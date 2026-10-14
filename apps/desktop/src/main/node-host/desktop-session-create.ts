@@ -4,15 +4,20 @@ import type { PermissionMode, SandboxMode, SendMessageRequest } from '@superone/
 import { sanitizeGitRef } from '@superone/runtime/git'
 import { gitRun } from '../git-run'
 import { activateWorktree } from '../git/worktree-ops'
-import type { LocalSessionHostDeps } from './local-session-host'
+import type { DesktopSessionHostDeps } from './desktop-session-host'
+import type { RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import { applyDesktopSessionSettings } from './desktop-session-mutations'
 import log from '../logger'
 
 type Create = NonNullable<SessionHostPort['createOnHost']>
 const refused = (message: string) => Object.assign(new Error(message), { code: 'failed_precondition' })
 
-/** Resolve native creation choices before persisting a row; draft control is rechecked after Git work. */
-export async function createDesktopSession(deps: LocalSessionHostDeps, input: Parameters<Create>[0], options: Parameters<Create>[1]) {
+/**
+ * Resolve native creation choices before persisting a row; draft control is
+ * rechecked after Git work. A session a controller desktop starts is stored
+ * with its `controller` record and leaves this desktop's active session as it was.
+ */
+export async function createDesktopSession(deps: DesktopSessionHostDeps, input: Parameters<Create>[0], options: Parameters<Create>[1], controller: RemoteControllerRecord | null) {
   const projectPath = deps.projectPath(input.projectId)
   if (!projectPath) throw Object.assign(new Error('project not found'), { code: 'not_found' })
   const sessionId = input.sessionId ?? randomUUID()
@@ -54,11 +59,13 @@ export async function createDesktopSession(deps: LocalSessionHostDeps, input: Pa
       await deps.sessions.disposeSession(sessionId)
     }
     options.assertCreate()
-    if (!deps.edits) throw refused('Session persistence is not available')
     const providerId = input.providerId ?? `${input.harnessId ?? 'claude'}-base`
     deps.edits.create({ sessionId, projectPath, cwd, title: input.title, providerId })
     persisted = true
+    if (controller) deps.edits.setController(sessionId, controller, providerId)
     const settings = options.settings
+    // A remote launch must not take over which session this desktop shows.
+    const previousActive = controller ? deps.sessions.getActiveSession(projectPath)?.id ?? null : undefined
     const session = deps.sessions.createSession({
       id: sessionId, projectPath, cwd, providerId, title: input.title,
       systemPromptAppend: input.systemPromptAppend ?? undefined,
@@ -69,13 +76,15 @@ export async function createDesktopSession(deps: LocalSessionHostDeps, input: Pa
       additionalDirectories: settings.additionalDirectories ?? undefined,
       ...(gitBranch !== undefined ? { gitBranch } : {}),
     })
+    if (previousActive) deps.sessions.setActiveSession(projectPath, previousActive)
+    else if (previousActive === null) deps.sessions.clearActiveSession(projectPath)
     session.lease.grantCreatedSession()
     options.assertCreate()
     await applyDesktopSessionSettings(session, settings)
     return session
   } catch (error) {
     if (!existingRow && persisted) {
-      try { await deps.edits?.close(sessionId); deps.edits?.remove(sessionId) }
+      try { await deps.edits.close(sessionId); deps.edits.remove(sessionId) }
       catch (cleanupError) { log.warn('[desktop-session-create] session cleanup failed: %s', cleanupError) }
     }
     if (createdWorktree && (!persisted || !existingRow)) {

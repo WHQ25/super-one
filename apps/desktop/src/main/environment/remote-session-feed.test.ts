@@ -3,7 +3,7 @@ import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import type { TopicRef } from '@superone/shared/environment/topics'
 import { RemoteSessionFeed, type RemoteSessionFeedSource } from './remote-session-feed'
-import type { SessionStreamFrame } from '@superone/shared/environment'
+import type { SessionStreamFrame, TopicNoticeFrame } from '@superone/shared/environment'
 
 const envelope = (version: number, aggregateId: string, aggregateType = 'session', eventType = 'session.agent_event') =>
   ({ environmentId: 'env', sequence: String(version), sessionVersion: version, aggregateType, aggregateId, eventType, payload: {} }) as unknown as EnvironmentEventEnvelope
@@ -37,6 +37,7 @@ function pushSource(head = '7', apply?: (topics: TopicRef[]) => Promise<void>) {
     realign: () => handlers?.onRealign(),
     frame: (frame: SessionStreamFrame) => { handlers?.onFrame?.(frame); for (const event of frame.events) queue.push(event); poke() },
     terminal: (event: TerminalEvent) => handlers?.onTerminal?.(event),
+    topic: (frame: TopicNoticeFrame) => handlers?.onTopic?.(frame),
     applied,
   }
 }
@@ -150,7 +151,7 @@ describe('RemoteSessionFeed', () => {
   it('gives a follower only events above its barrier, though the stream lags behind', async () => {
     const source = pushSource('7')
     const feed = new RemoteSessionFeed(source, 'env')
-    await feed.observe(() => {})
+    await feed.observe({})
     // The session is at version 9 while the stream has not read 8 and 9 yet.
     const a = { event: vi.fn(), end: vi.fn() }
     await feed.follow('a', a, async () => 9)
@@ -165,7 +166,7 @@ describe('RemoteSessionFeed', () => {
   it('holds events that arrive while the barrier is read and releases those above it', async () => {
     const source = pushSource('7')
     const feed = new RemoteSessionFeed(source, 'env')
-    await feed.observe(() => {})
+    await feed.observe({})
     let release!: (version: number) => void
     const a = { event: vi.fn(), end: vi.fn() }
     const following = feed.follow('a', a, () => new Promise((resolve) => { release = resolve }))
@@ -197,7 +198,7 @@ describe('RemoteSessionFeed', () => {
     const source = pushSource()
     const feed = new RemoteSessionFeed(source, 'env')
     const seen: string[] = []
-    const unobserve = await feed.observe((e) => seen.push(e.aggregateId))
+    const unobserve = await feed.observe({ event: (e) => seen.push(e.aggregateId) })
     source.push(envelope(8, 'a', 'session', 'session.created'))
     source.push(envelope(9, 'b', 'session', 'session.agent_event'))
     source.push(envelope(10, 'c', 'session', 'session.renamed'))
@@ -210,17 +211,39 @@ describe('RemoteSessionFeed', () => {
     feed.close()
   })
 
+  it("hands a desktop node's list notices to observers, which then stand in for its durable list events", async () => {
+    const source = pushSource()
+    const feed = new RemoteSessionFeed(source, 'env')
+    const notices: TopicNoticeFrame[] = []
+    const events: string[] = []
+    await feed.observe({ notice: (frame) => notices.push(frame), event: (e) => events.push(e.aggregateId) })
+    expect(source.applied.at(-1)).toEqual([{ kind: 'sessionList', environmentId: 'env' }, { kind: 'projects', environmentId: 'env' }])
+    source.push(envelope(8, 'before', 'session', 'session.created'))
+    await flush()
+    const renamed: TopicNoticeFrame = { topic: { kind: 'sessionList', environmentId: 'env' }, cursor: { epoch: 'e', version: 1 }, events: [{ type: 'session_list_changed', projectPath: '/p' }] }
+    source.topic(renamed)
+    source.topic({ topic: { kind: 'projects', environmentId: 'env' }, events: [{ type: 'project_list_changed' }] })
+    source.topic({ topic: { kind: 'drafts', environmentId: 'env' }, events: [] })
+    source.topic({ topic: { kind: 'sessionList', environmentId: 'other' }, events: [] })
+    source.push(envelope(9, 'after', 'session', 'session.created'))
+    await flush()
+    expect(notices.map((frame) => frame.topic.kind)).toEqual(['sessionList', 'projects'])
+    expect(notices[0]).toBe(renamed)
+    expect(events).toEqual(['before'])
+    feed.close()
+  })
+
   it('subscribes to the union of what it is asked for, and reads a barrier only once the node has the topic', async () => {
     const source = pushSource()
     const feed = new RemoteSessionFeed(source, 'env')
-    const unobserve = await feed.observe(() => {})
+    const unobserve = await feed.observe({})
     const order: string[] = []
     const unfollowA = await feed.follow('a', { event: vi.fn(), end: vi.fn() }, async () => {
       order.push(`barrier with ${JSON.stringify(source.applied.at(-1))}`)
       return 7
     })
     const unfollowA2 = await feed.follow('a', { event: vi.fn(), end: vi.fn() }, async () => 7)
-    expect(order).toEqual([`barrier with ${JSON.stringify([{ kind: 'sessionList', environmentId: 'env' }, { kind: 'session', environmentId: 'env', sessionId: 'a' }])}`])
+    expect(order).toEqual([`barrier with ${JSON.stringify([{ kind: 'sessionList', environmentId: 'env' }, { kind: 'projects', environmentId: 'env' }, { kind: 'session', environmentId: 'env', sessionId: 'a' }])}`])
     const applies = source.applied.length
     unfollowA()
     expect(source.applied).toHaveLength(applies)

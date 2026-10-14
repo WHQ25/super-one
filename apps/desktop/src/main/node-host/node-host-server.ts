@@ -1,4 +1,5 @@
 import {
+  cancelMcpAppsInvocationsForClient,
   deriveIssuedChannelSecret,
   dispatchRpc,
   issueChannelCredential,
@@ -10,7 +11,9 @@ import {
   type NodeServerHandle,
   type RpcContext,
 } from '@superone/runtime/server'
+import type { ControlLeaseService } from '@superone/runtime/lease'
 import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
+import { cancelCodexAccountLoginForClient } from '@superone/runtime/server/rpc-codex'
 import type { NodeHostController, NodeHostControllerPath, NodeHostPairingToken } from '@superone/shared/agent-types'
 import { networkAddressScope } from '@superone/shared/private-network-address'
 import type { DesktopDomain } from './desktop-domain'
@@ -36,6 +39,27 @@ export interface DesktopNodeHostListen {
 }
 
 /**
+ * A controller desktop's grants on the domain's lease authority, held under
+ * its own client session. Its delegates can only be the phones it relays
+ * (`phone:<device>`), so none of its grants reads as this desktop's window;
+ * its wire `yields` reaches only those delegates.
+ */
+function controllerLeases(leases: ControlLeaseService): RpcContext['leases'] {
+  return {
+    acquire(input) {
+      if (input.delegate && !input.delegate.startsWith('phone:')) {
+        throw Object.assign(new Error('a controller delegates only to the phones it relays'), { code: 'invalid_argument' })
+      }
+      return leases.acquire(input)
+    },
+    renew: (input) => leases.renew(input),
+    release: (leaseId, generation, holderClientId, delegate) => leases.release(leaseId, generation, holderClientId, delegate),
+    revoke: (resource) => leases.revoke(resource),
+    assertValid: (input) => leases.assertValid(input),
+  }
+}
+
+/**
  * The listener that lets controller desktops reach this desktop's domain: the
  * runtime node server inside the pairing-secret channel, on the LAN and over
  * the relay. Stopping it leaves the domain (and the phones it serves) up.
@@ -55,7 +79,7 @@ export class DesktopNodeHost {
     // Pairing, tokens and RPC run only inside the pairing-secret channel
     // (AES-256-GCM over ws), so the server may listen beyond loopback.
     const channelRoot = loadOrCreateChannelRoot(domain.nodeHome)
-    const context = domain.rpcContext()
+    const context = domain.clientContext()
     const server = await startNodeServer<RpcContext>({
       identity,
       auth,
@@ -69,11 +93,17 @@ export class DesktopNodeHost {
       ...(listen.allowRemoteAddress ? { allowRemoteAddress: listen.allowRemoteAddress } : {}),
       // Controllers coming and going change what the settings list shows.
       onClientConnected: () => listen.onControllersChanged?.(),
-      onClientDisconnected: () => listen.onControllersChanged?.(),
-      createRpcContext: () => ({ ...context }),
+      onClientDisconnected: (clientSessionId) => {
+        domain.releaseClientDrafts(clientSessionId)
+        cancelMcpAppsInvocationsForClient(clientSessionId)
+        void cancelCodexAccountLoginForClient(clientSessionId)
+        listen.onControllersChanged?.()
+      },
+      createRpcContext: () => ({ ...context, leases: controllerLeases(domain.leases) }),
     })
     auth.onRevoke = (clientSessionId) => {
       server.closeSocketsForClient(clientSessionId)
+      domain.revokeClient(clientSessionId)
       listen.onControllersChanged?.()
     }
     auth.onPaired = () => listen.onControllersChanged?.()
@@ -99,7 +129,7 @@ export class DesktopNodeHost {
     return this.domain.auth
   }
 
-  /** The `session.*` surface, for tools of sessions served here. */
+  /** This desktop's session host, which serves every client; Host Actions reach the controllers through this listener. */
   get sessions(): DesktopSessionHost {
     return this.domain.sessions
   }
@@ -194,6 +224,11 @@ export class DesktopNodeHost {
     this.auth.onPaired = null
     // No controller can answer a Host Action until the listener is back.
     this.domain.sessions.cancelHostActions('node_host_stopped')
+    // Closing the sockets below reports no disconnects.
+    for (const { clientSessionId } of this.server.connectedClients()) {
+      this.domain.releaseClientDrafts(clientSessionId)
+      void cancelCodexAccountLoginForClient(clientSessionId)
+    }
     await this.server.close()
   }
 }

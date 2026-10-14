@@ -1,6 +1,7 @@
 import { verifyPayload } from '../crypto-util'
 import { dispatchRpc, clearWatchBuffersForClient, type RpcContext } from '../rpc/handlers'
-import { cancelMcpAppsInvocationsForClient } from '../rpc/mcp-apps-handlers'
+import { cancelMcpAppsInvocationsForClient } from '@superone/runtime/server'
+import { cancelCodexAccountLoginForClient } from '@superone/runtime/server/rpc-codex'
 import { createCliRpcHostHooks } from '../rpc/host-hooks'
 import type { AuthService } from '../auth/auth-service'
 import type { NodeIdentity } from '../identity'
@@ -19,7 +20,7 @@ import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
 import type { DraftControl } from '@superone/runtime/drafts'
-import type { ArtifactZoneService } from '../workspace/artifact-zone'
+import type { ArtifactZoneService } from '@superone/runtime/workspace'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import {
   startNodeServer as startRuntimeNodeServer,
@@ -61,7 +62,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
   const hooks = createCliRpcHostHooks()
   const startedAt = opts.startedAt ?? Date.now()
 
-  return startRuntimeNodeServer<RpcContext>({
+  const server = await startRuntimeNodeServer<RpcContext>({
     identity: opts.identity,
     auth: opts.auth,
     bindHost: opts.bindHost,
@@ -75,6 +76,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       opts.workspaceTailWatch.cancelForClient?.(clientSessionId)
       clearWatchBuffersForClient(clientSessionId)
       cancelMcpAppsInvocationsForClient(clientSessionId)
+      void cancelCodexAccountLoginForClient(clientSessionId)
     },
     createRpcContext: () => ({
       identity: opts.identity,
@@ -102,4 +104,10 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       simulatedHarness: opts.simulatedHarness,
     }),
   })
+  // A revoked or suspended client loses its sessions and terminals now, not when its leases expire.
+  opts.auth.onRevoke = (clientSessionId) => {
+    server.closeSocketsForClient(clientSessionId)
+    opts.leases.revokeHolder(clientSessionId)
+  }
+  return server
 }

@@ -51,7 +51,10 @@ node:     <nodeHome>/sync/<sessionId>/<producer>/<file>
 
 - `<nodeHome>` is whatever the CLI resolves as its home (`resolveNodeHome`,
   honouring `SUPERONE_HOME`, `SUPERONE_NODE_HOME` and the alpha/dev suffixes;
-  `apps/cli/src/config.ts`). Never a hard-coded `~/.superone`.
+  `apps/cli/src/config.ts`). Never a hard-coded `~/.superone`. A desktop
+  serving as a node uses its own zone, `<userData>/sync`
+  (`node-host/paths.ts`), so a controller's files sit with the ones produced
+  there and go with the session.
 - `producer` ∈ `browser | computer-use | ios-simulator | android | ios-mirror`
   (`CaptureProducer`) plus `recording`, `media-gen`, `download`, and `agent`
   (files the agent writes there on purpose); `ArtifactProducer` in
@@ -319,8 +322,8 @@ artifacts as `missing` in that session. No shim.
 `workspace.*` is project-scoped by construction and stays that way; the zone
 is outside every project. Five RPCs under `artifact.*`
 (`packages/shared/src/environment/artifact-rpc.ts`,
-`apps/cli/src/rpc/artifact-handlers.ts`,
-`apps/cli/src/workspace/artifact-zone.ts`), scoped to
+`packages/runtime/src/server/rpc-artifacts.ts`,
+`packages/runtime/src/workspace/artifact-zone.ts`), scoped to
 `<syncRoot>/<sessionId>` with the workspace `path-security` helpers:
 
 | RPC | Direction | Shape |
@@ -394,8 +397,12 @@ Boundary:
   it). Injection is once per `(session, notificationId)`, recorded in the
   host-action store's `artifact_notifications` table (pruned after 30 days),
   so a node restart between injecting and the desktop's retry does not inject
-  twice. This is a retry guarantee, not end-to-end delivery: a wake the node
-  acknowledged and then lost before the harness consumed it is not re-sent.
+  twice. The node answers once the session admits the wake (the harness took
+  it or its turn is queued) and refuses one that cannot land, so the desktop
+  retries it and a wake that starts a long turn does not hold the call open
+  (`packages/runtime/src/session/artifact-wakes.ts`). This is a retry
+  guarantee, not end-to-end delivery: a wake the node acknowledged and then
+  lost before the harness consumed it is not re-sent.
 
 ### 5.4 Agent-facing
 

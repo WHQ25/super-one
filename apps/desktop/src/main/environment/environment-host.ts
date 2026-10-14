@@ -2,6 +2,9 @@ import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/de
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
 import type { RemoteTopicStream } from './remote-topic-followers'
+import type { RemoteTerminalNode } from './remote-terminal-controller'
+import type { EnvironmentRpcClient } from './environment-rpc-client'
+import type { ProviderBundle } from '@superone/shared/platform-registry'
 import { notifySessionClosed } from '../session-list-watch'
 import { currentControlScope } from '../session/control-context'
 import { SESSION_LIST_OPERATION_METHODS, type SessionListOperationMethod, type SessionListOperationMethods } from '@superone/shared/environment/session-operations'
@@ -33,7 +36,6 @@ import type {
   ProjectRef,
   SessionLoadResult,
   SupervisorSnapshot,
-  TerminalReadResult,
   ResourceProvider,
 } from '@superone/shared/environment'
 import {
@@ -44,6 +46,7 @@ import {
   decideRemoteCliAction,
   refusingPeerProtocolMax,
   isControlReleasedError,
+  controlHeldBy,
   desktopUpgradeRequiredMessage,
   providerSessionIdFromResume,
   shouldBlockDesktopForNewerNode,
@@ -65,6 +68,8 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
+import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
+import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
@@ -348,8 +353,26 @@ export class EnvironmentHost {
     if (!client || !this.connections.isConnected(known.connectionId)) throw Object.assign(new Error('Remote environment is disconnected'), { code: 'unavailable' })
     return {
       client, environmentId,
-      follow: (input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<RemoteTopicStream> =>
-        this.feedFor(known.connectionId).followTopics(input, handlers, () => client.rpc<SessionStreamFrame>('topic.catchUp', input, environmentId)),
+      follow: this.topicFollower(known.connectionId, client, environmentId),
+    }
+  }
+
+  /** A native reader of a node's topics, joining the node's one shared feed at a cursor cut. */
+  private topicFollower(connectionId: string, client: Pick<EnvironmentRpcClient, 'rpc'>, environmentId: string) {
+    return (input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<RemoteTopicStream> =>
+      this.feedFor(connectionId).followTopics(input, handlers, () => client.rpc<SessionStreamFrame>('topic.catchUp', input, environmentId))
+  }
+
+  /** A connected node's terminals, read and followed the way its phones do. */
+  remoteTerminalNode(connectionId: string): RemoteTerminalNode {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const client = this.connections.getClient(connectionId)
+    if (!client) throw Object.assign(new Error('Remote environment is disconnected'), { code: 'unavailable' })
+    return {
+      environmentId,
+      terminals: gateway.terminals,
+      rpc: (method, payload) => client.rpc(method, payload, environmentId),
+      follow: this.topicFollower(connectionId, client, environmentId),
     }
   }
 
@@ -758,11 +781,6 @@ export class EnvironmentHost {
   /** Serialize ensureSessionLease per session key to avoid concurrent acquire races. */
   private readonly sessionLeaseInflight = new Map<string, Promise<{ leaseId: string; generation: string }>>()
 
-  private readonly terminalLeases = new Map<
-    string,
-    { leaseId: string; generation: string; expiresAt: number }
-  >()
-
   /**
    * A local grant belongs to the window asking (each window is its own
    * delegate and yields to a phone); a node's grant to this desktop.
@@ -780,122 +798,6 @@ export class EnvironmentHost {
     const prefix = `${connectionId}:${sessionId}`
     for (const key of [...this.sessionLeases.keys()]) {
       if (key === prefix || key.startsWith(`${prefix}:`)) this.sessionLeases.delete(key)
-    }
-  }
-
-  private terminalLeaseKey(connectionId: string, terminalId: string): string {
-    return `${connectionId}:${terminalId}`
-  }
-
-  private async ensureTerminalLease(
-    connectionId: string,
-    terminalId: string,
-  ): Promise<{ leaseId: string; generation: string }> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const key = this.terminalLeaseKey(connectionId, terminalId)
-    const existing = this.terminalLeases.get(key)
-    const now = Date.now()
-    if (existing?.expiresAt && existing.expiresAt > now + 5_000) {
-      return { leaseId: existing.leaseId, generation: existing.generation }
-    }
-
-    if (existing) {
-      try {
-        const renewed = await gateway.terminals.renewControl({
-          leaseId: existing.leaseId,
-          generation: existing.generation,
-          ttlMs: 60_000,
-        })
-        this.terminalLeases.set(key, {
-          leaseId: renewed.leaseId,
-          generation: renewed.generation,
-          expiresAt: Date.parse(renewed.expiresAt),
-        })
-        return { leaseId: renewed.leaseId, generation: renewed.generation }
-      } catch {
-        this.terminalLeases.delete(key)
-      }
-    }
-
-    const lease = await gateway.terminals.acquireControl({
-      resource: { environmentId, terminalId },
-      ttlMs: 60_000,
-    })
-    this.terminalLeases.set(key, {
-      leaseId: lease.leaseId,
-      generation: lease.generation,
-      expiresAt: Date.parse(lease.expiresAt),
-    })
-    return { leaseId: lease.leaseId, generation: lease.generation }
-  }
-
-  async createRemoteTerminal(
-    connectionId: string,
-    input: { cwd: string; title?: string; cols?: number; rows?: number },
-  ): Promise<{ terminalId: string }> {
-    const { gateway } = this.resolveRemote(connectionId)
-    const created = await gateway.terminals.create({
-      cwd: input.cwd,
-      title: input.title,
-      cols: input.cols,
-      rows: input.rows,
-    })
-    await this.ensureTerminalLease(connectionId, created.terminalId)
-    return created
-  }
-
-  async attachRemoteTerminal(
-    connectionId: string,
-    terminalId: string,
-  ): Promise<{ snapshot: string; sequence: string }> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    return gateway.terminals.attach({ environmentId, terminalId })
-  }
-
-  async readRemoteTerminal(
-    connectionId: string,
-    terminalId: string,
-    afterSequence: string,
-  ): Promise<TerminalReadResult> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    return gateway.terminals.read({ environmentId, terminalId }, afterSequence)
-  }
-
-  async writeRemoteTerminal(connectionId: string, terminalId: string, data: string): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const control = await this.ensureTerminalLease(connectionId, terminalId)
-    await gateway.terminals.write({
-      terminal: { environmentId, terminalId },
-      data,
-      ...control,
-    })
-  }
-
-  async resizeRemoteTerminal(
-    connectionId: string,
-    terminalId: string,
-    cols: number,
-    rows: number,
-  ): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const control = await this.ensureTerminalLease(connectionId, terminalId)
-    await gateway.terminals.resize({
-      terminal: { environmentId, terminalId },
-      cols,
-      rows,
-      ...control,
-    })
-  }
-
-  async killRemoteTerminal(connectionId: string, terminalId: string): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const key = this.terminalLeaseKey(connectionId, terminalId)
-    const control = await this.ensureTerminalLease(connectionId, terminalId)
-    try {
-      await gateway.terminals.kill({ environmentId, terminalId }, control)
-    } finally {
-      this.terminalLeases.delete(key)
-      await gateway.terminals.releaseControl(control).catch(() => {})
     }
   }
 
@@ -917,9 +819,10 @@ export class EnvironmentHost {
   }
 
   /**
-   * Drive a session again after the computer it runs on took it back. A lease
-   * acquired without `reclaim` is refused there, so ordinary sends never
-   * silently take control back.
+   * Drive a session again after the computer it runs on took it back, or take
+   * it over from that computer's window (the user's Reconnect / Take over). A
+   * lease acquired without `reclaim` is refused there, so ordinary sends never
+   * silently take control.
    */
   async reclaimSessionControl(connectionId: string, sessionId: string): Promise<void> {
     this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
@@ -1562,93 +1465,9 @@ export class EnvironmentHost {
     connectionId: string,
     opts?: { replaceAll?: boolean },
   ): Promise<{ credentials: number; bindings: number }> {
-    const bundle = (await this.asRemoteProviderGw(connectionId).providerExportBundle()) as {
-      credentials?: Array<{
-        id: string
-        platformId: string
-        planId: string
-        name: string
-        secret: string
-        secretEnv?: string
-        baseUrl?: string
-        overrides?: Record<string, unknown>
-        endpoints?: unknown[]
-        notes?: string
-        sortOrder?: number
-      }>
-      bindings?: Array<{
-        consumer: string
-        credentialId: string
-        endpointId?: string
-        config?: unknown
-      }>
-      customPlatforms?: Array<{ id: string }>
-    }
-    const {
-      createCredential,
-      updateCredential,
-      deleteCredential,
-      listCredentials,
-      setBinding,
-      deleteBinding,
-      listBindings,
-      upsertCustomPlatform,
-      deleteCustomPlatform,
-      listCustomPlatforms,
-    } = await import('../providers/credential-store')
-    if (opts?.replaceAll) {
-      for (const b of listBindings()) deleteBinding(b.consumer)
-      for (const c of listCredentials()) deleteCredential(c.id)
-      for (const p of listCustomPlatforms()) deleteCustomPlatform(p.id)
-    }
-    for (const plat of bundle.customPlatforms ?? []) {
-      if (plat && typeof plat === 'object' && 'id' in plat) {
-        upsertCustomPlatform(plat as never)
-      }
-    }
-    let creds = 0
-    for (const c of bundle.credentials ?? []) {
-      if (!c?.id || !c.platformId || !c.planId || !c.name) continue
-      const existing = listCredentials().find((x) => x.id === c.id)
-      if (existing) {
-        updateCredential(c.id, {
-          name: c.name,
-          secret: c.secret,
-          secretEnv: c.secretEnv,
-          baseUrl: c.baseUrl,
-          overrides: c.overrides as never,
-          endpoints: (c.endpoints as never) ?? null,
-          notes: c.notes,
-          sortOrder: c.sortOrder,
-        })
-      } else {
-        createCredential({
-          id: c.id,
-          platformId: c.platformId,
-          planId: c.planId,
-          name: c.name,
-          secret: c.secret,
-          secretEnv: c.secretEnv,
-          baseUrl: c.baseUrl,
-          overrides: c.overrides as never,
-          endpoints: c.endpoints as never,
-          notes: c.notes,
-        })
-      }
-      creds += 1
-    }
-    let binds = 0
-    for (const b of bundle.bindings ?? []) {
-      if (!b?.consumer || !b.credentialId) continue
-      setBinding({
-        consumer: b.consumer as never,
-        credentialId: b.credentialId,
-        endpointId: b.endpointId,
-        config: b.config as never,
-      })
-      binds += 1
-    }
-    return { credentials: creds, bindings: binds }
+    const bundle = (await this.asRemoteProviderGw(connectionId).providerExportBundle()) as Partial<ProviderBundle>
+    const { importBundle } = await import('../providers/credential-store')
+    return importBundle(bundle, opts)
   }
 
   /**
@@ -1742,23 +1561,77 @@ export class EnvironmentHost {
     this.watchedSessionLists.delete(connectionId)
   }
 
-  /** Listeners told which machine's session list changed. */
-  private readonly sessionListListeners = new Set<(connectionId: string) => void>()
+  /** Listeners told which machine's session list changed, and in which project when the node says. */
+  private readonly sessionListListeners = new Set<(connectionId: string, projectKey?: string) => void>()
+  /** Listeners told which machine's project list changed. */
+  private readonly projectListListeners = new Set<(connectionId: string) => void>()
+  /** Listeners given a remote session's sidebar summary, keyed by its desktop project key. */
+  private readonly sessionActivityListeners = new Set<(event: SessionActivityEvent) => void>()
   /** Machines whose list changes this desktop watches. */
   private readonly watchedSessionLists = new Set<string>()
+  /** Each machine's latest sidebar summary of the sessions it holds live, kept across reconnects. */
+  private readonly remoteSummaries = new Map<string, Map<string, SessionActivity>>()
+  /** Whether a window here shows a remote session (set by the app). */
+  private remoteSessionOnScreen: (connectionId: string, sessionId: string) => boolean = () => false
 
-  onSessionListChanged(listener: (connectionId: string) => void): () => void {
+  setRemoteSessionOnScreen(check: (connectionId: string, sessionId: string) => boolean): void {
+    this.remoteSessionOnScreen = check
+  }
+
+  /**
+   * A window here started showing a remote session: its completion is read,
+   * so tell the machine as a phone does, and every client drops the dot.
+   */
+  remoteSessionShown(connectionId: string, sessionId: string): void {
+    const summary = this.remoteSummaries.get(connectionId)?.get(sessionId)
+    if (summary) void this.reportSeen(connectionId, summary).catch(() => {})
+  }
+
+  /** Only a machine's live sessions keep a receipt, and each has a summary. */
+  private async reportSeen(connectionId: string, summary: SessionActivity): Promise<void> {
+    if (!summary.completedMessageId || summary.completedMessageId === summary.seenCompletedMessageId) return
+    await this.requireRemoteGateway(connectionId).markSeen(summary.sessionId)
+  }
+
+  onSessionListChanged(listener: (connectionId: string, projectKey?: string) => void): () => void {
     this.sessionListListeners.add(listener)
     return () => { this.sessionListListeners.delete(listener) }
   }
 
-  /** Tell the list listeners when a node's sessions are created, renamed, flagged, tagged or removed, by any client. */
+  onProjectListChanged(listener: (connectionId: string) => void): () => void {
+    this.projectListListeners.add(listener)
+    return () => { this.projectListListeners.delete(listener) }
+  }
+
+  onRemoteSessionActivity(listener: (event: SessionActivityEvent) => void): () => void {
+    this.sessionActivityListeners.add(listener)
+    return () => { this.sessionActivityListeners.delete(listener) }
+  }
+
+  /**
+   * Follow a node's session list and projects as its phones do: every
+   * create, rename, flag, tag, removal and sidebar activity, by any client.
+   */
   private watchSessionList(connectionId: string): void {
     if (this.watchedSessionLists.has(connectionId)) return
     this.watchedSessionLists.add(connectionId)
-    this.feedFor(connectionId).observe(() => {
-      for (const listener of [...this.sessionListListeners]) listener(connectionId)
-    }).catch(() => { this.watchedSessionLists.delete(connectionId) })
+    let summaries = this.remoteSummaries.get(connectionId)
+    if (!summaries) this.remoteSummaries.set(connectionId, summaries = new Map())
+    this.feedFor(connectionId).observe(remoteListObserver(connectionId, summaries, {
+      sessionListChanged: (projectKey) => {
+        for (const listener of [...this.sessionListListeners]) listener(connectionId, projectKey)
+      },
+      projectsChanged: () => {
+        this.remoteProjectCache.delete(connectionId)
+        this.remoteProjectLoads.delete(connectionId)
+        for (const listener of [...this.projectListListeners]) listener(connectionId)
+      },
+      activity: (event) => {
+        for (const listener of [...this.sessionActivityListeners]) listener(event)
+        // A completion landing in a session on screen here is read as it lands.
+        if (this.remoteSessionOnScreen(connectionId, event.activity.sessionId)) void this.reportSeen(connectionId, event.activity).catch(() => {})
+      },
+    })).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */
@@ -1877,10 +1750,11 @@ export class EnvironmentHost {
   ): Promise<unknown> {
     const { gateway, environmentId, local } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId).catch((err: unknown) => {
-      // The composer was opened before the node took the session back; close it now.
-      if (isControlReleasedError(err)) {
-        this.agentEventSink?.({ type: 'remote_control_changed', released: true, sessionId: input.sessionId, projectPath: input.projectPath })
-      }
+      // The composer was opened before the node took the session back, or before someone there took it; close it now.
+      const route = { sessionId: input.sessionId, projectPath: input.projectPath }
+      const holder = controlHeldBy(err)
+      if (isControlReleasedError(err)) this.agentEventSink?.({ type: 'remote_control_changed', released: true, ...route })
+      else if (holder) this.agentEventSink?.({ type: 'session_control_holder', holder, ...route })
       throw err
     })
 
@@ -2293,7 +2167,8 @@ export class EnvironmentHost {
     let promise!: Promise<ProjectSnapshot[]>
     promise = this.requireRemoteGateway(connectionId).listProjects().then((projects) => {
       const latest = this.lastStatus.get(connectionId)
-      if (latest?.state === 'connected' && latest.generation === generation) {
+      // A load the node's project change superseded must not cache the list it read before.
+      if (latest?.state === 'connected' && latest.generation === generation && this.remoteProjectLoads.get(connectionId)?.promise === promise) {
         this.remoteProjectCache.set(connectionId, { generation, projects })
       }
       return projects

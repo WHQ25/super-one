@@ -100,6 +100,7 @@ vi.mock('@/stores/chat', () => ({
   useIsRemoteLocked: () => hoisted.isRemoteLocked.value,
   useSessionRemoteController: () => null,
   useRemoteControlReleased: () => false,
+  useSessionControlHolder: () => null,
   useSessionScope: () => hoisted.scope.value,
 }))
 

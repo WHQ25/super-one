@@ -94,7 +94,7 @@ const HEARTBEAT_MAX_MISSED = 2
 function rpcTimeoutMs(method: string): number | undefined {
   // Native provider deadlines still bound server work; user input has no deadline.
   // Heartbeats/close reject a lost transport without resending an App operation.
-  if (method === 'mcpApps.provider') return undefined
+  if (method === 'mcpApps.provider' || method === 'codex.completeMcpOauth') return undefined
   // Only truly long mutators get 5 minutes — status/branches must not sit on 300s.
   if (
     method === 'git.clone' ||

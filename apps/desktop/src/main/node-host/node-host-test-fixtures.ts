@@ -8,13 +8,14 @@ import { HarnessManager } from '@superone/runtime/harness'
 import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
 import { openNodeDatabase } from '@superone/runtime/db'
 import type { ProjectSnapshot } from '@superone/shared/environment'
-import type { DesktopSessionRow, RemoteControlledSessionRow } from '../db-remote-controlled-sessions'
+import { McpAppsError, type McpAppsBinding, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import type { DesktopSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { Session, BackendCommand } from '../session/types'
 import { harnessIdFromProviderId } from '../session/session-repo'
 import { SessionLease } from '../session/session-lease'
 import { createDesktopProjectsPort } from './desktop-projects-port'
-import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
+import type { DesktopSessionEdits, NodeHostSessionManager } from './desktop-session-host'
 import { DesktopNodeHost, type DesktopNodeHostListen } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 
@@ -30,6 +31,16 @@ export const AGENT_PROFILES: SessionAgentProfile[] = [{
   efforts: ['medium', 'high'],
   apiProviders: [{ id: 'cred-b', name: 'Anthropic', keyName: 'Team key' }],
 }]
+
+/** B's harness hooks, without probing, installing or switching a real harness. */
+export function testHarnessHooks(): DesktopDomainDeps['hooks'] {
+  return {
+    probeHarnessReadiness: () => ({ ok: true }) as never,
+    assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
+    enableHarness: async (harnesses, input) => harnesses.get(input.harnessId),
+    disableHarness: (harnesses, id) => harnesses.get(id),
+  }
+}
 
 /** A desktop Session stand-in: records the owner and answers a turn with canned events. */
 export class FakeSession {
@@ -116,6 +127,23 @@ export class FakeSession {
   emitHostEvent(event: AgentEvent) {
     this.emit(event)
   }
+  /** The MCP connection this session's Apps reach; like a desktop backend, it serves only bindings to `local`. */
+  mcpAppsProvider: McpAppsProvider | null = null
+  async getMcpAppsProvider(binding: McpAppsBinding) {
+    if (!this.mcpAppsProvider || binding.node !== 'local' || binding.session !== this.id) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')
+    return this.mcpAppsProvider
+  }
+  /** Host wakes (task notifications) the agent was given. */
+  readonly wakes: string[] = []
+  async injectTaskNotification(content: string) { this.wakes.push(content) }
+  /** Set to refuse the next admitted wake, as a session whose backend cannot start does. */
+  wakeFailure: Error | null = null
+  async admitTaskNotification(content: string) {
+    const failure = this.wakeFailure
+    this.wakeFailure = null
+    if (failure) throw failure
+    this.wakes.push(content)
+  }
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch) {
     this.lease.assertMutation()
     this.emitHostEvent({ type: 'agent_setting_change', patch, sessionId: this.id } as AgentEvent)
@@ -156,18 +184,18 @@ export class FakeSessionManager implements NodeHostSessionManager {
   }
 }
 
-/** Desktop session rows in memory: `rows` holds every session, the store sees the controlled ones, `all` every one. */
-export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionStore & { rows: Map<string, DesktopSessionRow>; all: DesktopSessionRows<DesktopSessionRow> } {
+/** Desktop session rows in memory: `rows` holds every session, `all` reads them as the domain does. */
+export function memoryStore(projects: () => ProjectSnapshot[]) {
   const rows = new Map<string, DesktopSessionRow>()
-  const loadMessages = () => ({ messages: [], cursor: null, hasMore: false })
+  const all: DesktopSessionRows<DesktopSessionRow> = {
+    get: (sessionId) => rows.get(sessionId) ?? null,
+    list: (projectId) => [...rows.values()].filter((r) => !projectId || r.projectId === projectId),
+    loadMessages: () => ({ messages: [], cursor: null, hasMore: false }),
+  }
   return {
     rows,
-    all: {
-      get: (sessionId) => rows.get(sessionId) ?? null,
-      list: (projectId) => [...rows.values()].filter((r) => !projectId || r.projectId === projectId),
-      loadMessages,
-    },
-    createRow: ({ sessionId, projectPath, title, providerId }) => {
+    all,
+    createRow: ({ sessionId, projectPath, title, providerId }: Parameters<DesktopSessionEdits['create']>[0]) => {
       const project = projects().find((p) => p.path === projectPath)!
       rows.set(sessionId, {
         sessionId, projectId: project.projectId, projectPath, title: title ?? null, harnessId: harnessIdFromProviderId(providerId ?? 'claude-base'), providerId: providerId ?? null,
@@ -175,19 +203,26 @@ export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionS
         createdAt: Date.now(), updatedAt: Date.now(), controller: null,
       })
     },
-    setController: (sessionId, controller, providerId) => {
+    setController: (sessionId: string, controller: RemoteControllerRecord, providerId?: string) => {
       const row = rows.get(sessionId)
       if (!row) return false
       rows.set(sessionId, { ...row, controller, providerId: row.providerId ?? providerId ?? null })
       return true
     },
-    get: (sessionId) => {
-      const row = rows.get(sessionId)
-      return row?.controller ? row as RemoteControlledSessionRow : null
-    },
-    list: (projectId) => [...rows.values()].filter((r): r is RemoteControlledSessionRow => r.controller !== null && (!projectId || r.projectId === projectId)),
-    rename: () => {},
-    loadMessages,
+  }
+}
+
+/** The domain's persistence edits over `memoryStore` rows; closing disposes the fake runtime. */
+export function memorySessionEdits(store: ReturnType<typeof memoryStore>, sessions: FakeSessionManager): DesktopSessionEdits {
+  const update = (id: string, patch: Partial<DesktopSessionRow>) => { store.rows.set(id, { ...store.rows.get(id)!, ...patch }) }
+  return {
+    create: store.createRow,
+    setController: store.setController,
+    rename: (id, title) => update(id, { title }),
+    tags: (id, tags) => update(id, { tags }),
+    flags: (id, flags) => update(id, flags),
+    remove: (id) => { store.rows.delete(id) },
+    close: (id) => sessions.disposeSession(id),
   }
 }
 
@@ -205,12 +240,9 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
   const host = await startDesktopNode(
     {
       userDataDir: input.userDataDir, label: 'Desktop B', appVersion: '0.0.0-test', sessions,
-      store, rows: store.all, projects, harnesses,
+      rows: store.all, sessionEdits: memorySessionEdits(store, sessions), projects, harnesses,
       listAgentProfiles: () => AGENT_PROFILES,
-      hooks: {
-        probeHarnessReadiness: () => ({ ok: true }) as never,
-        assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
-      },
+      hooks: testHarnessHooks(),
     },
     input.listen,
   )

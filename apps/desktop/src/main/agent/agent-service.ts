@@ -25,6 +25,7 @@ import { baseSessionProviderId } from '@superone/shared/session-provider-definit
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
 import type { RemoteControlService } from '../remote-control-service'
+import type { McpChange } from '@superone/runtime/server/rpc-resources'
 import { trace } from './event-trace'
 import { applySessionDirectoryHint, sessionCreationCwd } from './session-directory'
 import { getProjectExtraDirs, updateProject } from '../recent-folders';
@@ -117,7 +118,6 @@ export class AgentService {
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
   private readHarnessUsage?: (request: import('./harness-usage').HarnessUsageRequest) => Promise<import('@superone/shared/agent-types').RemoteUsage | null>
-  private codexConsumeRateLimitReset?: (projectPath: string, apiProviderId: string | null, creditId: string | null) => Promise<import('@superone/shared/agent-types').CodexRateLimitResetOutcome | null>
   private codexProviderChanged?: (invalidateModelCache?: boolean) => void
   private remoteControlService?: RemoteControlService
   private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
@@ -139,9 +139,6 @@ export class AgentService {
     this.readHarnessUsage = fn
   }
 
-  setCodexConsumeRateLimitReset(fn: NonNullable<typeof this.codexConsumeRateLimitReset>): void {
-    this.codexConsumeRateLimitReset = fn
-  }
 
   setRemoteControlService(svc: RemoteControlService): void {
     this.remoteControlService = svc
@@ -177,9 +174,7 @@ export class AgentService {
         if (session.lease.isExternal) targets.push(session)
       })
     }
-    for (const session of targets) {
-      if (session.lease.isExternal) session.lease.revoke()
-    }
+    for (const session of targets) session.lease.takeBack()
     await this.releaseRoutedSessions?.(sessionId)
   }
 
@@ -377,11 +372,19 @@ export class AgentService {
   }
 
   /** A credential/platform change can affect either harness — rebuild and re-broadcast both. */
-  private broadcastProviderConfigChanged(): void {
+  providerConfigChanged(): void {
     this.markAllNeedsRebuild()
     this.codexProviderChanged?.()
     this.broadcastProviderChanged('claude')
     this.broadcastProviderChanged('codex')
+  }
+
+  /** One consumer's binding changed: rebuild sessions and re-broadcast its harness. */
+  providerBindingChanged(consumer: ConsumerId): void {
+    const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
+    this.markAllNeedsRebuild()
+    if (harness === 'codex') this.codexProviderChanged?.(false)
+    this.broadcastProviderChanged(harness)
   }
 
   private validateAddDirCandidate(
@@ -742,10 +745,6 @@ export class AgentService {
     return { usage: this.readHarnessUsage ? await this.readHarnessUsage(request) : null }
   }
 
-  async remoteConsumeRateLimitReset(projectPath: string, apiProviderId: string | null, creditId: string | null): Promise<{ outcome: import('@superone/shared/agent-types').CodexRateLimitResetOutcome | null }> {
-    return { outcome: this.codexConsumeRateLimitReset ? await this.codexConsumeRateLimitReset(projectPath, apiProviderId, creditId) : null }
-  }
-
   markAllNeedsRebuild(harnessId?: 'claude' | 'codex'): void {
     this.sessionManager?.markAllNeedsRebuild(harnessId)
   }
@@ -794,10 +793,25 @@ export class AgentService {
   }
 
   /** Live Claude runtimes pick up a plugin change now; released ones load it on their next start. */
-  private reloadLiveClaudePlugins(): void {
+  reloadLiveClaudePlugins(): void {
     this.sessionManager?.forEachSession((session) => {
       if (session.snapshot.harnessId === 'claude' && session.hasActiveRuntime()) void session.reloadPlugins()
     })
+  }
+
+  /**
+   * After a Claude MCP config change on disk, by the window or any node
+   * client: the project's active session turns the server on or off, and
+   * reconnects a saved one so it runs the new launch config.
+   */
+  async mcpConfigChanged({ provider, projectPath, name, enabled, saved }: McpChange): Promise<void> {
+    if (provider !== 'claude') return
+    const session = this.sessionManager?.getActiveSession(projectPath)
+    if (!session) return
+    try { await session.toggleMcpServer(name, enabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
+    if (saved) {
+      try { await session.reconnectMcp(name) } catch (err) { log.debug('[agent] MCP reconnect skipped:', err) }
+    }
   }
 
   setSessionManager(sessionManager: import('../session/session-manager').SessionManagerImpl): void {
@@ -1114,8 +1128,9 @@ export class AgentService {
       return loadRealtimeTimeline(sessionId)
     })
 
+    // A read the window makes just by showing the session: it takes no lease,
+    // so looking at a session never stops a phone or controller driving it.
     windowIpc.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
-      this.sessionManager?.getSession(sessionId)?.lease.assertMutation()
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
       return reconcileRealtimeTimeline(sessionId, timeline)
@@ -1814,11 +1829,9 @@ export class AgentService {
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+      if (scope !== 'user' && scope !== 'project') throw new Error('MCP save only supports user or project scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
-        if (scope !== 'user' && scope !== 'project') {
-          throw new Error('Remote MCP save only supports user or project scope')
-        }
         const { getEnvironmentHost } = await import('../environment')
         const { saveRemoteManagedMcp } = await import('../environment/remote-resources')
         const ok = await saveRemoteManagedMcp(getEnvironmentHost(), projectPath, {
@@ -1831,19 +1844,13 @@ export class AgentService {
         return
       }
       saveMcpConfig(name, config, scope, projectPath)
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (session) {
-        try { await session.toggleMcpServer(name, true) } catch (err) { log.debug('[agent] MCP save enable skipped:', err) }
-        try { await session.reconnectMcp(name) } catch (err) { log.debug('[agent] MCP save reconnect skipped:', err) }
-      }
+      await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: true, saved: true })
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
+      if (scope !== 'user' && scope !== 'project') throw new Error('MCP delete only supports user or project scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
-        if (scope !== 'user' && scope !== 'project') {
-          throw new Error('Remote MCP delete only supports user or project scope')
-        }
         const { getEnvironmentHost } = await import('../environment')
         const { deleteRemoteManagedMcp } = await import('../environment/remote-resources')
         const ok = await deleteRemoteManagedMcp(getEnvironmentHost(), projectPath, {
@@ -1855,7 +1862,7 @@ export class AgentService {
         return
       }
       deleteMcpConfig(name, scope, projectPath)
-      try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, false) } catch (err) { log.debug('[agent] MCP delete toggle skipped:', err) }
+      await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: false, saved: false })
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
@@ -1876,7 +1883,7 @@ export class AgentService {
         return
       }
       if (scope !== 'claudeai') toggleMcpConfig(name, disabled, scope, projectPath)
-      try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, !disabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
+      await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: !disabled, saved: false })
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string, harness?: HarnessId) => {
@@ -1969,7 +1976,7 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.PLATFORMS_UPDATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
     windowIpc.handle(AgentIpcChannels.PLATFORMS_DELETE_CUSTOM, (_event, id: string) => {
       const ok = deleteCustomPlatform(id)
-      this.broadcastProviderConfigChanged()
+      this.providerConfigChanged()
       return ok
     })
 
@@ -1977,12 +1984,12 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.CREDENTIALS_CREATE, (_event, input: CreateCredentialInput) => createCredential(input))
     windowIpc.handle(AgentIpcChannels.CREDENTIALS_UPDATE, (_event, id: string, patch: UpdateCredentialInput) => {
       const result = updateCredential(id, patch)
-      this.broadcastProviderConfigChanged()
+      this.providerConfigChanged()
       return result
     })
     windowIpc.handle(AgentIpcChannels.CREDENTIALS_DELETE, (_event, id: string) => {
       const ok = deleteCredential(id)
-      this.broadcastProviderConfigChanged()
+      this.providerConfigChanged()
       return ok
     })
 
@@ -1990,18 +1997,12 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.BINDINGS_SET, (_event, binding: ConsumerBinding) => {
       log.info('[bindings] set consumer=%s credential=%s', binding.consumer, binding.credentialId)
       setBinding(binding)
-      const harness = binding.consumer === 'chat:codex' ? 'codex' : 'claude'
-      this.markAllNeedsRebuild()
-      if (harness === 'codex') this.codexProviderChanged?.(false)
-      this.broadcastProviderChanged(harness)
+      this.providerBindingChanged(binding.consumer)
     })
     windowIpc.handle(AgentIpcChannels.BINDINGS_CLEAR, (_event, consumer: ConsumerId) => {
       log.info('[bindings] clear consumer=%s', consumer)
       deleteBinding(consumer)
-      const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
-      this.markAllNeedsRebuild()
-      if (harness === 'codex') this.codexProviderChanged?.(false)
-      this.broadcastProviderChanged(harness)
+      this.providerBindingChanged(consumer)
     })
 
     windowIpc.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }) => {

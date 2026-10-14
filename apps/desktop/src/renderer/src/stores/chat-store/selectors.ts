@@ -8,6 +8,7 @@ import type {
   SessionRemoteControllerInfo,
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
+import type { SessionControlHolder } from '@superone/shared/environment'
 
 import { isRemoteSession, useChatStore } from './index'
 import { useSessionScope, type SessionScope } from './session-scope'
@@ -88,6 +89,11 @@ export function useIsRemoteLocked(): boolean {
 /** Controller of the scoped session while it holds control from another device; null otherwise. */
 export function useSessionRemoteController(): SessionRemoteControllerInfo | null {
   return useActiveSession((s) => (s.remoteController && !s.remoteController.released ? s.remoteController : null))
+}
+
+/** Another device drives the scoped session now (`PerSessionState.controlHolder`); null otherwise. */
+export function useSessionControlHolder(): SessionControlHolder | null {
+  return useActiveSession((s) => s.controlHolder ?? null)
 }
 
 /** The computer this remote session runs on took it back; Reconnect controls it again. */

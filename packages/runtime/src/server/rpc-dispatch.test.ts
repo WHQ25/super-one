@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
 import { dispatchRpc } from './rpc-dispatch'
+import { resetSandboxCapabilityCacheForTests } from '../sandbox/index'
 import type {
   HostCapabilityFlags,
   ProjectsPort,
@@ -124,7 +125,7 @@ describe('terminal control delegates', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
-  it('passes delegate and yields through acquire just as session control does', async () => {
+  it('passes delegate through acquire and yields only to the caller\'s own delegates, as session control does', async () => {
     const acquire = vi.fn(() => ({ leaseId: 'lease' }))
     const ctx = projectsOnlyHost({
       terminals: {} as RpcContext['terminals'],
@@ -133,7 +134,7 @@ describe('terminal control delegates', () => {
     expect(await dispatchRpc('terminal.acquireControl', { terminalId: 't', delegate: 'phone-a', yields: true, ttlMs: 60_000 }, ctx)).toEqual({ result: { leaseId: 'lease' } })
     expect(acquire).toHaveBeenCalledWith({
       resource: { environmentId: 'env-1', terminalId: 't' }, holderClientId: 'c1',
-      delegate: 'phone-a', yields: true, ttlMs: 60_000,
+      delegate: 'phone-a', yields: 'holder', ttlMs: 60_000,
     })
   })
 })
@@ -263,6 +264,18 @@ describe('a partial git port', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('awaits async reads and maps their failures', async () => {
+    const { ctx } = worktreeOnlyHost()
+    const failed = Object.assign(new Error('git status timed out after 20000ms'), { code: 'internal' })
+    ctx.workspaceGit = {
+      status: vi.fn(async () => ({ isRepo: true, branch: 'main' })),
+      statusAt: vi.fn(async () => { throw failed }),
+    } as unknown as RpcContext['workspaceGit']
+    expect(await dispatchRpc('git.status', { projectId: 'p1' }, ctx)).toEqual({ result: { isRepo: true, branch: 'main' } })
+    const res = await dispatchRpc('git.status', { projectId: 'p1', cwd: '/tmp/p1-wt' }, ctx)
+    expect(res.error).toMatchObject({ code: 'internal', message: failed.message })
+  })
+
   it('advertises only the git methods it serves', async () => {
     const { ctx } = worktreeOnlyHost()
     const res = await dispatchRpc('environment.descriptor', {}, ctx)
@@ -328,5 +341,50 @@ describe('a partial collaboration port', () => {
     const { methods } = (res.result as ExecutionEnvironmentDescriptor).capabilities
     expect(methods).toEqual(expect.arrayContaining(['collaboration.listProfiles', 'collaboration.history']))
     expect(methods).not.toContain('collaboration.send')
+  })
+})
+
+describe('session.fork without a provider-side fork', () => {
+  const methods = async (sessions: Partial<SessionHostPort>) => {
+    const res = await dispatchRpc('environment.descriptor', {}, projectsOnlyHost({ sessions: sessions as SessionHostPort }))
+    return (res.result as ExecutionEnvironmentDescriptor).capabilities.methods
+  }
+
+  it('is unserved on a host with neither forkOnHost nor forkHarnessResume', async () => {
+    expect(await methods({ get: () => null })).not.toContain('session.fork')
+    const res = await dispatchRpc('session.fork', { sessionId: 's1' }, projectsOnlyHost({ sessions: { get: () => null } as unknown as SessionHostPort }))
+    expect(res.error).toMatchObject({ code: 'not_found', details: { method: 'session.fork', unsupported: true } })
+  })
+
+  it('is served by a session host that forks on its own', async () => {
+    expect(await methods({ get: () => null, forkOnHost: vi.fn() })).toContain('session.fork')
+  })
+})
+
+describe('sandbox probes on a GUI-launched host', () => {
+  it('waits for the host PATH before looking up bwrap / socat on Linux', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const path = process.env.PATH
+    // The login shell's PATH is the only one with bwrap / socat on it.
+    const shellBin = mkdtempSync(join(tmpdir(), 's1-shell-bin-'))
+    for (const bin of ['bwrap', 'socat']) writeFileSync(join(shellBin, bin), '#!/bin/sh\n', { mode: 0o755 })
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    resetSandboxCapabilityCacheForTests()
+    try {
+      const ctx = projectsOnlyHost()
+      ctx.hooks = {
+        ...ctx.hooks,
+        pathReady: async () => {
+          process.env.PATH = `${shellBin}:${path}`
+        },
+      }
+      const info = await dispatchRpc('environment.systemInfo', {}, ctx)
+      expect((info.result as { sandbox: unknown }).sandbox).toMatchObject({ ok: true, bwrap: true, socat: true })
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+      process.env.PATH = path
+      rmSync(shellBin, { recursive: true, force: true })
+      resetSandboxCapabilityCacheForTests()
+    }
   })
 })

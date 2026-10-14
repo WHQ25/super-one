@@ -35,7 +35,7 @@ export const TOPIC_KINDS: readonly TopicKind[] = ['session', 'sessionList', 'pro
 
 /** Terminal-list readers receive row metadata, never another terminal's output or screen. */
 export const TERMINAL_LIST_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'terminal_created', 'terminal_exited', 'terminal_title_changed', 'terminal_control_changed',
+  'terminal_created', 'terminal_exited', 'terminal_title_changed', 'terminal_control_changed', 'terminal_owner_changed',
 ])
 
 function instanceOf(ref: TopicRef): string {

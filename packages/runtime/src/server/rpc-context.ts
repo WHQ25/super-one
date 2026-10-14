@@ -3,6 +3,7 @@ import type {
   EnvironmentCapabilities,
   EnvironmentEventEnvelope,
   HostActionsPollResult,
+  NodeAgentSettings,
   NodeHarnessId,
   ProjectSnapshot,
   RespondHostActionResult,
@@ -22,6 +23,7 @@ import type {
   RuntimeReadyResult,
 } from '../harness/index'
 import type { ControlLeaseService } from '../lease/index'
+import type { SandboxPathReady } from '../sandbox/index'
 import type {
   NodeSessionRecord,
   NodeSessionSettings,
@@ -35,6 +37,8 @@ import type { ChatMessage, TerminalEvent, TerminalListItem, QuestionAnnotations,
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import type { DeliveryPolicy } from '../stream/delivery-policy'
 import type { DraftsPort } from './rpc-drafts'
+import type { ArtifactZoneService } from '../workspace/artifact-zone'
+import type { McpAppsPort } from './rpc-mcp-apps'
 import type { AuthenticatedClient } from './auth-service'
 import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
@@ -115,17 +119,17 @@ export interface WorkspaceGitPort {
    * Absent: the whole family.
    */
   readonly servedMethods?: ReadonlySet<string>
-  status(projectId: string): unknown
-  statusAt(projectId: string, absolutePath?: string | null): unknown
-  diff(projectId: string, opts?: { staged?: boolean; path?: string }): unknown
-  branches(projectId: string, absolutePath?: string | null): unknown
+  status(projectId: string): Promise<unknown>
+  statusAt(projectId: string, absolutePath?: string | null): Promise<unknown>
+  diff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<unknown>
+  branches(projectId: string, absolutePath?: string | null): Promise<unknown>
   switchBranch(
     projectId: string,
     branch: string,
     opts?: { create?: boolean; absolutePath?: string | null },
-  ): unknown
-  worktrees(projectId: string): unknown
-  checkedOutBranches(projectId: string): string[]
+  ): Promise<unknown>
+  worktrees(projectId: string): Promise<unknown>
+  checkedOutBranches(projectId: string): Promise<string[]>
   activateWorktree(
     projectId: string,
     input: {
@@ -134,13 +138,13 @@ export interface WorkspaceGitPort {
       branchName?: string
       carryLocalChanges?: boolean
     },
-  ): { path: string } | Promise<{ path: string }>
-  removeWorktree(projectId: string, worktreePath: string): void
+  ): Promise<{ path: string }>
+  removeWorktree(projectId: string, worktreePath: string): Promise<void>
   /** Update the project's remote-tracking refs of `remote` (and its `HEAD`). */
-  fetch(projectId: string, remote: string): void | Promise<void>
-  assignBranch(projectId: string, worktreePath: string, rawName: string): unknown
-  handoffToMain(projectId: string, worktreePath: string): unknown
-  handoffPreview(projectId: string, worktreePath: string): unknown
+  fetch(projectId: string, remote: string): Promise<void>
+  assignBranch(projectId: string, worktreePath: string, rawName: string): Promise<unknown>
+  handoffToMain(projectId: string, worktreePath: string): Promise<unknown>
+  handoffPreview(projectId: string, worktreePath: string): Promise<unknown>
   mentionRefs(
     projectId: string,
     kind: GitMentionRefKind,
@@ -148,7 +152,7 @@ export interface WorkspaceGitPort {
     absolutePath?: string | null,
   ): Promise<unknown>
   mentionCapabilities(projectId: string, absolutePath?: string | null): Promise<unknown>
-  isAllowedSessionCwd(projectId: string, cwd: string | null | undefined): boolean
+  isAllowedSessionCwd(projectId: string, cwd: string | null | undefined): Promise<boolean>
 }
 
 /** Recursive directory watch (CLI: WorkspaceWatchService). */
@@ -223,6 +227,8 @@ export interface IdempotencyPort {
 
 /** Node-local AI provider credentials (CLI: ProviderStore). */
 export interface ProvidersPort {
+  /** The `provider.*` methods a partial port serves; the rest answer unsupported. Absent: the whole family. */
+  readonly servedMethods?: ReadonlySet<string>
   listCredentials(): unknown
   getCredentialDecrypted(id: string): unknown
   createCredential(input: unknown): unknown
@@ -241,16 +247,13 @@ export interface ProvidersPort {
 /** Control leases on sessions and terminals (runtime ControlLeaseService). */
 export type ControlLeasePort = Pick<ControlLeaseService, 'acquire' | 'renew' | 'release' | 'revoke' | 'assertValid'>
 
-/** Session sync zone (`docs/architecture/session-sync-zone.md`; CLI: ArtifactZoneService). */
-export interface ArtifactZonePort {
-  /** Absolute `<nodeHome>/sync`, reported as `descriptor.syncRoot`. */
-  readonly syncRoot: string
-  /** Node path of a zone-relative path inside `sessionId`'s zone; throws when it escapes. */
-  resolve(sessionId: string, relativePath: string): string
-  stat(sessionId: string, relativePath: string): { exists: boolean }
-  /** Drop the session's zone directory. */
-  delete(sessionId: string): Promise<unknown>
-}
+/**
+ * Session sync zone (`docs/architecture/session-sync-zone.md`), served as
+ * `artifact.*`: `syncRoot` is reported as `descriptor.syncRoot`, `resolve`
+ * throws for a path that escapes the session's zone, `delete` without a path
+ * drops the whole session directory.
+ */
+export type ArtifactZonePort = Pick<ArtifactZoneService, 'syncRoot' | 'resolve' | 'stat' | 'list' | 'get' | 'put' | 'delete'>
 
 type SessionRuntimeInput<K extends keyof SessionRuntime> = SessionRuntime[K] extends (
   input: infer I,
@@ -329,11 +332,13 @@ export interface SessionHostPort {
   historyIndex?(sessionId: string): SessionHistoryIndex | Promise<SessionHistoryIndex>
 
   /**
-   * Gate a lease just acquired on a session: refuse it while the host has taken
-   * the session back, unless the client explicitly `reclaim`s it. Hosts without
-   * takeback omit it.
+   * Gate a lease about to be acquired on a session: refuse it while the host has
+   * taken the session back, unless the client explicitly `reclaim`s it. Runs
+   * before the grant, so a refused client takes no lease over; returns what to
+   * commit once the lease is granted. `delegate` is the phone a controller
+   * acquires for, if any. Hosts without takeback omit it.
    */
-  admitControl?(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): void
+  admitControl?(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean; delegate?: string }): (() => void) | void
   /** Re-point Host Action ownership after a new client acquires the session's lease. */
   rebindHostActionController(sessionId: string, controllerClientSessionId: string): unknown
   pollHostActions(input: SessionRuntimeInput<'pollHostActions'>): Promise<HostActionsPollResult>
@@ -344,8 +349,8 @@ export interface SessionHostPort {
 }
 
 /**
- * Host-specific harness / catalog hooks. CLI injects binary-override probes,
- * enable/disable and provider-side fork; desktop will inject its own later.
+ * Host-specific harness / catalog hooks: binary-override probes,
+ * enable/disable, provider-side fork (CLI) and the host's PATH readiness.
  */
 export interface RpcHostHooks {
   isCodexBinaryOverrideRunnable(): boolean
@@ -372,11 +377,14 @@ export interface RpcHostHooks {
     providers?: ProvidersPort | null,
   ): Promise<HarnessInstallationStatus>
   disableHarness(harnesses: HarnessManager, id: NodeHarnessId): HarnessInstallationStatus
+  /** The host's PATH is final; `sandbox.probe` / `environment.systemInfo` wait for it before caching a lookup. */
+  pathReady?: SandboxPathReady
   /**
    * Fork the provider-side conversation (Claude transcript / Codex thread) for
-   * `session.fork`. Returns the new resume token, or null when there is none.
+   * the dispatcher's `session.fork`. Returns the new resume token, or null when
+   * there is none. A host whose session port serves `edits.fork` omits it.
    */
-  forkHarnessResume(input: {
+  forkHarnessResume?(input: {
     source: NodeSessionRecord
     targetCwd: string
     forkFromMessageId?: string
@@ -433,6 +441,12 @@ export interface RpcContext {
    * Required for settings.get/patch and session default fallbacks.
    */
   settingsConfigPath: string
+  /**
+   * The agent settings of a host that keeps them outside `settingsConfigPath`
+   * (the desktop's own app settings), as `settings.get` and `git.clone` read
+   * them. Such a host applies its defaults to sessions itself.
+   */
+  agentSettings?: () => NodeAgentSettings
   hooks: RpcHostHooks
   capabilities: HostCapabilityFlags
   startedAt: number
@@ -460,6 +474,8 @@ export interface RpcContext {
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
+  /** MCP App state, resources and provider calls of this host's sessions (`mcpApps.*`). */
+  mcpApps?: McpAppsPort
   /** Composer drafts and their leases (`draft.*`). */
   drafts?: DraftsPort
   /** Host editor handover barrier, completed before draft.open acquires its lease. */

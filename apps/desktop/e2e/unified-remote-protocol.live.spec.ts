@@ -138,7 +138,7 @@ for (const route of ['lan', 'relay'] as const) {
     for (const [method, payload] of [
       ['harness.options', {}], ['harness.systemInfo', { projectId: target.projectId, harnessId: 'claude' }],
       ['harness.projectResources', { projectId: target.projectId, harnessId: 'claude' }],
-      ['mcp.list', { projectId: target.projectId }], ['mcp.icons', { projectId: target.projectId }],
+      ['mcp.status', { projectId: target.projectId }], ['mcp.icons', { projectId: target.projectId }],
       ['workspace.searchMentions', { projectId: target.projectId, query: 'readme' }],
       ['workspace.mentionIcons', { ids: [] }], ['media.listProviders', {}],
       ['git.branches', { projectId: target.projectId }], ['git.worktrees', { projectId: target.projectId }],

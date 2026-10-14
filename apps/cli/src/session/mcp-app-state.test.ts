@@ -8,8 +8,10 @@ import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
 import { ControlLeaseService } from './control-lease'
 import { SessionRuntime, type TurnRunner } from './session-runtime'
-import { dispatchMcpAppsRpc } from '../rpc/mcp-apps-handlers'
-import type { RpcContext } from '../rpc/handlers'
+import { MCP_APPS_HANDLERS } from '@superone/runtime/server/rpc-mcp-apps'
+import type { RpcContext } from '@superone/runtime/server'
+
+const dispatchMcpAppsRpc = (method: string, payload: unknown, ctx: RpcContext) => MCP_APPS_HANDLERS[method]!(payload, ctx as never, method)
 import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 
 describe('durable node MCP App host updates', () => {
@@ -44,7 +46,7 @@ describe('durable node MCP App host updates', () => {
         expect(runtime.get(session.sessionId)?.status, JSON.stringify(events.listAfter('0'))).toBe('idle')
       }
       await send('initial')
-      const context = () => ({ identity: { environmentId: 'node' }, client: { scopes: ['session:operate'], clientSessionId: 'client' }, leases, sessions: runtime }) as unknown as RpcContext
+      const context = () => ({ identity: { environmentId: 'node' }, client: { scopes: ['session:operate'], clientSessionId: 'client' }, leases, mcpApps: runtime }) as unknown as RpcContext
       const readContext = () => ({ ...context(), client: { ...context().client, scopes: ['session:read'] } }) as RpcContext
       const lookup = { sessionId: session.sessionId, appInstanceId: 'view', messageId: 'stale-hint' }
       expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, context())).toMatchObject({ error: { code: 'forbidden' } })

@@ -688,6 +688,17 @@ export const zh: Messages = {
     mosaic: {
       noSpace: '空间不足',
     },
+    terminal: {
+      heldBy: {
+        host: '{{host}} 正在使用这个终端。',
+        hostUnnamed: '终端所在的电脑正在使用它。',
+        phone: '一台手机正在使用这个终端。',
+        desktop: '另一台电脑正在使用这个终端。',
+      },
+      viewOnly: '仅查看',
+      takeOver: '接管',
+      disconnect: '断开',
+    },
   },
   identityHandoff: {
     title: 'SuperOne 更换了应用标识',
@@ -1639,10 +1650,13 @@ export const zh: Messages = {
       badgeUnknown: '由其他设备发起',
       controlling: '{{label}} 正在操控此会话。',
       controllingUnknown: '另一台电脑正在操控此会话。',
+      controllingPhoneUnknown: '一部手机正在操控此会话。',
       disconnect: '断开',
       disconnectFailed: '无法断开：{{message}}',
       reconnect: '重新连接',
       reconnectFailed: '无法重新连接：{{message}}',
+      takeOver: '接管',
+      takeOverFailed: '无法接管：{{message}}',
     },
     mods: {
       paneClosed: '这个面板已关闭。',

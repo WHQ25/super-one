@@ -526,6 +526,8 @@ export interface Session {
    */
   appendTranscriptMessage(message: import('@superone/shared/agent-types').ChatMessage): void
   injectTaskNotification(content: string): Promise<void>
+  /** Resolves once the wake is admitted and rejects when it is not; does not wait for its turn. */
+  admitTaskNotification(content: string): Promise<void>
   respondToPermission(
     requestId: string,
     allow: boolean,

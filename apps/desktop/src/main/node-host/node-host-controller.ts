@@ -12,29 +12,30 @@ import { NODE_LAN_SERVICE_TYPE } from '../lan-service-type'
 import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
+import { findPairedPhone } from '../database'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
-import {
-  getDesktopSessionRow,
-  listDesktopSessionRows,
-  getRemoteControlledSession,
-  listRemoteControlledSessions,
-  setSessionRemoteController,
-} from '../db-remote-controlled-sessions'
-import { getHarnessManager, probeDesktopHarness } from '../harness/service'
+import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteController } from '../db-remote-controlled-sessions'
+import { disableDesktopHarness, enableDesktopHarness, getHarnessManager, probeDesktopHarness } from '../harness/service'
+import { ensureShellPath } from '../shell-path'
+import { readAppSettings } from '../app-settings-service'
+import { sessionProviderStore } from '../session/session-provider-repo'
+import { desktopAgentSettings } from './desktop-agent-settings'
+import { createDesktopAutomationsPort } from './desktop-automations-port'
 import { desktopHarnessResolver } from '../harness/host'
 import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
-import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
+import type { NodeHostSessionManager } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 import { getEnvironmentHost } from '../environment/environment-host'
 import { InProcessRpcClient } from '../environment/in-process-rpc-client'
 import { defaultDesktopNodePort } from './paths'
 import { desktopRestorePorts } from '../session/session-restore-ports'
+import { getMcpAppResourceStore } from '../mcp-apps/resource-store'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 /** What main gives the domain for its phones: its PTYs and its desktop methods. */
-type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter' | 'scheduledSends'>
+type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'catalog' | 'resources' | 'codex' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter' | 'scheduledSends' | 'providers'>
 
 let host: DesktopNodeHost | null = null
 /** This desktop's environment backend, open from the first settings pass until quit. */
@@ -53,18 +54,6 @@ const changeListeners = new Set<() => void>()
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 /** Allow Control (the phone link's switch) also gates every controller here. */
 let accessAllowed = true
-
-const desktopSessionStore: NodeHostSessionStore = {
-  createRow: ({ sessionId, projectPath, title, cwd, providerId }) => {
-    const isWorktree = cwd !== projectPath
-    createSessionRow(projectPath, sessionId, title, isWorktree, undefined, isWorktree ? cwd : undefined, providerId)
-  },
-  setController: setSessionRemoteController,
-  get: getRemoteControlledSession,
-  list: listRemoteControlledSessions,
-  rename: renameSession,
-  loadMessages: loadSessionMessagesPaginated,
-}
 
 export function nodeHostStatus(): NodeHostStatus {
   return {
@@ -159,9 +148,12 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       start: async (parentSessionId, assertControl) => (await import('../session/side-chat')).startSideChat(sessions, { parentSessionId }, assertControl),
       close: async (sessionId) => (await import('../session/side-chat')).closeSideChat(sessions, sessionId),
     },
-    store: desktopSessionStore,
     sessionEdits: {
-      create: desktopSessionStore.createRow,
+      create: ({ sessionId, projectPath, title, cwd, providerId }) => {
+        const isWorktree = cwd !== projectPath
+        createSessionRow(projectPath, sessionId, title, isWorktree, undefined, isWorktree ? cwd : undefined, providerId)
+      },
+      setController: setSessionRemoteController,
       rename: renameSession,
       tags: (id, tags) => { setSessionTags(id, tags) },
       flags: (id, flags) => {
@@ -175,6 +167,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       fork: async (input, assertControl) => (await import('../session/session-fork')).forkSession(input, assertControl),
     },
     rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
+    mcpAppResources: getMcpAppResourceStore,
     restore: desktopRestorePorts,
     projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
     harnesses: getHarnessManager(),
@@ -183,7 +176,17 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       probeHarnessReadiness: (_harnesses, id) => probeDesktopHarness(id),
       assertSessionHarnessRuntimeReady: (id, harnesses) =>
         assertSessionHarnessRuntimeReady(id, harnesses, desktopHarnessResolver),
+      // As Settings → Harnesses: install progress reaches the window either way.
+      enableHarness: async (_harnesses, input) => {
+        await ensureShellPath()
+        return enableDesktopHarness(input)
+      },
+      disableHarness: (_harnesses, id) => disableDesktopHarness(id),
+      pathReady: ensureShellPath,
     },
+    agentSettings: () => desktopAgentSettings(readAppSettings()),
+    phoneLabel: (deviceId) => findPairedPhone({ id: deviceId })?.deviceName ?? null,
+    config: { sessionProviders: sessionProviderStore(), automations: createDesktopAutomationsPort() },
   })
   getEnvironmentHost().registry.getLocal().bindProtocol(new InProcessRpcClient(domain))
   return domain

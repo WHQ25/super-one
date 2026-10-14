@@ -1,18 +1,17 @@
-import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
-import { basename, join, resolve } from 'path'
+import { existsSync } from 'fs'
+import { join } from 'path'
 import { gitRun } from '../git-run'
-import { withRepoLock } from './repo-lock'
 import { logGitFailure } from '../git-diagnostics'
 import { sanitizeGitRef } from '../path-security'
 import {
   gitErrorMessage as runtimeGitErrorMessage,
-  resolveMainDirFromCommonDir,
-  planNewWorktreePaths,
-  worktreeAddArgs,
-  recordedBranchForMode,
-  parseNumstat,
+  worktreeGit,
+  activateWorktree as activateWorktreeAt,
+  assignBranch as assignBranchAt,
+  carryUncommittedChanges as carryUncommittedChangesAt,
+  handoffPreview,
+  handoffToMain,
+  resolveMainWorktreeDir as resolveMainWorktreeDirAt,
   worktreeInfoFromPorcelain,
   checkedOutBranchesFromPorcelain,
 } from '@superone/runtime/git'
@@ -23,6 +22,13 @@ import type {
   WorktreeAssignResult,
   GitDirtyStatus,
 } from '@superone/shared/agent-types'
+
+/**
+ * The window's worktree flows run the runtime implementation on its
+ * login-shell runner, so they queue on the same per-repo lock as the
+ * `git.*` RPCs B serves to phones and controllers.
+ */
+const git = worktreeGit(gitRun)
 
 export interface ActivateWorktreeRequest {
   baseBranch: string
@@ -73,27 +79,15 @@ export async function getCheckedOutBranches(folderPath: string): Promise<string[
   }
 }
 
-export async function resolveMainWorktreeDir(folderPath: string): Promise<string> {
-  const common = await gitRun(folderPath, ['rev-parse', '--git-common-dir'])
-  return resolveMainDirFromCommonDir(folderPath, common)
+export function resolveMainWorktreeDir(folderPath: string): Promise<string> {
+  return resolveMainWorktreeDirAt(git, folderPath)
 }
 
 /**
  * Copy the source's uncommitted changes into a freshly created worktree.
  */
-export async function carryUncommittedChanges(sourceDir: string, worktreePath: string): Promise<void> {
-  const stashTop = () =>
-    gitRun(sourceDir, ['rev-parse', '-q', '--verify', 'refs/stash']).then((s) => s.trim()).catch(() => '')
-  const before = await stashTop()
-  await gitRun(sourceDir, ['stash', 'push', '-u', '-m', 'superone-carry']).catch(() => {})
-  const after = await stashTop()
-  if (!after || after === before) return
-  try {
-    await gitRun(worktreePath, ['stash', 'apply', after])
-  } catch {
-    /* ignore rare apply miss */
-  }
-  await gitRun(sourceDir, ['stash', 'pop']).catch(() => {})
+export function carryUncommittedChanges(sourceDir: string, worktreePath: string): Promise<void> {
+  return carryUncommittedChangesAt(git, sourceDir, worktreePath)
 }
 
 export async function activateWorktree(
@@ -106,148 +100,26 @@ export async function activateWorktree(
     throw new Error('Branch name is required for branch mode')
   }
 
-  const mainDir = await resolveMainWorktreeDir(folderPath)
-  const safeBase = sanitizeGitRef(baseBranch)
-  const safeBranchName =
-    mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined
-
-  // `worktree add` and the carry stash both take repo-wide git locks, and the
-  // second-resolution path stamp collides when two activations land in the same
-  // second. Both break parallel session_collab_start — queue per repo.
-  return withRepoLock(mainDir, async () => {
-    const commitHash = (await gitRun(folderPath, ['rev-parse', safeBase])).trim()
-    const planned = planNewWorktreePaths({
-      mainDir,
-      shortHash: commitHash.slice(0, 7),
-    })
-    if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
-    // planNewWorktreePaths uses epoch-second uniqueness only; suffix until free.
-    const wtPath = allocateWorktreePath(planned.wtDir, basename(planned.wtPath))
-    const addArgs = worktreeAddArgs(mode, wtPath, safeBase, safeBranchName)
-    await gitRun(folderPath, ['worktree', ...addArgs])
-
-    if (carryLocalChanges) {
-      await carryUncommittedChanges(folderPath, wtPath)
-    }
-
-    return {
-      ok: true,
-      path: wtPath,
-      recordedBranch: recordedBranchForMode(mode, safeBase, safeBranchName ?? branchName),
-    }
+  const result = await activateWorktreeAt(git, folderPath, {
+    baseBranch: sanitizeGitRef(baseBranch),
+    mode,
+    branchName: mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined,
+    carryLocalChanges,
   })
+  return { ok: true, ...result }
 }
 
-/**
- * `${epoch}-${shortHash}` is only unique per second, so sibling activations from
- * the same base commit would target one directory. Suffix until the name is
- * free — safe to probe because callers hold the repo lock.
- */
-function allocateWorktreePath(wtDir: string, stem: string): string {
-  for (let n = 0; n < 100; n++) {
-    const candidate = join(wtDir, n === 0 ? stem : `${stem}-${n + 1}`)
-    if (!existsSync(candidate)) return candidate
-  }
-  return join(wtDir, `${stem}-${randomUUID().slice(0, 8)}`)
-}
-
-async function writeWorkingTree(worktreePath: string): Promise<string> {
-  const tmpIndex = join(tmpdir(), `s1-handoff-${randomUUID()}.index`)
-  const env = { GIT_INDEX_FILE: tmpIndex }
-  try {
-    await gitRun(worktreePath, ['read-tree', 'HEAD'], env)
-    await gitRun(worktreePath, ['add', '-A'], env)
-    return (await gitRun(worktreePath, ['write-tree'], env)).trim()
-  } finally {
-    rmSync(tmpIndex, { force: true })
-  }
-}
-
-type HandoffDiff =
-  | { ok: true; localDir: string; base: string; tree: string; stat: GitDirtyStatus }
-  | { ok: false; reason: 'not-worktree' | 'no-changes' }
-
-async function buildHandoffDiff(worktreePath: string): Promise<HandoffDiff> {
-  const localDir = await resolveMainWorktreeDir(worktreePath)
-  if (resolve(localDir) === resolve(worktreePath)) return { ok: false, reason: 'not-worktree' }
-
-  const [onBranch, worktreeHead, tree] = await Promise.all([
-    gitRun(worktreePath, ['symbolic-ref', '-q', 'HEAD']).then(() => true).catch(() => false),
-    gitRun(worktreePath, ['rev-parse', 'HEAD']).then((s) => s.trim()),
-    writeWorkingTree(worktreePath),
-  ])
-
-  let base = worktreeHead
-  if (!onBranch) {
-    const localHead = (await gitRun(localDir, ['rev-parse', 'HEAD'])).trim()
-    base =
-      (await gitRun(worktreePath, ['merge-base', localHead, worktreeHead]).catch(() => worktreeHead)).trim() ||
-      worktreeHead
-  }
-
-  const numstat = await gitRun(worktreePath, ['diff', '--numstat', base, tree])
-  if (!numstat.trim()) return { ok: false, reason: 'no-changes' }
-  return { ok: true, localDir, base, tree, stat: parseNumstat(numstat) }
-}
-
-export async function getHandoffPreview(worktreePath: string): Promise<GitDirtyStatus | null> {
-  try {
-    const diff = await buildHandoffDiff(worktreePath)
-    if (diff.ok) return diff.stat
-    return diff.reason === 'not-worktree' ? null : { files: 0, insertions: 0, deletions: 0 }
-  } catch {
-    return null
-  }
+export function getHandoffPreview(worktreePath: string): Promise<GitDirtyStatus | null> {
+  return handoffPreview(git, worktreePath)
 }
 
 export async function handoffToLocal(worktreePath: string): Promise<WorktreeHandoffResult> {
-  const diff = await buildHandoffDiff(worktreePath)
-  if (!diff.ok) return { ok: false, reason: diff.reason }
-
-  const localStatus = (await gitRun(diff.localDir, ['status', '--porcelain'])).trim()
-  if (localStatus) return { ok: false, reason: 'local-dirty' }
-
-  const patch = await gitRun(worktreePath, ['diff', '--binary', diff.base, diff.tree])
-  const patchFile = join(tmpdir(), `s1-handoff-${randomUUID()}.patch`)
-  writeFileSync(patchFile, `${patch}\n`)
-  try {
-    await gitRun(diff.localDir, ['apply', '--3way', '--whitespace=nowarn', patchFile])
-  } catch (err) {
-    try {
-      await gitRun(diff.localDir, ['reset', '--hard'])
-      await gitRun(diff.localDir, ['clean', '-fd'])
-    } catch {
-      /* best-effort rollback */
-    }
-    return { ok: false, reason: 'conflict', error: gitErrorMessage(err) }
-  } finally {
-    rmSync(patchFile, { force: true })
-  }
-
-  await gitRun(diff.localDir, ['reset', '--quiet']).catch(() => {})
-  return { ok: true }
+  const result = await handoffToMain(git, worktreePath)
+  // The window's copy calls the main checkout "local".
+  if (result.ok) return result
+  return { ...result, reason: result.reason === 'main-dirty' ? 'local-dirty' : result.reason }
 }
 
-export async function assignBranch(worktreePath: string, rawName: string): Promise<WorktreeAssignResult> {
-  const name = rawName.trim()
-  if (!name) return { ok: false, reason: 'name-required' }
-
-  const onBranch = await gitRun(worktreePath, ['symbolic-ref', '-q', 'HEAD']).then(() => true).catch(() => false)
-  if (onBranch) return { ok: false, reason: 'not-detached' }
-
-  try {
-    const safe = sanitizeGitRef(name)
-    if (await getCheckedOutBranches(worktreePath).then((bs) => bs.includes(safe))) {
-      return { ok: false, reason: 'checked-out' }
-    }
-    const exists = await gitRun(worktreePath, ['show-ref', '--verify', '--quiet', `refs/heads/${safe}`])
-      .then(() => true)
-      .catch(() => false)
-    if (exists) return { ok: false, reason: 'exists' }
-
-    await gitRun(worktreePath, ['switch', '-c', safe])
-    return { ok: true, branch: safe }
-  } catch (err) {
-    return { ok: false, reason: 'error', error: gitErrorMessage(err) }
-  }
+export function assignBranch(worktreePath: string, rawName: string): Promise<WorktreeAssignResult> {
+  return assignBranchAt(git, worktreePath, rawName)
 }

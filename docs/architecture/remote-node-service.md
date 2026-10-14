@@ -164,7 +164,7 @@ Features must not bypass the gateway with environment-specific raw IPC.
 `RemoteEnvironmentGateway` delegates to an authenticated node RPC session.
 `LocalEnvironmentGateway` delegates to the desktop domain through
 `InProcessRpcClient`, the same dispatcher phones use, so its Session port
-serves the full family against `LocalSessionHost`. A local session lives in
+serves the full family against `DesktopSessionHost`. A local session lives in
 the desktop's own process, where its `Session` is the read model. The renderer
 commands both hosts through one session client and reads their events through the
 shared reducer; a remote session opens at a node snapshot (§9.2), and its writes
@@ -173,9 +173,19 @@ settle on the session's stream like local ones.
 Local commands acquire per-window yielding leases at the IPC boundary; metadata
 and read-only queries remain lease-free. Optional session/list/composer methods
 are declared in shared contracts and advertised by each host's `methods`.
-`LocalSessionHost` supplies the desktop implementations, including ephemeral side
-chats without database rows. The CLI node reports unsupported desktop-only
-operations; UI controls use those capabilities rather than a remote-key gate.
+`DesktopSessionHost` (`node-host/desktop-session-host.ts`) supplies the desktop
+implementations, including ephemeral side chats without database rows. It is the
+one session host for every client of the desktop: its window, its phones and
+controller desktops all see every session and are served the same methods.
+Controller-only behavior (the controller record written on create, launch
+settings, takeback and Host Actions) is keyed by the session's controller
+record or the authenticated client, never by payload. Likewise the desktop
+serves all its clients from one RPC context (`DesktopDomain.clientContext()`):
+the same methods, policy and secret boundary for the window, a phone and a
+controller, which differ only by who they are (lease actor, client-scoped
+methods). The CLI node reports
+unsupported desktop-only operations; UI controls use those capabilities rather
+than a remote-key gate.
 Local delivery stays on the desktop event hub, while node delivery uses its
 snapshot/event follower, preventing duplicate local deltas.
 
@@ -500,10 +510,20 @@ output sequence plus the attach snapshot.
 
 The desktop keeps one subscription per node (`remote-session-feed.ts`), shared
 by the chat, routed phones and the collaboration watcher. It carries the union
-of their interests, counted per follower: `sessionList` while the session list
-is watched, and each followed session. A follower joins once the node applied
-its topic, reads its snapshot, and gets the session's events above that
-version; it resumes by version across reconnects. No session reads poll.
+of their interests, counted per follower: `sessionList` and `projects` while
+the session list is watched, and each followed session. A follower joins once
+the node applied its topic, reads its snapshot, and gets the session's events
+above that version; it resumes by version across reconnects. No session reads
+poll.
+
+A desktop node pushes `sessionList` and `projects` as notices, exactly as its
+phones read them: every list change whoever made it, and `session_activity`
+summaries for the sidebar (running, unread). A notice snapshot (a fresh
+subscribe, or changes the node no longer holds) re-reads the lists and
+replaces the summaries; a row it leaves out goes idle and keeps its unread
+dot (`remote-list-observer.ts`). A CLI node's `sessionList` topic carries its
+durable list events instead. A controller window showing a remote session
+reports the read with `client.markSeen`, as a phone does.
 
 Each node connection has a delivery policy (`ConnectionDelivery`,
 `@superone/runtime/stream/delivery`) from the socket it came in on: a relay
@@ -564,14 +584,24 @@ interface ControlLease {
   block the holder.
 - A client that relays devices acquires for each as a `delegate` (a desktop
   for each phone it routes, by device ID). Delegates of one client hold a
-  resource one at a time, like separate clients, except that the client's own
-  window acquires with `yields`: a phone opening the session takes the
-  window's lease over, as it does a local session, and the window is refused
-  until the phone leaves. Renew, release and commands check the client; the
+  resource one at a time, like separate clients. A live lease refuses every
+  other acquire unless it yields to the asker (`LeaseYield`): to other
+  delegates of its holder, or to any holder. Wire `yields: true` only ever
+  means the first; the server normalizes it, so no client can make its lease
+  yield to other clients. Only a desktop's own window holds a lease that
+  yields to any holder, so its phones and controller desktops take it over
+  (for sessions, subject to the takeover rule below), and the window is
+  refused until they leave. Renew, release and commands check the client; the
   lease ID and generation fence its delegates.
+- Lease rules follow the authenticated actor, never the transport or the
+  payload (`control-context.ts` `controlActorFor`): a desktop's window
+  (`window:<id>`) and phones (`phone:<device>`) are delegates of the desktop's
+  own holder; a controller desktop holds leases under its own client session
+  and may delegate only to the phones it relays.
 - The holder renews before expiry. Disconnect does not transfer control
   instantly; the short TTL bounds takeover delay. Explicit release permits
-  immediate acquisition.
+  immediate acquisition. Revoking or suspending a client session revokes
+  every lease it holds at once (`revokeHolder`, desktop and CLI nodes).
 - Every mutating control command carries `leaseId` and `generation`; the node
   rejects expired, superseded or late commands even if their socket survives an
   endpoint failover.
@@ -607,9 +637,24 @@ interface ControlLease {
   retry.
 - The lease epoch is random per node process, so a restart invalidates every
   prior lease; clients reacquire after synchronization.
-- Whichever side cannot drive a session its controller started on a desktop
-  node shows "<computer> is controlling" in place of the composer, like a
-  phone-driven session: the node offers Disconnect, the controller Reconnect. Disconnect takes the session back:
+- A desktop node names who holds each session (`SessionControlHolder`: its
+  window, a phone or a controller desktop, with the paired name). Holder
+  changes ride the session stream as `session_control_holder` events and the
+  session record carries `controlHolder`; each reader sees itself as nobody.
+  An acquire it refuses answers `failed_precondition` with
+  `details.reason: 'control_held'` and `details.holder`. A controller's
+  acquire takes a session from the node's window only on an explicit Take
+  over (`reclaim: true`) or for a phone it relays (phones have no Take over,
+  and the window yields to the node's own phones too); a phone or another
+  controller holding it refuses it. No takeover is silent.
+- Whichever side cannot drive a session shows "<holder> is controlling" in
+  place of the composer. On the node, a session a controller drives (one the
+  node started included) offers Disconnect. On the controller, a session the
+  node's window drives offers Take over; one a phone or another controller
+  drives is read-only; one the node took back offers Reconnect. Disconnect on
+  a session the node started ends the controller's lease and the window holds
+  it, so the controller sees Take over. Disconnect on a session the
+  controller started takes it back:
   the node expires the lease, refuses `failed_precondition` with
   `details.reason: 'control_released'` to the controller's commands and
   ordinary acquires, and emits `remote_control_changed` on the session (its
@@ -717,9 +762,11 @@ Forwarded headers are not trusted by default.
 A desktop's environment backend (`DesktopDomain`, `node-host/desktop-domain.ts`:
 identity, the node database with auth, leases, idempotency, the event log and
 Host Actions, and the session host) opens with the app and stays open until
-quit. The controller listener (`DesktopNodeHost`) runs over it only while
+quit, and serves its window, phones and controllers from one context (§5.2).
+The controller listener (`DesktopNodeHost`) runs over it only while
 controllers need it; stopping the listener cancels the Host Actions waiting on
-a controller and leaves the domain up.
+a controller and leaves the domain up. A controller's last connection closing
+ends its draft grants, MCP App calls and Codex device-code sign-in.
 
 A desktop node listens on every interface while it serves (§11.5), but accepts
 TCP peers only from private networks: loopback, RFC 1918, link-local
@@ -848,7 +895,8 @@ Computer → Desktop; removing one revokes its client session and closes its
 sockets. Its switch suspends the session instead (`client_sessions.suspended_at`):
 the sockets close and refresh, access tokens and tickets fail as non-terminal
 `unauthorized` (`client session suspended`), so C keeps its credential, backs
-off, and reconnects once the switch is back on. Allow Control (the phone
+off, and reconnects once the switch is back on. Removing or suspending a controller
+also ends its leases. Allow Control (the phone
 link's switch) is the master switch over both: off pauses every session the
 same way (`AuthService.setAccessPaused`) and stops the phone link; each device's
 own switch applies again once it is on. A phone's switch (`paired_devices.disabled`)
@@ -943,9 +991,26 @@ own Claude, Codex, Cursor, OpenCode and Grok configuration; desktop credentials
 are never copied implicitly. Provider API secrets are encrypted at rest with
 `secrets/provider-secrets.key` (`apps/cli/src/provider/`).
 
-Codex login runs node-side, either through its CLI/device flow or an RPC that
-returns an external-browser authorization URL; the desktop opens the URL, never
-the node. An API-key form holds the secret briefly in renderer memory, never
+On a desktop node, pairing is the trust boundary. A paired phone or controller
+desktop already runs terminals and agents there, so provider writes (including
+base URLs and secret environment variables) are served to it without a further
+fence. Key material still stays on the desktop, only so that normal flows do
+not copy keys off it: `provider.getCredentialDecrypted` and
+`provider.exportBundle` are not served (a controller cannot pull providers
+from it), reads mask secrets (credentials, MCP env and headers, session
+provider profile secrets), and a masked secret written back keeps the stored
+one. A phone and a controller get the same answers. On any host, an empty key
+in an imported bundle means "unread" and keeps the stored key.
+
+Codex login runs node-side. A remote client signs an account in with a device
+code (`codex.accountLoginStart`), which ends when the client disconnects or is
+revoked; only browser OAuth sign-ins, which listen on Codex's fixed callback
+port, exclude one another. For an MCP server sign-in (`codex.loginMcpOauth`)
+the node answers as soon as Codex has the authorization URL; the client opens
+it (http(s) only) in its own browser, catches the loopback redirect and hands
+it to `codex.completeMcpOauth`, which checks origin, path and state before
+forwarding it to Codex's listener. The node never opens a browser. An
+API-key form holds the secret briefly in renderer memory, never
 persists or redisplays it, clears it after submission, and sends it through a
 dedicated typed IPC path to Electron Main and then the node. Export/import of
 provider configuration is a separate feature requiring explicit authorization.
@@ -986,8 +1051,9 @@ includes:
 - harness catalog, turn runners and provider runtime adapters
 - permission, plan and question interactions
 - collaboration grants and mailbox delivery (`packages/runtime/src/collaboration/`)
-- skills and MCP resource RPC (`skills.*`, `mcp.*` in `apps/cli/src/rpc/resource-handlers.ts`);
-  Claude turns merge project/user MCP config with the Host Action MCP server
+- resource RPC (`skills.*`, `mcp.*`, `hooks.*`, `agents.*`, `plugins.*` in
+  `packages/runtime/src/server/rpc-resources.ts`); Claude turns merge
+  project/user MCP config with the Host Action MCP server
 - automations and drafts
 - persistence ports and event publication
 
@@ -1000,11 +1066,36 @@ RPC dispatch for the shared method families (`environment`, `settings`,
 and runs against optional host ports (`rpc-context.ts`; `session.*` goes through
 `SessionHostPort`). A host serves the families whose ports it provides, the
 descriptor capabilities advertise exactly those, and any other family answers
-`not_found` with `details.unsupported: true`. A git port may serve part of its
-family (`WorkspaceGitPort.servedMethods`); the desktop serves only
-`git.worktreeActivate`. Host-only families (the CLI's
-archive, MCP Apps, resources, automations, drafts, artifacts, Codex admin) plug
-in through `RpcContext.extensions`.
+`not_found` with `details.unsupported: true`. A port may serve part of its
+family (`servedMethods`), and a host may withhold shared methods
+(`unservedMethods`). `draft.*`, `mcpApps.*` and `artifact.*` are shared families
+behind their own ports. The resource, `automation.*`, `sessionProviders.*` and
+`codex.*` families are runtime dispatchers (`rpc-resources.ts`,
+`rpc-automations.ts`, `rpc-session-providers.ts`, `rpc-codex.ts`) that each
+host plugs in through `RpcContext.extensions` over its own stores; the CLI
+also adds its archive and `harness.resources` there.
+
+A desktop node serves its controllers what its window has, over the window's
+own stores and probes, so a change made remotely is the change the window
+would make and the window refreshes as after its own IPC:
+
+- every session (§5.2), terminal (§14.1), draft, workspace file and watch;
+- the whole `git.*` family through the runtime `WorkspaceGitService` on the
+  window's login-shell runners; worktree activation and handoff take the same
+  per-repository lock as the window's (`packages/runtime/src/git/repo-lock.ts`),
+  and Git reads are async with a timeout so they never block the main process;
+- `harness.resources` and `provider.listModels` from the window's harness
+  catalog (`node-host/desktop-catalog-methods.ts`), `harness.enable` /
+  `harness.disable` and `sandbox.probe`;
+- `provider.*` without key material (§12.4), the resource families,
+  `sessionProviders.*`, `automation.*`, `codex.*`, `mcpApps.*`, and
+  `settings.get` projected from its app settings (`settings.patch` is not
+  served);
+- `artifact.*` rooted at its own session sync zone, `<userData>/sync`, so a
+  controller's files sit with the ones produced there
+  ([session-sync-zone.md](session-sync-zone.md));
+- of `collaboration.*` only `listProfiles`: the mailbox stays with the
+  controller that launches a child (below).
 
 Agent collaboration runs within one environment, except that a desktop may
 spawn a child on a node it controls (desktop or CLI). The mailbox stays with
@@ -1170,9 +1261,10 @@ keeps a bounded snapshot so a reconnect does not replay unlimited output.
 screen and the output sequence it covers. A host whose terminal port has
 `onEvent` (the desktop) pushes the terminal topics on `topic.subscribe`
 streams as `terminal` messages (`topic-streams.ts`): every event of a
-followed `terminal`, and row changes (created, exited, title, agent control)
-for `terminalList`; a reader applies output above its attach sequence. Hosts
-without it (the CLI node today) serve output by `terminal.read` polling.
+followed `terminal`, and row changes (created, exited, title, writer, agent
+control) for `terminalList`; a reader applies output above its attach
+sequence. Hosts without it (the CLI node today) serve output by
+`terminal.read` polling.
 
 Terminal writes, resize and kill require the current lease id and generation.
 `terminal.acquireControl` accepts `delegate` and `yields`, with the same takeover
@@ -1185,7 +1277,21 @@ come from the sender's `webContents.id`; phone actors come from the authenticate
 pairing. A phone cannot override its delegate or yielding policy in a payload.
 Control hints in attach snapshots and pushes describe the asking connection.
 Lease expiry releases the displayed writer and notifies its observers; renewing
-preserves the delegate and postpones expiry.
+preserves the delegate and postpones expiry. A controller desktop holds
+terminal leases under its own client session, and the window's yielding lease
+permits its takeover too.
+
+A controller desktop shows every terminal of a desktop node as its own tab
+(`remote-terminal-controller.ts`): it reads `terminal.list` under the pushed
+`terminalList` topic and follows a shown tab's output as phones do, without
+polling. Only real input (keys, paste, an IME commit) takes a terminal that
+nobody else holds or the node's window holds; what xterm sends on its own
+(focus, device-status and mouse reports) is written only under a lease the
+controller already holds. A terminal a phone or another computer holds is
+read-only. Once the node's window takes a terminal back, the controller writes
+again only after an explicit Take over; a lease that merely expired (the
+controller slept or went offline) leaves the tab free. Both sides name the
+writer on the tab.
 
 ### 14.2 Filesystem
 
@@ -1209,7 +1315,8 @@ repository the node lacks; matching uses the normalized origin URL of
 ### 14.4 Session artifacts
 
 Each Session has a sync zone mirrored between the controlling desktop and the
-node (`<node dir>/sync/<sessionId>/`) so Host Action outputs and agent-written
+node (`<node dir>/sync/<sessionId>/`; on a desktop node its own
+`<userData>/sync/<sessionId>/`) so Host Action outputs and agent-written
 files are readable on both sides; see [session-sync-zone.md](session-sync-zone.md).
 
 ### 14.5 Drafts
@@ -1232,7 +1339,8 @@ On a desktop, `draft.open` first flushes the existing composer and refuses the
 handover if saving fails. Opens and writes use idempotency receipts; a repeated
 open whose lease was discarded after disconnect reacquires a live grant, while
 a repeated save never reapplies stale text. Disconnect releases only that
-phone's draft grants and composer views.
+phone's draft grants and composer views; a controller desktop's draft grants
+end when its last connection closes.
 
 ## 15. Installation, Service Lifecycle, and Upgrade
 

@@ -22,14 +22,12 @@ import type { WorkspaceWatchService } from '@superone/runtime/workspace/watch-se
 import type { WorkspaceTailWatchService } from '@superone/runtime/workspace/tail-watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
-import type { ArtifactZoneService } from '../workspace/artifact-zone'
+import type { ArtifactZoneService } from '@superone/runtime/workspace'
 import { dispatchSessionArchiveRpc, SESSION_ARCHIVE_RPC_METHODS } from './session-archive-handlers'
-import { dispatchMcpAppsRpc, MCP_APPS_RPC_METHODS } from './mcp-apps-handlers'
-import { dispatchResourceRpc, RESOURCE_RPC_METHODS } from './resource-handlers'
-import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from './automation-handlers'
-import { ARTIFACT_RPC_METHOD_SET, dispatchArtifactRpc } from './artifact-handlers'
+import { dispatchResourceRpc, RESOURCE_RPC_METHODS, type ResourceHost } from '@superone/runtime/server/rpc-resources'
+import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from '@superone/runtime/server/rpc-automations'
 import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
-import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from './session-provider-handlers'
+import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@superone/runtime/server/rpc-session-providers'
 import { dispatchHarnessResourcesRpc, HARNESS_RESOURCES_RPC_METHODS } from './harness-resources-handlers'
 
 export type { RpcResult }
@@ -40,7 +38,7 @@ export { clearWatchBuffersForClient } from '@superone/runtime/server'
  * service, plus the stores only the CLI's own method families use.
  */
 export interface RpcContext
-  extends Omit<NodeRpcContext, 'capabilities' | 'extensions' | 'sessionProviders' | 'artifacts'> {
+  extends Omit<NodeRpcContext, 'capabilities' | 'extensions' | 'sessionProviders' | 'artifacts' | 'mcpApps'> {
   terminals: NodeTerminalManager
   projects: ProjectRegistry
   workspaceFs: WorkspaceFsService
@@ -90,10 +88,8 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
   ...SESSION_ARCHIVE_RPC_METHODS,
   ...RESOURCE_RPC_METHODS,
   ...AUTOMATION_RPC_METHODS,
-  ...ARTIFACT_RPC_METHOD_SET,
   ...SESSION_PROVIDER_RPC_METHODS,
   ...HARNESS_RESOURCES_RPC_METHODS,
-  ...MCP_APPS_RPC_METHODS,
   ...CODEX_RPC_METHODS,
 ])
 
@@ -101,30 +97,37 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
 export function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   return dispatchNodeRpc(method, payload, {
     ...ctx,
+    mcpApps: ctx.sessions,
     capabilities: CLI_CAPABILITY_FLAGS,
     extensions: (extMethod, extPayload) => dispatchCliRpc(extMethod, extPayload, ctx),
     extensionMethods: CLI_EXTENSION_METHODS,
   })
 }
 
-const PLUGIN_RELOAD_METHODS = new Set(['plugins.setEnabled', 'plugins.install', 'plugins.update', 'plugins.delete'])
+/** What the CLI adds to the shared resource families: its Codex app-server and live sessions. */
+function cliResourceHost(ctx: RpcContext): ResourceHost {
+  return {
+    listCodexPlugins: async ({ projectId }) => {
+      const { createCodexAdminService } = await import('../session/codex-admin-service')
+      const svc = createCodexAdminService({
+        harnesses: ctx.harnesses,
+        providers: ctx.providers,
+        resolveProjectPath: (id) => ctx.projects.get(id)?.path ?? null,
+      })
+      if (!svc.isBinaryReady()) throw Object.assign(new Error('Codex binary not ready'), { code: 'failed_precondition' })
+      return svc.listPlugins(projectId)
+    },
+    // A live Claude process loads plugins once; a change on disk reaches it by reload.
+    pluginsChanged: () => { void ctx.sessions.reloadPlugins() },
+  }
+}
 
 /** Method families only the CLI node serves; null hands the method to the shared families. */
 async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
   const archive = dispatchSessionArchiveRpc(method, payload, ctx)
   if (archive) return archive
-  const resource = dispatchResourceRpc(method, payload, {
-    client: ctx.client,
-    projects: ctx.projects,
-    harnesses: ctx.harnesses,
-    providers: ctx.providers,
-  })
-  if (resource) {
-    const result = await resource
-    // A live Claude process loads plugins once; a change on disk reaches it by reload.
-    if (!result.error && PLUGIN_RELOAD_METHODS.has(method)) void ctx.sessions.reloadPlugins()
-    return result
-  }
+  const resource = await dispatchResourceRpc(method, payload, { client: ctx.client, projects: ctx.projects, ...cliResourceHost(ctx) })
+  if (resource) return resource
 
   const automation = dispatchAutomationRpc(method, payload, {
     client: ctx.client,
@@ -133,15 +136,6 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
     automationService: ctx.automationService,
   })
   if (automation) return await automation
-
-  const artifact = dispatchArtifactRpc(method, payload, {
-    client: ctx.client,
-    environmentId: ctx.identity.environmentId,
-    sessions: ctx.sessions,
-    leases: ctx.leases,
-    artifacts: ctx.artifacts,
-  })
-  if (artifact) return await artifact
 
   const sessionProviders = dispatchSessionProviderRpc(method, payload, {
     client: ctx.client,
@@ -158,9 +152,6 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
       loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
   })
   if (harnessResources) return harnessResources
-
-  const mcpApps = await dispatchMcpAppsRpc(method, payload, ctx)
-  if (mcpApps) return mcpApps
 
   const codex = await dispatchCodexRpc(method, payload, {
     nodeHome: configDirname(ctx.settingsConfigPath),

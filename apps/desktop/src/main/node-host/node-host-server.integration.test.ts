@@ -1,14 +1,22 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, RecentFolder } from '@superone/shared/agent-types'
-import type { EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentEvent, RecentFolder, TerminalEvent, TerminalSnapshot } from '@superone/shared/agent-types'
+import type { ControlLease, EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
+import type { Credential, Platform } from '@superone/shared/platform-registry'
+import Database from 'better-sqlite3'
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
+import { bindControlActor } from '@superone/runtime/lease'
+import { createDraftStore, DraftControl } from '@superone/runtime/drafts'
+import { createAutomationStore, ensureAutomationsTable } from '@superone/runtime/automations'
+import { createSessionProviderStore } from '@superone/runtime/session'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
+/** B's own SQLite, holding its credential store. */
+const desktopDb = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof openNodeDatabase> }))
 
 vi.mock('electron', () => ({
   safeStorage: {
@@ -26,18 +34,58 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
+vi.mock('../database', () => ({
+  getDb: () => desktopDb.current,
+  maskApiKey: (key: string) => (key.length <= 6 ? '***' : '***' + key.slice(-6)),
+}))
 
 import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { RemoteHostActionConsumer } from '../environment/remote-host-action-consumer'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
+import { createDesktopProvidersPort } from './desktop-providers-port'
+import * as credentialStore from '../providers/credential-store'
+import { RemoteEnvironmentGateway } from '../environment/remote-environment-gateway'
+import { RemoteSessionFeed } from '../environment/remote-session-feed'
+import { RemoteTerminalController } from '../environment/remote-terminal-controller'
+import { NODE_WINDOW_TERMINAL_OWNER, parseRemoteTerminalKey, remoteProjectKey, remoteTerminalKey } from '@superone/shared/remote-resource-key'
+import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
+import type { DesktopDomainDeps } from './desktop-domain'
+import { desktopAgentSettings } from './desktop-agent-settings'
+import { REDACTED_PROFILE_SECRET } from './desktop-session-providers'
 import { DesktopNodeHost } from './node-host-server'
+import type { DesktopDomainDeps } from './desktop-domain'
+import { createDesktopTerminalsPort } from './desktop-terminals-port'
+import { TerminalManager } from '../terminal/terminal-manager'
+import { runWindowControl } from '../session/control-context'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
+import { createDesktopTopicHub, publishHubEvent, type HubEventPublishContext } from '../stream/desktop-topics'
+import { LocalTopicRecovery } from '../stream/topic-recovery'
+import { createDesktopTopicNotices } from './desktop-topic-notices'
+import { bindSessionListNotifications } from '../session-list-notifications'
+import { notifyProjectList, notifySessionList, watchProjectList } from '../session-list-watch'
+import { RemoteSessionFeed } from '../environment/remote-session-feed'
+import { remoteListObserver, type SessionActivityEvent } from '../environment/remote-list-observer'
+import { remoteProjectKey } from '@superone/shared/remote-resource-key'
+import { createPhoneMethods, type PhoneMethodHost } from '../remote/phone-methods'
 
 const dirs: string[] = []
 const hosts: DesktopNodeHost[] = []
 const managers: NodeConnectionManager[] = []
+
+beforeEach(() => {
+  desktopDb.current = openNodeDatabase(':memory:')
+  desktopDb.current.exec(`
+    CREATE TABLE credentials (
+      id TEXT PRIMARY KEY, platform_id TEXT NOT NULL, plan_id TEXT NOT NULL, name TEXT NOT NULL,
+      secret TEXT NOT NULL DEFAULT '', secret_env TEXT NOT NULL DEFAULT '', base_url TEXT NOT NULL DEFAULT '',
+      overrides_json TEXT NOT NULL DEFAULT '{}', endpoints_json TEXT, notes TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE custom_platforms (id TEXT PRIMARY KEY, definition_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+    CREATE TABLE consumer_bindings (consumer TEXT PRIMARY KEY, credential_id TEXT NOT NULL, endpoint_id TEXT, config_json TEXT NOT NULL DEFAULT '{}');
+  `)
+})
 
 afterEach(async () => {
   for (const m of managers.splice(0)) m.disconnectAll()
@@ -46,14 +94,49 @@ afterEach(async () => {
   electron.store.clear()
 })
 
+/** B's window catalogs: what its composer offers, without probing a real harness. */
+function fakeCatalog() {
+  return {
+    connectClaude: vi.fn(async () => ({
+      models: [{ id: 'claude-opus', name: 'Opus', description: '' }],
+      account: { email: 'b@example.com' },
+      slashCommands: [{ name: 'review', description: 'Review', argumentHint: '', isSkill: false }],
+      skills: [], commands: [], agents: [], outputStyles: ['default'],
+    })),
+    listModels: vi.fn(async (harnessId: string) => harnessId === 'codex' ? [{ id: 'gpt-5', name: 'GPT-5', description: '' }] : []),
+  }
+}
+
 function tempDir(prefix: string): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   dirs.push(dir)
   return dir
 }
 
+/** B's terminal tabs over scripted PTYs; `writes` collects what reaches them, `ptys` prints in each. */
+function scriptedTerminals() {
+  const writes: string[] = []
+  const ptys: Array<(data: string) => void> = []
+  const listeners = new Set<(event: import('@superone/shared/agent-types').TerminalEvent) => void>()
+  const manager = new TerminalManager({
+    spawner: { spawn: () => {
+      let print: (data: string) => void = () => {}
+      ptys.push((data) => print(data))
+      return { write: (data) => writes.push(data), resize: () => {}, kill: () => {}, onExit: () => {}, onData: (cb) => { print = cb }, foregroundProcess: () => 'zsh' }
+    } },
+    onEvent: (event) => { for (const listener of listeners) listener(event) },
+    exists: () => true,
+    coalesceMs: 0,
+  })
+  const deps: Partial<DesktopDomainDeps> = {
+    terminals: createDesktopTerminalsPort(manager, (listener) => { listeners.add(listener); return () => listeners.delete(listener) }),
+    bindLocalControl: (authority) => manager.bindLeases(authority),
+  }
+  return { manager, writes, ptys, deps }
+}
+
 /** B with one git project (origin + a commit), paired with a fresh A. */
-async function pairedDesktops() {
+async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDomainDeps> = {}) {
   const userData = tempDir('superone-node-host-')
   const projectDir = tempDir('superone-node-host-project-')
   execFileSync('git', ['init', '-q', projectDir])
@@ -65,14 +148,14 @@ async function pairedDesktops() {
   const store = memoryStore(() => projects.list())
   const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
   harnesses.enableSimulatedOverlay()
+  const providerChanges = { providerConfigChanged: vi.fn(), providerBindingChanged: vi.fn() }
   const host = await startDesktopNode(
     {
-      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses,
+      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, rows: store.all, sessionEdits: memorySessionEdits(store, sessions), projects, harnesses, catalog,
+      providers: createDesktopProvidersPort(credentialStore, providerChanges),
       listAgentProfiles: () => AGENT_PROFILES,
-      hooks: {
-        probeHarnessReadiness: () => ({ ok: true }) as never,
-        assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
-      },
+      hooks: testHarnessHooks(),
+      ...extra,
     },
     { bindPort: 23000 + Math.floor(Math.random() * 10000) },
   )
@@ -81,7 +164,7 @@ async function pairedDesktops() {
   const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a-')) })
   managers.push(manager)
   const { connectionId } = await manager.pairAndConnect({ baseUrl: pairing.url, pairingToken: pairing.pairingToken, label: 'Desktop A', channel: pairing.channel })
-  return { host, sessions, store, projectDir, connectionId, client: manager.getClient(connectionId)! }
+  return { host, sessions, store, projectDir, manager, connectionId, client: manager.getClient(connectionId)!, providerChanges }
 }
 
 describe('DesktopNodeHost', () => {
@@ -96,22 +179,29 @@ describe('DesktopNodeHost', () => {
     const store = memoryStore(() => projects.list())
     const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
     harnesses.enableSimulatedOverlay()
+    const terminals = scriptedTerminals()
     const port = 23000 + Math.floor(Math.random() * 10000)
     const start = (bindPort: number) => startDesktopNode(
       {
+        ...terminals.deps,
         userDataDir: userData,
         label: 'Desktop B',
         appVersion: '0.0.0-test',
         sessions,
-        store,
         rows: store.all,
+        sessionEdits: {
+          ...memorySessionEdits(store, sessions),
+          fork: async ({ sessionId }, assertControl) => {
+            assertControl()
+            store.createRow({ sessionId: `${sessionId}-fork`, projectPath: projectDir, cwd: projectDir })
+            return { ok: true, sessionId: `${sessionId}-fork` }
+          },
+        },
         projects,
         harnesses,
+        catalog: fakeCatalog(),
         listAgentProfiles: () => AGENT_PROFILES,
-        hooks: {
-          probeHarnessReadiness: () => ({ ok: true }) as never,
-          assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
-        },
+        hooks: testHarnessHooks(),
       },
       { bindPort },
     )
@@ -132,7 +222,9 @@ describe('DesktopNodeHost', () => {
 
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities.methods).toContain('session.get')
-    for (const method of ['terminal.create', 'workspace.readFile', 'git.status', 'collaboration.send']) expect(described.capabilities.methods).not.toContain(method)
+    // The workspace, Git, catalog and terminals its window and phones get.
+    for (const method of ['workspace.readFile', 'git.status', 'git.branches', 'harness.resources', 'provider.listModels', 'terminal.create']) expect(described.capabilities.methods).toContain(method)
+    expect(described.capabilities.methods).not.toContain('collaboration.send')
     expect(described.capabilities.harnessIds).toContain('claude')
 
     const listed = await client.rpc<ProjectSnapshot[]>('project.list')
@@ -155,13 +247,18 @@ describe('DesktopNodeHost', () => {
 
     const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: '0' })
     const types = events.map((e) => e.eventType)
-    expect(types).toEqual(['session.created', 'session.user_message', 'session.agent_event', 'session.agent_event'])
+    expect(types).toEqual(['session.agent_event', 'session.created', 'session.user_message', 'session.agent_event', 'session.agent_event'])
+    // The creator's grant: the controller reads itself as nobody else driving it.
+    expect(events[0].payload).toEqual({ event: { type: 'session_control_holder', holder: null } })
+    events.shift()
     expect(events[1].payload).toMatchObject({ blockId: 'm1', text: 'do the task' })
     expect((events[2].payload as { event: Record<string, unknown> }).event).not.toHaveProperty('projectPath')
 
-    await expect(client.rpc('session.fork', { sessionId: created.sessionId })).rejects.toMatchObject({ code: 'not_found' })
-    await expect(client.rpc('terminal.create', { cwd: projectDir })).rejects.toMatchObject({ code: 'not_found' })
-    await expect(client.rpc('harness.enable', { harnessId: 'codex' })).rejects.toMatchObject({ code: 'not_found' })
+    // The session edits, terminals and harness installs B's window has.
+    const forked = await client.rpc<{ ok: boolean; session: { sessionId: string } }>('session.fork', { sessionId: created.sessionId, mode: 'local', leaseId: lease.leaseId, generation: lease.generation })
+    expect(forked).toMatchObject({ ok: true, session: { sessionId: `${created.sessionId}-fork` } })
+    expect(await client.rpc('terminal.create', { cwd: projectDir })).toMatchObject({ terminalId: expect.any(String), cwd: projectDir })
+    expect(await client.rpc('harness.enable', { harnessId: 'codex' })).toMatchObject({ id: 'codex' })
 
     // Restart B (on a fresh port: fetch would reuse the closed keep-alive socket): the cursor continues from the durable log.
     manager.disconnectAll()
@@ -180,6 +277,221 @@ describe('DesktopNodeHost', () => {
   })
 })
 
+describe('DesktopNodeHost composer', () => {
+  it('offers a controller the models, catalog and Git its window has', async () => {
+    const catalog = fakeCatalog()
+    const { client } = await pairedDesktops(catalog)
+    credentialStore.createCredential({ id: 'cred-b', platformId: 'anthropic', planId: 'api', name: 'Team key', secret: 'sk-team-secret-1234' })
+    credentialStore.setBinding({ consumer: 'chat:claude', credentialId: 'cred-b' })
+
+    expect(await client.rpc('provider.listModels', { harness: 'codex', apiProviderId: 'cred-b' })).toEqual([{ id: 'gpt-5', name: 'GPT-5', description: '' }])
+    expect(catalog.listModels).toHaveBeenCalledWith('codex', 'cred-b')
+
+    const resources = await client.rpc<{ claude: { models: unknown[]; account: unknown; slashCommands: unknown[]; outputStyles: string[] } }>('harness.resources', { projectId: 'p1', harnessId: 'claude' })
+    expect(resources.claude).toMatchObject({
+      models: [{ id: 'claude-opus' }], account: { email: 'b@example.com' }, slashCommands: [{ name: 'review' }], outputStyles: ['default'],
+    })
+    // One probe answers every Claude section.
+    expect(catalog.connectClaude).toHaveBeenCalledTimes(1)
+    await expect(client.rpc('harness.resources', { projectId: 'missing' })).rejects.toMatchObject({ code: 'not_found' })
+
+    expect(await client.rpc('git.status', { projectId: 'p1' })).toMatchObject({ isRepo: true, dirty: false })
+    expect(await client.rpc('git.branches', { projectId: 'p1' })).toMatchObject({ current: expect.any(String) })
+    expect(await client.rpc('git.diff', { projectId: 'p1' })).toEqual({ diff: '' })
+    expect(await client.rpc('git.worktrees', { projectId: 'p1' })).toEqual([expect.objectContaining({ bare: false })])
+    expect(await client.rpc('git.worktreeCheckedOutBranches', { projectId: 'p1' })).toEqual({ branches: [expect.any(String)] })
+
+    // The API provider picker reads masked credentials; key material stays on B.
+    expect(await client.rpc('provider.listCredentials')).toEqual([expect.objectContaining({ id: 'cred-b', name: 'Team key', secret: '***t-1234' })])
+    expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:claude', credentialId: 'cred-b', config: {} }])
+  })
+})
+
+describe('DesktopNodeHost providers', () => {
+  it('lets a controller edit credentials, bindings and custom platforms as B\'s window does', async () => {
+    const { client, providerChanges } = await pairedDesktops()
+    const secret = 'sk-controller-key-abcdef'
+
+    const created = await client.rpc<Credential>('provider.createCredential', { platformId: 'anthropic', planId: 'api', name: 'Team', secret })
+    expect(created.secret).toBe('***abcdef')
+    expect(credentialStore.getCredentialDecrypted(created.id)?.secret).toBe(secret)
+
+    // The masked secret the controller read back means "unchanged".
+    await expect(client.rpc('provider.updateCredential', { id: created.id, name: 'Team 2', secret: created.secret })).resolves.toMatchObject({ name: 'Team 2' })
+    expect(credentialStore.getCredentialDecrypted(created.id)).toMatchObject({ name: 'Team 2', secret })
+    expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(1)
+    await expect(client.rpc('provider.updateCredential', { id: 'missing', name: 'x' })).rejects.toMatchObject({ code: 'not_found' })
+
+    await client.rpc('provider.setBinding', { consumer: 'chat:codex', credentialId: created.id })
+    expect(providerChanges.providerBindingChanged).toHaveBeenLastCalledWith('chat:codex')
+    expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:codex', credentialId: created.id, config: {} }])
+    await client.rpc('provider.clearBinding', { consumer: 'chat:codex' })
+    expect(providerChanges.providerBindingChanged).toHaveBeenCalledTimes(2)
+    expect(await client.rpc('provider.listBindings')).toEqual([])
+
+    const platform = { id: 'custom:acme', brand: 'acme', name: 'Acme', plans: [] } satisfies Platform
+    expect(await client.rpc('provider.upsertCustomPlatform', platform)).toEqual(platform)
+    expect(await client.rpc('provider.listCustomPlatforms')).toEqual([platform])
+    const onPlatform = await client.rpc<Credential>('provider.createCredential', { platformId: platform.id, planId: 'default', name: 'Acme key', secret: 'sk-acme-key-123456' })
+    // Removing a platform takes its keys with it.
+    await client.rpc('provider.deleteCustomPlatform', { id: platform.id })
+    expect(credentialStore.getCredentialDecrypted(onPlatform.id)).toBeUndefined()
+    expect(await client.rpc('provider.listCustomPlatforms')).toEqual([])
+
+    await client.rpc('provider.deleteCredential', { id: created.id })
+    expect(await client.rpc('provider.listCredentials')).toEqual([])
+    await expect(client.rpc('provider.deleteCredential', { id: created.id })).rejects.toMatchObject({ code: 'not_found' })
+    expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(4)
+  })
+
+  it('takes a pushed bundle but never hands key material back', async () => {
+    const { client, providerChanges } = await pairedDesktops()
+    const pushed = ['sk-pushed-from-a-998877', 'sk-second-key-445566']
+    credentialStore.createCredential({ id: 'cred-a', platformId: 'openai', planId: 'api', name: 'Old', secret: 'sk-old-value-000000' })
+
+    const imported = await client.rpc('provider.importBundle', {
+      bundle: {
+        credentials: [
+          { id: 'cred-a', platformId: 'openai', planId: 'api', name: 'A key', secret: pushed[0], notes: '', sortOrder: 0 },
+          { id: 'cred-new', platformId: 'anthropic', planId: 'api', name: 'New', secret: pushed[1], notes: '', sortOrder: 1 },
+          { id: 'broken' },
+        ],
+        bindings: [{ consumer: 'chat:claude', credentialId: 'cred-new' }],
+        customPlatforms: [],
+      },
+    })
+    expect(imported).toEqual({ credentials: 2, bindings: 1 })
+    expect(credentialStore.getCredentialDecrypted('cred-a')).toMatchObject({ name: 'A key', secret: pushed[0] })
+    expect(credentialStore.getCredentialDecrypted('cred-new')?.secret).toBe(pushed[1])
+    expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(1)
+
+    // A sends '' for a key its keychain could not decrypt: B keeps its own, even when replacing all.
+    await client.rpc('provider.importBundle', {
+      bundle: { credentials: [{ id: 'cred-a', platformId: 'openai', planId: 'api', name: 'Renamed', secret: '' }], bindings: [], customPlatforms: [] },
+      replaceAll: true,
+    })
+    expect(credentialStore.getCredentialDecrypted('cred-a')).toMatchObject({ name: 'Renamed', secret: pushed[0] })
+    expect(credentialStore.getCredentialDecrypted('cred-new')).toBeUndefined()
+
+    const reads = JSON.stringify([
+      await client.rpc('provider.listCredentials'), await client.rpc('provider.listBindings'), await client.rpc('provider.listCustomPlatforms'),
+    ])
+    for (const plaintext of pushed) expect(reads).not.toContain(plaintext)
+    for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) {
+      await expect(client.rpc(method, { id: 'cred-a' })).rejects.toMatchObject({ code: 'not_found' })
+    }
+
+    const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+    expect(described.capabilities.methods).toEqual(expect.arrayContaining(['provider.createCredential', 'provider.setBinding', 'provider.importBundle']))
+    for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) expect(described.capabilities.methods).not.toContain(method)
+
+    // A's pull stops at its own side, before asking B for keys B withholds.
+    const gateway = new RemoteEnvironmentGateway(client)
+    await gateway.getDescriptor()
+    await expect(gateway.providerExportBundle()).rejects.toMatchObject({ code: 'failed_precondition' })
+  })
+})
+
+/** B's app settings as its window saved them. */
+const B_APP_SETTINGS = {
+  agentPreference: {
+    claude: { defaultModel: 'claude-opus', defaultEffort: 'high', defaultPermissionMode: 'acceptEdits', defaultSandboxMode: 'auto', disabledSkills: ['lint'], askUserQuestionPreviewFormat: 'markdown' },
+    codex: { defaultModel: 'gpt-5', defaultReasoningEffort: 'medium', defaultPermissionPreset: '' },
+  },
+  experimentalClaudeOpenAiChatEnabled: true,
+  defaultClonePaths: { local: '~/Code' },
+} as unknown as Parameters<typeof desktopAgentSettings>[0]
+
+describe('DesktopNodeHost configuration', () => {
+  it("lets a controller edit B's session providers and automations, read its agent settings and manage its harnesses", async () => {
+    const db = new Database(':memory:')
+    ensureAutomationsTable(db)
+    const runNow = vi.fn(async () => ({ status: 'completed', sessionId: 's-auto' }))
+    const enableHarness = vi.fn<DesktopDomainDeps['hooks']['enableHarness']>(async (harnesses, input) => harnesses.get(input.harnessId))
+    const { client } = await pairedDesktops(fakeCatalog(), {
+      hooks: { ...testHarnessHooks(), enableHarness },
+      agentSettings: () => desktopAgentSettings(B_APP_SETTINGS),
+      config: {
+        sessionProviders: createSessionProviderStore(db),
+        automations: { automations: createAutomationStore(db, () => null), automationService: { runNow } },
+      },
+    })
+    try {
+      const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+      for (const method of ['sessionProviders.create', 'automation.runNow', 'settings.get', 'sandbox.probe', 'harness.enable', 'harness.disable']) {
+        expect(described.capabilities.methods).toContain(method)
+      }
+      expect(described.capabilities.methods).not.toContain('settings.patch')
+
+      // Session provider profiles: the store B's window edits.
+      const { provider } = await client.rpc<{ provider: { id: string } }>('sessionProviders.create', { harnessId: 'claude', name: 'Team', config: { model: 'claude-opus', apiKey: 'sk-b' } })
+      await client.rpc('sessionProviders.update', { id: provider.id, name: 'Team Opus' })
+      expect(await client.rpc('sessionProviders.get', { id: provider.id })).toMatchObject({ provider: { name: 'Team Opus', config: { model: 'claude-opus', apiKey: REDACTED_PROFILE_SECRET } } })
+      const listed = await client.rpc<{ providers: Array<{ id: string }> }>('sessionProviders.list', { harnessId: 'claude' })
+      expect(listed.providers.map((p) => p.id)).toEqual(['claude-base', provider.id])
+      await expect(client.rpc('sessionProviders.delete', { id: 'claude-base' })).rejects.toMatchObject({ code: 'failed_precondition' })
+      expect(await client.rpc('sessionProviders.delete', { id: provider.id })).toEqual({ ok: true })
+
+      // B's own agent defaults, not a node config file.
+      expect(await client.rpc('settings.get')).toEqual({
+        settings: {
+          claude: { defaultModel: 'claude-opus', defaultEffort: 'high', permissionMode: 'acceptEdits', sandboxMode: 'auto', disabledSkills: ['lint'], askUserQuestionPreviewFormat: 'markdown' },
+          codex: { defaultModel: 'gpt-5', defaultEffort: 'medium', permissionPreset: '' },
+          experimentalClaudeOpenAiChatEnabled: true,
+          projectsDir: '~/Code',
+        },
+      })
+
+      const { automation } = await client.rpc<{ automation: { id: string; projectId: string } }>('automation.create', {
+        projectId: 'p1', name: 'Nightly', prompt: 'Run the tests', agentConfig: { type: 'claude', model: 'claude-opus' }, schedule: { type: 'recurring', cron: '0 3 * * *' },
+      })
+      expect(automation.projectId).toBe('p1')
+      expect(await client.rpc('automation.list', { projectId: 'p1' })).toMatchObject({ automations: [{ id: automation.id, name: 'Nightly' }] })
+      expect(await client.rpc('automation.runNow', { automationId: automation.id })).toEqual({ automationId: automation.id, status: 'completed', sessionId: 's-auto' })
+      expect(runNow).toHaveBeenCalledWith(automation.id)
+
+      expect(await client.rpc('harness.enable', { harnessId: 'claude' })).toMatchObject({ id: 'claude' })
+      expect(enableHarness.mock.calls[0][1]).toMatchObject({ harnessId: 'claude' })
+      expect(await client.rpc('harness.disable', { harnessId: 'claude' })).toMatchObject({ id: 'claude' })
+      expect(await client.rpc('sandbox.probe')).toMatchObject({ ok: expect.any(Boolean), platform: process.platform })
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('DesktopNodeHost resources', () => {
+  it("manages B's MCP servers, skills and agents for a controller, with secrets kept on B", async () => {
+    const home = tempDir('superone-node-host-home-')
+    const mcpChanged = vi.fn()
+    const { client, projectDir } = await pairedDesktops(fakeCatalog(), { resources: { homeDir: home, mcpChanged } })
+    mkdirSync(join(projectDir, '.claude', 'skills', 'ship'), { recursive: true })
+    writeFileSync(join(projectDir, '.claude', 'skills', 'ship', 'SKILL.md'), '---\ndescription: Ship it\n---\n')
+    mkdirSync(join(projectDir, '.claude', 'agents'), { recursive: true })
+    writeFileSync(join(projectDir, '.claude', 'agents', 'reviewer.md'), '---\ndescription: Reviews\n---\n')
+    const server = { projectId: 'p1', provider: 'claude', name: 'tools', scope: 'project' }
+    const listed = async () => (await client.rpc<{ servers: Array<Record<string, unknown>> }>('mcp.list', { projectId: 'p1', provider: 'claude' })).servers
+
+    await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['a.js'], env: { TOKEN: 'secret-token-123' } } })
+    expect(await listed()).toEqual([expect.objectContaining({ name: 'tools', command: 'node', env: { TOKEN: '********' } })])
+
+    // An edit sends the masked env back; B keeps the secret.
+    await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['b.js'], env: { TOKEN: '********' } } })
+    const onDisk = JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as { mcpServers: Record<string, unknown> }
+    expect(onDisk.mcpServers.tools).toMatchObject({ args: ['b.js'], env: { TOKEN: 'secret-token-123' } })
+
+    await client.rpc('mcp.toggle', { ...server, disabled: true })
+    expect(await listed()).toEqual([expect.objectContaining({ name: 'tools', disabled: true })])
+    // B's window applies the same follow-ups as after its own edits.
+    expect(mcpChanged).toHaveBeenLastCalledWith({ provider: 'claude', projectPath: projectDir, name: 'tools', enabled: false, saved: false })
+
+    const { skills } = await client.rpc<{ skills: Array<{ name: string; scope: string }> }>('skills.list', { projectId: 'p1', provider: 'claude' })
+    expect(skills).toContainEqual(expect.objectContaining({ name: 'ship', scope: 'project' }))
+    const { agents } = await client.rpc<{ agents: Array<{ name: string; scope: string }> }>('agents.list', { projectId: 'p1' })
+    expect(agents).toContainEqual(expect.objectContaining({ name: 'reviewer', scope: 'project' }))
+  })
+})
+
 describe('DesktopNodeHost collaboration children', () => {
   it('cuts a worktree for a remote child and carries its mailbox tools to the controller as Host Actions', async () => {
     const { host, sessions, store, projectDir, connectionId, client } = await pairedDesktops()
@@ -187,8 +499,7 @@ describe('DesktopNodeHost collaboration children', () => {
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities).toMatchObject({ hostActionV1: true })
     expect(described.capabilities.methods).toEqual(expect.arrayContaining(['git.fetch', 'git.worktreeActivate']))
-    // Only fetching and worktree creation of the git family are served.
-    await expect(client.rpc('git.status', { projectId: 'p1' })).rejects.toMatchObject({ code: 'not_found' })
+    expect(await client.rpc('git.status', { projectId: 'p1' })).toMatchObject({ isRepo: true, branch: 'main' })
     // Pushed work B's checkout has not seen yet: the fetch makes it the base.
     const origin = tempDir('superone-origin-')
     execFileSync('git', ['init', '-q', '--bare', origin])
@@ -277,15 +588,125 @@ describe('DesktopNodeHost agent catalog', () => {
 })
 
 describe('DesktopNodeHost visibility', () => {
-  it('records every session of the desktop but shows a controller only the ones it started', async () => {
-    const { sessions, client, projectDir } = await pairedDesktops()
+  it("shows a controller every session of the desktop and lets it edit them as B's window does", async () => {
+    const { sessions, store, client, projectDir } = await pairedDesktops()
     const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
-    // A session this desktop's user runs: recorded, and private to the desktop.
+    // A session this desktop's user runs.
+    store.createRow({ sessionId: 'own-session', projectPath: projectDir, cwd: projectDir, title: 'Mine' })
     const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
     own.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
     sessions.live.get(created.sessionId)!.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
     const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: '0' })
-    expect(new Set(events.map((e) => e.aggregateId))).toEqual(new Set([created.sessionId]))
+    expect(new Set(events.map((e) => e.aggregateId))).toEqual(new Set([created.sessionId, 'own-session']))
+    const listed = await client.rpc<Array<{ sessionId: string }>>('session.list', { projectId: 'p1', limit: 50, offset: 0 })
+    expect(listed.map((s) => s.sessionId).sort()).toEqual([created.sessionId, 'own-session'].sort())
+    expect(await client.rpc('session.get', { sessionId: 'own-session' })).toMatchObject({ title: 'Mine', controllerClientSessionId: null })
+
+    const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+    for (const method of ['session.setCwd', 'session.setTags', 'session.setUiFlags', 'session.close', 'session.remove', 'session.modUi', 'session.rewind', 'session.hostActionsPoll']) {
+      expect(described.capabilities.methods).toContain(method)
+    }
+    await client.rpc('session.setTags', { sessionId: 'own-session', set: ['review'] })
+    await client.rpc('session.setUiFlags', { sessionId: 'own-session', isPinned: true })
+    expect(store.rows.get('own-session')).toMatchObject({ tags: ['review'], isPinned: true })
+
+    // Driving B's own session takes its lease and leaves its launch origin alone.
+    const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: 'own-session' })
+    await client.rpc('session.send', { sessionId: 'own-session', text: 'from A', leaseId: lease.leaseId, generation: lease.generation })
+    expect(own.sent[0]).toMatchObject({ content: 'from A' })
+    expect(store.rows.get('own-session')?.controller).toBeNull()
+    await client.rpc('session.close', { sessionId: 'own-session', leaseId: lease.leaseId, generation: lease.generation })
+    expect(sessions.live.has('own-session')).toBe(false)
+  })
+})
+
+/**
+ * B's topics as its app publishes them: list changes from its database writes
+ * (`bindSessionListNotifications`, `watchProjectList`) and each session's
+ * sidebar activity, served to phones and controllers as topic notices.
+ */
+function desktopTopics() {
+  const hub = createDesktopTopicHub()
+  let context!: HubEventPublishContext
+  let notices!: ReturnType<typeof createDesktopTopicNotices>
+  const sessions = new Map<string, unknown>()
+  const unbind = [
+    bindSessionListNotifications(() => {}, event => publishHubEvent(hub, { event, source: 'list' }, context)),
+    watchProjectList(() => publishHubEvent(hub, { event: { type: 'project_list_changed' }, source: 'list' }, context)),
+  ]
+  return {
+    deps: { topicNotices: { open: (input) => {
+      notices ??= createDesktopTopicNotices(hub, context.recovery!, context.localEnvironmentId)
+      return notices.open(input)
+    } } } satisfies Partial<DesktopDomainDeps>,
+    bind(environmentId: string) {
+      context = { localEnvironmentId: environmentId, recovery: new LocalTopicRecovery(environmentId, () => null),
+        getSession: (id) => sessions.get(id) as ReturnType<HubEventPublishContext['getSession']>, spawnParentOf: () => null }
+    },
+    /** B's window drives one of its sessions: its row on the list shows the turn. */
+    activity(session: { id: string; projectPath: string; status: 'idle' | 'streaming' }, event: AgentEvent) {
+      sessions.set(session.id, { ephemeral: false, snapshot: { id: session.id, projectPath: session.projectPath, status: session.status, harnessId: 'claude', messages: [] },
+        activityStatus: () => session.status, seenCompletedMessageId: null, realtimeActive: false, getPendingInteractions: () => [] })
+      publishHubEvent(hub, { event, source: 'session', sessionId: session.id }, context)
+    },
+    close: () => { for (const stop of unbind) stop() },
+  }
+}
+
+describe('DesktopNodeHost live session list', () => {
+  it("keeps a controller's list of B live for what B's window does, from the topics phones use", async () => {
+    const topics = desktopTopics()
+    const agent = { markRemoteSeen: vi.fn() }
+    const { host, store, projectDir, connectionId, client } = await pairedDesktops(fakeCatalog(), { ...topics.deps, phoneMethods: createPhoneMethods({ agent } as unknown as PhoneMethodHost) })
+    topics.bind(host.identity.environmentId)
+    try {
+      // A follows B's list as `EnvironmentHost.watchSessionList` does.
+      const gateway = new RemoteEnvironmentGateway(client)
+      await gateway.getDescriptor()
+      const environmentId = host.identity.environmentId
+      const feed = new RemoteSessionFeed({
+        head: () => gateway.eventHeadSequence(),
+        subscribe: (afterSequence, signal, handlers) => gateway.subscribeEvents({ environmentId, afterSequence, topics: handlers.interest.current(), signal, ...handlers }),
+      }, environmentId)
+      const changed: Array<string | undefined> = []
+      const projects = vi.fn()
+      const activity: SessionActivityEvent[] = []
+      await feed.observe(remoteListObserver(connectionId, new Map(), { sessionListChanged: key => changed.push(key), projectsChanged: projects, activity: event => activity.push(event) }))
+      await vi.waitFor(() => expect(changed).toEqual([undefined]))
+      const key = remoteProjectKey(connectionId, projectDir)
+      changed.length = 0
+
+      // B's window creates, renames and archives a session A never touched.
+      store.createRow({ sessionId: 'b-own', projectPath: projectDir, cwd: projectDir, title: 'New session' })
+      notifySessionList(projectDir)
+      store.rows.set('b-own', { ...store.rows.get('b-own')!, title: 'Renamed on B' })
+      notifySessionList(projectDir)
+      await vi.waitFor(() => expect(changed).toEqual([key, key]))
+      expect((await gateway.sessions.list({ environmentId, projectId: 'p1' }, { limit: 50, offset: 0 }))).toEqual([expect.objectContaining({ sessionId: 'b-own', title: 'Renamed on B' })])
+      store.rows.set('b-own', { ...store.rows.get('b-own')!, isHidden: true })
+      notifySessionList(projectDir)
+      await vi.waitFor(() => expect(changed).toEqual([key, key, key]))
+
+      // B's window runs it: A's sidebar shows the turn, under A's key for the project.
+      topics.activity({ id: 'b-own', projectPath: projectDir, status: 'streaming' }, { type: 'status_change', status: 'streaming', sessionId: 'b-own' } as AgentEvent)
+      await vi.waitFor(() => expect(activity.at(-1)?.activity).toMatchObject({ sessionId: 'b-own', projectPath: key, status: 'streaming' }))
+      // A shows it: B records the read for every client, as a phone's.
+      await gateway.markSeen('b-own')
+      expect(agent.markRemoteSeen).toHaveBeenCalledWith('b-own')
+
+      // A controller's own create is heard once, from the same notices.
+      const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+      notifySessionList(projectDir)
+      await vi.waitFor(() => expect(changed).toHaveLength(4))
+      expect(store.rows.has(created.sessionId)).toBe(true)
+
+      notifyProjectList()
+      await vi.waitFor(() => expect(projects).toHaveBeenCalledTimes(2))
+      expect(changed).toEqual([key, key, key, key])
+      feed.close()
+    } finally {
+      topics.close()
+    }
   })
 })
 
@@ -393,5 +814,252 @@ describe('DesktopNodeHost launch tasks', () => {
       source: 'collaboration',
       collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionTitle: 'Desktop A' },
     })
+  })
+})
+
+describe('DesktopNodeHost control takeover', () => {
+  /** B's window driving one of B's sessions, as its composer does. */
+  const windowControl = (session: FakeSession) => runWindowControl(1, () => session.lease.assertMutation())
+
+  it("takes over what B's window holds only on purpose, and never a lease of B's phones", async () => {
+    const { host, sessions, projectDir, client } = await pairedDesktops(fakeCatalog(), { phoneLabel: (id) => id === 'p' ? 'Pixel 9' : null })
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    const { snapshotSequence } = await client.rpc<{ snapshotSequence: string }>('session.snapshot')
+    windowControl(own)
+    const held = own.lease.current!
+    expect(held.delegate).toBe('window:1')
+
+    // A controller learns B is using it before it asks, and an ordinary acquire (before a send) does not take it.
+    expect(await client.rpc('session.get', { sessionId: own.id })).toMatchObject({ controlHolder: { kind: 'window', label: null } })
+    await expect(client.rpc('session.acquireControl', { sessionId: own.id, yields: true }))
+      .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_held', holder: { kind: 'window', label: null } } })
+    expect(own.lease.current).toEqual(held)
+
+    // Take over: the explicit reclaim.
+    const lease = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, yields: true, reclaim: true })
+    const controller = host.controllers()[0].id
+    expect(lease).toMatchObject({ holderClientId: controller })
+    expect(own.lease.current).toMatchObject({ leaseId: lease.leaseId, holderClientId: controller })
+    expect(own.lease.isExternal).toBe(true)
+    // The controller's own yield reaches only the phones it relays, not B's window.
+    expect(() => windowControl(own)).toThrow()
+    const relayed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, delegate: 'phone:a-device' })
+    expect(relayed).toMatchObject({ holderClientId: controller, delegate: 'phone:a-device' })
+    expect(own.lease.phoneDeviceId).toBeNull()
+    // A controller's grant never reads as B's window.
+    await expect(client.rpc('session.acquireControl', { sessionId: own.id, delegate: 'window:1' })).rejects.toMatchObject({ code: 'invalid_argument' })
+
+    expect(await client.rpc('session.get', { sessionId: own.id })).not.toHaveProperty('controlHolder')
+
+    // The session's stream told it who held it, and that it holds it now.
+    const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: snapshotSequence })
+    const holders = events.map((e) => (e.payload as { event?: AgentEvent }).event).filter((e) => e?.type === 'session_control_holder')
+    expect(holders).toEqual([
+      { type: 'session_control_holder', holder: { kind: 'window', label: null } },
+      { type: 'session_control_holder', holder: null },
+      { type: 'session_control_holder', holder: null },
+    ])
+
+    // B's phone holds another session: the controller does not take it, even on purpose, and is told whose it is.
+    const phoneHeld = sessions.createSession({ id: 'phone-session', projectPath: projectDir }) as unknown as FakeSession
+    bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${host.identity.environmentId}`, delegate: 'phone:p', yields: 'none' })
+      .acquire({ resource: phoneHeld.lease.resource, holderClientId: 'phone:p', ttlMs: 60_000 })
+    const phone = { kind: 'phone', label: 'Pixel 9' }
+    expect(await client.rpc('session.get', { sessionId: phoneHeld.id })).toMatchObject({ controlHolder: phone })
+    for (const reclaim of [false, true]) {
+      await expect(client.rpc('session.acquireControl', { sessionId: phoneHeld.id, yields: true, reclaim }))
+        .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_held', holder: phone } })
+    }
+    expect(phoneHeld.lease.phoneDeviceId).toBe('p')
+  })
+
+  it("lets a phone the controller relays take what B's window holds, as B's own phones do", async () => {
+    const { host, sessions, projectDir, client } = await pairedDesktops(fakeCatalog(), { phoneLabel: (id) => id === 'p' ? 'Pixel 9' : null })
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    windowControl(own)
+
+    // A relayed phone has no Take over: it acquires as routed-phone-rpc does, without reclaim.
+    const relayed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, delegate: 'phone:a-device', yields: false })
+    expect(relayed).toMatchObject({ holderClientId: host.controllers()[0].id, delegate: 'phone:a-device' })
+    expect(own.lease.current).toMatchObject({ leaseId: relayed.leaseId, delegate: 'phone:a-device' })
+
+    // Still never a lease of B's phones.
+    const phoneHeld = sessions.createSession({ id: 'phone-session', projectPath: projectDir }) as unknown as FakeSession
+    bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${host.identity.environmentId}`, delegate: 'phone:p', yields: 'none' })
+      .acquire({ resource: phoneHeld.lease.resource, holderClientId: 'phone:p', ttlMs: 60_000 })
+    await expect(client.rpc('session.acquireControl', { sessionId: phoneHeld.id, delegate: 'phone:a-device', yields: false }))
+      .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_held', holder: { kind: 'phone', label: 'Pixel 9' } } })
+    expect(phoneHeld.lease.phoneDeviceId).toBe('p')
+  })
+
+  it("lets B's user take a session from a controller, which then sees it in use", async () => {
+    const { sessions, projectDir, client } = await pairedDesktops()
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    const lease = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id })
+    expect(own.lease.holder).toEqual({ kind: 'controller', label: 'Desktop A' })
+
+    // Disconnect in B's window: the controller's lease ends and the window holds the session.
+    runWindowControl(1, () => own.lease.takeBack())
+    expect(own.lease.current?.delegate).toBe('window:1')
+    await expect(client.rpc('session.renewControl', { leaseId: lease.leaseId, generation: lease.generation })).rejects.toMatchObject({ code: 'lease_required' })
+    await expect(client.rpc('session.acquireControl', { sessionId: own.id }))
+      .rejects.toMatchObject({ details: { reason: 'control_held', holder: { kind: 'window', label: null } } })
+    await client.rpc('session.acquireControl', { sessionId: own.id, reclaim: true })
+    expect(own.lease.holder).toEqual({ kind: 'controller', label: 'Desktop A' })
+  })
+
+  it("leaves B's window its lease when B took the session back and the controller does not reclaim", async () => {
+    const { host, sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    const live = sessions.live.get(created.sessionId)!
+    host.sessions.releaseControl(created.sessionId)
+    windowControl(live)
+    const held = live.lease.current!
+    expect(held.delegate).toBe('window:1')
+
+    await expect(client.rpc('session.acquireControl', { sessionId: created.sessionId, yields: true }))
+      .rejects.toMatchObject({ details: { reason: 'control_released' } })
+    expect(live.lease.current).toEqual(held)
+    windowControl(live)
+
+    // An explicit reconnect takes it over.
+    const reclaimed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
+    expect(live.lease.current).toMatchObject({ leaseId: reclaimed.leaseId, generation: reclaimed.generation })
+    expect(await client.rpc('session.get', { sessionId: created.sessionId })).not.toHaveProperty('controlReleased')
+  })
+
+  it("serves B's terminals to a controller under its own writer identity", async () => {
+    const terminals = scriptedTerminals()
+    const { host, projectDir, client } = await pairedDesktops(fakeCatalog(), terminals.deps)
+    const controller = host.controllers()[0].id
+
+    const created = await client.rpc<{ terminalId: string }>('terminal.create', { cwd: projectDir })
+    const tab = terminals.manager.get(created.terminalId)!
+    expect(await client.rpc('terminal.list')).toMatchObject({ terminals: [{ terminalId: created.terminalId }] })
+    // B's window types in it first.
+    tab.lease.assertWindow(1)
+    const before = await client.rpc<{ terminal: TerminalSnapshot }>('terminal.attach', { terminalId: created.terminalId })
+    expect(before.terminal).toMatchObject({ ownerDeviceId: null, writableByMe: false })
+
+    const lease = await client.rpc<ControlLease>('terminal.acquireControl', { terminalId: created.terminalId, ttlMs: 60_000 })
+    await client.rpc('terminal.write', { terminalId: created.terminalId, data: 'ls\r', leaseId: lease.leaseId, generation: lease.generation })
+    expect(terminals.writes).toEqual(['ls\r'])
+    const after = await client.rpc<{ terminal: TerminalSnapshot }>('terminal.attach', { terminalId: created.terminalId })
+    expect(after.terminal).toMatchObject({ ownerDeviceId: `node:${controller}`, writableByMe: true })
+    expect(tab.lease.isWritableBy('local')).toBe(false)
+    expect(() => tab.lease.assertWindow(1)).toThrow()
+  })
+
+  it("shows the controller B's terminals with pushed output, and hands control back and forth by B's leases", async () => {
+    const terminals = scriptedTerminals()
+    const { host, projectDir, manager, connectionId, client } = await pairedDesktops(fakeCatalog(), terminals.deps)
+    const environmentId = host.identity.environmentId
+    const gateway = manager.getGateway(environmentId) as RemoteEnvironmentGateway
+    const feed = new RemoteSessionFeed({ head: () => gateway.eventHeadSequence(),
+      subscribe: (afterSequence, signal, handlers) => gateway.subscribeEvents({ environmentId, afterSequence, signal, topics: handlers.interest.current(), ...handlers }) }, environmentId)
+    const events: TerminalEvent[] = []
+    const remote = new RemoteTerminalController({
+      node: () => ({ environmentId, terminals: gateway.terminals, rpc: (method, payload) => client.rpc(method, payload, environmentId),
+        follow: (input, handlers) => feed.followTopics(input, handlers, () => client.rpc('topic.catchUp', input, environmentId)) }),
+      projectId: async () => 'p1',
+      onEvent: (event) => events.push(event),
+    })
+    try {
+      // A tab B's window opened and typed in.
+      const tab = terminals.manager.create({ cwd: projectDir, projectPath: projectDir, title: 'zsh' })
+      tab.lease.assertWindow(1)
+      const key = remoteTerminalKey(connectionId, tab.terminalId)
+      const project = remoteProjectKey(connectionId, projectDir)
+      expect(await remote.list(project)).toEqual([expect.objectContaining({ terminalId: key, projectPath: project, ownerDeviceId: null })])
+
+      await remote.snapshot(key)
+      expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_snapshot', terminalId: key, snapshot: expect.objectContaining({ terminalId: key, writableByMe: true }) }))
+      terminals.ptys[0]('hello from B')
+      await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_output', terminalId: key, data: 'hello from B' })))
+
+      // What xterm answers on its own (a focus report) leaves B's window holding it; typing takes it over.
+      await remote.write(key, '\x1b[I', false)
+      expect(terminals.writes).toEqual([])
+      expect(tab.lease.ownerDeviceId).toBeNull()
+      await remote.write(key, 'ls\r', true)
+      expect(terminals.writes).toEqual(['ls\r'])
+      expect(tab.lease.ownerDeviceId).toBe(`node:${host.controllers()[0].id}`)
+      expect(() => tab.lease.assertWindow(1)).toThrow()
+
+      // B's window takes it back: the controller reads until it takes over on purpose.
+      tab.lease.reclaimLocal(1)
+      await vi.waitFor(() => expect(events).toContainEqual({ type: 'terminal_owner_changed', terminalId: key, ownerDeviceId: NODE_WINDOW_TERMINAL_OWNER, writableByMe: false }))
+      await remote.write(key, 'echo ignored\r', true)
+      expect(terminals.writes).toEqual(['ls\r'])
+      await remote.claim(key)
+      await remote.write(key, 'pwd\r', true)
+      expect(terminals.writes).toEqual(['ls\r', 'pwd\r'])
+
+      // A tab opened on B later appears without a poll; one B's phone holds stays read-only here.
+      const phoneTab = terminals.manager.create({ cwd: projectDir, projectPath: projectDir, title: 'phone' })
+      const phoneKey = remoteTerminalKey(connectionId, phoneTab.terminalId)
+      await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_created', terminalId: phoneKey })))
+      bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${environmentId}`, delegate: 'phone:p', yields: 'none' })
+        .acquire({ resource: phoneTab.lease.ref, holderClientId: 'phone:p', ttlMs: 60_000 })
+      // Its writer reaches the tab strip before the tab is shown here.
+      await vi.waitFor(() => expect(events).toContainEqual({ type: 'terminal_owner_changed', terminalId: phoneKey, ownerDeviceId: 'p', writableByMe: false }))
+      expect(await remote.snapshot(phoneKey)).toMatchObject({ ownerDeviceId: 'p', writableByMe: false })
+      await remote.write(phoneKey, 'ls\r', true)
+      await expect(remote.claim(phoneKey)).rejects.toMatchObject({ code: 'failed_precondition' })
+      expect(terminals.writes).toEqual(['ls\r', 'pwd\r'])
+
+      // A tab opened here runs in B's project, which B resolves and lists it under.
+      const opened = await remote.create({ projectPath: project })
+      expect(opened).toMatchObject({ projectPath: project, cwd: project, ownerDeviceId: null })
+      expect(terminals.manager.get(parseRemoteTerminalKey(opened.terminalId)!.terminalId)!.listItem().projectPath).toBe(projectDir)
+    } finally {
+      remote.dispose()
+      feed.close()
+    }
+  })
+
+  it("ends a controller's draft grants when it disconnects and when B stops listening", async () => {
+    const db = new Database(':memory:')
+    const drafts = new DraftControl(createDraftStore(db))
+    const { host, projectDir, manager, connectionId, client } = await pairedDesktops(fakeCatalog(), { drafts })
+    const controller = host.controllers()[0].id
+    drafts.upsert({ id: 'd1', text: 'from B', projectPath: projectDir })
+
+    await client.rpc('draft.open', { draftId: 'd1' })
+    expect(drafts.get('d1')?.controllerDeviceId).toBe(controller)
+    manager.disconnect(connectionId)
+    await vi.waitFor(() => expect(drafts.get('d1')?.controllerDeviceId).toBeNull())
+
+    await manager.connectExisting(connectionId)
+    await manager.getClient(connectionId)!.rpc('draft.open', { draftId: 'd1' })
+    expect(drafts.get('d1')?.controllerDeviceId).toBe(controller)
+    hosts.splice(hosts.indexOf(host), 1)
+    await stopDesktopNode(host)
+    expect(drafts.get('d1')?.controllerDeviceId).toBeNull()
+    // B's window edits it again.
+    expect(drafts.upsert({ id: 'd1', text: 'B again' }).text).toBe('B again')
+    db.close()
+  })
+
+  it.each([
+    ['removed', (host: DesktopNodeHost, id: string) => host.removeController(id)],
+    ['turned off', (host: DesktopNodeHost, id: string) => host.setControllerEnabled(id, false)],
+  ])("ends a controller's session and terminal leases when it is %s", async (_case, cut) => {
+    const terminals = scriptedTerminals()
+    const { host, sessions, projectDir, client } = await pairedDesktops(fakeCatalog(), terminals.deps)
+    const controller = host.controllers()[0].id
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    await client.rpc('session.acquireControl', { sessionId: own.id, yields: true })
+    const { terminalId } = await client.rpc<{ terminalId: string }>('terminal.create', { cwd: projectDir })
+    await client.rpc('terminal.acquireControl', { terminalId })
+    const tab = terminals.manager.get(terminalId)!
+    expect(tab.lease.ownerDeviceId).toBe(`node:${controller}`)
+
+    cut(host, controller)
+    expect(own.lease.current).toBeNull()
+    expect(tab.lease.ownerDeviceId).toBeNull()
+    // B's window drives both again.
+    windowControl(own)
+    tab.lease.assertWindow(1)
   })
 })

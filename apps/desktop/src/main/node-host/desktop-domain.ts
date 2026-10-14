@@ -7,6 +7,7 @@ import {
   type HostCapabilityFlags,
   type NodeIdentity,
   type ProjectsPort,
+  type ProvidersPort,
   type RpcContext,
   type RpcHostHooks,
   type TerminalsPort,
@@ -15,16 +16,23 @@ import {
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { ControlLeaseService } from '@superone/runtime/lease'
+import type { DraftControl } from '@superone/runtime/drafts'
 import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
 import type { HarnessManager } from '@superone/runtime/harness'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
+import type { NodeAgentSettings } from '@superone/shared/environment'
 import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
-import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
-import { createDesktopWorktreePort } from './desktop-worktree-port'
+import { DesktopSessionHost, type DesktopSessionEdits, type DesktopSessionHostDeps, type NodeHostSessionManager } from './desktop-session-host'
+import { createDesktopGitPort } from './desktop-git-port'
+import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-catalog-methods'
+import { createDesktopConfigMethods, type DesktopConfig } from './desktop-config-methods'
+import { createDesktopResourceMethods } from './desktop-resource-methods'
+import type { ResourceHost } from '@superone/runtime/server/rpc-resources'
+import { createDesktopCodexMethods, type DesktopCodexServices } from './desktop-codex-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
+  ArtifactZoneService,
   WorkspaceFsService,
-  WorkspaceGitService,
   WorkspaceTailWatchService,
   WorkspaceWatchService,
   type WorkspaceProjects,
@@ -32,13 +40,13 @@ import {
 import { SessionEventRecorder } from './session-event-recorder'
 import { runRpcControl } from '../session/control-context'
 import { dispatchRpc } from '@superone/runtime/server'
-import { LocalSessionHost, type LocalSessionEdits, type LocalSessionHostDeps } from './local-session-host'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import { desktopNodeHostPaths } from './paths'
 import { claudeUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
 import type { TerminalLeaseAuthority } from '../terminal/terminal-lease'
+import { controlHolderOf, type ControlHolderNames } from '../session/session-lease'
 import type { PhoneRpcRouter } from './routed-phone-rpc'
 
 /** Policy flags of the desktop node; its methods follow from the ports this host passes. */
@@ -49,15 +57,11 @@ const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
 }
 
 /**
- * Shared methods with no desktop meaning yet: node settings belong to this
- * desktop's own settings, a fork would cut a worktree before learning sessions
- * cannot fork here, harness installs stay with this desktop's user, and a
- * controller's session keeps its cwd, tags and lifetime as this desktop has them.
+ * Shared methods with no desktop meaning yet: node settings are this desktop's
+ * app settings, which only its window edits.
  */
 const DESKTOP_UNSERVED_METHODS: ReadonlySet<string> = new Set([
-  'settings.patch', 'sandbox.probe', 'harness.enable', 'harness.disable',
-  'session.fork', 'session.setCwd', 'session.setTags', 'session.setUiFlags', 'session.close', 'session.remove',
-  'session.modUi', 'session.notifyArtifactCompleted',
+  'settings.patch',
 ])
 
 /**
@@ -81,36 +85,53 @@ function desktopCollaborationPort(listProfiles: () => SessionAgentProfile[]): Co
 
 export interface DesktopDomainDeps {
   restore?: import('../session/session-restore-facts').DesktopRestorePorts
-  /** Every session row of this desktop, for the devices that see all of them. */
+  /** Every session row of this desktop. */
   rows: DesktopSessionRows<DesktopSessionRow>
   userDataDir: string
   /** Shown to controllers as this environment's name; the host name by default. */
   label?: string
   appVersion: string
   sessions: NodeHostSessionManager
-  store: NodeHostSessionStore
   projects: ProjectsPort
   harnesses: HarnessManager
   /** The agent profiles this desktop can launch, as its own collaboration lists them. */
   listAgentProfiles: () => SessionAgentProfile[]
-  /** Harness readiness probes and runtime checks (desktop resolver). */
-  hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady'>
-  /** This desktop's PTYs, which its phones see and controllers do not. */
+  /**
+   * Harness readiness probes, runtime checks and installs, as the window's
+   * Settings → Harnesses runs them; `pathReady` is the window's login-shell PATH.
+   */
+  hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady' | 'enableHarness' | 'disableHarness' | 'pathReady'>
+  /** This desktop's PTYs. */
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
-  drafts?: DraftsPort
+  drafts?: DraftsPort & Pick<DraftControl, 'releaseDevice'>
   beforeDraftOpen?(draftId: string): Promise<void>
   topicNotices?: RpcContext['topicNotices']
   rpcRouter?: PhoneRpcRouter
-  /** What a phone's project changes do beyond the registry; controllers cannot edit projects. */
+  /** What a client's project changes do beyond the registry, as the window applies them. */
   projectEdits?: DesktopProjectEdits
-  /** Desktop methods for phones beyond the shared families (`remote/phone-methods.ts`). */
-  phoneMethods?: { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
-  sessionEdits?: LocalSessionEdits
-  sideChats?: LocalSessionHostDeps['sideChats']
-  scheduledSends?: LocalSessionHostDeps['scheduledSends']
+  /** Desktop methods beyond the shared families (`remote/phone-methods.ts`). */
+  phoneMethods?: DesktopExtension
+  /** The window's harness catalogs, served as the node catalog contract. */
+  catalog?: DesktopCatalog
+  /** What the window adds to the resource families' files: its shell PATH, Codex and live sessions. */
+  resources?: ResourceHost
+  /** The window's Codex services, served as the node `codex.*` contract. */
+  codex?: DesktopCodexServices
+  /** This desktop's credential store, keys withheld (`desktop-providers-port.ts`). */
+  providers?: ProvidersPort
+  sessionEdits: DesktopSessionEdits
+  sideChats?: DesktopSessionHostDeps['sideChats']
+  scheduledSends?: DesktopSessionHostDeps['scheduledSends']
+  mcpAppResources?: DesktopSessionHostDeps['mcpAppResources']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
+  /** The name a phone paired with this desktop under, for who holds a session. */
+  phoneLabel?(deviceId: string): string | null
+  /** This desktop's agent defaults (`desktop-agent-settings.ts`), what `settings.get` reports. */
+  agentSettings?: () => NodeAgentSettings
+  /** The session provider and automation stores the window edits (`desktop-config-methods.ts`). */
+  config?: DesktopConfig
 }
 
 /** What one RPC needs besides who asks and how it is delivered. */
@@ -129,15 +150,14 @@ export class DesktopDomain {
     readonly identity: NodeIdentity,
     readonly auth: AuthService,
     readonly leases: ControlLeaseService,
+    /** Every session of this desktop, for every client. */
     readonly sessions: DesktopSessionHost,
-    /** Every session of this desktop, fenced by the same domain leases. */
-    readonly localSessions: LocalSessionHost,
     private readonly recorder: SessionEventRecorder,
     private readonly unbindSessions: () => void,
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'resources' | 'codex' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -151,69 +171,95 @@ export class DesktopDomain {
       const leases = new ControlLeaseService(db)
       const events = new EventLog(db, identity.environmentId)
       reconcileRunsAfterRestart({ db, events, sessions: deps.sessions })
-      const unbindSessions = deps.sessions.onSession((session) => session.lease.bind({ environmentId: identity.environmentId, leases }))
+      const names: ControlHolderNames = {
+        controller: (clientSessionId) => controllerLabel(auth, clientSessionId),
+        phone: (deviceId) => deps.phoneLabel?.(deviceId) ?? null,
+      }
+      const unbindSessions = deps.sessions.onSession((session) => session.lease.bind({ environmentId: identity.environmentId, leases, names }))
       const recorder = new SessionEventRecorder(deps.sessions, events)
       const sessions = new DesktopSessionHost({
         environmentId: identity.environmentId,
         restore: deps.restore,
         sessions: deps.sessions,
-        store: deps.store,
+        rows: deps.rows,
+        edits: deps.sessionEdits,
+        drafts: deps.drafts,
+        sideChats: deps.sideChats,
+        scheduledSends: deps.scheduledSends,
+        mcpAppResources: deps.mcpAppResources,
         leases,
         events,
         hostActions: createSqliteHostActionStore(db),
         projectPath: (projectId) => deps.projects.get(projectId)?.path ?? null,
-        controllerLabel: (clientSessionId) =>
-          auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null,
+        projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null,
+        controllerLabel: names.controller,
+        controlHolder: (lease) => controlHolderOf(lease, identity.environmentId, names),
+        controllerActive: (clientSessionId) =>
+          auth.listClientSessions().some((c) => c.clientSessionId === clientSessionId && c.revokedAt === null && c.suspendedAt === null),
       })
       const context: DesktopRpcContext = {
         identity,
         idempotency: new IdempotencyService(db),
         leases,
         settingsConfigPath: paths.configJson,
+        ...(deps.agentSettings ? { agentSettings: deps.agentSettings } : {}),
         hooks: desktopRpcHooks(deps),
         capabilities: DESKTOP_NODE_CAPABILITIES,
         startedAt: Date.now(),
         projects: deps.projects,
-        workspaceGit: createDesktopWorktreePort(deps.projects),
+        ...(deps.providers ? { providers: deps.providers } : {}),
         sessions,
         harnesses: deps.harnesses,
         collaboration: desktopCollaborationPort(deps.listAgentProfiles),
-        unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
+        artifacts: new ArtifactZoneService(paths.syncRoot),
+        mcpApps: sessions.mcpApps,
       }
-      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, sideChats: deps.sideChats, scheduledSends: deps.scheduledSends, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
+      leases.onChange((resource, lease) => {
+        if ('sessionId' in resource && resource.environmentId === identity.environmentId) sessions.publishControlHolder(resource.sessionId, lease)
+      })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
     }
   }
 
-  /** The context a controller's RPCs run in, before its client and delivery: the sessions it started. */
-  rpcContext(): DesktopRpcContext {
-    return this.context
-  }
-
   /**
-   * The context this desktop's phones run in. They are its user's devices:
-   * every session and terminal, the workspace files and
-   * Git the window has, and its drafts, which controllers do not get.
+   * The one context this desktop serves its clients from — its window, its
+   * phones and controller desktops: every session and terminal, the workspace
+   * files and Git the window has, its drafts and desktop methods. Clients
+   * differ only by who they are (lease actor, client-scoped methods).
    */
-  phoneContext(): DesktopRpcContext {
-    return this.phone ??= this.openPhoneContext()
+  clientContext(): DesktopRpcContext {
+    return this.client ??= this.openClientContext()
   }
 
   openPhoneRoute(client: import('@superone/runtime/server').AuthenticatedClient) { return this.phonePorts.rpcRouter?.open(client) }
 
-  private phone: DesktopRpcContext | null = null
-  /** Watches phones hold, closed with the domain. */
+  /** A controller lost access (revoked, suspended, paused): its leases and draft grants end with it. */
+  revokeClient(clientSessionId: string): void {
+    this.leases.revokeHolder(clientSessionId)
+    this.releaseClientDrafts(clientSessionId)
+  }
+
+  /**
+   * A controller went away (its last connection closed, or the listener
+   * stopped): its draft grants, which never expire, end as a phone's do.
+   */
+  releaseClientDrafts(clientSessionId: string): void {
+    this.phonePorts.drafts?.releaseDevice(clientSessionId)
+  }
+
+  private client: DesktopRpcContext | null = null
+  /** Watches clients hold, closed with the domain. */
   private readonly watches: Array<{ closeAll(): void }> = []
   private readonly closeListeners = new Set<() => void>()
 
   onClose(listener: () => void): void { this.closeListeners.add(listener) }
 
-  private openPhoneContext(): DesktopRpcContext {
+  private openClientContext(): DesktopRpcContext {
     // Recency stays with the window's own project opens.
     const projects: WorkspaceProjects = { get: (projectId) => this.context.projects!.get(projectId), touch: () => {} }
     const workspaceFs = new WorkspaceFsService(projects)
@@ -221,21 +267,27 @@ export class DesktopDomain {
     const workspaceTailWatch = new WorkspaceTailWatchService(projects, workspaceFs)
     this.watches.push(workspaceWatch, workspaceTailWatch)
     const edits = this.phonePorts.projectEdits
+    const extension = composeExtensions([
+      this.phonePorts.phoneMethods,
+      this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog),
+      this.phonePorts.config && createDesktopConfigMethods(this.phonePorts.config, this.context.projects!),
+      this.phonePorts.resources && createDesktopResourceMethods(this.phonePorts.resources),
+      this.phonePorts.codex && createDesktopCodexMethods(this.phonePorts.codex),
+    ])
     return {
       ...this.context,
       ...(edits ? { projects: withProjectEdits(this.context.projects!, edits) } : {}),
-      sessions: this.localSessions,
       workspaceFs,
-      workspaceGit: new WorkspaceGitService(projects),
+      workspaceGit: createDesktopGitPort(projects),
       workspaceWatch,
       workspaceTailWatch,
       terminals: this.phonePorts.terminals,
       topicNotices: this.phonePorts.topicNotices,
       drafts: this.phonePorts.drafts,
       beforeDraftOpen: this.phonePorts.beforeDraftOpen,
-      extensions: this.phonePorts.phoneMethods?.dispatch,
-      extensionMethods: this.phonePorts.phoneMethods?.methods,
-      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS].filter((method) => !method.startsWith('session.')).concat([...this.localSessions.unservedMethods])),
+      extensions: extension.dispatch,
+      extensionMethods: extension.methods,
+      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...this.sessions.unservedMethods]),
     }
   }
 
@@ -251,10 +303,31 @@ export class DesktopDomain {
     this.unbindSessions()
     for (const watch of this.watches) watch.closeAll()
     this.recorder.dispose()
-    this.localSessions.dispose()
     this.sessions.dispose()
     this.leases.dispose()
     this.db.close()
+  }
+}
+
+function controllerLabel(auth: AuthService, clientSessionId: string): string | null {
+  return auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null
+}
+
+/** Methods this desktop serves beyond the shared families. */
+export interface DesktopExtension { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
+
+/** One extension over several; each method has exactly one owner. */
+function composeExtensions(parts: Array<DesktopExtension | null | undefined | false>): DesktopExtension {
+  const present = parts.filter((part): part is DesktopExtension => !!part)
+  const methods = present.flatMap((part) => [...part.methods])
+  const twice = methods.find((method, index) => methods.indexOf(method) !== index)
+  if (twice) throw new Error(`desktop extensions both serve ${twice}`)
+  return {
+    dispatch: async (method, payload, ctx) => {
+      const owner = present.find((part) => part.methods.has(method))
+      return owner ? owner.dispatch(method, payload, ctx) : null
+    },
+    methods: new Set(methods),
   }
 }
 
@@ -295,14 +368,9 @@ function desktopRpcHooks(deps: DesktopDomainDeps): RpcHostHooks {
     resolveReleaseVersion: () => deps.appVersion,
     probeHarnessReadiness: deps.hooks.probeHarnessReadiness,
     assertSessionHarnessRuntimeReady: deps.hooks.assertSessionHarnessRuntimeReady,
-    // Installing or switching harnesses stays with this desktop's user.
-    enableHarness: async () => {
-      throw unsupportedMethodError('harness.enable')
-    },
-    disableHarness: unsupported('harness.disable'),
+    enableHarness: deps.hooks.enableHarness,
+    disableHarness: deps.hooks.disableHarness,
+    ...(deps.hooks.pathReady ? { pathReady: deps.hooks.pathReady } : {}),
     listHarnessModels: unsupported('provider.listModels'),
-    forkHarnessResume: async () => {
-      throw unsupportedMethodError('session.fork')
-    },
   }
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { openNodeDatabase, type NodeDatabase } from '../db'
 import { bindControlActor } from './control-actor'
-import { ControlLeaseService } from './control-lease'
+import { ControlLeaseService, type LeaseYield } from './control-lease'
 
 const dbs: NodeDatabase[] = []
 afterEach(() => { for (const db of dbs.splice(0)) db.close() })
@@ -11,14 +11,14 @@ describe('authenticated control actors', () => {
     const db = openNodeDatabase(':memory:')
     dbs.push(db)
     const service = new ControlLeaseService(db)
-    const bind = (clientSessionId: string, delegate: string, yields = false) => bindControlActor(service, {
+    const bind = (clientSessionId: string, delegate: string, yields: LeaseYield = 'none') => bindControlActor(service, {
       clientSessionId, holderClientId: 'desktop:env', delegate, yields,
     })
-    const window = bind('ipc:1', 'window:1', true)
+    const window = bind('ipc:1', 'window:1', 'any')
     const a = bind('phone:a', 'phone:a')
     const b = bind('phone:b', 'phone:b')
     const local = window.acquire({ resource, holderClientId: 'ipc:1' })
-    const remote = a.acquire({ resource, holderClientId: 'phone:a', delegate: 'phone:b', yields: true })
+    const remote = a.acquire({ resource, holderClientId: 'phone:a', delegate: 'phone:b', yields: 'any' })
     expect(remote).toMatchObject({ holderClientId: 'desktop:env', delegate: 'phone:a' })
     expect(() => window.assertValid({ ...local, holderClientId: 'ipc:1' })).toThrow()
     expect(() => b.acquire({ resource, holderClientId: 'phone:b' })).toThrow('another device')

@@ -46,7 +46,7 @@ import {
   type ArtifactPutResult,
   type ArtifactStatResult,
 } from '@superone/shared/environment'
-import { resolveProjectPath } from './path-security'
+import { resolveProjectPath } from '../fs'
 
 /** Largest window one `get` returns; a whole file streams as a series of these. */
 export const ARTIFACT_MAX_GET_BYTES = ARTIFACT_CHUNK_BYTES

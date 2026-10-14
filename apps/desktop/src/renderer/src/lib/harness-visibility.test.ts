@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   catalogEntryOn,
+  catalogFromHarnessIds,
   catalogIdForSessionProvider,
   isCatalogHarnessDisabled,
   isCatalogHarnessEnabled,
@@ -100,5 +101,15 @@ describe('isPickerHarnessEnabled', () => {
     expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', off)).toBe(false)
     expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', { enabledExperimentalAgents: ['gemini'] })).toBe(true)
     expect(isPickerHarnessEnabled([], 'acp', null, off)).toBe(true)
+  })
+})
+
+describe('catalogFromHarnessIds', () => {
+  it('turns on the catalog rows whose session harness a node runs', () => {
+    const catalog = catalogFromHarnessIds(['codex', 'acp'])
+    expect(isCatalogHarnessEnabled(catalog, 'codex')).toBe(true)
+    expect(isCatalogHarnessEnabled(catalog, 'acp-grok')).toBe(true)
+    expect(isCatalogHarnessEnabled(catalog, 'claude')).toBe(false)
+    expect(isCatalogHarnessDisabled(catalog, 'claude')).toBe(true)
   })
 })

@@ -6,8 +6,10 @@ import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
 import { ControlLeaseService } from './control-lease'
 import { SessionRuntime, type TurnRunner } from './session-runtime'
-import { dispatchMcpAppsRpc } from '../rpc/mcp-apps-handlers'
-import type { RpcContext } from '../rpc/handlers'
+import { MCP_APPS_HANDLERS } from '@superone/runtime/server/rpc-mcp-apps'
+import type { RpcContext } from '@superone/runtime/server'
+
+const dispatchMcpAppsRpc = (method: string, payload: unknown, ctx: RpcContext) => MCP_APPS_HANDLERS[method]!(payload, ctx as never, method)
 
 it('deduplicates node HTML, authorizes scoped fetches, restores fixed history, and collects unique deleted-session blobs', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'node-mcp-resource-'))
@@ -30,7 +32,7 @@ it('deduplicates node HTML, authorizes scoped fetches, restores fixed history, a
     expect(() => runtime.updateMcpApp(a.sessionId, 'shared', { resource: { hash: unique.hash, meta: {} } })).toThrow('must include HTML')
     expect(shared).not.toHaveProperty('html'); expect(readdirSync(join(directory, 'mcp-app-resources'))).toHaveLength(3)
     expect(JSON.stringify(runtime.listMessages({ sessionId: a.sessionId }))).not.toContain('shared HTML')
-    const ctx = { identity: { environmentId: 'node' }, client: { scopes: ['session:read'], clientSessionId: 'client' }, sessions: runtime, leases } as unknown as RpcContext
+    const ctx = { identity: { environmentId: 'node' }, client: { scopes: ['session:read'], clientSessionId: 'client' }, mcpApps: runtime, leases } as unknown as RpcContext
     expect(await dispatchMcpAppsRpc('mcpApps.resource', { sessionId: a.sessionId, appInstanceId: 'shared', hash: unique.hash }, ctx)).toMatchObject({ result: { ok: true, value: { html: 'shared HTML' } } })
     expect(await dispatchMcpAppsRpc('mcpApps.resource', { sessionId: a.sessionId, hash: shared.hash }, ctx)).toMatchObject({ error: { code: 'invalid_argument' } })
     expect(await dispatchMcpAppsRpc('mcpApps.resource', { sessionId: 'not-authorized', appInstanceId: 'shared', hash: shared.hash }, ctx)).toMatchObject({ result: { ok: false } })

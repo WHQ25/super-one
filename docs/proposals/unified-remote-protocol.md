@@ -182,7 +182,11 @@ Added to it:
    protocol.
 5. **Feature parity, topic by topic.** Terminals and watched directories
    pushed instead of polled; workspace and Git on the desktop node; then the
-   remaining desktop features on the phone.
+   remaining desktop features on the phone. Done for the desktop node: a
+   controller gets every session and terminal (pushed), workspace, Git,
+   composer catalogs and configuration families from the same context as
+   phones. Open: pushed watched directories, CLI-node terminal push,
+   configuration and Git-state topics, and the remaining phone features.
 
 Phases 1–4 are this branch's target: the architecture every later feature
 extends.

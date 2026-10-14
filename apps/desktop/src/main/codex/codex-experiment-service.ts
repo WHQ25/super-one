@@ -30,6 +30,7 @@ import {
   type CodexProjectAuth,
 } from './app-server-connection'
 import { clearCodexProxyCache } from '../providers/llm-proxy-manager'
+import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { resolveChatService } from '../providers/resolver'
 import { codexReasoningOptions, resolveCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import { listCodexRealtimeVoices } from './codex-realtime'
@@ -350,6 +351,9 @@ export class CodexExperimentService {
     }
     for (const projectPath of this.authChangedListeners.keys()) this.emitAuthChanged(projectPath, providerId)
   }
+
+  /** Whether Codex can spawn here: enabled, with a resolvable runtime. */
+  isRuntimeReady(): boolean { return tryResolveHarnessRuntime('codex') !== null }
 
   getAccountStatus(providerId?: string | null) { return this.accounts.status(providerId) }
   startAccountLogin(_projectPath: string, accountId?: string) { return this.accounts.start('chatgpt', accountId) }

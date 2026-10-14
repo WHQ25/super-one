@@ -732,7 +732,7 @@ describe('AgentService Realtime Voice', () => {
     expect(realtimeTimelineRepoMocks.loadRealtimeTimeline).toHaveBeenCalledWith('sid-voice')
   })
 
-  it('reconciles a provider timeline into the local snapshot', async () => {
+  it('reconciles a provider timeline into the local snapshot without taking the session', async () => {
     const service = new AgentService()
     const timeline = {
       segments: [],
@@ -757,6 +757,7 @@ describe('AgentService Realtime Voice', () => {
     const handler = getRegisteredIpcHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)!
     await expect(handler(null, '/repo/main', 'sid-voice')).resolves.toEqual(timeline)
     expect(realtimeTimelineRepoMocks.reconcileRealtimeTimeline).toHaveBeenCalledWith('sid-voice', timeline)
+    expect(existing.lease.current).toBeNull()
   })
 
   it('creates a Codex session from the renderer draft before starting voice', async () => {
@@ -1366,16 +1367,6 @@ describe('AgentService phone projections', () => {
     service.setHarnessUsageReader(async () => { throw new Error('app-server down') })
     await captureValue(respond, 'u-3', () => service.remoteUsage({ projectPath: '/p', provider: 'codex', sessionId: null, apiProviderId: null, force: false }))
     expect(respond).toHaveBeenLastCalledWith('u-3', { error: 'app-server down' })
-  })
-
-  it('consume_rate_limit_reset redeems through the Codex service and answers { outcome }', async () => {
-    const consume = vi.fn(async () => 'reset' as const)
-    const respond = vi.fn()
-    const service = new AgentService()
-    service.setCodexConsumeRateLimitReset(consume)
-    await captureValue(respond, 'r-1', () => service.remoteConsumeRateLimitReset('/p', null, 'rc-1'))
-    expect(consume).toHaveBeenCalledWith('/p', null, 'rc-1')
-    expect(respond).toHaveBeenCalledWith('r-1', { outcome: 'reset' })
   })
 
   it('get_system_info returns user agent defaults for claude', async () => {

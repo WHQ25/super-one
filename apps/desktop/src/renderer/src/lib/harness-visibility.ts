@@ -9,6 +9,7 @@
 
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
+import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
 import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 export interface HarnessCatalogStatus {
@@ -50,6 +51,17 @@ export function isCatalogHarnessDisabled(
   if (catalog == null) return false
   const row = catalog.find((r) => r.id === id)
   return Boolean(row && !row.enabled)
+}
+
+/**
+ * A node's catalog as its descriptor states it: `capabilities.harnessIds`
+ * lists the session harnesses that are enabled and ready there.
+ */
+export function catalogFromHarnessIds(harnessIds: readonly string[]): HarnessCatalogStatus[] {
+  return NODE_HARNESS_DEFINITIONS.map((def) => {
+    const runnable = harnessIds.includes(def.sessionHarnessId)
+    return { id: def.id, enabled: runnable, state: runnable ? 'ready' : 'disabled' }
+  })
 }
 
 /**

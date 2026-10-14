@@ -6,7 +6,6 @@ vi.mock('./database', () => ({ getDb: () => db.current }))
 
 import {
   getRemoteControlledSession,
-  listRemoteControlledSessions,
   remoteControllerInfo,
   setSessionRemoteController,
 } from './db-remote-controlled-sessions'
@@ -36,11 +35,9 @@ beforeEach(() => {
 })
 
 describe('remote-controlled sessions', () => {
-  it('marks a session with its controller and lists only marked sessions', () => {
+  it('marks a session with its controller', () => {
     expect(setSessionRemoteController('remote', { clientSessionId: 'c1', label: 'Desktop A', permissionMode: 'acceptEdits' }, 'codex-base')).toBe(true)
 
-    expect(listRemoteControlledSessions('p1').map((r) => r.sessionId)).toEqual(['remote'])
-    expect(listRemoteControlledSessions('other')).toEqual([])
     expect(getRemoteControlledSession('local')).toBeNull()
     expect(getRemoteControlledSession('remote')).toMatchObject({
       projectPath: '/work/app',

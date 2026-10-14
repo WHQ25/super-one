@@ -1,4 +1,3 @@
-import { providerSettingsEnv } from '@superone/claude'
 import { registerSessionLinkIpc } from './environment/session-link-ipc'
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMediaComposerIpc } from './media-gen/composer-ipc'
@@ -79,9 +78,6 @@ import {
   type PrivacyPane,
 } from './computer-use/computer-use-permission-window'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
-import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
-import { readTerminalSlashCommandsFromInitMessage, sdkSlashCommands } from '@superone/shared/slash-commands'
-import { tryResolveHarnessRuntime } from './harness/resolve-runtime'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
 import { ensureShellPath, refreshShellPath } from './shell-path'
@@ -151,7 +147,6 @@ import {
   type CodexAccountLoginStartResult,
   type CodexAccountStatus,
   type CodexAccountUsage,
-  type CodexRateLimitResetOutcome,
   type CodexRateLimits,
   type ClaudeResources,
   type CodexResources,
@@ -205,7 +200,6 @@ import {
   type GitStatusPair,
   type ParsedGitStatus,
 } from './git-status-utils'
-import { CLAUDE_CLI_DEFAULT_MODEL_ID, CLAUDE_METADATA_PROBE_PROMPT, mapClaudeModelCatalog } from '@superone/claude'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { claudeAccountConfig, listAccounts as listClaudeAccounts } from './agent/claude-account-service'
 import { claudeAccountStore } from './agent/claude-account-store'
@@ -222,12 +216,11 @@ import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
 import { disposeMirrorDeviceManager } from './device/ios-mirror'
 import { attachDeviceGestureEvents } from './device/gesture-events'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, updateCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, setPairedDeviceEnabled, findPairedPhone } from './database'
-import { connectWithHarnessResourceCache, getFreshHarnessResources, harnessRuntimeCacheKey } from './harness/resource-cache'
+import { getDb, closeDb, getCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, setPairedDeviceEnabled, findPairedPhone } from './database'
+import { connectWithHarnessResourceCache } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
-import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
-import { getCodexProviderOverrideFor } from './codex/app-server-connection'
+import { createHarnessCatalog } from './harness/harness-catalog'
 import { CodexPluginsService } from './codex/codex-plugins-service'
 import { CodexHooksService } from './codex/codex-hooks-service'
 import { CodexMarketplaceService } from './codex/codex-marketplace-service'
@@ -373,13 +366,8 @@ const codexPluginsService = new CodexPluginsService(codexService)
 const codexHooksService = new CodexHooksService(codexService)
 const codexMarketplaceService = new CodexMarketplaceService(codexService)
 setCodexServiceFactory(() => codexService)
+const harnessCatalog = createHarnessCatalog(codexService)
 
-/** Codex catalog cache key: the runtime binary plus the provider/auth it serves. */
-function codexCatalogCacheKey(projectPath: string): string | undefined {
-  const binary = tryResolveHarnessRuntime('codex')
-  const runtime = binary && harnessRuntimeCacheKey(binary)
-  return runtime ? `${runtime}::${codexService.modelCatalogSignature(projectPath)}` : undefined
-}
 
 const automationService = new AutomationService()
 bindAutomationService(automationService)
@@ -715,6 +703,8 @@ agentService.setSessionForegroundListener((windowId, ref, foreground, sender) =>
     })
   }
   rendererInterest.setShown(windowId, ref, foreground)
+  // A remote session on screen is read on its machine too (a local one marks itself through setForeground).
+  if (foreground && ref.environmentId !== localEnvironmentId) environmentBridgeHost?.remoteSessionShown(ref.environmentId, ref.sessionId)
 })
 /** A terminal event to the frontends following its terminal; responses with no terminal go to the windows. */
 function publishTerminalEvent(event: TerminalEvent): void {
@@ -933,7 +923,7 @@ const remoteChildWatcher = new RemoteChildWatcher(collaborationChildMonitor)
 remoteChildWatcher.start()
 
 
-new PresenceCoordinator(sessionManager, {
+const presence = new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => sessionEvents.publish({ event, source: 'presence' }),
 })
 
@@ -943,8 +933,7 @@ const mobileReceiveService = new MobileReceiveService({
     if (!sessionId) return null
     const session = sessionManager.getSession(sessionId)
     if (!session) return null
-    const delegate = session.lease.current?.delegate
-    const deviceId = delegate?.startsWith('phone:') ? delegate.slice(6) : null
+    const deviceId = session.lease.phoneDeviceId
     if (!deviceId) return null
     return {
       deviceId,
@@ -981,12 +970,16 @@ const terminalManager = new TerminalManager({
   },
 })
 const remoteTerminalController = new RemoteTerminalController({
-  getHost: async () => {
+  node: async (connectionId) => {
     const { getEnvironmentHost } = await import('./environment')
-    return getEnvironmentHost()
+    return getEnvironmentHost().remoteTerminalNode(connectionId)
+  },
+  projectId: async (projectKey) => {
+    const [{ getEnvironmentHost }, { resolveRemoteProjectContext }] = await Promise.all([import('./environment'), import('./environment/remote-file-tree')])
+    return (await resolveRemoteProjectContext(getEnvironmentHost(), projectKey))!.projectId
   },
   onEvent: publishTerminalEvent,
-  onAttach: (ref, attached) => rendererInterest.attachTerminal(ref, attached),
+  onWatch: (connectionId, watched) => rendererInterest.watchTerminals(connectionId, watched),
 })
 deviceRegistry.setTerminalManager(terminalManager)
 setTerminalToolDeps({
@@ -1079,6 +1072,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
     import('./node-host/routed-phone-rpc'),
   ])
   const { getEnvironmentHost, setLegacyScheduleCancellation } = await import('./environment')
+  const { createDesktopProvidersPort } = await import('./node-host/desktop-providers-port')
   setLegacyScheduleCancellation(sessionId => scheduledSendService.clear(sessionId))
   const environmentHost = getEnvironmentHost()
   phoneRpcRouter ??= createPhoneRpcRouter(environmentId => environmentHost.phoneRouteTarget(environmentId),
@@ -1099,6 +1093,15 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         update: (path, input) => agentService.remoteUpdateProjectDirs(path, input),
         opened: (path) => void agentService.openFolder(path),
       },
+      catalog: harnessCatalog,
+      resources: {
+        shellReady: ensureShellPath,
+        listCodexPlugins: ({ path }) => codexPluginsService.listPlugins(path),
+        pluginsChanged: () => agentService.reloadLiveClaudePlugins(),
+        mcpChanged: (change) => agentService.mcpConfigChanged(change),
+      },
+      codex: { service: codexService, plugins: codexPluginsService, marketplace: codexMarketplaceService },
+      providers: createDesktopProvidersPort(await import('./providers/credential-store'), agentService),
       phoneMethods: createPhoneMethods({
         agent: agentService,
         sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },
@@ -1772,19 +1775,24 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
  * Forward supervisor state changes to the renderer once per host instance.
  * Attached lazily so the environment subsystem stays unloaded until used.
  */
-let environmentStatusBridgeAttached = false
+let environmentBridgeHost: EnvironmentHost | null = null
 let environmentConnectivityDisposer: (() => void) | null = null
 function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
-  if (environmentStatusBridgeAttached) return
-  environmentStatusBridgeAttached = true
+  if (environmentBridgeHost) return
+  environmentBridgeHost = host
+  host.setRemoteSessionOnScreen((connectionId, sessionId) => rendererInterest.shown().some((ref) => ref.environmentId === connectionId && ref.sessionId === sessionId))
   host.onStatusChange((snapshot) => {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
+    if (snapshot.state === 'connected') remoteTerminalController.resume(snapshot.connectionId)
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
   host.setFollowListener((ref, followed) => rendererInterest.follow(ref, followed))
-  // Sessions another client creates, renames or removes on a machine show up here.
-  host.onSessionListChanged(() => safeSend(AgentIpcChannels.SESSIONS_CHANGED))
+  // Sessions and projects another client creates, renames or removes on a machine show up here.
+  host.onSessionListChanged((_connectionId, projectKey) => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectKey))
+  host.onProjectListChanged((connectionId) => safeSend(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, connectionId))
+  // A machine's sidebar summaries (running, read) of sessions this desktop does not follow.
+  host.onRemoteSessionActivity((event) => rendererAgentEventTransport.push(event))
   // A remote session whose missed events are gone: the chat reads its snapshot again.
   host.onRemoteSessionResync((target) => safeSend(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, target))
   // Auto-connect desired remotes + network-online edge wake.
@@ -2204,7 +2212,9 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.ENVIRONMENT_PROVIDER_PULL_REMOTE,
     async (_e, connectionId: string, opts?: { replaceAll?: boolean }) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+      const result = await getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+      agentService.providerConfigChanged()
+      return result
     },
   )
   ipcMain.handle(
@@ -2479,13 +2489,6 @@ function registerIpcHandlers(): void {
       },
     })
   })
-  agentService.setCodexConsumeRateLimitReset(async (projectPath, apiProviderId, creditId) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexConsumeRateLimitReset } = await import('./environment')
-      return (await remoteCodexConsumeRateLimitReset(getEnvironmentHost(), projectPath, apiProviderId, creditId)) as CodexRateLimitResetOutcome | null
-    }
-    return codexService.consumeRateLimitReset(projectPath, apiProviderId, creditId)
-  })
   agentService.setup()
 
   ipcMain.on(AgentIpcChannels.TRACE, (_e, source: string, type: string, data: unknown, tag?: string) => {
@@ -2564,33 +2567,7 @@ function registerIpcHandlers(): void {
       }
     }
 
-    let models = await codexService.listModels(projectPath, apiProviderId ?? null, force ?? false)
-    const resolved = resolveChatService('codex', apiProviderId ?? null)
-    log.debug('[CODEX_LIST_MODELS] raw=%d protocol=%s models=%d hasMapping=%s apiProvider=%s',
-      models.length, resolved?.protocol ?? 'null', resolved?.models?.length ?? 0, String(Boolean(resolved?.modelMapping)), apiProviderId ?? 'null')
-    if (resolved && resolved.protocol === 'openai-chat' && !getCodexProviderOverrideFor(apiProviderId ?? null)) {
-      const catalogById = new Map<string, string>()
-      for (const m of (resolved.models ?? [])) if (m.name) catalogById.set(m.id, m.name)
-      const mapped = new Map<string, ModelOption>()
-      for (const m of (resolved.models ?? [])) mapped.set(m.id, { id: m.id, name: m.name ?? m.id, description: '', isDefault: false })
-      for (const slot of Object.values(resolved.modelMapping ?? {})) {
-        if (!slot.id) continue
-        const strippedId = slot.id.replace(/\[1m\]/i, '')
-        if (!mapped.has(strippedId)) {
-          const name = slot.name?.replace(/\[1m\]/i, '').trim() || catalogById.get(strippedId) || strippedId
-          mapped.set(strippedId, { id: strippedId, name, description: '', isDefault: true })
-        }
-      }
-      models = [...mapped.values()]
-      log.debug('[CODEX_LIST_MODELS] overrode with %d models (enabled=%d mapped=%d)',
-        models.length, resolved.models?.length ?? 0, Object.keys(resolved.modelMapping ?? {}).length)
-    }
-    if (apiProviderId == null) {
-      const current = getCachedHarnessResources('codex')
-      setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] }, codexCatalogCacheKey(projectPath) ?? null)
-    }
-    log.info('[CODEX_LIST_MODELS] response project=%s apiProvider=%s models=%s', projectPath, apiProviderId ?? 'default', JSON.stringify(models))
-    return models
+    return harnessCatalog.listCodexModels(projectPath, apiProviderId, force)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_AUTH_STATUS, async (_event, projectPath: string) => {
@@ -2668,7 +2645,7 @@ function registerIpcHandlers(): void {
     options?: CodexMcpOauthLoginOptions,
   ) => {
     if (parseRemoteProjectKey(projectPath)) {
-      // Node starts OAuth; browser open stays on desktop (result may include URL later via host_action).
+      // The node runs Codex's sign-in; the authorization page opens in this desktop's browser.
       const { getEnvironmentHost, remoteCodexLoginMcpOauth } = await import('./environment')
       return remoteCodexLoginMcpOauth(
         getEnvironmentHost(),
@@ -2676,6 +2653,7 @@ function registerIpcHandlers(): void {
         serverName,
         apiProviderId ?? null,
         options,
+        (url) => shell.openExternal(url),
       )
     }
     return codexService.loginMcpServerOauth(
@@ -4634,149 +4612,10 @@ function registerIpcHandlers(): void {
     return probeSandboxDependencies()
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (_e, force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources> => {
-    const skills = discoverUserSkills()
-    const userCommands = discoverUserCommands()
-    const agents = discoverUserAgents()
-    const claudeBinary = tryResolveHarnessRuntime('claude')
-    const providerId = apiProviderId ?? (getBinding('chat:claude')?.credentialId ? null : claudeAccountStore().defaultProviderId())
-    const accountEnv = claudeAccountConfig(providerId)?.extraEnv
-    const cacheKey = claudeBinary ? `${harnessRuntimeCacheKey(claudeBinary)}:${providerId ?? 'default'}` : undefined
-    // A row probed before the CLI `default` model was dropped from the catalog is re-probed.
-    const cacheHit = getFreshHarnessResources('claude', {
-      force,
-      cacheKey,
-      isUsable: (cached) => !cached.models.some((m) => m.id === CLAUDE_CLI_DEFAULT_MODEL_ID),
-    })
-    if (cacheHit) {
-      log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheHit.ageMs)
-      const resources: ClaudeResources = { ...cacheHit.resources, skills, commands: userCommands, agents }
-      // Payload-only: rewriting the whole row here would restart the TTL on every hit.
-      updateCachedHarnessResources('claude', resources)
-      return resources
-    }
+  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, (_e, force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources> =>
+    harnessCatalog.connectClaude(force, apiProviderId))
 
-    // Harness gate — same resolver the spawn path uses, so "no runtime" means the
-    // same thing everywhere: never enabled, still installing after an upgrade, or
-    // explicitly disabled. Probing without a binary makes the SDK throw
-    // *synchronously* out of query() — which is constructed outside the try
-    // below, so it escapes as a raw IPC rejection. The renderer used to answer
-    // that by retrying forever. An empty catalog is the honest answer:
-    // disk-discovered skills / commands / agents are still valid, there is just
-    // no model list without a runtime.
-    if (!claudeBinary) {
-      log.info('[CONNECT_CLAUDE] no runtime available — skipping CLI probe (harness not installed or disabled)')
-      // Deliberately not cached: the harness may be installed or re-enabled at any moment.
-      return { models: [], account: {}, slashCommands: [], skills, commands: userCommands, agents, outputStyles: [] }
-    }
-
-    await ensureShellPath()
-    const probeCwd = resolveProbeCwd()
-    log.info('[CONNECT_CLAUDE] cwd:', probeCwd)
-    log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
-    const q = query({
-      prompt: CLAUDE_METADATA_PROBE_PROMPT,
-      options: { cwd: probeCwd, pathToClaudeCodeExecutable: claudeBinary, maxTurns: 0, permissionMode: 'default', persistSession: false,
-        ...(accountEnv ? { env: buildSafeEnv(accountEnv), settings: { env: providerSettingsEnv(accountEnv) } } : {}),
-      },
-    })
-    try {
-      log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')
-      let terminalSlashCommands: string[] | undefined
-      const drainResult = (async (): Promise<SDKResultMessage | null> => {
-        for await (const msg of q) {
-          const tagged = readTerminalSlashCommandsFromInitMessage(msg)
-          if (tagged) terminalSlashCommands = tagged
-          if (msg.type === 'result') return msg
-        }
-        return null
-      })()
-      const [modelInfos, accountInfo, commands, initResult, resultMessage] = await Promise.all([
-        q.supportedModels(),
-        q.accountInfo(),
-        q.supportedCommands(),
-        q.initializationResult(),
-        drainResult,
-      ])
-      log.info('[CONNECT_CLAUDE] Fetch complete, closing query...')
-      q.close()
-
-      if (resultMessage) {
-        log.info(
-          '[CONNECT_CLAUDE] handshake result subtype=%s costUSD=%d usage=%s modelUsage=%s',
-          resultMessage.subtype,
-          resultMessage.total_cost_usd,
-          JSON.stringify(resultMessage.usage),
-          JSON.stringify(resultMessage.modelUsage),
-        )
-      } else {
-        log.warn('[CONNECT_CLAUDE] handshake result message never arrived')
-      }
-      log.info('[CONNECT_CLAUDE] Models:', JSON.stringify(modelInfos, null, 2))
-      log.info('[CONNECT_CLAUDE] Account:', JSON.stringify(accountInfo, null, 2))
-      log.info('[CONNECT_CLAUDE] Commands:', JSON.stringify(commands, null, 2))
-      log.info('[CONNECT_CLAUDE] OutputStyle=%s AvailableStyles=%j', initResult.output_style, initResult.available_output_styles)
-      log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(skills, null, 2))
-      log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
-
-      const models = mapClaudeModelCatalog(modelInfos)
-      const account = {
-        email: accountInfo.email,
-        organization: accountInfo.organization,
-        subscriptionType: accountInfo.subscriptionType,
-        apiKeySource: accountInfo.apiKeySource,
-        apiProvider: accountInfo.apiProvider,
-      }
-      const slashCommands = sdkSlashCommands(commands, terminalSlashCommands)
-
-      const outputStyles = initResult.available_output_styles ?? []
-
-      const resources: ClaudeResources = {
-        models,
-        account,
-        slashCommands,
-        skills,
-        commands: userCommands,
-        agents,
-        outputStyles,
-      }
-      setCachedHarnessResources('claude', resources, cacheKey ?? null)
-
-      return resources
-    } catch (error) {
-      log.error('[CONNECT_CLAUDE] failed: %s', error instanceof Error ? error.message : String(error))
-      const debugLogPath = String(log.transports.file.getFile().path)
-      throw new Error(`CONNECT_CLAUDE failed. Debug log: ${debugLogPath}`)
-    } finally {
-      try {
-        q.close()
-      } catch {}
-    }
-  })
-
-  ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, async (): Promise<CodexResources> => {
-    const projectPath = app.getPath('userData')
-    // Prompts are user files: always rescanned, never served from the cache.
-    const prompts = discoverCodexUserPrompts()
-    const resources = await connectWithHarnessResourceCache('codex', {
-      cacheKey: codexCatalogCacheKey(projectPath),
-      isUsable: (r) => (r.models?.length ?? 0) > 0,
-      probe: async () => {
-        log.info('[CONNECT_CODEX] Fetching codex resources...')
-        const models = await codexService.listModels(projectPath)
-        log.info('[CONNECT_CODEX] Fetch complete: %d models, %d prompts', models.length, prompts.length)
-        return { models, prompts }
-      },
-      onCacheHit: (hit) => {
-        log.info('[CONNECT_CODEX] cache fresh (ageMs=%d), skipping model probe', hit.ageMs)
-        updateCachedHarnessResources('codex', { ...hit.resources, prompts })
-      },
-      onProbeError: (error) => {
-        log.error('[CONNECT_CODEX] failed: %s', error instanceof Error ? error.message : String(error))
-      },
-    })
-    return { ...resources, prompts }
-  })
+  ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, (): Promise<CodexResources> => harnessCatalog.connectCodex())
 
   ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async (_e, force?: boolean) => {
     try {

@@ -155,8 +155,28 @@ export function settingsFromSessionProviderConfig(config: unknown): {
   }
 }
 
-export function createSessionProviderStore(db: SqliteDatabase): SessionProviderStore {
+export interface SessionProviderStoreOptions {
+  /** The host's own check of a profile config (its harness schemas); returns the config to store. */
+  validateConfig?(harnessId: HarnessId, config: unknown): unknown
+}
+
+export function createSessionProviderStore(
+  db: SqliteDatabase,
+  options: SessionProviderStoreOptions = {},
+): SessionProviderStore {
   ensureSessionProvidersTable(db)
+  const validConfig = (harnessId: HarnessId, config: unknown): unknown => {
+    const normalized = normalizeConfig(config)
+    if (!options.validateConfig) return normalized
+    try {
+      return options.validateConfig(harnessId, normalized)
+    } catch (err) {
+      // The host's check rejected the client's config, whatever its schema library throws.
+      throw Object.assign(new Error(err instanceof Error ? err.message : String(err), { cause: err }), {
+        code: 'invalid_argument',
+      })
+    }
+  }
 
   const list = (): SessionProviderRecord[] => {
     const rows = db
@@ -197,7 +217,7 @@ export function createSessionProviderStore(db: SqliteDatabase): SessionProviderS
     if (!name) {
       throw Object.assign(new Error('name required'), { code: 'invalid_argument' })
     }
-    const config = normalizeConfig(input.config)
+    const config = validConfig(harnessId, input.config)
     const id = input.id?.trim() || `${harnessId}-${randomUUID()}`
     if (get(id)) {
       throw Object.assign(new Error(`Provider already exists: ${id}`), { code: 'conflict' })
@@ -224,7 +244,7 @@ export function createSessionProviderStore(db: SqliteDatabase): SessionProviderS
     }
     const name =
       patch.name !== undefined ? String(patch.name).trim() || existing.name : existing.name
-    const config = patch.config !== undefined ? normalizeConfig(patch.config) : existing.config
+    const config = patch.config !== undefined ? validConfig(existing.harnessId, patch.config) : existing.config
     const now = new Date().toISOString()
     db.prepare(
       'UPDATE session_providers SET name = ?, config_json = ?, updated_at = ? WHERE id = ?',

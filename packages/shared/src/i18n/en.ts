@@ -650,6 +650,19 @@ export type Messages = {
     mosaic: {
       noSpace: string
     }
+    /** A terminal tab another client writes in. */
+    terminal: {
+      heldBy: {
+        /** The computer the terminal runs on, from its own window. */
+        host: string
+        hostUnnamed: string
+        phone: string
+        desktop: string
+      }
+      viewOnly: string
+      takeOver: string
+      disconnect: string
+    }
   }
   /** First launch under the new macOS bundle id, before the keychain is touched. */
   identityHandoff: { title: string; body: string; continue: string }
@@ -1544,10 +1557,13 @@ export type Messages = {
       badgeUnknown: string
       controlling: string
       controllingUnknown: string
+      controllingPhoneUnknown: string
       disconnect: string
       disconnectFailed: string
       reconnect: string
       reconnectFailed: string
+      takeOver: string
+      takeOverFailed: string
     }
     mods: {
       paneClosed: string
@@ -4980,6 +4996,17 @@ export const en: Messages = {
     mosaic: {
       noSpace: 'Not enough space',
     },
+    terminal: {
+      heldBy: {
+        host: '{{host}} is using this terminal.',
+        hostUnnamed: 'Its computer is using this terminal.',
+        phone: 'A phone is using this terminal.',
+        desktop: 'Another computer is using this terminal.',
+      },
+      viewOnly: 'View Only',
+      takeOver: 'Take Over',
+      disconnect: 'Disconnect',
+    },
   },
   identityHandoff: {
     title: 'SuperOne has a new application identity',
@@ -5943,10 +5970,13 @@ export const en: Messages = {
       badgeUnknown: 'Started from another device',
       controlling: '{{label}} is controlling this session.',
       controllingUnknown: 'Another computer is controlling this session.',
+      controllingPhoneUnknown: 'A phone is controlling this session.',
       disconnect: 'Disconnect',
       disconnectFailed: 'Could not disconnect: {{message}}',
       reconnect: 'Reconnect',
       reconnectFailed: 'Could not reconnect: {{message}}',
+      takeOver: 'Take Over',
+      takeOverFailed: 'Could not take over: {{message}}',
     },
     mods: {
       paneClosed: 'This pane is closed.',

@@ -815,7 +815,8 @@ interface TerminalAPI {
   create(opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }): Promise<TerminalListItem>
   list(cwd?: string): Promise<TerminalListItem[]>
   snapshot(terminalId: string): Promise<TerminalSnapshot | null>
-  write(terminalId: string, data: string): Promise<void>
+  /** `input`: typed, pasted or composed by the user, not a reply xterm sent on its own. */
+  write(terminalId: string, data: string, input: boolean): Promise<void>
   resize(terminalId: string, cols: number, rows: number): Promise<void>
   kill(terminalId: string): Promise<void>
   claim(terminalId: string): Promise<void>
@@ -1246,6 +1247,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
   /** A remote session whose missed events are gone: read it again with `openRemoteSession`. */
   onSessionResync(callback: (target: { connectionId: string; sessionId: string; projectPath?: string; providerId?: string }) => void): () => void
+  /** A paired machine's project list changed (any client added, removed or renamed one). */
+  onProjectsChanged(callback: (connectionId: string) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
   /** Download percent of the in-flight local `cloneRepository` from this window. */
   onCloneProgress(callback: (percent: number) => void): () => void

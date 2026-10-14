@@ -229,9 +229,10 @@ export class CodexAdminService {
     serverName: string,
     apiProviderId?: string | null,
     options?: CodexMcpOauthLoginOptions,
+    openUrl?: (url: string) => void,
   ): Promise<CodexMcpOauthLoginResult> {
     return this.withClient(projectId, apiProviderId, (client) =>
-      loginMcpServerOauth(client, serverName, undefined, 180_000, options),
+      loginMcpServerOauth(client, serverName, openUrl, 180_000, options),
     )
   }
 
@@ -289,15 +290,11 @@ export class CodexAdminService {
       const record = records.find((r) => r.key === key)
       if (!record) throw new Error(`Unknown Codex plugin: ${key}`)
       await installPlugin(client, record.marketplacePath, record.name)
-      return { ok: true as const, key }
     })
   }
 
   async uninstallPlugin(projectId: string, key: string, apiProviderId?: string | null) {
-    return this.withClient(projectId, apiProviderId, async (client) => {
-      await uninstallPlugin(client, key)
-      return { ok: true as const, key }
-    })
+    return this.withClient(projectId, apiProviderId, (client) => uninstallPlugin(client, key))
   }
 
   async marketplaceAdd(
@@ -313,10 +310,7 @@ export class CodexAdminService {
     marketplaceName: string,
     apiProviderId?: string | null,
   ) {
-    return this.withClient(projectId, apiProviderId, async (client) => {
-      await marketplaceRemove(client, marketplaceName)
-      return { ok: true as const }
-    })
+    return this.withClient(projectId, apiProviderId, (client) => marketplaceRemove(client, marketplaceName))
   }
 
   async marketplaceUpgrade(

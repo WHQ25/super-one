@@ -59,6 +59,7 @@ export const mockEnvironment = {
   // still checked against what the sidebar actually receives.
   listItems: vi.fn(async (): Promise<Array<Partial<EnvironmentListItem>>> => []),
   onStatusEvent: vi.fn(() => () => {}),
+  onProjectsChanged: vi.fn(() => () => {}),
   connect: vi.fn(async () => {}),
   upgradeNode: vi.fn(async () => ({ version: '0.50.3-alpha', warnings: [] as string[] })),
   listProjects: vi.fn(async (): Promise<Array<{

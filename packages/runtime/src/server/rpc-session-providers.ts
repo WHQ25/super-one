@@ -1,48 +1,20 @@
 /**
- * sessionProviders.* RPC handlers (desktop session-provider-repo parity on node).
- * Methods: sessionProviders.list|get|getBase|create|update|delete
+ * `sessionProviders.*`: the host's session-layer provider profiles
+ * (`claude-base`, custom multi-profile entries, …) over its session provider store.
  */
 
-import {
-  OPERATION_SCOPES,
-  hasAllScopes,
-  type AuthScope,
-  type RpcErrorCode,
-} from '@superone/shared/environment'
-import type { SessionProviderStore } from '@superone/runtime/session'
-import type { AuthenticatedClient } from '../auth/auth-service'
-
-export interface SessionProviderRpcResult {
-  result?: unknown
-  error?: { code: RpcErrorCode; message: string; details?: Record<string, unknown> }
-}
+import { OPERATION_SCOPES } from '@superone/shared/environment'
+import type { SessionProviderStore } from '../session/session-provider-store'
+import type { AuthenticatedClient } from './auth-service'
+import type { RpcResult } from './rpc-context'
+import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 
 export interface SessionProviderRpcContext {
   client: AuthenticatedClient
   sessionProviders: SessionProviderStore
 }
 
-function requireScopes(
-  client: AuthenticatedClient,
-  scopes: readonly AuthScope[],
-): SessionProviderRpcResult | null {
-  if (!hasAllScopes(client.scopes, scopes)) {
-    return { error: { code: 'forbidden', message: `missing scopes: ${scopes.join(', ')}` } }
-  }
-  return null
-}
-
-function asRecord(payload: unknown): Record<string, unknown> {
-  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
-}
-
-function mapThrown(err: unknown): SessionProviderRpcResult {
-  const e = err as { code?: string; message?: string }
-  const code = (e.code as RpcErrorCode | undefined) ?? 'internal'
-  return { error: { code, message: e.message || 'internal error' } }
-}
-
-const SESSION_PROVIDER_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: SessionProviderRpcContext, method: string) => SessionProviderRpcResult>> = {
+const SESSION_PROVIDER_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: SessionProviderRpcContext) => RpcResult>> = {
   'sessionProviders.list': (payload, ctx) => handleList(payload, ctx),
   'sessionProviders.get': (payload, ctx) => handleGet(payload, ctx),
   'sessionProviders.getBase': (payload, ctx) => handleGetBase(payload, ctx),
@@ -61,12 +33,12 @@ export function dispatchSessionProviderRpc(
   method: string,
   payload: unknown,
   ctx: SessionProviderRpcContext,
-): SessionProviderRpcResult | null {
+): RpcResult | null {
   const handler = Object.hasOwn(SESSION_PROVIDER_HANDLERS, method) ? SESSION_PROVIDER_HANDLERS[method] : undefined
-  return handler ? handler(payload, ctx, method) : null
+  return handler ? handler(payload, ctx) : null
 }
 
-function handleList(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {
+function handleList(payload: unknown, ctx: SessionProviderRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   const p = asRecord(payload)
@@ -81,7 +53,7 @@ function handleList(payload: unknown, ctx: SessionProviderRpcContext): SessionPr
   }
 }
 
-function handleGet(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {
+function handleGet(payload: unknown, ctx: SessionProviderRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   const p = asRecord(payload)
@@ -94,7 +66,7 @@ function handleGet(payload: unknown, ctx: SessionProviderRpcContext): SessionPro
   }
 }
 
-function handleGetBase(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {
+function handleGetBase(payload: unknown, ctx: SessionProviderRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   const p = asRecord(payload)
@@ -107,7 +79,7 @@ function handleGetBase(payload: unknown, ctx: SessionProviderRpcContext): Sessio
   }
 }
 
-function handleCreate(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {
+function handleCreate(payload: unknown, ctx: SessionProviderRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
   if (denied) return denied
   const p = asRecord(payload)
@@ -124,7 +96,7 @@ function handleCreate(payload: unknown, ctx: SessionProviderRpcContext): Session
   }
 }
 
-function handleUpdate(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {
+function handleUpdate(payload: unknown, ctx: SessionProviderRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
   if (denied) return denied
   const p = asRecord(payload)
@@ -141,7 +113,7 @@ function handleUpdate(payload: unknown, ctx: SessionProviderRpcContext): Session
   }
 }
 
-function handleDelete(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {
+function handleDelete(payload: unknown, ctx: SessionProviderRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.adminNode)
   if (denied) return denied
   const p = asRecord(payload)

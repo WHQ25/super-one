@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { IpcMain } from 'electron'
 import type { MutatingControlContext } from '@superone/shared/environment'
+import { bindControlActor, type ControlLeaseService } from '@superone/runtime/lease'
 
 interface ControlScope {
   clientSessionId: string
@@ -48,6 +49,28 @@ export function runRpcControl<T>(clientSessionId: string, payload: unknown, fn: 
     proofs.set(p.sessionId, { leaseId: p.leaseId, generation: p.generation })
   }
   return scopes.run({ clientSessionId, proofs, acquire: false }, fn)
+}
+
+/** A controller desktop: an authenticated client that is neither a phone nor this desktop's window. */
+export function isControllerClient(clientSessionId: string): boolean {
+  return !clientSessionId.startsWith('phone:') && !clientSessionId.startsWith('ipc:')
+}
+
+/**
+ * The lease actor a client of this desktop acts as. Its window (`ipc:`) and
+ * phones (`phone:`) are delegates of the desktop's own holder; the window
+ * steps aside for anyone, a phone for no one. A controller desktop holds
+ * leases under its own client session.
+ */
+export function controlActorFor(leases: ControlLeaseService, environmentId: string, clientSessionId: string) {
+  if (isControllerClient(clientSessionId)) return leases
+  const window = clientSessionId.startsWith('ipc:')
+  return bindControlActor(leases, {
+    clientSessionId,
+    holderClientId: `desktop:${environmentId}`,
+    delegate: window ? clientSessionId.replace(/^ipc:/, 'window:') : clientSessionId,
+    yields: window ? 'any' : 'none',
+  })
 }
 
 export function windowControlIpc(ipc: Pick<IpcMain, 'handle'>): Pick<IpcMain, 'handle'> {

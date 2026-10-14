@@ -37,7 +37,7 @@ import {
   type AutomationStore,
 } from '@superone/runtime/automations'
 import { createDraftStore, DraftControl } from '@superone/runtime/drafts'
-import { ArtifactZoneService } from './workspace/artifact-zone'
+import { ArtifactZoneService } from '@superone/runtime/workspace'
 import { withSessionZone } from './session/session-zone-runner'
 import {
   createSessionProviderStore,

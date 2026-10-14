@@ -21,7 +21,7 @@ export async function routedNode(cleanup: Array<() => void>, domain: DesktopDoma
   }, buffered: () => 0 })
   const rpc = createConnectionRpc({ identity: domain.identity, wire, route: tier, surface: 'desktop',
     client: { clientSessionId: 'root-controller', scopes: [...ADMIN_PAIRING_SCOPES], devicePublicKeyFingerprint: 'root', devicePublicKeyPem: '' },
-    context: domain.phoneContext(), dispatch: domain.dispatchRpc, control: domain.leases, isRevoked: () => false, close: () => {} })
+    context: domain.clientContext(), dispatch: domain.dispatchRpc, control: domain.leases, isRevoked: () => false, close: () => {} })
   connection = new RpcConnection(message => { void rpc(() => message) }, {
     protocolVersion: PROTOCOL_GENERATION.current, newId: randomUUID,
     responseError: err => Object.assign(new Error(err.message), err), timeoutError: () => new Error('fixture timeout'),

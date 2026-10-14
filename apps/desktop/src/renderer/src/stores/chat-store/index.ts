@@ -658,6 +658,10 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       }))
     }
 
+    if (project.unseenCompletedSessions.has(sessionId)) {
+      set((s) => clearUnseenCompleted(s, activeProject, sessionId))
+    }
+
     // Remote node: open the session at a node snapshot; main follows it from there.
     const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
     const remoteKey = parseRemoteProjectKey(activeProject)
@@ -692,10 +696,6 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       // this tab was closed is only visible there, not in the merged state.
       followRemoteSessionEvents(activeProject, sessionId, applied, snap)
       return
-    }
-
-    if (project.unseenCompletedSessions.has(sessionId)) {
-      set((s) => clearUnseenCompleted(s, activeProject, sessionId))
     }
 
     // Case A: Session already in _sessions (background streaming or parked)
@@ -1054,6 +1054,7 @@ export {
   useIsRemoteLocked,
   useSessionRemoteController,
   useRemoteControlReleased,
+  useSessionControlHolder,
   useBashOutput,
   selectClaudeResources,
   selectCodexResources,

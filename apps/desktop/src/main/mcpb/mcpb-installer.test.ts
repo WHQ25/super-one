@@ -459,6 +459,24 @@ describe('mcpb installer', () => {
       expect(deleteCodexMcpConfigMock).toHaveBeenCalledWith('demo-server', 'user', '')
       expect(deleteMcpConfigMock).toHaveBeenCalledWith('demo-server', 'user', '')
     })
+
+    it('finishes when the other provider never had the server', async () => {
+      const file = await buildBundle(bundleDir, { manifest: nodeManifest() })
+      const preview = await previewMcpbBundle(file, { rootDir: installRoot, tempBaseDir: workDir })
+      await installMcpbBundle({
+        filePath: file,
+        provider: 'codex',
+        scope: 'user',
+        userConfig: {},
+        expectedManifestHash: preview.manifestHash,
+      }, { rootDir: installRoot, tempBaseDir: workDir })
+      deleteMcpConfigMock.mockImplementation(() => {
+        throw Object.assign(new Error('MCP server not found: demo-server'), { code: 'not_found' })
+      })
+
+      await expect(uninstallMcpbBundle('demo-server', { rootDir: installRoot, tempBaseDir: workDir })).resolves.toBeUndefined()
+      expect(deleteCodexMcpConfigMock).toHaveBeenCalledWith('demo-server', 'user', '')
+    })
   })
 
   describe('listInstalledMcpb', () => {

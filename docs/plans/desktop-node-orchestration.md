@@ -1,6 +1,6 @@
 # Desktop as an execution node for agent orchestration
 
-Status: planned · Updated: 2026-10-08
+Status: in progress · Updated: 2026-10-14
 Goal: An agent on desktop A launches a child session on another desktop B (or a CLI node), talks to it, and is woken when the child finishes, needs a human, or stalls. The child works unattended and hands back a pushed branch or PR, and A verifies it locally.
 Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as node, transports); collaboration tool docs.
 
@@ -11,16 +11,12 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - The initiator side is environment-agnostic. It goes through `SessionGateway` (`packages/shared/src/environment/gateway.ts:83`) and is verified on both desktop B and a CLI node.
 - Launch is approved by a human on the confirmation card, which also sets the permission mode. After that the child runs unattended (auto or bypass).
 
-## Current gaps (verified 2026-10-08)
+## Current gaps
 
-- The extraction to the shared runtime is only half done. `dispatchRpc` and the CLI-specific `RpcContext` are still in `apps/cli/src/rpc/handlers.ts:66-153`. The `session.*` family depends on concrete runtime classes (`SessionRuntime`, `EventLog`, `ControlLeaseService`), not on ports.
-- The desktop `LocalSessionPort` is a stub. `list` works; create, send and control throw, and events are empty (`apps/desktop/src/main/environment/environment-host.ts:251-272`, `local-environment-gateway.ts:216-233`).
-- The node server has no TLS (`apps/cli/src/server/node-server.ts:391`). The architecture doc rejects plain `ws://` beyond loopback.
-- The desktop has no durable event log. `session/event-seq.ts` is an in-memory counter.
-- `session.create` does not accept `cwd` or `systemPromptAppend` (`handlers.ts:1901`). `git.clone` exists (`:1884`), and `ProjectSnapshot.repoIdentity` is `git:<origin url>`.
-- Collaboration has no environment field. A parent is woken only when its child calls `session_collab_send` (`collaboration-messaging.ts:32`). Nothing fires when a child finishes, needs a human, or stalls, not even locally.
-- Only the CLI node runtime serves Host Actions (`session-runtime.ts:1884`). The desktop is only a consumer.
-- `environment_get_info` returns `{environmentId, label, isLocal, state, searchable}` (`environment-archive-tools.ts:16`). No hardware information is collected.
+The gaps listed on 2026-10-08 (half-extracted dispatcher, stub local session
+port, no channel encryption, no durable desktop event log, `session.create`
+without `cwd`, no collaboration environment or lifecycle wakes, Host Actions
+only on the CLI node, no hardware info) are closed by steps 1–6.
 
 ## Steps
 
@@ -30,13 +26,15 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - Put the `session.*` family behind a `SessionHostPort` covering create, get, list, send, events (`afterSequence`), snapshot, messages.list, interrupt, respond* and the hostAction* calls. The CLI implements it with `SessionRuntime`.
 - A host advertises the method families it serves through descriptor capabilities. An unserved family returns the explicit unsupported error.
 - Acceptance: no change in CLI behavior, and the existing CLI and runtime tests pass.
+- Progress: done. `dispatchRpc` and `RpcContext` live in `packages/runtime/src/server`; `session.*` runs over `SessionHostPort`; descriptors list served methods.
 
 ### 2. Minimal served surface on desktop B
 
-- Serve `environment.*`, `harness.list`, `project.list/get/open`, `git.clone` and the `session.*` subset from step 1. Terminal, workspace, fs and the other git methods stay unsupported for now.
+- Serve `environment.*`, `harness.list`, `project.list/get/open`, `git.clone` and the `session.*` subset from step 1.
 - Implement `SessionHostPort` with `SessionManager` (`session-manager.ts:184`, `SessionCreateOptions` already has cwd, permissionMode, systemPromptAppend and unattended).
 - Add a durable event log for sessions served to remote controllers, using the runtime `EventLog` (SQLite, rowid sequence), so that a controller can resume with `afterSequence` after a disconnect or a restart of B.
 - Ownership: the remote controller holds the session's control lease. B's own UI shows "<A> is controlling" with Disconnect in place of the composer (and a "started from <A>" badge in the sidebar), which takes the session back until A reconnects (`docs/architecture/remote-node-service.md`, control leases).
+- Progress (2026-10-14): done and superseded by full parity. B serves every client from one context and one `DesktopSessionHost`: a controller sees every session and terminal, workspace files, Git, composer catalogs and the configuration families, with named control holders and explicit takeover (`docs/architecture/remote-node-service.md` §5.2, §9.4, §13.1, §14.1).
 
 ### 3. Embedded server, pairing and transport on B
 
@@ -77,7 +75,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 
 - API key weekly and monthly budgets, and agent-chosen account per launch. This is opt-in, the chosen account is always shown, and there is no detection evasion. Quota for gateway subscriptions is adapted provider by provider.
 - B-side pairing UX beyond the code and QR.
-- The ownership merge (lease as the single steering authority), and human viewing and control (CDP screencast or window frames first, WebRTC with input later).
+- Human viewing and control (CDP screencast or window frames first, WebRTC with input later). The ownership merge is done: the domain's lease service is the one authority over sessions and terminals for the window, phones and controllers.
 
 ## Open decisions
 

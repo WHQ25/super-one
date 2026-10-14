@@ -11,19 +11,23 @@ import type { McpAppDesktopApi } from './desktop-executor'
 import { useMcpAppLayout } from './layout-store'
 
 export interface McpAppFrameProps {
-  app: ToolAppAttachment; meta: McpUiResourceMeta; registration: McpAppDocumentRegistration; api: McpAppDesktopApi
+  app: ToolAppAttachment
+  /** The session runs on this desktop, not on a node it controls. */
+  localSession: boolean
+  meta: McpUiResourceMeta; registration: McpAppDocumentRegistration; api: McpAppDesktopApi
   executor: McpAppHostExecutor; context: McpUiHostContext; active: boolean
   onHost(host: McpAppHost | null): void; onInitialized(modes: Array<'inline' | 'fullscreen' | 'pip'>): void
   onError(error: unknown): void; onUnknown(): void; onRevoked(): void; onHeight(height: number): void
 }
 
 /**
- * Desktop shows files only from its own machine, so remote sessions do not offer `openai/files`.
- * Downloads are saved on this desktop for any session.
+ * Desktop shows files only from its own machine, so remote sessions do not offer `openai/files`
+ * (a desktop node's Apps are bound to `local`, so the binding cannot tell). Downloads are saved
+ * on this desktop for any session.
  */
-function mcpAppDesktopCapabilities(app: ToolAppAttachment) {
+function mcpAppDesktopCapabilities(app: ToolAppAttachment, localSession: boolean) {
   const base = { ...(app.file ? mcpAppFileCapabilities : mcpAppMessageCapabilities), downloadFile: {} }
-  return app.binding.node === 'local' ? { ...base, experimental: { ...base.experimental, ...MCP_APP_OPEN_FILES_EXTENSION } } : base
+  return localSession ? { ...base, experimental: { ...base.experimental, ...MCP_APP_OPEN_FILES_EXTENSION } } : base
 }
 
 /** Store-owned imperative iframe: React never removes it while changing surfaces. */
@@ -47,7 +51,7 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.
-      capabilities: { ...mcpAppDesktopCapabilities(props.app), serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
+      capabilities: { ...mcpAppDesktopCapabilities(props.app, props.localSession), serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
       onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline']),
       onError: error => latest.current.onError(error), onUnknownOutcome: () => latest.current.onUnknown(),
       onSizeChanged: size => { if (size.height) latest.current.onHeight(size.height) },

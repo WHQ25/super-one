@@ -16,6 +16,7 @@ import {
   type EnvironmentAggregateType,
   type EnvironmentUsageReport,
   type ExecutionEnvironmentDescriptor,
+  type NodeAgentSettings,
   type NodeAgentSettingsPatch,
   type RpcErrorCode,
 } from '@superone/shared/environment'
@@ -41,6 +42,8 @@ import { handleTopicCatchUp, handleTopicSubscribe, handleTopicUpdate, handleTopi
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { DRAFT_HANDLERS, isDraftOpenReceiptLive } from './rpc-drafts'
 import { TERMINAL_HANDLERS } from './rpc-terminals'
+import { ARTIFACT_HANDLERS } from './rpc-artifacts'
+import { MCP_APPS_HANDLERS } from './rpc-mcp-apps'
 import { parseSessionSettings } from './session-settings'
 import { parseSessionSendSelections } from './session-send-selections'
 import type {
@@ -64,11 +67,13 @@ type FamilyPort =
   | 'collaboration'
   | 'providers'
   | 'drafts'
+  | 'artifacts'
+  | 'mcpApps'
 
 /**
  * The context a handler sees once {@link requiredPorts} admitted its method.
  * Ports a handler only uses opportunistically outside its own family
- * (`workspaceGit` from session.*, `artifacts`) are read through
+ * (`workspaceGit` and `artifacts` from session.*) are read through
  * {@link optionalGit} / `ctx.artifacts` instead.
  */
 type RpcContext = HostRpcContext & Required<Pick<HostRpcContext, FamilyPort>>
@@ -97,13 +102,19 @@ function requiredPorts(method: string): readonly FamilyPort[] {
     case 'git.':
       return method === 'git.clone' ? ['projects'] : ['workspaceGit']
     case 'session.':
-      return method === 'session.create' ? ['sessions', 'projects', 'harnesses'] : ['sessions', 'projects']
+      if (method === 'session.create') return ['sessions', 'projects', 'harnesses']
+      if (method === 'session.notifyArtifactCompleted') return ['sessions', 'projects', 'artifacts']
+      return ['sessions', 'projects']
     case 'topic.':
       return ['sessions']
     case 'collaboration.':
       return ['collaboration']
     case 'draft.':
       return ['drafts']
+    case 'artifact.':
+      return ['artifacts', 'sessions']
+    case 'mcpApps.':
+      return ['mcpApps']
     default:
       return []
   }
@@ -112,6 +123,7 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 function serves(ctx: HostRpcContext, method: string): boolean {
   if (ctx.unservedMethods?.has(method)) return false
   if (Object.hasOwn(SESSION_OPERATION_HANDLERS, method) && !ctx.sessions?.servedOperations?.has(method)) return false
+  if (method === 'session.fork' && !ctx.sessions?.forkOnHost && !ctx.hooks.forkHarnessResume) return false
   // A partial port (`servedMethods`) serves only the methods it names.
   return requiredPorts(method).every((port) => {
     const served = ctx[port] as { readonly servedMethods?: ReadonlySet<string> } | undefined
@@ -341,6 +353,8 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'provider.listModels': (payload, ctx) => handleProviderListModels(payload, ctx),
   ...DRAFT_HANDLERS,
   ...TERMINAL_HANDLERS,
+  ...ARTIFACT_HANDLERS,
+  ...MCP_APPS_HANDLERS,
 }
 
 /** Every method this table serves. */
@@ -490,7 +504,7 @@ function handleProviderListModels(payload: unknown, ctx: RpcContext): RpcResult 
   return {
     result: ctx.hooks.listHarnessModels(ctx.providers, harness, apiProviderId, {
       experimentalClaudeOpenAiChatEnabled:
-        loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
+        hostAgentSettings(ctx).experimentalClaudeOpenAiChatEnabled,
     }),
   }
 }
@@ -670,7 +684,7 @@ async function handleUsage(payload: unknown, ctx: RpcContext): Promise<RpcResult
 async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  const sandbox = await probeSandboxRpc()
+  const sandbox = await probeSandboxRpc(ctx.hooks.pathReady)
   return {
     result: {
       environmentId: ctx.identity.environmentId,
@@ -699,11 +713,16 @@ async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {
   }
 }
 
+/** The host's agent settings: its own when it keeps them elsewhere, its config file otherwise. */
+function hostAgentSettings(ctx: RpcContext): NodeAgentSettings {
+  return ctx.agentSettings ? ctx.agentSettings() : loadNodeAgentSettings(ctx.settingsConfigPath)
+}
+
 function handleSettingsGet(ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   try {
-    const settings = loadNodeAgentSettings(ctx.settingsConfigPath)
+    const settings = hostAgentSettings(ctx)
     return { result: { settings } }
   } catch (err) {
     return mapThrown(err)
@@ -730,7 +749,7 @@ async function handleSandboxProbe(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   try {
-    return { result: await probeSandboxRpc() }
+    return { result: await probeSandboxRpc(ctx.hooks.pathReady) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1145,7 +1164,7 @@ function handleWorkspaceTailWatchStop(payload: unknown, ctx: RpcContext): RpcRes
   }
 }
 
-function handleGitStatus(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitStatus(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
@@ -1154,21 +1173,21 @@ function handleGitStatus(payload: unknown, ctx: RpcContext): RpcResult {
     const cwd = typeof p.cwd === 'string' ? p.cwd : null
     return {
       result: cwd
-        ? ctx.workspaceGit.statusAt(projectId, cwd)
-        : ctx.workspaceGit.status(projectId),
+        ? await ctx.workspaceGit.statusAt(projectId, cwd)
+        : await ctx.workspaceGit.status(projectId),
     }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-function handleGitDiff(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitDiff(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.diff(String(p.projectId ?? ''), {
+      result: await ctx.workspaceGit.diff(String(p.projectId ?? ''), {
         staged: p.staged === true,
         path: typeof p.path === 'string' ? p.path : undefined,
       }),
@@ -1178,13 +1197,13 @@ function handleGitDiff(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleGitBranches(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitBranches(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.branches(
+      result: await ctx.workspaceGit.branches(
         String(p.projectId ?? ''),
         typeof p.cwd === 'string' ? p.cwd : null,
       ),
@@ -1194,13 +1213,13 @@ function handleGitBranches(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleGitSwitchBranch(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitSwitchBranch(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
+      result: await ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
         create: false,
         absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
       }),
@@ -1210,13 +1229,13 @@ function handleGitSwitchBranch(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleGitCreateBranch(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitCreateBranch(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
+      result: await ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
         create: true,
         absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
       }),
@@ -1263,12 +1282,12 @@ async function handleGitMentionRefs(payload: unknown, ctx: RpcContext): Promise<
   }
 }
 
-function handleGitWorktrees(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitWorktrees(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
-    return { result: ctx.workspaceGit.worktrees(String(p.projectId ?? '')) }
+    return { result: await ctx.workspaceGit.worktrees(String(p.projectId ?? '')) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1310,24 +1329,24 @@ async function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): Pro
   }
 }
 
-function handleGitWorktreeCheckedOutBranches(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitWorktreeCheckedOutBranches(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
-    return { result: { branches: ctx.workspaceGit.checkedOutBranches(String(p.projectId ?? '')) } }
+    return { result: { branches: await ctx.workspaceGit.checkedOutBranches(String(p.projectId ?? '')) } }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-function handleGitWorktreeAssignBranch(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitWorktreeAssignBranch(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.assignBranch(
+      result: await ctx.workspaceGit.assignBranch(
         String(p.projectId ?? ''),
         String(p.worktreePath ?? ''),
         String(p.name ?? ''),
@@ -1338,13 +1357,13 @@ function handleGitWorktreeAssignBranch(payload: unknown, ctx: RpcContext): RpcRe
   }
 }
 
-function handleGitWorktreeHandoff(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitWorktreeHandoff(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.handoffToMain(
+      result: await ctx.workspaceGit.handoffToMain(
         String(p.projectId ?? ''),
         String(p.worktreePath ?? ''),
       ),
@@ -1354,13 +1373,13 @@ function handleGitWorktreeHandoff(payload: unknown, ctx: RpcContext): RpcResult 
   }
 }
 
-function handleGitWorktreeHandoffPreview(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitWorktreeHandoffPreview(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.workspaceGit.handoffPreview(
+      result: await ctx.workspaceGit.handoffPreview(
         String(p.projectId ?? ''),
         String(p.worktreePath ?? ''),
       ),
@@ -1384,18 +1403,23 @@ async function handleSessionSetCwd(payload: unknown, ctx: RpcContext): Promise<R
     return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   }
   try {
-    ctx.leases.assertValid({
+    const assertControl = () => ctx.leases.assertValid({
       resource: { environmentId: ctx.identity.environmentId, sessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),
       holderClientId: ctx.client.clientSessionId,
     })
+    assertControl()
     const session = ctx.sessions.get(sessionId)
     if (!session) {
       return { error: { code: 'not_found', message: 'session not found' } }
     }
-    if (cwd !== null && !isAllowedSessionCwd(ctx, session.projectId, cwd)) {
-      return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
+    if (cwd !== null) {
+      if (!(await isAllowedSessionCwd(ctx, session.projectId, cwd))) {
+        return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
+      }
+      // The lease may have moved while Git checked the path.
+      assertControl()
     }
     return { result: await ctx.sessions.setCwd(sessionId, cwd) }
   } catch (err) {
@@ -1479,6 +1503,8 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
     if (ctx.sessions.forkOnHost) {
       return { result: await ctx.sessions.forkOnHost({ sessionId, mode, forkFromMessageId, carryLocalChanges: p.carryLocalChanges !== false, client: { clientSessionId: ctx.client.clientSessionId }, leaseId: String(p.leaseId ?? ''), generation: String(p.generation ?? '') }) }
     }
+    const { hooks } = ctx
+    if (!hooks.forkHarnessResume) return unsupported('session.fork')
     if (mode === 'worktree') {
       // writeWorkspace for git worktree create
       const writeDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
@@ -1507,7 +1533,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
       const anchor = source.harnessId === 'opencode' && forkFromMessageId ? ctx.sessions.messages?.(sessionId).find(message => message.id === forkFromMessageId) : undefined
       const nativeForkAnchor = anchor?.role === 'user' ? anchor.checkpointId : anchor?.metadata?.forkAnchorId
       if (source.harnessId === 'opencode' && forkFromMessageId && !nativeForkAnchor) throw new Error('Native fork anchor is unavailable; reload the session')
-      providerResume = await ctx.hooks.forkHarnessResume({
+      providerResume = await hooks.forkHarnessResume({
         source,
         targetCwd: effectiveCwd,
         forkFromMessageId,
@@ -1599,7 +1625,7 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
     // Without a parent the clone goes to this node's projects directory.
     const parentPath = typeof p.parentPath === 'string' && p.parentPath.trim()
       ? p.parentPath
-      : nodeProjectsDir(loadNodeAgentSettings(ctx.settingsConfigPath))
+      : nodeProjectsDir(hostAgentSettings(ctx))
     const input = {
       remoteUrl: String(p.remoteUrl ?? ''),
       parentPath: expandHostPath(parentPath),
@@ -1712,15 +1738,18 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
   }
   try {
     const resource = { environmentId: ctx.identity.environmentId, sessionId }
+    // Before the grant: a refused client must not take over a lease that yields to it.
+    const delegate = typeof p.delegate === 'string' && p.delegate ? p.delegate : undefined
+    const admitted = ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true, ...(delegate ? { delegate } : {}) })
     const lease = ctx.leases.acquire({
       resource,
       holderClientId: ctx.client.clientSessionId,
-      ...(typeof p.delegate === 'string' && p.delegate ? { delegate: p.delegate } : {}),
-      ...(p.yields === true ? { yields: true } : {}),
+      ...(delegate ? { delegate } : {}),
+      ...(p.yields === true ? { yields: 'holder' as const } : {}),
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
     try {
-      ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true })
+      admitted?.()
     } catch (err) {
       // Expire rather than delete, so the next grant still bumps the generation.
       ctx.leases.revoke(resource)
@@ -2370,7 +2399,6 @@ async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcCo
     return { error: { code: 'invalid_argument', message: 'sessionId, notificationId and relativePaths are required' } }
   }
   const artifacts = ctx.artifacts
-  if (!artifacts) return unsupported('session.notifyArtifactCompleted')
   // Authorisation first, and before touching the filesystem: otherwise
   // "delivered: false" versus "forbidden" tells a client that is not the
   // controller whether a given path exists in someone else's zone.

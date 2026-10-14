@@ -7,7 +7,7 @@ import type { DraftOpenResult } from '@superone/shared/environment'
 
 vi.mock('../../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
 vi.mock('../../git/worktree-ops', () => ({ activateWorktree: vi.fn() }))
-vi.mock('../../git-run', () => ({ gitRun: vi.fn(async () => '') }))
+vi.mock('../../git-run', () => ({ gitRun: vi.fn(async () => ''), ghRun: vi.fn() }))
 
 import { activateWorktree } from '../../git/worktree-ops'
 import { gitRun } from '../../git-run'
@@ -83,7 +83,7 @@ describe('phone endpoint: native creation', () => {
       return { ok: true, path, recordedBranch: null }
     })
     await expect(phone.rpc('session.create', { projectId: 'p1', sessionId: 'new', worktreeBranch: 'HEAD', worktreeMode: 'detach', draftId: 'draft', draftLeaseId: opened.leaseId })).rejects.toThrow('Draft control was released')
-    expect(store.get('new')).toBeNull()
+    expect(store.rows.has('new')).toBe(false)
     expect(sessions.getSession('new')).toBeNull()
     expect(gitRun).toHaveBeenCalledWith(projectDir, ['worktree', 'remove', '--force', path])
   })

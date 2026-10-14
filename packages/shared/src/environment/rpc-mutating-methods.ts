@@ -135,6 +135,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'codex.accountLogout',
   'codex.consumeRateLimitReset',
   'codex.loginMcpOauth',
+  'codex.completeMcpOauth',
   'codex.importExternalAgent',
   'codex.plugins.install',
   'codex.plugins.uninstall',

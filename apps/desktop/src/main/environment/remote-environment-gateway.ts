@@ -56,7 +56,7 @@ import type {
 } from '@superone/shared/environment'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { EnvironmentRpcClient, TopicStream } from './environment-rpc-client'
-import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
+import type { CodexMcpOauthLoginOptions, CodexMcpOauthLoginResult, CodexMcpOauthLoginStart } from '@superone/shared/agent-types'
 import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 
 export interface ArtifactGateway {
@@ -280,6 +280,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     const snap = await this.client.rpc<{ snapshotSequence?: string }>('session.snapshot')
     const seq = snap?.snapshotSequence
     return typeof seq === 'string' && seq.length > 0 ? seq : '0'
+  }
+
+  /** This desktop read the session's latest completion: the node records it for every client, as a phone's read. */
+  async markSeen(sessionId: string): Promise<void> {
+    await this.client.rpc('client.markSeen', { sessionId })
   }
 
   /**
@@ -889,7 +894,12 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('provider.deleteCustomPlatform', { id })
   }
 
+  /** A desktop node keeps its keys: its descriptor leaves `provider.exportBundle` out. */
   async providerExportBundle(): Promise<unknown> {
+    const capabilities = this.descriptorCache?.capabilities
+    if (capabilities && !servesMethod(capabilities, 'provider.exportBundle')) {
+      throw Object.assign(new Error('This host does not share its provider keys; pull is unavailable'), { code: 'failed_precondition' })
+    }
     return this.client.rpc('provider.exportBundle', {})
   }
 
@@ -1125,13 +1135,18 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     serverName: string,
     apiProviderId?: string | null,
     options?: CodexMcpOauthLoginOptions,
-  ): Promise<unknown> {
+  ): Promise<CodexMcpOauthLoginStart | CodexMcpOauthLoginResult> {
     return this.client.rpc('codex.loginMcpOauth', {
       projectId,
       serverName,
       apiProviderId: apiProviderId ?? null,
       options,
     })
+  }
+
+  /** Hands the browser's loopback callback (null: none was caught) to the node's waiting MCP sign-in. */
+  async codexCompleteMcpOauth(loginId: string, callbackUrl: string | null): Promise<CodexMcpOauthLoginResult> {
+    return this.client.rpc('codex.completeMcpOauth', { loginId, callbackUrl })
   }
 
   async codexDetectExternalAgent(

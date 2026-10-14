@@ -1,4 +1,4 @@
-import type { ControlLeaseService } from './control-lease'
+import type { ControlLeaseService, LeaseYield } from './control-lease'
 
 /** Trusted host identity of one frontend, derived from IPC or its authenticated pairing. */
 export interface ControlActor {
@@ -6,7 +6,7 @@ export interface ControlActor {
   /** Phones and local windows share this desktop principal, with separate delegates. */
   holderClientId: string
   delegate: string
-  yields: boolean
+  yields: LeaseYield
 }
 
 /**

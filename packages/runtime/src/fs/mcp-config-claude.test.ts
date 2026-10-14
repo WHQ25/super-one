@@ -1,9 +1,11 @@
 import { join } from 'path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   existsSync: vi.fn<(p: string) => boolean>(() => false),
   readFileSync: vi.fn<(p: string, enc: string) => string>(() => '{}'),
   writeFileSync: vi.fn<(p: string, data: string) => void>(),
+  mkdirSync: vi.fn(),
   homedir: vi.fn(() => '/mock-home'),
 }))
 
@@ -11,13 +13,19 @@ vi.mock('fs', () => ({
   existsSync: mocks.existsSync,
   readFileSync: mocks.readFileSync,
   writeFileSync: mocks.writeFileSync,
+  mkdirSync: mocks.mkdirSync,
 }))
 
 vi.mock('os', () => ({
   homedir: mocks.homedir,
 }))
 
-import { listMcpConfigs, saveMcpConfig, toggleMcpConfig, deleteMcpConfig } from './mcp-config-service'
+import {
+  listClaudeMcpConfigs as listMcpConfigs,
+  saveClaudeMcpConfig as saveMcpConfig,
+  toggleClaudeMcpConfig as toggleMcpConfig,
+  deleteClaudeMcpConfig as deleteMcpConfig,
+} from './mcp-config-claude'
 
 const CWD = '/test/project'
 const USER_CONFIG = join('/mock-home', '.claude.json')
@@ -32,8 +40,10 @@ function mockFiles(files: Record<string, unknown>) {
   })
 }
 
-function writtenJson(callIndex = 0): Record<string, unknown> {
-  return JSON.parse(mocks.writeFileSync.mock.calls[callIndex][1] as string)
+type WrittenConfig = { mcpServers: Record<string, Record<string, unknown>>; [key: string]: unknown }
+
+function writtenJson(callIndex = 0): WrittenConfig {
+  return JSON.parse(mocks.writeFileSync.mock.calls[callIndex]![1]) as WrittenConfig
 }
 
 beforeEach(() => {
@@ -171,7 +181,8 @@ describe('saveMcpConfig', () => {
 
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
       USER_CONFIG,
-      expect.any(String)
+      expect.any(String),
+      'utf8',
     )
     const written = writtenJson()
     expect(written.mcpServers.newServer).toEqual({
@@ -187,7 +198,7 @@ describe('saveMcpConfig', () => {
 
     saveMcpConfig('projSrv', { command: 'python' }, 'project', CWD)
 
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(PROJECT_MCP, expect.any(String))
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(PROJECT_MCP, expect.any(String), 'utf8')
   })
 
   it('should write http config with url and headers', () => {
@@ -280,18 +291,32 @@ describe('toggleMcpConfig', () => {
 
     toggleMcpConfig('srv', true, 'project', CWD)
 
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(PROJECT_MCP, expect.any(String))
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(PROJECT_MCP, expect.any(String), 'utf8')
     const written = writtenJson()
     expect(written.mcpServers.srv.disabled).toBe(true)
   })
 
-  it('should be no-op when server not found', () => {
+  it('reports a server it cannot find without writing', () => {
     mockFiles({
       [USER_CONFIG]: { mcpServers: { other: { command: 'x' } } },
     })
 
-    toggleMcpConfig('nonexistent', true, 'user', CWD)
+    expect(() => toggleMcpConfig('nonexistent', true, 'user', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
 
+    expect(mocks.writeFileSync).not.toHaveBeenCalled()
+  })
+  it('finds only own entries, so an inherited name never reaches the prototype', () => {
+    mockFiles({
+      [USER_CONFIG]: { mcpServers: { srv: { command: 'x' } } },
+      [PROJECT_MCP]: { mcpServers: { srv: { command: 'x' } } },
+    })
+
+    for (const name of ['__proto__', 'toString', 'constructor']) {
+      expect(() => toggleMcpConfig(name, true, 'user', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
+      expect(() => toggleMcpConfig(name, true, 'project', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
+      expect(() => deleteMcpConfig(name, 'project', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
+    }
+    expect(({} as { disabled?: unknown }).disabled).toBeUndefined()
     expect(mocks.writeFileSync).not.toHaveBeenCalled()
   })
 })
@@ -317,7 +342,7 @@ describe('deleteMcpConfig', () => {
 
     deleteMcpConfig('target', 'project', CWD)
 
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(PROJECT_MCP, expect.any(String))
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(PROJECT_MCP, expect.any(String), 'utf8')
     const written = writtenJson()
     expect(written.mcpServers.target).toBeUndefined()
   })
@@ -329,15 +354,15 @@ describe('deleteMcpConfig', () => {
 
     deleteMcpConfig('target', 'user', CWD)
 
-    expect(mocks.writeFileSync).toHaveBeenCalledWith(USER_CONFIG, expect.any(String))
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(USER_CONFIG, expect.any(String), 'utf8')
   })
 
-  it('should be no-op when server not found', () => {
+  it('reports a server it cannot find without writing', () => {
     mockFiles({
       [USER_CONFIG]: { mcpServers: {} },
     })
 
-    deleteMcpConfig('ghost', 'user', CWD)
+    expect(() => deleteMcpConfig('ghost', 'user', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
 
     expect(mocks.writeFileSync).not.toHaveBeenCalled()
   })

@@ -2054,7 +2054,14 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
-  | { type: 'session_control_changed'; sessionId: string; projectPath: string; lease: import('./environment').ControlLease | null; harnessId: HarnessId; acpAgentId?: string | null; worktreePath?: string | null; gitBranch?: string | null }
+  /** `holder`: who holds `lease` (this desktop's window, one of its phones, or a controller desktop), when one does. */
+  | { type: 'session_control_changed'; sessionId: string; projectPath: string; lease: import('./environment').ControlLease | null; harnessId: HarnessId; acpAgentId?: string | null; worktreePath?: string | null; gitBranch?: string | null; holder?: import('./environment').SessionControlHolder }
+  /**
+   * Who drives the session on its host now, as each reader sees it: null while
+   * nobody does, or the reader itself does. The host records it on the session,
+   * so a controller following it learns before it asks for control.
+   */
+  | { type: 'session_control_holder'; holder: import('./environment').SessionControlHolder | null }
   /**
    * A session another desktop started here changed hands: `released` means this
    * host took it back, so the controller watches until it reconnects. The host
@@ -3341,6 +3348,15 @@ export interface CodexMcpOauthLoginResult {
   error?: string
   /** Present when login returned an authorize URL (headless clients surface this). */
   authorizationUrl?: string
+}
+
+/**
+ * A remote node's MCP sign-in, waiting on the node's loopback redirect: the
+ * client opens the URL and finishes with `codex.completeMcpOauth`.
+ */
+export interface CodexMcpOauthLoginStart {
+  loginId: string
+  authorizationUrl: string
 }
 
 export type CodexMcpOauthClientRegistration = 'auto' | 'cimd' | 'dcr'
@@ -4768,6 +4784,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
   /** A remote session the chat must read again (`EnvironmentHost.onRemoteSessionResync`). */
   ENVIRONMENT_SESSION_RESYNC_EVENT: 'environment:sessionResyncEvent',
+  /** A paired machine's project list changed (`EnvironmentHost.onProjectListChanged`). */
+  ENVIRONMENT_PROJECTS_CHANGED_EVENT: 'environment:projectsChangedEvent',
   /** Main → renderer SSH probe/install progress push. */
   ENVIRONMENT_INSTALL_PROGRESS: 'environment:installProgress',
   /** Node-local AI provider credentials (masked). */

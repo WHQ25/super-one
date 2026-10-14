@@ -11,6 +11,7 @@ import type { McpAppHostRequest, McpAppHostResult, McpAppRequester, ToolAppAttac
 import { findMcpAppAttachment, mcpAppEventAttachments } from '@superone/shared/mcp-apps-state'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 import type { SessionManagerImpl } from '../session/session-manager'
+import { untilAdmitted } from '../session/admission'
 import type { sendPhoneMcpAppMessage } from '../session/mcp-app-send'
 import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
 import { routeMcpAppsProviderRequest } from './provider-ipc'
@@ -29,13 +30,8 @@ let executor: McpAppExecutor | undefined
 const remoteFreshness = new RemoteMcpAppFreshness()
 
 function acceptedSend(deliver: (onAccepted: () => void) => Promise<unknown>, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) { reject(new McpAppsError('cancelled', 'MCP App message cancelled')); return }
-    let accepted = false
-    const onAccepted = (): void => { accepted = true; resolve() }
-    // After admission the normal send path owns the turn and its error events.
-    void deliver(onAccepted).then(() => { if (!accepted) reject(new McpAppsError('not_connected', 'MCP App message was not admitted')) }, error => { if (!accepted) reject(error) })
-  })
+  if (signal.aborted) return Promise.reject(new McpAppsError('cancelled', 'MCP App message cancelled'))
+  return untilAdmitted(deliver, () => new McpAppsError('not_connected', 'MCP App message was not admitted'))
 }
 
 export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: MobileSender, hub: SessionEventHub): void {
@@ -59,7 +55,9 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     if (!resolved.ok) throw new McpAppsError(resolved.error.code, resolved.error.message)
     const path = resolved.value.projectId
     if (!path) throw new McpAppsError('not_connected', 'MCP App session project unavailable')
-    return { ref, node, projectPath: `remote:${ref.environmentId}:${path}`, ...resolved.value }
+    // A desktop node binds its own sessions' Apps to `local`, its name for itself.
+    const bound = resolved.value.app.binding.node === 'local' ? 'local' : node
+    return { ref, node: bound, projectPath: `remote:${ref.environmentId}:${path}`, ...resolved.value }
   }
   executor = new McpAppExecutor({
     resolve,

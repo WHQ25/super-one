@@ -1,31 +1,37 @@
-import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
-import { randomUUID } from 'node:crypto'
 import {
   sanitizeGitRef as sanitizeGitRefCore,
   gitErrorMessage,
   parseShortstat,
   parseWorktreePorcelain,
   ghRun,
-  gitRunSync,
+  gitRun,
   fetchRemoteCommands,
   listGitMentionRefs,
   probeGitMentionCapabilities,
   type GitMentionRunners,
-  resolveMainDirFromCommonDir,
-  planNewWorktreePaths,
-  worktreeAddArgs,
-  recordedBranchForMode,
-  parseNumstat,
+  activateWorktree as activateWorktreeAt,
+  assignBranch as assignBranchAt,
+  handoffPreview as handoffPreviewAt,
+  handoffToMain as handoffToMainAt,
+  samePath,
+  worktreeGit,
+  type ActivateWorktreeInput,
+  type ActivateWorktreeResult,
+  type AssignBranchResult,
+  type HandoffPreview,
+  type HandoffResult,
+  type WorktreeGit,
 } from '@superone/runtime/git'
 import type { WorkspaceProjects } from './workspace-projects'
+import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 
 /** GitHub round-trips for `@gh`; a popup must never wait longer than this. */
 const GH_TIMEOUT_MS = 15_000
-import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 
 export { parseShortstat } from '@superone/runtime/git'
+export type { ActivateWorktreeInput, ActivateWorktreeResult, AssignBranchResult, HandoffPreview, HandoffResult }
 
 export interface GitStatusResult {
   isRepo: boolean
@@ -52,45 +58,10 @@ export interface WorktreeListEntry {
   head?: string
 }
 
-export type WorktreeMode = 'branch' | 'attach' | 'detach'
-
-export interface ActivateWorktreeInput {
-  baseBranch: string
-  mode: WorktreeMode
-  branchName?: string
-  carryLocalChanges?: boolean
-}
-
-export interface ActivateWorktreeResult {
-  path: string
-  recordedBranch: string | null
-}
-
-export type AssignBranchResult =
-  | { ok: true; branch: string }
-  | {
-      ok: false
-      reason: 'name-required' | 'not-detached' | 'exists' | 'checked-out' | 'error'
-      error?: string
-    }
-
-export type HandoffResult =
-  | { ok: true }
-  | {
-      ok: false
-      reason: 'not-worktree' | 'no-changes' | 'main-dirty' | 'conflict' | 'error'
-      error?: string
-    }
-
-export interface HandoffPreview {
-  files: number
-  insertions: number
-  deletions: number
-}
-
-/** Shared sync git runner (same flags as desktop async gitRun). */
-function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): string {
-  return gitRunSync(cwd, args, env)
+export interface WorkspaceGitServiceOptions {
+  /** Process runners; a host may wrap them (e.g. to spawn on its login-shell PATH). */
+  gitRun?: typeof gitRun
+  ghRun?: typeof ghRun
 }
 
 /** Reject flag injection; wrap core errors with invalid_argument for RPC. */
@@ -104,32 +75,34 @@ export function sanitizeGitRef(ref: string): string {
   }
 }
 
-function isGitWorktree(cwd: string): boolean {
-  try {
-    git(cwd, ['rev-parse', '--is-inside-work-tree'])
-    return true
-  } catch {
-    return false
-  }
-}
-
-function resolveMainWorktreeDir(folderPath: string): string {
-  const common = git(folderPath, ['rev-parse', '--git-common-dir'])
-  return resolveMainDirFromCommonDir(folderPath, common)
-}
-
-function samePath(a: string, b: string): boolean {
-  try {
-    const ra = existsSync(a) ? realpathSync(a) : resolve(a)
-    const rb = existsSync(b) ? realpathSync(b) : resolve(b)
-    return ra === rb
-  } catch {
-    return resolve(a) === resolve(b)
-  }
-}
-
 export class WorkspaceGitService {
-  constructor(private readonly projects: WorkspaceProjects) {}
+  private readonly git: WorktreeGit
+  private readonly runGh: typeof ghRun
+
+  constructor(
+    private readonly projects: WorkspaceProjects,
+    opts: WorkspaceGitServiceOptions = {},
+  ) {
+    this.git = worktreeGit(opts.gitRun ?? gitRun)
+    this.runGh = opts.ghRun ?? ghRun
+  }
+
+  private read(cwd: string, args: string[]): Promise<string> {
+    return this.git.read(cwd, args)
+  }
+
+  private write(cwd: string, args: string[]): Promise<string> {
+    return this.git.write(cwd, args)
+  }
+
+  private async isGitWorktree(cwd: string): Promise<boolean> {
+    try {
+      await this.read(cwd, ['rev-parse', '--is-inside-work-tree'])
+      return true
+    } catch {
+      return false
+    }
+  }
 
   private root(projectId: string): string {
     const p = this.projects.get(projectId)
@@ -137,17 +110,17 @@ export class WorkspaceGitService {
     return p.path
   }
 
-  status(projectId: string): GitStatusResult {
+  async status(projectId: string): Promise<GitStatusResult> {
     const cwd = this.root(projectId)
-    const result = this.statusForCwd(cwd)
+    const result = await this.statusForCwd(cwd)
     if (result.isRepo) this.projects.touch(projectId)
     return result
   }
 
   /** Status for an arbitrary allowed worktree path of this project (or project root). */
-  statusAt(projectId: string, absolutePath?: string | null): GitStatusResult {
+  async statusAt(projectId: string, absolutePath?: string | null): Promise<GitStatusResult> {
     if (!absolutePath) return this.status(projectId)
-    const cwd = this.assertRepoWorktreePath(projectId, absolutePath)
+    const cwd = await this.assertRepoWorktreePath(projectId, absolutePath)
     return this.statusForCwd(cwd)
   }
 
@@ -155,21 +128,23 @@ export class WorkspaceGitService {
    * Fast path for status-bar / file-tree: one `git status -b --porcelain` (no --ignored).
    * --ignored walks the whole tree of ignored paths and dominates remote latency.
    */
-  private statusForCwd(cwd: string): GitStatusResult {
-    if (!existsSync(join(cwd, '.git')) && !isGitWorktree(cwd)) {
+  private async statusForCwd(cwd: string): Promise<GitStatusResult> {
+    if (!existsSync(join(cwd, '.git')) && !(await this.isGitWorktree(cwd))) {
       return { isRepo: false, branch: null, dirty: false, ahead: 0, behind: 0, porcelain: '' }
     }
     try {
       // Single process: branch header + file lines. No --ignored (expensive on large trees).
-      const raw = git(cwd, ['status', '--porcelain=v1', '-b'])
+      const raw = await this.read(cwd, ['status', '--porcelain=v1', '-b'])
       const parsed = parseBranchPorcelain(raw)
       const dirty = parsed.porcelain.trim().length > 0
       // shortstat only when dirty — clean trees skip the extra git invocation.
-      const shortstat = dirty ? shortstatAt(cwd) : { insertions: 0, deletions: 0 }
+      const shortstat = dirty ? await this.shortstatAt(cwd) : { insertions: 0, deletions: 0 }
       return {
         isRepo: true,
         branch: parsed.branch,
-        ...(parsed.branch === null ? { head: git(cwd, ['rev-parse', '--short=7', 'HEAD']).trim() } : {}),
+        ...(parsed.branch === null
+          ? { head: (await this.read(cwd, ['rev-parse', '--short=7', 'HEAD'])).trim() }
+          : {}),
         dirty,
         ahead: parsed.ahead,
         behind: parsed.behind,
@@ -179,14 +154,22 @@ export class WorkspaceGitService {
       }
     } catch (err) {
       // stderr carries the reason the desktop status bar shows (license,
-      // dubious ownership…); execFileSync's message is just "Command failed".
+      // dubious ownership…); the process error's message is just "Command failed".
       throw Object.assign(new Error(gitErrorMessage(err) || 'git status failed'), {
         code: 'internal',
       })
     }
   }
 
-  diff(projectId: string, opts?: { staged?: boolean; path?: string }): GitDiffResult {
+  private async shortstatAt(cwd: string): Promise<{ insertions: number; deletions: number }> {
+    try {
+      return parseShortstat(await this.read(cwd, ['diff', 'HEAD', '--shortstat']))
+    } catch {
+      return { insertions: 0, deletions: 0 }
+    }
+  }
+
+  async diff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<GitDiffResult> {
     const cwd = this.root(projectId)
     const args = ['diff']
     if (opts?.staged) args.push('--cached')
@@ -197,7 +180,7 @@ export class WorkspaceGitService {
       args.push('--', opts.path)
     }
     try {
-      const diff = git(cwd, args)
+      const diff = await this.read(cwd, args)
       this.projects.touch(projectId)
       return { diff }
     } catch (err) {
@@ -205,19 +188,22 @@ export class WorkspaceGitService {
     }
   }
 
-  branches(projectId: string, absolutePath?: string | null): { current: string | null; branches: string[] } {
+  async branches(
+    projectId: string,
+    absolutePath?: string | null,
+  ): Promise<{ current: string | null; branches: string[] }> {
     const cwd = absolutePath
-      ? this.assertRepoWorktreePath(projectId, absolutePath)
+      ? await this.assertRepoWorktreePath(projectId, absolutePath)
       : this.root(projectId)
     try {
-      const out = git(cwd, ['branch', '--format=%(refname:short)'])
+      const out = await this.read(cwd, ['branch', '--format=%(refname:short)'])
       const branches = out
         .split('\n')
         .map((l) => l.trim())
         .filter(Boolean)
       let current: string | null = null
       try {
-        current = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
+        current = (await this.read(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
       } catch {
         current = null
       }
@@ -228,19 +214,19 @@ export class WorkspaceGitService {
   }
 
   /** Checkout existing branch (or create with create=true). Operates at project root or allowed worktree. */
-  switchBranch(
+  async switchBranch(
     projectId: string,
     branch: string,
     opts?: { create?: boolean; absolutePath?: string | null },
-  ): { ok: true } | { ok: false; error: string } {
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
       const cwd = opts?.absolutePath
-        ? this.assertRepoWorktreePath(projectId, opts.absolutePath)
+        ? await this.assertRepoWorktreePath(projectId, opts.absolutePath)
         : this.root(projectId)
       const safe = sanitizeGitRef(branch)
       if (opts?.create) {
         try {
-          git(cwd, ['rev-parse', '--verify', 'HEAD'])
+          await this.read(cwd, ['rev-parse', '--verify', 'HEAD'])
         } catch {
           return {
             ok: false,
@@ -248,9 +234,9 @@ export class WorkspaceGitService {
               'Cannot create a new branch before the first commit. Commit once, then create the branch.',
           }
         }
-        git(cwd, ['checkout', '-b', safe])
+        await this.write(cwd, ['checkout', '-b', safe])
       } else {
-        git(cwd, ['checkout', safe])
+        await this.write(cwd, ['checkout', safe])
       }
       this.projects.touch(projectId)
       return { ok: true }
@@ -260,42 +246,42 @@ export class WorkspaceGitService {
   }
 
   /** `@git` / `@gh` popup rows; `absolutePath` narrows to a linked worktree of the project. */
-  mentionRefs(
+  async mentionRefs(
     projectId: string,
     kind: GitMentionRefKind,
     query: string,
     absolutePath?: string | null,
   ): Promise<GitMentionRefsResult> {
-    return listGitMentionRefs(kind, query, this.mentionRunners(projectId, absolutePath))
+    return listGitMentionRefs(kind, query, await this.mentionRunners(projectId, absolutePath))
   }
 
   /** What the `@git` / `@gh` portals may offer for the project (or one of its worktrees). */
-  mentionCapabilities(projectId: string, absolutePath?: string | null): Promise<GitMentionCapabilities> {
-    return probeGitMentionCapabilities(this.mentionRunners(projectId, absolutePath))
+  async mentionCapabilities(projectId: string, absolutePath?: string | null): Promise<GitMentionCapabilities> {
+    return probeGitMentionCapabilities(await this.mentionRunners(projectId, absolutePath))
   }
 
-  private mentionRunners(projectId: string, absolutePath?: string | null): GitMentionRunners {
+  private async mentionRunners(projectId: string, absolutePath?: string | null): Promise<GitMentionRunners> {
     const cwd = absolutePath
-      ? this.assertRepoWorktreePath(projectId, absolutePath)
+      ? await this.assertRepoWorktreePath(projectId, absolutePath)
       : this.root(projectId)
     return {
-      git: async (args) => gitRunSync(cwd, args),
-      gh: (args) => ghRun(cwd, args, GH_TIMEOUT_MS),
+      git: (args) => this.read(cwd, args),
+      gh: (args) => this.runGh(cwd, args, GH_TIMEOUT_MS),
     }
   }
 
-  worktrees(projectId: string): WorktreeListEntry[] {
+  async worktrees(projectId: string): Promise<WorktreeListEntry[]> {
     const cwd = this.root(projectId)
     try {
-      return parseWorktreePorcelain(git(cwd, ['worktree', 'list', '--porcelain']))
+      return parseWorktreePorcelain(await this.read(cwd, ['worktree', 'list', '--porcelain']))
     } catch {
       return []
     }
   }
 
-  checkedOutBranches(projectId: string): string[] {
+  async checkedOutBranches(projectId: string): Promise<string[]> {
     const branches: string[] = []
-    for (const wt of this.worktrees(projectId)) {
+    for (const wt of await this.worktrees(projectId)) {
       if (wt.branch) branches.push(wt.branch)
     }
     return branches
@@ -304,7 +290,7 @@ export class WorkspaceGitService {
   /**
    * Ensure absolutePath is the project root or a git worktree of the same repo.
    */
-  assertRepoWorktreePath(projectId: string, worktreePath: string): string {
+  async assertRepoWorktreePath(projectId: string, worktreePath: string): Promise<string> {
     if (!worktreePath || typeof worktreePath !== 'string') {
       throw Object.assign(new Error('worktreePath required'), { code: 'invalid_argument' })
     }
@@ -315,7 +301,7 @@ export class WorkspaceGitService {
     const main = resolve(this.root(projectId))
     if (samePath(abs, main)) return existsSync(abs) ? realpathSync(abs) : abs
 
-    const listed = this.worktrees(projectId)
+    const listed = await this.worktrees(projectId)
     for (const wt of listed) {
       if (samePath(abs, wt.path)) {
         return existsSync(abs) ? realpathSync(abs) : resolve(wt.path)
@@ -324,9 +310,9 @@ export class WorkspaceGitService {
 
     // Fallback: same git-common-dir as project
     try {
-      if (existsSync(abs) && isGitWorktree(abs)) {
-        const commonA = resolve(abs, git(abs, ['rev-parse', '--git-common-dir']).trim())
-        const commonB = resolve(main, git(main, ['rev-parse', '--git-common-dir']).trim())
+      if (existsSync(abs) && (await this.isGitWorktree(abs))) {
+        const commonA = resolve(abs, (await this.read(abs, ['rev-parse', '--git-common-dir'])).trim())
+        const commonB = resolve(main, (await this.read(main, ['rev-parse', '--git-common-dir'])).trim())
         if (samePath(commonA, commonB)) {
           return realpathSync(abs)
         }
@@ -340,17 +326,17 @@ export class WorkspaceGitService {
   }
 
   /** Whether cwd may be used for agent turns (project root or known worktree). */
-  isAllowedSessionCwd(projectId: string, cwd: string | null | undefined): boolean {
+  async isAllowedSessionCwd(projectId: string, cwd: string | null | undefined): Promise<boolean> {
     if (!cwd) return true
     try {
-      this.assertRepoWorktreePath(projectId, cwd)
+      await this.assertRepoWorktreePath(projectId, cwd)
       return true
     } catch {
       return false
     }
   }
 
-  activateWorktree(projectId: string, input: ActivateWorktreeInput): ActivateWorktreeResult {
+  async activateWorktree(projectId: string, input: ActivateWorktreeInput): Promise<ActivateWorktreeResult> {
     const { mode, branchName, carryLocalChanges } = input
     if (mode === 'branch' && (!branchName || !branchName.trim())) {
       throw Object.assign(new Error('Branch name is required for branch mode'), {
@@ -358,250 +344,77 @@ export class WorkspaceGitService {
       })
     }
     const folderPath = this.root(projectId)
-    if (!isGitWorktree(folderPath)) {
+    if (!(await this.isGitWorktree(folderPath))) {
       throw Object.assign(new Error('project is not a git repository'), { code: 'failed_precondition' })
     }
 
     const baseBranch = sanitizeGitRef(input.baseBranch)
     const safeBranchName =
       mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined
-    const mainDir = resolveMainWorktreeDir(folderPath)
-    const commitHash = git(folderPath, ['rev-parse', baseBranch]).trim()
-    const { wtDir, wtPath } = planNewWorktreePaths({
-      mainDir,
-      shortHash: commitHash.slice(0, 7),
-    })
-
-    if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-
     try {
-      const addArgs = worktreeAddArgs(mode, wtPath, baseBranch, safeBranchName)
-      git(folderPath, ['worktree', ...addArgs])
+      const result = await activateWorktreeAt(this.git, folderPath, {
+        baseBranch,
+        mode,
+        branchName: safeBranchName,
+        carryLocalChanges,
+      })
+      this.projects.touch(projectId)
+      return result
     } catch (err) {
       throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree add failed'), {
         code: 'internal',
       })
     }
-
-    if (carryLocalChanges) {
-      this.carryUncommittedChanges(folderPath, wtPath)
-    }
-
-    const recordedBranch = recordedBranchForMode(mode, baseBranch, safeBranchName ?? branchName)
-    this.projects.touch(projectId)
-    return { path: wtPath, recordedBranch }
   }
 
-  fetch(projectId: string, remote: string): void {
+  async fetch(projectId: string, remote: string): Promise<void> {
     const folderPath = this.root(projectId)
     const { fetch, setHead } = fetchRemoteCommands(remote)
     try {
-      git(folderPath, fetch)
+      await this.write(folderPath, fetch)
     } catch (err) {
       throw Object.assign(new Error(gitErrorMessage(err) || 'git fetch failed'), { code: 'failed_precondition' })
     }
     try {
-      git(folderPath, setHead)
+      await this.write(folderPath, setHead)
     } catch {
       /* the remote may have no default branch to point at */
     }
   }
 
   /** Best-effort cleanup after a failed session.fork worktree path. */
-  removeWorktree(projectId: string, worktreePath: string): void {
+  async removeWorktree(projectId: string, worktreePath: string): Promise<void> {
     const folderPath = this.root(projectId)
     try {
-      git(folderPath, ['worktree', 'remove', '--force', worktreePath])
+      await this.write(folderPath, ['worktree', 'remove', '--force', worktreePath])
     } catch {
       /* ignore — caller already failed for another reason */
     }
   }
 
-  private carryUncommittedChanges(sourceDir: string, worktreePath: string): void {
-    const stashTop = (): string => {
-      try {
-        return git(sourceDir, ['rev-parse', '-q', '--verify', 'refs/stash']).trim()
-      } catch {
-        return ''
-      }
-    }
-    const before = stashTop()
-    try {
-      git(sourceDir, ['stash', 'push', '-u', '-m', 'superone-carry'])
-    } catch {
-      /* nothing to stash */
-    }
-    const after = stashTop()
-    if (!after || after === before) return
-    try {
-      git(worktreePath, ['stash', 'apply', after])
-    } catch {
-      /* ignore rare apply miss */
-    }
-    try {
-      git(sourceDir, ['stash', 'pop'])
-    } catch {
-      /* changes stay in stash */
-    }
+  async assignBranch(projectId: string, worktreePath: string, rawName: string): Promise<AssignBranchResult> {
+    const wt = await this.assertRepoWorktreePath(projectId, worktreePath)
+    return assignBranchAt(this.git, wt, rawName)
   }
 
-  assignBranch(projectId: string, worktreePath: string, rawName: string): AssignBranchResult {
-    const wt = this.assertRepoWorktreePath(projectId, worktreePath)
-    const name = rawName.trim()
-    if (!name) return { ok: false, reason: 'name-required' }
-
-    let onBranch = false
+  async handoffPreview(projectId: string, worktreePath: string): Promise<HandoffPreview | null> {
     try {
-      git(wt, ['symbolic-ref', '-q', 'HEAD'])
-      onBranch = true
-    } catch {
-      onBranch = false
-    }
-    if (onBranch) return { ok: false, reason: 'not-detached' }
-
-    try {
-      const safe = sanitizeGitRef(name)
-      if (this.checkedOutBranches(projectId).includes(safe)) {
-        return { ok: false, reason: 'checked-out' }
-      }
-      const exists = (() => {
-        try {
-          git(wt, ['show-ref', '--verify', '--quiet', `refs/heads/${safe}`])
-          return true
-        } catch {
-          return false
-        }
-      })()
-      if (exists) return { ok: false, reason: 'exists' }
-      git(wt, ['switch', '-c', safe])
-      return { ok: true, branch: safe }
-    } catch (err) {
-      return { ok: false, reason: 'error', error: gitErrorMessage(err) }
-    }
-  }
-
-  handoffPreview(projectId: string, worktreePath: string): HandoffPreview | null {
-    try {
-      const diff = this.buildHandoffDiff(projectId, worktreePath)
-      if (diff.ok) return diff.stat
-      return diff.reason === 'not-worktree' ? null : { files: 0, insertions: 0, deletions: 0 }
+      return await handoffPreviewAt(this.git, await this.assertRepoWorktreePath(projectId, worktreePath))
     } catch {
       return null
     }
   }
 
-  handoffToMain(projectId: string, worktreePath: string): HandoffResult {
+  async handoffToMain(projectId: string, worktreePath: string): Promise<HandoffResult> {
     try {
-      const diff = this.buildHandoffDiff(projectId, worktreePath)
-      if (!diff.ok) return { ok: false, reason: diff.reason }
-
-      const mainStatus = git(diff.mainDir, ['status', '--porcelain']).trim()
-      if (mainStatus) return { ok: false, reason: 'main-dirty' }
-
-      const patch = git(diff.worktreePath, ['diff', '--binary', diff.base, diff.tree])
-      const patchFile = join(tmpdir(), `s1-handoff-${randomUUID()}.patch`)
-      writeFileSync(patchFile, `${patch}\n`)
-      // Narrow the TOCTOU window before mutating main; reset --hard on failure is only
-      // safe if main was clean immediately before apply (not just at the first check).
-      if (git(diff.mainDir, ['status', '--porcelain']).trim()) {
-        rmSync(patchFile, { force: true })
-        return { ok: false, reason: 'main-dirty' }
-      }
-      try {
-        git(diff.mainDir, ['apply', '--3way', '--whitespace=nowarn', patchFile])
-      } catch (err) {
-        try {
-          git(diff.mainDir, ['reset', '--hard'])
-          git(diff.mainDir, ['clean', '-fd'])
-        } catch {
-          /* best-effort */
-        }
-        return { ok: false, reason: 'conflict', error: gitErrorMessage(err) }
-      } finally {
-        rmSync(patchFile, { force: true })
-      }
-      try {
-        git(diff.mainDir, ['reset', '--quiet'])
-      } catch {
-        /* ignore */
-      }
-      return { ok: true }
+      return await handoffToMainAt(this.git, await this.assertRepoWorktreePath(projectId, worktreePath))
     } catch (err) {
       return { ok: false, reason: 'error', error: gitErrorMessage(err) }
     }
   }
 
-  private buildHandoffDiff(
-    projectId: string,
-    worktreePath: string,
-  ):
-    | {
-        ok: true
-        mainDir: string
-        worktreePath: string
-        base: string
-        tree: string
-        stat: HandoffPreview
-      }
-    | { ok: false; reason: 'not-worktree' | 'no-changes' } {
-    const wt = this.assertRepoWorktreePath(projectId, worktreePath)
-    const mainDir = resolveMainWorktreeDir(this.root(projectId))
-    if (samePath(mainDir, wt)) return { ok: false, reason: 'not-worktree' }
-
-    let onBranch = false
-    try {
-      git(wt, ['symbolic-ref', '-q', 'HEAD'])
-      onBranch = true
-    } catch {
-      onBranch = false
-    }
-    const worktreeHead = git(wt, ['rev-parse', 'HEAD']).trim()
-    const tree = this.writeWorkingTree(wt)
-
-    let base = worktreeHead
-    if (!onBranch) {
-      const mainHead = git(mainDir, ['rev-parse', 'HEAD']).trim()
-      try {
-        base = git(wt, ['merge-base', mainHead, worktreeHead]).trim() || worktreeHead
-      } catch {
-        base = worktreeHead
-      }
-    }
-
-    const numstat = git(wt, ['diff', '--numstat', base, tree])
-    if (!numstat.trim()) return { ok: false, reason: 'no-changes' }
-    return {
-      ok: true,
-      mainDir,
-      worktreePath: wt,
-      base,
-      tree,
-      stat: parseNumstat(numstat),
-    }
-  }
-
-  private writeWorkingTree(worktreePath: string): string {
-    const tmpIndex = join(tmpdir(), `s1-handoff-${randomUUID()}.index`)
-    const env = { GIT_INDEX_FILE: tmpIndex }
-    try {
-      git(worktreePath, ['read-tree', 'HEAD'], env)
-      git(worktreePath, ['add', '-A'], env)
-      return git(worktreePath, ['write-tree'], env).trim()
-    } finally {
-      rmSync(tmpIndex, { force: true })
-    }
-  }
-
   repoIdentity(projectId: string): string | null {
     return this.projects.get(projectId)?.repoIdentity ?? null
-  }
-}
-
-function shortstatAt(cwd: string): { insertions: number; deletions: number } {
-  try {
-    return parseShortstat(git(cwd, ['diff', 'HEAD', '--shortstat']))
-  } catch {
-    return { insertions: 0, deletions: 0 }
   }
 }
 

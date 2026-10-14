@@ -161,6 +161,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       if (session.ephemeral) continue
       out.push({
         controlLease: session.lease.current,
+        controlHolder: session.lease.holder,
         sid,
         projectPath,
         isActive: this.activeByProject.get(projectPath) === sid,

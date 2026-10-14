@@ -280,29 +280,9 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     return this.reads.events.headSequence()
   }
 
-  /**
-   * The log records every session of this desktop; a reader sees the sessions
-   * `rows` serves. A page with none of them reads on, so an empty answer still
-   * means the end of the log.
-   */
-  listEventsAfter(afterSequence: string): EnvironmentEventEnvelope[] {
-    let cursor = afterSequence
-    for (;;) {
-      const page = this.reads.events.listAfter(cursor)
-      if (page.length === 0) return []
-      const visible = page.filter((envelope) => this.visible(envelope))
-      if (visible.length > 0) return visible
-      cursor = page.at(-1)!.sequence
-    }
-  }
-
-  /** Whether this host serves `sessionId`; asked for every event read, so hosts answer it without a query when they can. */
-  protected serves(sessionId: string): boolean {
-    return this.row(sessionId) !== null
-  }
-
-  private visible(envelope: EnvironmentEventEnvelope): boolean {
-    return envelope.aggregateType !== 'session' || this.serves(envelope.aggregateId)
+  listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[] {
+    const events = this.reads.events.listAfter(afterSequence)
+    return reader ? events.map((envelope) => this.viewEvent(envelope, reader)) : events
   }
 
   streamEpoch(): string {
@@ -310,20 +290,18 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
   }
 
   streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null {
-    return this.serves(sessionId) ? this.reads.events.streamingAfter(sessionId, version) : []
+    return this.reads.events.streamingAfter(sessionId, version)
   }
 
   streamingEvents(): EnvironmentEventEnvelope[] {
-    return this.reads.events.streaming().filter((envelope) => this.visible(envelope))
+    return this.reads.events.streaming()
   }
 
   onEventsAppended(listener: (envelope: EnvironmentEventEnvelope) => void): () => void {
-    return this.reads.events.onAppend((envelope) => {
-      if (this.visible(envelope)) listener(envelope)
-    })
+    return this.reads.events.onAppend(listener)
   }
 
-  viewEvent(envelope: EnvironmentEventEnvelope): EnvironmentEventEnvelope {
+  viewEvent(envelope: EnvironmentEventEnvelope, _reader?: { clientSessionId: string }): EnvironmentEventEnvelope {
     return envelope
   }
 }

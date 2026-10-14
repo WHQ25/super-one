@@ -54,6 +54,7 @@ interface RawMcpEntry {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  bearerTokenFile?: string
 }
 
 function extractServers(
@@ -77,6 +78,7 @@ function extractServers(
       env: raw?.env,
       url: raw?.url,
       headers: raw?.headers,
+      bearerTokenFile: typeof raw?.bearerTokenFile === 'string' ? raw.bearerTokenFile : undefined,
     }
   })
 }
@@ -100,6 +102,32 @@ export function listClaudeMcpConfigs(cwd: string, opts?: ClaudeMcpOptions): McpS
   return results
 }
 
+/** The files a scope's servers live in, in listing order. */
+function scopeFilePaths(
+  scope: Extract<ResourceScope, 'user' | 'project'>,
+  cwd: string,
+  opts?: ClaudeMcpOptions,
+): string[] {
+  return scope === 'user'
+    ? [getUserConfigPath(opts)]
+    : [getProjectSettingsPath(cwd), getProjectMcpJsonPath(cwd)]
+}
+
+/** The server named `name` as listed from `scope`'s own files, ignoring other scopes. */
+export function findClaudeMcpConfig(
+  name: string,
+  scope: Extract<ResourceScope, 'user' | 'project'>,
+  cwd: string,
+  opts?: ClaudeMcpOptions,
+): McpServerConfig | undefined {
+  for (const filePath of scopeFilePaths(scope, cwd, opts)) {
+    const found = extractServers(readJsonFile(filePath), scope).find((server) => server.name === name)
+    if (found) return found
+  }
+  return undefined
+}
+
+/** A name for a server being written; existing entries are found by whatever key they have. */
 function assertServerName(name: string): void {
   if (!name || name.length > 128 || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
     throw Object.assign(new Error('invalid MCP server name'), { code: 'invalid_argument' })
@@ -139,7 +167,7 @@ function authorizeProjectMcpServer(name: string, cwd: string, opts?: ClaudeMcpOp
 
 export function saveClaudeMcpConfig(
   name: string,
-  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>,
+  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'bearerTokenFile'>>,
   scope: Extract<ResourceScope, 'user' | 'project'>,
   cwd: string,
   opts?: ClaudeMcpOptions,
@@ -162,6 +190,7 @@ export function saveClaudeMcpConfig(
     if (config.headers && Object.keys(config.headers).length > 0) {
       entry.headers = config.headers
     }
+    if (config.bearerTokenFile) entry.bearerTokenFile = config.bearerTokenFile
   } else {
     if (!config.command || typeof config.command !== 'string') {
       throw Object.assign(new Error('stdio MCP requires command'), { code: 'invalid_argument' })
@@ -187,17 +216,13 @@ export function toggleClaudeMcpConfig(
   cwd: string,
   opts?: ClaudeMcpOptions,
 ): void {
-  assertServerName(name)
-  const filePaths =
-    scope === 'user'
-      ? [getUserConfigPath(opts)]
-      : [getProjectSettingsPath(cwd), getProjectMcpJsonPath(cwd)]
+  const filePaths = scopeFilePaths(scope, cwd, opts)
 
   for (const filePath of filePaths) {
     const data = readJsonFile(filePath)
     if (data.mcpServers && typeof data.mcpServers === 'object') {
       const servers = data.mcpServers as Record<string, RawMcpEntry>
-      if (name in servers) {
+      if (Object.hasOwn(servers, name)) {
         if (disabled) {
           servers[name]!.disabled = true
         } else {
@@ -217,17 +242,13 @@ export function deleteClaudeMcpConfig(
   cwd: string,
   opts?: ClaudeMcpOptions,
 ): void {
-  assertServerName(name)
-  const filePaths =
-    scope === 'user'
-      ? [getUserConfigPath(opts)]
-      : [getProjectSettingsPath(cwd), getProjectMcpJsonPath(cwd)]
+  const filePaths = scopeFilePaths(scope, cwd, opts)
 
   for (const filePath of filePaths) {
     const data = readJsonFile(filePath)
     if (data.mcpServers && typeof data.mcpServers === 'object') {
       const servers = data.mcpServers as Record<string, unknown>
-      if (name in servers) {
+      if (Object.hasOwn(servers, name)) {
         delete servers[name]
         writeJsonFile(filePath, data)
         return

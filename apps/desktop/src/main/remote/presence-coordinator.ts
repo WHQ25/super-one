@@ -22,8 +22,9 @@ export class PresenceCoordinator {
     if (session.lease.current) this.publish(session, session.lease.current)
   }
   private publish(session: Session, lease: import('@superone/shared/environment').ControlLease | null): void {
+    const holder = lease && session.lease.holder
     this.transport.broadcastToRenderer({ type: 'session_control_changed', sessionId: session.id,
-      projectPath: session.projectPath, lease, harnessId: session.snapshot.harnessId,
+      projectPath: session.projectPath, lease, ...(holder ? { holder } : {}), harnessId: session.snapshot.harnessId,
       acpAgentId: session.snapshot.acpAgentId, worktreePath: session.snapshot.worktreePath, gitBranch: session.snapshot.gitBranch })
   }
   private handle(session: Session, event: SessionLifecycleEvent): void {

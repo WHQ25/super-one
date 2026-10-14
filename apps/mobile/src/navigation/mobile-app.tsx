@@ -2671,6 +2671,7 @@ export function MobileApp() {
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
+          worktreeRemoved={sessionWorktree.removed}
           scheduledSend={scheduledSend.controls}
           hasConversation={hasTranscript}
           composerMode={nextTurnMode}

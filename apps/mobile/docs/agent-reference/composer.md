@@ -4,6 +4,10 @@ Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confi
 
 The native shell also owns project Git/worktree status, remote file browsing,
 provider/model selection, slash/mention overlays, and the IME-safe composer.
+When the host reports a removed session worktree, `ChatScreen` replaces the
+composer, todos, and pending input surfaces with a read-only notice and dismisses
+the keyboard. The native editor stays mounted with its draft so switching to a
+writable session restores the input without remounting it.
 **Composer surfaces are mutually exclusive, not stacked.** `ChatComposer` renders
 exactly one overlay above the input: `overlay` when a command owns the slot,
 otherwise the slash and mention lists. `MobileApp` picks it by priority from the

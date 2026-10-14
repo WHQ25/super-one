@@ -25,6 +25,7 @@ import { createChatWebViewChannel } from './chat-webview-channel'
 import { injectHostMessage } from '../native-actions'
 import { TodoPanel } from '../ui/todo-panel'
 import { PendingPromptBar } from '../ui/pending-prompt-bar'
+import { WorktreeRemovedBanner } from '../ui/worktree-removed-banner'
 import type { PendingPrompt } from '../pending-prompt-state'
 import { useMobileLocale } from '../i18n/context'
 import type { ComposerMode } from '@superone/shared/composer-mode'
@@ -58,6 +59,8 @@ export function ChatScreen(props: {
    * rather than leaving it on screen until restore finishes.
    */
   loadingConversation?: boolean
+  /** The host withdrew the session checkout; replace all composer surfaces with a notice. */
+  worktreeRemoved?: boolean
   selection?: ComposerSelection
   webRef: RefObject<WebView | null>
   permissionModes: string[]
@@ -178,8 +181,8 @@ export function ChatScreen(props: {
   // send (landing → live transcript) is not a switch: both of these are then
   // false, and the keyboard stays for the next message.
   useEffect(() => {
-    if (showLanding || props.loadingConversation || props.voiceComposer) Keyboard.dismiss()
-  }, [showLanding, props.loadingConversation, !!props.voiceComposer])
+    if (showLanding || props.loadingConversation || props.voiceComposer || props.worktreeRemoved) Keyboard.dismiss()
+  }, [showLanding, props.loadingConversation, !!props.voiceComposer, props.worktreeRemoved])
   const coveringRestore = props.loadingConversation || hold || (coverUntilReady && !rendererReady)
   const hideRenderer = coveringRestore || showLanding || !rendererReady
   // Captured on first mount: changing `injectedJavaScriptBeforeContentLoaded`
@@ -245,15 +248,17 @@ export function ChatScreen(props: {
       ) : null}
       {props.onEdgeSwipe ? <EdgeSwipeArea onSwipe={props.onEdgeSwipe} /> : null}
       </View>
-      {!props.loadingConversation ? props.collapsedPrompts?.map((prompt) => (
+      {!props.loadingConversation && !props.worktreeRemoved ? props.collapsedPrompts?.map((prompt) => (
         <PendingPromptBar key={prompt.request.requestId} prompt={prompt} onExpand={(id) => props.onExpandPrompt?.(id)} />
       )) : null}
       {/* Hidden, never unmounted: the native editor clears a sent draft asynchronously, and
           unmounting it mid-send would restore the draft on the way back. */}
       <View testID="chat-composer-stack" style={props.composerHidden ? { display: 'none' } : undefined}>
-        {!props.loadingConversation && !props.voiceComposer ? <TodoPanel todos={props.todos} /> : null}
-        {props.inputComposer ?? props.voiceComposer}
-        <View testID="chat-text-composer" style={props.inputComposer || props.voiceComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
+        {props.worktreeRemoved ? <WorktreeRemovedBanner /> : <>
+          {!props.loadingConversation && !props.voiceComposer ? <TodoPanel todos={props.todos} /> : null}
+          {props.inputComposer ?? props.voiceComposer}
+        </>}
+        <View testID="chat-text-composer" style={props.worktreeRemoved || props.inputComposer || props.voiceComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
       </View>
     </View>
   )

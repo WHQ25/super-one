@@ -7,6 +7,8 @@ import { ChatScreen } from './chat-screen'
 import type { NewSessionLandingProps } from './new-session-landing'
 import { MobileVoiceEntry, MobileVoiceControls, MobileVoiceReturnEntry } from '../voice/mobile-voice-controls'
 import type { MobileVoiceState } from '../voice/voice-service'
+import type { Locale } from '@superone/shared/agent-types'
+import type { MobileColorScheme } from '../theme/tokens'
 
 const noop = () => {}
 
@@ -59,14 +61,16 @@ const base: ComponentProps<typeof ChatScreen> = {
   onStop: noop,
 }
 
-function Preview({ frameHeight = 640, ...props }: ComponentProps<typeof ChatScreen> & { frameHeight?: number }) {
+function Preview({ frameHeight = 640, frameWidth = 390, colorScheme, locale, ...props }: ComponentProps<typeof ChatScreen> & {
+  frameHeight?: number; frameWidth?: number; colorScheme?: MobileColorScheme; locale?: Locale
+}) {
   return (
-    <MobileThemeProvider>
+    <MobileThemeProvider colorScheme={colorScheme} locale={locale}>
       <SafeAreaProvider initialMetrics={{
         frame: { x: 0, y: 0, width: 390, height: 844 },
         insets: { top: 47, left: 0, right: 0, bottom: 34 },
       }}>
-        <View style={{ width: 390, height: frameHeight }}>
+        <View style={{ width: frameWidth, height: frameHeight }}>
           <ChatScreen {...props} />
         </View>
       </SafeAreaProvider>
@@ -83,6 +87,31 @@ export default {
 
 export const LiveSession = {
   name: 'Live session · no loading copy',
+}
+
+export const WorktreeRemoved = {
+  name: 'Removed worktree · read-only composer',
+  args: { worktreeRemoved: true, draft: 'Unsent draft', todos: {
+    a: { id: 'a', subject: 'Ship it', description: '', status: 'pending' },
+  } },
+}
+
+export const WorktreeRemovedLight = {
+  ...WorktreeRemoved,
+  name: 'Removed worktree · light',
+  render: (props: ComponentProps<typeof ChatScreen>) => <Preview {...props} colorScheme="light" locale="en" />,
+}
+
+export const WorktreeRemovedChineseNarrow = {
+  ...WorktreeRemoved,
+  name: 'Removed worktree · Chinese, narrow dark layout',
+  render: (props: ComponentProps<typeof ChatScreen>) => <Preview {...props} frameWidth={320} colorScheme="dark" locale="zh" />,
+}
+
+export const WorktreeRemovedNarrow = {
+  ...WorktreeRemoved,
+  name: 'Removed worktree · English, narrow light layout',
+  render: (props: ComponentProps<typeof ChatScreen>) => <Preview {...props} frameWidth={320} colorScheme="light" locale="en" />,
 }
 
 export const Landing = {

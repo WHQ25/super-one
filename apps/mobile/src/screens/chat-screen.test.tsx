@@ -7,6 +7,7 @@ import type { WebView } from 'react-native-webview'
 import { renderWithTheme } from '../test-render'
 import { ChatScreen } from './chat-screen'
 import type { NewSessionLandingProps } from './new-session-landing'
+import type { PendingPrompt } from '../pending-prompt-state'
 
 const noop = () => {}
 
@@ -28,6 +29,9 @@ function screenUi(overrides: {
   composerHidden?: boolean
   voiceComposer?: ReactNode
   inputComposer?: ReactNode
+  worktreeRemoved?: boolean
+  draft?: string
+  collapsedPrompts?: PendingPrompt[]
 } = {}) {
   return <SafeAreaProvider initialMetrics={{
     frame: { x: 0, y: 0, width: 390, height: 844 },
@@ -41,6 +45,8 @@ function screenUi(overrides: {
       composerHidden={overrides.composerHidden}
       voiceComposer={overrides.voiceComposer}
       inputComposer={overrides.inputComposer}
+      worktreeRemoved={overrides.worktreeRemoved}
+      collapsedPrompts={overrides.collapsedPrompts}
       permissionModes={['default']}
       permissionMode="default"
       sandboxInfo={null}
@@ -55,7 +61,7 @@ function screenUi(overrides: {
       sessionDirs={[]}
       todos={overrides.todos ? { a: { id: 'a', subject: 'Ship it', description: '', status: 'pending' } } : {}}
       onManageDirectories={noop}
-      draft=""
+      draft={overrides.draft ?? ''}
       streaming={false}
       onWebMessage={noop}
       onWebProcessError={noop}
@@ -122,6 +128,53 @@ test('a pending native decision temporarily owns the composer slot during voice'
   expect(screen.getByText('Answer question')).toBeTruthy()
   expect(screen.queryByText('Voice controls')).toBeNull()
   expect(screen.queryByLabelText('Message')).toBeNull()
+})
+
+test.each([
+  { scheme: 'dark', locale: 'en', message: 'Worktree has been removed. This session is now READ ONLY.' },
+  { scheme: 'light', locale: 'zh', message: 'Worktree 已删除，此会话现为只读。' },
+] as const)('a removed worktree replaces every composer surface in $scheme / $locale', async ({ scheme, locale, message }) => {
+  await renderWithTheme(screenUi({ worktreeRemoved: true, todos: true, draft: 'Keep this draft',
+    inputComposer: <Text>Answer question</Text>, voiceComposer: <Text>Voice controls</Text>,
+  }), scheme, locale)
+
+  expect(screen.getByText(message)).toBeTruthy()
+  expect(screen.getByTestId('chat-webview')).toBeTruthy()
+  expect(screen.queryByLabelText('Message')).toBeNull()
+  expect(screen.queryByLabelText('Send')).toBeNull()
+  expect(screen.queryByTestId('todo-panel')).toBeNull()
+  expect(screen.queryByText('Answer question')).toBeNull()
+  expect(screen.queryByText('Voice controls')).toBeNull()
+})
+
+test('a live worktree removal dismisses the keyboard and preserves the editor through session switching', async () => {
+  const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {})
+  try {
+    const props = { draft: 'Keep this draft', todos: true, collapsedPrompts: [
+      { kind: 'permission', request: { requestId: 'perm', toolName: 'Bash', input: { command: 'bun run build' }, allowAlwaysAllow: false } },
+    ] } satisfies Parameters<typeof screenUi>[0]
+    const view = await renderWithTheme(screenUi(props))
+    const editor = screen.getByLabelText('Message')
+    expect(screen.getByTestId('todo-panel')).toBeTruthy()
+    expect(screen.getByLabelText('Bash')).toBeTruthy()
+    dismiss.mockClear()
+
+    await view.rerender(screenUi({ ...props, worktreeRemoved: true }))
+    expect(screen.getByTestId('worktree-removed-banner')).toBeTruthy()
+    expect(screen.queryByLabelText('Message')).toBeNull()
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+    expect(screen.queryByLabelText('Bash')).toBeNull()
+    expect(screen.getByLabelText('Message', { includeHiddenElements: true })).toBe(editor)
+    expect(dismiss).toHaveBeenCalled()
+
+    await view.rerender(screenUi(props))
+    expect(screen.queryByTestId('worktree-removed-banner')).toBeNull()
+    expect(screen.getByLabelText('Message')).toBe(editor)
+    expect(screen.getByTestId('todo-panel')).toBeTruthy()
+    expect(editor.props.value).toBe('Keep this draft')
+  } finally {
+    dismiss.mockRestore()
+  }
 })
 
 test('the new-session landing is not a conversation restore', async () => {

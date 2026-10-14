@@ -139,7 +139,7 @@ function scriptedTerminals() {
 async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDomainDeps> = {}) {
   const userData = tempDir('superone-node-host-')
   const projectDir = tempDir('superone-node-host-project-')
-  execFileSync('git', ['init', '-q', projectDir])
+  execFileSync('git', ['init', '-q', '-b', 'main', projectDir])
   execFileSync('git', ['-C', projectDir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'])
   execFileSync('git', ['-C', projectDir, 'remote', 'add', 'origin', 'https://example.com/acme/app.git'])
   const folders: RecentFolder[] = [{ id: 'p1', path: projectDir, name: 'app', addedAt: '', lastOpened: new Date().toISOString() }]

@@ -2238,7 +2238,8 @@ export class EnvironmentHost {
     let promise!: Promise<ProjectSnapshot[]>
     promise = this.requireRemoteGateway(connectionId).listProjects().then((projects) => {
       const latest = this.lastStatus.get(connectionId)
-      if (latest?.state === 'connected' && latest.generation === generation) {
+      // A load the node's project change superseded must not cache the list it read before.
+      if (latest?.state === 'connected' && latest.generation === generation && this.remoteProjectLoads.get(connectionId)?.promise === promise) {
         this.remoteProjectCache.set(connectionId, { generation, projects })
       }
       return projects

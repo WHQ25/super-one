@@ -504,8 +504,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }), [])
 
   const containerRef = useRef<HTMLDivElement>(null)
-  // Read by the empty-pane landing (ChatSuggestions) to stay put while a
-  // composer other than the text one occupies the slot.
+  // Read by the empty-pane landing (ChatSuggestions) and the transcript's follow
+  // line (useChatScroll) to stay put while a composer other than the text one
+  // occupies the slot.
   const publishComposerOverhang = useCallback((px: number) => {
     containerRef.current?.style.setProperty('--composer-overhang', `${px}px`)
   }, [])

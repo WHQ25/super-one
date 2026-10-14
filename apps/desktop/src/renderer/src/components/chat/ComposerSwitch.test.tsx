@@ -104,13 +104,10 @@ describe('ComposerSwitch', () => {
     // At rest the text composer's popups (@ / todo) hang above the slot, so it must not clip.
     expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
 
-    expect(screen.getByTestId('composer-slot')).not.toHaveAttribute('data-composer-handoff')
 
     rerender(render_('voice'))
     expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
     expect(screen.getByTestId('composer-slot').style.clipPath).toBe('inset(-100vh 0 0)')
-    // The transcript holds its scroll position while this mark is up.
-    expect(screen.getByTestId('composer-slot')).toHaveAttribute('data-composer-handoff')
 
     const stage = screen.getByTestId('composer-switch')
     endAnimation(stage)
@@ -118,7 +115,6 @@ describe('ComposerSwitch', () => {
     expect(stage).toHaveAttribute('data-phase', 'steady')
     expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
     expect(screen.getByTestId('composer-slot').style.clipPath).toBe('')
-    expect(screen.getByTestId('composer-slot')).not.toHaveAttribute('data-composer-handoff')
   })
 
   it("reports how far the slot stands above the base composer's resting height", () => {
@@ -144,6 +140,20 @@ describe('ComposerSwitch', () => {
     endAnimation(stage)
     notify()
     expect(onOverhangChange).toHaveBeenLastCalledWith(160)
+    rerender(slot('short'))
+    endAnimation(stage)
+    endAnimation(stage)
+    endAnimation(stage)
+    notify()
+    expect(onOverhangChange).toHaveBeenLastCalledWith(0)
+    // The base composer growing with its draft, without a render, counts too.
+    const draft = stage.querySelector('[data-measured-height]')!
+    draft.setAttribute('data-measured-height', '120')
+    notify()
+    expect(onOverhangChange).toHaveBeenLastCalledWith(40)
+    draft.setAttribute('data-measured-height', '80')
+    notify()
+    expect(onOverhangChange).toHaveBeenLastCalledWith(0)
     unmount()
     expect(onOverhangChange).toHaveBeenLastCalledWith(0)
     vi.unstubAllGlobals()

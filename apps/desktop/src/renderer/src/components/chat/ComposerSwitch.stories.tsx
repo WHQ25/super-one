@@ -29,7 +29,7 @@ function ComposerSwitchPreview({ narrow = false, landing = false }: { narrow?: b
           </button>
         ))}
       </div>
-      {/* Mirrors ChatContent: history keeps its scroll position through a hand-off, and
+      {/* Mirrors ChatContent: following history stays still while another composer stands in, and
           the landing stays centred as if the text composer held the slot. */}
       <div ref={rootRef} data-chat-root="" data-testid="handoff-preview" className="flex h-120 flex-col overflow-hidden rounded-xl border border-border">
         <div data-testid="handoff-transcript" className="relative min-h-0 flex-1 overflow-hidden">

@@ -22,8 +22,8 @@ interface ComposerSwitchProps<K extends string> {
   maxHeight?: number | string
   /**
    * Reports, on every slot resize, how much taller the slot is than `align.to`'s
-   * resting height. Content centred above the slot uses it to stay put while
-   * another composer stands in.
+   * shortest resting height. Content above the slot uses it to stay put while
+   * another composer stands in or the base one grows with its draft.
    */
   onOverhangChange?: (px: number) => void
 }
@@ -45,9 +45,10 @@ function motionEnabled(): boolean {
  * newcomer's rise so its top stays inside the clipping edge. A shorter newcomer
  * keeps the outgoing space until it has fully risen, then the slot eases down;
  * chat history does not reclaim that space while the composer is still entering.
- * The slot marks itself `data-composer-handoff` meanwhile, and the transcript
- * keeps its scroll position instead of re-pinning to the bottom: history stays
- * still, and anything the taller newcomer displaces stays reachable by scrolling.
+ * The slot reports its overhang above the base composer's resting height, and a
+ * following transcript pins its tail to that resting line instead of the slot's
+ * top: history stays still through the whole visit, and anything a taller
+ * composer covers stays reachable by scrolling.
  *
  * The outgoing composer stays mounted until its exit animation ends, so a call
  * that ends mid-caption still slides away intact instead of vanishing.
@@ -71,7 +72,16 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
   // hand-off time would pin a collapsed slot. Measure only while nothing is
   // changing hands.
   const restingHeights = useRef<Partial<Record<K, number>>>({})
+  const base = align?.to
+  // The base composer at rest updates the baseline. It can grow without a render
+  // (an editor wrapping a line), so the observer measures it, not a commit.
+  const baseAtRest = useRef(false)
+  // The base composer's shortest height at the slot's current width (a narrower
+  // pane can wrap its placeholder). Every composer, the base one growing with its
+  // draft included, reports overhang against it, so history keeps one baseline.
+  const baseline = useRef<{ width: number; height: number } | null>(null)
   useLayoutEffect(() => {
+    baseAtRest.current = phase === 'steady' && sameEntry && shown === base
     if (phase === 'steady' && sameEntry && stageRef.current) {
       shownRender.current = render
       shownMaxHeight.current = maxHeight
@@ -81,13 +91,20 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
   const floor = align?.kind === shown ? restingHeights.current[align.to] : undefined
 
   // ResizeObserver delivers after layout and before paint, so the report lands
-  // in the same frame as each step of the slot's height transition.
-  const base = align?.to
+  // in the same frame as each step of the slot's height transition. It is
+  // created in a layout effect, ahead of the transcript's observer, which reads
+  // the report in that same delivery.
   useLayoutEffect(() => {
     const slot = slotRef.current
     if (!slot || !onOverhangChange || base === undefined) return
     const observer = new ResizeObserver(() => {
-      const resting = restingHeights.current[base]
+      const width = slot.offsetWidth
+      if (baseline.current?.width !== width) baseline.current = null
+      if (baseAtRest.current && stageRef.current) {
+        const height = stageRef.current.offsetHeight
+        baseline.current = { width, height: Math.min(height, baseline.current?.height ?? height) }
+      }
+      const resting = baseline.current?.height ?? restingHeights.current[base]
       onOverhangChange(resting === undefined ? 0 : slot.offsetHeight - resting)
     })
     observer.observe(slot)
@@ -166,8 +183,6 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
       ref={slotRef}
       data-testid="composer-slot"
       data-height-lock={height === null ? undefined : 'on'}
-      // The transcript reads this to hold its scroll position while the slot resizes.
-      data-composer-handoff={phase === 'steady' ? undefined : ''}
       onTransitionEnd={handleTransitionEnd}
       className={cn(
         // Composers hug the slot's bottom edge, so a shorter newcomer rises to the

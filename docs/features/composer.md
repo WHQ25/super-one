@@ -205,12 +205,19 @@ The slot reuses the realtime voice composer's handoff: the outgoing composer
 drops for 200 ms, then the incoming one rises for 240 ms. The slot grows with a
 taller newcomer's rise using the same duration and easing, keeping its top
 visible. For a shorter newcomer, the slot waits until the rise finishes before
-shrinking over 200 ms. Content above the slot stays still throughout: the
-transcript keeps its scroll position instead of re-pinning to the bottom, so a
-taller composer leaves the displaced tail one scroll away rather than covering
-it, and the empty-pane landing stays centred as if the text composer held the
-slot. A shorter composer only moves history when the browser must clamp the
-scroll position at the bottom. Request identity also
+shrinking over 200 ms. Content above the slot stays still for the whole visit,
+not only the animation: the slot reports how far it rises above the text
+composer's shortest resting height at the current width, and a following
+transcript keeps its end on that line. A taller composer covers the tail, and so
+does the text composer growing with its draft; new content follows to the same
+line. Scrolling past the line reveals the tail; following then keeps the
+true end in view for the rest of the visit. When the viewport grows at the end
+(the taller composer leaving a revealed tail, or the text composer shrinking),
+the transcript holds the released space as bottom padding instead of letting the
+browser clamp history down. New content appends into that space, and scrolling
+up releases what is off screen. Resizing the chat itself (the window, a terminal
+panel) keeps a following tail at the bottom edge instead. The empty-pane landing stays centred the same
+way as the overhang. Request identity also
 triggers a handoff between two
 permissions, a permission and a question, or successive MCP App consents.
 The outgoing request remains visible but inert until its exit finishes. Reduced

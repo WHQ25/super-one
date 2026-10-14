@@ -247,6 +247,46 @@ test('stays paused after a short upward scroll while streaming', async ({ page }
   expect(await bottomDistance(page)).toBeGreaterThan(100)
 })
 
+// A taller decision composer covers the tail instead of pushing history up, and
+// its return reveals the tail in place.
+test('keeps history still while a taller decision composer comes and goes at the bottom', async ({ page }) => {
+  await open(page, 'long-history')
+  await expect.poll(() => bottomDistance(page)).toBeLessThan(2)
+  const anchorTop = () => page.locator('.chat-md p').last().evaluate(el => el.getBoundingClientRect().top)
+  const slotTop = () => page.getByTestId('composer-slot').evaluate(el => el.getBoundingClientRect().top)
+  const before = await anchorTop()
+  const restingSlot = await slotTop()
+  await page.locator('[data-perf-permission]').click()
+  await expect.poll(slotTop).toBeLessThan(restingSlot - 50)
+  await page.waitForTimeout(600)
+  expect(Math.abs(await anchorTop() - before)).toBeLessThan(1)
+  await page.locator('[data-perf-permission]').click()
+  await expect.poll(slotTop).toBe(restingSlot)
+  await page.waitForTimeout(400)
+  expect(Math.abs(await anchorTop() - before)).toBeLessThan(1)
+  expect(await bottomDistance(page)).toBeLessThan(2)
+})
+
+test('covers the tail instead of pushing history while the text composer grows with a draft', async ({ page }) => {
+  await open(page, 'long-history')
+  await expect.poll(() => bottomDistance(page)).toBeLessThan(2)
+  const anchorTop = () => page.locator('.chat-md p').last().evaluate(el => el.getBoundingClientRect().top)
+  const slotTop = () => page.getByTestId('composer-slot').evaluate(el => el.getBoundingClientRect().top)
+  const before = await anchorTop()
+  const restingSlot = await slotTop()
+  await page.getByTestId('composer-slot').locator('[contenteditable=true]').first().click()
+  for (let line = 0; line < 4; line++) {
+    await page.keyboard.type(`draft line ${line}`)
+    await page.keyboard.press('Shift+Enter')
+  }
+  await expect.poll(slotTop).toBeLessThan(restingSlot - 40)
+  expect(Math.abs(await anchorTop() - before)).toBeLessThan(1)
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('Backspace')
+  await expect.poll(slotTop).toBe(restingSlot)
+  expect(Math.abs(await anchorTop() - before)).toBeLessThan(1)
+})
+
 test('keeps compacted history navigable without mounting the full suffix', async ({ page }) => {
   await open(page, 'compacted-history')
   expect(await page.locator('[data-message-id="perf-0"]').count()).toBe(0)

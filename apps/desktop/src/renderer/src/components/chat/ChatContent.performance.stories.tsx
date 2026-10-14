@@ -131,12 +131,26 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
     return { projectSessions: { ...state.projectSessions, __performance__: { ...project, _sessions: { ...project._sessions, performance: { ...session, status: 'streaming', messages: [...session.messages.slice(0, -1), tail] } } } } }
   })
 
+  // A decision composer stands in for the text one, toggled to check the transcript under a hand-off.
+  const togglePermission = () => useChatStore.setState(state => {
+    const project = state.projectSessions.__performance__
+    const session = project._sessions.performance
+    const pendingPermissions = session.pendingPermissions.length > 0 ? [] : [{
+      requestId: 'perf-permission',
+      toolName: 'Bash',
+      input: { command: Array.from({ length: 8 }, (_, line) => `bun run step-${line} --filter @superone/desktop`).join(' && \\\n  '), description: 'Build and test the workspace' },
+      allowAlwaysAllow: true,
+    }]
+    return { projectSessions: { ...state.projectSessions, __performance__: { ...project, _sessions: { ...project._sessions, performance: { ...session, pendingPermissions } } } } }
+  })
+
   return <TooltipProvider>
     <div className="flex flex-col gap-3" style={{ width: 760 }}>
       <Button data-perf-toggle onClick={() => setPanelOpen(value => !value)}>Toggle activity panel</Button>
       <div className="flex gap-2">
         <Button data-perf-jump-first onClick={() => useCodexRealtimeViewStore.getState().jumpTo('performance', { view: 'thread', messageId: 'perf-0' })}>Jump to first message</Button>
         <Button data-perf-append-chunk onClick={appendChunk}>Append streaming chunk</Button>
+        <Button data-perf-permission onClick={togglePermission}>Toggle permission request</Button>
       </div>
       <div className="flex h-[560px] overflow-hidden rounded-xl border border-border bg-card" data-perf-shell>
         <div className="@container flex min-w-0 flex-1 flex-col" data-perf-chat>

@@ -36,7 +36,8 @@ function isPauseFollowWheel(event: WheelEvent): boolean {
 const AT_BOTTOM_EPSILON_PX = 1
 
 /**
- * Pin the viewport to the bottom, skipping the write when it is already there.
+ * Pin the viewport to the follow line, skipping the write when it is already there
+ * (or below it, revealing what a taller composer covers).
  *
  * A redundant `scrollTop` write is not free. It fires a `scroll` event, and each
  * of those cascades into `handleScroll` plus ChatScrollIndicator's rAF +
@@ -51,9 +52,26 @@ const AT_BOTTOM_EPSILON_PX = 1
  * still catches late growth like image decode or font swap, where the layout
  * effect never runs because `messages` did not change.
  */
-function pinToBottom(el: HTMLElement): void {
-  if (el.scrollTop >= el.scrollHeight - el.clientHeight - AT_BOTTOM_EPSILON_PX) return
-  el.scrollTop = el.scrollHeight
+function pinToBottom(el: HTMLElement, revealed: boolean): void {
+  const top = followTop(el, revealed)
+  if (el.scrollTop >= top - AT_BOTTOM_EPSILON_PX) return
+  el.scrollTop = top
+}
+
+/** How far a taller composer standing in rises above the text composer's resting top (ChatContent publishes it). */
+function composerOverhang(el: HTMLElement): number {
+  const overhang = parseFloat(el.closest<HTMLElement>('[data-chat-root]')?.style.getPropertyValue('--composer-overhang') ?? '')
+  return Math.max(0, overhang || 0)
+}
+
+/**
+ * The scroll offset that puts the transcript's end on the text composer's
+ * resting top edge. A taller composer standing in (a decision, a form) covers
+ * the tail instead of moving history. Scrolling past this line reveals it, and
+ * following then keeps the true end in view until the composer leaves.
+ */
+function followTop(el: HTMLElement, revealed: boolean): number {
+  return el.scrollHeight - el.clientHeight - (revealed ? 0 : composerOverhang(el))
 }
 
 const followByViewport = new WeakMap<HTMLElement, () => boolean>()
@@ -86,6 +104,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   // back toward the bottom, or a deliberate tick jump lands there.
   const followRef = useRef(true)
   const pausedScrollTopRef = useRef(0)
+  // Scrolled past the follow line while a taller composer covers the tail.
+  const revealedRef = useRef(false)
+  // Space held below the content when the viewport grew at the end, so history
+  // stays put and new content appends into it.
+  const reserveRef = useRef(0)
+  const clientHeightRef = useRef(0)
+  const rootHeightRef = useRef(0)
   const allowStationaryBottomResumeRef = useRef(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
@@ -93,15 +118,63 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const sessionSwitchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const SETTLE_TIMEOUT = 300
 
+  /**
+   * A viewport growing at the end (a taller composer leaving, the text composer
+   * shrinking) makes the browser clamp scrollTop and drop history by the growth.
+   * Hold that much as bottom padding and restore the offset instead. Only growth
+   * inside the chat root counts: a resized window or a closed terminal panel
+   * changes the root itself, and the tail stays at the bottom then. The reserve
+   * only shrinks afterwards: new content fills it, and scrolling up releases
+   * what is no longer on screen. The clamp's scroll event can arrive before or
+   * after the resize callback, so both run this before recording the offset.
+   */
+  const settleTail = useCallback((el: HTMLElement) => {
+    if (composerOverhang(el) === 0) revealedRef.current = false
+    const grew = el.clientHeight - clientHeightRef.current
+    clientHeightRef.current = el.clientHeight
+    const rootHeight = el.closest('[data-chat-root]')?.clientHeight ?? 0
+    const external = rootHeight !== rootHeightRef.current
+    rootHeightRef.current = rootHeight
+    // A clamp leaves scrollTop at the new maximum. Elsewhere a lower offset is a
+    // row re-measuring or the user, and the last recorded offset may be stale.
+    const clamped = el.scrollTop >= el.scrollHeight - el.clientHeight - AT_BOTTOM_EPSILON_PX
+    const dropped = pausedScrollTopRef.current - el.scrollTop
+    let reserve = reserveRef.current
+    // Growth comes in whole pixels as the slot eases down; only sub-pixel noise is ignored.
+    if (grew > 0 && clamped && dropped > 0.5 && !external) reserve += Math.min(grew, dropped)
+    else if (reserve > 0) {
+      // How much of the reserve is on screen. Heights are whole pixels while the
+      // clamped offset is fractional, so this reads up to a pixel short at the
+      // end; shrinking by that would clamp a pixel and repeat every frame.
+      const shown = el.scrollTop + el.clientHeight - (el.scrollHeight - reserve)
+      reserve = shown <= AT_BOTTOM_EPSILON_PX ? 0 : Math.min(reserve, shown + AT_BOTTOM_EPSILON_PX)
+    }
+    if (reserve === reserveRef.current) return
+    const held = reserve - reserveRef.current
+    reserveRef.current = reserve
+    el.style.paddingBottom = reserve > 0 ? `${reserve}px` : ''
+    if (held > 0) el.scrollTop += held
+  }, [])
+
+  const followTail = useCallback((el: HTMLElement) => {
+    settleTail(el)
+    pinToBottom(el, revealedRef.current)
+  }, [settleTail])
+
   useLayoutEffect(() => {
     followRef.current = true
     allowStationaryBottomResumeRef.current = false
     sessionSwitchRef.current = true
+    revealedRef.current = false
     setShowScrollButton(false)
     clearTimeout(sessionSwitchTimerRef.current)
     const el = scrollViewportRef.current
     if (el) {
-      pinToBottom(el)
+      reserveRef.current = 0
+      el.style.paddingBottom = ''
+      clientHeightRef.current = el.clientHeight
+      rootHeightRef.current = el.closest('[data-chat-root]')?.clientHeight ?? 0
+      pinToBottom(el, false)
       pausedScrollTopRef.current = el.scrollTop
       if (import.meta.env.DEV) {
         window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
@@ -129,6 +202,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const el = scrollViewportRef.current
     if (el && el.scrollHeight <= el.clientHeight) return
     followRef.current = false
+    revealedRef.current = false
     pausedScrollTopRef.current = el?.scrollTop ?? 0
     allowStationaryBottomResumeRef.current = allowStationaryBottomResume
     sessionSwitchRef.current = false
@@ -163,7 +237,9 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const handlePointerDown = (): void => { pointerDown = true }
     const handlePointerUp = (): void => { pointerDown = false }
     const handleScroll = (): void => {
-      const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
+      settleTail(el)
+      if (followRef.current && el.scrollTop > followTop(el, false) + AT_BOTTOM_EPSILON_PX) revealedRef.current = true
+      const remaining = followTop(el, revealedRef.current) - el.scrollTop
       if (followRef.current) {
         // A drag that scrolls (text selection, middle-click autoscroll) fires
         // only scroll events. Without a pressed pointer a decrease is layout: the
@@ -190,7 +266,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     el.addEventListener('pointerdown', handlePointerDown)
     view.addEventListener('pointerup', handlePointerUp, true)
     view.addEventListener('pointercancel', handlePointerUp, true)
-    const following = (): boolean => followRef.current
+    const following = (): boolean => followRef.current && reserveRef.current === 0
     followByViewport.set(el, following)
     return () => {
       if (followByViewport.get(el) === following) followByViewport.delete(el)
@@ -203,7 +279,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       el.removeEventListener('touchmove', handleTouchMove)
       el.removeEventListener('keydown', handleKeyDown)
     }
-  }, [sessionKey, viewKey, viewportMounted, scrollViewportRef, pauseAutoScroll])
+  }, [sessionKey, viewKey, viewportMounted, scrollViewportRef, pauseAutoScroll, settleTail])
 
   const lastMsgIsUser = !showRealtime && messages.length > 0 && messages[messages.length - 1].role === 'user'
 
@@ -220,13 +296,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, follow: followRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
     }
     if (shouldScroll) {
-      pinToBottom(el)
+      followTail(el)
       pausedScrollTopRef.current = el.scrollTop
       followRef.current = true
       allowStationaryBottomResumeRef.current = false
       setShowScrollButton(false)
     }
-  }, [messages, showRealtime ? realtime : null, viewKey, lastMsgIsUser, scrollViewportRef])
+  }, [messages, showRealtime ? realtime : null, viewKey, lastMsgIsUser, scrollViewportRef, followTail])
 
   useEffect(() => {
     const viewport = scrollViewportRef.current
@@ -234,23 +310,20 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const content = viewport.firstElementChild as HTMLElement | null
     if (!content) return
     if (sessionSwitchRef.current && followRef.current) {
-      pinToBottom(viewport)
+      followTail(viewport)
       pausedScrollTopRef.current = viewport.scrollTop
       setShowScrollButton(false)
     }
-    const observer = new ResizeObserver((entries) => {
-      // A composer hand-off resizes only the viewport. Holding scrollTop keeps
-      // history still; what a taller composer displaces stays one scroll away,
-      // and a shorter one hands the space back without moving anything.
-      const handoff = entries.every((entry) => entry.target === viewport)
-        && !!viewport.closest('[data-chat-root]')?.querySelector('[data-composer-handoff]')
+    const observer = new ResizeObserver(() => {
       // Late growth (syntax highlight, wrap, content-visibility revealing a
       // tall tool block) often lands after the turn is already idle. Follow
       // state, not streaming, is what decides whether to stay pinned.
-      if (followRef.current && !handoff) {
-        pinToBottom(viewport)
+      if (followRef.current) {
+        followTail(viewport)
         pausedScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)
+      } else {
+        settleTail(viewport)
       }
       if (sessionSwitchRef.current) {
         clearTimeout(sessionSwitchTimerRef.current)
@@ -260,7 +333,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     observer.observe(content)
     observer.observe(viewport)
     return () => observer.disconnect()
-  }, [sessionKey, viewKey, viewportMounted, scrollViewportRef])
+  }, [sessionKey, viewKey, viewportMounted, scrollViewportRef, followTail, settleTail])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollViewportRef.current

@@ -166,31 +166,151 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(250)
   })
 
-  it('holds the scroll position while a composer hand-off resizes the viewport', () => {
+  it('keeps history still while a taller composer stands in, and reveals the tail when it leaves', () => {
     const { el, state, contentChild } = createMockViewport()
     const root = document.createElement('div')
     root.setAttribute('data-chat-root', '')
-    const slot = document.createElement('div')
-    slot.setAttribute('data-composer-handoff', '')
-    root.append(el, slot)
+    root.append(el)
     const ref = { current: el }
 
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
     expect(state.scrollTop).toBe(200)
 
+    // A decision 50px taller than the text composer shrinks the viewport.
+    root.style.setProperty('--composer-overhang', '50px')
     state.clientHeight = 250
     fireResize(el)
     expect(state.scrollTop).toBe(200)
 
-    // Content growth still follows, hand-off or not.
+    // Content growth still follows, to the text composer's resting line.
     state.scrollHeight = 800
     fireResize(contentChild)
-    expect(state.scrollTop).toBe(550)
+    expect(state.scrollTop).toBe(500)
 
-    slot.removeAttribute('data-composer-handoff')
-    state.clientHeight = 200
+    // The text composer returns: the tail appears without moving history.
+    root.style.setProperty('--composer-overhang', '0px')
+    state.clientHeight = 300
     fireResize(el)
-    expect(state.scrollTop).toBe(600)
+    expect(state.scrollTop).toBe(500)
+  })
+
+  it('follows a revealed tail, and holds history when the taller composer leaves', () => {
+    const { el, state, contentChild } = createMockViewport()
+    // The reserve is bottom padding, which the browser counts in scrollHeight.
+    let content = 500
+    Object.defineProperty(el, 'scrollHeight', { get: () => content + (parseFloat(el.style.paddingBottom) || 0), configurable: true })
+    Object.defineProperty(el, 'scrollTop', {
+      get: () => state.scrollTop,
+      set: (v: number) => { state.scrollTop = Math.min(v, el.scrollHeight - state.clientHeight) },
+      configurable: true,
+    })
+    const root = document.createElement('div')
+    root.setAttribute('data-chat-root', '')
+    root.append(el)
+    const ref = { current: el }
+    const scroll = (top: number) => act(() => {
+      state.scrollTop = top
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    expect(state.scrollTop).toBe(200)
+
+    root.style.setProperty('--composer-overhang', '50px')
+    state.clientHeight = 250
+    act(() => { fireResize(el) })
+    expect(state.scrollTop).toBe(200)
+
+    // Scrolling past the follow line reveals the tail; new content keeps it in view.
+    scroll(250)
+    content = 540
+    act(() => { fireResize(contentChild) })
+    expect(state.scrollTop).toBe(290)
+
+    // The composer leaves and the browser clamps; the released space is held instead.
+    root.style.setProperty('--composer-overhang', '0px')
+    state.clientHeight = 300
+    state.scrollTop = 240
+    act(() => { fireResize(el) })
+    expect(state.scrollTop).toBe(290)
+    expect(el.style.paddingBottom).toBe('50px')
+
+    // New content appends into the held space without moving history.
+    content = 560
+    act(() => { fireResize(contentChild) })
+    expect(state.scrollTop).toBe(290)
+    // A pixel of slack absorbs whole-pixel heights against fractional offsets.
+    expect(el.style.paddingBottom).toBe('31px')
+
+    // Scrolling up releases what is off screen.
+    act(() => { wheelUp(el, -100) })
+    scroll(190)
+    expect(el.style.paddingBottom).toBe('')
+  })
+
+  it('keeps the tail at the bottom when the chat itself is resized', () => {
+    const { el, state } = createMockViewport()
+    const root = document.createElement('div')
+    root.setAttribute('data-chat-root', '')
+    root.append(el)
+    let rootHeight = 400
+    Object.defineProperty(root, 'clientHeight', { get: () => rootHeight, configurable: true })
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    expect(state.scrollTop).toBe(200)
+
+    // A terminal panel opens below the chat: the tail moves up with the bottom edge.
+    rootHeight = 300
+    state.clientHeight = 200
+    act(() => { fireResize(el) })
+    expect(state.scrollTop).toBe(300)
+
+    // It closes: the browser clamps, and history follows the bottom edge back down.
+    rootHeight = 400
+    state.clientHeight = 300
+    state.scrollTop = 200
+    act(() => { fireResize(el) })
+    expect(state.scrollTop).toBe(200)
+    expect(el.style.paddingBottom).toBe('')
+  })
+
+  it('keeps the held space when sub-pixel offsets round against integer heights', () => {
+    const { el, state } = createMockViewport()
+    // The browser reports whole-pixel heights but clamps scrollTop against the
+    // fractional layout, so the offset at the end sits half a pixel short.
+    const content = 500.4
+    const extent = () => content + (parseFloat(el.style.paddingBottom) || 0)
+    Object.defineProperty(el, 'scrollHeight', { get: () => Math.ceil(extent()), configurable: true })
+    // Layout clamps the offset whenever the extent shrinks, not only on writes.
+    Object.defineProperty(el, 'scrollTop', {
+      get: () => (state.scrollTop = Math.min(state.scrollTop, extent() - state.clientHeight)),
+      set: (v: number) => { state.scrollTop = Math.min(v, extent() - state.clientHeight) },
+      configurable: true,
+    })
+    const root = document.createElement('div')
+    root.setAttribute('data-chat-root', '')
+    root.append(el)
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    root.style.setProperty('--composer-overhang', '40px')
+    state.clientHeight = 260
+    act(() => { fireResize(el) })
+    act(() => {
+      state.scrollTop = 240.4
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    root.style.setProperty('--composer-overhang', '0px')
+    state.clientHeight = 300
+    act(() => { fireResize(el) })
+    expect(el.scrollTop).toBeCloseTo(240.4)
+    for (let frame = 0; frame < 10; frame++) {
+      act(() => { fireResize(el) })
+      act(() => { el.dispatchEvent(new Event('scroll')) })
+    }
+    expect(el.scrollTop).toBeCloseTo(240.4)
   })
 
   it('stops following on wheel-up before any scroll event fires', () => {

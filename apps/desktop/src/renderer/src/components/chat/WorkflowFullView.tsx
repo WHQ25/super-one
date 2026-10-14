@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Workflow, Network, Code, Bot, Wrench, List, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -7,25 +7,16 @@ import { useWorkflowNavigation, type WorkflowViewState } from './workflow-naviga
 import { useActiveSession } from '@/stores/chat'
 import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
 import { HighlightedCodeBlock } from './CodeBlock'
-import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
-import { useResolvedWorkflowGraph } from './use-workflow-graph'
-import { useWorkflowReplay } from './use-workflow-replay'
-import type { ReplayAgentRecord } from './workflow-replay'
-import {
-  buildDag,
-  resolveAgentPhase,
-  bindAgentsToDag,
-  runtimeStatusFromAgentState,
-  type DagNode,
-  type DagRuntimeAgent,
-} from './workflow-dag'
+import { mergeLiveWorkflowAgents, useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
+import { resolveAgentPhase, type DagNode } from './workflow-dag'
+import { useWorkflowModel, useWorkflowScriptSource } from './use-workflow-model'
+import { looksLikeRhaiWorkflow } from './workflow-graph-rhai'
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { renderJsonlEntry } from './subagent-activity'
 import { NestedToolContext } from './nested-tool-context'
 import { StructuredOutputView } from './StructuredOutputView'
-import { looksLikeRhaiWorkflow } from './workflow-graph-rhai'
-import { workflowArtifactPath, workflowAgentIconClass } from './workflow-utils'
+import { workflowAgentIconClass } from './workflow-utils'
 import {
   streamdownPlugins,
   streamdownRehypePlugins,
@@ -180,118 +171,14 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   })
   const liveRows = liveProgress?.workflowAgents
   const isRunning = !!liveProgress && !liveProgress.completed
-  // Annotated because the live-only branch omits the optional prompt/result
-  // fields, which would otherwise widen this into a union that drops them.
-  const agents = useMemo<WorkflowAgentInfo[]>(() => {
-    if (!liveRows?.length) return diskAgents
-    if (diskAgents.length === 0) {
-      return liveRows.map((a, i) => ({
-        agentId: a.agentId ?? `live-${a.label}-${i}`,
-        jsonlPath: '',
-        label: a.label,
-        toolCount: a.toolCount,
-        tokens: a.tokens,
-        phase: a.phase,
-        state: a.state,
-      }))
-    }
-    return diskAgents.map((a) => {
-      const live = liveRows.find(
-        (r) => (r.agentId && r.agentId === a.agentId) || r.label === a.label,
-      )
-      if (!live) return a
-      return {
-        ...a,
-        phase: a.phase ?? live.phase,
-        state: live.state ?? a.state,
-        tokens: a.tokens ?? live.tokens,
-        toolCount: a.toolCount || live.toolCount,
-      }
-    })
-  }, [diskAgents, liveRows])
+  const agents = useMemo(() => mergeLiveWorkflowAgents(diskAgents, liveRows), [diskAgents, liveRows])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [loadedScript, setLoadedScript] = useState<string | undefined>(view.script)
-  const [loadedFromPath, setLoadedFromPath] = useState<string | undefined>(undefined)
-
-  useEffect(() => {
-    if (view.script) {
-      setLoadedScript(view.script)
-      setLoadedFromPath(undefined)
-      return
-    }
-    let cancelled = false
-    const candidates = [
-      view.scriptPath,
-      workflowArtifactPath(view.transcriptDir, 'script.rhai'),
-      workflowArtifactPath(view.transcriptDir, 'script.js'),
-    ].filter((p): p is string => !!p)
-
-    void (async () => {
-      for (const path of candidates) {
-        const src = await Promise.resolve(window.app.readWorkflowScript?.(path)).catch(() => null)
-        if (cancelled) return
-        if (typeof src === 'string' && src.length > 0) {
-          setLoadedScript(src)
-          setLoadedFromPath(path)
-          return
-        }
-      }
-      if (!cancelled) {
-        setLoadedScript(undefined)
-        setLoadedFromPath(undefined)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [view.script, view.scriptPath, view.transcriptDir])
-
-  const script = loadedScript
-  const { graph, childScripts } = useResolvedWorkflowGraph(script)
-  const records = useMemo<ReplayAgentRecord[]>(
-    () => agents.map((a) => ({ agentId: a.agentId, prompt: a.prompt, label: a.label, result: a.result, toolCount: a.toolCount })),
-    [agents],
-  )
-  const childWorkflowMap = useMemo(
-    () => new Map(childScripts.map((cs) => [cs.scriptPath, { source: cs.source, name: cs.name }])),
-    [childScripts],
-  )
-  // Runtime rows for graph expansion (Grok labels / Claude fan-out without full JS replay).
-  const runtimeAgents = useMemo<DagRuntimeAgent[]>(
-    () => agents.map((a) => ({
-      label: a.label,
-      prompt: a.prompt,
-      agentId: a.agentId,
-      status: runtimeStatusFromAgentState(a.state),
-      toolCount: a.toolCount,
-    })),
-    [agents],
-  )
-  // JS replay only — Rhai cannot execute; use static graph + runtime label binding.
-  const replay = useWorkflowReplay(
-    script && !looksLikeRhaiWorkflow(script) ? script : undefined,
-    records,
-    childWorkflowMap,
-  )
-  const dag = useMemo(
-    () => {
-      if (replay) return replay.dag
-      if (!graph || graph.blocks.length === 0) return null
-      // Pass runtime so parallel(catalog:*) expands to one node per live agent.
-      return buildDag(graph, runtimeAgents.length > 0 ? runtimeAgents : undefined)
-    },
-    [replay, graph, runtimeAgents],
-  )
-
-  const nodeToAgent = useMemo(
-    () => {
-      if (replay) return replay.nodeAgentIds
-      if (!dag) return new Map<string, string>()
-      return bindAgentsToDag(dag, agents, dag.nodeAgentIds)
-    },
-    [replay, dag, agents],
-  )
+  const { source: script, path: loadedFromPath } = useWorkflowScriptSource({
+    script: view.script,
+    scriptPath: view.scriptPath,
+    transcriptDir: view.transcriptDir,
+  })
+  const { graph, childScripts, replay, dag, nodeToAgent } = useWorkflowModel(script, agents)
   const selected = useMemo(() => {
     const agentId = selectedNodeId ? nodeToAgent.get(selectedNodeId) : undefined
     return agentId ? agents.find((a) => a.agentId === agentId) : undefined
@@ -310,8 +197,8 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const colorIdx = useActiveSession((s) => s.subagentColors[view.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
 
-  const [tab, setTab] = useState<'graph' | 'script' | 'list'>('graph')
-  const [listAgentId, setListAgentId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'graph' | 'script' | 'list'>(view.agentId ? 'list' : 'graph')
+  const [listAgentId, setListAgentId] = useState<string | null>(view.agentId ?? null)
   const canList = agents.length > 0
   const activeTab: 'graph' | 'script' | 'list' | null =
     tab === 'list' && canList

@@ -12,6 +12,8 @@ export interface ReplayAgentRecord {
 export interface ReplayResult {
   dag: Dag
   nodeAgentIds: Map<string, string>
+  /** Child workflow name → the parent phase its `workflow()` call ran in. */
+  subworkflowHosts: Map<string, string | undefined>
   output?: unknown
 }
 
@@ -33,7 +35,7 @@ export interface ChildWorkflow {
   name?: string
 }
 
-function deriveWorkflowName(scriptPath: string): string {
+export function deriveWorkflowName(scriptPath: string): string {
   const base = scriptPath.split('/').pop() ?? scriptPath
   return base.replace(/\.js$/, '').replace(/-wf_[a-z0-9-]+$/i, '')
 }
@@ -175,6 +177,7 @@ export async function replayWorkflowDag(
   }
 
   const subworkflowPhases = new Set<string>()
+  const subworkflowHosts = new Map<string, string | undefined>()
   const workflow = async (nameOrRef: unknown): Promise<unknown> => {
     const resolved = resolveChild(nameOrRef)
     if (!resolved) {
@@ -182,6 +185,7 @@ export async function replayWorkflowDag(
       return {}
     }
     if (!currentSubworkflow && currentPhase) subworkflowPhases.add(currentPhase)
+    if (!currentSubworkflow && !subworkflowHosts.has(resolved.name)) subworkflowHosts.set(resolved.name, currentPhase)
     const prevSub = currentSubworkflow
     const prevPhase = currentPhase
     currentSubworkflow = resolved.name
@@ -218,5 +222,5 @@ export async function replayWorkflowDag(
   let maxCol = 0
   for (const n of nodes) maxCol = Math.max(maxCol, n.col)
   const phases = declaredPhases.filter((p) => !subworkflowPhases.has(p))
-  return { dag: { nodes, edges, cols: maxCol + 1, phases }, nodeAgentIds, output }
+  return { dag: { nodes, edges, cols: maxCol + 1, phases }, nodeAgentIds, subworkflowHosts, output }
 }

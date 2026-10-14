@@ -16,9 +16,12 @@ import {
   stripWorkflowNamePrefix,
   workflowArtifactPath,
   workflowToolTargetLabel,
-  type WorkflowMeta,
+  type WorkflowSubworkflowInfo,
 } from './workflow-utils'
-import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
+import { mergeLiveWorkflowAgents, useWorkflowAgents } from './use-workflow-agents'
+import { useWorkflowModel, useWorkflowScriptSource } from './use-workflow-model'
+import { deriveWorkflowName, type ReplayResult } from './workflow-replay'
+import type { ChildWorkflowScript } from './use-workflow-graph'
 import { useWorkflowOutput } from './use-workflow-output'
 import { useWorkflowNavigation } from './workflow-navigation-context'
 import { StructuredOutputView } from './StructuredOutputView'
@@ -38,6 +41,21 @@ function phaseFromSummary(summary?: string): string | undefined {
   if (!summary) return undefined
   const match = summary.match(/(?:^|·\s*)phase:\s*([^·]+)/i)
   return match?.[1]?.trim() || undefined
+}
+
+const AGENT_REFRESH_MS = 3000
+
+/** Child workflows the replay entered, with the parent phase each was called from. */
+function subworkflowViews(
+  replay: ReplayResult | null,
+  childScripts: ChildWorkflowScript[],
+): WorkflowSubworkflowInfo[] {
+  if (!replay) return []
+  return [...replay.subworkflowHosts].map(([name, hostPhase]) => {
+    const child = childScripts.find((cs) => (cs.name ?? deriveWorkflowName(cs.scriptPath)) === name)
+    const childMeta = child ? parseWorkflowScript(child.source) : undefined
+    return { name, hostPhase, description: childMeta?.description || undefined, phases: childMeta?.phases ?? [] }
+  })
 }
 
 function DesktopStructuredOutput({ data, fill }: WorkflowStructuredOutputProps) {
@@ -87,7 +105,6 @@ export function WorkflowBlock({
     () => extractWorkflowScriptPath(toolBlock.input),
     [toolBlock.input],
   )
-  const [diskMeta, setDiskMeta] = useState<WorkflowMeta | null>(null)
   const nav = useWorkflowNavigation()
 
   useEffect(() => {
@@ -106,31 +123,18 @@ export function WorkflowBlock({
   const scriptPath = launch.scriptPath
     ?? inputScriptPath
     ?? workflowArtifactPath(transcriptDir, 'script.rhai')
+  const { source: scriptSource } = useWorkflowScriptSource({
+    script,
+    scriptPath,
+    transcriptDir,
+    enabled: expanded,
+  })
   const inputHasPhaseDetails = meta.phases.some((phase) => !!phase.detail)
-  useEffect(() => {
-    if (inputHasPhaseDetails || !scriptPath) {
-      setDiskMeta(null)
-      return
-    }
-    const readScript = window.app?.readWorkflowScript
-    if (!readScript) {
-      setDiskMeta(null)
-      return
-    }
-    let cancelled = false
-    void Promise.resolve(readScript(scriptPath))
-      .then((src) => {
-        if (cancelled || typeof src !== 'string' || !src) return
-        const parsed = parseWorkflowScript(src)
-        if (!cancelled && parsed.phases.some((phase) => !!phase.detail)) {
-          setDiskMeta(parsed)
-        }
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [inputHasPhaseDetails, scriptPath])
+  const diskMeta = useMemo(() => {
+    if (inputHasPhaseDetails || !scriptSource) return null
+    const parsed = parseWorkflowScript(scriptSource)
+    return parsed.phases.some((phase) => !!phase.detail) ? parsed : null
+  }, [inputHasPhaseDetails, scriptSource])
   const hasTranscript = !!transcriptDir
   const hasLaunchIdentity = hasTranscript || !!runKey || !!progress?.taskId
   const launched = hasLaunchIdentity || !!progress
@@ -151,37 +155,24 @@ export function WorkflowBlock({
     || undefined
   const isSpawning = !launchFailed && !launched && !isComplete && !name
   const terminalStatus = launchFailed ? 'failed' as const : progress?.status
-  const transcriptAgents = useWorkflowAgents(transcriptDir, hasTranscript, isComplete)
-  const liveAgents: WorkflowAgentInfo[] = useMemo(() => {
-    const rows = progress?.workflowAgents ?? toolBlock.workflowAgents
-    if (!rows?.length) return []
-    return rows.map((agent, index) => ({
-      agentId: agent.agentId ?? `live-${agent.label}-${index}`,
-      jsonlPath: '',
-      label: agent.label,
-      toolCount: agent.toolCount,
-      tokens: agent.tokens,
-      phase: agent.phase,
-      state: agent.state,
-    }))
-  }, [progress?.workflowAgents, toolBlock.workflowAgents])
-  const agents = useMemo(() => {
-    const base = transcriptAgents.length > 0 ? transcriptAgents : liveAgents
-    const liveRows = progress?.workflowAgents ?? toolBlock.workflowAgents
-    if (!liveRows?.length) return base
-    return base.map((agent) => {
-      const live = liveRows.find(
-        (row) => (row.agentId && row.agentId === agent.agentId) || row.label === agent.label,
-      )
-      return live ? {
-        ...agent,
-        phase: agent.phase ?? live.phase,
-        state: live.state ?? agent.state,
-        tokens: agent.tokens ?? live.tokens,
-        toolCount: agent.toolCount || live.toolCount,
-      } : agent
-    })
-  }, [liveAgents, progress?.workflowAgents, toolBlock.workflowAgents, transcriptAgents])
+  // While the run is open and visible, re-list on progress, at most every few seconds.
+  const refreshKey = isComplete || !expanded ? isComplete : Math.floor((progress?.durationMs ?? 0) / AGENT_REFRESH_MS)
+  const transcriptAgents = useWorkflowAgents(transcriptDir, hasTranscript, refreshKey)
+  const liveRows = progress?.workflowAgents ?? toolBlock.workflowAgents
+  const agents = useMemo(() => mergeLiveWorkflowAgents(transcriptAgents, liveRows), [liveRows, transcriptAgents])
+  const model = useWorkflowModel(expanded ? scriptSource : undefined, agents)
+  const subworkflows = useMemo(
+    () => subworkflowViews(model.replay, model.childScripts),
+    [model.replay, model.childScripts],
+  )
+  const agentSubworkflow = useMemo(() => {
+    const byAgent = new Map<string, string>()
+    for (const node of model.dag?.nodes ?? []) {
+      const agentId = node.subworkflow ? model.nodeToAgent.get(node.id) : undefined
+      if (agentId && node.subworkflow) byAgent.set(agentId, node.subworkflow)
+    }
+    return byAgent
+  }, [model.dag, model.nodeToAgent])
   const canOpenFullView = hasTranscript || !!script || !!scriptPath
   const outputFile = progress?.outputFile
     ?? (resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined)
@@ -213,12 +204,13 @@ export function WorkflowBlock({
     meta.description || toolBlock.workflowDescription || progress?.description || undefined,
     name,
   )
-  const openFullView = () => nav.open({
+  const openFullView = (agentId?: string) => nav.open({
     toolUseId: toolBlock.toolUseId,
     transcriptDir,
     name: name ?? '',
     script,
     scriptPath: script ? undefined : scriptPath,
+    agentId,
   })
 
   return (
@@ -238,13 +230,17 @@ export function WorkflowBlock({
         toolCount: agent.toolCount,
         tokens: agent.tokens,
         state: agent.state,
+        phase: agent.phase,
+        subworkflow: agentSubworkflow.get(agent.agentId),
       }))}
+      subworkflows={subworkflows}
       totalTokens={progress?.totalTokens || agentsTokens}
       elapsed={progress?.durationMs ? Math.round(progress.durationMs / 1000) : 0}
       expanded={expanded}
       onExpandedChange={setExpanded}
       canOpenFullView={canOpenFullView}
-      onOpenFullView={openFullView}
+      onOpenFullView={() => openFullView()}
+      onOpenAgent={openFullView}
       retryBadge={isRunning && progress?.retry
         ? <SubagentRetryBadge retry={progress.retry} className="ml-1" />
         : undefined}

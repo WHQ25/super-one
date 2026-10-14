@@ -19,6 +19,13 @@ describe('listWorkflowAgents', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: '红色是 #FF0000' }], usage: { input_tokens: 1000, output_tokens: 20 } } },
     ]))
     await writeFile(join(dir, 'agent-aaa111.meta.json'), JSON.stringify({ agentType: 'workflow-subagent' }))
+    const cachedUsage = { input_tokens: 2, cache_creation_input_tokens: 4000, cache_read_input_tokens: 36000, output_tokens: 16 }
+    await writeFile(join(dir, 'agent-ddd444.jsonl'), jsonl([
+      { type: 'user', message: { role: 'user', content: 'cached' } },
+      { type: 'assistant', message: { id: 'msg_1', content: [{ type: 'thinking' }], usage: { ...cachedUsage, cache_read_input_tokens: 6000 } } },
+      { type: 'assistant', message: { id: 'msg_1', content: [{ type: 'tool_use', name: 'Read' }], usage: { ...cachedUsage, cache_read_input_tokens: 6000 } } },
+      { type: 'assistant', message: { id: 'msg_2', content: [{ type: 'text', text: 'done' }], usage: cachedUsage } },
+    ]))
     await writeFile(join(dir, 'agent-bbb222.jsonl'), jsonl([
       { type: 'user', message: { role: 'user', content: '打个招呼' } },
     ]))
@@ -26,8 +33,12 @@ describe('listWorkflowAgents', () => {
       { type: 'user', message: { role: 'user', content: '\nRead the file and identify the key functions.\nFocus on pure functions.' } },
     ]))
     await writeFile(join(dir, 'journal.jsonl'), jsonl([
-      { type: 'started', key: 'v2:abc', agentId: 'aaa111' },
+      { type: 'launched' },
+      { type: 'started', key: 'v2:abc', agentId: 'aaa111', label: 'color:red', phase: 'Colors' },
+      { type: 'started', key: 'v2:def', agentId: 'ccc333', label: 'scan', phase: 'Scan' },
+      { type: 'started', key: 'v2:ghi', agentId: 'ddd444' },
       { type: 'result', key: 'v2:abc', agentId: 'aaa111', result: { hex: '#FF0000' } },
+      { type: 'failed', key: 'v2:def', agentId: 'ccc333' },
     ]))
   })
 
@@ -35,17 +46,26 @@ describe('listWorkflowAgents', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('derives label from the first non-empty prompt line when the prompt starts with a newline', async () => {
+  it('derives label from the first non-empty prompt line when the journal has none', async () => {
     const agents = await listWorkflowAgents(dir)
-    const ccc = agents.find((a) => a.agentId === 'ccc333')!
-    expect(ccc.label).toBe('Read the file and identify the key functions.')
+    const bbb = agents.find((a) => a.agentId === 'bbb222')!
+    expect(bbb.label).toBe('打个招呼')
+  })
+
+  it('takes label, phase, and lifecycle state from journal.jsonl', async () => {
+    const byId = new Map((await listWorkflowAgents(dir)).map((a) => [a.agentId, a]))
+    expect(byId.get('aaa111')).toMatchObject({ label: 'color:red', phase: 'Colors', state: 'completed' })
+    expect(byId.get('ccc333')).toMatchObject({ label: 'scan', phase: 'Scan', state: 'failed' })
+    expect(byId.get('ddd444')).toMatchObject({ label: 'cached', state: 'running' })
+    expect(byId.get('ddd444')?.phase).toBeUndefined()
+    expect(byId.get('bbb222')?.state).toBeUndefined()
   })
 
   it('lists agent transcripts with label from prompt, tool count, and result text', async () => {
     const agents = await listWorkflowAgents(dir)
-    expect(agents.map((a) => a.agentId)).toEqual(['aaa111', 'bbb222', 'ccc333'])
+    expect(agents.map((a) => a.agentId)).toEqual(['aaa111', 'bbb222', 'ccc333', 'ddd444'])
     const red = agents[0]
-    expect(red.label).toBe('你负责颜色 红色，返回它的十六进制。')
+    expect(red.label).toBe('color:red')
     expect(red.prompt).toBe('你负责颜色 红色，返回它的十六进制。\n（第二行被忽略）')
     expect(red.toolCount).toBe(1)
     expect(red.tokens).toBe(1050)
@@ -55,8 +75,15 @@ describe('listWorkflowAgents', () => {
 
   it('ignores non-agent files and returns id-only fallback for promptless transcripts', async () => {
     const agents = await listWorkflowAgents(dir)
-    expect(agents).toHaveLength(3)
+    expect(agents).toHaveLength(4)
     expect(agents[1].toolCount).toBe(0)
+  })
+
+  it('counts cached prompt tokens and each response once across its split records', async () => {
+    const agents = await listWorkflowAgents(dir)
+    const cached = agents.find((a) => a.agentId === 'ddd444')
+    expect(cached?.toolCount).toBe(1)
+    expect(cached?.tokens).toBe(40_002 + 16 + 16)
   })
 
   it('attaches the structured result from journal.jsonl by agentId', async () => {

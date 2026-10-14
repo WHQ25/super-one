@@ -754,6 +754,7 @@ function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreamin
     toolCount: agent.toolCount,
     tokens: agent.tokens,
     state: agent.state,
+    phase: agent.phase,
   }))
   const agentsTokens = agents.reduce((sum, agent) => sum + (agent.tokens ?? 0), 0)
   const summary = stripWorkflowNamePrefix(toolBlock.taskSummary, name)

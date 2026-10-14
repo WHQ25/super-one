@@ -8,6 +8,8 @@ export interface WorkflowViewState {
   script?: string
   /** Absolute path to load when `script` is missing (Grok script.rhai / library path). */
   scriptPath?: string
+  /** Agent to open in the list tab instead of the graph. */
+  agentId?: string
 }
 
 export interface WorkflowNavigation {

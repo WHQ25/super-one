@@ -73,7 +73,7 @@ describe('workflow card on the phone', () => {
     expect(container.textContent).not.toContain('Workflow complete')
     const card = await expandCard(container)
     expect(card.textContent).toContain('Source')
-    expect(card.textContent).toContain('cataloger')
+    expect(card.querySelector('[aria-label="cataloger"]')?.getAttribute('data-status')).toBe('running')
     expect(card.textContent).toContain('phase Catalog · 3 agents')
     expect(card.textContent).not.toContain('started in the background')
     expect(card.textContent).not.toContain('Output')

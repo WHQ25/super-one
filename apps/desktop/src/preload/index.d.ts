@@ -428,7 +428,7 @@ interface AppAPI {
   getMediaProviders(): Promise<MediaProviderStatus[]>
   getModelCatalog(): Promise<ModelCatalog>
   refreshModelCatalog(): Promise<ModelCatalog>
-  listWorkflowAgents(transcriptDir: string): Promise<Array<{ agentId: string; jsonlPath: string; label: string; prompt?: string; toolCount: number; tokens?: number; resultText?: string }>>
+  listWorkflowAgents(transcriptDir: string): Promise<Array<{ agentId: string; jsonlPath: string; label: string; prompt?: string; toolCount: number; tokens?: number; resultText?: string; result?: unknown; phase?: string; state?: string }>>
   readWorkflowOutput(filePath: string): Promise<{ summary?: string; agentCount?: number; logs: string[]; result?: unknown } | null>
   readWorkflowScript(filePath: string): Promise<string | null>
   /** Project + user `.grok/workflows/*.rhai` with parsed supported args. */

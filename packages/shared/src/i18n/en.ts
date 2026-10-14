@@ -3134,6 +3134,19 @@ export type Messages = {
         }
       }
     }
+    workflow: {
+      agentState: string
+      phase: string
+      toolCalls: string
+      tokens: string
+      agentStatus: {
+        done: string
+        running: string
+        failed: string
+        stopped: string
+        queued: string
+      }
+    }
     subagent: {
       spawning: string
       runningInBackground: string
@@ -7508,6 +7521,19 @@ export const en: Messages = {
           offline: 'Offline',
           unknown: 'Unknown',
         },
+      },
+    },
+    workflow: {
+      agentState: 'Status',
+      phase: 'Phase',
+      toolCalls: 'Tool Calls',
+      tokens: 'Tokens',
+      agentStatus: {
+        done: 'Done',
+        running: 'Running',
+        failed: 'Failed',
+        stopped: 'Stopped',
+        queued: 'Queued',
       },
     },
     subagent: {

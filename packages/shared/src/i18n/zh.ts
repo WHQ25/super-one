@@ -3215,6 +3215,19 @@ export const zh: Messages = {
         },
       },
     },
+    workflow: {
+      agentState: '状态',
+      phase: '阶段',
+      toolCalls: '工具调用',
+      tokens: 'Tokens',
+      agentStatus: {
+        done: '完成',
+        running: '运行中',
+        failed: '失败',
+        stopped: '已停止',
+        queued: '排队中',
+      },
+    },
     subagent: {
       spawning: '正在创建子代理...',
       runningInBackground: '后台运行中',

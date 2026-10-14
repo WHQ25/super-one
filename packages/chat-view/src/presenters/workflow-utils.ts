@@ -323,7 +323,8 @@ export function normalizeWorkflowAgentState(state: string | undefined): Workflow
 
 /**
  * Bot icon classes for a workflow agent row: pulse while running (same idiom as
- * SubagentBlock's header icon), amber on failure, otherwise the idle colour.
+ * SubagentBlock's header icon), faded on failure, otherwise the idle colour.
+ * No separate status hue, so it cannot clash with the agent's identity colour.
  * `workflowRunning` gates the pulse so a stale `running` state cannot keep
  * breathing after the run itself has ended.
  */
@@ -334,7 +335,95 @@ export function workflowAgentIconClass(
   activeClass: string,
 ): string {
   const status = normalizeWorkflowAgentState(state)
-  if (status === 'failed') return 'text-amber-600 dark:text-amber-400'
+  if (status === 'failed') return `${idleClass} opacity-40`
   if (status === 'running' && workflowRunning) return `${activeClass} animate-pulse`
   return idleClass
+}
+
+export type WorkflowAgentTileStatus = 'done' | 'running' | 'failed' | 'stopped' | 'queued'
+
+/**
+ * Tile colour for one workflow agent. A `running` or `pending` agent outlives
+ * neither a finished run (it was cut off: stopped) nor a missing state (an agent
+ * row without lifecycle data is assumed to have finished once the run has).
+ */
+export function workflowAgentTileStatus(state: string | undefined, workflowRunning: boolean): WorkflowAgentTileStatus {
+  const s = state?.toLowerCase()
+  if (s === 'pending' || s === 'queued') return workflowRunning ? 'queued' : 'stopped'
+  if (s === 'stopped' || s === 'cancelled' || s === 'canceled' || s === 'killed') return 'stopped'
+  const status = normalizeWorkflowAgentState(state)
+  if (status === 'failed') return 'failed'
+  if (status === 'done') return 'done'
+  return workflowRunning ? 'running' : status === 'running' ? 'stopped' : 'done'
+}
+
+export interface WorkflowGroupableAgent {
+  phase?: string
+  /** Name of the child workflow (`workflow()` call) the agent ran in. */
+  subworkflow?: string
+}
+
+export interface WorkflowSubworkflowInfo {
+  name: string
+  description?: string
+  /** Parent phase the child workflow was called from. */
+  hostPhase?: string
+  phases: WorkflowPhase[]
+}
+
+export interface WorkflowPhaseSection<A> {
+  /** Empty title collects agents that ran outside any phase. */
+  phase: WorkflowPhase
+  agents: A[]
+}
+
+export interface WorkflowChildSection<A> {
+  workflow: WorkflowSubworkflowInfo
+  sections: WorkflowPhaseSection<A>[]
+}
+
+export interface WorkflowAgentGroup<A> extends WorkflowPhaseSection<A> {
+  children: WorkflowChildSection<A>[]
+}
+
+function sectionFor<S extends WorkflowPhaseSection<unknown>>(
+  list: S[],
+  title: string,
+  create: (phase: WorkflowPhase) => S,
+): S {
+  const found = list.find((s) => s.phase.title === title)
+  if (found) return found
+  const created = create({ title })
+  list.push(created)
+  return created
+}
+
+/**
+ * Lay agents out under the declared phases (in order), adding phases that only
+ * appear at runtime. A child workflow's agents nest under the parent phase that
+ * called it, split by the child's own phases.
+ */
+export function groupWorkflowAgents<A extends WorkflowGroupableAgent>(
+  phases: WorkflowPhase[],
+  agents: A[],
+  subworkflows: WorkflowSubworkflowInfo[] = [],
+): WorkflowAgentGroup<A>[] {
+  const groups: WorkflowAgentGroup<A>[] = phases.map((phase) => ({ phase, agents: [], children: [] }))
+  const newGroup = (phase: WorkflowPhase): WorkflowAgentGroup<A> => ({ phase, agents: [], children: [] })
+  for (const agent of agents) {
+    if (!agent.subworkflow) {
+      sectionFor(groups, agent.phase ?? '', newGroup).agents.push(agent)
+      continue
+    }
+    const info = subworkflows.find((w) => w.name === agent.subworkflow)
+      ?? { name: agent.subworkflow, phases: [] }
+    const host = sectionFor(groups, info.hostPhase ?? '', newGroup)
+    let child = host.children.find((c) => c.workflow.name === info.name)
+    if (!child) {
+      child = { workflow: info, sections: info.phases.map((phase) => ({ phase, agents: [] })) }
+      host.children.push(child)
+    }
+    sectionFor(child.sections, agent.phase ?? '', (phase) => ({ phase, agents: [] })).agents.push(agent)
+  }
+  return groups
 }

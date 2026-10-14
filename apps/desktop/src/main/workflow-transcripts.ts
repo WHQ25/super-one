@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -45,16 +45,50 @@ export interface WorkflowAgentInfo {
 interface JsonlRecord {
   type?: string
   message?: {
+    id?: string
     content?: string | Array<{ type?: string; text?: string }>
-    usage?: { input_tokens?: number; output_tokens?: number }
+    usage?: {
+      input_tokens?: number
+      cache_creation_input_tokens?: number
+      cache_read_input_tokens?: number
+      output_tokens?: number
+    }
   }
 }
 
-function summarizeAgentJsonl(raw: string, agentId: string): { label: string; prompt?: string; toolCount: number; tokens?: number; resultText?: string } {
+interface AgentJsonlSummary {
+  label: string
+  prompt?: string
+  toolCount: number
+  tokens?: number
+  resultText?: string
+}
+
+// A running workflow is re-listed on every progress refresh; only transcripts
+// that grew since the last read are parsed again.
+const summaryCache = new Map<string, { mtimeMs: number; size: number; summary: AgentJsonlSummary }>()
+const SUMMARY_CACHE_LIMIT = 512
+
+async function summarizeAgentJsonlCached(jsonlPath: string, agentId: string): Promise<AgentJsonlSummary> {
+  const { mtimeMs, size } = await stat(jsonlPath)
+  const cached = summaryCache.get(jsonlPath)
+  if (cached && cached.mtimeMs === mtimeMs && cached.size === size) return cached.summary
+  const summary = summarizeAgentJsonl(await readFile(jsonlPath, 'utf8'), agentId)
+  summaryCache.delete(jsonlPath)
+  if (summaryCache.size >= SUMMARY_CACHE_LIMIT) {
+    summaryCache.delete(summaryCache.keys().next().value as string)
+  }
+  summaryCache.set(jsonlPath, { mtimeMs, size, summary })
+  return summary
+}
+
+function summarizeAgentJsonl(raw: string, agentId: string): AgentJsonlSummary {
   let label = agentId
   let prompt: string | undefined
   let toolCount = 0
-  let outputTokens = 0
+  // One API response is written as one record per content block, each repeating
+  // the same usage; key output by message id so a response counts once.
+  const outputByMessage = new Map<string, number>()
   let lastInputTokens = 0
   let resultText: string | undefined
   let foundPrompt = false
@@ -75,8 +109,11 @@ function summarizeAgentJsonl(raw: string, agentId: string): { label: string; pro
     if (rec.type === 'assistant' && Array.isArray(rec.message?.content)) {
       const usage = rec.message.usage
       if (usage) {
-        outputTokens += usage.output_tokens ?? 0
-        lastInputTokens = usage.input_tokens ?? lastInputTokens
+        outputByMessage.set(rec.message.id ?? `#${outputByMessage.size}`, usage.output_tokens ?? 0)
+        // Prompt caching moves most of the prompt out of input_tokens.
+        lastInputTokens = (usage.input_tokens ?? 0)
+          + (usage.cache_creation_input_tokens ?? 0)
+          + (usage.cache_read_input_tokens ?? 0)
       }
       for (const block of rec.message.content) {
         if (block.type === 'tool_use') toolCount++
@@ -84,6 +121,9 @@ function summarizeAgentJsonl(raw: string, agentId: string): { label: string; pro
       }
     }
   }
+  let outputTokens = 0
+  for (const n of outputByMessage.values()) outputTokens += n
+  // Same measure as the CLI's task usage: latest prompt size plus all output.
   const tokens = outputTokens + lastInputTokens || undefined
   return { label, prompt, toolCount, tokens, resultText }
 }
@@ -129,27 +169,49 @@ export async function readWorkflowScript(filePath: string): Promise<string | nul
   }
 }
 
-async function readJournalResults(transcriptDir: string): Promise<Map<string, unknown>> {
-  const results = new Map<string, unknown>()
+interface JournalAgent {
+  label?: string
+  phase?: string
+  /** `started` without a terminal record is still running, or was cut off by a stop. */
+  state?: 'running' | 'completed' | 'failed'
+  result?: unknown
+}
+
+/** Claude's journal.jsonl: `started` (label, phase), then `result` or `failed`, per agentId. */
+async function readJournal(transcriptDir: string): Promise<Map<string, JournalAgent>> {
+  const agents = new Map<string, JournalAgent>()
   let raw: string
   try {
     raw = await readFile(join(transcriptDir, 'journal.jsonl'), 'utf8')
   } catch {
-    return results
+    return agents
   }
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
+    let rec: { type?: string; agentId?: string; label?: unknown; phase?: unknown; result?: unknown }
     try {
-      const rec = JSON.parse(trimmed) as { type?: string; agentId?: string; result?: unknown }
-      if (rec.type === 'result' && typeof rec.agentId === 'string' && rec.result !== undefined) {
-        results.set(rec.agentId, rec.result)
-      }
+      rec = JSON.parse(trimmed)
     } catch {
       continue
     }
+    if (typeof rec.agentId !== 'string') continue
+    const entry = agents.get(rec.agentId) ?? {}
+    if (rec.type === 'started') {
+      if (typeof rec.label === 'string' && rec.label.trim()) entry.label = rec.label.trim()
+      if (typeof rec.phase === 'string' && rec.phase.trim()) entry.phase = rec.phase.trim()
+      entry.state ??= 'running'
+    } else if (rec.type === 'result') {
+      entry.state = 'completed'
+      if (rec.result !== undefined) entry.result = rec.result
+    } else if (rec.type === 'failed') {
+      entry.state = 'failed'
+    } else {
+      continue
+    }
+    agents.set(rec.agentId, entry)
   }
-  return results
+  return agents
 }
 
 /**
@@ -191,7 +253,7 @@ async function listGrokWorkflowAgents(transcriptDir: string): Promise<WorkflowAg
   }
   if (agents.length === 0) return []
 
-  const journalResults = await readJournalResults(transcriptDir)
+  const journal = await readJournal(transcriptDir)
   // session_dir/subagents is sibling of workflows/; child sessions are siblings of session_dir.
   const sessionDir = join(transcriptDir, '..', '..')
   const sessionsRoot = join(sessionDir, '..')
@@ -248,7 +310,7 @@ async function listGrokWorkflowAgents(transcriptDir: string): Promise<WorkflowAg
       // child session may still be spinning up
     }
 
-    const journalResult = journalResults.get(agentId)
+    const journalResult = journal.get(agentId)?.result
     if (resultText == null && journalResult !== undefined) {
       resultText = typeof journalResult === 'string' ? journalResult : JSON.stringify(journalResult, null, 2)
     }
@@ -276,19 +338,28 @@ export async function listWorkflowAgents(transcriptDir: string): Promise<Workflo
   } catch {
     return []
   }
-  const journalResults = await readJournalResults(transcriptDir)
+  const journal = await readJournal(transcriptDir)
   const jsonls = files.filter((f) => f.startsWith('agent-') && f.endsWith('.jsonl')).sort()
   const out: WorkflowAgentInfo[] = []
   for (const file of jsonls) {
     const jsonlPath = join(transcriptDir, file)
     const agentId = file.replace(/^agent-/, '').replace(/\.jsonl$/, '')
-    let summary: { label: string; prompt?: string; toolCount: number; tokens?: number; resultText?: string } = { label: agentId, toolCount: 0 }
+    let summary: AgentJsonlSummary = { label: agentId, toolCount: 0 }
     try {
-      summary = summarizeAgentJsonl(await readFile(jsonlPath, 'utf8'), agentId)
+      summary = await summarizeAgentJsonlCached(jsonlPath, agentId)
     } catch {
       // unreadable agent transcript — fall back to id-only row
     }
-    out.push({ agentId, jsonlPath, ...summary, result: journalResults.get(agentId) })
+    const entry = journal.get(agentId)
+    out.push({
+      agentId,
+      jsonlPath,
+      ...summary,
+      ...(entry?.label ? { label: entry.label } : {}),
+      ...(entry?.phase ? { phase: entry.phase } : {}),
+      ...(entry?.state ? { state: entry.state } : {}),
+      result: entry?.result,
+    })
   }
   if (out.length > 0) return out
   // Grok Build: no Claude-style agent-*.jsonl — use state.json + session/subagents.

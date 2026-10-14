@@ -109,6 +109,7 @@ const s = await agent('summarize ' + r.greeting, { label: 'summarize' })`
     const greet = out.dag.nodes.find((n) => n.label === 'greet')!
     expect(greet.subworkflow).toBe('greeter')
     expect(greet.phase).toBe('Greet')
+    expect(out.subworkflowHosts.get('greeter')).toBe('Children')
     // parent summarize ran with the child's real return value (prompt matched -> mapped)
     const summarize = out.dag.nodes.find((n) => n.label === 'summarize')!
     expect(summarize.subworkflow).toBeUndefined()

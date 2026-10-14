@@ -8,12 +8,12 @@ import {
   Loader2,
   Maximize,
   Workflow,
-  Wrench,
   X,
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { SubagentColorClasses } from './SubagentBlock'
-import { workflowAgentIconClass } from './workflow-utils'
+import type { WorkflowSubworkflowInfo } from './workflow-utils'
+import { WorkflowPhaseGroups, type WorkflowTileAgent } from './WorkflowAgentTiles'
 
 export interface WorkflowPhaseView {
   title: string
@@ -21,13 +21,7 @@ export interface WorkflowPhaseView {
   state?: string
 }
 
-export interface WorkflowAgentView {
-  agentId: string
-  label: string
-  toolCount: number
-  tokens?: number
-  state?: string
-}
+export type WorkflowAgentView = WorkflowTileAgent
 
 export interface WorkflowStructuredOutputProps {
   data: string
@@ -45,12 +39,16 @@ export interface WorkflowBlockPresenterProps {
   activePhase?: string
   phases: WorkflowPhaseView[]
   agents: WorkflowAgentView[]
+  /** Child workflows the agents' `subworkflow` names refer to. */
+  subworkflows?: WorkflowSubworkflowInfo[]
   totalTokens: number
   elapsed: number
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   canOpenFullView: boolean
   onOpenFullView: () => void
+  /** Open one agent; defaults to the full view. */
+  onOpenAgent?: (agentId: string) => void
   retryBadge?: ReactNode
   logs: string[]
   resultText?: string
@@ -144,12 +142,14 @@ export function WorkflowBlockPresenter({
   activePhase,
   phases,
   agents,
+  subworkflows,
   totalTokens,
   elapsed,
   expanded,
   onExpandedChange,
   canOpenFullView,
   onOpenFullView,
+  onOpenAgent,
   retryBadge,
   logs,
   resultText,
@@ -197,13 +197,13 @@ export function WorkflowBlockPresenter({
           </span>
         )}
         {!expanded && !isSpawning && terminalStatus === 'failed' && (
-          <span className="min-w-0 truncate text-left text-destructive">
+          <span className="min-w-0 truncate text-left text-foreground">
             {t('chat.workflow.failed', 'Workflow failed')}
           </span>
         )}
         {isRunning && retryBadge}
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          {!expanded && activePhase && <span className="text-primary">{activePhase}</span>}
+          {!expanded && activePhase && <span className={colors.text}>{activePhase}</span>}
           {!expanded && stats}
           {expanded && canOpenFullView && (
             <span
@@ -231,92 +231,18 @@ export function WorkflowBlockPresenter({
 
       {expanded && (
         <div className="border-t border-border/30">
-          {phases.length > 0 && (
-            <div className="px-3 py-1.5">
-              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('chat.workflow.phases', 'Phases')}
-              </div>
-              <div className="space-y-0.5">
-                {phases.map((phase, index) => {
-                  const showActive = isRunning
-                    && (phase.state === 'active' || (!phase.state && activePhase === phase.title))
-                  const showDone = phase.state === 'done'
-                    || (!isRunning && isComplete && terminalStatus === 'completed' && !phase.state)
-                  return (
-                    <div key={index} className="flex w-full min-w-0 items-baseline gap-1.5 text-xs">
-                      <span className={cn(
-                        'shrink-0 font-medium',
-                        showActive ? 'text-primary' : showDone ? 'text-muted-foreground' : 'text-foreground',
-                      )}>
-                        {showActive && <Loader2 className="mr-1 inline size-2.5 animate-spin" />}
-                        {showDone && !showActive && <Check className="mr-1 inline size-2.5 text-success" />}
-                        {phase.title}
-                      </span>
-                      {phase.detail && (
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={phase.detail}>
-                          {phase.detail}
-                        </span>
-                      )}
-                      {isRunning && phase.state && phase.state !== 'done' && phase.state !== 'active' && (
-                        <span className="shrink-0 text-muted-foreground/80">({phase.state})</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {agents.length > 0 && (
-            <div className="border-t border-border/30 px-3 py-1.5">
-              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('chat.workflow.agents', 'Agents')} ({agents.length})
-              </div>
-              <div className="max-h-32 space-y-0.5 overflow-y-auto">
-                {agents.map((agent) => {
-                  const row = (
-                    <>
-                      <Bot className={cn(
-                        'size-3 shrink-0',
-                        workflowAgentIconClass(agent.state, isRunning, 'text-muted-foreground', colors.text),
-                      )} />
-                      <span className="min-w-0 truncate text-foreground">{agent.label}</span>
-                      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-muted-foreground">
-                        {agent.toolCount > 0 && (
-                          <span className="inline-flex items-center gap-0.5">
-                            <Wrench className="size-2.5" />
-                            {agent.toolCount}
-                          </span>
-                        )}
-                        {agent.tokens != null && agent.tokens > 0 && (
-                          <>
-                            {agent.toolCount > 0 && <span>·</span>}
-                            <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
-                          </>
-                        )}
-                      </span>
-                    </>
-                  )
-                  return canOpenFullView ? (
-                    <button
-                      key={agent.agentId}
-                      type="button"
-                      onClick={onOpenFullView}
-                      className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs hover:bg-muted/60"
-                    >
-                      {row}
-                    </button>
-                  ) : (
-                    <div
-                      key={agent.agentId}
-                      className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs"
-                    >
-                      {row}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+          {(phases.length > 0 || agents.length > 0) && (
+            <WorkflowPhaseGroups
+              phases={phases}
+              agents={agents}
+              subworkflows={subworkflows}
+              isRunning={isRunning}
+              completed={isComplete && terminalStatus === 'completed'}
+              activePhase={activePhase}
+              accent={colors.text}
+              formatTokens={formatTokens}
+              onOpenAgent={canOpenFullView ? onOpenAgent ?? (() => onOpenFullView()) : undefined}
+            />
           )}
 
           <LogOutputPanel logs={logs} resultText={resultText} StructuredOutput={StructuredOutput} />
@@ -329,7 +255,7 @@ export function WorkflowBlockPresenter({
               </>
             ) : terminalStatus === 'failed' ? (
               <>
-                <X className="size-3 shrink-0 text-destructive" />
+                <X className="size-3 shrink-0 text-foreground" />
                 <span>
                   {t('chat.workflow.failed', 'Workflow failed')}
                   {terminalSummary ? ` · ${terminalSummary}` : ''}
@@ -346,7 +272,7 @@ export function WorkflowBlockPresenter({
               </>
             ) : isComplete ? (
               <>
-                <Check className="size-3 shrink-0 text-success" />
+                <Check className="size-3 shrink-0 text-muted-foreground" />
                 <span>
                   {t('chat.workflow.done', 'Workflow complete')}
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}

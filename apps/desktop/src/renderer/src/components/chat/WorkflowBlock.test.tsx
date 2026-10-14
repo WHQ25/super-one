@@ -51,21 +51,30 @@ vi.mock('./workflow-navigation-context', () => ({
   useWorkflowNavigation: () => ({ open: hoisted.navOpen, close: vi.fn() }),
 }))
 
-vi.mock('./use-workflow-agents', () => ({
-  useWorkflowAgents: (transcriptDir: string | undefined) => {
-    if (!transcriptDir) return []
-    // Only Claude-style dirs ship agent-*.jsonl fixtures in these tests.
-    // Grok resolved ~/.grok/.../workflows/<run> should fall back to liveAgents.
-    if (transcriptDir.includes('/.grok/')) return []
-    return [{
-      agentId: 'claude-a1',
-      jsonlPath: `${transcriptDir}/agent.jsonl`,
-      label: 'ClaudeAgent',
-      toolCount: 2,
-      tokens: 100,
-    }]
-  },
-}))
+vi.mock('./use-workflow-agents', async (importOriginal) => {
+  // Stable per dir, like the hook's state: a fresh array each render would re-run replay forever.
+  const byDir = new Map<string, unknown[]>()
+  const none: unknown[] = []
+  return {
+    ...await importOriginal<typeof import('./use-workflow-agents')>(),
+    useWorkflowAgents: (transcriptDir: string | undefined) => {
+      if (!transcriptDir) return none
+      // Only Claude-style dirs ship agent-*.jsonl fixtures in these tests.
+      // Grok resolved ~/.grok/.../workflows/<run> should fall back to liveAgents.
+      if (transcriptDir.includes('/.grok/')) return none
+      if (!byDir.has(transcriptDir)) {
+        byDir.set(transcriptDir, [{
+          agentId: 'claude-a1',
+          jsonlPath: `${transcriptDir}/agent.jsonl`,
+          label: 'ClaudeAgent',
+          toolCount: 2,
+          tokens: 100,
+        }])
+      }
+      return byDir.get(transcriptDir)
+    },
+  }
+})
 
 vi.mock('./use-workflow-output', () => ({
   useWorkflowOutput: () => null,
@@ -263,8 +272,9 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
     )
     expect(screen.getByText('Plan')).toBeInTheDocument()
     expect(screen.getByText('Execute')).toBeInTheDocument()
-    const agentRow = screen.getByText('Explore').closest('button, div')
-    expect(agentRow?.querySelector('svg')).toHaveClass('animate-pulse')
+    const tile = screen.getByRole('button', { name: 'Explore' })
+    expect(tile).toHaveAttribute('data-status', 'running')
+    expect(tile).toHaveClass('animate-pulse')
     expect(screen.queryByText('running')).not.toBeInTheDocument()
     expect(screen.getByText(/phase: Execute/)).toBeInTheDocument()
     // Grok resolves ~/.grok/sessions/.../workflows/<run_id> → full view available
@@ -381,9 +391,9 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
     expect(screen.getByText(/Workflow failed/)).toBeInTheDocument()
     // Explicit done may keep a check; active/pending must not get success styling for failed run.
     const phaseRows = container.querySelectorAll('.space-y-0\\.5 > div')
-    // Plan is done → may show check; Execute/Verify must not appear with text-success check alone on unfinished
-    expect(screen.getByText('Execute').closest('div')?.querySelector('.text-success')).toBeNull()
-    expect(screen.getByText('Verify').closest('div')?.querySelector('.text-success')).toBeNull()
+    // Plan is done → may show check; Execute/Verify must not show a check on unfinished
+    expect(screen.getByText('Execute').closest('div')?.querySelector('.lucide-check')).toBeNull()
+    expect(screen.getByText('Verify').closest('div')?.querySelector('.lucide-check')).toBeNull()
     void phaseRows
 
     hoisted.sessionState.taskProgress = {
@@ -411,7 +421,7 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
       />,
     )
     expect(screen.getByText(/Workflow stopped/)).toBeInTheDocument()
-    expect(screen.getByText('Execute').closest('div')?.querySelector('.text-success')).toBeNull()
+    expect(screen.getByText('Execute').closest('div')?.querySelector('.lucide-check')).toBeNull()
   })
 })
 
@@ -466,7 +476,7 @@ describe('WorkflowBlock — Claude transcript regression', () => {
       />,
     )
     expect(screen.getByText(/Workflow complete/)).toBeInTheDocument()
-    expect(screen.getByText('ClaudeAgent')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ClaudeAgent' })).toHaveAttribute('data-status', 'done')
     expect(screen.getByTitle('Open full view')).toBeInTheDocument()
   })
 })

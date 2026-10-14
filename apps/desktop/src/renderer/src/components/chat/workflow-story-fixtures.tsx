@@ -3,12 +3,13 @@ import { useChatStore } from '@/stores/chat'
 
 export interface SeedTaskProgressValue {
   completed: boolean
+  status?: 'completed' | 'failed' | 'stopped'
   description: string
   lastToolName?: string
   toolUses: number
   totalTokens: number
   durationMs?: number
-  workflowAgents?: Array<{ agentId?: string; label: string; toolCount: number; state?: string }>
+  workflowAgents?: Array<{ agentId?: string; label: string; toolCount: number; state?: string; phase?: string }>
 }
 
 /** Seed `taskProgress[toolUseId]` on the active story session so workflow blocks see live progress. */

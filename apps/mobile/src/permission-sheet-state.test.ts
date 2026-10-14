@@ -17,6 +17,7 @@ const kindSet = {
   computer_use_grant: true,
   session_cleanup_confirm: true,
   automation_confirm: true,
+  agent_profile_confirm: true,
   webmcp_trust_confirm: true,
   device_control_confirm: true,
   terminal_command_confirm: true,
@@ -33,6 +34,27 @@ describe('permission sheet state', () => {
     const titles = kinds.map((kind) => permissionSheetPresentation(request(kind)).title)
     expect(new Set(titles).size).toBe(kinds.length)
     expect(titles.every(Boolean)).toBe(true)
+  })
+
+  it('lists agent profile changes and marks deletion destructive', () => {
+    const update = request('agent_profile_confirm')
+    update.agentProfileConfirm = {
+      operation: 'update',
+      profiles: [{ harnessId: 'claude', name: 'Reviewer', description: 'Reviews diffs.' }],
+      changes: [{ field: 'effort', from: 'high', to: 'max' }, { field: 'model', to: 'opus' }],
+    }
+    expect(permissionSheetPresentation(update)).toMatchObject({
+      title: 'Update agent?',
+      destructive: false,
+      items: [{ title: 'effort', subtitle: 'high → max' }, { title: 'model', subtitle: '— → opus' }],
+    })
+    const remove = request('agent_profile_confirm')
+    remove.agentProfileConfirm = { operation: 'delete', profiles: [{ harnessId: 'codex', name: 'Speedy', description: 'Fast fixes.' }] }
+    expect(permissionSheetPresentation(remove)).toMatchObject({
+      title: 'Delete agents?',
+      destructive: true,
+      items: [{ title: 'Speedy', subtitle: 'codex · Fast fixes.' }],
+    })
   })
 
   it('uses device-scoped actions for device control approval', () => {

@@ -336,12 +336,17 @@ function PromptMarkdown({ text }: { text: string }) {
  * Collapsed: 2-line plain summary (click to expand).
  * Expanded: Markdown with max-height + scroll — same grammar as collab task preview.
  */
-function ExpandablePrompt({
+export function ExpandablePrompt({
   prompt,
   preview,
+  expandTitle,
+  collapseTitle,
 }: {
   prompt?: string
   preview?: string
+  /** Tooltips; default to the collaboration task wording. */
+  expandTitle?: string
+  collapseTitle?: string
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
@@ -364,7 +369,7 @@ function ExpandablePrompt({
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            title={t('chat.sessionAgentsConfirm.collapseTask')}
+            title={collapseTitle ?? t('chat.sessionAgentsConfirm.collapseTask')}
             className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-xs leading-snug text-muted-foreground hover:text-foreground"
           >
             {collapsedLabel}
@@ -377,7 +382,7 @@ function ExpandablePrompt({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          title={t('chat.sessionAgentsConfirm.expandTask')}
+          title={expandTitle ?? t('chat.sessionAgentsConfirm.expandTask')}
           className="block w-full cursor-pointer text-left"
         >
           <span className="line-clamp-2 whitespace-pre-wrap break-words text-xs leading-snug text-foreground/90">

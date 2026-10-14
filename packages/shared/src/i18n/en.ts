@@ -2198,6 +2198,30 @@ export type Messages = {
       automationEnabledOn: string
       automationEnabledOff: string
       automationChangeFromTo: string
+      /** agent_profile_apply / agent_profile_delete HITL */
+      agentProfile: {
+        createTitle: string
+        updateTitle: string
+        deleteTitle: string
+        deleteNote: string
+        userDefault: string
+        unsupported: string
+        none: string
+        on: string
+        off: string
+        before: string
+        after: string
+        fields: {
+          harness: string
+          description: string
+          instructions: string
+          model: string
+          effort: string
+          fastMode: string
+          context: string
+          name: string
+        }
+      }
     }
     /** Declarative forms (MCP elicitation, OpenAI extended forms). */
     inputRequest: {
@@ -2724,6 +2748,36 @@ export type Messages = {
           status: string
           prompt: string
           agent: string
+        }
+      }
+      /** agent_profile_list / agent_profile_apply / agent_profile_delete — casing mirrors automation. */
+      agentProfile: {
+        listingAgents: string
+        agentsListed: string
+        listAgents: string
+        readingAgent: string
+        agentRead: string
+        readAgent: string
+        agentCount: string
+        confirmingCreate: string
+        agentCreated: string
+        createAgent: string
+        confirmingUpdate: string
+        agentUpdated: string
+        updateAgent: string
+        confirmingDelete: string
+        agentsDeleted: string
+        deleteAgents: string
+        nothingDeleted: string
+        partiallyDeleted: string
+        partialDeleteSummary: string
+        builtIn: string
+        fields: {
+          harness: string
+          description: string
+          model: string
+          effort: string
+          changed: string
         }
       }
       dismissed: string
@@ -6620,6 +6674,29 @@ export const en: Messages = {
       automationEnabledOn: 'on',
       automationEnabledOff: 'off',
       automationChangeFromTo: '{{from}} → {{to}}',
+      agentProfile: {
+        createTitle: 'Create agent?',
+        updateTitle: 'Update agent?',
+        deleteTitle: 'Permanently delete {{count}} agent(s)?',
+        deleteNote: 'Sessions already started on them continue on the built-in agent of their harness.',
+        userDefault: 'User default',
+        unsupported: 'Not supported',
+        none: 'None',
+        on: 'On',
+        off: 'Off',
+        before: 'Before',
+        after: 'After',
+        fields: {
+          harness: 'Harness',
+          description: 'Description',
+          instructions: 'Instructions',
+          model: 'Model',
+          effort: 'Effort',
+          fastMode: 'Fast Mode',
+          context: 'Context',
+          name: 'Name',
+        },
+      },
     },
     inputRequest: {
       originAgent: 'Agent',
@@ -7133,6 +7210,35 @@ export const en: Messages = {
           status: 'Status',
           prompt: 'Prompt',
           agent: 'Agent',
+        },
+      },
+      agentProfile: {
+        listingAgents: 'Listing agents…',
+        agentsListed: 'Agents Listed',
+        listAgents: 'List Agents',
+        readingAgent: 'Reading agent…',
+        agentRead: 'Agent Read',
+        readAgent: 'Read Agent',
+        agentCount: '{{count}} agents',
+        confirmingCreate: 'Confirming create…',
+        agentCreated: 'Agent Created',
+        createAgent: 'Create Agent',
+        confirmingUpdate: 'Confirming update…',
+        agentUpdated: 'Agent Updated',
+        updateAgent: 'Update Agent',
+        confirmingDelete: 'Confirming delete…',
+        agentsDeleted: 'Agents Deleted',
+        deleteAgents: 'Delete Agents',
+        nothingDeleted: 'Nothing Deleted',
+        partiallyDeleted: 'Partially Deleted',
+        partialDeleteSummary: '{{deleted}} deleted · {{failed}} failed',
+        builtIn: 'Built-in',
+        fields: {
+          harness: 'Harness',
+          description: 'Description',
+          model: 'Model',
+          effort: 'Effort',
+          changed: 'Changed',
         },
       },
       dismissed: 'Dismissed',

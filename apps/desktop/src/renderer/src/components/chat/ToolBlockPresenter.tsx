@@ -7,6 +7,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
 import { AutomationToolBlock, isAutomationToolName } from './AutomationToolBlock'
+import { AgentProfileToolBlock, isAgentProfileToolName } from './AgentProfileToolBlock'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { DeviceToolBlock } from './DeviceToolBlock'
@@ -518,6 +519,19 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     if (isAutomationToolName(mcpInfo.mcpToolName)) {
       return (
         <AutomationToolBlock
+          toolName={mcpInfo.mcpToolName}
+          params={params}
+          result={cleanResult}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
+        />
+      )
+    }
+    if (isAgentProfileToolName(mcpInfo.mcpToolName)) {
+      return (
+        <AgentProfileToolBlock
           toolName={mcpInfo.mcpToolName}
           params={params}
           result={cleanResult}

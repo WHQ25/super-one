@@ -187,6 +187,28 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         })),
       }
     }
+    case 'agent_profile_confirm': {
+      const payload = request.agentProfileConfirm
+      const operation = payload?.operation ?? 'update'
+      return {
+        title: operation === 'delete' ? 'Delete agents?' : operation === 'create' ? 'Create agent?' : 'Update agent?',
+        description: operation === 'delete'
+          ? 'Sessions already started on them continue on the built-in agent of their harness.'
+          : 'Review the agent before saving. It is offered for delegation once saved.',
+        approveLabel: operation === 'delete' ? 'Delete' : 'Save agent',
+        denyLabel: 'Cancel',
+        destructive: operation === 'delete',
+        items: operation === 'update'
+          ? (payload?.changes ?? []).map((change) => ({
+            title: change.field,
+            subtitle: `${change.from || '—'} → ${change.to || '—'}`,
+          }))
+          : (payload?.profiles ?? []).map((profile) => ({
+            title: profile.name,
+            subtitle: [profile.harnessId, profile.model, profile.description].filter(Boolean).join(' · '),
+          })),
+      }
+    }
     case 'webmcp_trust_confirm': {
       const payload = request.webmcpTrustConfirm
       const origin = payload?.origin || String(request.input.origin || 'this site')

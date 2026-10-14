@@ -114,7 +114,11 @@ describe('DesktopNodeHost sync zone', () => {
     expect(Buffer.from(read.chunk, 'base64').toString()).toBe('screenshot bytes')
 
     // The wake names the file as B resolved it, once per notification however often A retries.
+    // A wake B's session could not take is not recorded, so A's retry delivers it.
     const notify = { sessionId, notificationId: 'job-1', relativePaths: ['browser/shot.png'] }
+    live.wakeFailure = new Error('harness unavailable')
+    await expect(gateway.artifacts.notifyCompleted(notify)).rejects.toThrow('harness unavailable')
+    expect(live.wakes).toEqual([])
     expect(await gateway.artifacts.notifyCompleted(notify)).toEqual({ delivered: true })
     expect(await gateway.artifacts.notifyCompleted(notify)).toEqual({ delivered: true })
     expect(live.wakes).toHaveLength(1)

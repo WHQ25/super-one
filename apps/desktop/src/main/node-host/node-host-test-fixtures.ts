@@ -136,6 +136,14 @@ export class FakeSession {
   /** Host wakes (task notifications) the agent was given. */
   readonly wakes: string[] = []
   async injectTaskNotification(content: string) { this.wakes.push(content) }
+  /** Set to refuse the next admitted wake, as a session whose backend cannot start does. */
+  wakeFailure: Error | null = null
+  async admitTaskNotification(content: string) {
+    const failure = this.wakeFailure
+    this.wakeFailure = null
+    if (failure) throw failure
+    this.wakes.push(content)
+  }
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch) {
     this.lease.assertMutation()
     this.emitHostEvent({ type: 'agent_setting_change', patch, sessionId: this.id } as AgentEvent)

@@ -639,14 +639,16 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
    * A controller's deferred artifact landed in this desktop's sync zone: wake
    * the session's agent once per notification, as the CLI node does. The
    * dispatcher built the text from files it holds; the wake is host work, not
-   * the controller's turn, so it needs no lease.
+   * the controller's turn, so it needs no lease. The answer comes once the
+   * session admits the wake, so a wake that cannot land is retried and one
+   * that starts a long turn does not hold the controller's call open.
    */
   async notifyArtifactsCompleted(input: Parameters<SessionHostPort['notifyArtifactsCompleted']>[0]): Promise<{ delivered: boolean }> {
     if (this.requireRow(input.sessionId).controller?.clientSessionId !== input.controllerClientSessionId) {
       throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
     }
     return this.artifactWakes.deliverOnce(input.sessionId, input.notificationId, () =>
-      runHostReaction(() => this.live(input.sessionId).injectTaskNotification(input.text)))
+      runHostReaction(() => this.live(input.sessionId).admitTaskNotification(input.text)))
   }
 
   fork = refuse('session.fork')

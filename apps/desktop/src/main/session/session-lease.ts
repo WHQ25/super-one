@@ -1,9 +1,15 @@
-import type { ControlLease, SessionRef } from '@superone/shared/environment'
+import type { ControlLease, SessionControlHolder, SessionRef } from '@superone/shared/environment'
 import { bindControlActor, type ControlLeaseService } from '@superone/runtime/lease'
 import { currentControlScope } from './control-context'
 import { SessionLockedError, type SendProviderOrigin, type SessionLifecycleEvent } from './types'
 
-export interface SessionLeaseAuthority { environmentId: string; leases: ControlLeaseService }
+/** Paired names of the clients that can hold this desktop's leases. */
+export interface ControlHolderNames {
+  controller(clientSessionId: string): string | null
+  phone(deviceId: string): string | null
+}
+
+export interface SessionLeaseAuthority { environmentId: string; leases: ControlLeaseService; names?: ControlHolderNames }
 
 /**
  * The delegate of a lease this desktop's own principal holds (`window:<id>`,
@@ -12,6 +18,23 @@ export interface SessionLeaseAuthority { environmentId: string; leases: ControlL
  */
 export function hostDelegate(lease: ControlLease | null, environmentId: string): string | null {
   return lease?.holderClientId === `desktop:${environmentId}` ? lease.delegate ?? null : null
+}
+
+/**
+ * The authenticated client holding `lease`: a window (`ipc:<id>`) or phone
+ * (`phone:<device>`) of this desktop, or a controller desktop's client session.
+ */
+export function holderClientOf(lease: ControlLease, environmentId: string): string {
+  const delegate = hostDelegate(lease, environmentId)
+  return delegate === null ? lease.holderClientId : delegate.replace(/^window:/, 'ipc:')
+}
+
+/** Who holds `lease`, told apart by its holder and delegate and named by their pairings. */
+export function controlHolderOf(lease: ControlLease, environmentId: string, names?: ControlHolderNames): SessionControlHolder {
+  const delegate = hostDelegate(lease, environmentId)
+  if (delegate === null) return { kind: 'controller', label: names?.controller(lease.holderClientId) ?? null }
+  if (delegate.startsWith('window:')) return { kind: 'window', label: null }
+  return { kind: 'phone', label: names?.phone(delegate.replace(/^phone:/, '')) ?? null }
 }
 
 /** Every frontend mutation uses the domain's lease; observing a session grants no authority. */
@@ -40,6 +63,11 @@ export class SessionLease {
   }
   get current(): ControlLease | null { return this.authority ? this.authority.leases.get(this.resource) : null }
   get isExternal(): boolean { const lease = this.current; return !!lease && !lease.delegate?.startsWith('window:') }
+  /** Who holds the session's lease now, named; null while nobody does. */
+  get holder(): SessionControlHolder | null {
+    const lease = this.current
+    return lease && this.authority ? controlHolderOf(lease, this.authority.environmentId, this.authority.names) : null
+  }
   /** The phone of this desktop driving the session, if one is. */
   get phoneDeviceId(): string | null {
     const delegate = this.authority ? hostDelegate(this.current, this.authority.environmentId) : null
@@ -142,6 +170,16 @@ export class SessionLease {
     return true
   }
   revoke(): void { this.authority?.leases.revoke(this.resource) }
+  /**
+   * This desktop's user takes the session from a phone or controller desktop
+   * (Disconnect): their lease ends and the asking window holds it, so a
+   * controller sees it in use and must take it over on purpose.
+   */
+  takeBack(): void {
+    if (!this.isExternal) return
+    this.revoke()
+    this.assertMutation()
+  }
 
   dispose(): void {
     if (this.closed) return

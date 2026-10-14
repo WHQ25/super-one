@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import {
+  CONTROL_HELD_REASON,
   CONTROL_RELEASED_REASON,
   HOST_ACTION_CAPABILITY_VERSION,
   HOST_ACTION_TOOL_GROUPS,
   SESSION_DURABLE_EVENT,
+  type ControlLease,
+  type EnvironmentEventEnvelope,
   type HostActionTerminalResult,
+  type SessionControlHolder,
 } from '@superone/shared/environment'
 import type {
   AgentEvent,
@@ -18,6 +22,8 @@ import type {
   SideChatStartResult,
 } from '@superone/shared/agent-types'
 import type { ControlLeasePort, DraftsPort, SessionHostPort } from '@superone/runtime/server'
+import type { ControlLeaseService } from '@superone/runtime/lease'
+import type { NodeSessionRecord } from '@superone/runtime/session'
 import { unsupportedMethodError } from '@superone/runtime/server'
 import {
   HostActionChannel,
@@ -32,7 +38,8 @@ import type { Session, SessionCreateOptions } from '../session/types'
 import log from '../logger'
 import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
 import { createDesktopSession } from './desktop-session-create'
-import { isControllerClient, runFencedSessionControl, runHostReaction } from '../session/control-context'
+import { currentControlScope, isControllerClient, runFencedSessionControl, runHostReaction } from '../session/control-context'
+import { holderClientOf } from '../session/session-lease'
 import { enqueueSessionQueueOp } from '../session/session-queue'
 import { worktreeExists } from '../git/worktree-alive'
 
@@ -64,7 +71,7 @@ export interface DesktopSessionEdits {
 }
 
 export interface DesktopSessionHostDeps extends DesktopSessionReadsDeps<DesktopSessionRow> {
-  leases: ControlLeasePort
+  leases: ControlLeasePort & Pick<ControlLeaseService, 'get'>
   /** Durable Host Actions this desktop's sessions ask their controller to run. */
   hostActions: HostActionStore
   projectPath(projectId: string): string | null
@@ -72,6 +79,8 @@ export interface DesktopSessionHostDeps extends DesktopSessionReadsDeps<DesktopS
   projectId?(projectPath: string): string | null
   /** Pairing label of a controller, for the "started from" badge. */
   controllerLabel(clientSessionId: string): string | null
+  /** Who holds a lease of this desktop, named (`controlHolderOf`). */
+  controlHolder(lease: ControlLease): SessionControlHolder
   /** Whether a controller's pairing still admits it (not revoked or suspended). */
   controllerActive(clientSessionId: string): boolean
   edits: DesktopSessionEdits
@@ -126,6 +135,16 @@ function controlReleasedError(): Error {
   return Object.assign(new Error('this computer took the session back; reconnect to control it again'), {
     code: 'failed_precondition',
     details: { reason: CONTROL_RELEASED_REASON },
+  })
+}
+
+/** The refusal a controller gets while someone else drives the session here. */
+function controlHeldError(holder: SessionControlHolder): Error {
+  return Object.assign(new Error(holder.kind === 'window'
+    ? 'this computer is using the session; take it over to control it'
+    : 'another device is controlling this session'), {
+    code: 'failed_precondition',
+    details: { reason: CONTROL_HELD_REASON, holder },
   })
 }
 
@@ -566,15 +585,55 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   /**
    * A controller acquiring a session taken back from it drives it again only
    * when it reclaims it on purpose; the reclaim lands once its lease is granted.
+   * Nor does it take a session from whoever drives it here: a phone or another
+   * controller refuses it, and this desktop's window yields only to the user's
+   * explicit Take over (`reclaim`). The refusal names the holder.
    */
   admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): (() => void) | void {
     const controller = this.requireRow(sessionId).controller
-    if (!controller?.released || !isControllerClient(controllerClientSessionId)) return
-    if (!opts.reclaim) throw controlReleasedError()
+    const isController = isControllerClient(controllerClientSessionId)
+    const released = !!controller?.released && isController
+    if (released && !opts.reclaim) throw controlReleasedError()
+    const lease = isController ? this.deps.leases.get({ environmentId: this.deps.environmentId, sessionId }) : null
+    if (lease && lease.holderClientId !== controllerClientSessionId) {
+      const holder = this.deps.controlHolder(lease)
+      if (holder.kind !== 'window' || !opts.reclaim) throw controlHeldError(holder)
+    }
+    if (!released) return
     return () => {
       this.deps.edits.setController(sessionId, { ...controller, released: false })
       this.live(sessionId).emitHostEvent({ type: 'remote_control_changed', released: false })
     }
+  }
+
+  /**
+   * Record who drives a session now on its stream, so a controller following
+   * it shows that before it asks for control. Each reader sees itself as
+   * nobody (`viewEvent`).
+   */
+  publishControlHolder(sessionId: string, lease: ControlLease | null): void {
+    if (!this.row(sessionId)) return
+    const event: AgentEvent = { type: 'session_control_holder', holder: lease ? this.deps.controlHolder(lease) : null }
+    this.deps.events.appendSession({
+      sessionId,
+      eventType: SESSION_DURABLE_EVENT.agentEvent,
+      payload: { event, ...(lease ? { holderClient: holderClientOf(lease, this.deps.environmentId) } : {}) },
+    })
+  }
+
+  override viewEvent(envelope: EnvironmentEventEnvelope, reader?: { clientSessionId: string }): EnvironmentEventEnvelope {
+    const payload = envelope.payload as { event?: AgentEvent; holderClient?: string } | null
+    if (envelope.eventType !== SESSION_DURABLE_EVENT.agentEvent || payload?.event?.type !== 'session_control_holder') return envelope
+    const self = !!payload.holderClient && payload.holderClient === reader?.clientSessionId
+    return { ...envelope, payload: { event: self ? { ...payload.event, holder: null } : payload.event } }
+  }
+
+  /** A session's record as the client reading it sees it: who else drives it now, if anyone. */
+  protected override record(row: DesktopSessionRow): NodeSessionRecord {
+    const record = super.record(row)
+    const lease = this.deps.leases.get({ environmentId: this.deps.environmentId, sessionId: row.sessionId })
+    if (!lease || holderClientOf(lease, this.deps.environmentId) === currentControlScope()?.clientSessionId) return record
+    return { ...record, controlHolder: this.deps.controlHolder(lease) }
   }
 
   async forkOnHost(input: Parameters<NonNullable<SessionHostPort['forkOnHost']>>[0]) {

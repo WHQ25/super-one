@@ -54,6 +54,8 @@ export type SessionUiSettings = SessionSettingsPatch
 
 export interface LiveSessionSnapshot {
   controlLease?: import('./environment').ControlLease | null
+  /** Who holds `controlLease`, named; null while nobody does. */
+  controlHolder?: import('./environment').SessionControlHolder | null
   sid: string
   projectPath: string
   isActive: boolean

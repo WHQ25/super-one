@@ -280,8 +280,9 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     return this.reads.events.headSequence()
   }
 
-  listEventsAfter(afterSequence: string): EnvironmentEventEnvelope[] {
-    return this.reads.events.listAfter(afterSequence)
+  listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[] {
+    const events = this.reads.events.listAfter(afterSequence)
+    return reader ? events.map((envelope) => this.viewEvent(envelope, reader)) : events
   }
 
   streamEpoch(): string {
@@ -300,7 +301,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     return this.reads.events.onAppend(listener)
   }
 
-  viewEvent(envelope: EnvironmentEventEnvelope): EnvironmentEventEnvelope {
+  viewEvent(envelope: EnvironmentEventEnvelope, _reader?: { clientSessionId: string }): EnvironmentEventEnvelope {
     return envelope
   }
 }

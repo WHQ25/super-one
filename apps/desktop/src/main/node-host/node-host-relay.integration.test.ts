@@ -166,7 +166,8 @@ describe('desktop node over the relay', () => {
 
     await send('over the relay', 'm1')
     const first = await eventsAfter('0')
-    expect(first.events.map((e) => e.eventType)).toEqual(['session.created', 'session.user_message', 'session.agent_event', 'session.agent_event'])
+    // The first agent event is the creator's grant (`session_control_holder`).
+    expect(first.events.map((e) => e.eventType)).toEqual(['session.agent_event', 'session.created', 'session.user_message', 'session.agent_event', 'session.agent_event'])
 
     // A joins B's network: the next route check hands the connection to the LAN.
     await lan.up()

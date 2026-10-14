@@ -1,5 +1,5 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
-import type { SessionTurnEvent } from '@superone/shared/environment'
+import type { SessionControlHolder, SessionTurnEvent } from '@superone/shared/environment'
 import type { MessageDisplayFields } from '@superone/shared/message-display'
 import type { AgentEvent, ChatMessageSource, PermissionRequest, SendFailure } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest, ModUiResult } from '@superone/shared/mod-ui'
@@ -89,6 +89,8 @@ export interface NodeSessionRecord {
    * The controller re-acquires its lease with `reclaim` to drive it again.
    */
   controlReleased?: boolean
+  /** Who drives the session now when it is not the reader (desktop nodes: its window, a phone, another controller). */
+  controlHolder?: SessionControlHolder
   /** Capability version for the Host Action channel (0 = unbound / unsupported). */
   hostActionCapabilityVersion: number
   /** Session-scoped tool groups the controller may execute (e.g. browser.read). */

@@ -230,7 +230,10 @@ describe('DesktopNodeHost', () => {
 
     const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: '0' })
     const types = events.map((e) => e.eventType)
-    expect(types).toEqual(['session.created', 'session.user_message', 'session.agent_event', 'session.agent_event'])
+    expect(types).toEqual(['session.agent_event', 'session.created', 'session.user_message', 'session.agent_event', 'session.agent_event'])
+    // The creator's grant: the controller reads itself as nobody else driving it.
+    expect(events[0].payload).toEqual({ event: { type: 'session_control_holder', holder: null } })
+    events.shift()
     expect(events[1].payload).toMatchObject({ blockId: 'm1', text: 'do the task' })
     expect((events[2].payload as { event: Record<string, unknown> }).event).not.toHaveProperty('projectPath')
 
@@ -703,13 +706,22 @@ describe('DesktopNodeHost control takeover', () => {
   /** B's window driving one of B's sessions, as its composer does. */
   const windowControl = (session: FakeSession) => runWindowControl(1, () => session.lease.assertMutation())
 
-  it("takes over what B's window holds, but never a lease of B's phones", async () => {
-    const { host, sessions, projectDir, client } = await pairedDesktops()
+  it("takes over what B's window holds only on purpose, and never a lease of B's phones", async () => {
+    const { host, sessions, projectDir, client } = await pairedDesktops(fakeCatalog(), { phoneLabel: (id) => id === 'p' ? 'Pixel 9' : null })
     const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    const { snapshotSequence } = await client.rpc<{ snapshotSequence: string }>('session.snapshot')
     windowControl(own)
-    expect(own.lease.current?.delegate).toBe('window:1')
+    const held = own.lease.current!
+    expect(held.delegate).toBe('window:1')
 
-    const lease = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, yields: true })
+    // A controller learns B is using it before it asks, and an ordinary acquire (before a send) does not take it.
+    expect(await client.rpc('session.get', { sessionId: own.id })).toMatchObject({ controlHolder: { kind: 'window', label: null } })
+    await expect(client.rpc('session.acquireControl', { sessionId: own.id, yields: true }))
+      .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_held', holder: { kind: 'window', label: null } } })
+    expect(own.lease.current).toEqual(held)
+
+    // Take over: the explicit reclaim.
+    const lease = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, yields: true, reclaim: true })
     const controller = host.controllers()[0].id
     expect(lease).toMatchObject({ holderClientId: controller })
     expect(own.lease.current).toMatchObject({ leaseId: lease.leaseId, holderClientId: controller })
@@ -722,12 +734,44 @@ describe('DesktopNodeHost control takeover', () => {
     // A controller's grant never reads as B's window.
     await expect(client.rpc('session.acquireControl', { sessionId: own.id, delegate: 'window:1' })).rejects.toMatchObject({ code: 'invalid_argument' })
 
-    // B's phone holds another session: the controller does not take it.
+    expect(await client.rpc('session.get', { sessionId: own.id })).not.toHaveProperty('controlHolder')
+
+    // The session's stream told it who held it, and that it holds it now.
+    const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: snapshotSequence })
+    const holders = events.map((e) => (e.payload as { event?: AgentEvent }).event).filter((e) => e?.type === 'session_control_holder')
+    expect(holders).toEqual([
+      { type: 'session_control_holder', holder: { kind: 'window', label: null } },
+      { type: 'session_control_holder', holder: null },
+      { type: 'session_control_holder', holder: null },
+    ])
+
+    // B's phone holds another session: the controller does not take it, even on purpose, and is told whose it is.
     const phoneHeld = sessions.createSession({ id: 'phone-session', projectPath: projectDir }) as unknown as FakeSession
     bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${host.identity.environmentId}`, delegate: 'phone:p', yields: 'none' })
       .acquire({ resource: phoneHeld.lease.resource, holderClientId: 'phone:p', ttlMs: 60_000 })
-    await expect(client.rpc('session.acquireControl', { sessionId: phoneHeld.id, yields: true })).rejects.toMatchObject({ code: 'failed_precondition' })
+    const phone = { kind: 'phone', label: 'Pixel 9' }
+    expect(await client.rpc('session.get', { sessionId: phoneHeld.id })).toMatchObject({ controlHolder: phone })
+    for (const reclaim of [false, true]) {
+      await expect(client.rpc('session.acquireControl', { sessionId: phoneHeld.id, yields: true, reclaim }))
+        .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_held', holder: phone } })
+    }
     expect(phoneHeld.lease.phoneDeviceId).toBe('p')
+  })
+
+  it("lets B's user take a session from a controller, which then sees it in use", async () => {
+    const { sessions, projectDir, client } = await pairedDesktops()
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    const lease = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id })
+    expect(own.lease.holder).toEqual({ kind: 'controller', label: 'Desktop A' })
+
+    // Disconnect in B's window: the controller's lease ends and the window holds the session.
+    runWindowControl(1, () => own.lease.takeBack())
+    expect(own.lease.current?.delegate).toBe('window:1')
+    await expect(client.rpc('session.renewControl', { leaseId: lease.leaseId, generation: lease.generation })).rejects.toMatchObject({ code: 'lease_required' })
+    await expect(client.rpc('session.acquireControl', { sessionId: own.id }))
+      .rejects.toMatchObject({ details: { reason: 'control_held', holder: { kind: 'window', label: null } } })
+    await client.rpc('session.acquireControl', { sessionId: own.id, reclaim: true })
+    expect(own.lease.holder).toEqual({ kind: 'controller', label: 'Desktop A' })
   })
 
   it("leaves B's window its lease when B took the session back and the controller does not reclaim", async () => {

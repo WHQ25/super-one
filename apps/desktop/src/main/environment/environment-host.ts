@@ -45,6 +45,7 @@ import {
   decideRemoteCliAction,
   refusingPeerProtocolMax,
   isControlReleasedError,
+  controlHeldBy,
   desktopUpgradeRequiredMessage,
   providerSessionIdFromResume,
   shouldBlockDesktopForNewerNode,
@@ -918,9 +919,10 @@ export class EnvironmentHost {
   }
 
   /**
-   * Drive a session again after the computer it runs on took it back. A lease
-   * acquired without `reclaim` is refused there, so ordinary sends never
-   * silently take control back.
+   * Drive a session again after the computer it runs on took it back, or take
+   * it over from that computer's window (the user's Reconnect / Take over). A
+   * lease acquired without `reclaim` is refused there, so ordinary sends never
+   * silently take control.
    */
   async reclaimSessionControl(connectionId: string, sessionId: string): Promise<void> {
     this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
@@ -1794,10 +1796,11 @@ export class EnvironmentHost {
   ): Promise<unknown> {
     const { gateway, environmentId, local } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId).catch((err: unknown) => {
-      // The composer was opened before the node took the session back; close it now.
-      if (isControlReleasedError(err)) {
-        this.agentEventSink?.({ type: 'remote_control_changed', released: true, sessionId: input.sessionId, projectPath: input.projectPath })
-      }
+      // The composer was opened before the node took the session back, or before someone there took it; close it now.
+      const route = { sessionId: input.sessionId, projectPath: input.projectPath }
+      const holder = controlHeldBy(err)
+      if (isControlReleasedError(err)) this.agentEventSink?.({ type: 'remote_control_changed', released: true, ...route })
+      else if (holder) this.agentEventSink?.({ type: 'session_control_holder', holder, ...route })
       throw err
     })
 

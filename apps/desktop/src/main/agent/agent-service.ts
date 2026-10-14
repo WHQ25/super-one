@@ -174,9 +174,7 @@ export class AgentService {
         if (session.lease.isExternal) targets.push(session)
       })
     }
-    for (const session of targets) {
-      if (session.lease.isExternal) session.lease.revoke()
-    }
+    for (const session of targets) session.lease.takeBack()
     await this.releaseRoutedSessions?.(sessionId)
   }
 

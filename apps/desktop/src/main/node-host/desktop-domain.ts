@@ -45,6 +45,7 @@ import { desktopNodeHostPaths } from './paths'
 import { claudeUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
 import type { TerminalLeaseAuthority } from '../terminal/terminal-lease'
+import { controlHolderOf, type ControlHolderNames } from '../session/session-lease'
 import type { PhoneRpcRouter } from './routed-phone-rpc'
 
 /** Policy flags of the desktop node; its methods follow from the ports this host passes. */
@@ -120,6 +121,8 @@ export interface DesktopDomainDeps {
   scheduledSends?: DesktopSessionHostDeps['scheduledSends']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
+  /** The name a phone paired with this desktop under, for who holds a session. */
+  phoneLabel?(deviceId: string): string | null
   /** This desktop's agent defaults (`desktop-agent-settings.ts`), what `settings.get` reports. */
   agentSettings?: () => NodeAgentSettings
   /** The session provider and automation stores the window edits (`desktop-config-methods.ts`). */
@@ -163,7 +166,11 @@ export class DesktopDomain {
       const leases = new ControlLeaseService(db)
       const events = new EventLog(db, identity.environmentId)
       reconcileRunsAfterRestart({ db, events, sessions: deps.sessions })
-      const unbindSessions = deps.sessions.onSession((session) => session.lease.bind({ environmentId: identity.environmentId, leases }))
+      const names: ControlHolderNames = {
+        controller: (clientSessionId) => controllerLabel(auth, clientSessionId),
+        phone: (deviceId) => deps.phoneLabel?.(deviceId) ?? null,
+      }
+      const unbindSessions = deps.sessions.onSession((session) => session.lease.bind({ environmentId: identity.environmentId, leases, names }))
       const recorder = new SessionEventRecorder(deps.sessions, events)
       const sessions = new DesktopSessionHost({
         environmentId: identity.environmentId,
@@ -179,7 +186,8 @@ export class DesktopDomain {
         hostActions: createSqliteHostActionStore(db),
         projectPath: (projectId) => deps.projects.get(projectId)?.path ?? null,
         projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null,
-        controllerLabel: (clientSessionId) => controllerLabel(auth, clientSessionId),
+        controllerLabel: names.controller,
+        controlHolder: (lease) => controlHolderOf(lease, identity.environmentId, names),
         controllerActive: (clientSessionId) =>
           auth.listClientSessions().some((c) => c.clientSessionId === clientSessionId && c.revokedAt === null && c.suspendedAt === null),
       })
@@ -199,6 +207,9 @@ export class DesktopDomain {
         collaboration: desktopCollaborationPort(deps.listAgentProfiles),
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
+      leases.onChange((resource, lease) => {
+        if ('sessionId' in resource && resource.environmentId === identity.environmentId) sessions.publishControlHolder(resource.sessionId, lease)
+      })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
       return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
@@ -218,9 +229,6 @@ export class DesktopDomain {
   }
 
   openPhoneRoute(client: import('@superone/runtime/server').AuthenticatedClient) { return this.phonePorts.rpcRouter?.open(client) }
-
-  /** The name a controller desktop paired under; null for any other holder. */
-  controllerLabel(clientSessionId: string): string | null { return controllerLabel(this.auth, clientSessionId) }
 
   /** A controller lost access (revoked, suspended, paused): its leases and draft grants end with it. */
   revokeClient(clientSessionId: string): void {

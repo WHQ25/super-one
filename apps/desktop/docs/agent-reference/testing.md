@@ -62,6 +62,13 @@ mints a node code and A pairs it, both over CDP through development-only IPC
 up and `lab:pair` pairs later. A's Control Other Devices tab needs the
 experimental remote nodes setting on.
 
+Paired, A should use B as if it sat there: every B session and terminal,
+models, API providers, Git and `@` mentions in A's composer, the file tree,
+and B's settings families. For control, type in B's window, then open the
+session on A: A names B with Take over, B names A with Disconnect, and
+terminals change hands only on real input. Paired-controller coverage
+without the UI is `src/main/node-host/node-host-server.integration.test.ts`.
+
 B is `SUPERONE_INSTANCE=node-b` (`scripts/desktop-node-lab.ts`). It runs the
 main/preload build already in `apps/desktop/out` (A's `bun run dev` writes it;
 the script builds once if it is missing) against its own renderer dev server, so
@@ -83,6 +90,8 @@ There is no single-instance lock, and the phone LAN server and other local
 listeners take ephemeral ports. B's node host starts when it mints a code and
 then runs while A is paired; delete `.dev-data/instance-node-b` for a fresh node. A child
 on B needs its harness enabled and signed in on B (Settings → Harnesses).
+A's harness picker lists the harnesses enabled on A, while B's models come
+from B, so a fresh profile on either side needs the harness enabled on both.
 
 The automated version is `e2e/desktop-node-orchestration.spec.ts`
 (`bun run test:e2e:fast -- e2e/desktop-node-orchestration.spec.ts` after

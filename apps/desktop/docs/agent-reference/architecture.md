@@ -143,14 +143,22 @@ Observers on protocol topics acquire no control.
 
 IPC actors come from `event.sender.id` (`window:<id>`); phone actors come from
 an authenticated pairing (`phone:<deviceId>`). Both delegate for this desktop's
-canonical principal. Window grants yield to a phone; phones refuse competing
-phones and windows until release, expiry or explicit reclaim. Every frontend
+canonical principal; a controller desktop holds leases under its own client
+session. `controlActorFor` (`session/control-context.ts`) is the one place that
+maps an authenticated client to its actor; the transport and payload never
+choose it. Window grants yield to any other client (a phone, a controller);
+phones and controllers refuse competing clients until release, expiry or
+explicit reclaim. A controller takes a session from the window only on
+explicit Take over or for a phone it relays (`DesktopSessionHost.admitControl`);
+refusals name the holder (`control_held`). Every frontend
 mutation checks its grant. A request retains its exact proof across asynchronous
 admission and startup; takeover cannot silently give it a fresh grant. Trusted
 host work uses a separate origin.
 
 The local Environment gateway uses `InProcessRpcClient` to dispatch the same
-resource methods as node and phone connections. Network and in-process clients
+resource methods as node and phone connections: the window, phones and
+controller desktops share one `DesktopSessionHost` and one RPC context
+(`DesktopDomain.clientContext()`). Network and in-process clients
 share `EnvironmentRpcClient` resource helpers and `RemoteEnvironmentGateway`.
 The domain binds live and resumed sessions before controller adoption; terminal
 IPC is in `terminal/terminal-ipc.ts`.

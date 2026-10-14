@@ -5,9 +5,14 @@ Goal: One backend serves its own window, controller desktops and phones through 
 Proposal: [unified-remote-protocol.md](../proposals/unified-remote-protocol.md)
 Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md), [chat-core.md](../architecture/chat-core.md), [relay-crypto.md](../architecture/relay-crypto.md) (framing), `apps/desktop/docs/agent-reference/architecture.md`, `apps/desktop/CLAUDE.md` (session control boundary), `apps/mobile/docs/agent-reference/transport.md`
 
-Scope is proposal phases 1–4. Poll-to-push for terminals and watched
-directories, Git/workspace parity on the desktop node, configuration families
-and features the phone does not have today are phase 5 and get their own plan.
+Scope is proposal phases 1–4. Phase 5 is outside this plan. Done on
+2026-10-14: Git/workspace parity, configuration families and pushed terminals
+and session lists on the desktop node, served to controllers from the same
+context as phones (long-term docs: remote-node-service.md §5.2, §9.4, §13.1,
+§14.1). Still open there: pushed watched directories (controllers poll
+`workspace.watchPoll`), pushed terminals on the CLI node (`terminal.read`
+polling), configuration and Git-state topics, and desktop features the phone
+does not have today.
 This plan absorbs the former mobile-desktop-compatibility plan (deleted in step 6).
 
 ## Starting point (verified 2026-10-10)
@@ -134,7 +139,7 @@ layer.
   shared ports and wire the local gateway: reads and contracts here; local
   mutation and control turn on with the lease move in step 6, so no resource
   has two authorities at once. The phone endpoint covers every local and archived session it
-  can open today. Which sessions a controller desktop sees stays as is.
+  can open today. (Since superseded: controllers now see every session too.)
 - Move the CLI-only handlers the phone needs (drafts, harness resources, …)
   into runtime ports on the existing dispatcher and `servedMethods`.
 - Coverage list generated from the actual old-command call sites: old command
@@ -226,7 +231,7 @@ through the desktop today (`environment-commands.ts`), by envelope
 | `open_draft`, `close_draft` | **`draft.open`**, **`draft.close`** (draft lease, `expectedUpdatedAt`) | |
 | `composer_open`, `composer_cancel`, `composer_outcome`, `open_widget_input_request` | **`composer.open`**, **`composer.cancel`**, **`composer.outcome`**, **`composer.openInputRequest`** | |
 | `save_widget_template` | **`widget.saveTemplate`** | |
-| `search_mcp_mentions`, `read_mcp_mentions`, `list_mcp_servers`, `get_mcp_icons` | **`mcp.searchMentions`**, **`mcp.readMentions`**, `mcp.list`, **`mcp.icons`** | |
+| `search_mcp_mentions`, `read_mcp_mentions`, `list_mcp_servers`, `get_mcp_icons` | **`mcp.searchMentions`**, **`mcp.readMentions`**, **`mcp.status`** (renamed from `mcp.list`, which is the resource family's config list), **`mcp.icons`** | |
 | `list_directory`, `browse_host_directory`, `create_directory` | **`files.listDir`**, `fs.listDir`, **`files.mkdir`** | |
 | `search_files`, `search_mentions`, `get_mention_icons` | `workspace.search`, **`workspace.searchMentions`**, **`workspace.mentionIcons`** | |
 | `read_desktop_file`, `read_video_poster` | **`files.read`**, **`files.videoPoster`** | |
@@ -259,7 +264,9 @@ is a single value whose last write wins, so neither needs a version. Session
 and terminal mutations are fenced by leases (step 6).
 
 The phone's composer catalogs come from the desktop that pairs it, not from
-the CLI's `harness.resources`, so those handlers stay with the CLI.
+the CLI's `harness.resources`, so those handlers stay with the CLI. (A desktop
+node now also serves `harness.resources` and `provider.listModels` to
+controllers from its window catalogs.)
 
 ## Verification
 

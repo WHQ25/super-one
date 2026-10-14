@@ -185,6 +185,18 @@ The phone uses the same form in its bottom dock and the same user bubble.
 Worktree-removed, disabled-harness, and remote-locked states retain their
 existing read-only behavior and suppress session decision prompts.
 
+A session another client drives shows a banner in place of the composer that
+names the holder (`RemoteControlBanner`, from the session's control holder).
+On the computer the session runs on, a controller desktop's hold offers
+Disconnect. On a controller, the host window's hold offers Take over, a phone
+or another controller is shown read-only, and a session the host took back
+offers Reconnect. The rules are in
+[remote-node-service.md §9.4](../architecture/remote-node-service.md#94-fenced-control-leases).
+For a session on a node, desktop or CLI, the composer's catalogs (models,
+efforts, API providers, skills and commands) and Git state come from that
+node through the same methods (`harness.resources`, `provider.listModels`,
+`git.*`).
+
 ## Handoff animation
 
 The slot reuses the realtime voice composer's handoff: the outgoing composer

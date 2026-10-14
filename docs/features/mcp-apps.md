@@ -233,6 +233,9 @@ the only View-to-host entry, used by desktop IPC and by the phone's
   sessions. The host resolves the attachment itself; a View never names a
   server, account or node. Remote attachments resolve through one node RPC,
   `mcpApps.resolveAttachment`, which is served from a node-side index.
+  Locality comes from the session's connection, not the binding: a desktop
+  node binds its own sessions' Apps to `node: 'local'`, and a controller sends
+  that binding back as is while still treating the View as remote.
 - **Activation** is keyed by requester (`desktop` or `mobile:<deviceId>`).
   A View that arrives live activates automatically on the device showing it.
   A View restored from history starts as a collapsed tool row with no document;
@@ -406,9 +409,13 @@ authorization page (http(s) only) and waits until `tools` stops reporting
   the CLI receives the redirect on its own listener. For a remote node, the
   desktop runs an RFC 8252 loopback listener, relays the callback and asks the
   node to reconnect the server.
-- **Codex** uses `mcpServer/oauth/login`, and Codex receives the redirect. A
-  Codex session on a remote node receives it on the node's localhost, so
-  signing in from another machine needs a port forward.
+- **Codex** uses `mcpServer/oauth/login`, and Codex receives the redirect. For
+  a remote node (CLI or desktop), `codex.loginMcpOauth` answers with the
+  authorization URL as soon as Codex has it; the desktop opens it (http(s)
+  only), catches the redirect on the same loopback address Codex listens on
+  at the node, and hands it to `codex.completeMcpOauth`, which validates it
+  and forwards it to Codex's listener. A node on the same machine receives
+  the redirect itself.
 
 ## Verification
 

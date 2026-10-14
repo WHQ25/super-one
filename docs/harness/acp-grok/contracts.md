@@ -34,8 +34,8 @@ Upstream behavior SuperOne depends on that the published types do not state.
 
 - **Behavior:** An HTTP or SSE MCP server may carry `_meta["x.ai/mcp/bearerTokenFile"]`. Grok re-reads that file per request. An absolute path or a `~/` path is valid. A relative path must be sent unchanged so Grok returns `BearerTokenPathError::NotAbsolute`. The host does not copy the secret into headers.
 - **Observed:** grok-build `mcp_bearer_token_file.rs`.
-- **Depends on it:** `apps/desktop/src/main/acp/acp-mcp.ts#toAcpMcpServer`, `apps/desktop/src/main/mcp-config-service.ts` (`McpServerConfig.bearerTokenFile`).
-- **Guard:** `apps/desktop/src/main/acp/acp-mcp.test.ts`, `apps/desktop/src/main/mcp-config-service.test.ts`
+- **Depends on it:** `apps/desktop/src/main/acp/acp-mcp.ts#toAcpMcpServer`, `packages/runtime/src/fs/mcp-config-claude.ts` (`McpServerConfig.bearerTokenFile`).
+- **Guard:** `apps/desktop/src/main/acp/acp-mcp.test.ts`, `packages/runtime/src/fs/mcp-config-claude.test.ts`
 
 ## Folder trust
 

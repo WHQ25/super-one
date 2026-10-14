@@ -1054,6 +1054,7 @@ export {
   useIsRemoteLocked,
   useSessionRemoteController,
   useRemoteControlReleased,
+  useSessionControlHolder,
   useBashOutput,
   selectClaudeResources,
   selectCodexResources,

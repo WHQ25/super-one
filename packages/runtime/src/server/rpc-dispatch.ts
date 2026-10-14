@@ -1727,11 +1727,12 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
   try {
     const resource = { environmentId: ctx.identity.environmentId, sessionId }
     // Before the grant: a refused client must not take over a lease that yields to it.
-    const admitted = ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true })
+    const delegate = typeof p.delegate === 'string' && p.delegate ? p.delegate : undefined
+    const admitted = ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true, ...(delegate ? { delegate } : {}) })
     const lease = ctx.leases.acquire({
       resource,
       holderClientId: ctx.client.clientSessionId,
-      ...(typeof p.delegate === 'string' && p.delegate ? { delegate: p.delegate } : {}),
+      ...(delegate ? { delegate } : {}),
       ...(p.yields === true ? { yields: 'holder' as const } : {}),
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })

@@ -65,6 +65,8 @@ export type NodeSessionSnapshot = {
   providerSessionId?: string | null
   /** The node's own user took the session back; reconnect re-acquires with `reclaim`. */
   controlReleased?: boolean
+  /** Who else drives the session on the node now (desktop nodes); Take over re-acquires with `reclaim`. */
+  controlHolder?: import('./environment').SessionControlHolder
 }
 
 /** Map node pending permission into desktop PermissionRequest for the prompt UI. */

@@ -732,7 +732,7 @@ describe('AgentService Realtime Voice', () => {
     expect(realtimeTimelineRepoMocks.loadRealtimeTimeline).toHaveBeenCalledWith('sid-voice')
   })
 
-  it('reconciles a provider timeline into the local snapshot', async () => {
+  it('reconciles a provider timeline into the local snapshot without taking the session', async () => {
     const service = new AgentService()
     const timeline = {
       segments: [],
@@ -757,6 +757,7 @@ describe('AgentService Realtime Voice', () => {
     const handler = getRegisteredIpcHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)!
     await expect(handler(null, '/repo/main', 'sid-voice')).resolves.toEqual(timeline)
     expect(realtimeTimelineRepoMocks.reconcileRealtimeTimeline).toHaveBeenCalledWith('sid-voice', timeline)
+    expect(existing.lease.current).toBeNull()
   })
 
   it('creates a Codex session from the renderer draft before starting voice', async () => {

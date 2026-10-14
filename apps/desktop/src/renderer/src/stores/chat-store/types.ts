@@ -39,6 +39,7 @@ import type {
   TodoItem,
 } from '@superone/shared/agent-types'
 import type { SchemaFormValue } from '@superone/shared/schema-form'
+import type { SessionControlHolder } from '@superone/shared/environment'
 import type { StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import type { ChatCoreSession } from '@superone/chat-core'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
@@ -239,6 +240,12 @@ export interface PerSessionState extends ChatCoreSession {
   remoteController?: SessionRemoteControllerInfo | null
   /** A session on another computer that its own user took back; read-only here until Reconnect. */
   remoteControlReleased?: boolean
+  /**
+   * Another device drives this session: on this computer, a phone or a
+   * controller desktop holding its lease; for a session on another computer,
+   * whoever drives it there (its window yields to Take over).
+   */
+  controlHolder?: SessionControlHolder | null
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   browserAnnotations: BrowserAnnotation[]

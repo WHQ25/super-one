@@ -1639,10 +1639,13 @@ export const zh: Messages = {
       badgeUnknown: '由其他设备发起',
       controlling: '{{label}} 正在操控此会话。',
       controllingUnknown: '另一台电脑正在操控此会话。',
+      controllingPhoneUnknown: '一部手机正在操控此会话。',
       disconnect: '断开',
       disconnectFailed: '无法断开：{{message}}',
       reconnect: '重新连接',
       reconnectFailed: '无法重新连接：{{message}}',
+      takeOver: '接管',
+      takeOverFailed: '无法接管：{{message}}',
     },
     mods: {
       paneClosed: '这个面板已关闭。',

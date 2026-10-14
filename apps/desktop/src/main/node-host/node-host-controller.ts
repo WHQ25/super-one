@@ -12,6 +12,7 @@ import { NODE_LAN_SERVICE_TYPE } from '../lan-service-type'
 import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
+import { findPairedPhone } from '../database'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
 import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteController } from '../db-remote-controlled-sessions'
 import { disableDesktopHarness, enableDesktopHarness, getHarnessManager, probeDesktopHarness } from '../harness/service'
@@ -182,6 +183,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       pathReady: ensureShellPath,
     },
     agentSettings: () => desktopAgentSettings(readAppSettings()),
+    phoneLabel: (deviceId) => findPairedPhone({ id: deviceId })?.deviceName ?? null,
     config: { sessionProviders: sessionProviderStore(), automations: createDesktopAutomationsPort() },
   })
   getEnvironmentHost().registry.getLocal().bindProtocol(new InProcessRpcClient(domain))

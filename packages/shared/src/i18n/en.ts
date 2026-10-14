@@ -1544,10 +1544,13 @@ export type Messages = {
       badgeUnknown: string
       controlling: string
       controllingUnknown: string
+      controllingPhoneUnknown: string
       disconnect: string
       disconnectFailed: string
       reconnect: string
       reconnectFailed: string
+      takeOver: string
+      takeOverFailed: string
     }
     mods: {
       paneClosed: string
@@ -5930,10 +5933,13 @@ export const en: Messages = {
       badgeUnknown: 'Started from another device',
       controlling: '{{label}} is controlling this session.',
       controllingUnknown: 'Another computer is controlling this session.',
+      controllingPhoneUnknown: 'A phone is controlling this session.',
       disconnect: 'Disconnect',
       disconnectFailed: 'Could not disconnect: {{message}}',
       reconnect: 'Reconnect',
       reconnectFailed: 'Could not reconnect: {{message}}',
+      takeOver: 'Take Over',
+      takeOverFailed: 'Could not take over: {{message}}',
     },
     mods: {
       paneClosed: 'This pane is closed.',

@@ -6,7 +6,10 @@ import { runWindowControl } from '../session/control-context'
 import type { Session } from '../session/types'
 
 function fixture(harnessId: 'claude' | 'codex' | 'acp' = 'claude') {
-  const authority = controlLeaseAuthority()
+  const authority = { ...controlLeaseAuthority(), names: {
+    controller: (id: string) => id === 'controller-a' ? 'Desktop A' : null,
+    phone: (id: string) => id === 'a' ? 'iPhone A' : null,
+  } }
   const lease = new SessionLease('s', authority)
   const session = { id: 's', projectPath: '/project', lease,
     snapshot: { harnessId, acpAgentId: harnessId === 'acp' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' },
@@ -22,7 +25,7 @@ describe('native session control presence', () => {
     const f = fixture(harnessId)
     const grant = acquirePhoneControl(f.authority, 's', 'a')
     expect(f.broadcast).toHaveBeenCalledWith({ type: 'session_control_changed', projectPath: '/project', sessionId: 's', lease: grant,
-      harnessId, acpAgentId: harnessId === 'acp' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' })
+      holder: { kind: 'phone', label: 'iPhone A' }, harnessId, acpAgentId: harnessId === 'acp' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' })
     expect(f.broadcast).toHaveBeenCalledTimes(1)
     acquirePhoneControl(f.authority, 's', 'a')
     expect(f.broadcast).toHaveBeenCalledTimes(1)
@@ -45,13 +48,16 @@ describe('native session control presence', () => {
       f.presence.dispose()
     } finally { vi.useRealTimers() }
   })
-  it('names the controller desktop that takes over from the window, and only it', () => {
+  it('tells the window, a phone and a controller desktop apart by the lease and names them', () => {
     const f = fixture()
-    f.presence.labelControllers(holder => holder === 'controller-a' ? 'Desktop A' : null)
     runWindowControl(7, () => f.lease.assertMutation())
-    expect(f.broadcast.mock.lastCall?.[0]).not.toHaveProperty('controllerLabel')
+    expect(f.broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ holder: { kind: 'window', label: null } }))
     const grant = f.authority.leases.acquire({ resource: f.lease.resource, holderClientId: 'controller-a', yields: 'holder', ttlMs: 60_000 })
-    expect(f.broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ lease: grant, controllerLabel: 'Desktop A' }))
+    expect(f.broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ lease: grant, holder: { kind: 'controller', label: 'Desktop A' } }))
+    // A phone the controller relays is the controller's, not one of this desktop's phones.
+    f.authority.leases.revoke(f.lease.resource)
+    f.authority.leases.acquire({ resource: f.lease.resource, holderClientId: 'controller-a', delegate: 'phone:a', ttlMs: 60_000 })
+    expect(f.broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ holder: { kind: 'controller', label: 'Desktop A' } }))
     expect(f.lease.isExternal).toBe(true)
     f.presence.dispose()
   })

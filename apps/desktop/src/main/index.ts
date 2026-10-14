@@ -1106,7 +1106,6 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
       }),
   }
   const domain = openDesktopDomain(sessionManager, phonePorts)
-  presence.labelControllers((holderClientId) => domain.controllerLabel(holderClientId))
   const { openPhoneConnection } = await import('./node-host/phone-endpoint')
   nativePhoneOpen = link => openPhoneConnection(domain, link)
   await apply(settings, sessionManager, { relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__, phonePorts })

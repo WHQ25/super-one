@@ -20,7 +20,10 @@ export interface LeaseAcquireInput {
   resource: SessionRef | TerminalRef
   /** Requested TTL in ms; node may clamp. */
   ttlMs?: number
-  /** Take a session back after its host released it from this client (the user's Reconnect). */
+  /**
+   * The user's explicit Reconnect or Take over: take a session back after its
+   * host released it from this client, or from the host's own window using it.
+   */
   reclaim?: boolean
   /**
    * A holder inside the authenticated client: a device it relays for, such as
@@ -56,6 +59,26 @@ export const CONTROL_RELEASED_REASON = 'control_released'
 
 export function isControlReleasedError(err: unknown): boolean {
   return (err as { details?: { reason?: unknown } } | null)?.details?.reason === CONTROL_RELEASED_REASON
+}
+
+/**
+ * Who drives a session on the computer it runs on, as another client sees
+ * it: that computer's own window, a phone paired with it, or another paired
+ * computer. `label` is the phone's or computer's paired name (null for the
+ * window, or when it gave none).
+ */
+export interface SessionControlHolder {
+  kind: 'window' | 'phone' | 'controller'
+  label: string | null
+}
+
+/** `details.reason` of the refusal a client gets while someone else drives the session; `details.holder` names them. */
+export const CONTROL_HELD_REASON = 'control_held'
+
+/** The holder a `control_held` refusal names, or null for any other error. */
+export function controlHeldBy(err: unknown): SessionControlHolder | null {
+  const details = (err as { details?: { reason?: unknown; holder?: SessionControlHolder } } | null)?.details
+  return details?.reason === CONTROL_HELD_REASON && details.holder ? details.holder : null
 }
 
 export function isSessionResource(

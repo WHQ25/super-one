@@ -7,7 +7,7 @@ import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
-import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, GitPatchRequest, GitPatchResult, PinnedSessionEntry, ScheduledSend, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
@@ -2106,6 +2106,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
+  getGitPatch: (folderPath: string, request: GitPatchRequest): Promise<GitPatchResult> =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_PATCH, folderPath, request),
   readProjectFile: (folderPath: string, filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_FILE, folderPath, filePath),
   statPreviewFile: (root: string, filePath: string) =>

@@ -242,7 +242,7 @@ import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
 import type { DetailTarget } from '@superone/shared/environment/detail'
-import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, GitPatchRequest, GitPatchResult, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
 import { windowControlIpc } from './session/control-context'
 import type { SessionCallMethod, SessionCallMethods, SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
@@ -3161,6 +3161,13 @@ function registerIpcHandlers(): void {
     } catch {
       return { path: filePath, diff: '' }
     }
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_PATCH, async (_event, folderPath: string, request: GitPatchRequest) => {
+    // The diff panel reads through local git; remote projects have no node RPC for a whole patch yet.
+    if (parseRemoteProjectKey(folderPath)) return { ok: false, error: 'remote_project' } satisfies GitPatchResult
+    const { readGitPatch } = await import('./git-patch')
+    return readGitPatch(folderPath, request ?? {})
   })
 
   const BINARY_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS

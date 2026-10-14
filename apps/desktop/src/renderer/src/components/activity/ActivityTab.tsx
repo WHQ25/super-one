@@ -2,7 +2,7 @@ import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Blocks, Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
+import { Blocks, Bot, Bug, GitCompareArrows, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
 export { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
@@ -122,6 +122,30 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
         {fileName && <FileIcon name={fileName} size={14} className="shrink-0" />}
       </HoverCloseSlot>
       <TabTitle>{fileName || 'File'}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
+export interface DiffTabParams {
+  root: string
+  commit?: string
+  path?: string
+}
+
+/** The read-only change-set tab: named by file, then commit, then "uncommitted". */
+export function DiffTab(props: IDockviewPanelHeaderProps<DiffTabParams>) {
+  const { t } = useTranslation()
+  const active = useIsActive(props.api)
+  const { commit, path } = props.params
+  const fileName = path?.split('/').pop()
+  const label = fileName ?? (commit ? commit.slice(0, 7) : t('activity.diff.uncommitted'))
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => props.api.close()}>
+        <GitCompareArrows className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <TabTitle>{label}</TabTitle>
       <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
@@ -372,6 +396,7 @@ export function McpAppTab(props: IDockviewPanelHeaderProps<{ appInstanceId: stri
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'mcp-app-tab': McpAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'diff-tab': DiffTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tool-preview-tab': ToolUiPreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,

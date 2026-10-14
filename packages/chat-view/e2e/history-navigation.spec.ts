@@ -51,17 +51,10 @@ async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boole
 const jump = (page: Page, id: string) => page.locator(`[data-tick="${id}"]`).evaluate((element: HTMLElement) => element.click())
 const calls = (page: Page) => page.evaluate(() => (window as any).calls.filter((call: any) => call.action === 'loadHistoryWindow').map((call: any) => call.payload))
 
-test('a short transcript loads history on a touch swipe without an idle button', async ({ page }) => {
+test('a short transcript loads visible history automatically without an idle button', async ({ page }) => {
   await open(page, { short: true, holdWindow: true })
   await expect(page.locator('[data-tick]')).toHaveCount(50)
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 80)).toBe(true)
-  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
-  expect(await calls(page)).toEqual([])
-  const client = await page.context().newCDPSession(page)
-  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true })
-  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 300 }] })
-  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 400 }] })
-  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await expect.poll(() => calls(page)).toEqual([{ anchorId: 'm92', direction: 'before' }])
   await expect(page.getByTestId('edge-loader-top')).toHaveText('Loading...')
   await page.evaluate(() => { const host = window as any; for (const response of host.responses) host.__applyHost(response) })

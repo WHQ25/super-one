@@ -73,7 +73,8 @@ a {
   line-height: 1.6;
 }
 
-.chat-view-top-sentinel {
+.chat-view-top-sentinel,
+.chat-view-bottom-sentinel {
   min-height: 1px;
   scroll-margin-top: calc(8px + var(--safe-area-top));
 }

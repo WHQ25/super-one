@@ -2,6 +2,7 @@ import { invalidateSessionLinkMetadata } from './portable-session-links'
 import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './history-navigation'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { EdgeLoader } from './EdgeLoader'
+import { historyEdgeKey, useHistoryEdges } from './use-history-edges'
 import { deliverDetail, documentDetailClient } from './document-detail'
 import { DetailScopeProvider, type DetailScope } from './detail-scope'
 import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
@@ -245,6 +246,7 @@ export function ChatView() {
   const loadingPreviousRef = useRef(false)
   const fetchingHistoryRef = useRef(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyEdge, setHistoryEdge] = useState<'top' | 'bottom'>('top')
   const scrollToBottomRef = useRef(false)
   const scrollbarRef = useRef<ChatScrollbarHandle>(null)
   const navigationRequest = useRef(0)
@@ -301,18 +303,27 @@ export function ChatView() {
     setIndexAttempt(value => value + 1)
   }, [])
 
-  const requestHistoryWindow = useCallback(async (anchorId: string, direction: 'around' | 'before' | 'after', targetId = anchorId) => {
+  const prepareHistoryPage = useCallback((edge: ScrollAnchor['edge'], followTail = false) => {
+    const keepFollowing = followTail && atBottomRef.current
+    atBottomRef.current = keepFollowing
+    scrollToBottomRef.current = keepFollowing
+    prependSnapshotRef.current = keepFollowing ? null : captureScrollAnchor(edge)
+  }, [])
+
+  const requestHistoryWindow = useCallback(async (anchorId: string, direction: 'around' | 'before' | 'after', targetId = anchorId, followTail = false) => {
     const epoch = stateRef.current.transcriptEpoch
     const request = ++navigationRequest.current
-    atBottomRef.current = false
-    scrollToBottomRef.current = false
+    if (!followTail) {
+      atBottomRef.current = false
+      scrollToBottomRef.current = false
+    }
     setNavigationLoading(true)
     setNavigationRetry(null)
     setNavigationEdge(direction === 'after' ? 'bottom' : direction === 'before' ? 'top' : jumpEdge(stateRef.current, anchorId))
     try {
       const result = await requestNativeAsync('loadHistoryWindow', { anchorId, direction }) as { messages: ChatMessage[] } | TranscriptWindowPage
       if (epoch !== stateRef.current.transcriptEpoch || request !== navigationRequest.current) return
-      if (direction !== 'around') prependSnapshotRef.current = captureScrollAnchor(direction === 'before' ? 'bottom' : 'top')
+      if (direction !== 'around') prepareHistoryPage(direction === 'before' ? 'bottom' : 'top', followTail)
       else { prependSnapshotRef.current = null; navigatingUntilRef.current = performance.now() + 700 }
       const windowPage = 'messageOrder' in result ? result : null
       setState(previous => {
@@ -344,17 +355,15 @@ export function ChatView() {
     } finally {
       if (epoch === stateRef.current.transcriptEpoch && request === navigationRequest.current) setNavigationLoading(false)
     }
-  }, [])
+  }, [prepareHistoryPage])
 
-  const changeWindow = useCallback((direction: 'previous' | 'next') => {
+  const changeWindow = useCallback((direction: 'previous' | 'next', followTail = false) => {
     if (loadingPreviousRef.current || performance.now() < navigatingUntilRef.current) return
     const current = stateRef.current
     const minimum = 0
     if (direction === 'previous' ? current.range.start <= minimum : current.range.end >= current.messages.length) return
     loadingPreviousRef.current = true
-    atBottomRef.current = false
-    scrollToBottomRef.current = false
-    prependSnapshotRef.current = captureScrollAnchor()
+    prepareHistoryPage('top', followTail)
     setState((previous) => ({
       ...previous,
       range: contiguousHistoryRange(previous.messages, previous.navigation, visibleChatWindow(
@@ -362,21 +371,20 @@ export function ChatView() {
         previous.messages.length, minimum,
       ), direction === 'previous' ? previous.range.start : previous.range.end - 1),
     }))
-  }, [])
+  }, [prepareHistoryPage])
   /** A transcript window pages through native: earlier fragments, possibly of the top row itself. */
-  const loadWindowPage = useCallback(async (placement: 'older' | 'newer') => {
+  const loadWindowPage = useCallback(async (placement: 'older' | 'newer', followTail = false) => {
     const current = stateRef.current
     if (fetchingHistoryRef.current) return
     fetchingHistoryRef.current = true
+    setHistoryEdge(placement === 'older' ? 'top' : 'bottom')
     setHistoryLoading(true)
     const epoch = current.transcriptEpoch
     const navigationGeneration = navigationRequest.current
     try {
       const page = await requestNativeAsync(placement === 'older' ? 'loadEarlier' : 'loadWindowPage', { placement }) as TranscriptWindowPage
       if (stateRef.current.transcriptEpoch !== epoch || navigationRequest.current !== navigationGeneration) return
-      atBottomRef.current = false
-      scrollToBottomRef.current = false
-      prependSnapshotRef.current = captureScrollAnchor(placement === 'older' ? 'bottom' : 'top')
+      prepareHistoryPage(placement === 'older' ? 'bottom' : 'top', followTail)
       setState(previous => {
         if (previous.transcriptEpoch !== epoch) return previous
         const merged = mergeWindowPage(previous.messages, page)
@@ -396,35 +404,34 @@ export function ChatView() {
         setHistoryLoading(false)
       }
     }
-  }, [])
-  const loadPrevious = useCallback(async () => {
+  }, [prepareHistoryPage])
+  const loadPrevious = useCallback(async (followTail = false) => {
     retryIndex()
     if (navigationRetry && navigationEdge === 'top') { navigationRetry(); return }
     const current = stateRef.current
     if (current.session.transcriptWindow) {
-      if (current.range.start > 0 || !current.hasMoreHistory) changeWindow('previous')
-      else await loadWindowPage('older')
+      if (current.range.start > 0 || !current.hasMoreHistory) changeWindow('previous', followTail)
+      else await loadWindowPage('older', followTail)
       return
     }
     if (needsEarlierPage(current)) {
-      if (!navigationLoading) await requestHistoryWindow(current.messages[current.range.start]!.id, 'before')
+      if (!navigationLoading) await requestHistoryWindow(current.messages[current.range.start]!.id, 'before', undefined, followTail)
       return
     }
     if (current.navigation || current.range.start > 0 || !current.hasMoreHistory) {
-      changeWindow('previous')
+      changeWindow('previous', followTail)
       return
     }
     if (fetchingHistoryRef.current) return
     fetchingHistoryRef.current = true
+    setHistoryEdge('top')
     setHistoryLoading(true)
     const epoch = current.transcriptEpoch
     const navigationGeneration = navigationRequest.current
     try {
       const result = await requestNativeAsync('loadEarlier') as ReductionProjection
       if (stateRef.current.transcriptEpoch !== epoch || navigationRequest.current !== navigationGeneration) return
-      atBottomRef.current = false
-      scrollToBottomRef.current = false
-      prependSnapshotRef.current = captureScrollAnchor()
+      prepareHistoryPage('top', followTail)
       setState(previous => {
         if (previous.transcriptEpoch !== epoch) return previous
         const merged = mergeHistory(result.messages ?? [], previous.messages)
@@ -444,7 +451,7 @@ export function ChatView() {
         setHistoryLoading(false)
       }
     }
-  }, [changeWindow, loadWindowPage, navigationLoading, navigationRetry, navigationEdge, requestHistoryWindow, retryIndex])
+  }, [changeWindow, loadWindowPage, navigationLoading, navigationRetry, navigationEdge, requestHistoryWindow, retryIndex, prepareHistoryPage])
   const loadNext = useCallback(() => {
     retryIndex()
     if (navigationRetry && navigationEdge === 'bottom') { navigationRetry(); return }
@@ -740,10 +747,22 @@ export function ChatView() {
     environmentId: state.session.sourceEnvironmentId ?? '',
     sessionId: state.session.sessionId ?? '',
   }), [state.session.sourceEnvironmentId, state.session.sessionId])
-  const bottomBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'bottom'
-  const moreAfter = bottomBusy || state.range.end < state.messages.length
+  const bottomBusy = ((navigationLoading || !!navigationRetry) && navigationEdge === 'bottom')
+    || (historyLoading && historyEdge === 'bottom')
+  const hasLater = state.range.end < state.messages.length
     || (state.session.transcriptWindow ? state.session.hasNewerHistory
       : !!state.navigation && needsHistoryPage(state.messages, state.navigation, state.range, 'after'))
+  const moreAfter = bottomBusy || hasLater
+  const edges = useHistoryEdges({
+    epoch: state.transcriptEpoch,
+    older: state.range.start > 0 || state.hasMoreHistory || needsEarlierPage(state)
+      ? historyEdgeKey(state.messages[state.range.start], state.range.start, 'older') : null,
+    newer: hasLater ? historyEdgeKey(state.messages[state.range.end - 1], state.range.end, 'newer') : null,
+    busy: historyLoading || navigationLoading || visible.length === 0 || !!state.scrollTarget,
+    notBefore: () => navigatingUntilRef.current,
+    loadOlder: () => { void loadPrevious(atBottomRef.current && !hasLater) },
+    loadNewer: loadNext,
+  })
   return (
     <TurnDetailStateProvider scope={state.transcriptEpoch}>
     <DetailScopeProvider scope={detailScope}>
@@ -761,8 +780,8 @@ export function ChatView() {
       <ChatScrollbar key={state.transcriptEpoch} ref={scrollbarRef} />
       <ChatScrollIndicator entries={outline} range={navigation ? globalHistoryRange(state.messages, navigation, state.range) : state.range}
         onJump={jumpToMessage} />
-      <div className="chat-view-top-sentinel" data-testid="top-sentinel">
-        {visible.length > 0 && <EdgeLoader edge="top" loading={historyLoading || (navigationLoading && navigationEdge === 'top')} />}
+      <div ref={edges.top} className="chat-view-top-sentinel" data-testid="top-sentinel">
+        {visible.length > 0 && <EdgeLoader edge="top" loading={(historyLoading && historyEdge === 'top') || (navigationLoading && navigationEdge === 'top')} />}
       </div>
       {visible.length === 0
         ? (historyLoading || navigationLoading || indexLoading
@@ -813,7 +832,9 @@ export function ChatView() {
       {!moreAfter && state.realtimeActivities.filter(row => row.afterMessageId === null)
         .map(row => <PortableRealtimeActivity key={row.turnId} row={row} />)}
       {visible.length > 0 && moreAfter && (
-        <EdgeLoader edge="bottom" loading={navigationLoading && navigationEdge === 'bottom'} />
+        <div ref={edges.bottom} className="chat-view-bottom-sentinel" data-testid="bottom-sentinel">
+          <EdgeLoader edge="bottom" loading={(navigationLoading && navigationEdge === 'bottom') || (historyLoading && historyEdge === 'bottom')} />
+        </div>
       )}
       {/* The queue follows the latest turn, so it waits until the window reaches it. */}
       {!moreAfter && <SessionProviderState items={state.session.sessionInbox} connection={state.session.harnessConnection}

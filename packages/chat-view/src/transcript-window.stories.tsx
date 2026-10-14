@@ -6,9 +6,10 @@ import { applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage, type 
 import { longReplyText, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
 import { MAX_FRAGMENT_BYTES } from '@superone/shared/transcript-window/fragment-message'
 import { ChatView } from './ChatView'
+import { collapsedHistoryTranscript } from './fixtures/collapsed-history'
 import type { TranscriptWindowPage } from './protocol'
 
-type Content = 'prose' | 'fence' | 'table' | 'omitted'
+type Content = 'prose' | 'fence' | 'table' | 'omitted' | 'collapsed'
 type Native = 'ready' | 'loading' | 'error' | 'copy-loading'
 
 const BUDGET = { ...DEFAULT_WINDOW_BUDGET, maxBytes: 48 * 1024, targetChars: 3000 }
@@ -38,7 +39,8 @@ function TranscriptWindowPreview({ content = 'prose', native = 'ready', scheme =
   useEffect(() => {
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
-    const transcript = [textMessage('ask', 'user', 'Show me everything.'), reply(content)]
+    const transcript = content === 'collapsed' ? collapsedHistoryTranscript()
+      : [textMessage('ask', 'user', 'Show me everything.'), reply(content)]
     const source = windowSource(transcript)
     let window: TranscriptWindowState = applyWindowResult(null, { ...selectTranscriptWindow(source, {}, BUDGET), total: transcript.length }, EMPTY_WINDOW_LOOKUP).state
     let failed = false
@@ -78,6 +80,10 @@ type Story = StoryObj<typeof meta>
 
 /** The tail of a long reply; scrolling up loads its earlier part into the same message. */
 export const PartialReply: Story = {}
+/** A short tail automatically pages past folded process until the viewport fills. */
+export const AutomaticFirstScreen: Story = { args: { content: 'collapsed' } }
+export const AutomaticFirstScreenLoading: Story = { args: { content: 'collapsed', native: 'loading' } }
+export const AutomaticFirstScreenRetry: Story = { args: { content: 'collapsed', native: 'error' } }
 /** A slice that starts inside a code fence renders as code, not prose. */
 export const ContinuedCodeFence: Story = { args: { content: 'fence' } }
 /** A slice that starts inside a table repeats the header rows. */

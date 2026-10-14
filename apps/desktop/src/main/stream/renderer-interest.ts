@@ -1,6 +1,6 @@
 import type { DeliveryPolicy, TopicConnection } from '@superone/runtime/stream'
-import type { SessionRef, TerminalRef } from '@superone/shared/environment/refs'
-import { sessionKey, terminalKey } from '@superone/shared/environment/refs'
+import type { SessionRef } from '@superone/shared/environment/refs'
+import { sessionKey } from '@superone/shared/environment/refs'
 import type { TopicRef } from '@superone/shared/environment/topics'
 
 /**
@@ -15,7 +15,8 @@ export class RendererInterest {
   /** Window id → shown session key → number of views. */
   private readonly windows = new Map<number, Map<string, { ref: SessionRef; views: number }>>()
   private readonly followed = new Map<string, SessionRef>()
-  private readonly terminals = new Map<string, TerminalRef>()
+  /** Nodes whose terminals the windows show. */
+  private readonly terminals = new Set<string>()
 
   constructor(
     private readonly connection: TopicConnection<DeliveryPolicy>,
@@ -59,10 +60,10 @@ export class RendererInterest {
     this.sync()
   }
 
-  /** A remote terminal attached to a window, or detached. */
-  attachTerminal(ref: TerminalRef, attached: boolean): void {
-    if (attached) this.terminals.set(terminalKey(ref), ref)
-    else this.terminals.delete(terminalKey(ref))
+  /** The windows show a node's terminals, or stopped showing them. */
+  watchTerminals(environmentId: string, watched: boolean): void {
+    if (watched) this.terminals.add(environmentId)
+    else this.terminals.delete(environmentId)
     this.sync()
   }
 
@@ -84,9 +85,9 @@ export class RendererInterest {
     }
     const terminals: TopicRef[] = [{ kind: 'terminal', environmentId: this.localEnvironmentId, terminalId: '*' }]
     const terminalLists = new Map<string, TopicRef>([[this.localEnvironmentId, { kind: 'terminalList', environmentId: this.localEnvironmentId }]])
-    for (const ref of this.terminals.values()) {
-      terminals.push({ kind: 'terminal', ...ref })
-      terminalLists.set(ref.environmentId, { kind: 'terminalList', environmentId: ref.environmentId })
+    for (const environmentId of this.terminals) {
+      terminals.push({ kind: 'terminal', environmentId, terminalId: '*' })
+      terminalLists.set(environmentId, { kind: 'terminalList', environmentId })
     }
     this.connection.replace('session', [...sessions.values()])
     this.connection.replace('environment', [...environments.values()])

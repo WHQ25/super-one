@@ -13,6 +13,7 @@
     "./desktop-pair": "./src/desktop-pair.ts",
     "./pair-room": "./src/pair-room.ts",
     "./presence": "./src/presence.ts",
+    "./terminal-feed": "./src/terminal-feed.ts",
     "./transport-ledger": "./src/transport-ledger.ts"
   },
   "scripts": {

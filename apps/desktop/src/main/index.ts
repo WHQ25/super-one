@@ -968,12 +968,16 @@ const terminalManager = new TerminalManager({
   },
 })
 const remoteTerminalController = new RemoteTerminalController({
-  getHost: async () => {
+  node: async (connectionId) => {
     const { getEnvironmentHost } = await import('./environment')
-    return getEnvironmentHost()
+    return getEnvironmentHost().remoteTerminalNode(connectionId)
+  },
+  sessionCwd: async (connectionId, sessionId) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return ((await getEnvironmentHost().getSession(connectionId, sessionId)) as { cwd?: string } | null)?.cwd ?? null
   },
   onEvent: publishTerminalEvent,
-  onAttach: (ref, attached) => rendererInterest.attachTerminal(ref, attached),
+  onWatch: (connectionId, watched) => rendererInterest.watchTerminals(connectionId, watched),
 })
 deviceRegistry.setTerminalManager(terminalManager)
 setTerminalToolDeps({
@@ -1777,6 +1781,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   environmentStatusBridgeAttached = true
   host.onStatusChange((snapshot) => {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
+    if (snapshot.state === 'connected') remoteTerminalController.resume(snapshot.connectionId)
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, RecentFolder, TerminalSnapshot } from '@superone/shared/agent-types'
+import type { AgentEvent, RecentFolder, TerminalEvent, TerminalSnapshot } from '@superone/shared/agent-types'
 import type { ControlLease, EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
 import type { Credential, Platform } from '@superone/shared/platform-registry'
 import Database from 'better-sqlite3'
@@ -46,6 +46,9 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
 import * as credentialStore from '../providers/credential-store'
 import { RemoteEnvironmentGateway } from '../environment/remote-environment-gateway'
+import { RemoteSessionFeed } from '../environment/remote-session-feed'
+import { RemoteTerminalController } from '../environment/remote-terminal-controller'
+import { NODE_WINDOW_TERMINAL_OWNER, remoteProjectKey, remoteTerminalKey } from '@superone/shared/remote-resource-key'
 import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
 import type { DesktopDomainDeps } from './desktop-domain'
 import { desktopAgentSettings } from './desktop-agent-settings'
@@ -101,12 +104,17 @@ function tempDir(prefix: string): string {
   return dir
 }
 
-/** B's terminal tabs over scripted PTYs; `writes` collects what reaches them. */
+/** B's terminal tabs over scripted PTYs; `writes` collects what reaches them, `ptys` prints in each. */
 function scriptedTerminals() {
   const writes: string[] = []
+  const ptys: Array<(data: string) => void> = []
   const listeners = new Set<(event: import('@superone/shared/agent-types').TerminalEvent) => void>()
   const manager = new TerminalManager({
-    spawner: { spawn: () => ({ write: (data) => writes.push(data), resize: () => {}, kill: () => {}, onExit: () => {}, onData: () => {}, foregroundProcess: () => 'zsh' }) },
+    spawner: { spawn: () => {
+      let print: (data: string) => void = () => {}
+      ptys.push((data) => print(data))
+      return { write: (data) => writes.push(data), resize: () => {}, kill: () => {}, onExit: () => {}, onData: (cb) => { print = cb }, foregroundProcess: () => 'zsh' }
+    } },
     onEvent: (event) => { for (const listener of listeners) listener(event) },
     exists: () => true,
     coalesceMs: 0,
@@ -115,7 +123,7 @@ function scriptedTerminals() {
     terminals: createDesktopTerminalsPort(manager, (listener) => { listeners.add(listener); return () => listeners.delete(listener) }),
     bindLocalControl: (authority) => manager.bindLeases(authority),
   }
-  return { manager, writes, deps }
+  return { manager, writes, ptys, deps }
 }
 
 /** B with one git project (origin + a commit), paired with a fresh A. */
@@ -770,6 +778,63 @@ describe('DesktopNodeHost control takeover', () => {
     expect(after.terminal).toMatchObject({ ownerDeviceId: `node:${controller}`, writableByMe: true })
     expect(tab.lease.isWritableBy('local')).toBe(false)
     expect(() => tab.lease.assertWindow(1)).toThrow()
+  })
+
+  it("shows the controller B's terminals with pushed output, and hands control back and forth by B's leases", async () => {
+    const terminals = scriptedTerminals()
+    const { host, projectDir, manager, connectionId, client } = await pairedDesktops(fakeCatalog(), terminals.deps)
+    const environmentId = host.identity.environmentId
+    const gateway = manager.getGateway(environmentId) as RemoteEnvironmentGateway
+    const feed = new RemoteSessionFeed({ head: () => gateway.eventHeadSequence(),
+      subscribe: (afterSequence, signal, handlers) => gateway.subscribeEvents({ environmentId, afterSequence, signal, topics: handlers.interest.current(), ...handlers }) }, environmentId)
+    const events: TerminalEvent[] = []
+    const remote = new RemoteTerminalController({
+      node: () => ({ environmentId, terminals: gateway.terminals, rpc: (method, payload) => client.rpc(method, payload, environmentId),
+        follow: (input, handlers) => feed.followTopics(input, handlers, () => client.rpc('topic.catchUp', input, environmentId)) }),
+      onEvent: (event) => events.push(event),
+    })
+    try {
+      // A tab B's window opened and typed in.
+      const tab = terminals.manager.create({ cwd: projectDir, projectPath: projectDir, title: 'zsh' })
+      tab.lease.assertWindow(1)
+      const key = remoteTerminalKey(connectionId, tab.terminalId)
+      const project = remoteProjectKey(connectionId, projectDir)
+      expect(await remote.list(project)).toEqual([expect.objectContaining({ terminalId: key, projectPath: project, ownerDeviceId: null })])
+
+      await remote.snapshot(key)
+      expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_snapshot', terminalId: key, snapshot: expect.objectContaining({ terminalId: key, writableByMe: true }) }))
+      terminals.ptys[0]('hello from B')
+      await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_output', terminalId: key, data: 'hello from B' })))
+
+      // Typing here takes it over: B's window yields.
+      await remote.write(key, 'ls\r')
+      expect(terminals.writes).toEqual(['ls\r'])
+      expect(tab.lease.ownerDeviceId).toBe(`node:${host.controllers()[0].id}`)
+      expect(() => tab.lease.assertWindow(1)).toThrow()
+
+      // B's window takes it back: the controller reads until it takes over on purpose.
+      tab.lease.reclaimLocal(1)
+      await vi.waitFor(() => expect(events).toContainEqual({ type: 'terminal_owner_changed', terminalId: key, ownerDeviceId: NODE_WINDOW_TERMINAL_OWNER, writableByMe: false }))
+      await remote.write(key, 'echo ignored\r')
+      expect(terminals.writes).toEqual(['ls\r'])
+      await remote.claim(key)
+      await remote.write(key, 'pwd\r')
+      expect(terminals.writes).toEqual(['ls\r', 'pwd\r'])
+
+      // A tab opened on B later appears without a poll; one B's phone holds stays read-only here.
+      const phoneTab = terminals.manager.create({ cwd: projectDir, projectPath: projectDir, title: 'phone' })
+      const phoneKey = remoteTerminalKey(connectionId, phoneTab.terminalId)
+      await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_created', terminalId: phoneKey })))
+      bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${environmentId}`, delegate: 'phone:p', yields: 'none' })
+        .acquire({ resource: phoneTab.lease.ref, holderClientId: 'phone:p', ttlMs: 60_000 })
+      expect(await remote.snapshot(phoneKey)).toMatchObject({ ownerDeviceId: 'p', writableByMe: false })
+      await remote.write(phoneKey, 'ls\r')
+      await expect(remote.claim(phoneKey)).rejects.toMatchObject({ code: 'failed_precondition' })
+      expect(terminals.writes).toEqual(['ls\r', 'pwd\r'])
+    } finally {
+      remote.dispose()
+      feed.close()
+    }
   })
 
   it("ends a controller's draft grants when it disconnects and when B stops listening", async () => {

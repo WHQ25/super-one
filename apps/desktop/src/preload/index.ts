@@ -801,8 +801,9 @@ const terminalAPI = {
   create: (opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_CREATE, opts) as Promise<TerminalListItem>,
 
-  list: (cwd?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_LIST, cwd) as Promise<TerminalListItem[]>,
+  /** Every tab here and on the followed nodes; a remote project's key reads that node's tabs. */
+  list: (projectPath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_LIST, projectPath) as Promise<TerminalListItem[]>,
 
   snapshot: (terminalId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_SNAPSHOT, terminalId) as Promise<TerminalSnapshot | null>,

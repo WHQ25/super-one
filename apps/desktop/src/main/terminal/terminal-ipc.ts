@@ -37,10 +37,10 @@ export function registerTerminalIpc(deps: TerminalIpcDeps): void {
       return session.listItem()
     },
   )
-  deps.ipc.handle(AgentIpcChannels.TERMINAL_LIST, (_e, cwd?: string) => {
-    if (cwd && parseRemoteProjectKey(cwd)) return deps.remote.list(cwd)
-    const local = deps.manager.list(cwd)
-    return cwd === undefined ? [...local, ...deps.remote.list()] : local
+  /** Every tab here and on the nodes followed; a remote project's key reads that node's tabs. */
+  deps.ipc.handle(AgentIpcChannels.TERMINAL_LIST, async (_e, projectPath?: string) => {
+    if (projectPath && parseRemoteProjectKey(projectPath)) return deps.remote.list(projectPath)
+    return [...deps.manager.list(), ...await deps.remote.list()]
   })
   deps.ipc.handle(AgentIpcChannels.TERMINAL_SNAPSHOT, async (_e, terminalId: string) => {
     if (deps.remote.has(terminalId)) {
@@ -74,8 +74,11 @@ export function registerTerminalIpc(deps: TerminalIpcDeps): void {
     deps.manager.get(terminalId)?.lease.assertWindow(_e.sender.id)
     deps.manager.kill(terminalId)
   })
-  deps.ipc.handle(AgentIpcChannels.TERMINAL_CLAIM, (_e, terminalId: string) => {
-    if (deps.remote.has(terminalId)) return
+  deps.ipc.handle(AgentIpcChannels.TERMINAL_CLAIM, async (_e, terminalId: string) => {
+    if (deps.remote.has(terminalId)) {
+      await deps.remote.claim(terminalId)
+      return
+    }
     deps.manager.get(terminalId)?.lease.reclaimLocal(_e.sender.id)
   })
 }

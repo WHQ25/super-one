@@ -7,6 +7,7 @@ import { deliverDetail, documentDetailClient } from './document-detail'
 import { DetailScopeProvider, type DetailScope } from './detail-scope'
 import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
 import { codexAsyncAnswerQuestions, codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
+import { withoutPendingRecapTurn } from '@superone/shared/recap-row'
 import {
   Fragment,
   Component,
@@ -726,9 +727,11 @@ export function ChatView() {
   const { segments, rows } = useMemo(() => transcriptView(state.messages), [state.messages])
   const outline = useTurnOutline(state.messages, segments, navigation?.entries)
   const sourcePositions = new Map(state.messages.map((message, index) => [message.id, index]))
+  // Hidden as a prefix cut so the window range keeps indexing `state.messages`.
+  const shownEnd = Math.min(state.range.end, withoutPendingRecapTurn(state.messages, !!state.session.isRecapping).length)
   const visible = rows.filter(row => {
     const index = sourcePositions.get(row.source.id)!
-    return index >= state.range.start && index < state.range.end
+    return index >= state.range.start && index < shownEnd
   })
   const asyncQuestion = useMemo(() => codexAsyncQuestionQueue({ messages: state.messages, pendingAsyncQuestions: state.session.pendingAsyncQuestions })[0], [state.messages, state.session.pendingAsyncQuestions])
   // Compact / turn-meta markers persist as assistant rows but render as

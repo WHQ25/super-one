@@ -35,6 +35,7 @@ import { resolveComposer } from './composer-slot/resolve-composer'
 import { COMPOSER_CONTENT_MAX_HEIGHT, renderComposer } from './composer-slot/composer-registry'
 import { topComposer, useComposerStacks } from './composer-slot/composer-stack'
 import { groupPendingPermissions } from '@superone/shared/input-request-presentation'
+import { withoutPendingRecapTurn } from '@superone/shared/recap-row'
 import { buildDecisionQueue } from './composer-slot/decision-queue'
 import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
@@ -183,8 +184,8 @@ function ChatTranscript({
   const displayMessages = useMemo(
     () => (queueProvider === 'codex' && hasRealtimeTimeline
       ? mergeCodexThreadMessages(messages, realtime, { keepDelegationPrompts: showsBackingThread })
-      : messages),
-    [hasRealtimeTimeline, messages, queueProvider, realtime, showsBackingThread],
+      : withoutPendingRecapTurn(messages, isRecapping)),
+    [hasRealtimeTimeline, isRecapping, messages, queueProvider, realtime, showsBackingThread],
   )
   const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)
     ?? lastAssistantMessageId

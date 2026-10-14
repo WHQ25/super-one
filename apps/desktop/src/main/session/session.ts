@@ -10,6 +10,7 @@ import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend, withoutManualCompactTurn } from '@superone/shared/compact-boundary'
+import { buildRecapMessage, withRecapRow } from '@superone/shared/recap-row'
 import { anchorAsyncAnswer, captureTranscriptBoundary } from '@superone/shared/transcript-boundary'
 import { newMessageId } from '@superone/shared/message-id'
 import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
@@ -2496,6 +2497,19 @@ export class Session implements SessionContract {
         // Incremental persistence only rewrites dirty rows; removing rows or
         // inserting mid-transcript shifts every sort_order after the change.
         this.replaceMessages(next, { fullPersist: next.length !== this._messages.length + 1 || insertIdx < this._messages.length })
+        this.notifyStateChange()
+      }
+      return
+    }
+    // A local-command `/recap` answers through stdout; persist it as the recap
+    // row that replaces the "/recap" bubble and blank reply, so a reload or the
+    // phone shows what the live reducers show.
+    if (event.type === 'slash_command_output' && event.command === 'recap') {
+      const summary = event.content.trim()
+      const row = summary ? buildRecapMessage(`session_recap_${Date.now().toString(36)}`, new Date().toISOString(), summary, false) : null
+      const next = row ? withRecapRow(this._messages, row, event.messageId) : null
+      if (next) {
+        this.replaceMessages(next, { fullPersist: true })
         this.notifyStateChange()
       }
       return

@@ -1,5 +1,11 @@
 import type { ChatMessage } from './agent-types'
 
+/** The bubble of a sent `/<command>` with no arguments, never a message the user typed after it. */
+export function isSlashCommandBubble(message: ChatMessage, command: string): boolean {
+  return message.role === 'user' && message.content.length === 1
+    && message.content[0].type === 'text' && message.content[0].text.trim() === `/${command}`
+}
+
 export function parseCompactMarker(message: ChatMessage): {
   trigger: string
   preTokens: number

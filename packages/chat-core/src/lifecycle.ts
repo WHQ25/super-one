@@ -136,6 +136,8 @@ export function reduceLifecycle(
         pendingQuestion: null,
         pendingPlanApproval: null,
         awaitingAssistantReply: false,
+        // A sent `/recap` ends with its turn when the stdout never comes.
+        isRecapping: false,
         lastEventAt: 0,
         streamingTokens: { input: 0, output: 0 },
       }
@@ -144,6 +146,7 @@ export function reduceLifecycle(
     case 'message_error':
       return {
         awaitingAssistantReply: false,
+        isRecapping: false,
         lastEventAt: 0,
         streamingTokens: { input: 0, output: 0 },
         messages: session.messages.map((msg) => {

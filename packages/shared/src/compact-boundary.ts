@@ -1,5 +1,6 @@
 import type { AgentEvent, ChatMessage, HarnessId } from './agent-types'
 import { captureTranscriptBoundary } from './transcript-boundary'
+import { isSlashCommandBubble } from './transcript-markers'
 
 export type CompactBoundaryEvent = Extract<AgentEvent, { type: 'compact_boundary' }>
 
@@ -43,8 +44,7 @@ export function withoutManualCompactTurn(messages: readonly ChatMessage[], compa
 
 /** The "/compact" bubble itself, never a message the user sent after it. */
 export function isCompactSlashBubble(message: ChatMessage): boolean {
-  return message.role === 'user' && message.content.length === 1
-    && message.content[0].type === 'text' && message.content[0].text.trim() === '/compact'
+  return isSlashCommandBubble(message, 'compact')
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashBubble, withoutManualCompactTurn } from '@superone/shared/compact-boundary'
+import { buildRecapMessage, withRecapRow } from '@superone/shared/recap-row'
 import { findCheckpointTarget } from './helpers'
 import type { ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
@@ -74,35 +75,6 @@ export function parseTurnMetaText(text: string): TurnMetaPayload | null {
   } catch {
     return null
   }
-}
-
-function appendSystemTurnMeta(
-  session: ChatCoreSession,
-  payload: TurnMetaPayload,
-  idPrefix: string,
-  ports: ChatCorePorts,
-): Partial<ChatCoreSession> {
-  const msg: ChatMessage = {
-    id: ports.id(`${idPrefix}_`),
-    role: 'assistant',
-    status: 'complete',
-    content: [{ type: 'text', text: encodeTurnMeta(payload) }],
-    createdAt: new Date(ports.now()).toISOString(),
-    providerId: 'system',
-  }
-  return { messages: [...session.messages, msg] }
-}
-
-/** True when `message` is already the recap row this event would mint. */
-function isMatchingRecapMarker(
-  message: ChatMessage,
-  payload: Extract<TurnMetaPayload, { kind: 'recap' }>,
-): boolean {
-  if (message.providerId !== 'system') return false
-  const first = message.content[0]
-  if (!first || first.type !== 'text') return false
-  const parsed = parseTurnMetaText(first.text)
-  return parsed?.kind === 'recap' && parsed.text === payload.text && parsed.auto === payload.auto
 }
 
 /** True when `message` is a legacy system marker for this turn summary text. */
@@ -211,17 +183,9 @@ export function reduceSlash(
     case 'session_recap': {
       const summary = event.summary.trim()
       if (!summary) return { isRecapping: false }
-      const payload: Extract<TurnMetaPayload, { kind: 'recap' }> = {
-        kind: 'recap',
-        text: summary,
-        ...(event.auto != null ? { auto: event.auto } : {}),
-      }
-      const last = session.messages[session.messages.length - 1]
-      if (last && isMatchingRecapMarker(last, payload)) return { isRecapping: false }
-      return {
-        ...appendSystemTurnMeta(session, payload, 'session_recap', ports),
-        isRecapping: false,
-      }
+      const row = buildRecapMessage(ports.id('session_recap_'), new Date(ports.now()).toISOString(), summary, event.auto)
+      const messages = withRecapRow(session.messages, row)
+      return { ...(messages ? { messages } : {}), isRecapping: false }
     }
 
     case 'session_recap_unavailable':
@@ -270,6 +234,14 @@ export function reduceSlash(
           if (lastUserIdx >= 0 && isCompactSlashBubble(filtered[lastUserIdx])) filtered.splice(lastUserIdx, 1)
         }
         return { _pendingSlashCommand: '', _pendingCompactUserId: '', messages: filtered }
+      }
+      // A local-command `/recap` (Claude) prints the recap as stdout. Render it as
+      // the recap row Grok's host-side `/recap` produces, not a popup.
+      if (cmd === 'recap') {
+        const summary = event.content.trim()
+        const row = summary ? buildRecapMessage(ports.id('session_recap_'), new Date(ports.now()).toISOString(), summary, false) : null
+        const messages = row ? withRecapRow(session.messages, row, event.messageId) : null
+        return { _pendingSlashCommand: '', isRecapping: false, ...(messages ? { messages } : {}) }
       }
       // These commands return their whole deliverable as local-command stdout —
       // the report *is* the answer the user asked for, so it belongs in the

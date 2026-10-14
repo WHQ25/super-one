@@ -16,7 +16,7 @@ vi.stubGlobal('window', {
 
 await import('../index')
 const { createDefaultPerSessionState } = await import('../defaults')
-const { reduceSlash } = await import('./slash')
+const { reduceSlash, parseTurnMetaText } = await import('./slash')
 
 function makeMessage(id: string, overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -410,6 +410,26 @@ describe('reduceSlash: slash_command_output', () => {
     const patch = reduceSlash(session, { type: 'slash_command_output', messageId: 'source', content: '', command: 'compact' } as never)
 
     expect(patch.messages!.map((m) => m.id)).toEqual(['divider', 'u-next'])
+  })
+
+  it('turns local-command /recap stdout into the recap row in place of its turn', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'recap'
+    session.isRecapping = true
+    session.messages = [
+      makeMessage('u1', { role: 'user', content: [{ type: 'text', text: 'ship it' }] }),
+      makeMessage('a1', { role: 'assistant' }),
+      makeMessage('u-recap', { role: 'user', content: [{ type: 'text', text: '/recap' }] }),
+      makeMessage('source', { role: 'assistant', status: 'streaming' }),
+    ]
+
+    const patch = reduceSlash(session, { type: 'slash_command_output', messageId: 'source', content: 'Shipped; next is push.\n', command: 'recap' })
+
+    expect(patch.slashCommandOutput).toBeUndefined()
+    expect(patch).toMatchObject({ _pendingSlashCommand: '', isRecapping: false })
+    expect(patch.messages!.map((m) => m.id).slice(0, 2)).toEqual(['u1', 'a1'])
+    expect(patch.messages).toHaveLength(3)
+    expect(parseTurnMetaText((patch.messages![2].content[0] as { text: string }).text)).toEqual({ kind: 'recap', text: 'Shipped; next is push.', auto: false })
   })
 
   it('produces a slashCommandOutput popup + hint assistant message for the default slash flow', () => {

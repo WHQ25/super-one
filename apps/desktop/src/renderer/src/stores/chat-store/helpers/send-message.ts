@@ -3,6 +3,7 @@ import { createSendWriteScope } from './send-write-scope'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
+import { isRecapSlashSend } from '@superone/shared/recap-row'
 import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/shared/agent-types'
 import { pendingSlashCommandFrom } from '@superone/chat-core'
 import { newMessageId } from '@superone/shared/message-id'
@@ -518,7 +519,8 @@ export async function sendMessageImpl(
     userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
   }
   const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
-  const awaitsReply = !isQueuedSend && !isCompactSlash
+  const isRecapSlash = !isQueuedSend && isRecapSlashSend(effectiveProvider, finalContent)
+  const awaitsReply = !isQueuedSend && !isCompactSlash && !isRecapSlash
   set((s) => ({
     ...commitPerSession(s, writeScope.target, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
@@ -534,6 +536,7 @@ export async function sendMessageImpl(
       additionalDirsDirty: false,
       draftId: null,
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
+      ...(isRecapSlash ? { isRecapping: true } : {}),
       ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
       ...(startsStreaming ? { status: 'streaming' as const } : {}),
     })),

@@ -10,6 +10,7 @@ import { McpAppContextAttachments } from './mcp-app-context-attachments'
 import { withCodexContents } from '@superone/shared/codex-content'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
+import { isRecapSlashSend } from '@superone/shared/recap-row'
 import { codexAsyncAnswerContent, codexAsyncAnswerId, codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
 import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
 import type {
@@ -639,6 +640,7 @@ export class ChatRuntime {
       // Same rule as the desktop composer: the boundary reducer drops this bubble
       // and the turn's blank reply instead of leaving "/compact" in the transcript.
       ...(!queued && isCompactSlashSend(this.provider as HarnessId, content) ? { _pendingCompactUserId: clientMessageId } : {}),
+      ...(!queued && isRecapSlashSend(this.provider as HarnessId, content) ? { isRecapping: true } : {}),
       ...(queued ? { queuedMessages: [...this.session.queuedMessages, queued] } : {}),
     }
     // A live send paints its own bubble, as the desktop does: the host echoes
@@ -746,7 +748,8 @@ export class ChatRuntime {
 
   /** What the transcript shows under a turn the host has not started answering. */
   get pendingTurn(): 'creating' | 'sending' | null {
-    if (!this.session.awaitingAssistantReply) return null
+    // A sent `/recap` shows the recapping line instead, as Grok's does.
+    if (!this.session.awaitingAssistantReply || this.session.isRecapping) return null
     return this.creating || !this.sessionId ? 'creating' : 'sending'
   }
 

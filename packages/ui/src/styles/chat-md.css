@@ -225,6 +225,23 @@
   }
 }
 
+/* A markdown user bubble (the parent-handed task) hugs its padding: no reply
+   spacing from the wide-panel rules below, and no first/last block margins —
+   the root's reset is a utility, so the element margins above outrank it. */
+.portable-user-message .chat-md {
+  margin-block: 0;
+}
+
+.portable-user-message .chat-md > :first-child,
+.portable-user-message .chat-md > [data-virtual-markdown-block]:first-child > :first-child {
+  margin-top: 0;
+}
+
+.portable-user-message .chat-md > :last-child,
+.portable-user-message .chat-md > [data-virtual-markdown-block]:last-child > :last-child {
+  margin-bottom: 0;
+}
+
 .tool-node {
   --diff-gutter-bg: color-mix(in oklch, var(--card), var(--muted) 20%);
 }

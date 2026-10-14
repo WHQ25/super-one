@@ -1,12 +1,46 @@
 # Agent Profile
 
-Status: draft · Updated: 2026-09-23
+Status: v1 shipped (minimal cut, §0); later phases remain draft · Updated: 2026-10-15
 
 Scope: turn a `session_providers` row ("run configuration") into a
 user-customizable **Agent Profile** — a named agent with its own identity,
 instructions, runtime defaults, permissions and capabilities — authored by the
 base agents through a confirm card, and usable first through collaboration
 (`@mention`, `session_collab_request`).
+
+## 0. What v1 shipped
+
+v1 is a minimal cut of this proposal. Everything below §0 that this section
+does not list is still open.
+
+| Area | Shipped in v1 | Where |
+|---|---|---|
+| Spec | `config.profile` = `{ version: 1, identity: { name, description }, instructions?, runtime?: { model?, effort?, fastMode?, context?: '1m' } }`, parsed by the shared store on every write | `packages/shared/src/agent-profile.ts`, `packages/runtime/src/session/session-provider-store.ts` |
+| Support checks | Model, effort, fast mode and 1M context are validated against the harness model catalog (`[1m]` catalog rows, model efforts, fast service tier); errors name the field and harness. No `profile` entry in `HarnessCapabilities` was needed for these fields | `validateAgentProfileRuntime`, `agentProfileModelSupport` |
+| Resolver | `resolveAgentLaunchDefaults`: launch args > profile > global preference, used by desktop `profileResources` and CLI `listCollaborationProfiles` (closes gap 2) | same module |
+| Identity | Profile name and description flow to `session_collab_list_agents` and `@` mentions | `agent-profiles.ts`, `collaboration-profiles.ts` |
+| Instructions | Composed ahead of the collaboration protocol into `systemPromptAppend`; desktop in `SessionManager` create/resume, CLI at collab start/reuse/rehydrate | `session-manager.ts`, `collaboration-start.ts` |
+| dsh | `systemPromptAppend` delivered as an agent-scoped `superone:session` section (closes gap 5) | `packages/deepseek/src/runtime.ts` |
+| Tools | `agent_profile_list` / `agent_profile_apply` (`create` \| `update`) / `agent_profile_delete`, host-confirmed (`agent_profile_confirm`, no always-allow); base rows read-only; delete moves sessions to the harness base row | `apps/desktop/src/main/mcp/agent-profile-tools.ts` |
+| UI | Desktop confirm card (create, update diff, destructive delete, explicit "Not supported" rows), shared chat-view tool rows, phone permission-sheet copy | `AgentProfileConfirmPrompt.tsx`, `chat-view/presenters/AgentProfileToolBlock.tsx` |
+
+Deviations from the sections below:
+
+- `runtime.context` (`'1m'`, requires `model`) is new; the spec stores the base
+  model id and the launch appends `[1m]`.
+- Instructions are read from the row on every create and resume, so editing a
+  profile also changes the instructions of its resumed sessions (§5 proposed a
+  launch-time snapshot). Model and effort still come from the session row.
+- An ACP profile pins the ACP agent in use at creation (`config.agentId`).
+- Remote spawn children (a desktop profile launched on another machine) do not
+  receive the profile's instructions yet.
+- On a CLI node the composed append is stored but its turn runners do not read
+  `systemPromptAppend` at all yet (pre-existing; collaboration prompt included).
+
+Deferred: `slug`, `projectPaths`, `runtime.apiProviderId`, `permissions`,
+`capabilities` (tools/MCP/skills/native agent), the `profile` capability entry,
+plaintext `apiKey` migration (gap 4), `agentName` (gap 6), Settings page,
+main-chat picker, remote-node/mobile authoring parity.
 
 ## 1. Decisions
 
@@ -36,13 +70,13 @@ Known gaps this plan closes:
 1. Config schemas describe *connection* (`apiKey`, `baseUrl`, `command`, `env`),
    not agent behavior. Codex `reasoningEffort` / `permissionPreset` are declared
    but never read by the backend.
-2. Desktop `profileResources` ignores row config when computing
+2. *(Closed in v1.)* Desktop `profileResources` ignores row config when computing
    `defaultConfig`; CLI `pushProfile` honors `model` / `effort`. Same row, two
    different defaults.
 3. `SessionManager.createSession` never applies row defaults.
 4. `apiKey` is stored in plaintext `config_json`; credentials already live in the
    credential store.
-5. dsh drops `systemPromptAppend` entirely — the collaboration system prompt
+5. *(Closed in v1.)* dsh drops `systemPromptAppend` entirely — the collaboration system prompt
    does not reach DeepSeek children today.
 6. `ClaudeRunConfig.agentName` (automations) is persisted but never applied.
 
@@ -118,7 +152,7 @@ supports it but SuperOne does not wire it, X = no hook.
 | MCP subset | S (explicit `mcpServers` map) | S (`mcp_servers.X.enabled=false`) | S (per-session list, filter) | S (`syncMcpServers` filter) | S (`buildCursorMcpServers` filter) | X (process-tree wide) |
 | Skills | S (per-session `skills` list; global today) | S (unverified per thread) | S Grok only, additive | S (`skill` permission) | coarse (`settingSources`) | X |
 | Native agent | S (SDK `agent`) | X | X (agentId picks a binary) | S (per-turn `agent` → default) | X | W (`agentPreset`) |
-| Instructions | W (preset append) | W (`developer_instructions`) | W (Grok `_meta.rules`, else first prompt) | W (per-prompt `system`) | W (first-turn prefix) | X (dropped — bug) |
+| Instructions | W (preset append) | W (`developer_instructions`) | W (Grok `_meta.rules`, else first prompt) | W (per-prompt `system`) | W (first-turn prefix) | W (agent-scoped section, v1) |
 | Permission / sandbox | W / W | W / preset | W / none | W / none | W / W (local) | W / preset |
 
 The support matrix becomes shared data, not UI branches. Add to

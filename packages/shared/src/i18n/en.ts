@@ -650,6 +650,19 @@ export type Messages = {
     mosaic: {
       noSpace: string
     }
+    /** A terminal tab another client writes in. */
+    terminal: {
+      heldBy: {
+        /** The computer the terminal runs on, from its own window. */
+        host: string
+        hostUnnamed: string
+        phone: string
+        desktop: string
+      }
+      viewOnly: string
+      takeOver: string
+      disconnect: string
+    }
   }
   /** First launch under the new macOS bundle id, before the keychain is touched. */
   identityHandoff: { title: string; body: string; continue: string }
@@ -4966,6 +4979,17 @@ export const en: Messages = {
     },
     mosaic: {
       noSpace: 'Not enough space',
+    },
+    terminal: {
+      heldBy: {
+        host: '{{host}} is using this terminal.',
+        hostUnnamed: 'Its computer is using this terminal.',
+        phone: 'A phone is using this terminal.',
+        desktop: 'Another computer is using this terminal.',
+      },
+      viewOnly: 'View Only',
+      takeOver: 'Take Over',
+      disconnect: 'Disconnect',
     },
   },
   identityHandoff: {

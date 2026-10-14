@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitFork, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
@@ -7,6 +7,7 @@ import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { applyRemoteControlChange } from '@/stores/chat-store/helpers/remote-control'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAppStore } from '@/stores/app'
+import { useEnvironmentLabel } from '@/hooks/use-environment-label'
 import { catalogIdForSessionProvider, isCatalogHarnessDisabled } from '@/lib/harness-visibility'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -153,17 +154,3 @@ export const ChatComposerShell = memo(function ChatComposerShell({
     </>
   )
 })
-
-/** A paired computer's name, read once it is needed; null until known. */
-function useEnvironmentLabel(connectionId: string | null): string | null {
-  const [label, setLabel] = useState<string | null>(null)
-  useEffect(() => {
-    if (!connectionId) return
-    let cancelled = false
-    void window.environment.listItems()
-      .then((items) => { if (!cancelled) setLabel(items.find((item) => item.connectionId === connectionId)?.label ?? null) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [connectionId])
-  return connectionId ? label : null
-}

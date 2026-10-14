@@ -1,67 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, PanelBottomClose, Smartphone, Bot } from 'lucide-react'
+import { Plus, PanelBottomClose } from 'lucide-react'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { parseRemoteTerminalKey } from '@superone/shared/remote-resource-key'
 import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
 import { onTerminalThemeChange } from './terminal-theme'
 import { applyTerminalAppearance, applyTerminalEvent, createBaseXterm, disposeTermInstance, SEARCH_DECORATIONS } from './term-instance'
 import { TerminalFindBar } from './TerminalFindBar'
 import { createTerminalKeyEventHandler } from './terminal-keybindings'
-import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
+import type { TerminalEvent } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { tabShowsInTerminalPanel } from '@/hooks/useTerminalSync'
 import { TerminalRemoteBanner } from './TerminalRemoteBanner'
-import { HoverCloseSlot } from '@/components/activity/ActivityTab'
+import { TERMINAL_HEADER_ITEM as HEADER_ITEM, TerminalTabStrip } from './TerminalTabStrip'
+import { terminalHolder } from './terminal-holder'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
-
-const HEADER_ITEM = 'flex items-center rounded-lg px-1.5 py-1 transition-colors'
-
-function SortableTerminalTab({
-  tab,
-  active,
-  onActivate,
-  onClose,
-}: {
-  tab: TerminalListItem
-  active: boolean
-  onActivate: () => void
-  onClose: () => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: tab.terminalId,
-  })
-  const style = {
-    transform: CSS.Transform.toString(transform ? { ...transform, y: 0 } : null),
-    transition,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onClick={onActivate}
-      className={`${HEADER_ITEM} gap-1.5 shrink-0 cursor-pointer ${
-        active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
-      } ${isDragging ? 'z-10 opacity-80' : ''}`}
-    >
-      <HoverCloseSlot onClose={onClose}>
-        {tab.ownerDeviceId
-          ? <Smartphone className="size-3 shrink-0" />
-          : tab.agentControl
-            ? <Bot className="size-3 shrink-0" />
-            : <TerminalIcon className="size-3 shrink-0" />}
-      </HoverCloseSlot>
-      <span className="max-w-40 truncate text-xs">{tab.title}</span>
-    </div>
-  )
-}
+import { useEnvironmentLabel } from '@/hooks/use-environment-label'
 
 export function TerminalPanel() {
   const projectPath = useAppStore((s) => s.currentFolder)
@@ -78,15 +34,13 @@ export function TerminalPanel() {
   const renameTab = useTerminalStore((s) => s.renameTab)
   const reorderTabs = useTerminalStore((s) => s.reorderTabs)
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-  const handleTabDragEnd = useCallback(
-    (e: DragEndEvent) => {
-      const { active, over } = e
-      if (!over || active.id === over.id || !projectPath) return
-      reorderTabs(projectPath, active.id as string, over.id as string)
-    },
+  const handleReorder = useCallback(
+    (fromId: string, toId: string) => { if (projectPath) reorderTabs(projectPath, fromId, toId) },
     [projectPath, reorderTabs],
   )
+  const activeHolder = terminalHolder(activeTab?.ownerDeviceId)
+  const remoteActive = activeId ? parseRemoteTerminalKey(activeId) !== null : false
+  const hostName = useEnvironmentLabel(activeHolder === 'host' && activeId ? parseRemoteTerminalKey(activeId)?.connectionId ?? null : null)
 
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [find, setFind] = useState<string | null>(null)
@@ -226,7 +180,8 @@ export function TerminalPanel() {
   useEffect(() => {
     if (!open || !projectPath) return
     let cancelled = false
-    void window.terminal.list().then((items) => {
+    // A remote project's key reads its node's tabs, including ones its window and phones opened.
+    void window.terminal.list(projectPath).then((items) => {
       if (cancelled) return
       for (const item of items) {
         if (tabShowsInTerminalPanel(item, projectPath)) upsertTab(projectPath, item)
@@ -294,22 +249,13 @@ export function TerminalPanel() {
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
-            <SortableContext
-              items={tabs.map((t) => t.terminalId)}
-              strategy={horizontalListSortingStrategy}
-            >
-              {tabs.map((tab) => (
-                <SortableTerminalTab
-                  key={tab.terminalId}
-                  tab={tab}
-                  active={tab.terminalId === activeId}
-                  onActivate={() => projectPath && setActive(projectPath, tab.terminalId)}
-                  onClose={() => closeTab(tab.terminalId)}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+          <TerminalTabStrip
+            tabs={tabs}
+            activeId={activeId}
+            onActivate={(terminalId) => projectPath && setActive(projectPath, terminalId)}
+            onClose={closeTab}
+            onReorder={handleReorder}
+          />
           <button
             onClick={() => void createTerminal()}
             disabled={!projectPath}
@@ -354,8 +300,14 @@ export function TerminalPanel() {
               inputRef={findInputRef}
             />
           )}
-          {activeTab?.ownerDeviceId && (
-            <TerminalRemoteBanner onDisconnect={() => { if (activeId) void window.terminal.claim(activeId) }} />
+          {activeHolder !== 'me' && (
+            <TerminalRemoteBanner
+              holder={activeHolder}
+              hostName={hostName}
+              // This window takes its own tabs back from anyone; a remote tab only from its node's window.
+              action={!remoteActive ? 'disconnect' : activeHolder === 'host' ? 'takeOver' : undefined}
+              onAction={() => { if (activeId) void window.terminal.claim(activeId) }}
+            />
           )}
         </div>
       )}

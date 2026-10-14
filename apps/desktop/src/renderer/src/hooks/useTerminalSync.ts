@@ -82,7 +82,7 @@ function revealRemoteTab(
     setOpen(true)
     return
   }
-  void window.terminal.list().then((items) => {
+  void window.terminal.list(folder).then((items) => {
     const item = items.find((row) => row.terminalId === terminalId)
     if (!item || !tabBelongsToProject(item, folder)) return
     upsertTab(folder, { ...item, ownerDeviceId })

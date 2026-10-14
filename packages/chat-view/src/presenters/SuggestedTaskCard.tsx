@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUpRight, ListPlus, Loader2 } from 'lucide-react'
+import { ArrowUpRight, ClipboardCheck, Loader2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import type { SuggestedTaskState } from '@superone/shared/suggested-task'
@@ -16,7 +16,6 @@ import {
 export interface SuggestedTaskActions {
   /** Resolves with an error message to show, or nothing on success. */
   launch: () => Promise<string | void>
-  dismiss: () => Promise<string | void>
 }
 
 export interface SuggestedTaskCardProps {
@@ -32,6 +31,10 @@ export interface SuggestedTaskCardProps {
   actions?: SuggestedTaskActions
   /** Shown instead of the buttons when `actions` is absent; defaults to "launch it on your computer". */
   unavailableReason?: string
+  /** The host's launch pickers (agent, model, permission), beside the buttons of a pending card. */
+  launchControls?: ReactNode
+  /** Renders the brief; plain text when absent. */
+  renderMarkdown?: (content: string) => ReactNode
   onOpenSession?: (sessionId: string) => void | Promise<void>
 }
 
@@ -39,7 +42,7 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-const icon = <ListPlus className="size-3 shrink-0 text-muted-foreground" />
+const icon = <ClipboardCheck className="size-3 shrink-0 text-muted-foreground" />
 
 /**
  * The `session_suggest_task` card. The result only names the card; its outcome
@@ -55,13 +58,17 @@ export function SuggestedTaskCard({
   allowExpand = true,
   actions,
   unavailableReason,
+  launchControls,
+  renderMarkdown,
   onOpenSession,
 }: SuggestedTaskCardProps) {
   const { t } = useTranslation()
-  const [busy, setBusy] = useState<'launch' | 'dismiss' | null>(null)
+  const [launching, setLaunching] = useState(false)
   const [failure, setFailure] = useState('')
+  const [promptOpen, setPromptOpen] = useState(false)
   const title = str(params.title) || str(toolSummary)
   const tldr = str(params.tldr)
+  const prompt = str(params.prompt)
 
   if (isStreaming || isError || isDenied || !allowExpand) {
     const label = toolOutcomeLabel({
@@ -82,41 +89,72 @@ export function SuggestedTaskCard({
     )
   }
 
-  const run = async (kind: 'launch' | 'dismiss') => {
-    if (!actions || busy) return
-    setBusy(kind)
+  const launch = async () => {
+    if (!actions || launching) return
+    setLaunching(true)
     setFailure('')
     try {
-      const error = await actions[kind]()
+      const error = await actions.launch()
       if (error) setFailure(error)
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error))
     } finally {
-      setBusy(null)
+      setLaunching(false)
     }
   }
 
+  const summary = (
+    <>
+      <span className={cn('mt-1 block min-w-0 break-words text-sm font-medium', state?.status === 'dismissed' && 'text-muted-foreground line-through')}>
+        {title}
+      </span>
+      {tldr ? (
+        <span className={cn('mt-0.5 block break-words text-xs text-muted-foreground', prompt && 'transition-colors group-hover/summary:text-foreground')}>
+          {tldr}
+        </span>
+      ) : null}
+    </>
+  )
+
   return (
     <div
-      className={cn('tool-node my-1 min-w-0 rounded-md border px-3 py-2', state ? 'bg-muted/20' : 'bg-card')}
+      className={cn('tool-node my-1 min-w-0 overflow-hidden rounded-md border', state ? 'bg-muted/20' : 'bg-card')}
       data-suggested-task-status={state?.status ?? 'pending'}
     >
-      <div className="flex min-w-0 items-center gap-1.5 text-xs">
-        {icon}
-        <ToolName>{t('chat.toolBlock.suggestedTask.suggestedTask')}</ToolName>
-        {state ? <StateBadge state={state} /> : null}
+      <div className="px-3 py-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-xs">
+          {icon}
+          <ToolName>{t('chat.toolBlock.suggestedTask.suggestedTask')}</ToolName>
+          {state ? <StateBadge state={state} /> : null}
+        </div>
+        {prompt ? (
+          // The summary is the toggle: the full brief opens beneath it.
+          <button
+            type="button"
+            aria-expanded={promptOpen}
+            title={t(promptOpen ? 'chat.toolBlock.suggestedTask.hidePrompt' : 'chat.toolBlock.suggestedTask.showPrompt')}
+            onClick={() => setPromptOpen((open) => !open)}
+            className="group/summary block w-full min-w-0 cursor-pointer text-left"
+          >
+            {summary}
+          </button>
+        ) : summary}
+        {prompt && promptOpen ? (
+          <div className="mt-1.5 max-h-80 min-w-0 overflow-y-auto overscroll-contain rounded-md bg-muted/40 px-2.5 py-2">
+            {renderMarkdown
+              ? renderMarkdown(prompt)
+              : <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">{prompt}</p>}
+          </div>
+        ) : null}
       </div>
-      <div className={cn('mt-1 min-w-0 break-words text-sm font-medium', state?.status === 'dismissed' && 'text-muted-foreground line-through')}>
-        {title}
-      </div>
-      {tldr ? <p className="mt-0.5 line-clamp-3 break-words text-xs text-muted-foreground">{tldr}</p> : null}
       <Footer
         state={state}
-        busy={busy}
+        launching={launching}
         failure={failure}
         actions={actions}
         unavailableReason={unavailableReason}
-        onRun={run}
+        launchControls={launchControls}
+        onLaunch={launch}
         onOpenSession={onOpenSession}
       />
     </div>
@@ -135,51 +173,53 @@ function StateBadge({ state }: { state: SuggestedTaskState }) {
 
 function Footer({
   state,
-  busy,
+  launching,
   failure,
   actions,
   unavailableReason,
-  onRun,
+  launchControls,
+  onLaunch,
   onOpenSession,
 }: {
   state?: SuggestedTaskState
-  busy: 'launch' | 'dismiss' | null
+  launching: boolean
   failure: string
   actions?: SuggestedTaskActions
   unavailableReason?: string
-  onRun: (kind: 'launch' | 'dismiss') => void
+  launchControls?: ReactNode
+  onLaunch: () => void
   onOpenSession?: (sessionId: string) => void | Promise<void>
 }) {
   const { t } = useTranslation()
   if (state?.status === 'launched') {
     if (!onOpenSession) return null
     return (
-      <Button variant="link" size="xs" className="mt-1 h-auto px-0 has-[>svg]:px-0" onClick={() => void onOpenSession(state.sessionId)}>
-        {t('chat.toolBlock.suggestedTask.openSession')}
-        <ArrowUpRight />
-      </Button>
+      <div className="px-3 pb-2">
+        <Button variant="link" size="xs" className="h-auto px-0 has-[>svg]:px-0" onClick={() => void onOpenSession(state.sessionId)}>
+          {t('chat.toolBlock.suggestedTask.openSession')}
+          <ArrowUpRight />
+        </Button>
+      </div>
     )
   }
   if (state?.status === 'dismissed') return null
   if (!actions) {
     return (
-      <p className="mt-1.5 text-xs text-muted-foreground">
+      <p className="px-3 pb-2 text-xs text-muted-foreground">
         {unavailableReason ?? t('chat.toolBlock.suggestedTask.desktopOnly')}
       </p>
     )
   }
   return (
-    <>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Button size="xs" disabled={busy !== null} onClick={() => onRun('launch')}>
-          {busy === 'launch' ? <Loader2 className="animate-spin" /> : null}
+    <div className="border-t bg-muted/30 px-2 py-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {launchControls ? <div className="min-w-0 flex-1">{launchControls}</div> : null}
+        <Button size="xs" className="ml-auto shrink-0" disabled={launching} onClick={onLaunch}>
+          {launching ? <Loader2 className="animate-spin" /> : null}
           {t('chat.toolBlock.suggestedTask.launch')}
         </Button>
-        <Button size="xs" variant="ghost" disabled={busy !== null} onClick={() => onRun('dismiss')}>
-          {t('chat.toolBlock.suggestedTask.dismiss')}
-        </Button>
       </div>
-      {failure ? <p role="alert" className="mt-1 break-words text-xs text-error">{failure}</p> : null}
-    </>
+      {failure ? <p role="alert" className="mt-1 break-words px-1 text-xs text-error">{failure}</p> : null}
+    </div>
   )
 }

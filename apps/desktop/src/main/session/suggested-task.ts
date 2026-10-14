@@ -1,12 +1,18 @@
 /**
- * Host side of suggested-task cards (`session_suggest_task`): the user's launch
- * or dismiss. The click is the approval, so a launch
+ * Host side of suggested-task cards (`session_suggest_task`): the user's launch.
+ * The click is the approval, so a launch
  * records a handoff grant and starts it through the same path as an approved
  * `session_collab_request` handoff — a new top-level sibling whose opening turn
  * is the brief plus a provenance line.
  */
-import type { SessionAgentWorktreeConfig } from '@superone/shared/agent-types'
-import { findSuggestedTask, type SuggestedTaskActionResult, type SuggestedTaskInput } from '@superone/shared/suggested-task'
+import type { SessionAgentLaunchSettings, SessionAgentProfile, SessionAgentWorktreeConfig } from '@superone/shared/agent-types'
+import {
+  findSuggestedTask,
+  type SuggestedTaskActionResult,
+  type SuggestedTaskInput,
+  type SuggestedTaskLaunchChoice,
+  type SuggestedTaskLaunchOptions,
+} from '@superone/shared/suggested-task'
 import { resolveMainWorktreeDir } from '../git/worktree-ops'
 import { listSessionAgentProfiles } from './agent-profiles'
 import { resolveCwd } from './collaboration-child-project'
@@ -37,11 +43,6 @@ function pendingTask(session: CardSession, taskId: string): SuggestedTaskInput {
   return found.input
 }
 
-export function dismissSuggestedTask(session: CardSession, taskId: string): void {
-  pendingTask(session, taskId)
-  session.emitHostEvent({ type: 'suggested_task_updated', taskId, state: { status: 'dismissed' } })
-}
-
 /** A branch name git accepts for any title; non-Latin titles fall back to the id alone. */
 export function suggestedTaskBranchName(title: string, taskId: string): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '')
@@ -59,29 +60,74 @@ async function defaultWorktree(cwd: string, title: string, taskId: string): Prom
   return { enabled: true, baseBranch: 'HEAD', mode: 'branch', branchName: suggestedTaskBranchName(title, taskId) }
 }
 
+const LAUNCH_SETTING_KEYS = ['model', 'effort', 'fastMode', 'apiProviderId', 'permissionMode', 'sandboxMode'] as const satisfies readonly (keyof SessionAgentLaunchSettings)[]
+
+/** Only how the launch runs comes from the renderer; where and what it runs is the host's. */
+function pickSettings(settings: SessionAgentLaunchSettings): SessionAgentLaunchSettings {
+  return Object.fromEntries(LAUNCH_SETTING_KEYS.flatMap((key) => (settings[key] === undefined ? [] : [[key, settings[key]]])))
+}
+
+/** The suggesting session's agent, running as that session does; the first launchable agent otherwise. */
+function initialChoice(parent: Pick<Session, 'snapshot' | 'getUiSettings'>, profiles: SessionAgentProfile[]): SuggestedTaskLaunchChoice | null {
+  const own = profiles.find((item) => item.id === parent.snapshot.providerId)
+  if (!own) return profiles[0] ? { agentId: profiles[0].id, settings: {} } : null
+  const ui = parent.getUiSettings()
+  return {
+    agentId: own.id,
+    settings: {
+      ...(ui.permissionMode ? { permissionMode: ui.permissionMode } : {}),
+      ...(ui.selectedModel ? { model: ui.selectedModel } : {}),
+      ...(ui.selectedEffort ? { effort: ui.selectedEffort } : {}),
+      ...(ui.apiProviderId ? { apiProviderId: ui.apiProviderId } : {}),
+    },
+  }
+}
+
+/** What the card's launch picker offers for a pending card. */
+export function suggestedTaskLaunchOptions(host: SessionManager, sessionId: string, taskId: string): SuggestedTaskLaunchOptions {
+  const parent = resolveLiveSession(host, sessionId)
+  if (!parent) throw new SuggestedTaskError('This session is no longer available.')
+  pendingTask(parent, taskId)
+  const profiles = listSessionAgentProfiles()
+  const initial = initialChoice(parent, profiles)
+  if (!initial) throw new SuggestedTaskError('No agent can launch new sessions.')
+  return { profiles, initial }
+}
+
 const launching = new Map<string, Promise<string>>()
 
-/** Launch a pending card; resolves with the new session id. Concurrent clicks share one launch. */
-export function launchSuggestedTask(host: SessionManager, sessionId: string, taskId: string): Promise<string> {
+/**
+ * Launch a pending card on the user's pick, or on the suggesting session's own
+ * agent and settings; resolves with the new session id. Concurrent clicks share one launch.
+ */
+export function launchSuggestedTask(
+  host: SessionManager,
+  sessionId: string,
+  taskId: string,
+  choice?: SuggestedTaskLaunchChoice,
+): Promise<string> {
   const key = `${sessionId}:${taskId}`
   const inflight = launching.get(key)
   if (inflight) return inflight
-  const run = launch(host, sessionId, taskId).finally(() => launching.delete(key))
+  const run = launch(host, sessionId, taskId, choice).finally(() => launching.delete(key))
   launching.set(key, run)
   return run
 }
 
-async function launch(host: SessionManager, parentSessionId: string, taskId: string): Promise<string> {
+async function launch(host: SessionManager, parentSessionId: string, taskId: string, requested?: SuggestedTaskLaunchChoice): Promise<string> {
   const parent = resolveLiveSession(host, parentSessionId)
   if (!parent) throw new SuggestedTaskError('This session is no longer available.')
   const input = pendingTask(parent, taskId)
   const launchId = `suggested-task-${taskId}`
-  // A retry after a failed start reuses its grant; startSessionAgent resumes it.
-  if (!store().grantForLaunch(parentSessionId, launchId)) {
-    const providerId = parent.snapshot.providerId
-    const profile = listSessionAgentProfiles().find((item) => item.id === providerId)
-    if (!profile) throw new SuggestedTaskError(`This session's agent (${providerId}) cannot launch new sessions.`)
-    const ui = parent.getUiSettings()
+  // A start that already made its session is resumed as it was approved; a
+  // grant that never started is superseded by the user's current pick.
+  if (!store().grantForLaunch(parentSessionId, launchId)?.started_at) {
+    const profiles = listSessionAgentProfiles()
+    const choice = requested ?? initialChoice(parent, profiles)
+    const profile = profiles.find((item) => item.id === choice?.agentId)
+    if (!choice || !profile) {
+      throw new SuggestedTaskError(`This agent (${choice?.agentId ?? parent.snapshot.providerId}) cannot launch new sessions.`)
+    }
     const cwd = resolveCwd({ cwd: input.cwd }, parent)
     const worktree = await defaultWorktree(cwd, input.title, taskId)
     const name = input.title
@@ -95,11 +141,7 @@ async function launch(host: SessionManager, parentSessionId: string, taskId: str
       role,
       config: {
         ...profile.defaultConfig,
-        // The new session runs as this one does; the user can change it there.
-        ...(ui.permissionMode ? { permissionMode: ui.permissionMode } : {}),
-        ...(ui.selectedModel ? { model: ui.selectedModel } : {}),
-        ...(ui.selectedEffort ? { effort: ui.selectedEffort } : {}),
-        ...(ui.apiProviderId ? { apiProviderId: ui.apiProviderId } : {}),
+        ...pickSettings(choice.settings ?? {}),
         cwd,
         ...(worktree ? { worktree } : {}),
         name,

@@ -5,6 +5,7 @@ import { resolveProjectExtraDirs } from '@superone/shared/project-extra-dirs'
 import { findAttachment } from '../remote/attachment-thumbnail'
 import { readPhoneFile, readPhoneVideoPoster, type PhoneFileInput, type PhoneFileSource } from '../remote/phone-files'
 import type { SessionActivity } from '@superone/shared/session-activity'
+import type { SuggestedTaskLaunchChoice } from '@superone/shared/suggested-task'
 import { liveSessionActivity } from '../remote/live-session-activity'
 import { spawnParentOf } from '../session/collaboration-mailbox'
 import { enqueueSessionQueueOp } from '../session/session-queue'
@@ -1136,20 +1137,24 @@ export class AgentService {
       return reconcileRealtimeTimeline(sessionId, timeline)
     })
 
-    windowIpc.handle(AgentIpcChannels.LAUNCH_SUGGESTED_TASK, async (_event, sessionId: string, taskId: string) => {
+    windowIpc.handle(AgentIpcChannels.SUGGESTED_TASK_LAUNCH_OPTIONS, async (_event, sessionId: string, taskId: string) => {
+      const manager = this.sessionManager
+      if (!manager) return { ok: false, error: 'Sessions are not ready yet.' }
+      const { suggestedTaskLaunchOptions, suggestedTaskReply } = await import('../session/suggested-task')
+      return suggestedTaskReply(async () => suggestedTaskLaunchOptions(manager, sessionId, taskId))
+    })
+
+    windowIpc.handle(AgentIpcChannels.LAUNCH_SUGGESTED_TASK, async (
+      _event,
+      sessionId: string,
+      taskId: string,
+      choice?: SuggestedTaskLaunchChoice,
+    ) => {
       const manager = this.sessionManager
       if (!manager) return { ok: false, error: 'Sessions are not ready yet.' }
       manager.getSession(sessionId)?.lease.assertMutation()
       const { launchSuggestedTask, suggestedTaskReply } = await import('../session/suggested-task')
-      return suggestedTaskReply(async () => ({ sessionId: await launchSuggestedTask(manager, sessionId, taskId) }))
-    })
-
-    windowIpc.handle(AgentIpcChannels.DISMISS_SUGGESTED_TASK, async (_event, sessionId: string, taskId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return { ok: false, error: 'This session is no longer available.' }
-      session.lease.assertMutation()
-      const { dismissSuggestedTask, suggestedTaskReply } = await import('../session/suggested-task')
-      return suggestedTaskReply(async () => dismissSuggestedTask(session, taskId))
+      return suggestedTaskReply(async () => ({ sessionId: await launchSuggestedTask(manager, sessionId, taskId, choice) }))
     })
 
     windowIpc.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (
@@ -2186,7 +2191,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.LAUNCH_SUGGESTED_TASK)
-    ipcMain.removeHandler(AgentIpcChannels.DISMISS_SUGGESTED_TASK)
+    ipcMain.removeHandler(AgentIpcChannels.SUGGESTED_TASK_LAUNCH_OPTIONS)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)

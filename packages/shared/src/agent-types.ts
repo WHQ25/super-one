@@ -1140,6 +1140,12 @@ export interface SessionAgentLaunchConfig {
   remote?: SessionAgentRemoteLaunch
 }
 
+/** How a launch runs: the part of its config the user may retune before it starts. */
+export type SessionAgentLaunchSettings = Pick<
+  SessionAgentLaunchConfig,
+  'model' | 'effort' | 'fastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
+>
+
 /**
  * Where a spawn child launched on another machine runs. The host resolves it
  * at request time so the confirm card shows the machine, whether it clones,
@@ -4192,8 +4198,8 @@ export const AgentIpcChannels = {
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
+  SUGGESTED_TASK_LAUNCH_OPTIONS: 'agent:suggested-task-launch-options',
   LAUNCH_SUGGESTED_TASK: 'agent:launch-suggested-task',
-  DISMISS_SUGGESTED_TASK: 'agent:dismiss-suggested-task',
   EVENT: 'agent:event',
   SANDBOX_PROBE: 'sandbox:probe',
   LIST_DIRECTORY: 'agent:list-directory',

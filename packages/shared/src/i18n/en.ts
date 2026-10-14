@@ -2530,12 +2530,14 @@ export type Messages = {
         suggestTask: string
         suggestedTask: string
         launch: string
-        dismiss: string
         launched: string
         openSession: string
         dismissed: string
         desktopOnly: string
         unavailable: string
+        showPrompt: string
+        hidePrompt: string
+        agent: string
       }
       collab: {
         requestingCollaboration: string
@@ -6938,12 +6940,14 @@ export const en: Messages = {
         suggestTask: 'Suggest Task',
         suggestedTask: 'Suggested Task',
         launch: 'Launch',
-        dismiss: 'Dismiss',
         launched: 'Launched',
         openSession: 'Open Session',
         dismissed: 'Dismissed',
         desktopOnly: 'Launch it from SuperOne on your computer.',
         unavailable: 'This session cannot launch tasks from here.',
+        showPrompt: 'Show Full Prompt',
+        hidePrompt: 'Hide Prompt',
+        agent: 'Agent',
       },
       collab: {
         requestingCollaboration: 'Requesting collaboration…',

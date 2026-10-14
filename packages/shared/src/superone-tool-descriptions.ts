@@ -236,7 +236,7 @@ export const SESSION_RETRIEVE_FROM_DESCRIPTION =
 export const SESSION_SUGGEST_TASK_DESCRIPTION =
   'Suggest a side task the user can launch later as its own session. Use when you notice a real issue outside the current task ' +
   '(a bug, cleanup, or follow-up) that should not derail it. Returns a taskId at once, without an approval prompt; keep working. ' +
-  'The user sees a card and may launch it as a new top-level session or dismiss it; if it goes stale, say so in your reply. ' +
+  'The user sees a card and may launch it as a new top-level session; if it goes stale, say so in your reply. ' +
   'To hand work over now, use session_collab_request instead.'
 
 export const SUGGEST_TASK_TITLE_DESCRIPTION = 'Card title, starting with a verb.'

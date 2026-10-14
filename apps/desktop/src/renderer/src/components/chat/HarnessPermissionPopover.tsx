@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { cn } from '@superone/ui/lib/utils'
 import type { HarnessId, PermissionMode } from '@superone/shared/agent-types'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
@@ -15,11 +16,14 @@ export function HarnessPermissionPopover({
   harnessId,
   value,
   onChange,
+  labelClassName,
 }: {
   harnessId: HarnessId
   /** Unset shows the harness's own default, which is what the launch would start in. */
   value?: PermissionMode
   onChange: (mode: PermissionMode) => void
+  /** Extra classes on the trigger's label and chevron, e.g. to hide them when space runs out. */
+  labelClassName?: string
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -42,8 +46,8 @@ export function HarnessPermissionPopover({
           title={label}
         >
           {view.icon}
-          <span>{label}</span>
-          <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+          <span className={labelClassName}>{label}</span>
+          <ChevronDown className={cn('size-3 transition-transform duration-200', open && 'rotate-180', labelClassName)} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>

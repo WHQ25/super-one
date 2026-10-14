@@ -183,3 +183,11 @@
   max-width: 100%;
   border-radius: 6px;
 }
+
+/* --- Compact: markdown inside a tool card, headings at body size --- */
+.github-md.md-compact [data-streamdown^="heading-"] {
+  font-size: 1em;
+  margin: 10px 0 4px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}

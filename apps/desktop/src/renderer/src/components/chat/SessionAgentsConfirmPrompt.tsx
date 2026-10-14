@@ -18,20 +18,16 @@ import {
   shortSessionId,
 } from '@superone/shared/collab-request-display'
 import type {
-  PermissionMode,
-  SandboxMode,
   SessionAgentLaunchProposal,
+  SessionAgentLaunchSettings,
   SessionAgentProfile,
   SessionAgentRemoteLaunch,
   SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
-import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { DesktopSessionLinkScope } from '@/lib/session-links'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
-import { useAppStore } from '@/stores/app'
-import { HarnessPermissionPopover } from './HarnessPermissionPopover'
-import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, SandboxModePopover } from './SandboxModeSelector'
+import { HarnessGlyph, LaunchSettingsBar } from './launch-settings-bar'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { useRemoteAgentCatalogs, type RemoteAgentCatalog } from './model-selector/useRemoteAgentCatalogs'
@@ -50,33 +46,7 @@ interface Props {
  * permission mode. Everything else (which agent, the summary, cwd, worktree, sandbox) is the
  * requesting agent's decision and is rendered read-only.
  */
-type EditableConfig = Pick<
-  SessionAgentLaunchProposal['config'],
-  'model' | 'effort' | 'fastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
->
-
-/** Idle harness glyph, brand-aware for ACP agents (e.g. Grok → acp-grok icon). */
-function HarnessGlyph({
-  profile,
-  launch,
-}: {
-  profile: SessionAgentProfile | undefined
-  /** Link launches have no agent profile — use peer harness fields instead. */
-  launch?: SessionAgentLaunchProposal
-}) {
-  const Icon = resolveSessionIconFromBrandKey(profile?.brandKey ?? launch?.peerBrandKey)
-    ?? resolveSessionIcon(
-      profile?.harnessId ?? launch?.peerHarnessId,
-      profile?.acpAgentId ?? launch?.peerAcpAgentId,
-    )
-  return (
-    <span className="flex size-3 shrink-0 items-center justify-center">
-      {Icon
-        ? <Icon status="default" renderLevel="compact" />
-        : <Bot className="size-3 text-muted-foreground" />}
-    </span>
-  )
-}
+type EditableConfig = SessionAgentLaunchSettings
 
 function MetaChip({
   icon: Icon,
@@ -222,7 +192,6 @@ function LaunchPanel({
   onChange: (patch: EditableConfig) => void
 }) {
   const { t } = useTranslation()
-  const sandboxCapability = useAppStore((state) => state.sandboxCapability)
   const { config } = launch
   const link = isLinkLaunch(launch)
   const handoff = isHandoffLaunch(launch)
@@ -339,7 +308,7 @@ function LaunchPanel({
           </div>
           )}
 
-          <div className="mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
+          <LaunchSettingsBar harnessId={harnessId} settings={config} onChange={onChange} className="mt-2">
             {config.remote && !remotePicker ? (
               <RemoteModelStatus
                 remote={config.remote}
@@ -359,24 +328,7 @@ function LaunchPanel({
                 onChange={onChange}
               />
             )}
-            <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
-            <HarnessPermissionPopover
-              harnessId={harnessId}
-              value={config.permissionMode}
-              onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
-            />
-            {harnessSupportsSandbox(harnessId) && (
-              <>
-                <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
-                <SandboxModePopover
-                  value={coerceSandboxModeForHarness(harnessId, config.sandboxMode ?? 'off')}
-                  onValueChange={(sandboxMode: SandboxMode) => onChange({ sandboxMode })}
-                  supportLevel={harnessSandboxSupportLevel(harnessId, sandboxCapability?.supportLevel ?? 'always')}
-                  availableModes={harnessSandboxModes(harnessId)}
-                />
-              </>
-            )}
-          </div>
+          </LaunchSettingsBar>
           {config.remote && requestedModelMissing && (
             <p className="mt-1 flex shrink-0 items-start gap-1 text-xs leading-snug text-warning">
               <AlertTriangle className="mt-px size-3 shrink-0" />

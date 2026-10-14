@@ -1,6 +1,7 @@
 import { Box, PackageOpen, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useState } from 'react'
@@ -54,6 +55,8 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
 
 interface SandboxModePopoverProps {
   compact?: boolean
+  /** Extra classes on the trigger's label and chevron, e.g. to hide them when space runs out. */
+  labelClassName?: string
   value: SandboxMode
   onValueChange: (mode: SandboxMode) => void
   supportLevel?: 'always' | 'conditional' | 'unsupported'
@@ -65,6 +68,7 @@ interface SandboxModePopoverProps {
 
 export function SandboxModePopover({
   compact = false,
+  labelClassName,
   value,
   onValueChange,
   supportLevel = 'always',
@@ -110,8 +114,8 @@ export function SandboxModePopover({
           title={triggerTitle}
         >
           {current.icon}
-          {!compact && <span>{current.triggerLabel}</span>}
-          {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
+          {!compact && <span className={labelClassName}>{current.triggerLabel}</span>}
+          {!compact && <ChevronDown className={cn('size-3 transition-transform duration-200', open && 'rotate-180', labelClassName)} />}
         </button>
       </PopoverTrigger>
       <PopoverContent

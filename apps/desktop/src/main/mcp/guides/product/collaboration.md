@@ -38,7 +38,7 @@ Say what you did in your own reply: the user sees a new top-level session, not a
 | A real issue outside your task (bug, cleanup, follow-up) the user may want handled later | `session_suggest_task` — no approval prompt, no waiting; keep working |
 | Work that must move on now, or the user asked you to pass it on | `handoff` |
 
-A suggestion is a card the user may launch whenever they like. Launching it is a handoff the click approves: a new top-level session running this session's agent, model, and permission mode, with the `prompt` as its opening turn. In a git repository it gets a fresh `task/…` branch worktree cut from the current HEAD; a plain folder is shared. Write the `prompt` as self-contained as a handoff brief. Suggest each issue once and never to postpone your own task. Only the user dismisses a card; if a suggestion goes stale, say so in your reply.
+A suggestion is a card the user may launch whenever they like. Launching it is a handoff the click approves: a new top-level session with the `prompt` as its opening turn, running this session's agent, model, and permission mode unless the user picks others on the card. In a git repository it gets a fresh `task/…` branch worktree cut from the current HEAD; a plain folder is shared. Write the `prompt` as self-contained as a handoff brief. Suggest each issue once and never to postpone your own task. You cannot withdraw a card; if a suggestion goes stale, say so in your reply.
 
 ## Launch flow
 

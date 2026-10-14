@@ -15,7 +15,10 @@ vi.mock('./session-collaboration', () => ({
 }))
 vi.mock('./collaboration-mailbox', () => ({ collaborationStore: () => ({ grantForLaunch: mocks.grantForLaunch }) }))
 vi.mock('./agent-profiles', () => ({
-  listSessionAgentProfiles: () => [{ id: 'claude-base', defaultConfig: { sandboxMode: 'off', model: 'default-model' } }],
+  listSessionAgentProfiles: () => [
+    { id: 'claude-base', defaultConfig: { sandboxMode: 'off', model: 'default-model' } },
+    { id: 'codex-base', defaultConfig: { sandboxMode: 'workspace-write', model: 'gpt-default', permissionMode: 'default' } },
+  ],
 }))
 vi.mock('./collaboration-child-project', () => ({
   resolveCwd: (config: { cwd?: string }, parent: { cwd: string }) => config.cwd ?? parent.cwd,
@@ -27,9 +30,9 @@ vi.mock('../git/worktree-ops', () => ({ resolveMainWorktreeDir: mocks.resolveMai
 
 import {
   SuggestedTaskError,
-  dismissSuggestedTask,
   launchSuggestedTask,
   suggestedTaskBranchName,
+  suggestedTaskLaunchOptions,
   suggestedTaskReply,
 } from './suggested-task'
 
@@ -122,11 +125,34 @@ describe('launchSuggestedTask', () => {
     expect(config).not.toHaveProperty('worktree')
   })
 
-  it('reuses the grant of an earlier failed start instead of approving twice', async () => {
-    mocks.grantForLaunch.mockReturnValue({ grant_id: 'g1' })
-    await launchSuggestedTask(fakeHost(fakeSession()).host, 'parent', TASK_ID)
+  it('launches on the agent the user picked, from its own defaults, keeping only how it runs', async () => {
+    const parent = fakeSession()
+    await launchSuggestedTask(fakeHost(parent).host, 'parent', TASK_ID, {
+      agentId: 'codex-base',
+      settings: { effort: 'xhigh', permissionMode: 'bypassPermissions', cwd: '/elsewhere' } as never,
+    })
+    const [{ agentId, config }] = mocks.createGrants.mock.calls[0][1]
+    expect(agentId).toBe('codex-base')
+    expect(config).toMatchObject({ sandboxMode: 'workspace-write', model: 'gpt-default', effort: 'xhigh', permissionMode: 'bypassPermissions', cwd: '/repo' })
+  })
+
+  it('refuses an agent that cannot launch sessions', async () => {
+    await expect(launchSuggestedTask(fakeHost(fakeSession()).host, 'parent', TASK_ID, { agentId: 'gone', settings: {} }))
+      .rejects.toThrow(/gone/)
+    expect(mocks.startSessionAgent).not.toHaveBeenCalled()
+  })
+
+  it('resumes a start that already made its session instead of approving twice', async () => {
+    mocks.grantForLaunch.mockReturnValue({ grant_id: 'g1', started_at: '2026-10-14T00:00:00Z' })
+    await launchSuggestedTask(fakeHost(fakeSession()).host, 'parent', TASK_ID, { agentId: 'codex-base', settings: {} })
     expect(mocks.createGrants).not.toHaveBeenCalled()
     expect(mocks.startSessionAgent).toHaveBeenCalledTimes(1)
+  })
+
+  it('supersedes a grant that never started with the current pick', async () => {
+    mocks.grantForLaunch.mockReturnValue({ grant_id: 'g1', started_at: null })
+    await launchSuggestedTask(fakeHost(fakeSession()).host, 'parent', TASK_ID, { agentId: 'codex-base', settings: {} })
+    expect(mocks.createGrants.mock.calls[0][1][0].agentId).toBe('codex-base')
   })
 
   it('runs one launch for concurrent clicks and refuses a card that already launched', async () => {
@@ -157,16 +183,21 @@ describe('launchSuggestedTask', () => {
   })
 })
 
-describe('dismissSuggestedTask', () => {
-  it('dismisses a pending card once, and refuses one the user already launched', async () => {
-    const session = fakeSession()
-    dismissSuggestedTask(session as never, TASK_ID)
-    expect(session.emitHostEvent).toHaveBeenCalledWith({ type: 'suggested_task_updated', taskId: TASK_ID, state: { status: 'dismissed' } })
-    expect(() => dismissSuggestedTask(session as never, TASK_ID)).toThrow(/already dismissed/)
+describe('suggestedTaskLaunchOptions', () => {
+  it('starts on the suggesting session\'s agent and settings', () => {
+    const parent = fakeSession()
+    const options = suggestedTaskLaunchOptions(fakeHost(parent).host, 'parent', TASK_ID)
+    expect(options.profiles.map((profile) => profile.id)).toEqual(['claude-base', 'codex-base'])
+    expect(options.initial).toEqual({
+      agentId: 'claude-base',
+      settings: { permissionMode: 'bypassPermissions', model: 'opus', effort: 'high' },
+    })
+  })
 
-    const launched = fakeSession()
-    await launchSuggestedTask(fakeHost(launched).host, 'parent', TASK_ID)
-    expect(() => dismissSuggestedTask(launched as never, TASK_ID)).toThrow(/already launched/)
+  it('falls back to the first agent when the session\'s own cannot launch', () => {
+    const parent = fakeSession()
+    parent.snapshot = { ...parent.snapshot, providerId: 'unknown' }
+    expect(suggestedTaskLaunchOptions(fakeHost(parent).host, 'parent', TASK_ID).initial).toEqual({ agentId: 'claude-base', settings: {} })
   })
 })
 

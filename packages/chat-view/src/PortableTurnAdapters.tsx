@@ -299,6 +299,7 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
         isStreaming={props.status === 'streaming'}
         isError={props.isError}
         isDenied={isDenied}
+        renderMarkdown={(content) => <PortableText text={content} isStreaming={false} />}
         onOpenSession={(sessionId) => { requestNative('openSession', { sessionId }) }}
       />
     )

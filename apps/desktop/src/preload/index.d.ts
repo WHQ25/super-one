@@ -42,10 +42,10 @@ interface AgentAPI {
   readyRealtimeVoice(projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity): Promise<void>
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
-  /** Local sessions only: launch a pending `session_suggest_task` card as a new session. */
-  launchSuggestedTask(sessionId: string, taskId: string): Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<{ sessionId: string }>>
-  /** Local sessions only: dismiss a pending `session_suggest_task` card. */
-  dismissSuggestedTask(sessionId: string, taskId: string): Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult>
+  /** Local sessions only: the agents a pending `session_suggest_task` card can launch on, and its starting pick. */
+  suggestedTaskLaunchOptions(sessionId: string, taskId: string): Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<import('@superone/shared/suggested-task').SuggestedTaskLaunchOptions>>
+  /** Local sessions only: launch a pending `session_suggest_task` card as a new session, on `choice` when given. */
+  launchSuggestedTask(sessionId: string, taskId: string, choice?: import('@superone/shared/suggested-task').SuggestedTaskLaunchChoice): Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<{ sessionId: string }>>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
   setSessionForeground(sessionId: string, foreground: boolean, projectPath?: string): Promise<void>

@@ -1,6 +1,6 @@
 /**
  * Suggested tasks (`session_suggest_task`): a side issue the agent noticed,
- * shown as a card the user may later launch as its own session or dismiss.
+ * shown as a card the user may later launch as its own session, or leave be.
  * Only the user decides a card; the agent cannot withdraw one.
  *
  * The tool result only names the card (`taskId`) and is never rewritten. What
@@ -8,13 +8,16 @@
  * row — a `tool_use` block, or a Codex `mcp_tool_call` item — so it persists
  * with the transcript and reaches every surface that renders the row.
  */
-import type { ChatMessage } from './agent-types'
+import type { ChatMessage, SessionAgentLaunchSettings, SessionAgentProfile } from './agent-types'
 import { readableContent } from './codex-content'
 import { parseMcpToolName } from './tool-ui'
 
 export const SUGGEST_TASK_TOOL_NAME = 'session_suggest_task' as const
 
-/** Outcome of a card. Absent while the card is pending. */
+/**
+ * Outcome of a card. Absent while the card is pending. Cards can no longer be
+ * dismissed, but transcripts still hold some that were, so they render as settled.
+ */
 export type SuggestedTaskState =
   | { status: 'launched'; sessionId: string }
   | { status: 'dismissed' }
@@ -27,7 +30,22 @@ export interface SuggestedTaskInput {
   cwd?: string
 }
 
-/** Reply of the desktop launch / dismiss calls. */
+/** The agent a card launches on and how it runs, as the user picked it. */
+export interface SuggestedTaskLaunchChoice {
+  agentId: string
+  settings: SessionAgentLaunchSettings
+}
+
+/**
+ * The card's launch picker: the agents this host can launch, and the choice it
+ * starts on — the suggesting session's agent and settings, when launchable.
+ */
+export interface SuggestedTaskLaunchOptions {
+  profiles: SessionAgentProfile[]
+  initial: SuggestedTaskLaunchChoice
+}
+
+/** Reply of the desktop launch calls. */
 export type SuggestedTaskActionResult<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string }
 
 export interface SuggestedTaskRecord {

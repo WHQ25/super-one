@@ -57,11 +57,10 @@ const agentAPI = {
   getRealtimeTimeline: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, projectPath, sessionId) as Promise<RealtimeTimelineResult>,
 
-  launchSuggestedTask: (sessionId: string, taskId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.LAUNCH_SUGGESTED_TASK, sessionId, taskId) as Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<{ sessionId: string }>>,
-
-  dismissSuggestedTask: (sessionId: string, taskId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DISMISS_SUGGESTED_TASK, sessionId, taskId) as Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult>,
+  suggestedTaskLaunchOptions: (sessionId: string, taskId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SUGGESTED_TASK_LAUNCH_OPTIONS, sessionId, taskId) as Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<import('@superone/shared/suggested-task').SuggestedTaskLaunchOptions>>,
+  launchSuggestedTask: (sessionId: string, taskId: string, choice?: import('@superone/shared/suggested-task').SuggestedTaskLaunchChoice) =>
+    ipcRenderer.invoke(AgentIpcChannels.LAUNCH_SUGGESTED_TASK, sessionId, taskId, choice) as Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<{ sessionId: string }>>,
 
 
   parkSession: (projectPath: string) =>

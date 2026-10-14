@@ -143,6 +143,8 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
+    const view = el.ownerDocument.defaultView ?? window
+    let pointerDown = false
     let touchY = 0
     const handleWheel = (e: WheelEvent): void => {
       if (isPauseFollowWheel(e)) pauseAutoScroll(false)
@@ -158,14 +160,18 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') pauseAutoScroll(false)
     }
+    const handlePointerDown = (): void => { pointerDown = true }
+    const handlePointerUp = (): void => { pointerDown = false }
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
       if (followRef.current) {
-        // Thumb-drag / track-click only fire scroll, not wheel. pinToBottom
-        // only raises scrollTop, so a decrease outside the bottom band is user.
+        // A drag that scrolls (text selection, middle-click autoscroll) fires
+        // only scroll events. Without a pressed pointer a decrease is layout: the
+        // browser clamping after rows shrank, whose event can land after they
+        // grew again. Jumps pause through stopAutoScroll; the bar is hidden.
         const movedUp = el.scrollTop < pausedScrollTopRef.current - 1
         pausedScrollTopRef.current = el.scrollTop
-        if (movedUp && remaining > RESUME_AT_BOTTOM_PX) pauseAutoScroll(false)
+        if (pointerDown && movedUp && remaining > RESUME_AT_BOTTOM_PX) pauseAutoScroll(false)
       } else {
         const movedTowardBottom = el.scrollTop > pausedScrollTopRef.current + 1
         pausedScrollTopRef.current = el.scrollTop
@@ -181,10 +187,16 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     el.addEventListener('touchstart', handleTouchStart, { passive: true })
     el.addEventListener('touchmove', handleTouchMove, { passive: true })
     el.addEventListener('keydown', handleKeyDown)
+    el.addEventListener('pointerdown', handlePointerDown)
+    view.addEventListener('pointerup', handlePointerUp, true)
+    view.addEventListener('pointercancel', handlePointerUp, true)
     const following = (): boolean => followRef.current
     followByViewport.set(el, following)
     return () => {
       if (followByViewport.get(el) === following) followByViewport.delete(el)
+      el.removeEventListener('pointerdown', handlePointerDown)
+      view.removeEventListener('pointerup', handlePointerUp, true)
+      view.removeEventListener('pointercancel', handlePointerUp, true)
       el.removeEventListener('scroll', handleScroll)
       el.removeEventListener('wheel', handleWheel)
       el.removeEventListener('touchstart', handleTouchStart)

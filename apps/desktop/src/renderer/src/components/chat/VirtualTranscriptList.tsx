@@ -89,7 +89,6 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   // including after a backward jump. Growth inside the visible row stays put.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     (instance.itemSizeCache.has(item.key) ? item.end : item.start) < (instance.scrollOffset ?? 0)
-
   // A growing row keeps the tail in place only while the chat follows it. The
   // list-relative distance leaves out the transcript padding around the list, so
   // a short upward scroll still read as "at the end" and each streamed row
@@ -169,6 +168,17 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   }, [viewportRef])
 
   // The keyed transcript releases session-owned state on session switch.
+
+  // Virtual rows and useChatScroll own every offset correction. Native anchoring
+  // would pick a node outside the list and keep the end pinned while a taller
+  // composer shrinks the viewport, pushing history up instead of covering it.
+  // The host attaches the viewport ref after this list's layout effects.
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (small || !viewport) return
+    viewport.style.overflowAnchor = 'none'
+    return () => { viewport.style.overflowAnchor = '' }
+  }, [small, viewportRef])
 
   // A new session initially opens at the end, even when no useChatScroll host is mounted (stories).
   useLayoutEffect(() => {

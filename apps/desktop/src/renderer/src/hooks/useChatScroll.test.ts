@@ -219,7 +219,7 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(500)
   })
 
-  it('stops following when the scrollbar is dragged up', () => {
+  it('stops following when a pointer drag scrolls up (text selection, middle-click)', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }
     state.scrollTop = state.scrollHeight - state.clientHeight
@@ -227,13 +227,34 @@ describe('useChatScroll', () => {
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
 
     act(() => {
+      el.dispatchEvent(new Event('pointerdown'))
       state.scrollTop = 40
       el.dispatchEvent(new Event('scroll'))
+      window.dispatchEvent(new Event('pointerup'))
     })
 
     state.scrollHeight = 800
     act(() => { fireResize() })
     expect(state.scrollTop).toBe(40)
+  })
+
+  it('keeps following when a clamp scroll event arrives after the content grew back', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    expect(state.scrollTop).toBe(200)
+
+    // Rows shrink and the browser clamps; they grow again before the clamp's
+    // scroll event is delivered (a narrowing pane re-wrapping its rows).
+    act(() => {
+      state.scrollTop = 150
+      state.scrollHeight = 700
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(400)
   })
 
   it('does not scroll on resize after user wheels up to the top', () => {

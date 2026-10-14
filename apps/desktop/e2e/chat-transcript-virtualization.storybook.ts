@@ -8,6 +8,11 @@ async function open(page: Page, story: string) {
   await page.locator('[data-message-id]').first().waitFor()
   await page.waitForTimeout(600)
 }
+// A reader leaves the live tail with an upward wheel; a bare offset write is layout to the chat.
+const scrollToTop = (page: Page) => page.locator(viewport).evaluate(el => {
+  el.dispatchEvent(new WheelEvent('wheel', { deltaY: -el.scrollHeight, bubbles: true }))
+  el.scrollTop = 0
+})
 const bottomDistance = (page: Page) => page.locator(viewport).evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)
 
 // Sample the reading anchor throughout each cold reveal, rather than accepting
@@ -89,7 +94,7 @@ test('spaces narration under reasoning the same across virtual turn chunks', asy
 test('spaces a long turn as if its virtual chunks were absent', async ({ page }) => {
   for (const story of ['codex-reasoning-narration', 'codex-long-turn']) {
     await open(page, story)
-    await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+    await scrollToTop(page)
     await page.waitForTimeout(600)
     const margins = await page.evaluate(() => {
       const reply = [...document.querySelectorAll('.assistant-reply')].find(el => el.querySelector('[data-virtual-segment]'))!
@@ -108,7 +113,7 @@ test('spaces a long turn as if its virtual chunks were absent', async ({ page })
 
 test('caps every pinned narration under collapsed process in a long compact turn', async ({ page }) => {
   await open(page, 'codex-long-turn')
-  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await scrollToTop(page)
   await page.waitForTimeout(600)
   const margins = await page.locator('.assistant-reply .chat-md').evaluateAll(texts => texts.map(text => getComputedStyle(text).marginTop))
   expect(margins.length).toBeGreaterThan(2)
@@ -173,7 +178,7 @@ test('bounds a single huge reply, reveals both ends and preserves an active sele
     return selection.toString()
   })
   await page.waitForTimeout(100)
-  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await scrollToTop(page)
   await expect(page.getByText(/^Paragraph 0:/)).toBeVisible()
   expect(await page.evaluate(() => document.getSelection()?.toString())).toBe(selected)
   await page.evaluate(() => document.getSelection()?.removeAllRanges())
@@ -190,7 +195,7 @@ test('retains a selected message outside the virtual range until selection is cl
     return selection.toString()
   })
   await page.waitForTimeout(100)
-  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await scrollToTop(page)
   await expect(page.locator('[data-message-id="perf-0"]')).toBeVisible()
   await page.waitForTimeout(100)
   expect(await page.evaluate(() => document.getSelection()?.toString())).toBe(selected)
@@ -306,7 +311,7 @@ test('bounds a thousand Codex activities across content segments and preserves t
   await last.locator(':scope > div').first().click()
   await expect(last.locator('.text-terminal-muted')).toBeVisible()
   await expect(last.locator('.text-terminal-muted')).toContainText('output-activity-799')
-  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await scrollToTop(page)
   await expect(page.getByText('echo activity-0', { exact: true })).toBeVisible()
   await expect(last).toHaveCount(0)
   await page.locator(viewport).evaluate(el => { el.scrollTop = el.scrollHeight })
@@ -342,7 +347,7 @@ test('bounds a live ContentBlock turn during file-chip opens and restores evicte
     selection.removeAllRanges(); selection.addRange(range)
     return selection.toString()
   })
-  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await scrollToTop(page)
   await expect(page.locator('[data-tool-use-id="command-0"]')).toBeVisible()
   expect(await page.evaluate(() => document.getSelection()?.toString())).toBe(selected)
   await page.evaluate(() => document.getSelection()?.removeAllRanges())
@@ -358,7 +363,7 @@ test('bounds a live ContentBlock turn during file-chip opens and restores evicte
 
 test('keeps completed ContentBlock details and narrow streaming turns bounded', async ({ page }) => {
   await openContentBlockTurn(page, 'completed-details', 'theme:light;locale:en')
-  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await scrollToTop(page)
   await expect(page.locator('[data-tool-use-id="command-0"]')).toBeVisible()
   expect(await page.locator('[data-chat-root] .tool-node').count()).toBeLessThan(40)
   await openContentBlockTurn(page, 'narrow')

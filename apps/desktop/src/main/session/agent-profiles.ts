@@ -39,6 +39,11 @@ import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
 import { resolveServiceFromCredential } from '../providers/resolver'
 import { listSessionProviders } from './session-provider-repo'
+import { readDefaultSessionPrefs } from './session-preferences'
+import { subscriptionAccountProviders } from '../agent/remote-selector-catalog'
+import { listKnownAccounts as listKnownClaudeAccounts } from '../agent/claude-account-service'
+import { defaultChatProviderId } from '../agent/default-chat-provider'
+import { codexAccountStore } from '../codex/codex-account-store'
 
 export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProviders>[number]): string | null {
   const fromConfig = typeof (provider.config as { agentId?: unknown })?.agentId === 'string'
@@ -202,14 +207,38 @@ function apiProviderOption(credential: Credential, modelEnv: ProviderModelEnv | 
   }
 }
 
-/** Same filter as the main chat provider picker (endpoint-capable credentials). */
+/** Same rows as the main chat provider picker: subscription accounts, then endpoint-capable credentials. */
 function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): ApiProviderRow[] {
   const consumer = harnessId === 'codex' ? 'chat:codex' : 'chat:claude'
   const options = { experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled }
-  return listCredentials().flatMap((credential) => {
-    const resolved = resolveServiceFromCredential(consumer, credential, null, options)
-    return resolved ? [apiProviderOption(credential, resolved.modelMapping)] : []
-  })
+  const accounts = subscriptionAccountProviders(harnessId, harnessId === 'claude'
+    ? { claudeAccounts: listKnownClaudeAccounts() }
+    : { codexAccounts: codexAccountStore().list() })
+  return [
+    ...accounts.map(({ id, name, brand, keyName }) => ({ id, name, ...(brand ? { brand } : {}), ...(keyName ? { keyName } : {}) })),
+    ...listCredentials().flatMap((credential) => {
+      const resolved = resolveServiceFromCredential(consumer, credential, null, options)
+      return resolved ? [apiProviderOption(credential, resolved.modelMapping)] : []
+    }),
+  ]
+}
+
+/**
+ * What a new session on this profile starts with when the launch leaves a field
+ * out: the user's model, effort, permission and sandbox defaults, and the
+ * provider or account their chats are bound to.
+ */
+function launchDefaultConfig(harnessId: HarnessId, resources: SessionAgentLaunchConfig): SessionAgentLaunchConfig {
+  const { permissionMode, sandboxMode } = readDefaultSessionPrefs(harnessId)
+  const apiProviderId = harnessId === 'claude' || harnessId === 'codex'
+    ? defaultChatProviderId(harnessId, { experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled })
+    : null
+  return {
+    ...resources,
+    permissionMode,
+    ...(sandboxMode ? { sandboxMode } : {}),
+    ...(apiProviderId ? { apiProviderId } : {}),
+  }
 }
 
 /**
@@ -254,7 +283,7 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
       description: provider.harnessId === 'acp'
         ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
         : `${provider.harnessId} harness with the built-in configuration`,
-      defaultConfig: resources.defaultConfig,
+      defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig),
       models,
       efforts: resources.efforts,
       apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'

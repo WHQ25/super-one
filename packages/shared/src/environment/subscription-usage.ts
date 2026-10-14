@@ -8,6 +8,12 @@ export interface SubscriptionUsage {
   harness: SubscriptionHarness
   /** Account label when the node knows one (email, account id); null for the harness's own default login. */
   account: string | null
+  /**
+   * The launch `apiProviderId` that runs on this subscription
+   * (`claude-account:…` / `codex-account:…`); null when the node only has the
+   * harness's default login, which a launch reaches by omitting the field.
+   */
+  apiProviderId?: string | null
   planType: string | null
   windows: ClaudeRateLimitWindow[]
   /** Why the windows are missing or stale: an expired login, a failed request. */

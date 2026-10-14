@@ -29,31 +29,46 @@ export { UsageThrottle, type UsageReading } from './throttle'
 export interface ClaudeUsageAccount {
   credentialDir: string | null
   label: string | null
+  /** Launch id of this login; see `SubscriptionUsage.apiProviderId`. */
+  apiProviderId?: string | null
+}
+
+/** A Codex login to read: `home` undefined is the CLI's default `CODEX_HOME`. */
+export interface CodexUsageAccount {
+  home?: string
+  label: string | null
+  apiProviderId?: string | null
 }
 
 export interface SubscriptionUsageOptions {
   /** A host without SuperOne-managed accounts omits this and gets the default login only. */
   claudeAccounts?: readonly ClaudeUsageAccount[]
+  codexAccounts?: readonly CodexUsageAccount[]
   force?: boolean
   log?: UsageLog
 }
 
-function row(harness: SubscriptionHarness, account: string | null, reading: UsageReading<ClaudeRateLimits>): SubscriptionUsage[] {
+interface UsageSource { label: string | null; apiProviderId?: string | null }
+
+const defaultLogin: UsageSource = { label: null }
+
+function row(harness: SubscriptionHarness, source: UsageSource, reading: UsageReading<ClaudeRateLimits>): SubscriptionUsage[] {
   if (!reading.value && !reading.error) return []
   return [{
     harness,
-    account,
+    account: source.label,
+    apiProviderId: source.apiProviderId ?? null,
     planType: reading.value?.planType ?? null,
     windows: reading.value?.windows.map(({ label, usedPercent, resetsAt }) => ({ label, usedPercent, resetsAt })) ?? [],
     ...(reading.error ? { error: reading.error } : {}),
   }]
 }
 
-async function settle(harness: SubscriptionHarness, account: string | null, read: () => Promise<UsageReading<ClaudeRateLimits>>): Promise<SubscriptionUsage[]> {
+async function settle(harness: SubscriptionHarness, source: UsageSource, read: () => Promise<UsageReading<ClaudeRateLimits>>): Promise<SubscriptionUsage[]> {
   try {
-    return row(harness, account, await read())
+    return row(harness, source, await read())
   } catch (error) {
-    return row(harness, account, { value: null, error: error instanceof Error ? error.message : String(error) })
+    return row(harness, source, { value: null, error: error instanceof Error ? error.message : String(error) })
   }
 }
 
@@ -61,12 +76,13 @@ export async function readSubscriptionUsage(opts: SubscriptionUsageOptions): Pro
   const force = opts.force === true
   const log = opts.log ?? silentLog
   const claude = opts.claudeAccounts ?? [{ credentialDir: null, label: null }]
+  const codex = opts.codexAccounts?.length ? opts.codexAccounts : [{ label: null }]
   const rows = await Promise.all([
-    ...claude.map((account) => settle('claude', account.label, () => readClaudeRateLimits(account.credentialDir, { force, log }))),
-    settle('codex', null, () => readCodexRateLimits({ force })),
-    settle('grok', null, () => readGrokRateLimits({ force, log })),
-    settle('opencode', null, () => readOpenCodeGoRateLimits(openReadOnlySqlite, { force })),
-    settle('cursor', null, () => readCursorRateLimits(openReadOnlySqlite, { force })),
+    ...claude.map((account) => settle('claude', account, () => readClaudeRateLimits(account.credentialDir, { force, log }))),
+    ...codex.map((account) => settle('codex', account, () => readCodexRateLimits({ home: account.home, force }))),
+    settle('grok', defaultLogin, () => readGrokRateLimits({ force, log })),
+    settle('opencode', defaultLogin, () => readOpenCodeGoRateLimits(openReadOnlySqlite, { force })),
+    settle('cursor', defaultLogin, () => readCursorRateLimits(openReadOnlySqlite, { force })),
   ])
   return rows.flat()
 }

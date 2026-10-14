@@ -182,15 +182,16 @@ describe('built-in superone tool registration surfaces', () => {
   // This used to assert the full autonomy guidance sat on the field, on the grounds that
   // the 700-char budget does not reach into the input schema. The budget does not, but the
   // token cost does: field descriptions are the larger half of the always-loaded surface.
-  // The field now carries the decision rule and points at the manual for the rest; the mode
+  // The field defers to the user's default and points at the manual for the rest; the mode
   // names it used to spell out are already in the enum beside it.
-  it('keeps the launch autonomy rule on permissionMode and the detail in product/collaboration', () => {
+  it('defers permissionMode to the user\'s default and the mode names to product/collaboration', () => {
     const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
     const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
       .launches.items!.properties!
     const config = (launch.config as { properties: Record<string, { description?: string; enum?: string[] }> }).properties
     expect(config.permissionMode.description).toBe(LAUNCH_PERMISSION_MODE_DESCRIPTION)
-    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/most autonomous mode/i)
+    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/user's default .* defaultConfig/)
+    expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).not.toMatch(/most autonomous/i)
     expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).toMatch(/read_manual/)
     // Not repeated in prose — the schema already offers them.
     expect(config.permissionMode.enum).toContain('bypassPermissions')

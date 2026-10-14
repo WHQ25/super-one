@@ -43,7 +43,7 @@ import { dispatchRpc } from '@superone/runtime/server'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import { desktopNodeHostPaths } from './paths'
-import { claudeUsageAccounts } from '../agent/subscription-usage'
+import { claudeUsageAccounts, codexUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
 import type { TerminalLeaseAuthority } from '../terminal/terminal-lease'
 import { controlHolderOf, type ControlHolderNames } from '../session/session-lease'
@@ -211,7 +211,7 @@ export class DesktopDomain {
         sessions,
         harnesses: deps.harnesses,
         collaboration: desktopCollaborationPort(deps.listAgentProfiles),
-        subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
+        subscriptionUsage: { claudeAccounts: claudeUsageAccounts, codexAccounts: codexUsageAccounts, log: usageLog },
         artifacts: new ArtifactZoneService(paths.syncRoot),
         mcpApps: sessions.mcpApps,
       }

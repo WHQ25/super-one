@@ -53,6 +53,9 @@ const state = vi.hoisted(() => ({
     }],
   }],
   projects: [] as Array<{ path: string; missing?: boolean }>,
+  claudeAccounts: [] as Array<Record<string, unknown>>,
+  codexAccounts: [] as Array<Record<string, unknown>>,
+  defaultChatProviderId: null as string | null,
   agentPreference: {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
     codex: { defaultModel: '', defaultReasoningEffort: '', defaultFastMode: false },
@@ -87,6 +90,15 @@ vi.mock('../database', () => ({
 }))
 vi.mock('../providers/credential-store', () => ({
   listCredentials: () => state.credentials,
+}))
+vi.mock('../agent/claude-account-service', () => ({
+  listKnownAccounts: () => state.claudeAccounts,
+}))
+vi.mock('../codex/codex-account-store', () => ({
+  codexAccountStore: () => ({ list: () => state.codexAccounts }),
+}))
+vi.mock('../agent/default-chat-provider', () => ({
+  defaultChatProviderId: () => state.defaultChatProviderId,
 }))
 vi.mock('../providers/registry', () => ({
   getPlatforms: () => state.platforms,
@@ -384,6 +396,9 @@ beforeEach(() => {
     id: 'claude-base', harnessId: 'claude', name: 'Claude', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
   }]
   state.credentials = [{ id: 'api-1', name: 'Seed-lei', platformId: 'openai', planId: 'api' }]
+  state.claudeAccounts = []
+  state.codexAccounts = []
+  state.defaultChatProviderId = null
   state.platforms = [{
     id: 'openai',
     name: 'OpenAI',
@@ -412,7 +427,7 @@ describe('session collaboration', () => {
   it('offers a harness whose model catalog has not been fetched yet', () => {
     state.resourceCache = {}
     expect(listSessionAgentProfiles()).toEqual([
-      expect.objectContaining({ id: 'claude-base', models: [], defaultConfig: {} }),
+      expect.objectContaining({ id: 'claude-base', models: [], defaultConfig: { permissionMode: 'default' } }),
     ])
   })
 
@@ -524,7 +539,7 @@ describe('@agent mention targets', () => {
     expect(listSessionAgentProfiles()).toEqual([
       expect.objectContaining({
         id: 'codex-base',
-        defaultConfig: { model: 'gpt-5.6-sol', effort: 'medium', fastMode: true },
+        defaultConfig: { model: 'gpt-5.6-sol', effort: 'medium', fastMode: true, permissionMode: 'default' },
         models: [
           expect.objectContaining({
             id: 'gpt-5.6-sol',
@@ -561,7 +576,7 @@ describe('@agent mention targets', () => {
           expect.objectContaining({ id: 'composer-1', name: 'Composer 1' }),
           expect.objectContaining({ id: 'gpt-5', name: 'GPT-5' }),
         ],
-        defaultConfig: { model: 'gpt-5', effort: 'medium' },
+        defaultConfig: { model: 'gpt-5', effort: 'medium', permissionMode: 'agent' },
       }),
     ])
   })
@@ -581,7 +596,7 @@ describe('@agent mention targets', () => {
       expect.objectContaining({
         id: 'dsh-base',
         models: [expect.objectContaining({ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' })],
-        defaultConfig: { model: 'deepseek-v4-pro', effort: 'medium' },
+        defaultConfig: { model: 'deepseek-v4-pro', effort: 'medium', permissionMode: 'default' },
       }),
     ])
   })
@@ -618,7 +633,7 @@ describe('@agent mention targets', () => {
       expect.objectContaining({
         id: 'acp-base',
         acpAgentId: 'grok-build',
-        defaultConfig: { model: 'grok-4.5', effort: 'high' },
+        defaultConfig: { model: 'grok-4.5', effort: 'high', permissionMode: 'default' },
       }),
     ])
   })
@@ -793,6 +808,40 @@ describe('@agent mention targets', () => {
     })
 
     await expect(promise).rejects.toThrow(/Unknown apiProviderId/)
+  })
+
+  it('offers the user\'s launch defaults and subscription accounts, and launches on them when config is left out', async () => {
+    state.agentPreference = {
+      ...state.agentPreference,
+      claude: { ...state.agentPreference.claude, defaultPermissionMode: 'acceptEdits' },
+    }
+    state.claudeAccounts = [
+      { credentialDir: null, email: 'me@example.com', loggedIn: true },
+      { credentialDir: '/accounts/b', email: 'team@example.com', loggedIn: true },
+    ]
+    state.defaultChatProviderId = 'claude-account:/accounts/b'
+    const [profile] = listSessionAgentProfiles()
+    expect(profile.apiProviders.map((provider) => provider.id)).toEqual(['claude-account:cli', 'claude-account:/accounts/b', 'api-1'])
+    expect(profile.apiProviders[1]).toMatchObject({ name: 'Claude', keyName: 'team@example.com' })
+    expect(profile.defaultConfig).toEqual({
+      model: 'test-model', effort: 'high', permissionMode: 'acceptEdits', apiProviderId: 'claude-account:/accounts/b',
+    })
+
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{ launchId: 'defaults', agentId: 'claude-base', summary: 'Task', name: 'Agent', role: 'Worker', config: { apiProviderId: 'claude-account:cli' } }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    expect(launches[0].config).toMatchObject({
+      model: 'test-model', effort: 'high', permissionMode: 'acceptEdits', sandboxMode: 'off', apiProviderId: 'claude-account:cli',
+    })
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+    await expect(promise).resolves.toBeDefined()
   })
 
   it('approves repeated profiles as independent launches and starts each once', async () => {

@@ -50,6 +50,15 @@ export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
   if (generation === listGeneration) listCache = { accounts: resolved, at: Date.now() }
   return resolved
 }
+/**
+ * Signed-in accounts as last recorded in the registry, without probing credentials,
+ * for synchronous catalogs. `listAccounts` refreshes the same records.
+ */
+export function listKnownAccounts(): ClaudeAccount[] {
+  const store = claudeAccountStore()
+  const accounts = [null, ...store.dirs()].flatMap((dir) => store.get(dir)?.account ?? [])
+  return dedupeAccounts(accounts).filter((account) => account.loggedIn).map((account) => ({ ...account, isDefault: store.isDefault(account.credentialDir) }))
+}
 export function createAccountDir(): string {
   const dir = join(accountsRoot(), randomUUID())
   mkdirSync(dir, { recursive: true, mode: 0o700 })

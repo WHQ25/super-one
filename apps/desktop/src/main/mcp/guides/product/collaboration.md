@@ -44,7 +44,7 @@ A suggestion is a card the user may launch whenever they like. Launching it is a
 
 | Step | Action |
 |------|--------|
-| 1 | **Spawn / handoff:** call `session_collab_list_agents` and choose an `agentId`. **Link:** take `sessionId` from `@session` / session tools. |
+| 1 | **Spawn / handoff:** call `session_collab_list_agents`, choose an `agentId`, and read its `defaultConfig` (see [Launch defaults](#launch-defaults-providers-and-accounts)). **Link:** take `sessionId` from `@session` / session tools. |
 | 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role` and pass a short `summary` for the user to approve. Link: pass `sessionId` + `summary`. Do not write the brief yet — a rejected request never costs it. |
 | 3 | Wait for user approval. Each approved launch returns its `launchId`. |
 | 4 | Call `session_collab_start({ launchId, task })` for every approved launch back-to-back. `task` is the full Markdown brief. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling and delivers `task`. Link: host binds the peer and wakes it; a `task` becomes the opening mailbox message. A retry with the same `launchId` is idempotent and keeps the first `task`. |
@@ -80,8 +80,7 @@ Then start it with the opening message:
       "agentId": "claude-base",
       "name": "Dana",
       "role": "Implementer",
-      "summary": "Continue the migration with phase 2",
-      "config": { "permissionMode": "bypassPermissions" }
+      "summary": "Continue the migration with phase 2"
     }
   ]
 }
@@ -94,6 +93,21 @@ Then start it with the self-contained brief:
 ```
 
 A single request may mix spawn, handoff and link launches (one confirm card, multiple tabs). The recipes below show request payloads; each launch still gets its `task` at start.
+
+## Launch defaults, providers and accounts
+
+Each profile's `defaultConfig` is the user's own launch setup for that agent: model, effort, permission and sandbox mode, and the `apiProviderId` (key or subscription account) their chats run on. Start from it. When it fits the task, leave those `config` fields out and the host applies it. Change a field when the user asks for something else, or when the task needs something the default lacks.
+
+What you can read to decide, when it matters. The user's instructions decide how to use it; there is no preferred policy:
+
+| Source | Tells you |
+|--------|-----------|
+| `session_collab_list_agents` → `agents[].apiProviders[]` | Every subscription account (`claude-account:…`, `codex-account:…`) and API key the agent can run on; `keyName` names the account email or key |
+| `environment_get_info({ include: ["usage"] })` | One row per quota window of each signed-in subscription, per machine: `usedPercent`, `resetsAt`, and the `apiProviderId` that runs on it. `null` is the harness's default login, reached by omitting `apiProviderId` |
+| `environment_get_info()` | Each machine's OS, CPU, GPUs and free memory |
+| `session_collab_list_agents` → `environments[]` | The agents each other connected machine can run (see [On another machine](#on-another-machine)) |
+
+Usage and `apiProviderId` belong to the machine that reports them: a launch on another machine uses that machine's ids.
 
 ## Choose `cwd` or `worktree`
 
@@ -153,11 +167,7 @@ Default for “review my local changes” / “code review this session’s diff
       "agentId": "codex-base",
       "name": "Casey",
       "role": "Reviewer",
-      "summary": "Review uncommitted WIP (read-only); report bugs with file:line, no fixes",
-      "config": {
-        "permissionMode": "bypassPermissions",
-        "sandboxMode": "on"
-      }
+      "summary": "Review uncommitted WIP (read-only); report bugs with file:line, no fixes"
     }
   ]
 }
@@ -257,14 +267,14 @@ Set `cwd` only because this launch targets a genuinely different project root. T
 A `spawn` launch may run on another connected machine: `session_collab_list_agents` lists them under `environments[]` with the agents each one can run, and the launch passes that `environmentId` as `environment`. Use it for a heavy job or a toolchain this machine lacks.
 
 - The child works in a fresh worktree and branch of the same repository on that machine, cloned there when missing. A project without an origin remote cannot run elsewhere.
-- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (except `branchName`), `carryLocalChanges` and `apiProviderId` do not apply.
+- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (except `branchName`) and `carryLocalChanges` do not apply. An `apiProviderId` must be one of that machine's own (`environments[].agents[].apiProviders[]`); omit it for that machine's default.
 - Ask it to push its branch (or open a PR) and report the branch name, then fetch the branch here to verify.
 - The mailbox works as for a local child. `session_collab_retrieve` reports its `state` from that machine, or `unreachable` while it is offline.
 - `handoff` and `link` stay on this machine, and a remote child cannot launch children.
 
 ## Permission and sandbox
 
-Nobody watches child or handoff sessions. Prefer the most autonomous mode that can finish the task: `permissionMode: "bypassPermissions"` for Claude-family and Codex harnesses, or `"auto"` for ACP. The user can downgrade permission and sandbox settings in the approval dialog. Use `"plan"` or `"default"` only when stopping for human review is the purpose of the launch.
+`defaultConfig` carries the user's default `permissionMode` and `sandboxMode` for the agent. Nobody watches child or handoff sessions: a mode that asks before acting waits on the user, who is notified. Mode names differ per harness: Claude-family `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`; Codex `default`, `auto`, `bypassPermissions`; ACP `default`, `plan`, `auto`, `bypassPermissions`; Cursor `agent`, `plan`, `bypassPermissions`; DeepSeek `plan`, `default`, `bypassPermissions`. The approval dialog shows the mode, and the user can change it there.
 
 ## Mailbox
 

@@ -134,6 +134,7 @@ function usageRow(environmentId: string, usage: SubscriptionUsage | null, window
     environmentId,
     harness: usage?.harness ?? null,
     account: usage?.account ?? null,
+    apiProviderId: usage?.apiProviderId ?? null,
     plan: usage?.planType ?? null,
     window: window?.label ?? null,
     usedPercent: window ? Math.round(window.usedPercent * 10) / 10 : null,

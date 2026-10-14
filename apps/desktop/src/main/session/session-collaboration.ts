@@ -103,7 +103,7 @@ export interface SessionCollaborationRunConfig {
 
 
 /**
- * `apiProviderId` is a credential id, and an unknown one is NOT an error further
+ * `apiProviderId` is a key or subscription-account id, and an unknown one is NOT an error further
  * down: the provider resolver silently falls back to the global binding, so the
  * child would quietly run on the default provider while the caller believes it
  * picked a third-party one. Reject it here (and again at grant time, which is the
@@ -120,7 +120,7 @@ function assertKnownApiProviderId(
   const known = profile.apiProviders.map((provider) => provider.id)
   throw new Error(
     `Unknown apiProviderId for agent ${profile.id}: ${apiProviderId}. `
-    + 'It must be a credential id from session_collab_list_agents → agents[].apiProviders[].id'
+    + 'It must be a key or account id from session_collab_list_agents → agents[].apiProviders[].id'
     + (known.length > 0 ? ` (available: ${known.join(', ')})` : ' (this agent has no third-party providers configured)')
     + '. Omit it to follow the user\'s global provider binding.',
   )
@@ -210,9 +210,9 @@ function normalizeLaunches(
       name,
       role,
       config: {
-        ...profile.defaultConfig,
         permissionMode: 'default',
         sandboxMode: 'off',
+        ...profile.defaultConfig,
         cwd: defaultLaunchCwd(parent),
         ...launch.config,
         name,

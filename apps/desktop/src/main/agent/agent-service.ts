@@ -57,7 +57,7 @@ import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './f
 import { type Session as SessionContract } from '../session/types';
 import { installAcpRecapFocus } from '../acp/acp-recap-focus';
 import { harnessProviderCatalog } from './remote-selector-catalog'
-import { claudeAccountStore } from './claude-account-store'
+import { defaultChatProviderId } from './default-chat-provider'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
@@ -509,7 +509,7 @@ export class AgentService {
           platformDisplay,
           claudeAccounts,
           codexAccounts: harnessId === 'codex' ? codexAccountStore().list() : [],
-          selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId()),
+          selectedProviderId: defaultChatProviderId(harnessId, options),
         })
         } catch (err) {
           log.warn('[get_system_info] provider catalog unavailable: %s', err instanceof Error ? err.message : String(err))

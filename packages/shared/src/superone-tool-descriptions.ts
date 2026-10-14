@@ -141,7 +141,8 @@ export const VIDEO_STATUS_DESCRIPTION =
 export const SESSION_LIST_AGENTS_DESCRIPTION =
   'List the agent profiles available for user-approved child sessions. Only launchable agents are returned. ' +
   'Agents on other connected machines are listed under environments[] with the environmentId to launch them with. ' +
-  'Inspect each profile\'s harness and defaultConfig before session_collab_request. ' +
+  'defaultConfig is the user\'s launch setup for the agent (model, effort, permission, sandbox, apiProviderId); leave out the config fields it already covers. ' +
+  'apiProviders lists the subscription accounts and API keys it can run on. ' +
   'You may reuse one agentId for multiple launches. ' +
   'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
 
@@ -181,8 +182,8 @@ export const LAUNCH_SESSION_ID_DESCRIPTION =
  * field blurbs short and point there.
  */
 export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
-  'How autonomous the child session is. Nobody watches a child, so prefer the most autonomous mode it can finish under; "plan"/"default" only when stopping for human review is the point. ' +
-  'Per-harness mode names, and why requesting autonomy is safe here: See read_manual({ domain: "product", topic: "collaboration" }).'
+  'Omit to use the user\'s default from the profile\'s defaultConfig. Nobody watches a child, so a mode that asks before acting waits on the user. ' +
+  'Per-harness mode names: See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_ENVIRONMENT_DESCRIPTION =
   'Spawn only. environmentId of another connected machine (session_collab_list_agents → environments[]) to run the ' +
@@ -286,7 +287,7 @@ export const TERMINAL_WAIT_FOR_DESCRIPTION =
   'Block until a terminal tab reaches a state; conditions AND-combine: text (substring visible on screen or in new output), textGone, idleMs (no output for that long), exited (foreground command finished). ' +
   'Use after terminal_tabs run or terminal_act when output arrives asynchronously (a server banner, a watch rebuild finishing). timeoutMs default 15000, max 120000. Do not sleep+poll with terminal_snapshot yourself.'
 
-export const ENVIRONMENT_GET_INFO_DESCRIPTION = 'Read SuperOne environments (this machine and paired nodes): stable IDs, label and connection state, plus the detail groups in include. hardware (default): OS, arch, CPU, GPUs, total and free memory. usage: a separate table with one row per quota window of each signed-in Claude, Codex, Grok, OpenCode Go and Cursor subscription (plan, used percent, reset time); error explains a missing reading. Use it to choose where to launch work or to find an unknown remote ID; reuse known IDs. Null means unknown (offline or older node). Archive queries default to the calling session host; pass an ID to session_search/list/read or project_list for remote queries.'
+export const ENVIRONMENT_GET_INFO_DESCRIPTION = 'Read SuperOne environments (this machine and paired nodes): stable IDs, label and connection state, plus the detail groups in include. hardware (default): OS, arch, CPU, GPUs, total and free memory. usage: a separate table with one row per quota window of each signed-in Claude, Codex, Grok, OpenCode Go and Cursor subscription (plan, used percent, reset time, and the apiProviderId that launches on it); error explains a missing reading. Use it to choose where to launch work or to find an unknown remote ID; reuse known IDs. Null means unknown (offline or older node). Archive queries default to the calling session host; pass an ID to session_search/list/read or project_list for remote queries.'
 export const ENVIRONMENT_GET_INFO_IDS_DESCRIPTION = 'Environments to read; omit for all.'
 export const ENVIRONMENT_GET_INFO_INCLUDE_DESCRIPTION = 'Detail groups to add. Default ["hardware"]; [] returns IDs, labels and state only.'
 export const ARCHIVE_ENVIRONMENT_DESCRIPTION = 'Target environment ID from environment_get_info. Omit or use localhost for the calling session host.'

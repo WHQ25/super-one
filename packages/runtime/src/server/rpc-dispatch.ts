@@ -675,6 +675,7 @@ async function handleUsage(payload: unknown, ctx: RpcContext): Promise<RpcResult
   if (denied) return denied
   const accounts = await readSubscriptionUsage({
     claudeAccounts: await ctx.subscriptionUsage?.claudeAccounts?.(),
+    codexAccounts: await ctx.subscriptionUsage?.codexAccounts?.(),
     force: (payload as { force?: unknown } | null)?.force === true,
     log: ctx.subscriptionUsage?.log,
   })

@@ -42,7 +42,7 @@ import type { McpAppsPort } from './rpc-mcp-apps'
 import type { AuthenticatedClient } from './auth-service'
 import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
-import type { ClaudeUsageAccount, UsageLog } from '../usage/index'
+import type { ClaudeUsageAccount, CodexUsageAccount, UsageLog } from '../usage/index'
 import type { SessionCreateSelections } from '@superone/shared/environment/session-create'
 
 /** Host-owned project catalog (CLI: ProjectRegistry). */
@@ -400,6 +400,8 @@ export interface RpcHostHooks {
 export interface SubscriptionUsagePort {
   /** SuperOne-managed Claude accounts, read instead of the CLI's default login. */
   claudeAccounts?: () => Promise<readonly ClaudeUsageAccount[]>
+  /** SuperOne-managed Codex accounts, read instead of the CLI's default login. */
+  codexAccounts?: () => Promise<readonly CodexUsageAccount[]>
   log?: UsageLog
 }
 

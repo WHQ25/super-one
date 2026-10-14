@@ -65,6 +65,28 @@ export interface ProviderCatalogSource {
   selectedProviderId?: string | null
 }
 
+/** One row per signed-in subscription account the host manages; empty when only the harness's own login exists. */
+export function subscriptionAccountProviders(
+  harness: 'claude' | 'codex',
+  source: Pick<ProviderCatalogSource, 'claudeAccounts' | 'codexAccounts'>,
+): Array<RemoteProviderOption & { id: string }> {
+  if (harness === 'codex') {
+    return (source.codexAccounts ?? []).filter((a) => a.signedIn).map((account) => ({
+      id: codexAccountProviderId(account.id),
+      name: 'ChatGPT',
+      brand: 'openai',
+      keyName: [account.email, account.planType].filter(Boolean).join(' · '),
+    }))
+  }
+  const accounts = source.claudeAccounts ?? []
+  return accounts.map((account) => ({
+    id: claudeAccountProviderId(account.credentialDir)!,
+    name: 'Claude',
+    brand: 'claude',
+    ...(claudeAccountKeyName(account, accounts) ? { keyName: claudeAccountKeyName(account, accounts)! } : {}),
+  }))
+}
+
 /**
  * Mirrors `useSelectorProviders`: the host default first, then every credential
  * that can serve this harness. Claude's default row expands into one row per
@@ -78,19 +100,10 @@ export function harnessProviderCatalog(
   if (harness !== 'claude' && harness !== 'codex') {
     return { providers: [], selectedProviderId: null }
   }
-  const defaultName = harness === 'codex' ? 'ChatGPT' : 'Claude'
-  const accounts = harness === 'claude' ? source.claudeAccounts ?? [] : []
-  const codexAccounts = harness === 'codex' ? (source.codexAccounts ?? []).filter((a) => a.signedIn) : []
-  const providers: RemoteProviderOption[] = codexAccounts.length > 0
-    ? codexAccounts.map((account) => ({ id: codexAccountProviderId(account.id), name: defaultName, brand: 'openai', keyName: [account.email, account.planType].filter(Boolean).join(' · ') }))
-    : accounts.length > 0
-    ? accounts.map((account) => ({
-        id: claudeAccountProviderId(account.credentialDir),
-        name: defaultName,
-        brand: 'claude',
-        ...(claudeAccountKeyName(account, accounts) ? { keyName: claudeAccountKeyName(account, accounts)! } : {}),
-      }))
-    : [{ id: null, name: defaultName, brand: harness === 'codex' ? 'openai' : 'claude' }]
+  const accounts = subscriptionAccountProviders(harness, source)
+  const providers: RemoteProviderOption[] = accounts.length > 0
+    ? accounts
+    : [{ id: null, name: harness === 'codex' ? 'ChatGPT' : 'Claude', brand: harness === 'codex' ? 'openai' : 'claude' }]
 
   for (const credential of source.credentials) {
     const served = source.servesHarness(credential.id)

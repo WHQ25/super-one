@@ -76,17 +76,17 @@ describe('environment archive tools', () => {
 
   it('adds a usage table with one row per quota window, keeping a row for each failure', async () => {
     mocks.localUsage.mockResolvedValue([
-      { harness: 'claude', account: 'me@example.com', planType: 'Max 5x', windows: [{ label: '5h', usedPercent: 27.04, resetsAt: 1_800_000_000 }, { label: 'Weekly', usedPercent: 84, resetsAt: null }] },
+      { harness: 'claude', account: 'me@example.com', apiProviderId: 'claude-account:cli', planType: 'Max 5x', windows: [{ label: '5h', usedPercent: 27.04, resetsAt: 1_800_000_000 }, { label: 'Weekly', usedPercent: 84, resetsAt: null }] },
       { harness: 'grok', account: null, planType: null, windows: [], error: 'Grok login expired.' },
     ])
     mocks.usage.mockRejectedValue(new Error('unsupported method on this environment: environment.usage'))
     const value = decode((await createEnvironmentArchiveTools('local-session').environmentGetInfo({ include: ['usage'] })).content[0].text) as { environments: unknown[]; usage: Array<Record<string, unknown>> }
     expect(value.environments).toHaveLength(2)
     expect(value.usage).toEqual([
-      { environmentId: 'desktop', harness: 'claude', account: 'me@example.com', plan: 'Max 5x', window: '5h', usedPercent: 27, resetsAt: '2027-01-15T08:00:00.000Z', error: null },
-      { environmentId: 'desktop', harness: 'claude', account: 'me@example.com', plan: 'Max 5x', window: 'Weekly', usedPercent: 84, resetsAt: null, error: null },
-      { environmentId: 'desktop', harness: 'grok', account: null, plan: null, window: null, usedPercent: null, resetsAt: null, error: 'Grok login expired.' },
-      { environmentId: 'node', harness: null, account: null, plan: null, window: null, usedPercent: null, resetsAt: null, error: 'unsupported method on this environment: environment.usage' },
+      { environmentId: 'desktop', harness: 'claude', account: 'me@example.com', apiProviderId: 'claude-account:cli', plan: 'Max 5x', window: '5h', usedPercent: 27, resetsAt: '2027-01-15T08:00:00.000Z', error: null },
+      { environmentId: 'desktop', harness: 'claude', account: 'me@example.com', apiProviderId: 'claude-account:cli', plan: 'Max 5x', window: 'Weekly', usedPercent: 84, resetsAt: null, error: null },
+      { environmentId: 'desktop', harness: 'grok', account: null, apiProviderId: null, plan: null, window: null, usedPercent: null, resetsAt: null, error: 'Grok login expired.' },
+      { environmentId: 'node', harness: null, account: null, apiProviderId: null, plan: null, window: null, usedPercent: null, resetsAt: null, error: 'unsupported method on this environment: environment.usage' },
     ])
     expect(mocks.localContext).not.toHaveBeenCalled()
   })

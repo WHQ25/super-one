@@ -64,6 +64,7 @@ import { notifyProjectList, notifySessionList, watchProjectList } from '../sessi
 import { RemoteSessionFeed } from '../environment/remote-session-feed'
 import { remoteListObserver, type SessionActivityEvent } from '../environment/remote-list-observer'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
+import { createPhoneMethods, type PhoneMethodHost } from '../remote/phone-methods'
 
 const dirs: string[] = []
 const hosts: DesktopNodeHost[] = []
@@ -636,7 +637,8 @@ function desktopTopics() {
 describe('DesktopNodeHost live session list', () => {
   it("keeps a controller's list of B live for what B's window does, from the topics phones use", async () => {
     const topics = desktopTopics()
-    const { host, store, projectDir, connectionId, client } = await pairedDesktops(fakeCatalog(), topics.deps)
+    const agent = { markRemoteSeen: vi.fn() }
+    const { host, store, projectDir, connectionId, client } = await pairedDesktops(fakeCatalog(), { ...topics.deps, phoneMethods: createPhoneMethods({ agent } as unknown as PhoneMethodHost) })
     topics.bind(host.identity.environmentId)
     try {
       // A follows B's list as `EnvironmentHost.watchSessionList` does.
@@ -650,7 +652,7 @@ describe('DesktopNodeHost live session list', () => {
       const changed: Array<string | undefined> = []
       const projects = vi.fn()
       const activity: SessionActivityEvent[] = []
-      await feed.observe(remoteListObserver(connectionId, { sessionListChanged: key => changed.push(key), projectsChanged: projects, activity: event => activity.push(event) }))
+      await feed.observe(remoteListObserver(connectionId, new Map(), { sessionListChanged: key => changed.push(key), projectsChanged: projects, activity: event => activity.push(event) }))
       await vi.waitFor(() => expect(changed).toEqual([undefined]))
       const key = remoteProjectKey(connectionId, projectDir)
       changed.length = 0
@@ -669,6 +671,9 @@ describe('DesktopNodeHost live session list', () => {
       // B's window runs it: A's sidebar shows the turn, under A's key for the project.
       topics.activity({ id: 'b-own', projectPath: projectDir, status: 'streaming' }, { type: 'status_change', status: 'streaming', sessionId: 'b-own' } as AgentEvent)
       await vi.waitFor(() => expect(activity.at(-1)?.activity).toMatchObject({ sessionId: 'b-own', projectPath: key, status: 'streaming' }))
+      // A shows it: B records the read for every client, as a phone's.
+      await gateway.markSeen('b-own')
+      expect(agent.markRemoteSeen).toHaveBeenCalledWith('b-own')
 
       // A controller's own create is heard once, from the same notices.
       const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })

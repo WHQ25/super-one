@@ -67,6 +67,7 @@ import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
 import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
+import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
@@ -1668,6 +1669,29 @@ export class EnvironmentHost {
   private readonly sessionActivityListeners = new Set<(event: SessionActivityEvent) => void>()
   /** Machines whose list changes this desktop watches. */
   private readonly watchedSessionLists = new Set<string>()
+  /** Each machine's latest sidebar summary of the sessions it holds live, kept across reconnects. */
+  private readonly remoteSummaries = new Map<string, Map<string, SessionActivity>>()
+  /** Whether a window here shows a remote session (set by the app). */
+  private remoteSessionOnScreen: (connectionId: string, sessionId: string) => boolean = () => false
+
+  setRemoteSessionOnScreen(check: (connectionId: string, sessionId: string) => boolean): void {
+    this.remoteSessionOnScreen = check
+  }
+
+  /**
+   * A window here started showing a remote session: its completion is read,
+   * so tell the machine as a phone does, and every client drops the dot.
+   */
+  remoteSessionShown(connectionId: string, sessionId: string): void {
+    const summary = this.remoteSummaries.get(connectionId)?.get(sessionId)
+    if (summary) void this.reportSeen(connectionId, summary).catch(() => {})
+  }
+
+  /** Only a machine's live sessions keep a receipt, and each has a summary. */
+  private async reportSeen(connectionId: string, summary: SessionActivity): Promise<void> {
+    if (!summary.completedMessageId || summary.completedMessageId === summary.seenCompletedMessageId) return
+    await this.requireRemoteGateway(connectionId).markSeen(summary.sessionId)
+  }
 
   onSessionListChanged(listener: (connectionId: string, projectKey?: string) => void): () => void {
     this.sessionListListeners.add(listener)
@@ -1691,7 +1715,9 @@ export class EnvironmentHost {
   private watchSessionList(connectionId: string): void {
     if (this.watchedSessionLists.has(connectionId)) return
     this.watchedSessionLists.add(connectionId)
-    this.feedFor(connectionId).observe(remoteListObserver(connectionId, {
+    let summaries = this.remoteSummaries.get(connectionId)
+    if (!summaries) this.remoteSummaries.set(connectionId, summaries = new Map())
+    this.feedFor(connectionId).observe(remoteListObserver(connectionId, summaries, {
       sessionListChanged: (projectKey) => {
         for (const listener of [...this.sessionListListeners]) listener(connectionId, projectKey)
       },
@@ -1702,6 +1728,8 @@ export class EnvironmentHost {
       },
       activity: (event) => {
         for (const listener of [...this.sessionActivityListeners]) listener(event)
+        // A completion landing in a session on screen here is read as it lands.
+        if (this.remoteSessionOnScreen(connectionId, event.activity.sessionId)) void this.reportSeen(connectionId, event.activity).catch(() => {})
       },
     })).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }

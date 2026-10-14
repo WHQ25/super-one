@@ -18,12 +18,21 @@ export interface RemoteListHandlers {
  * Reads a node's list topics the way its phones do: `session_list_changed`
  * names the project to re-read, `session_activity` carries a row's live
  * state, and a snapshot (a fresh subscribe, or changes the node no longer
- * holds) re-reads everything and reseeds the summaries.
+ * holds) re-reads everything and replaces the summaries.
+ *
+ * `summaries` holds the node's latest summary of each session it holds live,
+ * by session id, kept by the caller across reconnects. A snapshot lists every
+ * live session, so one missing from it no longer runs there: a row still
+ * shown running goes idle, as a phone resets its own, and keeps its unread dot.
  */
-export function remoteListObserver(connectionId: string, handlers: RemoteListHandlers): RemoteListObserver {
-  const activity = (event: SessionActivityEvent) => handlers.activity({
+export function remoteListObserver(connectionId: string, summaries: Map<string, SessionActivity>, handlers: RemoteListHandlers): RemoteListObserver {
+  const publish = (event: SessionActivityEvent) => handlers.activity({
     ...event, activity: { ...event.activity, projectPath: remoteProjectKey(connectionId, event.activity.projectPath) },
   })
+  const activity = (event: SessionActivityEvent) => {
+    summaries.set(event.activity.sessionId, event.activity)
+    publish(event)
+  }
   return {
     event: () => handlers.sessionListChanged(),
     notice: (frame) => {
@@ -33,8 +42,16 @@ export function remoteListObserver(connectionId: string, handlers: RemoteListHan
       }
       if (frame.snapshot !== undefined) {
         handlers.sessionListChanged()
-        const { activities } = frame.snapshot as { activities?: SessionActivity[] }
-        for (const summary of activities ?? []) activity({ type: 'session_activity', activity: summary })
+        const { activities = [] } = frame.snapshot as { activities?: SessionActivity[] }
+        const live = new Set(activities.map((summary) => summary.sessionId))
+        for (const [sessionId, summary] of [...summaries]) {
+          if (live.has(sessionId)) continue
+          summaries.delete(sessionId)
+          if (summary.status !== 'idle') {
+            publish({ type: 'session_activity', activity: { ...summary, status: 'idle', realtimeActive: false, pendingCount: 0, pendingReason: { en: null, zh: null } } })
+          }
+        }
+        for (const summary of activities) activity({ type: 'session_activity', activity: summary })
       }
       for (const event of frame.events) {
         if (event.type === 'session_list_changed') handlers.sessionListChanged(remoteProjectKey(connectionId, event.projectPath))

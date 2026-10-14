@@ -282,6 +282,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return typeof seq === 'string' && seq.length > 0 ? seq : '0'
   }
 
+  /** This desktop read the session's latest completion: the node records it for every client, as a phone's read. */
+  async markSeen(sessionId: string): Promise<void> {
+    await this.client.rpc('client.markSeen', { sessionId })
+  }
+
   /**
    * Events after `afterSequence`, pushed by the node as they commit
    * (`topic.subscribe`). A stream ends with its socket; this resubscribes

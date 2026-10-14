@@ -1912,6 +1912,17 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
     expect(sess.awaitingAssistantReply).toBe(false)
   })
 
+  it("drops the unread dot of a paired machine's session opened here", async () => {
+    seedRemoteTwoSessions('Hello')
+    useChatStore.getState().handleAgentEvent({ type: 'session_activity', completed: true, activity: {
+      sessionId: sidA, projectPath: projectKey, status: 'idle', provider: 'claude', completedMessageId: 'asst-1', seenCompletedMessageId: null,
+      pendingCount: 0, pendingReason: { en: null, zh: null },
+    } })
+    expect(useChatStore.getState().projectSessions[projectKey]!.unseenCompletedSessions.has(sidA)).toBe(true)
+    await useChatStore.getState().switchSession(sidA)
+    expect(useChatStore.getState().projectSessions[projectKey]!.unseenCompletedSessions.has(sidA)).toBe(false)
+  })
+
   /**
    * User report end-to-end: already chatted several rounds on remote session A,
    * switch to B then back to A → earlier agent replies missing from thread head.

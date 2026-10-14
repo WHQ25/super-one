@@ -703,6 +703,8 @@ agentService.setSessionForegroundListener((windowId, ref, foreground, sender) =>
     })
   }
   rendererInterest.setShown(windowId, ref, foreground)
+  // A remote session on screen is read on its machine too (a local one marks itself through setForeground).
+  if (foreground && ref.environmentId !== localEnvironmentId) environmentBridgeHost?.remoteSessionShown(ref.environmentId, ref.sessionId)
 })
 /** A terminal event to the frontends following its terminal; responses with no terminal go to the windows. */
 function publishTerminalEvent(event: TerminalEvent): void {
@@ -1770,11 +1772,12 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
  * Forward supervisor state changes to the renderer once per host instance.
  * Attached lazily so the environment subsystem stays unloaded until used.
  */
-let environmentStatusBridgeAttached = false
+let environmentBridgeHost: EnvironmentHost | null = null
 let environmentConnectivityDisposer: (() => void) | null = null
 function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
-  if (environmentStatusBridgeAttached) return
-  environmentStatusBridgeAttached = true
+  if (environmentBridgeHost) return
+  environmentBridgeHost = host
+  host.setRemoteSessionOnScreen((connectionId, sessionId) => rendererInterest.shown().some((ref) => ref.environmentId === connectionId && ref.sessionId === sessionId))
   host.onStatusChange((snapshot) => {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
   })

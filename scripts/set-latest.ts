@@ -1,6 +1,4 @@
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import VARIANTS from '../apps/desktop/variants.json'
 import {
@@ -17,6 +15,7 @@ import {
   shouldPublish,
   versionedArtifactPath,
 } from './lib/channels'
+import { R2_BUCKET as BUCKET, r2ObjectExists as objectExists, readR2Object as readObject } from './lib/r2'
 
 const INSTALLER_EXTS = ['.dmg', '.exe', '.appimage']
 
@@ -86,62 +85,6 @@ function replaceManifestPath(text: string, current: string, replacement: string)
       return `${match[1]}${quote}${replacement}${quote}`
     })
     .join('\n')
-}
-
-const BUCKET = process.env.R2_BUCKET ?? 'super-one-releases'
-
-/**
- * Ask the BUCKET what is live, never the public URL.
- *
- * What every caller below actually needs is a three-state answer -- "this
- * version", "never published", "I do not know" -- and the third has to be
- * fatal, because treating it as "never published" bypasses the semver guard and
- * silently skips the legacy bridge.
- *
- * The public URL cannot give that answer. `dl.super-one.dev` returns 404 for a
- * missing object to some clients and 403 to others (GitHub runners get 403,
- * reproducibly), so the "definitively absent" branch was unreachable from CI
- * and the first publish to any new variant prefix failed -- exactly the path
- * the stable cutover takes. A 403 from a CDN edge says nothing about the
- * bucket's contents, so widening the check to accept it would have thrown away
- * the guard rather than fixed it.
- *
- * s3api distinguishes the two properly: a missing key is `(404) Not Found` /
- * `NoSuchKey`, a credentials problem is `(403) Forbidden` / `AccessDenied`. It
- * also reads through no CDN cache, so a 200 here is the authoritative state
- * rather than whatever the edge last stored.
- */
-function awsS3Api(args: string[]): { status: number; stdout: string; stderr: string } {
-  const endpoint = process.env.R2_ENDPOINT_URL
-  if (!endpoint) {
-    throw new Error('R2_ENDPOINT_URL is required — reads go to the bucket, not the public URL')
-  }
-  const res = spawnSync('aws', ['s3api', ...args, '--endpoint-url', endpoint], {
-    encoding: 'utf8',
-  })
-  if (res.error) throw new Error(`aws s3api failed to run: ${res.error.message}`)
-  return { status: res.status ?? 1, stdout: res.stdout ?? '', stderr: (res.stderr ?? '').trim() }
-}
-
-/** True only for "this key is not in the bucket". Any other failure throws. */
-function isMissingKeyError(stderr: string): boolean {
-  return /\(404\)|NoSuchKey|Not Found/i.test(stderr)
-}
-
-function objectExists(key: string): boolean {
-  const res = awsS3Api(['head-object', '--bucket', BUCKET, '--key', key])
-  if (res.status === 0) return true
-  if (isMissingKeyError(res.stderr)) return false
-  throw new Error(`could not stat s3://${BUCKET}/${key}: ${res.stderr || `aws exited ${res.status}`}`)
-}
-
-/** Object body, or null when the key is definitively absent. */
-function readObject(key: string): string | null {
-  const out = join(mkdtempSync(join(tmpdir(), 'set-latest-')), 'object')
-  const res = awsS3Api(['get-object', '--bucket', BUCKET, '--key', key, out])
-  if (res.status === 0) return readFileSync(out, 'utf8')
-  if (isMissingKeyError(res.stderr)) return null
-  throw new Error(`could not read s3://${BUCKET}/${key}: ${res.stderr || `aws exited ${res.status}`}`)
 }
 
 function resolveArtifactPaths(text: string, variant: string): string {

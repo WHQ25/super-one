@@ -19,23 +19,21 @@
  *   bun scripts/publish-mobile-update.ts --platform ios --version 1.0.0 \
  *     --build-code 42 --testflight-url https://testflight.apple.com/join/abcd
  *
- * --upload requires AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / R2_ACCOUNT_ID
- * (the same secrets as promote.yml) and the aws CLI.
+ * --upload and --check-stable-floor require AWS_ACCESS_KEY_ID /
+ * AWS_SECRET_ACCESS_KEY and R2_ACCOUNT_ID (or R2_ENDPOINT_URL), plus the aws CLI.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
   androidApkObjectKey,
@@ -48,11 +46,10 @@ import {
   type MobileUpdatePlatform,
   type MobileUpdateTrack,
 } from '../packages/shared/src/mobile-updates.ts'
-import { DOWNLOAD_BASE_URL, macUpdateManifestUrl } from '../packages/shared/src/download-links.ts'
+import { DOWNLOAD_BASE_URL, MAC_UPDATE_MANIFEST } from '../packages/shared/src/download-links.ts'
 import { compareCliVersions } from '../packages/shared/src/environment/cli-version.ts'
 import { MIN_PHONE_DESKTOP_VERSION } from '../packages/relay-client/src/phone-version.ts'
-
-const BUCKET = 'super-one-releases'
+import { awsEnv, R2_BUCKET as BUCKET, r2Endpoint, readR2Object, requireR2Credentials } from './lib/r2'
 
 // The APK sits at a key that encodes its own build code, so it can never be
 // replaced in place -- a year of browser/CDN caching is the correct answer.
@@ -248,12 +245,13 @@ export function assertStableDesktopServesPhone(
 }
 
 /** `version:` of the stable variant's macOS update feed, the released stable desktop. */
-async function fetchStableDesktopVersion(baseUrl: string): Promise<string> {
-  const url = macUpdateManifestUrl('stable', baseUrl)
-  const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } })
-  if (!res.ok) throw new Error(`reading ${url} failed: ${res.status}`)
-  const version = /^version:\s*['"]?([^'"\s]+)/m.exec(await res.text())?.[1]
-  if (!version) throw new Error(`${url} carries no version`)
+function fetchStableDesktopVersion(): string {
+  requireR2Credentials()
+  const key = `stable/${MAC_UPDATE_MANIFEST}`
+  const body = readR2Object(key)
+  if (body === null) throw new Error(`s3://${BUCKET}/${key} is not published`)
+  const version = /^version:\s*['"]?([^'"\s]+)/m.exec(body)?.[1]
+  if (!version) throw new Error(`s3://${BUCKET}/${key} carries no version`)
   return version
 }
 
@@ -278,27 +276,10 @@ export function buildManifest(input: {
   return manifest
 }
 
-function r2Endpoint(): string {
-  const accountId = process.env.R2_ACCOUNT_ID?.trim()
-  if (!accountId) throw new Error('R2_ACCOUNT_ID required for bucket access')
-  return `https://${accountId}.r2.cloudflarestorage.com`
-}
-
-function requireR2Credentials(): void {
-  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-    throw new Error('AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY required for bucket access')
-  }
-}
-
-function awsEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, AWS_DEFAULT_REGION: process.env.AWS_DEFAULT_REGION ?? 'auto' }
-}
-
 /**
  * Read the live manifest through the S3 API, not the public URL.
  *
  * The CDN is allowed to be a moment behind; the monotonicity check is not.
- * Mirrors the reasoning in scripts/set-latest.ts.
  */
 function fetchPublishedManifest(
   platform: MobileUpdatePlatform,
@@ -306,34 +287,9 @@ function fetchPublishedManifest(
 ): MobileUpdateManifest | null {
   requireR2Credentials()
   const key = mobileUpdateManifestObjectKey(platform, track)
-  const scratch = mkdtempSync(join(tmpdir(), 'mobile-update-'))
-  const dest = join(scratch, 'latest.json')
-  try {
-    const res = spawnSync(
-      'aws',
-      [
-        's3api',
-        'get-object',
-        '--bucket',
-        BUCKET,
-        '--key',
-        key,
-        '--endpoint-url',
-        r2Endpoint(),
-        dest,
-      ],
-      { encoding: 'utf8', env: awsEnv() },
-    )
-    if (res.status !== 0) {
-      const err = `${res.stderr ?? ''}`
-      // Nothing published for this platform and track yet is the expected first run.
-      if (/\(404\)|NoSuchKey|Not Found/.test(err)) return null
-      throw new Error(`reading s3://${BUCKET}/${key} failed: ${err.trim() || res.status}`)
-    }
-    return parseMobileUpdateManifest(JSON.parse(readFileSync(dest, 'utf8')), platform)
-  } finally {
-    rmSync(scratch, { recursive: true, force: true })
-  }
+  const body = readR2Object(key)
+  // Nothing published for this platform and track yet is the expected first run.
+  return body === null ? null : parseMobileUpdateManifest(JSON.parse(body), platform)
 }
 
 function putObject(localPath: string, key: string, cacheControl: string): void {
@@ -385,7 +341,7 @@ function summarize(plan: PublishPlan, platform: MobileUpdatePlatform, track: Mob
 
 async function main(): Promise<void> {
   if (process.argv[2] === '--check-stable-floor') {
-    const stable = await fetchStableDesktopVersion(DOWNLOAD_BASE_URL)
+    const stable = fetchStableDesktopVersion()
     assertStableDesktopServesPhone(stable)
     console.log(`ok: stable desktop ${stable} serves phones requiring ${MIN_PHONE_DESKTOP_VERSION}`)
     return

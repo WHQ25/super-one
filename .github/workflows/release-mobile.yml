@@ -181,6 +181,11 @@ jobs:
       # how stable is rolled back, which must work while the desktop lags.
       - name: Check the stable desktop floor
         if: ${{ env.TRACK == 'stable' && inputs.build_id == '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         run: bun scripts/publish-mobile-update.ts --check-stable-floor
 
       - name: Resolve the APK on EAS
@@ -472,6 +477,11 @@ jobs:
       # reused build_id is exempt, as on Android: it is the rollback.
       - name: Check the stable desktop floor
         if: ${{ env.TRACK == 'stable' && inputs.build_id == '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         run: bun scripts/publish-mobile-update.ts --check-stable-floor
 
       - name: Build on EAS

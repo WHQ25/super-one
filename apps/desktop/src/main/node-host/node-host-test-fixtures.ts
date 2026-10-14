@@ -8,6 +8,7 @@ import { HarnessManager } from '@superone/runtime/harness'
 import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
 import { openNodeDatabase } from '@superone/runtime/db'
 import type { ProjectSnapshot } from '@superone/shared/environment'
+import { McpAppsError, type McpAppsBinding, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { DesktopSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { Session, BackendCommand } from '../session/types'
@@ -126,6 +127,15 @@ export class FakeSession {
   emitHostEvent(event: AgentEvent) {
     this.emit(event)
   }
+  /** The MCP connection this session's Apps reach; like a desktop backend, it serves only bindings to `local`. */
+  mcpAppsProvider: McpAppsProvider | null = null
+  async getMcpAppsProvider(binding: McpAppsBinding) {
+    if (!this.mcpAppsProvider || binding.node !== 'local' || binding.session !== this.id) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')
+    return this.mcpAppsProvider
+  }
+  /** Host wakes (task notifications) the agent was given. */
+  readonly wakes: string[] = []
+  async injectTaskNotification(content: string) { this.wakes.push(content) }
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch) {
     this.lease.assertMutation()
     this.emitHostEvent({ type: 'agent_setting_change', patch, sessionId: this.id } as AgentEvent)

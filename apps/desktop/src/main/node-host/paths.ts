@@ -15,6 +15,13 @@ export function desktopNodeHostPaths(userDataDir: string) {
     db: join(nodeHome, 'node.db'),
     /** Node agent settings (`settings.get`, create-time defaults). */
     configJson: join(nodeHome, 'config.json'),
+    /**
+     * The node's sync root (`artifact.*`, `descriptor.syncRoot`): this
+     * desktop's own session sync zone (`media-output-paths.ts` `syncZoneRoot`),
+     * so a session's files from its controller sit with the ones produced
+     * here, are readable by its window and phones, and go with the session.
+     */
+    syncRoot: join(userDataDir, 'sync'),
   }
 }
 

@@ -31,6 +31,7 @@ import type { ResourceHost } from '@superone/runtime/server/rpc-resources'
 import { createDesktopCodexMethods, type DesktopCodexServices } from './desktop-codex-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
+  ArtifactZoneService,
   WorkspaceFsService,
   WorkspaceTailWatchService,
   WorkspaceWatchService,
@@ -118,6 +119,7 @@ export interface DesktopDomainDeps {
   sessionEdits: DesktopSessionEdits
   sideChats?: DesktopSessionHostDeps['sideChats']
   scheduledSends?: DesktopSessionHostDeps['scheduledSends']
+  mcpAppResources?: DesktopSessionHostDeps['mcpAppResources']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
   /** This desktop's agent defaults (`desktop-agent-settings.ts`), what `settings.get` reports. */
@@ -174,6 +176,7 @@ export class DesktopDomain {
         drafts: deps.drafts,
         sideChats: deps.sideChats,
         scheduledSends: deps.scheduledSends,
+        mcpAppResources: deps.mcpAppResources,
         leases,
         events,
         hostActions: createSqliteHostActionStore(db),
@@ -198,6 +201,8 @@ export class DesktopDomain {
         harnesses: deps.harnesses,
         collaboration: desktopCollaborationPort(deps.listAgentProfiles),
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
+        artifacts: new ArtifactZoneService(paths.syncRoot),
+        mcpApps: sessions.mcpApps,
       }
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
       return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })

@@ -17,13 +17,15 @@ import type {
   SessionForkResult,
   SideChatStartResult,
 } from '@superone/shared/agent-types'
-import type { ControlLeasePort, DraftsPort, SessionHostPort } from '@superone/runtime/server'
+import type { ControlLeasePort, DraftsPort, McpAppsPort, SessionHostPort } from '@superone/runtime/server'
 import { unsupportedMethodError } from '@superone/runtime/server'
 import {
+  ArtifactWakes,
   HostActionChannel,
   type HostActionStore,
   type NodeSessionSettings,
 } from '@superone/runtime/session'
+import type { McpAppResourceStore } from '@superone/shared/mcp-app-resource'
 import { messageText } from '@superone/shared/node-message-catalog'
 import type { SessionListControl } from '@superone/shared/environment/session-operations'
 import { DESKTOP_HOST_ACTION_TOOL_GROUPS, DesktopSessionReads, type DesktopSessionReadsDeps } from './desktop-session-reads'
@@ -35,6 +37,7 @@ import { createDesktopSession } from './desktop-session-create'
 import { isControllerClient, runFencedSessionControl, runHostReaction } from '../session/control-context'
 import { enqueueSessionQueueOp } from '../session/session-queue'
 import { worktreeExists } from '../git/worktree-alive'
+import { createDesktopMcpAppsPort } from './desktop-mcp-apps-port'
 
 export { pendingInteractionOf } from './desktop-session-reads'
 
@@ -86,6 +89,8 @@ export interface DesktopSessionHostDeps extends DesktopSessionReadsDeps<DesktopS
     clear(sessionId: string): void
     list(): ScheduledSend[]
   }
+  /** The window's MCP App HTML store (`mcp-apps/resource-store.ts`). */
+  mcpAppResources?: () => McpAppResourceStore
 }
 
 /**
@@ -163,9 +168,18 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   private readonly sessionListeners = new Set<() => void>()
   private readonly unsubscribe: () => void
   private readonly hostActions: HostActionChannel
+  private readonly artifactWakes: ArtifactWakes
+  /** MCP App state, resources and provider calls of every session here (`mcpApps.*`). */
+  readonly mcpApps: McpAppsPort
 
   constructor(private readonly deps: DesktopSessionHostDeps) {
     super(deps)
+    this.artifactWakes = new ArtifactWakes(deps.hostActions)
+    this.mcpApps = createDesktopMcpAppsPort({
+      session: (sessionId) => this.live(sessionId),
+      projectId: (sessionId) => this.requireRow(sessionId).projectId,
+      resources: deps.mcpAppResources,
+    })
     this.hostActions = new HostActionChannel({
       store: deps.hostActions,
       session: (sessionId) => {
@@ -189,7 +203,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   }
 
   get unservedMethods(): ReadonlySet<string> {
-    return new Set(['session.notifyArtifactCompleted', ...(this.deps.edits.fork ? [] : ['session.fork'])])
+    return new Set(this.deps.edits.fork ? [] : ['session.fork'])
   }
 
   get servedOperations(): ReadonlySet<string> {
@@ -621,6 +635,19 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     return this.hostActions.respond(input)
   }
 
+  /**
+   * A controller's deferred artifact landed in this desktop's sync zone: wake
+   * the session's agent once per notification, as the CLI node does. The
+   * dispatcher built the text from files it holds; the wake is host work, not
+   * the controller's turn, so it needs no lease.
+   */
+  async notifyArtifactsCompleted(input: Parameters<SessionHostPort['notifyArtifactsCompleted']>[0]): Promise<{ delivered: boolean }> {
+    if (this.requireRow(input.sessionId).controller?.clientSessionId !== input.controllerClientSessionId) {
+      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+    }
+    return this.artifactWakes.deliverOnce(input.sessionId, input.notificationId, () =>
+      runHostReaction(() => this.live(input.sessionId).injectTaskNotification(input.text)))
+  }
+
   fork = refuse('session.fork')
-  notifyArtifactsCompleted = async () => refuse('session.notifyArtifactCompleted')()
 }

@@ -1,4 +1,5 @@
 import {
+  cancelMcpAppsInvocationsForClient,
   deriveIssuedChannelSecret,
   dispatchRpc,
   issueChannelCredential,
@@ -93,6 +94,7 @@ export class DesktopNodeHost {
       onClientConnected: () => listen.onControllersChanged?.(),
       onClientDisconnected: (clientSessionId) => {
         domain.releaseClientDrafts(clientSessionId)
+        cancelMcpAppsInvocationsForClient(clientSessionId)
         listen.onControllersChanged?.()
       },
       createRpcContext: () => ({ ...context, leases: controllerLeases(domain.leases) }),

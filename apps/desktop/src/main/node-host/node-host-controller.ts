@@ -30,6 +30,7 @@ import { getEnvironmentHost } from '../environment/environment-host'
 import { InProcessRpcClient } from '../environment/in-process-rpc-client'
 import { defaultDesktopNodePort } from './paths'
 import { desktopRestorePorts } from '../session/session-restore-ports'
+import { getMcpAppResourceStore } from '../mcp-apps/resource-store'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 /** What main gives the domain for its phones: its PTYs and its desktop methods. */
@@ -165,6 +166,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       fork: async (input, assertControl) => (await import('../session/session-fork')).forkSession(input, assertControl),
     },
     rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
+    mcpAppResources: getMcpAppResourceStore,
     restore: desktopRestorePorts,
     projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
     harnesses: getHarnessManager(),

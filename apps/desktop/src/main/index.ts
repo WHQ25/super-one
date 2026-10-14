@@ -972,9 +972,9 @@ const remoteTerminalController = new RemoteTerminalController({
     const { getEnvironmentHost } = await import('./environment')
     return getEnvironmentHost().remoteTerminalNode(connectionId)
   },
-  sessionCwd: async (connectionId, sessionId) => {
-    const { getEnvironmentHost } = await import('./environment')
-    return ((await getEnvironmentHost().getSession(connectionId, sessionId)) as { cwd?: string } | null)?.cwd ?? null
+  projectId: async (projectKey) => {
+    const [{ getEnvironmentHost }, { resolveRemoteProjectContext }] = await Promise.all([import('./environment'), import('./environment/remote-file-tree')])
+    return (await resolveRemoteProjectContext(getEnvironmentHost(), projectKey))!.projectId
   },
   onEvent: publishTerminalEvent,
   onWatch: (connectionId, watched) => rendererInterest.watchTerminals(connectionId, watched),

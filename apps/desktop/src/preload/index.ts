@@ -808,8 +808,8 @@ const terminalAPI = {
   snapshot: (terminalId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_SNAPSHOT, terminalId) as Promise<TerminalSnapshot | null>,
 
-  write: (terminalId: string, data: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_WRITE, terminalId, data) as Promise<void>,
+  write: (terminalId: string, data: string, input: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_WRITE, terminalId, data, input) as Promise<void>,
 
   resize: (terminalId: string, cols: number, rows: number) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_RESIZE, terminalId, cols, rows) as Promise<void>,

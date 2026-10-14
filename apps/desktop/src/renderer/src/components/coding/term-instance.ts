@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { SearchAddon } from '@xterm/addon-search'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { requestOpenExternalLink } from '@/lib/external-link'
@@ -38,6 +39,52 @@ export function createBaseXterm(): { xterm: XTerm; fit: FitAddon; search: Search
   const search = new SearchAddon()
   xterm.loadAddon(search)
   return { xterm, fit, search }
+}
+
+/** Input events this close before xterm's data make it the user's: composed text lands a task after `compositionend`. */
+const USER_INPUT_WINDOW_MS = 100
+const userInputAt = new WeakMap<XTerm, number>()
+
+/**
+ * Send what an instance's xterm emits to its PTY while it is writable, saying
+ * whether the user typed, pasted or composed it. xterm also answers the
+ * program on its own (focus, device-status and mouse reports); only the
+ * user's input may take a remote tab over.
+ */
+export function forwardTerminalInput(inst: TermInstance, terminalId: string): void {
+  inst.xterm.onData((data) => {
+    if (!inst.writable) return
+    const input = performance.now() - (userInputAt.get(inst.xterm) ?? -Infinity) < USER_INPUT_WINDOW_MS
+    void window.terminal.write(terminalId, data, input)
+  })
+}
+
+/** Show an instance in `host`, opening it there (WebGL renderer, user-input tracking) the first time. */
+export function mountTermInstance(inst: TermInstance, host: HTMLElement): void {
+  if (inst.xterm.element) {
+    host.replaceChildren(inst.xterm.element)
+    return
+  }
+  host.replaceChildren()
+  inst.xterm.open(host)
+  const markInput = () => userInputAt.set(inst.xterm, performance.now())
+  for (const type of ['keydown', 'paste', 'compositionend', 'input']) inst.xterm.element!.addEventListener(type, markInput, true)
+  try {
+    const webgl = new WebglAddon()
+    webgl.onContextLoss(() => {
+      try {
+        webgl.dispose()
+      } catch {
+        /* renderer internals already gone — xterm reverts to the DOM renderer */
+      }
+      inst.webgl = undefined
+    })
+    inst.xterm.loadAddon(webgl)
+    inst.webgl = webgl
+    inst.xterm.clearTextureAtlas()
+  } catch {
+    /* WebGL unavailable — xterm falls back to the DOM renderer */
+  }
 }
 
 /**

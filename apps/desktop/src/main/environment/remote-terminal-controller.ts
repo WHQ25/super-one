@@ -1,4 +1,3 @@
-import { basename } from 'node:path'
 import type { TerminalEvent, TerminalListItem, TerminalSnapshot } from '@superone/shared/agent-types'
 import type { ControlLease, MutatingControlContext, TerminalGateway, TerminalRef, TopicSubscribeInput } from '@superone/shared/environment'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
@@ -24,8 +23,8 @@ export interface RemoteTerminalNode {
 export interface RemoteTerminalControllerOptions {
   /** The connected node behind a connection; throws while it is not connected. */
   node(connectionId: string): RemoteTerminalNode | Promise<RemoteTerminalNode>
-  /** Where a session of the node runs, for a terminal opened from it. */
-  sessionCwd?(connectionId: string, sessionId: string): Promise<string | null>
+  /** The node's project id behind a remote project key. */
+  projectId(projectKey: string): Promise<string>
   onEvent: (event: TerminalEvent) => void
   /** This desktop started or stopped following a node's terminals. */
   onWatch?: (connectionId: string, watched: boolean) => void
@@ -73,9 +72,9 @@ function leaseLost(err: unknown): boolean {
  * shared topic stream, the same contract its phones use; terminal ids here
  * are keys (`remote-terminal:<connectionId>:<id>`), paths project keys.
  *
- * Control follows the node's leases: a terminal its window holds (or nobody
- * does) is written to here, taking it over; one a phone or another desktop
- * holds is read-only. Once the node's window takes it back, this desktop
+ * Control follows the node's leases: typing in a terminal its window holds
+ * (or nobody does) takes it over; one a phone or another desktop holds is
+ * read-only. Once the node's window takes it back, this desktop
  * writes again only after an explicit takeover (`claim`).
  */
 export class RemoteTerminalController {
@@ -83,6 +82,8 @@ export class RemoteTerminalController {
   /** Connections whose terminals were followed, to follow again when they come back. */
   private readonly wanted = new Set<string>()
   private readonly tabs = new Map<string, Tab>()
+  /** Each node's terminals as last listed, so a list read again tells what came and went meanwhile. */
+  private readonly listed = new Map<string, Map<string, TerminalListItem>>()
   private disposed = false
 
   constructor(private readonly options: RemoteTerminalControllerOptions) {}
@@ -94,14 +95,11 @@ export class RemoteTerminalController {
   async create(input: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }): Promise<TerminalListItem> {
     const remote = parseRemoteProjectKey(input.projectPath)
     if (!remote) throw new Error('remote project path required')
-    const watch = await this.watch(remote.connectionId)
-    // A terminal still opens at the project root if session hydration lags.
-    const sessionCwd = input.sessionId
-      ? await this.options.sessionCwd?.(remote.connectionId, input.sessionId).catch(() => null)
-      : null
-    const cwd = sessionCwd || remote.path
-    const title = input.title ?? (basename(cwd) || 'Terminal')
-    const { terminalId } = await watch.node.terminals.create({ cwd, title, cols: input.cols, rows: input.rows })
+    const [watch, projectId] = await Promise.all([this.watch(remote.connectionId), this.options.projectId(input.projectPath)])
+    // The node resolves where the project or the session runs, as it does for its phones.
+    const { terminalId, cwd, title } = await watch.node.rpc<{ terminalId: string; cwd: string; title: string }>('terminal.create', {
+      projectId, ...(input.sessionId ? { sessionId: input.sessionId } : {}), title: input.title, cols: input.cols, rows: input.rows,
+    })
     const item = watch.items.get(terminalId)
       ?? { terminalId, cwd, projectPath: remote.path, title, status: 'running', ownerDeviceId: null }
     watch.items.set(terminalId, item)
@@ -134,11 +132,16 @@ export class RemoteTerminalController {
     return tab.snapshot
   }
 
-  async write(terminalId: string, data: string): Promise<void> {
+  /**
+   * Typed input takes over a tab nobody else holds; what xterm sends on its
+   * own (focus, device-status and mouse reports) is written only under a lease
+   * this desktop already holds.
+   */
+  async write(terminalId: string, data: string, input: boolean): Promise<void> {
     const tab = this.tabs.get(terminalId)
     if (!tab || !this.view(tab, tab.owner).writableByMe) return
     const watch = await this.watch(tab.connectionId)
-    const proof = await this.hold(tab, watch.node, true)
+    const proof = await this.hold(tab, watch.node, input)
     if (!proof) return
     await watch.node.terminals.write({ terminal: this.ref(watch, tab), data, ...proof })
       .catch((err) => this.failed(tab, err))
@@ -170,9 +173,17 @@ export class RemoteTerminalController {
     if (!ref) return
     const tab = this.tab(ref.connectionId, ref.terminalId)
     const watch = await this.watch(ref.connectionId)
-    const proof = await this.hold(tab, watch.node, true, true)
-    if (!proof) throw Object.assign(new Error('terminal is held elsewhere'), { code: 'failed_precondition' })
-    await watch.node.terminals.kill(this.ref(watch, tab), proof)
+    try {
+      const proof = await this.hold(tab, watch.node, true, true)
+      if (!proof) throw Object.assign(new Error('terminal is held elsewhere'), { code: 'failed_precondition' })
+      await watch.node.terminals.kill(this.ref(watch, tab), proof)
+    } catch (err) {
+      // The tab is closed here either way; one the node no longer has exited already.
+      this.forget(tab)
+      if ((err as { code?: string } | null)?.code !== 'not_found') throw err
+      this.receive(ref.connectionId, watch, { type: 'terminal_exited', terminalId: ref.terminalId, exitCode: null, signal: null })
+      return
+    }
     this.drop(tab)
   }
 
@@ -188,11 +199,8 @@ export class RemoteTerminalController {
 
   dispose(): void {
     this.disposed = true
-    for (const tab of [...this.tabs.values()]) {
-      const lease = tab.lease
-      this.drop(tab)
-      if (lease) void this.releaseLease(tab, lease.proof)
-    }
+    for (const tab of [...this.tabs.values()]) this.forget(tab)
+    this.listed.clear()
     const watches = [...this.watches]
     this.watches.clear()
     for (const [connectionId, pending] of watches) {
@@ -244,11 +252,14 @@ export class RemoteTerminalController {
     const watch: Watch = { node, items: new Map(), stream: null }
     const relist = async () => {
       const { terminals } = await node.rpc<{ terminals: TerminalListItem[] }>('terminal.list', {})
+      const before = this.listed.get(connectionId)
       watch.items = new Map(terminals.map((item) => [item.terminalId, item]))
+      this.listed.set(connectionId, watch.items)
       for (const item of terminals) {
         const tab = this.tabs.get(remoteTerminalKey(connectionId, item.terminalId))
         if (tab && !tab.feed) this.applyOwner(tab, watch, item.ownerDeviceId)
       }
+      if (before) this.announceChanges(connectionId, watch, before)
     }
     watch.stream = await node.follow({ afterSequence: '0', topics: [{ kind: 'terminalList', environmentId: node.environmentId }] }, {
       onFrame: (frame) => {
@@ -275,6 +286,22 @@ export class RemoteTerminalController {
       throw err
     }
     return watch
+  }
+
+  /** What changed in a node's list while it was not followed (a recover, a reconnect), as the list events it missed. */
+  private announceChanges(connectionId: string, watch: Watch, before: Map<string, TerminalListItem>): void {
+    for (const terminalId of before.keys()) {
+      if (!watch.items.has(terminalId)) this.receive(connectionId, watch, { type: 'terminal_exited', terminalId, exitCode: null, signal: null })
+    }
+    for (const item of [...watch.items.values()]) {
+      const prior = before.get(item.terminalId)
+      const tab = this.tabs.get(remoteTerminalKey(connectionId, item.terminalId))
+      if (!prior) this.receive(connectionId, watch, { type: 'terminal_created', terminalId: item.terminalId, item })
+      // A tab this desktop holds or follows learns its writer from its own stream.
+      else if (prior.ownerDeviceId !== item.ownerDeviceId && !tab?.lease && !tab?.feed) {
+        this.receive(connectionId, watch, { type: 'terminal_owner_changed', terminalId: item.terminalId, ownerDeviceId: item.ownerDeviceId, writableByMe: false })
+      }
+    }
   }
 
   /** Subscribe to the terminal's output, then attach: output above the attach cut follows the screen. */
@@ -304,6 +331,7 @@ export class RemoteTerminalController {
     if (event.type === 'terminal_created') watch.items.set(event.terminalId, event.item)
     else if (event.type === 'terminal_title_changed' && item) item.title = event.title
     else if (event.type === 'terminal_control_changed' && item) item.agentControl = event.control
+    else if (event.type === 'terminal_owner_changed' && item) item.ownerDeviceId = event.ownerDeviceId
     else if (event.type === 'terminal_exited') watch.items.delete(remoteId)
     const tab = this.tabs.get(remoteTerminalKey(connectionId, remoteId))
     if (tab) {
@@ -376,8 +404,8 @@ export class RemoteTerminalController {
           return tab.lease!.proof
         } catch (err) {
           if (!leaseLost(err)) throw err
+          // A lease that ran out leaves the tab free, so input takes it again below.
           this.lose(tab, true)
-          return null
         }
       }
       if (!acquire || (tab.yielded && !takeOver)) return null
@@ -403,9 +431,14 @@ export class RemoteTerminalController {
     tab.lease = { proof: { leaseId: lease.leaseId, generation: lease.generation }, expiresAt: Date.parse(lease.expiresAt) }
   }
 
+  /**
+   * The lease is gone. Taken while still live with no other holder shown,
+   * the node's window took it back, which only a takeover undoes; a lease
+   * that ran out (this desktop slept or was offline) leaves the tab free.
+   */
   private lose(tab: Tab, announce: boolean): void {
+    tab.yielded = tab.owner === null && tab.lease !== null && tab.lease.expiresAt > Date.now()
     tab.lease = null
-    tab.yielded = true
     if (tab.renew) clearInterval(tab.renew)
     tab.renew = null
     if (announce) this.emitOwner(tab)
@@ -419,6 +452,13 @@ export class RemoteTerminalController {
   private async releaseLease(tab: Tab, proof: MutatingControlContext): Promise<void> {
     const node = await Promise.resolve(this.options.node(tab.connectionId)).catch(() => null)
     await node?.terminals.releaseControl(proof).catch(() => {})
+  }
+
+  /** Stop following a tab and give back the lease this desktop held on it. */
+  private forget(tab: Tab): void {
+    const lease = tab.lease
+    this.drop(tab)
+    if (lease) void this.releaseLease(tab, lease.proof)
   }
 
   private drop(tab: Tab): void {

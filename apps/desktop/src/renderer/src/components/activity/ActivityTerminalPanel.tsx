@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { WebglAddon } from '@xterm/addon-webgl'
 import { useChatStore } from '@/stores/chat'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 import { onTerminalThemeChange } from '@/components/coding/terminal-theme'
-import { applyTerminalAppearance, SEARCH_DECORATIONS } from '@/components/coding/term-instance'
+import { applyTerminalAppearance, mountTermInstance, SEARCH_DECORATIONS } from '@/components/coding/term-instance'
 import { TerminalFindBar } from '@/components/coding/TerminalFindBar'
 import { createTerminalKeyEventHandler } from '@/components/coding/terminal-keybindings'
 import { ensureActivityTermInstance, feedActivityTerminal, getActivityTermInstance } from './activity-terminal'
@@ -72,28 +71,7 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
     const host = hostRef.current
     if (!host) return
     const inst = ensureActivityTermInstance(terminalId)
-    if (inst.xterm.element) {
-      host.replaceChildren(inst.xterm.element)
-    } else {
-      host.replaceChildren()
-      inst.xterm.open(host)
-      try {
-        const webgl = new WebglAddon()
-        webgl.onContextLoss(() => {
-          try {
-            webgl.dispose()
-          } catch {
-            /* renderer internals already gone — xterm reverts to the DOM renderer */
-          }
-          inst.webgl = undefined
-        })
-        inst.xterm.loadAddon(webgl)
-        inst.webgl = webgl
-        inst.xterm.clearTextureAtlas()
-      } catch {
-        /* WebGL unavailable — xterm falls back to the DOM renderer */
-      }
-    }
+    mountTermInstance(inst, host)
     inst.xterm.attachCustomKeyEventHandler(
       createTerminalKeyEventHandler(
         {

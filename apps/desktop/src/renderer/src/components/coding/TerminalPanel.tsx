@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus, PanelBottomClose } from 'lucide-react'
-import { WebglAddon } from '@xterm/addon-webgl'
 import { parseRemoteTerminalKey } from '@superone/shared/remote-resource-key'
 import { setCloseActiveTerminal, setCreateTerminal } from './terminal-panel-api'
 import { onTerminalThemeChange } from './terminal-theme'
-import { applyTerminalAppearance, applyTerminalEvent, createBaseXterm, disposeTermInstance, SEARCH_DECORATIONS } from './term-instance'
+import { applyTerminalAppearance, applyTerminalEvent, createBaseXterm, disposeTermInstance, forwardTerminalInput, mountTermInstance, SEARCH_DECORATIONS } from './term-instance'
 import { TerminalFindBar } from './TerminalFindBar'
 import { createTerminalKeyEventHandler } from './terminal-keybindings'
 import type { TerminalEvent } from '@superone/shared/agent-types'
@@ -112,12 +111,9 @@ export function TerminalPanel() {
           sendInput: (data) => xterm.input(data),
         }),
       )
-      xterm.onData((data) => {
-        if (instances.get(terminalId)?.writable === false) return
-        void window.terminal.write(terminalId, data)
-      })
       xterm.onTitleChange((t) => renameTab(terminalId, t))
       inst = { xterm, fit, search, lastSeq: 0, writable: true, chunks: new Map() }
+      forwardTerminalInput(inst, terminalId)
       instances.set(terminalId, inst)
       return inst
     },
@@ -202,28 +198,7 @@ export function TerminalPanel() {
       return
     }
     const inst = ensureInstance(activeId)
-    if (inst.xterm.element) {
-      host.replaceChildren(inst.xterm.element)
-    } else {
-      host.replaceChildren()
-      inst.xterm.open(host)
-      try {
-        const webgl = new WebglAddon()
-        webgl.onContextLoss(() => {
-          try {
-            webgl.dispose()
-          } catch {
-            /* renderer internals already gone — xterm reverts to the DOM renderer */
-          }
-          inst.webgl = undefined
-        })
-        inst.xterm.loadAddon(webgl)
-        inst.webgl = webgl
-        inst.xterm.clearTextureAtlas()
-      } catch {
-        /* WebGL unavailable — xterm falls back to the DOM renderer */
-      }
-    }
+    mountTermInstance(inst, host)
     inst.fit.fit()
     void window.terminal.snapshot(activeId)
     void window.terminal.resize(activeId, inst.xterm.cols, inst.xterm.rows)

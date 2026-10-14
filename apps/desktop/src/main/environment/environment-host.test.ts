@@ -138,11 +138,12 @@ describe('EnvironmentHost product path', () => {
     const output: string[] = []
     const terminals = new RemoteTerminalController({
       node: (id) => host.remoteTerminalNode(id),
+      projectId: async () => project.projectId,
       onEvent: (event) => { if (event.type === 'terminal_output') output.push(event.data) },
     })
     const terminal = await terminals.create({ projectPath: remoteProjectKey(connectionId, projectDir), cols: 90, rows: 30 })
     await terminals.snapshot(terminal.terminalId)
-    await terminals.write(terminal.terminalId, 'pwd\r')
+    await terminals.write(terminal.terminalId, 'pwd\r', true)
     await vi.waitFor(() => expect(output.join('')).toContain(projectDir), { timeout: 10_000, interval: 25 })
     await terminals.resize(terminal.terminalId, 100, 40)
     await terminals.kill(terminal.terminalId)

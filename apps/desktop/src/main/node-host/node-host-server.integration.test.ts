@@ -48,7 +48,7 @@ import * as credentialStore from '../providers/credential-store'
 import { RemoteEnvironmentGateway } from '../environment/remote-environment-gateway'
 import { RemoteSessionFeed } from '../environment/remote-session-feed'
 import { RemoteTerminalController } from '../environment/remote-terminal-controller'
-import { NODE_WINDOW_TERMINAL_OWNER, remoteProjectKey, remoteTerminalKey } from '@superone/shared/remote-resource-key'
+import { NODE_WINDOW_TERMINAL_OWNER, parseRemoteTerminalKey, remoteProjectKey, remoteTerminalKey } from '@superone/shared/remote-resource-key'
 import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
 import type { DesktopDomainDeps } from './desktop-domain'
 import { desktopAgentSettings } from './desktop-agent-settings'
@@ -791,6 +791,7 @@ describe('DesktopNodeHost control takeover', () => {
     const remote = new RemoteTerminalController({
       node: () => ({ environmentId, terminals: gateway.terminals, rpc: (method, payload) => client.rpc(method, payload, environmentId),
         follow: (input, handlers) => feed.followTopics(input, handlers, () => client.rpc('topic.catchUp', input, environmentId)) }),
+      projectId: async () => 'p1',
       onEvent: (event) => events.push(event),
     })
     try {
@@ -806,8 +807,11 @@ describe('DesktopNodeHost control takeover', () => {
       terminals.ptys[0]('hello from B')
       await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_output', terminalId: key, data: 'hello from B' })))
 
-      // Typing here takes it over: B's window yields.
-      await remote.write(key, 'ls\r')
+      // What xterm answers on its own (a focus report) leaves B's window holding it; typing takes it over.
+      await remote.write(key, '\x1b[I', false)
+      expect(terminals.writes).toEqual([])
+      expect(tab.lease.ownerDeviceId).toBeNull()
+      await remote.write(key, 'ls\r', true)
       expect(terminals.writes).toEqual(['ls\r'])
       expect(tab.lease.ownerDeviceId).toBe(`node:${host.controllers()[0].id}`)
       expect(() => tab.lease.assertWindow(1)).toThrow()
@@ -815,10 +819,10 @@ describe('DesktopNodeHost control takeover', () => {
       // B's window takes it back: the controller reads until it takes over on purpose.
       tab.lease.reclaimLocal(1)
       await vi.waitFor(() => expect(events).toContainEqual({ type: 'terminal_owner_changed', terminalId: key, ownerDeviceId: NODE_WINDOW_TERMINAL_OWNER, writableByMe: false }))
-      await remote.write(key, 'echo ignored\r')
+      await remote.write(key, 'echo ignored\r', true)
       expect(terminals.writes).toEqual(['ls\r'])
       await remote.claim(key)
-      await remote.write(key, 'pwd\r')
+      await remote.write(key, 'pwd\r', true)
       expect(terminals.writes).toEqual(['ls\r', 'pwd\r'])
 
       // A tab opened on B later appears without a poll; one B's phone holds stays read-only here.
@@ -827,10 +831,17 @@ describe('DesktopNodeHost control takeover', () => {
       await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_created', terminalId: phoneKey })))
       bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${environmentId}`, delegate: 'phone:p', yields: 'none' })
         .acquire({ resource: phoneTab.lease.ref, holderClientId: 'phone:p', ttlMs: 60_000 })
+      // Its writer reaches the tab strip before the tab is shown here.
+      await vi.waitFor(() => expect(events).toContainEqual({ type: 'terminal_owner_changed', terminalId: phoneKey, ownerDeviceId: 'p', writableByMe: false }))
       expect(await remote.snapshot(phoneKey)).toMatchObject({ ownerDeviceId: 'p', writableByMe: false })
-      await remote.write(phoneKey, 'ls\r')
+      await remote.write(phoneKey, 'ls\r', true)
       await expect(remote.claim(phoneKey)).rejects.toMatchObject({ code: 'failed_precondition' })
       expect(terminals.writes).toEqual(['ls\r', 'pwd\r'])
+
+      // A tab opened here runs in B's project, which B resolves and lists it under.
+      const opened = await remote.create({ projectPath: project })
+      expect(opened).toMatchObject({ projectPath: project, cwd: project, ownerDeviceId: null })
+      expect(terminals.manager.get(parseRemoteTerminalKey(opened.terminalId)!.terminalId)!.listItem().projectPath).toBe(projectDir)
     } finally {
       remote.dispose()
       feed.close()

@@ -50,9 +50,9 @@ export function registerTerminalIpc(deps: TerminalIpcDeps): void {
     if (!session) return null
     return session.snapshot('local')
   })
-  deps.ipc.handle(AgentIpcChannels.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
+  deps.ipc.handle(AgentIpcChannels.TERMINAL_WRITE, async (_e, terminalId: string, data: string, input: boolean) => {
     if (deps.remote.has(terminalId)) {
-      await deps.remote.write(terminalId, data)
+      await deps.remote.write(terminalId, data, input)
       return
     }
     const session = deps.manager.get(terminalId)

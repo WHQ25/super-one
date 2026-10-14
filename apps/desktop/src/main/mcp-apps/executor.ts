@@ -59,7 +59,9 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     if (!resolved.ok) throw new McpAppsError(resolved.error.code, resolved.error.message)
     const path = resolved.value.projectId
     if (!path) throw new McpAppsError('not_connected', 'MCP App session project unavailable')
-    return { ref, node, projectPath: `remote:${ref.environmentId}:${path}`, ...resolved.value }
+    // A desktop node binds its own sessions' Apps to `local`, its name for itself.
+    const bound = resolved.value.app.binding.node === 'local' ? 'local' : node
+    return { ref, node: bound, projectPath: `remote:${ref.environmentId}:${path}`, ...resolved.value }
   }
   executor = new McpAppExecutor({
     resolve,

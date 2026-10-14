@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { McpAppsError, mcpAppOmittedMessage } from '@superone/shared/mcp-apps'
 import type { McpAppPreparedDocument } from '@superone/shared/mcp-apps-desktop'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { mcpAppHostContext } from '@superone/shared/mcp-apps-host/context'
 import { CodeXml, Loader2, LogIn, Maximize, Maximize2, PanelRight, PictureInPicture2, Power, RotateCw, Undo2 } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -71,6 +72,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value)))
   }, [emphasize])
   const consent = useCallback<McpAppConsent>((prompt, signal) => requestMcpAppConsent(route.sessionId, prompt, signal), [route.sessionId])
+  const connection = parseRemoteProjectKey(route.projectPath)?.connectionId ?? 'local'
   useEffect(() => {
     let cancelled = false
     let documentId: string | undefined
@@ -92,7 +94,6 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     try {
       if (authenticate) {
         if (!app.origin) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
-        const connection = route.projectPath.startsWith('remote:') ? route.projectPath.slice(7).split(':')[0] : 'local'
         const result = await api.mcpAppsAuthenticate(connection, { binding: app.binding, origin: app.origin })
         if (!result.ok) throw new McpAppsError(result.error.code, result.error.message)
       }
@@ -198,7 +199,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   </>
   return <>
     {owner.row && createPortal(row, owner.row)}
-    {ready && executor && !omitted && !dormant && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
+    {ready && executor && !omitted && !dormant && <Suspense fallback={null}><Frame key={reload} app={app} localSession={connection === 'local'} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
       onHost={() => {}} onInitialized={modes => { setViewModes(modes); setInitialized(true) }} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
     {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
   </>

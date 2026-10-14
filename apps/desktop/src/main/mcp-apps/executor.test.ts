@@ -17,7 +17,7 @@ vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({
   resolveMcpAppAttachment: mocks.resolve,
   getSession: mocks.remoteSession, createSession: mocks.createRemoteSession, sendSessionMessage: mocks.remoteSend,
 }) }))
-import { executeMcpAppHostRequest, initializeMcpAppExecutor, isMcpAppHostActive, releaseMcpAppRequester, resolveMcpAppHostAttachment } from './executor'
+import { executeMcpAppHostRequest, initializeMcpAppExecutor, isMcpAppHostActive, observeRemoteMcpAppEvent, releaseMcpAppRequester, resolveMcpAppHostAttachment } from './executor'
 import { notifySessionClosed, notifySessionsDeleted } from '../session-list-watch'
 import { SessionEventHub } from '../stream/session-event-hub'
 
@@ -72,6 +72,17 @@ describe('main MCP App executor adapters', () => {
     expect(mocks.resolve).toHaveBeenCalledExactlyOnceWith('connection', { sessionId: 's', appInstanceId: 'view', messageId: 'stale-hint' })
     expect(mocks.provider).not.toHaveBeenCalled()
     expect(mocks.remoteSession).not.toHaveBeenCalled()
+  })
+
+  it("serves a desktop node's View, which that node binds to `local`, without opening files here", async () => {
+    mocks.resolve.mockResolvedValue({ ok: true, value: { projectId: '/b/project', messageId: 'm', app } })
+    expect(await executeMcpAppHostRequest({ sessionKey: 'connection:s', appInstanceId: 'view', operation: 'load' }, { kind: 'desktop' }))
+      .toEqual({ ok: true, value: app.resource })
+    const live = { sessionId: 's', projectPath: 'remote:connection:/b/project', messageId: 'm' }
+    observeRemoteMcpAppEvent({ type: 'content_delta', ...live, delta: { type: 'tool_use', toolUseId: 'call', toolName: 'fixture.view', input: '{}', status: 'streaming' } } as AgentEvent)
+    observeRemoteMcpAppEvent({ type: 'content_delta', ...live, delta: { type: 'tool_result', toolUseId: 'call', summary: '', app } } as AgentEvent)
+    expect(await executeMcpAppHostRequest({ sessionKey: 'connection:s', appInstanceId: 'view', operation: 'openFile', path: '/b/project/notes.md' }, { kind: 'desktop' }))
+      .toMatchObject({ ok: false, error: { code: 'denied' } })
   })
 
   it('creates a desktop destination using the source project and harness provider, then preserves rich input', async () => {

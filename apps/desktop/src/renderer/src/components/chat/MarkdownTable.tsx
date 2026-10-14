@@ -49,7 +49,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
   return (
     <div className="flex justify-center">
       <div data-streamdown="table-wrapper" className="group/mdtable relative w-full min-w-0">
-        <div data-table-toolbar className="absolute right-0 top-0 flex items-center gap-1 opacity-0 transition-opacity group-hover/mdtable:opacity-100 group-focus-within/mdtable:opacity-100 [@media(hover:none)]:opacity-100">
+        <div data-table-toolbar className="absolute right-0 top-0 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/mdtable:opacity-100 group-focus-within/mdtable:opacity-100 [@media(hover:none)]:opacity-100">
           <IconButton
             size="xs"
             variant="ghost"

@@ -1,6 +1,6 @@
 import { verifyPayload } from '../crypto-util'
 import { dispatchRpc, clearWatchBuffersForClient, type RpcContext } from '../rpc/handlers'
-import { cancelMcpAppsInvocationsForClient } from '../rpc/mcp-apps-handlers'
+import { cancelMcpAppsInvocationsForClient } from '@superone/runtime/server'
 import { createCliRpcHostHooks } from '../rpc/host-hooks'
 import type { AuthService } from '../auth/auth-service'
 import type { NodeIdentity } from '../identity'
@@ -19,7 +19,7 @@ import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
 import type { DraftControl } from '@superone/runtime/drafts'
-import type { ArtifactZoneService } from '../workspace/artifact-zone'
+import type { ArtifactZoneService } from '@superone/runtime/workspace'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import {
   startNodeServer as startRuntimeNodeServer,

@@ -52,6 +52,7 @@ export type {
   ProvidersPort,
 } from './rpc-context'
 export type { DraftsPort } from './rpc-drafts'
+export { cancelMcpAppsInvocationsForClient, type McpAppsPort } from './rpc-mcp-apps'
 export { createConnectionRpc, type ConnectionRpc, type ConnectionRpcOptions } from './connection-rpc'
 export { createFramedWire, type ConnectionWire, type FrameTransport } from './connection-wire'
 export { dialWebSocket, type NodeSocket, type NodeSocketDialer } from './node-socket'

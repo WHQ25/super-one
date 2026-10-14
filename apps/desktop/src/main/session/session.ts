@@ -16,6 +16,7 @@ import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type Duplicate
 import { SessionShutdown } from './session-shutdown'
 import { SessionLease, type SessionLeaseAuthority } from './session-lease'
 import { hostOwned, runHostReaction } from './control-context'
+import { untilAdmitted } from './admission'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer, isBackendSteerCommand } from './dispatch-backend-steer'
@@ -2908,36 +2909,55 @@ export class Session implements SessionContract {
    * delivers one itself (`sent-inline`) leaves no transcript entry to mirror.
    */
   async injectTaskNotification(content: string): Promise<void> {
-    if (this._status === 'disposed') return
-    if (this.rejectIfWorktreeRemoved()) return
-    const text = content.trim()
-    if (!text) return
-    this.touchRuntimeActivity()
+    if (this._status === 'disposed' || this.rejectIfWorktreeRemoved()) return
     try {
-      await this.ensureStarted()
+      await this.deliverTaskNotification(content)
     } catch (err) {
-      log.warn('[Session] injectTaskNotification ensureStarted failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
+      log.warn('[Session] injectTaskNotification failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /**
+   * The same wake for a caller that must know it landed: resolves once the
+   * backend takes it or the idle turn is queued, and rejects when neither
+   * happens. It does not wait for that turn.
+   */
+  admitTaskNotification(content: string): Promise<void> {
+    return untilAdmitted(
+      (onAccepted) => this.deliverTaskNotification(content, onAccepted),
+      () => new Error(`Session ${this.id} did not admit the task notification`),
+    )
+  }
+
+  private async deliverTaskNotification(content: string, onAccepted?: () => void): Promise<void> {
+    this.assertNotDisposed()
+    const worktreeErr = this.rejectIfWorktreeRemoved()
+    if (worktreeErr) throw worktreeErr
+    const text = content.trim()
+    if (!text) {
+      onAccepted?.()
       return
     }
+    this.touchRuntimeActivity()
+    await this.ensureStarted()
     if (this.backend.injectTaskNotification) {
       try {
         const outcome = await this.backend.injectTaskNotification(text)
-        if (outcome === 'sent-inline' || outcome === 'deferred') return
+        if (outcome === 'sent-inline' || outcome === 'deferred') {
+          onAccepted?.()
+          return
+        }
       } catch (err) {
         log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
       }
     }
-    try {
-      await this.send(
-        {
-          ...taskNotificationRequest(text),
-          priority: this.isStreaming() ? 'next' : 'now',
-        },
-        { providerOrigin: 'host' },
-      )
-    } catch (err) {
-      log.warn('[Session] injectTaskNotification fallback send failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
-    }
+    await this.send(
+      {
+        ...taskNotificationRequest(text),
+        priority: this.isStreaming() ? 'next' : 'now',
+      },
+      { providerOrigin: 'host', onAccepted },
+    )
   }
 
   private computeTitle(): string | null {

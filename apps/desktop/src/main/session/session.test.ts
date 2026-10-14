@@ -3876,6 +3876,23 @@ describe('Session frontend control', () => {
     expect(events.some((e) => e.type === 'user_message_appended')).toBe(false)
   })
 
+  it('admitTaskNotification answers once the idle wake turn is queued, not when it ends', async () => {
+    const { session, backend } = makeSession()
+    await session.admitTaskNotification('<task_notification source="artifact_sync" status="completed" />')
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    expect(backend.sendCalls[0].source).toBe('task-notification')
+    backend.resolveSend?.()
+  })
+
+  it('admitTaskNotification rejects a wake the session cannot take', async () => {
+    const { session, backend } = makeSession()
+    backend.startShouldFail = new Error('harness unavailable')
+    await expect(session.admitTaskNotification('wake')).rejects.toThrow('harness unavailable')
+    const removed = makeSession({ missingWorktreePath: '/tmp/proj/.worktrees/gone' })
+    await expect(removed.session.admitTaskNotification('wake')).rejects.toBeInstanceOf(SessionWorktreeRemovedError)
+    expect([...backend.sendCalls, ...removed.backend.sendCalls]).toEqual([])
+  })
+
   it('queued mailbox wake reaches the agent without entering the transcript', async () => {
     const { session, backend } = makeSession()
     const prompt = 'A collaboration mailbox message is ready. It is from SuperOne session parent. Call session_collab_retrieve to receive it.'

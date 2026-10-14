@@ -16,6 +16,7 @@ import type { McpAppDownloadContents, McpAppApprovalPrompt, McpAppAttachmentUpda
 
 export interface McpAppResolvedTarget {
   ref: SessionRef
+  /** The node as the owning host names it in bindings; where the session runs is `ref.environmentId`. */
   node: string
   projectPath: string
   messageId: string
@@ -274,7 +275,7 @@ export class McpAppExecutor {
 
   /** Opening a file needs no provider; only the host shows it, and paths outside the project are confirmed. */
   private async openFile(request: McpAppHostRequest, requester: McpAppRequester, target: McpAppResolvedTarget, path: string, signal: AbortSignal): Promise<McpAppHostResult> {
-    if (requester.kind !== 'desktop' || target.node !== 'local' || !this.ports.openFile) throw new McpAppsError('denied', 'Opening local files is available only for local sessions on the desktop')
+    if (requester.kind !== 'desktop' || target.ref.environmentId !== 'local' || !this.ports.openFile) throw new McpAppsError('denied', 'Opening local files is available only for local sessions on the desktop')
     const file = await this.ports.openFile(target, path, signal)
     if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
     const prompt: McpAppApprovalPrompt | undefined = file.insideProject ? undefined : { kind: 'openFile', server: mcpAppServerTitle(target.app), path: file.path }

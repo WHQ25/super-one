@@ -40,8 +40,9 @@ const APP: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local'
   origin: { providerSessionId: 'thread' }, resourceUri: 'ui://cad/viewer', status: 'result' }
 const DESKTOP: McpAppRequester = { kind: 'desktop' }
 
-function setup(project: string, node = 'local') {
-  const target: McpAppResolvedTarget = { ref: { environmentId: 'local', sessionId: 's' }, node, projectPath: project, messageId: 'm', app: { ...APP, binding: { ...APP.binding, node } } }
+/** A View of a session here, or of one on a node reached through `connection`. */
+function setup(project: string, connection = 'local', node = connection) {
+  const target: McpAppResolvedTarget = { ref: { environmentId: connection, sessionId: 's' }, node, projectPath: project, messageId: 'm', app: { ...APP, binding: { ...APP.binding, node } } }
   const ports: McpAppExecutorPorts = {
     resolve: vi.fn(async () => target), persist: vi.fn(), sendMessage: vi.fn(),
     provider: vi.fn(async () => { throw new Error('opening a file needs no provider') }),
@@ -50,7 +51,7 @@ function setup(project: string, node = 'local') {
   const executor = new McpAppExecutor(ports)
   executor.observeLive(target.ref, target.app)
   const run = (path: string, approval?: McpAppHostRequest['approval'], requester = DESKTOP) =>
-    executor.execute({ sessionKey: 'local:s', appInstanceId: 'view', messageId: 'm', operation: 'openFile', path, ...(approval ? { approval } : {}) }, requester, new AbortController().signal)
+    executor.execute({ sessionKey: `${connection}:s`, appInstanceId: 'view', messageId: 'm', operation: 'openFile', path, ...(approval ? { approval } : {}) }, requester, new AbortController().signal)
   return { executor, ports, run, target }
 }
 
@@ -94,8 +95,12 @@ describe('MCP App host executor: openFile', () => {
     await s.run(join(project, 'part.stl'), undefined, { kind: 'mobile', deviceId: 'phone' }).then(result => expect(result).toMatchObject({ ok: false, error: { code: 'inactive' } }))
     s.executor.observeLive(s.target.ref, s.target.app, { kind: 'mobile', deviceId: 'phone' })
     await expect(s.run(join(project, 'part.stl'), undefined, { kind: 'mobile', deviceId: 'phone' })).resolves.toMatchObject({ ok: false, error: { code: 'denied' } })
-    const remote = setup(project, 'node-1')
-    await expect(remote.run(join(project, 'part.stl'))).resolves.toMatchObject({ ok: false, error: { code: 'denied' } })
+    // A node binds its Apps to its id; a desktop node to `local`, its own name for itself.
+    for (const node of ['node-1', 'local']) {
+      const remote = setup(project, 'connection-1', node)
+      await expect(remote.run(join(project, 'part.stl'))).resolves.toMatchObject({ ok: false, error: { code: 'denied' } })
+      expect(remote.ports.openFile).not.toHaveBeenCalled()
+    }
     const restored = setup(project)
     restored.executor.releaseSession(restored.target.ref)
     await expect(restored.run(join(project, 'part.stl'))).resolves.toMatchObject({ ok: false, error: { code: 'inactive' } })

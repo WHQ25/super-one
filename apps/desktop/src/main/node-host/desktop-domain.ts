@@ -31,6 +31,7 @@ import type { ResourceHost } from '@superone/runtime/server/rpc-resources'
 import { createDesktopCodexMethods, type DesktopCodexServices } from './desktop-codex-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
+  ArtifactZoneService,
   WorkspaceFsService,
   WorkspaceTailWatchService,
   WorkspaceWatchService,
@@ -122,6 +123,7 @@ export interface DesktopDomainDeps {
   sessionEdits: DesktopSessionEdits
   sideChats?: DesktopSessionHostDeps['sideChats']
   scheduledSends?: DesktopSessionHostDeps['scheduledSends']
+  mcpAppResources?: DesktopSessionHostDeps['mcpAppResources']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
   /** The name a phone paired with this desktop under, for who holds a session. */
@@ -184,6 +186,7 @@ export class DesktopDomain {
         drafts: deps.drafts,
         sideChats: deps.sideChats,
         scheduledSends: deps.scheduledSends,
+        mcpAppResources: deps.mcpAppResources,
         leases,
         events,
         hostActions: createSqliteHostActionStore(db),
@@ -209,6 +212,8 @@ export class DesktopDomain {
         harnesses: deps.harnesses,
         collaboration: desktopCollaborationPort(deps.listAgentProfiles),
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
+        artifacts: new ArtifactZoneService(paths.syncRoot),
+        mcpApps: sessions.mcpApps,
       }
       leases.onChange((resource, lease) => {
         if ('sessionId' in resource && resource.environmentId === identity.environmentId) sessions.publishControlHolder(resource.sessionId, lease)

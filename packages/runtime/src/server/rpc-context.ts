@@ -37,6 +37,8 @@ import type { ChatMessage, TerminalEvent, TerminalListItem, QuestionAnnotations,
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import type { DeliveryPolicy } from '../stream/delivery-policy'
 import type { DraftsPort } from './rpc-drafts'
+import type { ArtifactZoneService } from '../workspace/artifact-zone'
+import type { McpAppsPort } from './rpc-mcp-apps'
 import type { AuthenticatedClient } from './auth-service'
 import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
@@ -245,16 +247,13 @@ export interface ProvidersPort {
 /** Control leases on sessions and terminals (runtime ControlLeaseService). */
 export type ControlLeasePort = Pick<ControlLeaseService, 'acquire' | 'renew' | 'release' | 'revoke' | 'assertValid'>
 
-/** Session sync zone (`docs/architecture/session-sync-zone.md`; CLI: ArtifactZoneService). */
-export interface ArtifactZonePort {
-  /** Absolute `<nodeHome>/sync`, reported as `descriptor.syncRoot`. */
-  readonly syncRoot: string
-  /** Node path of a zone-relative path inside `sessionId`'s zone; throws when it escapes. */
-  resolve(sessionId: string, relativePath: string): string
-  stat(sessionId: string, relativePath: string): { exists: boolean }
-  /** Drop the session's zone directory. */
-  delete(sessionId: string): Promise<unknown>
-}
+/**
+ * Session sync zone (`docs/architecture/session-sync-zone.md`), served as
+ * `artifact.*`: `syncRoot` is reported as `descriptor.syncRoot`, `resolve`
+ * throws for a path that escapes the session's zone, `delete` without a path
+ * drops the whole session directory.
+ */
+export type ArtifactZonePort = Pick<ArtifactZoneService, 'syncRoot' | 'resolve' | 'stat' | 'list' | 'get' | 'put' | 'delete'>
 
 type SessionRuntimeInput<K extends keyof SessionRuntime> = SessionRuntime[K] extends (
   input: infer I,
@@ -475,6 +474,8 @@ export interface RpcContext {
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
+  /** MCP App state, resources and provider calls of this host's sessions (`mcpApps.*`). */
+  mcpApps?: McpAppsPort
   /** Composer drafts and their leases (`draft.*`). */
   drafts?: DraftsPort
   /** Host editor handover barrier, completed before draft.open acquires its lease. */

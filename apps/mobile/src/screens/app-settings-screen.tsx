@@ -1,11 +1,12 @@
 import type { TransportLedger } from '@superone/relay-client'
 import { NetworkLedgerPanel } from '../ui/network-ledger-panel'
 import { networkLedger, networkMetricsEnabled } from '../network-ledger'
-import { ScrollView, View } from 'react-native'
+import { ScrollView } from 'react-native'
 import type { Locale, ThemeMode } from '@superone/shared/agent-types'
 import { Text } from '../ui/text'
 import { Button } from '../ui/primitives'
 import { SelectionField } from '../ui/selection-field'
+import { SettingsRow, SettingsSection } from '../ui/settings-section'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 import { formatBuildLabel } from '../updates/update-format'
@@ -30,21 +31,12 @@ export type AppSettingsUpdateProps = {
 
 /** Device-local preferences. Project and harness controls stay on the chat surface. */
 export function AppSettingsScreen({ update, ledger }: { update?: AppSettingsUpdateProps; ledger?: TransportLedger } = {}) {
-  const { tokens: { colors, radius, spacing }, mode, setMode } = useMobileTheme()
+  const { tokens: { spacing }, mode, setMode } = useMobileTheme()
   const { locale, setLocale, t } = useMobileLocale()
-  const sectionLabel = { color: colors.mutedForeground, fontSize: 12, fontWeight: '500' as const }
-  const card = { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface }
-  const row = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: spacing.md, padding: spacing.md }
-  const copy = { flex: 1, minWidth: 0, gap: 3 }
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg }}>
-      <View style={{ gap: spacing.sm }}>
-        <Text accessibilityRole="header" style={sectionLabel}>{t('Appearance')}</Text>
-        <View style={[card, row]}>
-          <View style={copy}>
-            <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: '500' }}>{t('Theme')}</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Choose how SuperOne looks on this device.')}</Text>
-          </View>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.md, paddingTop: spacing.lg, paddingBottom: spacing.xl, gap: 20 }}>
+      <SettingsSection title={t('Appearance')}>
+        <SettingsRow label={t('Theme')} description={t('Choose how SuperOne looks on this device.')}>
           <SelectionField
             label={t('Theme')}
             compact
@@ -52,18 +44,11 @@ export function AppSettingsScreen({ update, ledger }: { update?: AppSettingsUpda
             options={THEME_MODES.map((value) => ({ value, label: t(value === 'system' ? 'System' : value === 'light' ? 'Light' : 'Dark') }))}
             onChange={(value) => setMode(value as ThemeMode)}
           />
-        </View>
-      </View>
+        </SettingsRow>
+      </SettingsSection>
 
-      <View style={{ gap: spacing.sm }}>
-        <Text accessibilityRole="header" style={sectionLabel}>{t('Language & Region')}</Text>
-        <View style={[card, row]}>
-          <View style={copy}>
-            <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: '500' }}>{t('Language')}</Text>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
-              {t('Interface language for SuperOne. Takes effect immediately.')}
-            </Text>
-          </View>
+      <SettingsSection title={t('Language & Region')}>
+        <SettingsRow label={t('Language')} description={t('Interface language for SuperOne. Takes effect immediately.')}>
           <SelectionField
             label={t('Language')}
             compact
@@ -71,21 +56,14 @@ export function AppSettingsScreen({ update, ledger }: { update?: AppSettingsUpda
             options={LOCALES.map((value) => ({ value, label: t(value === 'en' ? 'English' : '中文') }))}
             onChange={(value) => setLocale(value as Locale)}
           />
-        </View>
-      </View>
+        </SettingsRow>
+      </SettingsSection>
 
       {update ? (
-        <View style={{ gap: spacing.sm }}>
-          <Text accessibilityRole="header" style={sectionLabel}>{t('About')}</Text>
-          <View style={[card, row]}>
-            <View style={copy}>
-              <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: '500' }}>{t('Version')}</Text>
-              {/* The version pair is a number, so it sits beside the translated
-                  label rather than inside it -- `t()` has no interpolation. */}
-              <Text testID="settings-build" style={{ color: colors.mutedForeground, fontSize: 12 }}>
-                {formatBuildLabel(update.version, update.buildCode)}
-              </Text>
-            </View>
+        <SettingsSection title={t('About')}>
+          <SettingsRow label={t('Version')} description={
+            <Text testID="settings-build">{formatBuildLabel(update.version, update.buildCode)}</Text>
+          }>
             {update.onCheckForUpdates ? (
               <Button
                 label={update.checking ? 'Checking…' : 'Check for updates'}
@@ -94,8 +72,8 @@ export function AppSettingsScreen({ update, ledger }: { update?: AppSettingsUpda
                 onPress={update.onCheckForUpdates}
               />
             ) : null}
-          </View>
-        </View>
+          </SettingsRow>
+        </SettingsSection>
       ) : null}
       {ledger ? <NetworkLedgerPanel ledger={ledger} /> : null}
     </ScrollView>

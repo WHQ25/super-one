@@ -5,6 +5,7 @@ import type { SavedPairing } from '@superone/relay-client'
 import { Text } from './text'
 import { SwipeRow } from './swipe-row'
 import { ConnectionStatusIndicator } from './connection-status'
+import { SettingsCard, settingsRowStyle } from './settings-section'
 import { useMobileTheme } from '../theme/context'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 
@@ -46,16 +47,16 @@ export function DeviceRow(props: {
       ]}
     >
       {({ revealed }) => (
-      <View style={[styles.card, revealed && styles.abutting, props.disabled && styles.disabled]}>
+      <SettingsCard style={[styles.card, revealed && styles.abutting, props.disabled && styles.disabled]}>
         <View style={styles.iconBox}>
-          <Laptop color={tokens.colors.mutedForeground} size={24} />
+          <Laptop color={tokens.colors.mutedForeground} size={18} />
         </View>
         <View style={styles.text}>
           <Text numberOfLines={1} style={styles.title}>{label}</Text>
           <ConnectionStatusIndicator status={props.status} reconnect={props.reconnect} />
         </View>
-        <ChevronRight color={tokens.colors.mutedForeground} size={20} />
-      </View>
+        <ChevronRight color={tokens.colors.mutedForeground} size={16} />
+      </SettingsCard>
       )}
     </SwipeRow>
   )
@@ -65,15 +66,11 @@ function useStyles() {
   const { tokens } = useMobileTheme()
   return useMemo(() => StyleSheet.create({
     card: {
+      ...settingsRowStyle,
       alignItems: 'center',
-      backgroundColor: tokens.colors.surface,
-      borderColor: tokens.colors.border,
       borderRadius: tokens.radius.lg,
-      borderWidth: 1,
       flexDirection: 'row',
       gap: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: 14,
     },
     /** The strip sits on the left, so that edge loses its radius while revealed. */
     abutting: { borderBottomLeftRadius: 0, borderTopLeftRadius: 0 },
@@ -81,12 +78,12 @@ function useStyles() {
     iconBox: {
       alignItems: 'center',
       backgroundColor: tokens.colors.muted,
-      borderRadius: 10,
-      height: 44,
+      borderRadius: tokens.radius.sm,
+      height: 32,
       justifyContent: 'center',
-      width: 44,
+      width: 32,
     },
     text: { flex: 1, gap: 3, minWidth: 0 },
-    title: { color: tokens.colors.foreground, fontSize: 15, fontWeight: '600' },
+    title: { color: tokens.colors.foreground, fontSize: 14, fontWeight: '500' },
   }), [tokens])
 }

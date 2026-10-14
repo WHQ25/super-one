@@ -1,5 +1,5 @@
-import { expect, test } from '@jest/globals'
-import { screen } from '@testing-library/react-native'
+import { expect, jest, test } from '@jest/globals'
+import { act, fireEvent, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
 import { AppSettingsScreen } from './app-settings-screen'
 
@@ -22,4 +22,23 @@ test('renders the settings surface in Chinese', async () => {
   expect(screen.getByText('深色')).toBeTruthy()
   expect(screen.getByText('语言与地区')).toBeTruthy()
   expect(screen.getByText('语言')).toBeTruthy()
+})
+
+test('keeps the build label and update action available in the compact card', async () => {
+  const onCheckForUpdates = jest.fn()
+  await renderWithTheme(<AppSettingsScreen update={{ version: '1.0.0', buildCode: 37, onCheckForUpdates }} />)
+
+  expect(screen.getByTestId('settings-build')).toHaveTextContent('1.0.0 (37)')
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'Check for updates' })) })
+  expect(onCheckForUpdates).toHaveBeenCalledTimes(1)
+})
+
+test('disables checking while an update check is running', async () => {
+  const onCheckForUpdates = jest.fn()
+  await renderWithTheme(<AppSettingsScreen update={{ version: '1.0.0', buildCode: 37, checking: true, onCheckForUpdates }} />)
+
+  const button = screen.getByRole('button', { name: 'Checking…' })
+  expect(button).toBeDisabled()
+  await act(async () => { fireEvent.press(button) })
+  expect(onCheckForUpdates).not.toHaveBeenCalled()
 })

@@ -579,7 +579,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Session search' ? <SessionSearchScreen client={previewClient} onOpenSession={() => setPage('Chat')} onCancel={() => setPage('Chat')} /> : null}
           {page === 'Network ledger' ? <ScrollView><TrafficAndReset /><NarrowLedger /><EmptyLedger /></ScrollView> : null}
-          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42 }} ledger={networkLedger} /> : null}
+          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42, onCheckForUpdates: () => {} }} ledger={networkLedger} /> : null}
           {page === 'Update' ? <UpdatePromptGallery /> : null}
           {page === 'Project' ? <ProjectPickerScreen projects={projectList} activePath={projectPath}
             onSelect={(item) => { setProjectPath(item.path); setPage('New session') }} /> : null}

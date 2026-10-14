@@ -101,6 +101,19 @@ export const LightMode = {
   ),
 }
 
+export const NarrowChinese = {
+  name: 'Narrow phone · Chinese and long device names',
+  render: (props: Props) => (
+    <MobileThemeProvider colorScheme="dark" locale="zh">
+      <Frame width={320} height={640}><PairingsScreen {...props} /></Frame>
+    </MobileThemeProvider>
+  ),
+  args: withDevices([
+    { pairing: device('long', 'Office workstation with a remarkably long machine name'), status: 'onlineLan' },
+    ...fewDevices.slice(1),
+  ]),
+}
+
 export const LandscapePhone = {
   name: 'Landscape phone · few devices already overflow',
   render: (props: Props) => <Preview {...props} frameWidth={844} frameHeight={390} />,

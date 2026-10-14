@@ -20,12 +20,30 @@ function header(overrides: Partial<Parameters<typeof MobileHeader>[0]> = {}) {
   />
 }
 
-test('shows an offline connection on the second line of every native header', async () => {
+test('shows an offline connection on the second line of remote page headers', async () => {
   await renderWithTheme(header({ deviceStatus: 'offline' }))
 
   expect(screen.getByText('Files')).toBeTruthy()
   expect(screen.getByText('Offline')).toBeTruthy()
 })
+
+test.each(['offline', 'connecting', 'searchingLan', 'repairRequired', 'connectedLan'] as const)(
+  'keeps local settings independent of the %s device status', async (deviceStatus) => {
+    await renderWithTheme(header({
+      route: 'settings',
+      title: 'Settings',
+      hasSession: true,
+      deviceStatus,
+      reconnect: { attempting: true, waiting: false, delayMs: 500, nextAtMs: null },
+      git: { kind: 'branch', branch: 'main', dirtyFiles: 0 },
+    }))
+
+    expect(screen.getByText('Settings')).toBeTruthy()
+    expect(screen.queryByText('super-one')).toBeNull()
+    expect(screen.queryByText('main')).toBeNull()
+    expect(screen.queryByText(/Offline|Reconnecting|Searching local network|Re-pair Required|Connected/)).toBeNull()
+  },
+)
 
 test('shows reconnecting under the session title', async () => {
   await renderWithTheme(header({

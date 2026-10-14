@@ -135,7 +135,9 @@ scope gets a no-op — which is why `WorkspaceSidebar` provides none: a permanen
 pane has no competing gesture to stand down.
 
 Connection feedback has exactly one shell location. On a phone it is the second
-line under whichever native header is visible; in the workspace drawer and the
+line under a remote page's native header; local app settings never show desktop
+connection or project metadata. Settings owns its card gutters so the shell does
+not add another page inset. In the workspace drawer and the
 persistent workspace sidebar it is the line under the device at the bottom. It is
 never copied into the page-level transient status row. Session headers keep two
 facts on that second line: how the phone is reaching the desktop, and which

@@ -58,7 +58,7 @@ describe('responsive shell layout', () => {
     expect(isFullBleedScreen('project-picker')).toBe(true)
     expect(isFullBleedScreen('add-project')).toBe(true)
     expect(isFullBleedScreen('session-search')).toBe(true)
-    expect(isFullBleedScreen('settings')).toBe(false)
+    expect(isFullBleedScreen('settings')).toBe(true)
     expect(isFullBleedScreen('pair')).toBe(false)
   })
 })

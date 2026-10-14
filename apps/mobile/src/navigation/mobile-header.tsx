@@ -120,10 +120,11 @@ export function MobileHeader(props: {
   const menu = useMenuAnchor()
   const chat = props.route === 'chat'
   const files = props.route === 'files' ? props.files : undefined
-  // Session pages always keep their checkout metadata. Every other native
-  // header adds this second line only while the connection needs attention.
+  // Session pages always keep their checkout metadata. Every other remote
+  // page adds this second line only while the connection needs attention.
+  // Settings belongs to this phone and never carries desktop metadata.
   const connected = isConnected(props.deviceStatus)
-  const showConnectionStatus = !props.sidebarVisible
+  const showConnectionStatus = props.route !== 'settings' && !props.sidebarVisible
   const terminal = props.route === 'terminal' ? props.terminal : undefined
   const showMeta = (chat && props.hasSession)
     || (showConnectionStatus && !connected)

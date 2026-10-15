@@ -27,6 +27,8 @@ import {
 import { supportsShortWidgetResult } from '@superone/shared/harness/harness-capabilities'
 import { readWidgetShowArgs, widgetShowShortContent } from '@superone/shared/generative-ui/widget-data'
 import { NESTED_COLLABORATION_UNSUPPORTED } from '@superone/runtime/collaboration'
+import type { SessionAgentProfile } from '@superone/shared/agent-types'
+import { collabAgentDetail, collabAgentSummary, unknownCollabAgentMessage } from '@superone/shared/collab-agent-catalog'
 import { jsonSchemaToZodShape } from './json-schema-to-zod'
 
 /** Public MCP server name harnesses attach as. */
@@ -44,7 +46,7 @@ export type HostActionRequestFn = (input: {
 
 /** Node-local collab handlers (SessionRuntime CollaborationService). */
 export interface NodeCollabToolHandlers {
-  listAgents: (sessionId: string) => Promise<unknown> | unknown
+  listAgents: (sessionId: string) => Promise<SessionAgentProfile[]> | SessionAgentProfile[]
   request: (
     sessionId: string,
     args: unknown,
@@ -234,12 +236,24 @@ export function registerNodeCollabTools(
     'session_collab_list_agents',
     {
       description: listDesc.description,
-      inputSchema: {},
+      inputSchema: jsonSchemaToZodShape(listDesc.inputSchema),
     },
-    async () => {
+    async (args) => {
       try {
-        const agents = await collab.listAgents(superoneSessionId)
-        return toolResultJson({ agents })
+        const { id, environment } = (args ?? {}) as { id?: string; environment?: string }
+        if (environment?.trim()) {
+          return collabErrorResult(Object.assign(
+            new Error('Agents on other machines are only listed from the SuperOne desktop app.'),
+            { code: 'failed_precondition' },
+          ))
+        }
+        const agents = (await collab.listAgents(superoneSessionId)) as SessionAgentProfile[]
+        const wanted = id?.trim()
+        if (!wanted) return toolResultJson({ agents: agents.map(collabAgentSummary) })
+        const agent = agents.find((profile) => profile.id === wanted)
+        return agent
+          ? toolResultJson(collabAgentDetail(agent))
+          : collabErrorResult(Object.assign(new Error(unknownCollabAgentMessage(wanted)), { code: 'not_found' }))
       } catch (err) {
         return collabErrorResult(err)
       }

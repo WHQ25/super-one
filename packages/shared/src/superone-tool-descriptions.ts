@@ -139,10 +139,10 @@ export const VIDEO_STATUS_DESCRIPTION =
   "Advance a submitted video job and read its status: running, generated with savedPaths, or error with message. Poll about every 30 seconds while running: these calls download and save the completed video. Report it ready only after generated; stop on error."
 
 export const SESSION_LIST_AGENTS_DESCRIPTION =
-  'List the agent profiles available for user-approved child sessions. Only launchable agents are returned. ' +
+  'List the agents available for user-approved child sessions (launchable ones only): id, name, harness, description. ' +
   'Agents on other connected machines are listed under environments[] with the environmentId to launch them with. ' +
-  'defaultConfig is the user\'s launch setup for the agent (model, effort, permission, sandbox, apiProviderId); leave out the config fields it already covers. ' +
-  'apiProviders lists the subscription accounts and API keys it can run on. ' +
+  'A launch without config runs on the user\'s setup for that agent. To set config, pass id (and environment for another machine): ' +
+  'returns its defaultConfig, models with their efforts, and the apiProviders (accounts, API keys) it can run on. ' +
   'You may reuse one agentId for multiple launches. ' +
   'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
 

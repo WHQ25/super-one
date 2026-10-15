@@ -139,11 +139,13 @@ import {
   type TerminalWaitForArgs,
 } from './terminal-tools'
 import type {
+  ListCollaborationAgentsArgs,
   RequestSessionAgentsArgs,
   SessionSendArgs,
   SessionRetrieveArgs,
   SessionStartArgs,
 } from '../session/session-collaboration'
+import { SESSION_LIST_AGENTS_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
 
 export {
   BUILT_IN_SUPERONE_TOOL_DEFS,
@@ -380,9 +382,7 @@ export async function executeBuiltInSuperoneTool(
       return import('./agent-profile-tools').then(({ agentProfileDeleteHandler }) =>
         agentProfileDeleteHandler(args as unknown as AgentProfileDeleteArgs, deps))
     case 'session_collab_list_agents':
-      return import('../session/session-collaboration').then(async ({ listCollaborationAgents }) => ({
-        content: [{ type: 'text' as const, text: JSON.stringify(await listCollaborationAgents()) }],
-      }))
+      return listAgentsResult(args as ListCollaborationAgentsArgs)
     case 'session_collab_request':
       return import('../session/session-collaboration').then(({ requestSessionAgents }) =>
         requestSessionAgents(deps.sessionId, args as unknown as RequestSessionAgentsArgs, collaborationHost(deps), deps.signal))
@@ -420,14 +420,19 @@ export async function executeBuiltInSuperoneTool(
   }
 }
 
+async function listAgentsResult(args: ListCollaborationAgentsArgs) {
+  const { listCollaborationAgents } = await import('../session/session-collaboration')
+  const result = await listCollaborationAgents(args)
+  return result.ok
+    ? { content: [{ type: 'text' as const, text: JSON.stringify(result.value) }] }
+    : { content: [{ type: 'text' as const, text: `[Error] ${result.error}` }], isError: true as const }
+}
+
 export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
   server.registerTool(
     'session_collab_list_agents',
-    { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: {} },
-    async () => {
-      const { listCollaborationAgents } = await import('../session/session-collaboration')
-      return { content: [{ type: 'text' as const, text: JSON.stringify(await listCollaborationAgents()) }] }
-    },
+    { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: jsonSchemaToZodShape(SESSION_LIST_AGENTS_INPUT_SCHEMA) },
+    (args) => listAgentsResult(args),
   )
   server.registerTool(
     'session_collab_request',

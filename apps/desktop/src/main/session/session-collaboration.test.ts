@@ -2201,19 +2201,36 @@ describe('spawning a child on another machine', () => {
 
   it('lists the machines a child can run on with the agents they have ready', async () => {
     const listed = await listCollaborationAgents()
-    expect(listed.environments).toEqual([
-      expect.objectContaining({ environmentId: 'env-b', label: 'Studio Mac', agents: [expect.objectContaining({ id: 'claude-base' })] }),
-    ])
+    expect(listed).toMatchObject({ ok: true, value: { environments: [
+      { environmentId: 'env-b', label: 'Studio Mac', agents: [expect.objectContaining({ id: 'claude-base' })] },
+    ] } })
   })
 
-  it('lists the agents of a machine that serves its catalog from that catalog', async () => {
+  it('lists only what picks an agent, and its launch options once asked by id', async () => {
     remoteProfiles = [STUDIO_CLAUDE, { ...STUDIO_CLAUDE, id: 'claude-custom', name: 'Custom' }]
     const listed = await listCollaborationAgents()
-    expect(listed.environments).toEqual([expect.objectContaining({
-      environmentId: 'env-b',
+    expect(listed).toMatchObject({ ok: true, value: {
+      agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', description: expect.any(String) }],
       // Only base profiles: a remote launch runs the target's base provider.
-      agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders }],
-    })])
+      environments: [{ environmentId: 'env-b', label: 'Studio Mac', agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude' }] }],
+    } })
+    expect((listed as { value: { agents: object[] } }).value.agents[0]).not.toHaveProperty('models')
+
+    expect(await listCollaborationAgents({ id: 'claude-base', environment: 'env-b' })).toEqual({ ok: true, value: {
+      id: 'claude-base', name: 'Claude', harnessId: 'claude', models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders,
+    } })
+    const local = await listCollaborationAgents({ id: 'claude-base' })
+    expect(local).toMatchObject({ ok: true, value: { id: 'claude-base', defaultConfig: expect.any(Object), models: expect.any(Array), apiProviders: expect.any(Array) } })
+    expect((local as { value: object }).value).not.toHaveProperty('brandKey')
+  })
+
+  it('points an unknown id back at the list', async () => {
+    expect(await listCollaborationAgents({ id: 'nope' })).toEqual({
+      ok: false, error: 'Unknown agent nope. Call session_collab_list_agents without id to see the available agents.',
+    })
+    expect(await listCollaborationAgents({ id: 'claude-custom', environment: 'env-b' })).toMatchObject({
+      ok: false, error: expect.stringMatching(/not available on environment env-b.*environments\[\]\.agents/),
+    })
   })
 
   it('creates the child on the model and key picked from the target catalog', async () => {

@@ -44,7 +44,7 @@ A suggestion is a card the user may launch whenever they like. Launching it is a
 
 | Step | Action |
 |------|--------|
-| 1 | **Spawn / handoff:** call `session_collab_list_agents`, choose an `agentId`, and read its `defaultConfig` (see [Launch defaults](#launch-defaults-providers-and-accounts)). **Link:** take `sessionId` from `@session` / session tools. |
+| 1 | **Spawn / handoff:** call `session_collab_list_agents` and choose an `agentId` by its `description`. Only when a launch needs `config` beyond the user's defaults, call it again with that `id` (see [Launch defaults](#launch-defaults-providers-and-accounts)). **Link:** take `sessionId` from `@session` / session tools. |
 | 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role` and pass a short `summary` for the user to approve. Link: pass `sessionId` + `summary`. Do not write the brief yet — a rejected request never costs it. |
 | 3 | Wait for user approval. Each approved launch returns its `launchId`. |
 | 4 | Call `session_collab_start({ launchId, task })` for every approved launch back-to-back. `task` is the full Markdown brief. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling and delivers `task`. Link: host binds the peer and wakes it; a `task` becomes the opening mailbox message. A retry with the same `launchId` is idempotent and keeps the first `task`. |
@@ -96,15 +96,15 @@ A single request may mix spawn, handoff and link launches (one confirm card, mul
 
 ## Launch defaults, providers and accounts
 
-Each profile's `defaultConfig` is the user's own launch setup for that agent: model, effort, permission and sandbox mode, and the `apiProviderId` (key or subscription account) their chats run on. Start from it. When it fits the task, leave those `config` fields out and the host applies it. Change a field when the user asks for something else, or when the task needs something the default lacks. Setting `config.model` re-picks the effort and options you leave out for that model; an explicit `effort` or `fastMode` that model cannot carry is rejected.
+`session_collab_list_agents({ id })` returns the agent's `defaultConfig`, its `models` with their efforts, and `apiProviders`. `defaultConfig` is the user's own launch setup for that agent: model, effort, permission and sandbox mode, and the `apiProviderId` (key or subscription account) their chats run on. Start from it. When it fits the task, leave those `config` fields out and the host applies it. Change a field when the user asks for something else, or when the task needs something the default lacks. Setting `config.model` re-picks the effort and options you leave out for that model; an explicit `effort` or `fastMode` that model cannot carry is rejected.
 
-Besides the built-in `<harness>-base` agents, the list includes agent profiles the user saved: named agents whose `description` says what they are for, whose own model, effort, permission mode and harness options (Codex Fast, Grok context window, OpenCode agent, …) are already folded into `defaultConfig`, and whose instructions reach the child's system prompt ahead of the collaboration protocol. Pick one by its description the way you would pick a harness. To create or change one, use `agent_profile_list` / `agent_profile_apply` / `agent_profile_delete`; every write asks the user.
+Besides the built-in `<harness>-base` agents, the list includes agent profiles the user saved: named agents whose `description` says what they are for, whose own model, effort, permission mode and harness options (Codex Fast, Grok context window, OpenCode agent, …) are already in its `defaultConfig`, and whose instructions reach the child's system prompt ahead of the collaboration protocol. Pick one by its description the way you would pick a harness. To create or change one, use `agent_profile_list` / `agent_profile_apply` / `agent_profile_delete`; every write asks the user.
 
 What you can read to decide, when it matters. The user's instructions decide how to use it; there is no preferred policy:
 
 | Source | Tells you |
 |--------|-----------|
-| `session_collab_list_agents` → `agents[].apiProviders[]` | Every subscription account (`claude-account:…`, `codex-account:…`) and API key the agent can run on; `keyName` names the account email or key |
+| `session_collab_list_agents({ id })` → `apiProviders[]` | Every subscription account (`claude-account:…`, `codex-account:…`) and API key the agent can run on; `keyName` names the account email or key |
 | `environment_get_info({ include: ["usage"] })` | One row per quota window of each signed-in subscription, per machine: `usedPercent`, `resetsAt`, and the `apiProviderId` that runs on it. `null` is the harness's default login, reached by omitting `apiProviderId` |
 | `environment_get_info()` | Each machine's OS, CPU, GPUs and free memory |
 | `session_collab_list_agents` → `environments[]` | The agents each other connected machine can run (see [On another machine](#on-another-machine)) |
@@ -269,14 +269,14 @@ Set `cwd` only because this launch targets a genuinely different project root. T
 A `spawn` launch may run on another connected machine: `session_collab_list_agents` lists them under `environments[]` with the agents each one can run, and the launch passes that `environmentId` as `environment`. Use it for a heavy job or a toolchain this machine lacks.
 
 - The child works in a fresh worktree and branch of the same repository on that machine, cloned there when missing. A project without an origin remote cannot run elsewhere.
-- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (except `branchName`) and `carryLocalChanges` do not apply. An `apiProviderId` must be one of that machine's own (`environments[].agents[].apiProviders[]`); omit it for that machine's default.
+- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (except `branchName`) and `carryLocalChanges` do not apply. An `apiProviderId` must be one of that machine's own (`session_collab_list_agents({ id, environment })` → `apiProviders[]`); omit it for that machine's default.
 - Ask it to push its branch (or open a PR) and report the branch name, then fetch the branch here to verify.
 - The mailbox works as for a local child. `session_collab_retrieve` reports its `state` from that machine, or `unreachable` while it is offline.
 - `handoff` and `link` stay on this machine, and a remote child cannot launch children.
 
 ## Permission and sandbox
 
-`defaultConfig` carries the user's default `permissionMode` and `sandboxMode` for the agent. Nobody watches child or handoff sessions: a mode that asks before acting waits on the user, who is notified. Mode names differ per harness: Claude-family `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`; Codex `default`, `auto`, `bypassPermissions`; ACP `default`, `plan`, `auto`, `bypassPermissions`; Cursor `agent`, `plan`, `bypassPermissions`; DeepSeek `plan`, `default`, `bypassPermissions`. The approval dialog shows the mode, and the user can change it there.
+The agent's `defaultConfig` (`session_collab_list_agents({ id })`) carries the user's default `permissionMode` and `sandboxMode`. Nobody watches child or handoff sessions: a mode that asks before acting waits on the user, who is notified. Mode names differ per harness: Claude-family `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`; Codex `default`, `auto`, `bypassPermissions`; ACP `default`, `plan`, `auto`, `bypassPermissions`; Cursor `agent`, `plan`, `bypassPermissions`; DeepSeek `plan`, `default`, `bypassPermissions`. The approval dialog shows the mode, and the user can change it there.
 
 ## Mailbox
 

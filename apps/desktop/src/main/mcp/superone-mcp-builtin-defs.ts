@@ -3,7 +3,7 @@ import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memor
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
 import { ENVIRONMENT_GET_INFO_INPUT_SCHEMA } from '@superone/shared/environment/host-action-archive-descriptors'
-import { SESSION_SUGGEST_TASK_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
+import { SESSION_LIST_AGENTS_INPUT_SCHEMA, SESSION_SUGGEST_TASK_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
 import {
   AGENT_PROFILE_APPLY_INPUT_SCHEMA,
   AGENT_PROFILE_DELETE_INPUT_SCHEMA,
@@ -203,7 +203,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
     name: 'session_collab_list_agents',
     description: SESSION_LIST_AGENTS_DESCRIPTION,
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema: SESSION_LIST_AGENTS_INPUT_SCHEMA,
   },
   {
     name: 'session_collab_request',

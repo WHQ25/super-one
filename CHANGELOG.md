@@ -19,8 +19,12 @@ Every alpha release keeps its own notes on its GitHub Release.
   mode and harness-specific settings. Review and edit proposed profiles before
   saving, and use their defaults across desktop and remote collaboration.
 - Let agents and mini-apps inspect and arrange their session's desktop layout:
-  open files, manage tabs and panels, and show child sessions side by side.
-  Background changes wait for that session without moving the user's focus.
+  open files, resize columns and tab groups, move tabs and show child sessions
+  side by side. Choose docked, floating or icon chat modes; background changes
+  wait for that session without moving the user's focus.
+- Float or dock the chat from its title menu, including while it is floating.
+- Let agents list, call and open installed mini-apps without an explicit mention,
+  subject to the harness permission flow.
 - Choose the agent and launch settings for a suggested task, and expand its
   full prompt before starting it.
 
@@ -29,6 +33,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Give each Claude and Codex subscription account its own card with consistent
   account actions and usage refresh placement.
 - Keep unstarted suggested-task cards available and remove the dismiss action.
+- Keep layout operations out of the transcript and give agents visibility and
+  reveal instructions when newly opened tabs stay in the background.
 - Upgrade Claude Agent SDK to 0.3.300 (Claude Code 2.1.300).
 
 ### Fixed
@@ -39,6 +45,34 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Show failed Claude usage refreshes beside the cached reading, and keep the
   refresh tooltip from opening automatically with the usage popover.
 - Keep Markdown table copy and expand buttons clickable.
+- Send full-size image originals in local sessions without requiring a sync zone.
+- Keep macOS layout controls in the visible top-left activity group, preserve
+  tabs when changing split orientation and prevent unsupported floating groups.
+
+## [0.74.0-alpha.1] - 2026-10-15
+
+### Added
+
+- Resize the sidebar, chat and activity columns through layout tools; move tabs
+  between groups, resize groups and choose docked, floating or icon chat modes.
+- Float or dock the chat from its title menu, including while it is floating.
+- Let agents list, call and open installed mini-apps without an explicit mention,
+  subject to the harness permission flow.
+
+### Changed
+
+- Replace `layout_act` and mini-app `context.layout.act` action `split_tab` with
+  `move_tab`; use `direction: right` or `down` for the previous split behavior.
+- Hide layout tool rows in the transcript and tell agents when tabs they open
+  stay in the background, with the action needed to reveal them.
+- Upgrade Claude Agent SDK to 0.3.300 (Claude Code 2.1.300).
+
+### Fixed
+
+- Send full-size image originals in local sessions without requiring a sync zone.
+- Preserve collaboration request titles when a request is denied.
+- Keep macOS layout controls in the visible top-left activity group, preserve
+  tabs when changing split orientation and prevent unsupported floating groups.
 
 ## [0.74.0-alpha] - 2026-10-15
 

@@ -270,7 +270,7 @@ export const AGENT_PROFILE_LIST_DESCRIPTION =
 export const AGENT_PROFILE_APPLY_DESCRIPTION =
   'Create or update an agent profile. create needs harnessId, name, description; update needs id plus the fields to change (empty string clears model, effort, permissionMode or instructions; null clears an option). ' +
   'description is what other agents read to pick a delegate, so say what this agent is for. model, effort, permissionMode and options must be ones the harness accepts: read agent_profile_list with the <harness>-base id first. ' +
-  'Built-in <harness>-base rows are read-only; remove profiles with agent_profile_delete. Always opens a user confirmation dialog and applies nothing without approval.'
+  'Built-in <harness>-base rows are read-only; remove profiles with agent_profile_delete. Always opens a user confirmation dialog, where the user may edit a new profile before approving; applies nothing without approval.'
 
 export const AGENT_PROFILE_DELETE_DESCRIPTION =
   'Permanently delete agent profiles by id (from agent_profile_list). Sessions already started on one fall back to its built-in harness agent. ' +

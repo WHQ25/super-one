@@ -60,8 +60,14 @@ const CODEX_MODELS = [
   { id: 'gpt-5.6', name: 'GPT-5.6', supportedReasoningEfforts: [{ value: 'medium' }], serviceTiers: [{ id: 'priority', name: 'Fast', description: '' }] },
 ]
 
+const CLAUDE_AGENT = {
+  id: 'claude-base', name: 'Claude', harnessId: 'claude', models: [], efforts: [], apiProviders: [],
+  defaultConfig: { model: 'sonnet', effort: 'high', permissionMode: 'default' },
+}
+
 vi.mock('../session/agent-profiles', () => ({
   isProviderUsable: () => true,
+  listSessionAgentProfiles: () => [CLAUDE_AGENT],
   resolveAcpAgentId: () => 'grok-build',
   profileResources: (row: SessionProvider) => {
     const models = row.harnessId === 'claude' ? CLAUDE_MODELS : row.harnessId === 'codex' ? CODEX_MODELS : row.harnessId === 'acp' ? GROK_MODELS : []
@@ -266,6 +272,62 @@ describe('agent_profile_apply create', () => {
     const refused = parse(await agentProfileApplyHandler({ action: 'create', harnessId: 'codex', name: 'Planner 2', description: 'Plans.', permissionMode: 'plan' }, deps))
     expect(refused.isError).toBe(true)
     expect(refused.parsed.message).toBe('runtime.permissionMode "plan" is not a codex mode (codex has: default, auto, bypassPermissions).')
+  })
+
+  it('hands the card the proposal, the harness agent and only the catalog fields option rows read', async () => {
+    const { deps, requests } = makeDeps()
+    const run = agentProfileApplyHandler({
+      action: 'create', harnessId: 'claude', name: 'Architect', description: 'Plans refactors.', model: 'opus', options: { ultracode: true },
+    }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]?.agentProfileConfirm?.editor).toEqual({
+      draft: { name: 'Architect', description: 'Plans refactors.', model: 'opus', options: { ultracode: true } },
+      agent: CLAUDE_AGENT,
+      catalog: {
+        models: CLAUDE_MODELS.map(({ id, supportedEffortLevels }) => ({ id, supportedEffortLevels })),
+        host: { lists: { mode: [] } },
+      },
+    })
+    await answer(run, requests, 'decline')
+  })
+
+  it('saves the user\'s edits from the card and tells the agent which fields they changed', async () => {
+    const { deps, requests } = makeDeps()
+    const run = agentProfileApplyHandler({
+      action: 'create', harnessId: 'claude', name: 'Architect', description: 'Plans refactors.', model: 'opus', effort: 'max',
+    }, deps)
+    const draft = {
+      name: 'Lead Architect', description: 'Plans refactors.', instructions: 'Plan first.',
+      model: 'sonnet', effort: 'medium', permissionMode: 'plan',
+    }
+    const { parsed } = parse(await answer(run, requests, 'accept', { agentProfileDraftJson: JSON.stringify(draft) }))
+    expect(parsed).toMatchObject({
+      status: 'ok',
+      profile: { name: 'Lead Architect' },
+      editedByUser: ['name', 'instructions', 'model', 'effort', 'permissionMode'],
+    })
+    expect(profiles.create).toHaveBeenCalledWith({
+      harnessId: 'claude',
+      name: 'Lead Architect',
+      config: {
+        profile: {
+          version: 1,
+          identity: { name: 'Lead Architect', description: 'Plans refactors.' },
+          instructions: 'Plan first.',
+          runtime: { model: 'sonnet', effort: 'medium', permissionMode: 'plan' },
+        },
+      },
+    })
+  })
+
+  it('writes nothing when the user\'s edits do not fit the harness', async () => {
+    const { deps, requests } = makeDeps()
+    const run = agentProfileApplyHandler({ action: 'create', harnessId: 'claude', name: 'Architect', description: 'Plans.' }, deps)
+    const draft = { name: 'Architect', description: 'Plans.', model: 'sonnet', effort: 'max' }
+    const { parsed, isError } = parse(await answer(run, requests, 'accept', { agentProfileDraftJson: JSON.stringify(draft) }))
+    expect(isError).toBe(true)
+    expect(parsed.message).toBe('runtime.effort "max" is not supported by Claude model "sonnet" (supported: low, medium, high).')
+    expect(profiles.create).not.toHaveBeenCalled()
   })
 
   it('returns a neutral refusal with the user feedback and writes nothing on decline', async () => {

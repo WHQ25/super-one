@@ -2201,6 +2201,9 @@ export type Messages = {
       /** agent_profile_apply / agent_profile_delete HITL */
       agentProfile: {
         createTitle: string
+        namePlaceholder: string
+        descriptionPlaceholder: string
+        instructionsPlaceholder: string
         updateTitle: string
         deleteTitle: string
         deleteNote: string
@@ -6681,7 +6684,10 @@ export const en: Messages = {
       automationEnabledOff: 'off',
       automationChangeFromTo: '{{from}} → {{to}}',
       agentProfile: {
-        createTitle: 'Create agent?',
+        createTitle: 'Create Agent Profile',
+        namePlaceholder: 'Name',
+        descriptionPlaceholder: 'What this agent is for',
+        instructionsPlaceholder: 'Instructions added to its system prompt (optional)',
         updateTitle: 'Update agent?',
         deleteTitle: 'Permanently delete {{count}} agent(s)?',
         deleteNote: 'Sessions already started on them continue on the built-in agent of their harness.',

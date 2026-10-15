@@ -10,7 +10,7 @@ import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
-import type { AgentProfileOptionKey, AgentProfileOptions } from './agent-profile-options'
+import type { AgentProfileOptionCatalog, AgentProfileOptionKey, AgentProfileOptions } from './agent-profile-options'
 import type { WidgetLayout } from './generative-ui/types'
 import type { SchemaForm } from './schema-form'
 import type { MediaVideoCapabilities } from './media-composer'
@@ -1449,6 +1449,37 @@ export interface AgentProfileConfirmPayload {
   profiles: AgentProfileConfirmView[]
   /** Present for update — only the fields that change. */
   changes?: AgentProfileConfirmChange[]
+  /** Create only: lets the card edit the proposal before it is saved. */
+  editor?: AgentProfileConfirmEditor
+}
+
+/**
+ * The renderer returns an edited create proposal as
+ * `content[AGENT_PROFILE_DRAFT_FIELD] = JSON.stringify(AgentProfileDraft)`.
+ */
+export const AGENT_PROFILE_DRAFT_FIELD = 'agentProfileDraftJson'
+
+/** A new profile as raw values: what the create card edits and the host saves. Unset runtime fields follow the user's defaults. */
+export interface AgentProfileDraft {
+  name: string
+  description: string
+  instructions?: string
+  model?: string
+  effort?: string
+  permissionMode?: PermissionMode
+  options?: AgentProfileOptions
+}
+
+export interface AgentProfileConfirmEditor {
+  /** The agent's proposal. */
+  draft: AgentProfileDraft
+  /**
+   * The harness's built-in agent: the model catalog its controls read, and in
+   * `defaultConfig` what each unset field launches with. Absent when the harness cannot launch now.
+   */
+  agent?: SessionAgentProfile
+  /** What the draft's model, effort and options are checked against. */
+  catalog: AgentProfileOptionCatalog
 }
 
 /** One row in the permanent-delete confirm dialog (mirrors session_list metadata). */

@@ -215,3 +215,102 @@ export function optionDisplayValue(
   }
   return String(value)
 }
+
+/** What option rows are read from: a model catalog and this host's lists. */
+export interface AgentProfileOptionCatalog {
+  models: readonly OptionCatalogModel[]
+  host?: AgentProfileOptionHost
+}
+
+/** The client's copy for option rows. */
+export interface AgentProfileOptionLabels {
+  field: (key: AgentProfileOptionKey) => string
+  userDefault: string
+  on: string
+  off: string
+}
+
+/** Row id prefix of one Cursor model parameter (`modelParams.<id>`). */
+const MODEL_PARAM_ROW = 'modelParams.'
+
+function findCatalogModel(catalog: AgentProfileOptionCatalog, modelId: string | undefined): OptionCatalogModel | undefined {
+  return modelId ? catalog.models.find((model) => model.id === modelId) : undefined
+}
+
+/**
+ * A profile's options as model-selector rows for one model (any model when it
+ * names none). Unset rows show `defaults` — what a launch would start with.
+ * Options the model or host cannot carry, and lists not read yet, have no row.
+ */
+export function agentProfileOptionRows(
+  harnessId: HarnessId,
+  catalog: AgentProfileOptionCatalog,
+  modelId: string | undefined,
+  options: AgentProfileOptions | undefined,
+  defaults: AgentProfileOptions | undefined,
+  labels: AgentProfileOptionLabels,
+): SelectorCatalogParam[] {
+  const model = findCatalogModel(catalog, modelId)
+  const choices = agentProfileOptionChoices(harnessId, model ? [model] : catalog.models, catalog.host)
+  return HARNESS_PROFILE_OPTIONS[harnessId].flatMap((key): SelectorCatalogParam[] => {
+    const choice = choices[key]
+    const value = options?.[key] ?? defaults?.[key]
+    if (!choice || choice.kind === 'unlisted') return []
+    if (choice.kind === 'toggle') {
+      return [{
+        id: key,
+        label: labels.field(key),
+        kind: 'toggle',
+        values: [{ value: 'false', label: labels.off }, { value: 'true', label: labels.on }],
+        selected: value === true ? 'true' : 'false',
+      }]
+    }
+    if (choice.kind === 'choice') {
+      return [{
+        id: key,
+        label: labels.field(key),
+        kind: 'choice',
+        values: [{ value: '', label: labels.userDefault }, ...choice.values.map((entry) => ({ value: String(entry.value), label: entry.label }))],
+        selected: options?.[key] === undefined ? '' : String(options[key]),
+      }]
+    }
+    const params = (value ?? {}) as Record<string, string>
+    return choice.params.map((param) => ({ ...param, id: `${MODEL_PARAM_ROW}${param.id}`, selected: params[param.id] ?? param.selected }))
+  })
+}
+
+/** `options` with one row of {@link agentProfileOptionRows} set; an empty choice clears it. */
+export function setAgentProfileOptionRow(
+  options: AgentProfileOptions | undefined,
+  rowId: string,
+  value: string,
+): AgentProfileOptions | undefined {
+  const next: Record<string, unknown> = { ...options }
+  if (rowId.startsWith(MODEL_PARAM_ROW)) {
+    next.modelParams = { ...options?.modelParams, [rowId.slice(MODEL_PARAM_ROW.length)]: value }
+  } else {
+    const kind = OPTION_KINDS[rowId as AgentProfileOptionKey]
+    if (!kind || kind === 'params') return options
+    if (kind === 'boolean') next[rowId] = value === 'true'
+    else if (!value) delete next[rowId]
+    else next[rowId] = kind === 'number' ? Number(value) : value
+  }
+  return Object.keys(next).length ? next as AgentProfileOptions : undefined
+}
+
+/** The options `modelId` can still carry, the rest dropped; unchanged when the catalog does not list the model. */
+export function agentProfileOptionsForModel(
+  harnessId: HarnessId,
+  catalog: AgentProfileOptionCatalog,
+  modelId: string,
+  options: AgentProfileOptions | undefined,
+): AgentProfileOptions | undefined {
+  const model = findCatalogModel(catalog, modelId)
+  if (!options || !model) return options
+  const choices = agentProfileOptionChoices(harnessId, [model], catalog.host)
+  const kept = Object.entries(options).filter(([key, value]) => {
+    const choice = choices[key as AgentProfileOptionKey]
+    return !!choice && !optionValueError(key as AgentProfileOptionKey, value, choice)
+  })
+  return kept.length ? Object.fromEntries(kept) as AgentProfileOptions : undefined
+}

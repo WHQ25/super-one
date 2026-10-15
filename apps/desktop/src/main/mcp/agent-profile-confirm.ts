@@ -3,11 +3,17 @@
  * the handlers so Session can resolve it without loading the profile catalog.
  */
 
+import { AGENT_PROFILE_DRAFT_FIELD } from '@superone/shared/agent-types'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
 
 const CONFIRM_TIMEOUT_MS = 10 * 60_000
 
-export type ConfirmOutcome = { action: 'accept' | 'decline' | 'cancel'; feedback?: string }
+export type ConfirmOutcome = {
+  action: 'accept' | 'decline' | 'cancel'
+  feedback?: string
+  /** A create card's edited proposal (`AgentProfileDraft` JSON), checked by the handler. */
+  draftJson?: string
+}
 
 export const profileConfirms = new HostConfirmRegistry<ConfirmOutcome>({
   idPrefix: 'agentprofileconfirm',
@@ -17,9 +23,13 @@ export const profileConfirms = new HostConfirmRegistry<ConfirmOutcome>({
 
 export function resolveAgentProfileConfirm(requestId: string, action: string, content?: Record<string, unknown>): boolean {
   const feedback = typeof content?.feedback === 'string' && content.feedback.trim() ? content.feedback.trim() : undefined
+  const draftJson = action === 'accept' && typeof content?.[AGENT_PROFILE_DRAFT_FIELD] === 'string'
+    ? content[AGENT_PROFILE_DRAFT_FIELD]
+    : undefined
   return profileConfirms.settle(requestId, action === 'accept', {
     action: action as ConfirmOutcome['action'],
     ...(feedback ? { feedback } : {}),
+    ...(draftJson ? { draftJson } : {}),
   })
 }
 

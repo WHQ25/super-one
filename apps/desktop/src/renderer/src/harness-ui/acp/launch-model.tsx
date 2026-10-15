@@ -12,7 +12,9 @@ import { acpSelectorModels } from './model-options'
  * `AcpModelSelector` shows, so a real session mode never appears as effort. A
  * remote launch reads only the target's profile.
  */
-export function AcpLaunchModel({ profile, catalog, acpAgentId, model, effort, onChange }: LaunchModelProps) {
+export function AcpLaunchModel({
+  profile, catalog, acpAgentId, model, effort, optionParams, onOptionParamChange, onChange,
+}: LaunchModelProps) {
   const resources = useChatStore((s) => (catalog === 'profile' ? null : s.harnessResources.acp))
   const agentId = acpAgentId ?? profile?.acpAgentId ?? resources?.selectedAgentId ?? null
   const live = useMemo(() => getCachedAcpCatalog(resources, agentId), [resources, agentId])
@@ -39,6 +41,8 @@ export function AcpLaunchModel({ profile, catalog, acpAgentId, model, effort, on
       selectedEffort={effort ?? null}
       selectedEffortLabel={effortLabel(effortOptions, effort)}
       onSelectEffort={(value) => onChange({ effort: value })}
+      optionParams={optionParams}
+      onOptionParamChange={onOptionParamChange}
     />
   )
 }

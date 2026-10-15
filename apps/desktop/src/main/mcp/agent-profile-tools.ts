@@ -11,6 +11,7 @@
 import { encode as toonEncode } from '@toon-format/toon'
 import type {
   AgentProfileConfirmChange,
+  AgentProfileConfirmEditor,
   AgentProfileConfirmPayload,
   AgentProfileConfirmView,
   AgentProfileRuntimeField,
@@ -38,7 +39,7 @@ import {
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import log from '../logger'
-import { isProviderUsable, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
+import { isProviderUsable, listSessionAgentProfiles, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
 import { profileConfirms, type ConfirmOutcome } from './agent-profile-confirm'
 import {
   agentProfileCatalog,
@@ -226,29 +227,35 @@ function requireConfirmSession(deps: BuiltInSuperoneToolDeps): { session: Sessio
   return { session }
 }
 
+type ToolResult = ReturnType<typeof toolResult>
+
 /** Decline / cancel / timeout are neutral results: the model waits for the user rather than retrying. */
 async function confirmOrRefusal(
   deps: BuiltInSuperoneToolDeps,
   opts: Omit<Parameters<typeof awaitConfirm>[1], 'signal'>,
-): Promise<ReturnType<typeof toolResult> | null> {
+): Promise<{ refusal: ToolResult } | { accepted: ConfirmOutcome }> {
   const host = requireConfirmSession(deps)
-  if ('error' in host) return host.error
+  if ('error' in host) return { refusal: host.error }
   let outcome: ConfirmOutcome
   try {
     outcome = await awaitConfirm(host.session, { ...opts, signal: deps.signal })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (/timed out|cancelled/i.test(message)) return toolResult({ status: 'cancelled', message })
-    return errorResult(message)
+    if (/timed out|cancelled/i.test(message)) return { refusal: toolResult({ status: 'cancelled', message }) }
+    return { refusal: errorResult(message) }
   }
   if (outcome.action === 'accept') {
-    return deps.signal?.aborted ? toolResult({ status: 'cancelled', message: 'The tool call was cancelled.' }) : null
+    return deps.signal?.aborted
+      ? { refusal: toolResult({ status: 'cancelled', message: 'The tool call was cancelled.' }) }
+      : { accepted: outcome }
   }
-  return toolResult({
-    status: outcome.action === 'cancel' ? 'cancelled' : 'rejected',
-    message: 'The user did not approve this change. Do not retry on your own; wait for the user.',
-    ...(outcome.feedback ? { feedback: outcome.feedback } : {}),
-  })
+  return {
+    refusal: toolResult({
+      status: outcome.action === 'cancel' ? 'cancelled' : 'rejected',
+      message: 'The user did not approve this change. Do not retry on your own; wait for the user.',
+      ...(outcome.feedback ? { feedback: outcome.feedback } : {}),
+    }),
+  }
 }
 
 // ─── List ───
@@ -435,6 +442,53 @@ function profileResultView(row: SessionProvider) {
   }
 }
 
+/** What the create card edits: the proposal as raw values, and the harness controls' catalog. */
+function confirmEditor(harnessId: HarnessId, spec: AgentProfileSpec, catalog: AgentProfileCatalog): AgentProfileConfirmEditor {
+  const runtime = spec.runtime ?? {}
+  const agent = listSessionAgentProfiles().find((profile) => profile.id === `${harnessId}-base`)
+  return {
+    draft: {
+      name: spec.identity.name,
+      description: spec.identity.description,
+      ...(spec.instructions ? { instructions: spec.instructions } : {}),
+      ...(runtime.model ? { model: runtime.model } : {}),
+      ...(runtime.effort ? { effort: runtime.effort } : {}),
+      ...(runtime.permissionMode ? { permissionMode: runtime.permissionMode } : {}),
+      ...(runtime.options ? { options: runtime.options } : {}),
+    },
+    ...(agent ? { agent } : {}),
+    // Only what option rows read: the full catalog would ride every relay copy of the request.
+    catalog: {
+      models: catalog.models.map(({ id, supportedEffortLevels, serviceTiers, contextWindows, parameters }) => ({
+        id,
+        ...(supportedEffortLevels ? { supportedEffortLevels } : {}),
+        ...(serviceTiers ? { serviceTiers } : {}),
+        ...(contextWindows ? { contextWindows } : {}),
+        ...(parameters ? { parameters } : {}),
+      })),
+      ...(catalog.host ? { host: catalog.host } : {}),
+    },
+  }
+}
+
+/** A draft the user confirmed, parsed like an agent's call. */
+function specFromDraft(harnessId: HarnessId, json: string): { spec: AgentProfileSpec } | { error: string } {
+  let draft: unknown
+  try {
+    draft = JSON.parse(json)
+  } catch {
+    return { error: 'The confirmed profile is not valid JSON.' }
+  }
+  if (!draft || typeof draft !== 'object' || Array.isArray(draft)) return { error: 'The confirmed profile must be an object.' }
+  const { name, description, instructions, ...runtime } = draft as Record<string, unknown>
+  return buildSpec(
+    harnessId,
+    { name, description } as AgentProfileSpec['identity'],
+    instructions as string | undefined,
+    Object.keys(runtime).length ? runtime as AgentProfileRuntime : undefined,
+  )
+}
+
 async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneToolDeps) {
   const harnessId = args.harnessId as HarnessId
   if (!HARNESS_IDS.includes(harnessId)) {
@@ -450,28 +504,39 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   if ('error' in built) return errorResult(built.error)
   // ACP is a container: pin the agent the user runs today, so the profile keeps its catalog.
   const acpAgentId = harnessId === 'acp' ? resolveAcpAgentId(getBaseProvider('acp')) : null
-  const config = { ...(acpAgentId ? { agentId: acpAgentId } : {}), profile: built.spec }
-  const draft: SessionProvider = { id: '', harnessId, name, isBase: false, config, createdAt: 0, updatedAt: 0 }
+  const configFor = (spec: AgentProfileSpec) => ({ ...(acpAgentId ? { agentId: acpAgentId } : {}), profile: spec })
+  const draft: SessionProvider = { id: '', harnessId, name, isBase: false, config: configFor(built.spec), createdAt: 0, updatedAt: 0 }
   const catalog = await agentProfileCatalog(draft)
   const invalid = agentProfileCatalogError(draft, catalog)
   if (invalid) return errorResult(invalid)
 
-  const refusal = await confirmOrRefusal(deps, {
+  const confirmed = await confirmOrRefusal(deps, {
     toolName: 'mcp__superone__agent_profile_apply',
-    payload: { operation: 'create', profiles: [toView({ harnessId, acpAgentId, spec: built.spec }, catalog)] },
+    payload: {
+      operation: 'create',
+      profiles: [toView({ harnessId, acpAgentId, spec: built.spec }, catalog)],
+      editor: confirmEditor(harnessId, built.spec, catalog),
+    },
     input: { action: 'create', harnessId, name },
     riskLevel: 'medium',
     abortErrorMessage: 'Agent profile create cancelled',
   })
-  if (refusal) return refusal
+  if ('refusal' in confirmed) return confirmed.refusal
+
+  // The user may have edited the proposal on the card; the store re-checks catalog and name on write.
+  const edited = confirmed.accepted.draftJson ? specFromDraft(harnessId, confirmed.accepted.draftJson) : { spec: built.spec }
+  if ('error' in edited) return errorResult(`The user's edits could not be saved: ${edited.error} Nothing was saved.`)
+  const spec = edited.spec
+  const editedByUser = diffSpecs(harnessId, catalog, built.spec, spec).map((change) => change.field)
 
   try {
-    const created = await createAgentProfile({ harnessId, name, config })
+    const created = await createAgentProfile({ harnessId, name: spec.identity.name, config: configFor(spec) })
     return toolResult({
       status: 'ok',
       action: 'create',
       profile: profileResultView(created),
-      next: `Delegate with session_collab_request({ agentId: "${created.id}" }); the user can @-mention it as ${name}.`,
+      ...(editedByUser.length ? { editedByUser, note: 'The user changed these fields before approving; the profile was saved as shown.' } : {}),
+      next: `Delegate with session_collab_request({ agentId: "${created.id}" }); the user can @-mention it as ${spec.identity.name}.`,
     })
   } catch (err) {
     return writeFailed('create', err)
@@ -512,7 +577,7 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const invalid = agentProfileCatalogError(next, catalog)
   if (invalid) return errorResult(invalid)
 
-  const refusal = await confirmOrRefusal(deps, {
+  const confirmed = await confirmOrRefusal(deps, {
     toolName: 'mcp__superone__agent_profile_apply',
     payload: {
       operation: 'update',
@@ -523,7 +588,7 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
     riskLevel: 'medium',
     abortErrorMessage: 'Agent profile update cancelled',
   })
-  if (refusal) return refusal
+  if ('refusal' in confirmed) return confirmed.refusal
 
   try {
     const updated = await updateAgentProfile(row, { name, config })
@@ -575,7 +640,7 @@ export async function agentProfileDeleteHandler(args: AgentProfileDeleteArgs, de
     })
   }
 
-  const refusal = await confirmOrRefusal(deps, {
+  const confirmed = await confirmOrRefusal(deps, {
     toolName: 'mcp__superone__agent_profile_delete',
     payload: {
       operation: 'delete',
@@ -589,7 +654,7 @@ export async function agentProfileDeleteHandler(args: AgentProfileDeleteArgs, de
     riskLevel: 'high',
     abortErrorMessage: 'Agent profile delete cancelled',
   })
-  if (refusal) return refusal
+  if ('refusal' in confirmed) return confirmed.refusal
 
   const deleted: Array<{ id: string; name: string }> = []
   const failed: Array<{ id: string; name: string; error: string }> = []

@@ -2295,7 +2295,10 @@ export const zh: Messages = {
       automationEnabledOff: '关',
       automationChangeFromTo: '{{from}} → {{to}}',
       agentProfile: {
-        createTitle: '创建智能体？',
+        createTitle: '创建 Agent Profile',
+        namePlaceholder: '名称',
+        descriptionPlaceholder: '这个智能体用来做什么',
+        instructionsPlaceholder: '追加到系统提示词的指令（可选）',
         updateTitle: '更新智能体？',
         deleteTitle: '永久删除 {{count}} 个智能体？',
         deleteNote: '已在这些智能体上启动的会话，会改由对应 harness 的内置智能体继续。',

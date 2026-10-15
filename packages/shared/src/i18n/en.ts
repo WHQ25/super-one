@@ -6081,9 +6081,9 @@ export const en: Messages = {
   chat: {
     sessionContinuation: {
       title: 'Hand Off to New Session',
-      lead: 'This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.',
-      mentionsThis: 'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.',
-      collaborationKept: 'Collaborate with all of the original session’s collaborators as usual.',
+      lead: 'This session has a long context and its cache has expired. Continuing here re-uploads the entire context, which is slow and expensive, and uses up your usage limit faster. Handing off to a new session will:',
+      mentionsThis: 'Mention this session automatically, so the agent can access its full context as needed.',
+      collaborationKept: 'Work seamlessly with all of this session’s collaborators.',
       approve: 'Approve',
       dismiss: 'Dismiss',
       continuedIn: 'This session continues in a new session.',

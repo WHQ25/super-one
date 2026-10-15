@@ -1659,9 +1659,9 @@ export const zh: Messages = {
   chat: {
     sessionContinuation: {
       title: '移交到新会话',
-      lead: '该会话较长且缓存已过期，在同一会话继续对话会重新上传整段上下文，速度慢，费用更高，会消耗大量订阅用量。建议移交到新会话。',
-      mentionsThis: '新会话自动引用当前会话，上下文保留，agent 可按需读取。',
-      collaborationKept: '可以和原会话的所有协作者正常协作。',
+      lead: '该会话较长且缓存已过期，在同一会话继续对话会重新上传整段上下文，速度慢，费用更高，会消耗大量订阅用量。移交到新会话将：',
+      mentionsThis: '自动引用当前会话，agent 可按需读取完整上下文。',
+      collaborationKept: '与原会话的所有协作者无缝协作。',
       approve: '批准',
       dismiss: '关闭',
       continuedIn: '这个会话已在新会话中继续。',

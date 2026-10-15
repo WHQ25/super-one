@@ -7,8 +7,8 @@ import { PromptActions } from './PromptControls'
 import { tint, usePromptStyles } from './styles'
 
 const BENEFITS: Array<{ icon: LucideIcon; text: string }> = [
-  { icon: AtSign, text: 'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.' },
-  { icon: Network, text: 'Collaborate with all of the original session’s collaborators as usual.' },
+  { icon: AtSign, text: 'Mention this session automatically, so the agent can access its full context as needed.' },
+  { icon: Network, text: 'Work seamlessly with all of this session’s collaborators.' },
 ]
 
 /**
@@ -26,7 +26,7 @@ export function SessionHandoffComposer({ onApprove, onDismiss }: { onApprove(): 
       </View>
       <Text accessibilityRole="header" style={[styles.title, styles.grow]}>{t('Hand Off to New Session')}</Text>
     </View>
-    <Text style={styles.meta}>{t('This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.')}</Text>
+    <Text style={styles.meta}>{t('This session has a long context and its cache has expired. Continuing here re-uploads the entire context, which is slow and expensive, and uses up your usage limit faster. Handing off to a new session will:')}</Text>
     <View style={styles.tight}>
       {BENEFITS.map(({ icon: Icon, text }) => <View key={text} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         <Icon size={14} color={colors.mutedForeground} style={{ marginTop: 3 }} />

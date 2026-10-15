@@ -1423,6 +1423,14 @@ export const zh: Messages = {
         label: '详细模式',
         description: '轮次结束后仍完整展示工具调用、推理与中间过程。关闭时默认只显示结论，过程折叠在「详细过程」中。流式输出过程中始终展示完整过程。',
       },
+      sessionContinuationHint: {
+        label: '建议在新会话中继续长会话',
+        description: '长会话的提示缓存过期后，提示改为在一个引用它的新会话中继续，避免重新缓存整段上下文。',
+      },
+      sessionContinuationThreshold: {
+        label: '长会话阈值',
+        description: '上下文达到多少时视为长会话。',
+      },
       crispText: {
         label: '锐利文本',
         description: '使用灰度抗锯齿,让文字更纤细锐利。仅 macOS 生效。',
@@ -1649,6 +1657,15 @@ export const zh: Messages = {
     },
   },
   chat: {
+    sessionContinuation: {
+      hint: '这个会话较长，缓存已过期。在这里继续会重新缓存整段上下文。',
+      continueInNew: '在新会话中继续',
+      continueHere: '仍在此继续',
+      dontShowAgain: '不再提示',
+      continuedIn: '这个会话已在新会话中继续。',
+      openSuccessor: '打开',
+      failed: '无法在新会话中继续：{{message}}',
+    },
     remoteController: {
       badge: '由 {{label}} 发起',
       badgeUnknown: '由其他设备发起',

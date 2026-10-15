@@ -22,6 +22,7 @@ import type {
   DshSubagentModelSelection,
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
+import { DEFAULT_SESSION_CONTINUATION_HINT, readSessionContinuationHint } from '@superone/shared/session-continuation'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { explicitClaudeModelId } from '@superone/claude'
@@ -110,6 +111,7 @@ const defaults: AppSettings = {
   notificationsPrimedAt: null,
   autoExpandFileDiffs: false,
   detailChatMode: false,
+  sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
   locale: '',
   themeMode: 'system',
   terminalLightPalette: null,
@@ -655,6 +657,7 @@ export function readAppSettings(): AppSettings {
         : typeof data.compactChatMode === 'boolean'
           ? !data.compactChatMode
           : defaults.detailChatMode,
+      sessionContinuationHint: readSessionContinuationHint(data.sessionContinuationHint),
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
       themeMode: isThemeMode(data.themeMode) ? data.themeMode : defaults.themeMode,
       terminalLightPalette: typeof data.terminalLightPalette === 'string' ? data.terminalLightPalette : defaults.terminalLightPalette,
@@ -739,6 +742,7 @@ export function readAppSettings(): AppSettings {
       notificationsPrimedAt: defaults.notificationsPrimedAt,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
       detailChatMode: defaults.detailChatMode,
+      sessionContinuationHint: defaults.sessionContinuationHint,
       locale: defaults.locale,
       themeMode: defaults.themeMode,
       terminalLightPalette: defaults.terminalLightPalette,
@@ -870,6 +874,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
         : current.notificationsPrimedAt,
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,
+    sessionContinuationHint: patch.sessionContinuationHint === undefined
+      ? current.sessionContinuationHint
+      : readSessionContinuationHint({ ...current.sessionContinuationHint, ...patch.sessionContinuationHint }),
     locale: patch.locale ?? current.locale,
     themeMode: patch.themeMode === undefined ? current.themeMode : patch.themeMode,
     terminalLightPalette: patch.terminalLightPalette === undefined ? current.terminalLightPalette : patch.terminalLightPalette,

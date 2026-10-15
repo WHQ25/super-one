@@ -1,6 +1,7 @@
 import type { AppSettings, AppSettingsPatch, ConfigConfirmField, HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { SESSION_CONTINUATION_MIN_CONTEXT_TOKENS } from '@superone/shared/session-continuation'
 import {
   parseSuggestionHarnessKey,
   serializeSuggestionHarness,
@@ -242,6 +243,24 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         note: 'When true, completed turns show the full process (tools, reasoning, intermediate narration). When false (default), process is collapsed under a disclosure. Streaming turns always render fully.',
         read: (s) => s.detailChatMode,
         toPatch: (v) => ({ detailChatMode: v as boolean }),
+      },
+      {
+        key: 'sessionContinuationHint',
+        label: 'Suggest Continuing Long Sessions',
+        type: 'boolean',
+        note: 'When true (default), a long session whose prompt cache expired offers continuing in a new session that mentions it.',
+        read: (s) => s.sessionContinuationHint.enabled,
+        toPatch: (v) => ({ sessionContinuationHint: { enabled: v as boolean } }),
+      },
+      {
+        key: 'sessionContinuationMinContextTokens',
+        label: 'Long Session Threshold',
+        type: 'number',
+        min: SESSION_CONTINUATION_MIN_CONTEXT_TOKENS.min,
+        max: SESSION_CONTINUATION_MIN_CONTEXT_TOKENS.max,
+        note: 'Context tokens at or above which a session counts as long for the continuation suggestion. Default 300000.',
+        read: (s) => s.sessionContinuationHint.minContextTokens,
+        toPatch: (v) => ({ sessionContinuationHint: { minContextTokens: v as number } }),
       },
       {
         key: 'terminalFontSize',

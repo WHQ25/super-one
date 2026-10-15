@@ -1333,6 +1333,14 @@ export type Messages = {
         label: string
         description: string
       }
+      sessionContinuationHint: {
+        label: string
+        description: string
+      }
+      sessionContinuationThreshold: {
+        label: string
+        description: string
+      }
       crispText: {
         label: string
         description: string
@@ -1558,6 +1566,15 @@ export type Messages = {
     }
   }
   chat: {
+    sessionContinuation: {
+      hint: string
+      continueInNew: string
+      continueHere: string
+      dontShowAgain: string
+      continuedIn: string
+      openSuccessor: string
+      failed: string
+    }
     remoteController: {
       badge: string
       badgeUnknown: string
@@ -5826,6 +5843,14 @@ export const en: Messages = {
         label: 'Detail Mode',
         description: 'Show the full process for each completed turn (tools, reasoning, intermediate steps). When off, only the final conclusion is shown and the process is collapsed under a disclosure.',
       },
+      sessionContinuationHint: {
+        label: 'Suggest Continuing Long Sessions',
+        description: 'When a long session’s prompt cache has expired, offer to continue in a new session that mentions it instead of re-caching the whole context.',
+      },
+      sessionContinuationThreshold: {
+        label: 'Long Session Threshold',
+        description: 'Context size at which a session counts as long.',
+      },
       crispText: {
         label: 'Crisp Text',
         description: 'Use grayscale font smoothing so text renders thinner and sharper. macOS only.',
@@ -6053,6 +6078,15 @@ export const en: Messages = {
     },
   },
   chat: {
+    sessionContinuation: {
+      hint: 'This session is long and its cache has expired. Continuing here re-caches the whole context.',
+      continueInNew: 'Continue in New Session',
+      continueHere: 'Continue Here',
+      dontShowAgain: 'Don’t Show Again',
+      continuedIn: 'This session continues in a new session.',
+      openSuccessor: 'Open',
+      failed: 'Could not continue in a new session: {{message}}',
+    },
     remoteController: {
       badge: 'Started from {{label}}',
       badgeUnknown: 'Started from another device',

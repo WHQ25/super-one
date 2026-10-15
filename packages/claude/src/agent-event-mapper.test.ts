@@ -308,6 +308,25 @@ describe('createClaudeAgentEventMapper', () => {
     ]))
   })
 
+  it('records the TTL of the prompt cache a turn wrote', () => {
+    const ttlOf = (cacheCreation: Record<string, number> | undefined) => {
+      const events: AgentEvent[] = []
+      const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+      mapper.apply({
+        type: 'assistant',
+        message: { id: 'step-1', usage: { input_tokens: 7, output_tokens: 1, cache_creation: cacheCreation }, content: [] },
+      })
+      mapper.apply({ type: 'result', subtype: 'success', session_id: 'sdk-session', result: 'done' })
+      const complete = events.find((event) => event.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }>
+      return complete.metadata?.usage?.cacheTtl
+    }
+
+    expect(ttlOf({ ephemeral_1h_input_tokens: 8991, ephemeral_5m_input_tokens: 0 })).toBe('1h')
+    expect(ttlOf({ ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 12 })).toBe('5m')
+    expect(ttlOf({ ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 })).toBeUndefined()
+    expect(ttlOf(undefined)).toBeUndefined()
+  })
+
   it('maps a rejected rate-limit result with success subtype to a typed failure', () => {
     const resetsAt = 1_787_635_200
     const events: AgentEvent[] = []

@@ -15,6 +15,10 @@ import { applyCrispText } from '@/lib/font-smoothing'
 import { processAppIcon } from '@/lib/app-icon-image'
 import { listSystemFonts, type SystemFonts } from '@/lib/system-fonts'
 import { useAppStore } from '@/stores/app'
+import {
+  SESSION_CONTINUATION_THRESHOLD_OPTIONS,
+  formatContinuationThreshold,
+} from '@superone/shared/session-continuation'
 import { useTheme } from '@/hooks/useTheme'
 import {
   type TerminalScheme,
@@ -103,6 +107,8 @@ export function AppearancePage() {
   const setAutoExpandFileDiffs = useAppStore((s) => s.setAutoExpandFileDiffs)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const setDetailChatMode = useAppStore((s) => s.setDetailChatMode)
+  const sessionContinuationHint = useAppStore((s) => s.sessionContinuationHint)
+  const setSessionContinuationHint = useAppStore((s) => s.setSessionContinuationHint)
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const isMac = window.app.platform === 'darwin'
   const supportsLiquidGlass = window.app.supportsLiquidGlass
@@ -233,6 +239,41 @@ export function AppearancePage() {
             onCheckedChange={setDetailChatMode}
             disabled={loading}
           />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.sessionContinuationHint.label')}
+          description={t('settings.general.sessionContinuationHint.description')}
+        >
+          <Switch
+            checked={sessionContinuationHint.enabled}
+            onCheckedChange={(enabled) => void setSessionContinuationHint({ enabled })}
+            disabled={loading}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.sessionContinuationThreshold.label')}
+          description={t('settings.general.sessionContinuationThreshold.description')}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild disabled={loading || !sessionContinuationHint.enabled}>
+              <button className={dropdownTriggerClassName}>
+                <span className="truncate">{formatContinuationThreshold(sessionContinuationHint.minContextTokens)}</span>
+                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-32">
+              {SESSION_CONTINUATION_THRESHOLD_OPTIONS.map((tokens) => (
+                <DropdownMenuItem
+                  key={tokens}
+                  onClick={() => void setSessionContinuationHint({ minContextTokens: tokens })}
+                  className="flex items-center justify-between"
+                >
+                  <span>{formatContinuationThreshold(tokens)}</span>
+                  {sessionContinuationHint.minContextTokens === tokens && <Check className="size-4 text-muted-foreground" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SettingsRow>
         {isMac && (
           <SettingsRow

@@ -2,6 +2,11 @@ import { create } from 'zustand'
 import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, AppVariant, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
+  DEFAULT_SESSION_CONTINUATION_HINT,
+  readSessionContinuationHint,
+  type SessionContinuationHintSettings,
+} from '@superone/shared/session-continuation'
+import {
   clampA,
   clampBrandHue,
   clampC,
@@ -262,6 +267,7 @@ interface AppState {
   liquidGlass: boolean
   autoExpandFileDiffs: boolean
   detailChatMode: boolean
+  sessionContinuationHint: SessionContinuationHintSettings
   setTerminalPalette: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
   setMermaidTheme: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
   setTerminalFontSize: (size: number) => Promise<void>
@@ -270,6 +276,7 @@ interface AppState {
   setLiquidGlass: (enabled: boolean) => Promise<void>
   setAutoExpandFileDiffs: (enabled: boolean) => Promise<void>
   setDetailChatMode: (enabled: boolean) => Promise<void>
+  setSessionContinuationHint: (patch: Partial<SessionContinuationHintSettings>) => Promise<void>
 
   // Per-token LCH overrides (per-harness, light mode only)
   tokenOverrides: Record<HarnessId, TokenOverrides>
@@ -1209,6 +1216,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   liquidGlass: false,
   autoExpandFileDiffs: false,
   detailChatMode: false,
+  sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
 
   loadBrandHues: async () => {
     try {
@@ -1244,6 +1252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         liquidGlass: settings.liquidGlass,
         autoExpandFileDiffs: settings.autoExpandFileDiffs,
         detailChatMode: settings.detailChatMode,
+        sessionContinuationHint: settings.sessionContinuationHint,
       })
     } catch (err) {
       console.error('[brand-hue] loadBrandHues failed:', err)
@@ -1337,6 +1346,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     void window.app
       .saveAppSettings({ detailChatMode: enabled })
       .catch((err) => console.error('[detail-chat-mode] persist failed:', err))
+  },
+
+  setSessionContinuationHint: async (patch) => {
+    set({ sessionContinuationHint: readSessionContinuationHint({ ...get().sessionContinuationHint, ...patch }) })
+    void window.app
+      .saveAppSettings({ sessionContinuationHint: patch })
+      .catch((err) => console.error('[session-continuation-hint] persist failed:', err))
   },
 
   setTerminalPalette: async (scheme, id) => {
@@ -1482,6 +1498,7 @@ if (typeof window !== 'undefined') {
       liquidGlass: settings.liquidGlass,
       autoExpandFileDiffs: settings.autoExpandFileDiffs,
       detailChatMode: settings.detailChatMode,
+      sessionContinuationHint: settings.sessionContinuationHint,
     })
     if (
       settings.experimentalRemoteNodesEnabled === false

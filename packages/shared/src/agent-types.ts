@@ -315,11 +315,16 @@ export interface ClaudePreferences {
 
 // --- Usage / cost tracking ---
 
+/** How long the provider keeps a written prompt-cache entry. */
+export type PromptCacheTtl = '5m' | '1h'
+
 export interface UsageInfo {
   inputTokens: number
   outputTokens: number
   cacheReadInputTokens: number
   cacheCreationInputTokens: number
+  /** TTL of the cache this turn wrote; absent when it wrote none or the harness does not say. */
+  cacheTtl?: PromptCacheTtl
 }
 
 export interface ModelUsageInfo {
@@ -5558,6 +5563,8 @@ export interface AppSettings {
    * is shown. Streaming turns always render fully.
    */
   detailChatMode: boolean
+  /** Offer continuing a long session in a new one once its prompt cache expired. */
+  sessionContinuationHint: import('./session-continuation').SessionContinuationHintSettings
   locale: Locale | ''
   themeMode: ThemeMode
   terminalLightPalette: string | null
@@ -5798,6 +5805,8 @@ export interface AppSettingsPatch {
   notificationsPrimedAt?: number | null
   autoExpandFileDiffs?: boolean
   detailChatMode?: boolean
+  /** Merged into the stored value field by field. */
+  sessionContinuationHint?: Partial<import('./session-continuation').SessionContinuationHintSettings>
   locale?: Locale | ''
   themeMode?: ThemeMode
   terminalLightPalette?: string | null

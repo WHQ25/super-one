@@ -6,7 +6,7 @@
  * state and emits IPC-safe AgentEvents.
  */
 import type { ClaudeToolApps } from './mcp-apps'
-import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
+import type { AgentEvent, MessageMetadata, PromptCacheTtl } from '@superone/shared/agent-types'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands, sdkSlashCommands } from '@superone/shared/slash-commands'
@@ -176,6 +176,8 @@ export function buildClaudeResultMetadata(
       cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
       cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
     }
+    const cacheTtl = writtenCacheTtl(usage.cache_creation)
+    if (cacheTtl) metadata.usage.cacheTtl = cacheTtl
   }
 
   if (result.modelUsage) {
@@ -197,6 +199,13 @@ export function buildClaudeResultMetadata(
     }
   }
   return metadata
+}
+
+/** The longer TTL a turn wrote cache with; one turn writes a single TTL in practice. */
+function writtenCacheTtl(cacheCreation: Raw | undefined): PromptCacheTtl | undefined {
+  if ((cacheCreation?.ephemeral_1h_input_tokens ?? 0) > 0) return '1h'
+  if ((cacheCreation?.ephemeral_5m_input_tokens ?? 0) > 0) return '5m'
+  return undefined
 }
 
 /** SDK refusal when `resumeDropsTurn` validation fails (deterministic — do not retry). */

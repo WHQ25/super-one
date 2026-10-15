@@ -23,7 +23,7 @@ export class InProcessRpcClient extends EnvironmentRpcClient {
       const clientSessionId = currentControlScope()?.clientSessionId ?? 'ipc:0'
       const actor = controlActorFor(domain.leases, domain.identity.environmentId, clientSessionId)
       void domain.dispatchRpc(request.method, request.payload, {
-        ...domain.clientContext(), leases: actor, streams: this.streams,
+        ...domain.clientContext(), leases: actor, streams: this.streams, sameHost: true,
         requestId: request.requestId, idempotencyKey: request.idempotencyKey,
         client: { clientSessionId, scopes: [...ADMIN_PAIRING_SCOPES], devicePublicKeyPem: '', devicePublicKeyFingerprint: '' },
       }).then((result) => this.connection.receive(result.error

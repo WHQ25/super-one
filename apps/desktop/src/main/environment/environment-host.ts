@@ -1807,7 +1807,8 @@ export class EnvironmentHost {
           .slice(0, 8)
       : []
     // A full-size original went ahead through the sync zone; the node reads its own copy.
-    if (images.some((img) => img.originalPath !== undefined)) {
+    // A local session's original is already a path on this machine.
+    if (!local && images.some((img) => img.originalPath !== undefined)) {
       const zone = this.getSyncZone(connectionId)
       if (!zone) throw new Error('This remote node cannot receive full-size attachments; remove them and attach again')
       const { nodeAttachmentOriginal } = await import('../attachment-originals')

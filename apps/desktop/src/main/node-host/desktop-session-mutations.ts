@@ -67,7 +67,7 @@ export function desktopSendRequest(input: Parameters<SessionHostPort['send']>[0]
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort as SendMessageRequest['effort'] } : {}),
-    ...(input.images?.length ? { images: input.images.map((image) => ({ mimeType: image.mimeType, base64: image.base64, name: image.name ?? 'Attachment', ...(image.id ? { id: image.id } : {}) })) } : {}),
+    ...(input.images?.length ? { images: input.images.map((image) => ({ mimeType: image.mimeType, base64: image.base64, name: image.name ?? 'Attachment', ...(image.id ? { id: image.id } : {}), ...(image.originalPath ? { originalPath: image.originalPath } : {}) })) } : {}),
     ...(additionalDirs ? { additionalDirs } : {}),
     ...(input.userMessageContent ? { userMessageContent: input.userMessageContent } : {}),
     ...(input.contexts ? { contexts: input.contexts } : {}),

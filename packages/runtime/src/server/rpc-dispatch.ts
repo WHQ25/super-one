@@ -1,5 +1,5 @@
 import { SESSION_OPERATION_HANDLERS } from './rpc-session-operations'
-import { dirname as configDirname, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
+import { dirname as configDirname, isAbsolute, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
 import { handleSessionCreate } from './rpc-session-create'
 import { isAllowedSessionCwd } from './session-cwd'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
@@ -47,7 +47,6 @@ import { MCP_APPS_HANDLERS } from './rpc-mcp-apps'
 import { parseSessionSettings } from './session-settings'
 import { parseSessionSendSelections } from './session-send-selections'
 import type {
-  ArtifactZonePort,
   RpcContext as HostRpcContext,
   RpcResult,
   SessionHostPort,
@@ -1934,7 +1933,15 @@ function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): RpcResult {
 }
 
 /** The resolved node path of an attachment original inside `sessionId`'s zone, or null. */
-function attachmentOriginal(zone: ArtifactZonePort | undefined, sessionId: string, path: unknown): string | null {
+function attachmentOriginal(ctx: RpcContext, sessionId: string, path: unknown): string | null {
+  if (ctx.sameHost) {
+    try {
+      return typeof path === 'string' && isAbsolute(path) && statSync(path).isFile() ? path : null
+    } catch {
+      return null
+    }
+  }
+  const zone = ctx.artifacts
   if (!zone) return null
   const prefix = pathJoin(zone.syncRoot, sessionId) + sep
   if (typeof path !== 'string' || !path.startsWith(prefix)) return null
@@ -2034,10 +2041,11 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       })
       .filter((x): x is NonNullable<typeof x> => x != null)
       .slice(0, 8)
-    // A full-size original arrives ahead of its message through this session's sync zone.
+    // A full-size original arrives ahead of its message through this session's sync zone,
+    // unless the caller is on this host.
     for (const image of images) {
       if (image.originalPath === undefined) continue
-      const original = attachmentOriginal(ctx.artifacts, String(p.sessionId ?? ''), image.originalPath)
+      const original = attachmentOriginal(ctx, String(p.sessionId ?? ''), image.originalPath)
       if (!original) return { error: { code: 'invalid_argument', message: "attachment original must be a file in this session's sync zone" } }
       image.originalPath = original
     }

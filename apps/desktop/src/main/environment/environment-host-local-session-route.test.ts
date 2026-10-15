@@ -1,4 +1,6 @@
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { ControlLease } from '@superone/shared/environment'
@@ -35,7 +37,7 @@ function localRoute(extra: Partial<DesktopDomainDeps> = {}, options: import('./e
 
 describe('local sessions on the environment route', () => {
   it('reads, opens and sends without a mapped follower', async () => {
-    const { host, own, forwarded } = localRoute()
+    const { host, own, forwarded, projectDir } = localRoute()
     expect(await host.getSession('local', 'own')).toMatchObject({ sessionId: 'own', title: 'Mine' })
     const snapshot = await runWindowControl(7, () => host.openRemoteSession('local', { sessionId: 'own', projectPath: own.projectPath }))
     expect(snapshot.sessionId).toBe('own')
@@ -46,6 +48,14 @@ describe('local sessions on the environment route', () => {
     }))
     expect(own.sent).toHaveLength(1)
     expect(own.sent[0]).toMatchObject({ content: 'hello', clientMessageId: 'c1', priority: 'next', cursor: { params: { fast: 'true' } }, inputRequest: { requestId: 'r1' } })
+    // A local original is this machine's own file; it needs no sync zone.
+    const original = join(projectDir, 'shot.png')
+    writeFileSync(original, 'png')
+    await runWindowControl(7, () => host.sendSessionMessage('local', {
+      sessionId: 'own', text: 'look', clientMessageId: 'c1b', projectPath: own.projectPath,
+      images: [{ mimeType: 'image/png', base64: 'AA==', originalPath: original }],
+    }))
+    expect(own.sent.at(-1)?.images).toMatchObject([{ originalPath: original }])
     // The desktop hub already carries local events; a follower would repeat each one.
     own.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
     await new Promise((resolve) => setTimeout(resolve, 20))

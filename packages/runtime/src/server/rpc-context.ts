@@ -435,6 +435,12 @@ export type HostCapabilityFlags = Pick<EnvironmentCapabilities, 'coldSessionResu
  */
 export interface RpcContext {
   client: AuthenticatedClient
+  /**
+   * The caller shares this host's filesystem (the desktop's own window), so a
+   * path it names is already here: an attachment original need not come through
+   * the sync zone.
+   */
+  sameHost?: boolean
   identity: NodeIdentity
   idempotency: IdempotencyPort
   leases: ControlLeasePort

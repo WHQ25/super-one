@@ -1,4 +1,4 @@
-import { listUnreadCollaborationMessages, onCollaborationMailboxChanged } from './collaboration-mailbox'
+import { collaborationStore, listUnreadCollaborationMessages, onCollaborationMailboxChanged } from './collaboration-mailbox'
 import Database from 'better-sqlite3'
 import { execFileSync } from 'child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'fs'
@@ -2335,6 +2335,40 @@ describe('spawning a child on another machine', () => {
     remoteSession = { status: 'idle', pendingInteraction: null }
     expect(resultJson(await retrieveSessionMessages('parent', {}, host)).peers[0].state).toBe('idle')
     expect(config().pendingStopWake).toMatchObject({ key: '50' })
+  })
+
+  it('continues a remote child on its machine and moves its channel and event watch there', async () => {
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    collaborationWakeQueue(host)
+    const { continueRemoteChild } = await import('./collaboration-remote-continuation')
+
+    remoteSession = { status: 'streaming', pendingInteraction: null }
+    await expect(continueRemoteChild('conn-b', 'remote-child', async () => ({ sessionId: 'never' })))
+      .rejects.toThrow(/is working/)
+
+    remoteSession = { status: 'idle', pendingInteraction: null }
+    const launches: unknown[] = []
+    const created = await continueRemoteChild('conn-b', 'remote-child', async (launch) => {
+      launches.push(launch)
+      return { sessionId: 'remote-next' }
+    })
+
+    expect(created.sessionId).toBe('remote-next')
+    expect(launches).toEqual([{ systemPromptAppend: expect.stringContaining('parent'), externalParent: { sessionId: 'parent' } }])
+    const grant = collaborationStore().spawnGrantForChild('remote-next')!
+    expect(JSON.parse(grant.config_json).remote).toMatchObject({ environmentId: 'env-b', eventCursor: '41' })
+    // The parent still names the old child; the wake waits for the successor's
+    // first turn (the user's), then goes to it on its machine.
+    await sendSessionMessage('parent', { to: 'remote-child', content: 'Also add tests' }, host)
+    const sends = calls.send.length
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.send).toHaveLength(sends)
+    collaborationWakeQueue(host).observe('remote-next', { type: 'message_complete', messageId: 'first' })
+    await vi.waitFor(() => expect(calls.send.at(-1)).toMatchObject({ sessionId: 'remote-next' }))
+    const read = await runRemoteChildMailboxTool('env-b', 'remote-next', 'session_collab_retrieve', {})
+    expect(resultJson(read.reply).messages.map((m: { content: string }) => m.content)).toEqual(['Also add tests'])
   })
 
   it('runs the remote child mailbox tools against this mailbox, both ways', async () => {

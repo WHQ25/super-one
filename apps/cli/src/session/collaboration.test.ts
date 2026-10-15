@@ -688,6 +688,22 @@ describe('continuing a session in a new one', () => {
     expect(() => collab.assertContinuable(childId)).toThrow(/already continued/)
   })
 
+  it('makes the successor the child of a parent on another machine', async () => {
+    const { collab, sessions, projects } = bootCollab()
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-proj-'))
+    dirs.push(projectDir)
+    const projectId = projects.open(projectDir).projectId
+    const child = sessions.create({ projectId, harnessId: 'claude', externalParent: { sessionId: 'desktop-parent' } })
+    const successor = sessions.create({ projectId, harnessId: 'claude' })
+
+    collab.continueSession(child.sessionId, successor.sessionId)
+
+    expect(sessions.get(successor.sessionId)?.externalParent).toEqual({ sessionId: 'desktop-parent' })
+    expect(sessions.getSystemPromptAppend(successor.sessionId)).toContain('desktop-parent')
+    expect(sessions.get(child.sessionId)?.externalParent).toBeNull()
+    expect(sessions.getSystemPromptAppend(child.sessionId)).toBeUndefined()
+  })
+
   it('refuses a session that no longer exists', async () => {
     const { collab } = await spawnChild()
     expect(() => collab.assertContinuable('missing')).toThrow(/no longer exists/)

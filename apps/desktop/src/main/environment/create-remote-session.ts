@@ -1,7 +1,11 @@
 import type { EnvironmentGateway } from '@superone/shared/environment'
 import type { SessionCreateRequest } from '@superone/shared/environment/session-requests'
 
-export type RemoteSessionCreateInput = SessionCreateRequest
+export type RemoteSessionCreateInput = SessionCreateRequest & {
+  /** A collaboration child's prompt and parent here, for a session continuing one. */
+  systemPromptAppend?: string
+  externalParent?: { sessionId: string }
+}
 
 /** Finish inherited settings before exposing the new session to navigation/send. */
 export async function createRemoteSession(input: RemoteSessionCreateInput, ports: {
@@ -18,6 +22,8 @@ export async function createRemoteSession(input: RemoteSessionCreateInput, ports
     project: { environmentId: ports.environmentId, projectId: input.projectId },
     providerId, title: input.title, options: { harnessId, ...input.selections },
     ...(input.continuesFrom ? { continuesFrom: input.continuesFrom } : {}),
+    ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
+    ...(input.externalParent ? { externalParent: input.externalParent } : {}),
   })
   if (input.settings) {
     const control = await ports.control(sessionId)

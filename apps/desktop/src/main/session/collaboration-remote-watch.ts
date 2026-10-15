@@ -213,11 +213,13 @@ export class RemoteChildWatcher {
     const advanced = seq(child.remote.eventCursor) < cursor
     const runChanged = JSON.stringify(run) !== JSON.stringify(child.remote.run)
     if (when === 'run' ? !runChanged : !advanced) return
+    const store = collaborationStore()
+    const current = store.grantById(child.grant.grant_id)
+    // Continued in a new session mid-poll: the grant now tracks that session's cursor.
+    if (current?.child_session_id !== sessionId) return
     const { run: _previous, ...remote } = child.remote
     child.remote = { ...remote, eventCursor: cursor.toString(), ...(run ? { run } : {}) }
-    const store = collaborationStore()
-    const config = parseGrantConfig(store.grantById(child.grant.grant_id)?.config_json ?? child.grant.config_json)
-    store.updateConfig(child.grant.grant_id, { ...config, remote: child.remote })
+    store.updateConfig(child.grant.grant_id, { ...parseGrantConfig(current.config_json), remote: child.remote })
   }
 }
 

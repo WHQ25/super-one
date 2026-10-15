@@ -618,6 +618,24 @@ export class SessionRuntime {
     this.systemPromptAppends.set(sessionId, prompt.trim())
   }
 
+  /**
+   * `to` continues `from`, a collaboration child of a session on another
+   * machine: `to` becomes that child, with its parent and prompt, and `from`
+   * a plain session. No-op when `from` has no such parent.
+   */
+  moveExternalParent(from: string, to: string): void {
+    const source = this.live.get(from)
+    const target = this.live.get(to)
+    const parent = source?.externalParent
+    if (!source || !target || !parent) return
+    target.externalParent = { sessionId: parent.sessionId }
+    source.externalParent = null
+    this.systemPromptAppends.set(to, collaborationSystemPrompt(parent.sessionId))
+    this.systemPromptAppends.delete(from)
+    this.persist(target)
+    this.persist(source)
+  }
+
   /** Set agent cwd (project root or worktree). Null clears to project default. */
   setCwd(sessionId: string, cwd: string | null): NodeSessionRecord {
     const session = this.live.get(sessionId)

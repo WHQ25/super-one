@@ -120,6 +120,8 @@ export class CollaborationService {
    */
   continueSession(from: string, to: string): void {
     continueCollaboration(this.ctx.store, this.ctx.wakes, from, to, this.continuedState(from))
+    // A child of a session on another machine: that machine holds the channel and moves it.
+    this.deps.sessions.moveExternalParent(from, to)
     const grant = this.ctx.store.spawnGrantForChild(to)
     if (grant) {
       this.deps.sessions.setSystemPromptAppend(to, launchedSessionPromptAppend(this.deps, grant))

@@ -13,7 +13,8 @@ import {
 } from '@superone/runtime/collaboration'
 import type { PermissionMode, SandboxMode } from '@superone/shared/agent-types'
 import { collaborationStore, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
-import { hasExternalParent } from './collaboration-external-parent'
+import { getDb } from '../database'
+import { parseRemoteController, setSessionRemoteController, type RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import { notifyCollaborationSessionsChanged } from './collaboration-host'
 import { startedCollaborationWakeQueue } from './collaboration-wakes'
 import { getSessionCollaborationRunConfig, getSessionCollaborationSystemPrompt } from './session-collaboration'
@@ -39,21 +40,40 @@ function wakes() {
   return queue
 }
 
-function assertOwnedHere(from: string): void {
-  // Its channel lives on the machine that launched it.
-  if (hasExternalParent(from)) {
-    throw new CollaborationError(
-      'This session works for a collaboration started on another device; continue it from that device',
-      'failed_precondition',
-    )
-  }
+/**
+ * A child working for a collaboration on another device has its channel
+ * there: only that device continues it (`requester`, the creating
+ * controller's client id), and the successor's create carries the parent.
+ */
+function assertOwnedHere(from: string, requester: string | null): void {
+  const controller = controllerOf(from)
+  if (!controller?.externalParent || (requester && controller.clientSessionId === requester)) return
+  throw new CollaborationError(
+    'This session works for a collaboration started on another device; continue it from that device',
+    'failed_precondition',
+  )
+}
+
+function controllerOf(sessionId: string): RemoteControllerRecord | null {
+  const row = getDb().prepare('SELECT remote_controller_json FROM sessions WHERE id = ?')
+    .get(sessionId) as { remote_controller_json: string | null } | undefined
+  return parseRemoteController(row?.remote_controller_json)
+}
+
+/** The continued child of another device's session is a plain session now. */
+function dropExternalParent(from: string): void {
+  const record = controllerOf(from)
+  if (!record?.externalParent) return
+  const { externalParent: _parent, systemPromptAppend: _prompt, ...controller } = record
+  setSessionRemoteController(from, controller)
 }
 
 /** What session create needs to continue a session; loaded on first use. */
 export interface DesktopContinuations {
-  assert(from: string, source: ContinuedSession): void
+  /** `requester`: the controller's client id when another device creates the successor here. */
+  assert(from: string, source: ContinuedSession, requester: string | null): void
   /** Record the continuation and move `from`'s channels and wakes to `to`, whose row exists. */
-  continue(from: string, to: string, source: ContinuedSession): void
+  continue(from: string, to: string, source: ContinuedSession, requester: string | null): void
   /**
    * The collaboration prompt and approved run settings `sessionId` runs with
    * as a spawn child, which its successor inherits; null for any other session.
@@ -62,13 +82,14 @@ export interface DesktopContinuations {
 }
 
 export const desktopContinuations: DesktopContinuations = {
-  assert: (from, source) => {
-    assertOwnedHere(from)
+  assert: (from, source, requester) => {
+    assertOwnedHere(from, requester)
     assertContinuable(collaborationStore(), wakes(), from, stateOf(source))
   },
-  continue: (from, to, source) => {
-    assertOwnedHere(from)
+  continue: (from, to, source, requester) => {
+    assertOwnedHere(from, requester)
     const moved = continueCollaboration(collaborationStore(), wakes(), from, to, stateOf(source))
+    dropExternalParent(from)
     if (moved.length === 0) return
     notifyCollaborationSessionsChanged()
     notifyCollaborationMailboxChanged(from)

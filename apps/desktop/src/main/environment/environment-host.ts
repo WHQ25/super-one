@@ -765,11 +765,20 @@ export class EnvironmentHost {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
     }
     const { gateway, environmentId } = this.resolveSession(connectionId)
-    return this.mapRemoteSessionEntry(await createRemoteSession(input, {
+    const create = (extra: Partial<RemoteSessionCreateInput> = {}) => createRemoteSession({ ...input, ...extra }, {
       gateway, environmentId,
       control: sessionId => this.ensureSessionLease(connectionId, sessionId),
       setCwd: (sessionId, cwd) => this.setSessionCwd(connectionId, sessionId, cwd),
-    }))
+    }) as Promise<{ sessionId: string }>
+    // A spawn child this desktop launched on that machine: this desktop holds its channel.
+    if (connectionId !== 'local' && input.continuesFrom) {
+      const { remoteChildTarget } = await import('../session/collaboration-remote')
+      if (remoteChildTarget(input.continuesFrom)) {
+        const { continueRemoteChild } = await import('../session/collaboration-remote-continuation')
+        return this.mapRemoteSessionEntry(await continueRemoteChild(connectionId, input.continuesFrom, create))
+      }
+    }
+    return this.mapRemoteSessionEntry(await create())
   }
 
   /** Per remote session control lease (desktop Main owns lease lifecycle). */

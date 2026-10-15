@@ -36,7 +36,8 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
   const continuations = continuesFrom ? await deps.continuations?.() : undefined
   if (continuesFrom && !continuations) throw Object.assign(new Error('This host cannot continue a session in a new one'), { code: 'unsupported' })
   const continued = () => ({ live: deps.sessions.getSession(continuesFrom!), stored: !!deps.rows.get(continuesFrom!) })
-  if (continuesFrom) continuations!.assert(continuesFrom, continued())
+  const requester = controller?.clientSessionId ?? null
+  if (continuesFrom) continuations!.assert(continuesFrom, continued(), requester)
   // A spawn child's successor runs as that child: its prompt and approved settings.
   const launch = continuesFrom ? continuations!.launch(continuesFrom) : null
   options.assertCreate()
@@ -92,7 +93,7 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
     if (continuesFrom) {
       // Last, and rechecked in the same transaction: a failure above leaves the
       // channels with the old session, so removing this row cascades nothing.
-      continuations!.continue(continuesFrom, sessionId, continued())
+      continuations!.continue(continuesFrom, sessionId, continued(), requester)
       if (deps.sessions.getSession(continuesFrom)) await deps.sessions.disposeSession(continuesFrom)
     }
     return session

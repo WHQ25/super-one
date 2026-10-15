@@ -13,7 +13,7 @@ argument, then read **one** reference file and follow it end to end:
 
 | Command | Reads | What it does |
 |---|---|---|
-| `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG → desktop build + promote → publish → set-latest → `release-followups.yml` (CLI / harness / relay / due mobile OTA), then any due native mobile builds |
+| `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG → desktop build + promote → publish → set-latest → `release.yml stage=publish` (CLI / harness / relay / due mobile OTA), then any due native mobile builds |
 | `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable `X.Y.0`, then the stable phone apps from the same commit; writes no file |
 | `/release mobile` | `references/mobile.md` | Mobile only, between desktop releases: per platform, OTA or native build, whichever is due (the alpha phone apps) |
 
@@ -23,8 +23,11 @@ ends with the stable phone apps.
 
 Desktop publication comes first. Do not dispatch CLI, harness, relay or mobile
 publication alongside desktop builds. After the desktop Release is public and
-set-latest succeeds, `release-followups.yml` checks the published tag and all
+set-latest succeeds, `release.yml stage=publish` checks the published tag and all
 three authoritative R2 desktop feeds, then publishes from that exact tag commit.
+Both stages stay in `release.yml`: npm Trusted Publishing authorizes the calling
+workflow filename, so moving publishers to another caller requires new npm trust.
+Do not rename the caller as part of a release-order change.
 
 ## Arguments
 

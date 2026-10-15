@@ -33,7 +33,7 @@ while the other takes a binary.
 
 When accompanying a desktop release, publish only after that desktop Release
 is public and set-latest succeeds. OTA platforms run through
-`release-followups.yml`; native platforms dispatch afterwards from the same
+`release.yml stage=publish`; native platforms dispatch afterwards from the same
 desktop commit. A standalone `/release mobile` keeps the flow below.
 
 Two facts decide which of the two you can use:

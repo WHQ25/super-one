@@ -50,13 +50,19 @@ function preflight(overrides: NodeJS.ProcessEnv = {}) {
 describe('desktop publication before release follow-ups', () => {
   it('keeps desktop build cancellation from leaving CLI, harness or relay publications', () => {
     const workflow = parse(readFileSync(join(root, '.github/workflows/release.yml'), 'utf8'))
-    const publishers = Object.values(workflow.jobs).filter((job: any) =>
-      /publish-cli|publish-harness|deploy-relay|update-mobile/.test(job.uses ?? ''))
-    expect(publishers).toEqual([])
+    expect(workflow.on.workflow_dispatch.inputs.stage.default).toBe('prepare')
+    expect(workflow.jobs.plan.if).toBe("${{ inputs.stage == 'prepare' }}")
+    expect(workflow.jobs.ready.if).toBe("${{ inputs.stage == 'publish' }}")
+    for (const job of Object.values(workflow.jobs) as any[]) {
+      if (/publish-cli|publish-harness|deploy-relay|update-mobile/.test(job.uses ?? '')) {
+        expect(job.if).toContain("inputs.stage == 'publish'")
+        expect(job.needs).toBe('ready')
+      }
+    }
   })
 
-  it('requires the desktop gate and its exact commit for every follow-up publisher', () => {
-    const workflow = parse(readFileSync(join(root, '.github/workflows/release-followups.yml'), 'utf8'))
+  it('keeps the trusted release.yml caller identity and the desktop tag commit for every publisher', () => {
+    const workflow = parse(readFileSync(join(root, '.github/workflows/release.yml'), 'utf8'))
     for (const name of ['publish-cli', 'publish-harness', 'deploy-relay', 'mobile-ota']) {
       expect(workflow.jobs[name].needs).toBe('ready')
       expect(workflow.jobs[name].with.ref).toBe('${{ needs.ready.outputs.sha }}')

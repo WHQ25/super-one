@@ -6,7 +6,8 @@ name: Publish CLI to npm
 # Design: docs/architecture/remote-node-service.md §15.4
 #
 # Triggers:
-# - workflow_dispatch: manual / release skill lockstep
+# - workflow_dispatch: manual recovery (requires its own npm trusted publisher)
+# - workflow_call: release.yml stage=publish, the npm-authorized caller identity
 # - Not on every PR. Prefer calling after a desktop version bump so the CLI
 #   version matches the SuperOne app (registry install pins by app version).
 

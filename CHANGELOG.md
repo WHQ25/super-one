@@ -26,7 +26,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Let agents list, call and open installed mini-apps without an explicit mention,
   subject to the harness permission flow.
 - Choose the agent and launch settings for a suggested task, and expand its
-  full prompt before starting it.
+  full prompt before starting it. Keep the selected agent and compatible account
+  together when switching harnesses and launching the task.
 
 ### Changed
 
@@ -49,7 +50,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Keep macOS layout controls in the visible top-left activity group, preserve
   tabs when changing split orientation and prevent unsupported floating groups.
 
-## [0.74.0-alpha.1] - 2026-10-15
+## [0.74.0-alpha.2] - 2026-10-15
 
 ### Added
 
@@ -71,8 +72,19 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Send full-size image originals in local sessions without requiring a sync zone.
 - Preserve collaboration request titles when a request is denied.
+- Reset stale provider bindings when switching suggested-task harnesses, and
+  inherit only accounts supported by the selected agent when launching a task.
 - Keep macOS layout controls in the visible top-left activity group, preserve
   tabs when changing split orientation and prevent unsupported floating groups.
+
+### Tests
+
+- Isolate AgentService account discovery from local credentials and network.
+
+### CI
+
+- Publish CLI, harness, relay and coordinated mobile OTA only after the desktop
+  Release is public and all three desktop update feeds point at that version.
 
 ## [0.74.0-alpha] - 2026-10-15
 

@@ -234,6 +234,13 @@ trust, and mini-app calls. They enter the session permission queue regardless
 of the active harness; replies resolve the host confirmation before reaching
 the harness backend. MCP elicitation forms use the same permission composer.
 
+## Notice rows
+
+The text composer draws session notices above its status lines. A long session
+whose prompt cache expired offers to continue in a new session there
+([session-continuation.md](session-continuation.md)); being part of the text
+composer, it yields to decisions and read-only states like the rest.
+
 ## Draft, focus, and keyboard rules
 
 The text, rich-text document, and attachments remain in the per-session chat

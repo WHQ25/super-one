@@ -1103,7 +1103,11 @@ the parent's desktop: the child is created with `externalParent` and the
 collaboration prompt (`session.create`), its `session_collab_send/retrieve` go
 to the controller as Host Actions in the `superone` group, it may not launch
 children itself, and the parent reaches it with `session.send` under the
-control lease. A child's retrieve is at least once: its messages are marked
+control lease. `session.create { continuesFrom }` creates a session that
+continues another and takes over its collaboration channels on that host; for
+such a child the controller passes the parent link and prompt, and the node
+moves `externalParent` from the old child to the new one
+([session-continuation.md](../features/session-continuation.md)). A child's retrieve is at least once: its messages are marked
 read only after the node accepted the Host Action response, so a lost
 response returns them again. The parent's desktop follows the child's runs
 from the node event log with a cursor and the open run's state persisted per

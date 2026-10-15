@@ -14,6 +14,7 @@ import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '
 import { worktreeExists } from '../git/worktree-alive'
 import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
+import { providerSystemPromptAppend } from '@superone/shared/agent-profile'
 import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { closeSuperoneMcpHttpSessions } from '../mcp/superone-mcp-http-state'
@@ -75,6 +76,7 @@ export interface SessionManagerPersistence {
   getProjectExtraDirs?: (projectPath: string) => string[]
 }
 
+
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
   if (!data.worktreePath) return { cwd: data.projectPath, missingWorktreePath: null }
   if (worktreeExists(data.worktreePath, data.projectPath)) {
@@ -134,6 +136,13 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (const cwd of cwds) this.projectResources.invalidate(cwd)
     const { disposeSuperoneMcpServer } = await import('../mcp/superone-mcp-server')
     for (const { sid } of targets) disposeSuperoneMcpServer(sid)
+  }
+
+  /** Move live sessions off a deleted provider row, so their next state save cannot write it back. */
+  rebindProviderSessions(fromProviderId: string, toProviderId: string): void {
+    for (const session of this.sessions.values()) {
+      if (session.providerId === fromProviderId) session.rebindProvider(toProviderId)
+    }
   }
 
   forEachSession(fn: (session: SessionContract) => void): void {
@@ -278,7 +287,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       missingWorktreePath,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
-      systemPromptAppend: opts.systemPromptAppend,
+      systemPromptAppend: providerSystemPromptAppend(provider.config, opts.systemPromptAppend),
       unattended: opts.unattended,
       firstTurnPreamble: opts.firstTurnPreamble,
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
@@ -394,7 +403,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: data.selectedEffort ?? undefined,
       model: data.selectedModel ?? undefined,
       codexServiceTier: data.codexServiceTier,
-      systemPromptAppend: data.systemPromptAppend,
+      systemPromptAppend: providerSystemPromptAppend(provider.config, data.systemPromptAppend),
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

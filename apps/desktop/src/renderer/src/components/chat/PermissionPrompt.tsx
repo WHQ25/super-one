@@ -32,6 +32,7 @@ import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
 import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
 import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
+import { AgentProfileConfirmPromptContainer } from './AgentProfileConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
 import { FolderTrustPrompt } from './FolderTrustPrompt'
@@ -173,6 +174,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const isWebMcpTrustConfirm = pendingPermission?.requestKind === 'webmcp_trust_confirm'
   const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
   const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
+  const isAgentProfileConfirm = pendingPermission?.requestKind === 'agent_profile_confirm'
   // Deliberately NOT in `isSelfManagedConfirm`: this one keeps the standard prompt,
   // because a refusal's typed reason is what the device tool reads back to the agent.
   // It only adds a third button.
@@ -200,6 +202,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     || isWebMcpTrustConfirm
     || isSessionCleanupConfirm
     || isAutomationConfirm
+    || isAgentProfileConfirm
     || isSchemaFormElicitation
     || isInputRequest
   const [urlOpened, setUrlOpened] = useState(false)
@@ -527,6 +530,9 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
 
   if (isAutomationConfirm) {
     return <AutomationConfirmPromptContainer request={pendingPermission} />
+  }
+  if (isAgentProfileConfirm) {
+    return <AgentProfileConfirmPromptContainer request={pendingPermission} />
   }
 
   if (isWebMcpTrustConfirm && pendingPermission) {

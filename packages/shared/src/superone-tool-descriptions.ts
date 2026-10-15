@@ -139,10 +139,10 @@ export const VIDEO_STATUS_DESCRIPTION =
   "Advance a submitted video job and read its status: running, generated with savedPaths, or error with message. Poll about every 30 seconds while running: these calls download and save the completed video. Report it ready only after generated; stop on error."
 
 export const SESSION_LIST_AGENTS_DESCRIPTION =
-  'List the agent profiles available for user-approved child sessions. Only launchable agents are returned. ' +
+  'List the agents available for user-approved child sessions (launchable ones only): id, name, harness, description. ' +
   'Agents on other connected machines are listed under environments[] with the environmentId to launch them with. ' +
-  'defaultConfig is the user\'s launch setup for the agent (model, effort, permission, sandbox, apiProviderId); leave out the config fields it already covers. ' +
-  'apiProviders lists the subscription accounts and API keys it can run on. ' +
+  'A launch without config runs on the user\'s setup for that agent. To set config, pass id (and environment for another machine): ' +
+  'returns its defaultConfig, models with their efforts, and the apiProviders (accounts, API keys) it can run on. ' +
   'You may reuse one agentId for multiple launches. ' +
   'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
 
@@ -262,6 +262,20 @@ export const AUTOMATION_DELETE_DESCRIPTION =
   'Permanently delete project automations by id (from automation_list). ' +
   'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
 
+export const AGENT_PROFILE_LIST_DESCRIPTION =
+  'List agent profiles: named agents that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
+  'Without id: one row per profile (id, name, harness, base, short description). ' +
+  'Pass id for its full description and instructions, runtime, launch defaults, and what that harness accepts: models, their efforts, permission modes, and its own options (each harness has different ones). ' +
+  'Read this before agent_profile_apply or agent_profile_delete.'
+
+export const AGENT_PROFILE_APPLY_DESCRIPTION =
+  'Create or update an agent profile. create needs harnessId, name, description; update needs id plus the fields to change (empty string clears model, effort, permissionMode or instructions; null clears an option). ' +
+  'description is what other agents read to pick a delegate, so say what this agent is for. model, effort, permissionMode and options must be ones the harness accepts: read agent_profile_list with the <harness>-base id first. ' +
+  'Built-in <harness>-base rows are read-only; remove profiles with agent_profile_delete. Always opens a user confirmation dialog, where the user may edit a new profile before approving; applies nothing without approval.'
+
+export const AGENT_PROFILE_DELETE_DESCRIPTION =
+  'Permanently delete agent profiles by id (from agent_profile_list). Sessions already started on one fall back to its built-in harness agent. ' +
+  'Built-in <harness>-base rows cannot be deleted. Always opens a user confirmation dialog.'
 
 export const TERMINAL_TABS_DESCRIPTION =
   'Only for commands that run until stopped (servers, watchers) or need keyboard input (REPLs, TUIs, ssh, wizards). ' +

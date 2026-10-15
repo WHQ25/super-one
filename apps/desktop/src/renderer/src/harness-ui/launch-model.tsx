@@ -12,6 +12,7 @@ import {
 } from '@/lib/provider-resolve'
 import {
   GroupedModelEffortSelector,
+  type SelectorCatalogParam,
   type SelectorEffortOption,
   type SelectorProviderOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
@@ -44,6 +45,11 @@ export interface LaunchModelProps {
   /** The row carries a Fast tier choice; harnesses with a Fast tier render its toggle. */
   offerFastMode?: boolean
   fastMode?: boolean
+  /** The row cannot pick an API key (it runs on the user's default one): no provider list. */
+  hideApiProvider?: boolean
+  /** Extra Options rows the caller owns, e.g. an agent profile's harness settings. */
+  optionParams?: SelectorCatalogParam[]
+  onOptionParamChange?: (id: string, value: string) => void
   onChange: (patch: LaunchModelPatch) => void
 }
 
@@ -122,6 +128,7 @@ export function useLaunchProviders(args: {
   profile: SessionAgentProfile | undefined
   profileOnly: boolean
   apiProviderId: string | null | undefined
+  hideApiProvider?: boolean
   onChange: (patch: LaunchModelPatch) => void
 }) {
   const { harnessId, profile, profileOnly } = args
@@ -178,7 +185,7 @@ export function useLaunchProviders(args: {
 
   return {
     effective,
-    selector: {
+    selector: args.hideApiProvider ? { selectedProviderId } : {
       providers,
       selectedProviderId,
       onSelectProvider: (id: string | null) => onChangeRef.current({ apiProviderId: id }),
@@ -196,12 +203,12 @@ export function useLaunchProviders(args: {
  * model with none shows no chips, since `profile.efforts` is a union across
  * every model and would offer levels the picked model cannot run.
  */
-export function FlatLaunchModel({ catalog, model, effort, onChange }: {
+export function FlatLaunchModel({ catalog, model, effort, optionParams, onOptionParamChange, onChange }: {
   catalog: ModelOption[]
   model: string | null | undefined
   effort: string | null | undefined
   onChange: (patch: LaunchModelPatch) => void
-}) {
+} & Pick<LaunchModelProps, 'optionParams' | 'onOptionParamChange'>) {
   const models = useMemo(() => toSelectorModels(catalog), [catalog])
   const selected = catalog.find((entry) => entry.id === model)
   const effortOptions = useMemo(() => levelEffortOptions(selected?.supportedEffortLevels ?? []), [selected])
@@ -218,6 +225,8 @@ export function FlatLaunchModel({ catalog, model, effort, onChange }: {
       selectedEffort={effort ?? null}
       selectedEffortLabel={effortLabel(effortOptions, effort)}
       onSelectEffort={(value) => onChange({ effort: value })}
+      optionParams={optionParams}
+      onOptionParamChange={onOptionParamChange}
     />
   )
 }

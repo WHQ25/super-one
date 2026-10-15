@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import type { HarnessId } from '@superone/shared/session-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
+import { parseAgentProfileSpec, providerLaunchRuntime } from '@superone/shared/agent-profile'
 import type { SqliteDatabase } from '../sqlite'
 
 export interface SessionProviderRecord {
@@ -40,12 +41,28 @@ function assertHarnessId(raw: string): HarnessId {
   return raw as HarnessId
 }
 
-function normalizeConfig(config: unknown): unknown {
+function normalizeConfig(harnessId: HarnessId, config: unknown): unknown {
   if (config === undefined || config === null) return {}
   if (typeof config !== 'object' || Array.isArray(config)) {
     throw Object.assign(new Error('config must be an object'), { code: 'invalid_argument' })
   }
-  return config
+  const profile = (config as { profile?: unknown }).profile
+  if (profile === undefined) return config
+  // Harness-agnostic, so checked here for every host rather than in each harness schema.
+  const parsed = parseAgentProfileSpec(profile, harnessId)
+  if (!parsed.ok) throw Object.assign(new Error(parsed.error), { code: 'invalid_argument' })
+  return { ...config, profile: parsed.value }
+}
+
+function hasProfile(config: unknown): boolean {
+  return !!config && typeof config === 'object' && (config as { profile?: unknown }).profile !== undefined
+}
+
+function profileWriteRefused(): Error {
+  return Object.assign(
+    new Error('Agent profiles change only through agent_profile_apply / agent_profile_delete, which ask the user first.'),
+    { code: 'failed_precondition' },
+  )
 }
 
 function rowToProvider(row: SessionProviderRow): SessionProviderRecord {
@@ -119,6 +136,11 @@ export interface UpdateSessionProviderInput {
   config?: unknown
 }
 
+/**
+ * Provider rows as RPC and IPC clients see them. These writes refuse agent
+ * profile rows (`config.profile`): a profile is a standing permission boundary
+ * the user confirms change by change, see {@link AgentProfileWriter}.
+ */
 export interface SessionProviderStore {
   list(): SessionProviderRecord[]
   listByHarness(harnessId: string): SessionProviderRecord[]
@@ -130,8 +152,19 @@ export interface SessionProviderStore {
 }
 
 /**
- * Extract session.create seed fields from a session_providers.config_json object.
- * Supports both claude-style `effort` and codex-style `reasoningEffort`.
+ * Agent profile writes, for a host's own confirm flow only — never served
+ * over RPC or IPC. `expected` is the row the user saw: a row changed since
+ * fails with `aborted` instead of being overwritten with an unseen state.
+ */
+export interface AgentProfileWriter {
+  create(input: CreateSessionProviderInput & { config: { profile: unknown } }): SessionProviderRecord
+  update(id: string, patch: UpdateSessionProviderInput & { config: { profile: unknown } }, expected: SessionProviderRecord): SessionProviderRecord
+  delete(id: string, expected: SessionProviderRecord): boolean
+}
+
+/**
+ * Extract session.create seed fields from a session_providers.config_json object:
+ * the row's launch runtime (`providerLaunchRuntime`) plus its permission fields.
  */
 export function settingsFromSessionProviderConfig(config: unknown): {
   model?: string
@@ -145,11 +178,12 @@ export function settingsFromSessionProviderConfig(config: unknown): {
     const v = c[key]
     return typeof v === 'string' && v.trim() ? v.trim() : undefined
   }
+  const runtime = providerLaunchRuntime(config)
+  const model = runtime?.model
+  const effort = runtime?.effort
   return {
-    ...(str('model') ? { model: str('model') } : {}),
-    ...(str('effort') || str('reasoningEffort')
-      ? { effort: str('effort') ?? str('reasoningEffort') }
-      : {}),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
     ...(str('sandboxMode') ? { sandboxMode: str('sandboxMode') } : {}),
   }
@@ -163,10 +197,10 @@ export interface SessionProviderStoreOptions {
 export function createSessionProviderStore(
   db: SqliteDatabase,
   options: SessionProviderStoreOptions = {},
-): SessionProviderStore {
+): SessionProviderStore & { profiles: AgentProfileWriter } {
   ensureSessionProvidersTable(db)
   const validConfig = (harnessId: HarnessId, config: unknown): unknown => {
-    const normalized = normalizeConfig(config)
+    const normalized = normalizeConfig(harnessId, config)
     if (!options.validateConfig) return normalized
     try {
       return options.validateConfig(harnessId, normalized)
@@ -211,7 +245,7 @@ export function createSessionProviderStore(
     return p
   }
 
-  const create = (input: CreateSessionProviderInput): SessionProviderRecord => {
+  const insert = (input: CreateSessionProviderInput): SessionProviderRecord => {
     const harnessId = assertHarnessId(String(input.harnessId ?? ''))
     const name = String(input.name ?? '').trim()
     if (!name) {
@@ -232,36 +266,74 @@ export function createSessionProviderStore(
     return created
   }
 
-  const update = (id: string, patch: UpdateSessionProviderInput): SessionProviderRecord => {
+  const existingCustom = (id: string, action: 'update' | 'delete'): SessionProviderRecord | null => {
     const existing = get(id)
     if (!existing) {
+      if (action === 'delete') return null
       throw Object.assign(new Error(`Provider not found: ${id}`), { code: 'not_found' })
     }
     if (existing.isBase) {
-      throw Object.assign(new Error(`Cannot update base provider: ${id}`), {
+      throw Object.assign(new Error(`Cannot ${action} base provider: ${id}`), {
         code: 'failed_precondition',
       })
     }
+    return existing
+  }
+
+  const write = (existing: SessionProviderRecord, patch: UpdateSessionProviderInput): SessionProviderRecord => {
     const name =
       patch.name !== undefined ? String(patch.name).trim() || existing.name : existing.name
     const config = patch.config !== undefined ? validConfig(existing.harnessId, patch.config) : existing.config
     const now = new Date().toISOString()
     db.prepare(
       'UPDATE session_providers SET name = ?, config_json = ?, updated_at = ? WHERE id = ?',
-    ).run(name, JSON.stringify(config), now, id)
-    return get(id)!
+    ).run(name, JSON.stringify(config), now, existing.id)
+    return get(existing.id)!
+  }
+
+  const remove = (id: string): void => {
+    db.prepare('DELETE FROM session_providers WHERE id = ?').run(id)
+  }
+
+  /** The row still holds what the user confirmed against. */
+  const assertUnchanged = (current: SessionProviderRecord, expected: SessionProviderRecord): void => {
+    if (current.name === expected.name && JSON.stringify(current.config) === JSON.stringify(expected.config)) return
+    throw Object.assign(new Error(`Agent profile ${current.id} changed while waiting for confirmation.`), { code: 'aborted' })
+  }
+
+  const create = (input: CreateSessionProviderInput): SessionProviderRecord => {
+    if (hasProfile(input.config)) throw profileWriteRefused()
+    return insert(input)
+  }
+
+  const update = (id: string, patch: UpdateSessionProviderInput): SessionProviderRecord => {
+    const existing = existingCustom(id, 'update')!
+    if (hasProfile(existing.config) || hasProfile(patch.config)) throw profileWriteRefused()
+    return write(existing, patch)
   }
 
   const del = (id: string): boolean => {
-    const existing = get(id)
+    const existing = existingCustom(id, 'delete')
     if (!existing) return false
-    if (existing.isBase) {
-      throw Object.assign(new Error(`Cannot delete base provider: ${id}`), {
-        code: 'failed_precondition',
-      })
-    }
-    db.prepare('DELETE FROM session_providers WHERE id = ?').run(id)
+    if (hasProfile(existing.config)) throw profileWriteRefused()
+    remove(id)
     return true
+  }
+
+  const profiles: AgentProfileWriter = {
+    create: insert,
+    update: (id, patch, expected) => {
+      const existing = existingCustom(id, 'update')!
+      assertUnchanged(existing, expected)
+      return write(existing, patch)
+    },
+    delete: (id, expected) => {
+      const existing = existingCustom(id, 'delete')
+      if (!existing) return false
+      assertUnchanged(existing, expected)
+      remove(id)
+      return true
+    },
   }
 
   return {
@@ -272,5 +344,6 @@ export function createSessionProviderStore(
     create,
     update,
     delete: del,
+    profiles,
   }
 }

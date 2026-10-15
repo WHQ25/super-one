@@ -76,6 +76,7 @@ import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
+import { resolveAgentProfileConfirm, rejectAgentProfileConfirm } from '../mcp/agent-profile-confirm'
 import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { rejectTerminalCommandConfirm, resolveTerminalCommandConfirm } from '../mcp/terminal-command-confirm'
@@ -227,7 +228,7 @@ function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
 export class Session implements SessionContract {
   readonly id: string
   readonly projectPath: string
-  readonly providerId: string
+  private _providerId: string
   readonly harnessId: HarnessId
   readonly createdAt: number
   /** Side chat: lives only in this process, never written to the SuperOne DB. */
@@ -554,7 +555,7 @@ export class Session implements SessionContract {
     this.lease = new SessionLease(opts.id, opts.leaseAuthority)
     this.projectPath = opts.projectPath
     this._cwd = opts.cwd
-    this.providerId = opts.providerId
+    this._providerId = opts.providerId
     this.harnessId = opts.harnessId
     this.ephemeral = opts.ephemeral ?? false
     this.firstTurnPreamble = opts.firstTurnPreamble
@@ -666,6 +667,19 @@ export class Session implements SessionContract {
     this._missingWorktreePath = this._cwd
     this.emitWorktreeMissing(this.projectPath)
     await runHostReaction(() => this.interrupt())
+  }
+
+  get providerId(): string {
+    return this._providerId
+  }
+
+  /**
+   * The provider row this session resumes through was deleted: later state
+   * saves and resumes use `providerId` instead. The running backend keeps
+   * what it was started with.
+   */
+  rebindProvider(providerId: string): void {
+    this._providerId = providerId
   }
 
   get snapshot(): SessionSnapshot {
@@ -1327,6 +1341,7 @@ export class Session implements SessionContract {
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
       if (rejectSessionCleanupConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectAutomationConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectAgentProfileConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectDeviceControlConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectTerminalCommandConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectComputerUseGrant(requestId, reason ?? 'User cancelled')) return true
@@ -1356,6 +1371,8 @@ export class Session implements SessionContract {
     } else if (resolveSessionCleanupConfirm(requestId, allow ? 'accept' : 'decline')) {
       return true
     } else if (resolveAutomationConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
+      return true
+    } else if (resolveAgentProfileConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveDeviceControlConfirm(
       requestId,

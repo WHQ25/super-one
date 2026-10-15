@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
+import { agentProfilePrompt } from '@superone/shared/agent-profile'
 import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
 import { ControlLeaseService } from './control-lease'
@@ -144,6 +145,110 @@ describe('collaboration grants + mailbox', () => {
       keyName: 'work-key',
       brand: 'openai',
     })
+  })
+
+  it('offers an agent profile with its own name, description and defaults, and launches it with its instructions', async () => {
+    const { collab, sessions, projects, sessionProviders } = bootCollab()
+    const reviewer = sessionProviders.profiles.create({
+      harnessId: 'claude',
+      name: 'Reviewer',
+      config: {
+        profile: {
+          version: 1,
+          identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' },
+          instructions: 'Never edit files.',
+          runtime: { effort: 'low' },
+        },
+      },
+    })
+    const listed = collab.listProfiles().find((p) => p.id === reviewer.id)
+    expect(listed).toMatchObject({ name: 'Reviewer', description: 'Reviews diffs without editing.' })
+
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-proj-'))
+    dirs.push(projectDir)
+    const project = projects.open(projectDir)
+    const parent = sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'parent' })
+    const req = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ agentId: reviewer.id, name: 'Rex', role: 'Reviewer', summary: 'Review.', config: { cwd: projectDir } }],
+    })
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const started = await collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Review it' })
+    const append = sessions.getSystemPromptAppend(started.sessionId) ?? ''
+    expect(append.startsWith(`${agentProfilePrompt({
+      version: 1,
+      identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' },
+      instructions: 'Never edit files.',
+    })}\n\n`)).toBe(true)
+    expect(append).toContain(parent.sessionId)
+  })
+
+  it('starts a profile launch with the options this node applies, and drops the rest', async () => {
+    const { collab, sessions, projects, sessionProviders } = bootCollab()
+    const identity = { name: 'Planner', description: 'Plans first.' }
+    const planner = sessionProviders.profiles.create({
+      harnessId: 'opencode', name: 'Planner', config: { profile: { version: 1, identity, runtime: { options: { agent: 'plan' } } } },
+    })
+    const ultra = sessionProviders.profiles.create({
+      harnessId: 'claude', name: 'Ultra', config: { profile: { version: 1, identity: { ...identity, name: 'Ultra' }, runtime: { model: 'claude-opus-5-5', options: { ultracode: true } } } },
+    })
+    expect(collab.listProfiles().find((p) => p.id === ultra.id)?.defaultConfig).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-options-'))
+    dirs.push(projectDir)
+    const parent = sessions.create({ projectId: projects.open(projectDir).projectId, harnessId: 'claude', title: 'parent' })
+    const req = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ agentId: planner.id, name: 'Pat', role: 'Planner', summary: 'Plan.', config: { cwd: projectDir } }],
+    })
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const started = await collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Plan it' })
+    expect(sessions.get(started.sessionId)?.agent).toBe('plan')
+  })
+
+  it('keeps the model and effort defaults of a row written before profiles', () => {
+    const { collab, sessionProviders } = bootCollab()
+    const legacy = sessionProviders.create({ harnessId: 'claude', name: 'Legacy', config: { model: 'claude-sonnet-5-5', effort: 'low' } })
+    expect(collab.listProfiles().find((p) => p.id === legacy.id)?.defaultConfig).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
+  })
+
+  it('rejects an explicit launch effort the chosen model cannot carry', async () => {
+    const { collab, sessions, projects } = bootCollab()
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-effort-'))
+    dirs.push(projectDir)
+    const parent = sessions.create({ projectId: projects.open(projectDir).projectId, harnessId: 'claude', title: 'parent' })
+    await expect(collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ agentId: 'claude-base', name: 'Rex', role: 'Reviewer', summary: 'Review.', config: { model: 'claude-sonnet-5-5', effort: 'ultra' } }],
+    })).rejects.toThrow(/config\.effort "ultra" is not supported by Claude model "claude-sonnet-5-5"/)
+  })
+
+  it('restores a profile handoff session\'s instructions after restart, from the current row', async () => {
+    const { collab, sessions, projects, sessionProviders } = bootCollab()
+    const spec = (instructions: string) => ({ version: 1 as const, identity: { name: 'Finisher', description: 'Finishes migrations.' }, instructions })
+    const profile = (instructions: string) => ({ profile: spec(instructions) })
+    const finisher = sessionProviders.profiles.create({ harnessId: 'claude', name: 'Finisher', config: profile('Never edit files.') })
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-handoff-profile-'))
+    dirs.push(projectDir)
+    const parent = sessions.create({ projectId: projects.open(projectDir).projectId, harnessId: 'claude', title: 'parent' })
+    const req = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ mode: 'handoff', agentId: finisher.id, name: 'Dana', role: 'Implementer', summary: 'Summary.', config: { cwd: projectDir } }],
+    })
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const start = () => collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Finish it.' })
+    const started = await start()
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe(agentProfilePrompt(spec('Never edit files.')))
+
+    // A restart loses the in-memory append; rehydrate rebuilds it without the collaboration protocol.
+    sessions.setSystemPromptAppend(started.sessionId, undefined)
+    collab.rehydrateSystemPrompts()
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe(agentProfilePrompt(spec('Never edit files.')))
+
+    sessionProviders.profiles.update(finisher.id, { config: profile('Review only.') }, sessionProviders.get(finisher.id)!)
+    sessions.setSystemPromptAppend(started.sessionId, undefined)
+    expect(await start()).toMatchObject({ reused: true })
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe(agentProfilePrompt(spec('Review only.')))
   })
 
   it('request creates durable grants; start is idempotent; send/retrieve advance cursor', async () => {

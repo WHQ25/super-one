@@ -129,6 +129,7 @@ vi.mock('./harness-registry', () => ({
 }))
 
 import { SessionManagerImpl } from './session-manager'
+import { agentProfilePrompt } from '@superone/shared/agent-profile'
 import { getRuntimeIdleTimeoutMs } from './session-runtime-policy'
 
 function seedProvider(id: string, harnessId: HarnessId = 'claude'): SessionProvider {
@@ -765,6 +766,57 @@ describe('SessionManager', () => {
         onSessionCreated: () => { throw new Error('boom') },
       })
       expect(() => mgr2.createSession({ projectPath: '/pp', providerId: 'claude-base' })).not.toThrow()
+    })
+  })
+
+  describe('agent profile instructions', () => {
+    const appendOf = (session: unknown) => (session as { systemPromptAppend?: string }).systemPromptAppend
+    const REVIEWER = { version: 1 as const, identity: { name: 'Reviewer', description: 'Reviews.' }, instructions: 'Never edit files.' }
+    const BLOCK = agentProfilePrompt(REVIEWER)
+    const seedProfile = () => {
+      hoisted.providers.set('claude-reviewer', {
+        ...seedProvider('claude-reviewer', 'claude'),
+        config: { apiKey: 'sk-x', profile: REVIEWER },
+      })
+    }
+
+    it('puts the profile block ahead of the collaboration protocol on create', () => {
+      seedProfile()
+      const session = mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer', systemPromptAppend: 'Collaboration protocol' })
+      expect(appendOf(session)).toBe(`${BLOCK}\n\nCollaboration protocol`)
+    })
+
+    it('applies the profile block alone to a launch with no host append (handoff)', () => {
+      seedProfile()
+      expect(appendOf(mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer' }))).toBe(BLOCK)
+    })
+
+    it('re-applies them on resume', () => {
+      seedProfile()
+      const mgr2 = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/p',
+          providerId: 'claude-reviewer',
+          providerSessionId: null,
+          messages: [],
+          totalCostUsd: 0,
+          contextTokens: 0,
+          systemPromptAppend: 'Collaboration protocol',
+        }),
+      })
+      expect(appendOf(mgr2.resumeSession('sid-r'))).toBe(`${BLOCK}\n\nCollaboration protocol`)
+    })
+
+    it('moves live sessions off a deleted profile, so their next state save names the base row', () => {
+      seedProfile()
+      const onProfile = mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer' })
+      mgr.rebindProviderSessions('claude-reviewer', 'claude-base')
+      expect(onProfile.snapshot.providerId).toBe('claude-base')
+    })
+
+    it('leaves a base row launch untouched', () => {
+      expect(appendOf(mgr.createSession({ projectPath: '/p', providerId: 'claude-base', systemPromptAppend: 'Protocol' }))).toBe('Protocol')
+      expect(appendOf(mgr.createSession({ projectPath: '/q', providerId: 'claude-base' }))).toBeUndefined()
     })
   })
 

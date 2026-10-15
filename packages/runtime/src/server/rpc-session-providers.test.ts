@@ -93,6 +93,22 @@ describe('sessionProviders RPC', () => {
     expect(del?.result).toEqual({ ok: true })
   })
 
+  it('never writes an agent profile, even for an admin client', () => {
+    const { admin, sessionProviders } = boot()
+    const profile = { version: 1, identity: { name: 'Probe', description: 'Probe only.' }, instructions: 'PRIVATE', runtime: { model: 'not-in-any-catalog', fastMode: true } }
+    const created = dispatchSessionProviderRpc('sessionProviders.create', { harnessId: 'claude', name: 'Probe', config: { profile } }, admin)
+    expect(created?.error?.code).toBe('failed_precondition')
+
+    const row = sessionProviders.profiles.create({ harnessId: 'claude', name: 'Reviewer', config: { profile: { ...profile, runtime: undefined } } })
+    for (const [method, payload] of [
+      ['sessionProviders.update', { id: row.id, config: {} }],
+      ['sessionProviders.delete', { id: row.id }],
+    ] as const) {
+      expect(dispatchSessionProviderRpc(method, payload, admin)?.error?.code, method).toBe('failed_precondition')
+    }
+    expect(sessionProviders.get(row.id)).not.toBeNull()
+  })
+
   it('getBase returns claude-base', () => {
     const { reader } = boot()
     const res = dispatchSessionProviderRpc(

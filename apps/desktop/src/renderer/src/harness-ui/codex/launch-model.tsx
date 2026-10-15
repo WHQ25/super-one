@@ -72,6 +72,9 @@ export function CodexLaunchModel({
   effort,
   offerFastMode,
   fastMode,
+  hideApiProvider,
+  optionParams,
+  onOptionParamChange,
   onChange,
 }: LaunchModelProps) {
   const { t } = useTranslation()
@@ -81,6 +84,7 @@ export function CodexLaunchModel({
     profile,
     profileOnly,
     apiProviderId,
+    hideApiProvider,
     onChange,
   })
   const live = useCodexLaunchCatalog(!profileOnly, selector.selectedProviderId)
@@ -153,6 +157,8 @@ export function CodexLaunchModel({
         selectedEffortLabel={effortLabel(effortOptions, effort, formatReasoningEffortLabel)}
         onSelectEffort={(value) => onChange({ effort: value })}
         {...selector}
+        optionParams={optionParams}
+        onOptionParamChange={onOptionParamChange}
         onRefreshModels={live.refresh}
         modelsLoading={live.loading}
       />

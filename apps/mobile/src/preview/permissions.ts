@@ -91,6 +91,14 @@ export const permissionExamples = {
       { name: 'Daily review', scheduleSummary: 'Every weekday at 09:00', enabled: true, agent: { type: 'codex', model: 'Preview model', permissionMode: 'default' }, promptPreview: 'Review open changes and summarize actionable findings.' },
     ] },
   },
+  agent_profile_confirm: {
+    toolName: 'mcp__superone__agent_profile_apply', input: {},
+    agentProfileConfirm: {
+      operation: 'update',
+      profiles: [{ id: 'claude-reviewer', harnessId: 'claude', name: 'Reviewer', description: 'Reviews diffs without editing files.', model: 'opus', effort: 'max', options: { ultracode: 'on' } }],
+      changes: [{ field: 'effort', from: 'high', to: 'max' }, { field: 'ultracode', to: 'on' }],
+    },
+  },
   webmcp_trust_confirm: {
     toolName: 'mcp__superone__browser_page_tools', input: {}, allowAlwaysAllow: true,
     webmcpTrustConfirm: {

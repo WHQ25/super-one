@@ -26,6 +26,16 @@ import {
 } from '../superone-tool-descriptions'
 
 /** Shared with the desktop descriptor, which must match it exactly. */
+export const SESSION_LIST_AGENTS_INPUT_SCHEMA: HostActionSuperoneToolDescriptor['inputSchema'] = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'An agent id from the list. Returns what a launch of that agent can set.' },
+    environment: { type: 'string', description: 'With id: the environmentId the agent is listed under in environments[].' },
+  },
+  additionalProperties: false,
+}
+
+/** Shared with the desktop descriptor, which must match it exactly. */
 export const SESSION_SUGGEST_TASK_INPUT_SCHEMA: HostActionSuperoneToolDescriptor['inputSchema'] = {
   type: 'object',
   properties: {
@@ -42,11 +52,7 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
   {
     "name": "session_collab_list_agents",
     "description": SESSION_LIST_AGENTS_DESCRIPTION,
-    "inputSchema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    }
+    "inputSchema": SESSION_LIST_AGENTS_INPUT_SCHEMA
   },
   {
     "name": "session_collab_request",

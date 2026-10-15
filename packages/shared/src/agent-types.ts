@@ -10,6 +10,7 @@ import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
+import type { AgentProfileOptionCatalog, AgentProfileOptionKey, AgentProfileOptions } from './agent-profile-options'
 import type { WidgetLayout } from './generative-ui/types'
 import type { SchemaForm } from './schema-form'
 import type { MediaVideoCapabilities } from './media-composer'
@@ -1127,6 +1128,11 @@ export interface SessionAgentLaunchConfig {
   worktree?: SessionAgentWorktreeConfig
   harnessConfig?: Record<string, unknown>
   /**
+   * The harness's own settings the launch starts with, from its agent profile
+   * (Codex Fast travels as {@link fastMode}). Not agent- or user-editable.
+   */
+  options?: Omit<AgentProfileOptions, 'fastMode'>
+  /**
    * Agent-chosen human display name (not harness brand). Combined with role for
    * titles: `Name - Role`. Not user-editable in the confirm UI.
    */
@@ -1308,6 +1314,7 @@ export interface PermissionRequest {
     | 'computer_use_grant'
     | 'session_cleanup_confirm'
     | 'automation_confirm'
+    | 'agent_profile_confirm'
     | 'webmcp_trust_confirm'
     | 'device_control_confirm'
     | 'terminal_command_confirm'
@@ -1339,6 +1346,8 @@ export interface PermissionRequest {
   sessionCleanupConfirm?: SessionCleanupConfirmPayload
   /** Present only when requestKind === 'automation_confirm'. */
   automationConfirm?: AutomationConfirmPayload
+  /** Present only when requestKind === 'agent_profile_confirm'. */
+  agentProfileConfirm?: AgentProfileConfirmPayload
   /** Present only when requestKind === 'input_request'; the form itself is `schemaForm`. */
   inputRequest?: InputRequestMeta
 }
@@ -1399,6 +1408,78 @@ export interface AutomationConfirmPayload {
   items: AutomationConfirmItem[]
   /** Present for update — what will change if the user approves. */
   changes?: AutomationConfirmChange[]
+}
+
+/** Runtime fields an agent profile can set beyond its model; the ones a harness/model cannot carry are listed as unsupported. */
+export type AgentProfileRuntimeField = 'effort' | 'permissionMode' | AgentProfileOptionKey
+
+/** One agent profile as the confirm card shows it: the result on create/update, the subject on delete. */
+export interface AgentProfileConfirmView {
+  id?: string
+  harnessId: HarnessId
+  /** ACP protocol agent the profile is pinned to. */
+  acpAgentId?: string
+  name: string
+  description: string
+  instructions?: string
+  model?: string
+  /** Catalog display name for {@link model}. */
+  modelName?: string
+  effort?: string
+  /** One of the harness's launch permission modes; the client labels it in the harness's vocabulary. */
+  permissionMode?: PermissionMode
+  /**
+   * The set harness options as display values (`on` / `off` for toggles,
+   * translated by the client). Rows follow `HARNESS_PROFILE_OPTIONS[harnessId]`.
+   */
+  options?: Partial<Record<AgentProfileOptionKey, string>>
+  /** Fields this harness (or the chosen model) cannot carry — rendered as explicit "not supported" rows. */
+  unsupported?: AgentProfileRuntimeField[]
+}
+
+/** One field an update changes, as display values. Empty `from`/`to` means unset (the global default applies). */
+export interface AgentProfileConfirmChange {
+  field: 'name' | 'description' | 'instructions' | 'model' | AgentProfileRuntimeField
+  from?: string
+  to?: string
+}
+
+export interface AgentProfileConfirmPayload {
+  operation: 'create' | 'update' | 'delete'
+  profiles: AgentProfileConfirmView[]
+  /** Present for update — only the fields that change. */
+  changes?: AgentProfileConfirmChange[]
+  /** Create only: lets the card edit the proposal before it is saved. */
+  editor?: AgentProfileConfirmEditor
+}
+
+/**
+ * The renderer returns an edited create proposal as
+ * `content[AGENT_PROFILE_DRAFT_FIELD] = JSON.stringify(AgentProfileDraft)`.
+ */
+export const AGENT_PROFILE_DRAFT_FIELD = 'agentProfileDraftJson'
+
+/** A new profile as raw values: what the create card edits and the host saves. Unset runtime fields follow the user's defaults. */
+export interface AgentProfileDraft {
+  name: string
+  description: string
+  instructions?: string
+  model?: string
+  effort?: string
+  permissionMode?: PermissionMode
+  options?: AgentProfileOptions
+}
+
+export interface AgentProfileConfirmEditor {
+  /** The agent's proposal. */
+  draft: AgentProfileDraft
+  /**
+   * The harness's built-in agent: the model catalog its controls read, and in
+   * `defaultConfig` what each unset field launches with. Absent when the harness cannot launch now.
+   */
+  agent?: SessionAgentProfile
+  /** What the draft's model, effort and options are checked against. */
+  catalog: AgentProfileOptionCatalog
 }
 
 /** One row in the permanent-delete confirm dialog (mirrors session_list metadata). */

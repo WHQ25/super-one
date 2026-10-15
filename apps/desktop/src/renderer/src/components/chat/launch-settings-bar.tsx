@@ -18,6 +18,7 @@ import type {
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
+import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 import { useAppStore } from '@/stores/app'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
 import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, SandboxModePopover } from './SandboxModeSelector'
@@ -28,7 +29,7 @@ export function HarnessGlyph({
   profile,
   launch,
 }: {
-  profile: SessionAgentProfile | undefined
+  profile: Pick<SessionAgentProfile, 'harnessId' | 'acpAgentId' | 'brandKey'> | undefined
   /** Link launches have no agent profile — use peer harness fields instead. */
   launch?: SessionAgentLaunchProposal
 }) {
@@ -55,19 +56,22 @@ const ICON_ONLY = '@max-[26rem]/launch:hidden'
 
 /**
  * How a session that does not exist yet will run: the leading controls the
- * caller passes (agent, model), then its permission mode and, where the
- * harness has one, its sandbox.
+ * caller passes (agent, model), then its permission mode where the harness has
+ * modes and, where it has one and the caller can carry it, its sandbox.
  */
 export function LaunchSettingsBar({
   harnessId,
   settings,
   onChange,
+  offerSandbox = true,
   className,
   children,
 }: {
   harnessId: HarnessId
   settings: Pick<SessionAgentLaunchSettings, 'permissionMode' | 'sandboxMode'>
   onChange: (patch: SessionAgentLaunchSettings) => void
+  /** False when what the bar configures has no sandbox setting (an agent profile). */
+  offerSandbox?: boolean
   className?: string
   children: ReactNode
 }) {
@@ -75,14 +79,18 @@ export function LaunchSettingsBar({
   return (
     <div className={cn('@container/launch flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5', className)}>
       {children}
-      <LaunchBarDivider />
-      <HarnessPermissionPopover
-        harnessId={harnessId}
-        value={settings.permissionMode}
-        onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
-        labelClassName={ICON_ONLY}
-      />
-      {harnessSupportsSandbox(harnessId) && (
+      {HARNESS_CONTROLS[harnessId].launchPermission && (
+        <>
+          <LaunchBarDivider />
+          <HarnessPermissionPopover
+            harnessId={harnessId}
+            value={settings.permissionMode}
+            onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
+            labelClassName={ICON_ONLY}
+          />
+        </>
+      )}
+      {offerSandbox && harnessSupportsSandbox(harnessId) && (
         <>
           <LaunchBarDivider />
           <SandboxModePopover

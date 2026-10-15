@@ -106,6 +106,14 @@ export class CollaborationStore {
     `).all() as CollaborationGrantRow[]
   }
 
+  /** Started handoff grants; the session each created is `config_json.handoffSessionId`. */
+  startedHandoffGrants(): CollaborationGrantRow[] {
+    return this.db.prepare(`
+      SELECT ${GRANT_COLUMNS} FROM session_collaboration_grants
+      WHERE kind = 'handoff' AND started_at IS NOT NULL
+    `).all() as CollaborationGrantRow[]
+  }
+
   /**
    * Open mailbox channels of `sessionId`: spawn grants with a bound child and
    * started link grants, oldest first. Handoff grants are never channels.

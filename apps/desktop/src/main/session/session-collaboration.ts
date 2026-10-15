@@ -9,6 +9,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { isLaunchModelOffered } from '@superone/shared/collab-request-display'
+import { collabAgentDetail, collabAgentSummary, unknownCollabAgentMessage } from '@superone/shared/collab-agent-catalog'
 import {
   EDITABLE_PERMISSION_MODES,
   EDITABLE_SANDBOX_MODES,
@@ -25,7 +26,7 @@ import {
   type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { getDb } from '../database'
-import { listSessionAgentProfiles } from './agent-profiles'
+import { listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
 import { collaborationStore as store } from './collaboration-mailbox'
 import { defaultLaunchCwd } from './collaboration-child-project'
 import {
@@ -58,17 +59,49 @@ export { startSessionAgent, type SessionStartArgs } from './collaboration-start'
  */
 export { listSessionAgentProfiles } from './agent-profiles'
 
+export interface ListCollaborationAgentsArgs {
+  /** One agent's launch options instead of the list. */
+  id?: string
+  /** With `id`: the connected machine the agent is listed under. */
+  environment?: string
+}
+
 /**
- * session_collab_list_agents: this machine's profiles, plus each connected
- * machine with the profiles it can run (launch them with `environment`).
+ * session_collab_list_agents. Without `id`: this machine's agents, plus each
+ * connected machine with the agents it can run (launch them with
+ * `environment`), each just enough to pick. With `id`: what a launch of that
+ * agent can set.
  */
-export async function listCollaborationAgents(): Promise<{
-  agents: SessionAgentProfile[]
-  environments?: Awaited<ReturnType<typeof listRemoteAgentEnvironments>>
-}> {
+export async function listCollaborationAgents(args: ListCollaborationAgentsArgs = {}): Promise<
+  { ok: true; value: unknown } | { ok: false; error: string }
+> {
   const agents = listSessionAgentProfiles()
+  const id = args.id?.trim()
+  const environment = args.environment?.trim()
+  if (id && !environment) {
+    const agent = agents.find((profile) => profile.id === id)
+    return agent ? { ok: true, value: collabAgentDetail(agent) } : { ok: false, error: unknownCollabAgentMessage(id) }
+  }
   const environments = await listRemoteAgentEnvironments(agents)
-  return environments.length > 0 ? { agents, environments } : { agents }
+  if (id && environment) {
+    const agent = environments.find((env) => env.environmentId === environment)?.agents.find((profile) => profile.id === id)
+    return agent ? { ok: true, value: collabAgentDetail(agent) } : { ok: false, error: unknownCollabAgentMessage(id, environment) }
+  }
+  return {
+    ok: true,
+    value: {
+      agents: agents.map(collabAgentSummary),
+      ...(environments.length > 0
+        ? {
+            environments: environments.map((env) => ({
+              environmentId: env.environmentId,
+              label: env.label,
+              agents: env.agents.map(collabAgentSummary),
+            })),
+          }
+        : {}),
+    },
+  }
 }
 
 export interface RequestSessionAgentsArgs {
@@ -120,7 +153,7 @@ function assertKnownApiProviderId(
   const known = profile.apiProviders.map((provider) => provider.id)
   throw new Error(
     `Unknown apiProviderId for agent ${profile.id}: ${apiProviderId}. `
-    + 'It must be a key or account id from session_collab_list_agents → agents[].apiProviders[].id'
+    + `It must be a key or account id from session_collab_list_agents({ id: "${profile.id}" }) → apiProviders[].id`
     + (known.length > 0 ? ` (available: ${known.join(', ')})` : ' (this agent has no third-party providers configured)')
     + '. Omit it to follow the user\'s global provider binding.',
   )
@@ -212,7 +245,7 @@ function normalizeLaunches(
       config: {
         permissionMode: 'default',
         sandboxMode: 'off',
-        ...profile.defaultConfig,
+        ...sessionAgentLaunchDefaults(profile, launch.config),
         cwd: defaultLaunchCwd(parent),
         ...launch.config,
         name,

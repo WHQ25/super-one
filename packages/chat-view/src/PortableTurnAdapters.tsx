@@ -54,6 +54,7 @@ import {
   AutomationToolBlockPresenter,
   isAutomationToolName,
 } from './presenters/AutomationToolBlock'
+import { AgentProfileToolBlockPresenter, isAgentProfileToolName } from './presenters/AgentProfileToolBlock'
 import { ConfigApplyBlockPresenter } from './presenters/ConfigApplyBlock'
 import { MediaProvidersBlockPresenter } from './presenters/MediaProvidersBlock'
 import {
@@ -359,6 +360,19 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
     const isDenied = Boolean(props.result?.startsWith('[denied] '))
     return (
       <AutomationToolBlockPresenter
+        toolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+      />
+    )
+  }
+  if (collabToolName && isAgentProfileToolName(collabToolName)) {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <AgentProfileToolBlockPresenter
         toolName={collabToolName}
         params={parseRecord(props.input)}
         result={isDenied ? props.result?.slice('[denied] '.length) : props.result}

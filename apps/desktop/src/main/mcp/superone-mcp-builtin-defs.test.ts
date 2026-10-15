@@ -21,6 +21,7 @@ import {
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
   AUTOMATION_TOOL_NAMES,
+  AGENT_PROFILE_TOOL_NAMES,
   SESSION_ARCHIVE_TOOL_NAMES,
   SESSION_COLLABORATION_TOOL_NAMES,
   SESSION_REQUEST_AGENTS_DESCRIPTION,
@@ -282,6 +283,32 @@ describe('built-in superone tool registration surfaces', () => {
       expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
       expect(hostAction?.description.length, `${name} description length`).toBeLessThanOrEqual(700)
     }
+  })
+
+  it('keeps agent profile tools aligned with the remote dump and pointed at each other', () => {
+    for (const name of AGENT_PROFILE_TOOL_NAMES) {
+      const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === name)
+      const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === name)
+      expect(hostAction?.description, `${name} description`).toBe(desktop?.description)
+      expect(hostAction?.inputSchema, `${name} input schema`).toEqual(desktop?.inputSchema)
+      expect(desktop!.description.length, `${name} description length`).toBeLessThanOrEqual(700)
+      expect(isStaticHostOwnedSuperoneBareName(name), `${name} host-owned`).toBe(true)
+    }
+    const [list, apply, del] = AGENT_PROFILE_TOOL_NAMES.map((name) => BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === name)!)
+    expect(list!.description).toMatch(/agent_profile_apply/)
+    expect(list!.description).toMatch(/session_collab_list_agents/)
+    expect(apply!.description).toMatch(/agent_profile_list/)
+    expect(apply!.description).toMatch(/agent_profile_delete/)
+    expect(apply!.description).toMatch(/confirmation dialog/)
+    expect(del!.description).toMatch(/agent_profile_list/)
+    expect(del!.description).toMatch(/confirmation dialog/)
+    expect(apply!.inputSchema.required).toEqual(['action'])
+    expect(del!.inputSchema.required).toEqual(['ids'])
+    expect(classifyHostActionTool('agent_profile_list').replayPolicy).toBe('safe')
+    expect(classifyHostActionTool('agent_profile_apply').replayPolicy).toBe('unsafe')
+    // Profiles are rows of the host that launches them; a remote session is never offered these.
+    const remote = new Set(listHostActionSuperoneTools().map((tool) => tool.name))
+    expect(AGENT_PROFILE_TOOL_NAMES.filter((name) => remote.has(name))).toEqual([])
   })
 
   it('points automation tools at each other for discovery and delete', () => {

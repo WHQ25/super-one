@@ -65,6 +65,9 @@ import {
   AUTOMATION_LIST_DESCRIPTION,
   AUTOMATION_APPLY_DESCRIPTION,
   AUTOMATION_DELETE_DESCRIPTION,
+  AGENT_PROFILE_LIST_DESCRIPTION,
+  AGENT_PROFILE_APPLY_DESCRIPTION,
+  AGENT_PROFILE_DELETE_DESCRIPTION,
   AUTOMATION_SCHEDULE_INPUT_SCHEMA,
   AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
@@ -116,6 +119,12 @@ import {
   type AutomationDeleteArgs,
   type AutomationListArgs,
 } from './automation-tools'
+import type { AgentProfileApplyArgs, AgentProfileDeleteArgs, AgentProfileListArgs } from './agent-profile-tools'
+import {
+  AGENT_PROFILE_APPLY_INPUT_SCHEMA,
+  AGENT_PROFILE_DELETE_INPUT_SCHEMA,
+  AGENT_PROFILE_LIST_INPUT_SCHEMA,
+} from '@superone/shared/environment/host-action-agent-profile-descriptors'
 import type { SessionManager } from '../session/types'
 import { sessionSuggestTaskHandler, type SessionSuggestTaskArgs } from './suggested-task-tools'
 import {
@@ -130,11 +139,13 @@ import {
   type TerminalWaitForArgs,
 } from './terminal-tools'
 import type {
+  ListCollaborationAgentsArgs,
   RequestSessionAgentsArgs,
   SessionSendArgs,
   SessionRetrieveArgs,
   SessionStartArgs,
 } from '../session/session-collaboration'
+import { SESSION_LIST_AGENTS_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
 
 export {
   BUILT_IN_SUPERONE_TOOL_DEFS,
@@ -166,6 +177,7 @@ export interface SessionTitleHost {
   getSession(sessionId: string): SessionTitleSetter | null
   /** A desktop view (pane, mosaic tile or mini window) is drawing this session. */
   isSessionForeground?(sessionId: string): boolean
+  rebindProviderSessions?(fromProviderId: string, toProviderId: string): void
 }
 
 function collaborationHost(deps: BuiltInSuperoneToolDeps): SessionManager {
@@ -360,10 +372,17 @@ export async function executeBuiltInSuperoneTool(
       return automationApplyHandler(args as unknown as AutomationApplyArgs, deps)
     case 'automation_delete':
       return automationDeleteHandler(args as unknown as AutomationDeleteArgs, deps)
+    case 'agent_profile_list':
+      return import('./agent-profile-tools').then(({ agentProfileListHandler }) =>
+        agentProfileListHandler(args as AgentProfileListArgs))
+    case 'agent_profile_apply':
+      return import('./agent-profile-tools').then(({ agentProfileApplyHandler }) =>
+        agentProfileApplyHandler(args as unknown as AgentProfileApplyArgs, deps))
+    case 'agent_profile_delete':
+      return import('./agent-profile-tools').then(({ agentProfileDeleteHandler }) =>
+        agentProfileDeleteHandler(args as unknown as AgentProfileDeleteArgs, deps))
     case 'session_collab_list_agents':
-      return import('../session/session-collaboration').then(async ({ listCollaborationAgents }) => ({
-        content: [{ type: 'text' as const, text: JSON.stringify(await listCollaborationAgents()) }],
-      }))
+      return listAgentsResult(args as ListCollaborationAgentsArgs)
     case 'session_collab_request':
       return import('../session/session-collaboration').then(({ requestSessionAgents }) =>
         requestSessionAgents(deps.sessionId, args as unknown as RequestSessionAgentsArgs, collaborationHost(deps), deps.signal))
@@ -401,14 +420,19 @@ export async function executeBuiltInSuperoneTool(
   }
 }
 
+async function listAgentsResult(args: ListCollaborationAgentsArgs) {
+  const { listCollaborationAgents } = await import('../session/session-collaboration')
+  const result = await listCollaborationAgents(args)
+  return result.ok
+    ? { content: [{ type: 'text' as const, text: JSON.stringify(result.value) }] }
+    : { content: [{ type: 'text' as const, text: `[Error] ${result.error}` }], isError: true as const }
+}
+
 export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneToolDeps): void {
   server.registerTool(
     'session_collab_list_agents',
-    { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: {} },
-    async () => {
-      const { listCollaborationAgents } = await import('../session/session-collaboration')
-      return { content: [{ type: 'text' as const, text: JSON.stringify(await listCollaborationAgents()) }] }
-    },
+    { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: jsonSchemaToZodShape(SESSION_LIST_AGENTS_INPUT_SCHEMA) },
+    (args) => listAgentsResult(args),
   )
   server.registerTool(
     'session_collab_request',
@@ -884,5 +908,72 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     })) ?? { content: [{ type: 'text' as const, text: 'Automation deletion cancelled.' }], isError: true },
   )
 
+  server.registerTool(
+    'agent_profile_list',
+    {
+      description: AGENT_PROFILE_LIST_DESCRIPTION,
+      inputSchema: {
+        id: z.string().optional().describe(agentProfileField(AGENT_PROFILE_LIST_INPUT_SCHEMA, 'id')),
+      },
+    },
+    async (args) => (await import('./agent-profile-tools')).agentProfileListHandler(args),
+  )
+
+  server.registerTool(
+    'agent_profile_apply',
+    {
+      description: AGENT_PROFILE_APPLY_DESCRIPTION,
+      inputSchema: {
+        action: z.enum(['create', 'update']).describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'action')),
+        id: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'id')),
+        harnessId: z.enum(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh']).optional()
+          .describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'harnessId')),
+        name: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'name')),
+        description: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'description')),
+        instructions: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'instructions')),
+        model: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'model')),
+        effort: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'effort')),
+        permissionMode: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'permissionMode')),
+        options: z.object({
+          ultracode: z.boolean().nullable().optional().describe(agentProfileOptionField('ultracode')),
+          fastMode: z.boolean().nullable().optional().describe(agentProfileOptionField('fastMode')),
+          contextWindow: z.number().int().positive().nullable().optional().describe(agentProfileOptionField('contextWindow')),
+          mode: z.string().nullable().optional().describe(agentProfileOptionField('mode')),
+          agent: z.string().nullable().optional().describe(agentProfileOptionField('agent')),
+          agentPreset: z.string().nullable().optional().describe(agentProfileOptionField('agentPreset')),
+          modelParams: z.record(z.string(), z.string()).nullable().optional().describe(agentProfileOptionField('modelParams')),
+        }).strict().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'options')),
+      },
+    },
+    async (args, extra) => (await import('./agent-profile-tools')).agentProfileApplyHandler(args, {
+      ...deps,
+      signal: extra?.signal ?? deps.signal,
+    }),
+  )
+
+  server.registerTool(
+    'agent_profile_delete',
+    {
+      description: AGENT_PROFILE_DELETE_DESCRIPTION,
+      inputSchema: {
+        ids: z.array(z.string()).min(1).max(20).describe(agentProfileField(AGENT_PROFILE_DELETE_INPUT_SCHEMA, 'ids')),
+      },
+    },
+    async (args, extra) => (await import('./agent-profile-tools')).agentProfileDeleteHandler(args, {
+      ...deps,
+      signal: extra?.signal ?? deps.signal,
+    }),
+  )
+
   registerMediaTools(server, deps)
+}
+
+/** Field description from the shared JSON schema, so the Zod surface cannot drift from it. */
+function agentProfileField(schema: { properties: Record<string, { description?: string }> }, field: string): string {
+  return schema.properties[field]?.description ?? ''
+}
+
+function agentProfileOptionField(option: string): string {
+  const options = AGENT_PROFILE_APPLY_INPUT_SCHEMA.properties.options as { properties: Record<string, { description?: string }> }
+  return options.properties[option]?.description ?? ''
 }

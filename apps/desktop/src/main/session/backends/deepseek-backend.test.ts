@@ -257,3 +257,15 @@ describe('dsh agent preset selection', () => {
     )
   })
 })
+
+describe('dsh system prompt append', () => {
+  it('hands the session append (profile instructions + collaboration protocol) to the agent', async () => {
+    installFakeAgent()
+
+    await new DeepseekBackend().start(makeOpts({ systemPromptAppend: 'Review only.\n\nCollaboration protocol' }))
+
+    expect(createAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ systemPromptAppend: 'Review only.\n\nCollaboration protocol' }),
+    )
+  })
+})

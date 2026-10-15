@@ -172,6 +172,14 @@ describe('remote tool input exemptions', () => {
       JSON.stringify({ action: 'update', name: 'Daily review', enabled: true, prompt: 'private' }),
     ))).toEqual({ action: 'update', name: 'Daily review', enabled: true })
     expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__agent_profile_apply',
+      JSON.stringify({ action: 'create', harnessId: 'claude', name: 'Reviewer', instructions: 'private', description: 'private' }),
+    ))).toEqual({ action: 'create', harnessId: 'claude', name: 'Reviewer' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__agent_profile_delete',
+      JSON.stringify({ ids: ['claude-a', 'claude-b'] }),
+    ))).toEqual({ ids: ['', ''] })
+    expect(JSON.parse(sanitizeRemoteToolInput(
       'mcp__superone__config_apply',
       JSON.stringify({ resource: { operation: 'update', recordId: 'secret' }, changes: [{ key: 'token', value: 'secret' }] }),
     ))).toEqual({ resource: { operation: 'update' } })

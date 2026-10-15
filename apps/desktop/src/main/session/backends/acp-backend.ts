@@ -256,6 +256,8 @@ export class AcpBackend implements SessionBackend {
   private selectedModelId: string | null = null
   /** Last Grok effort pick from setSessionMode. Survives spawn before runtime exists. */
   private grokReasoningEffort: string | null = null
+  private pendingContextWindow: { model: string; contextWindow: number } | null = null
+  private pendingModeId: string | null = null
   /**
    * Last Grok `message_usage` totals recorded into usage_daily per assistant
    * message. Mid-turn events are cumulative (response_started/completed +
@@ -770,6 +772,7 @@ export class AcpBackend implements SessionBackend {
       // The listeners above only reach the DB. The renderer learns the real id from this event.
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
       this.emitConfigFromRuntime(runtime, agentId, epoch)
+      await this.applyPendingSelections(runtime)
       return runtime
     })()
     this.ensureRuntimePromise = promise
@@ -1649,9 +1652,23 @@ export class AcpBackend implements SessionBackend {
     this.persistConfigCache(null, { ...cfg, selectedModelId: model }, agentId)
   }
 
+  /** Context window and session mode chosen while no runtime existed. A refusal leaves the agent's own default. */
+  private async applyPendingSelections(runtime: AcpRuntime): Promise<void> {
+    const window = this.pendingContextWindow
+    const modeId = this.pendingModeId
+    this.pendingContextWindow = null
+    this.pendingModeId = null
+    if (window) {
+      await this.applyModel(runtime, window.model, { contextWindow: window.contextWindow })
+        .catch((err) => log.warn('[AcpBackend] pending context window %d refused:', window.contextWindow, err))
+    }
+    if (modeId) await this.setSessionMode(modeId)
+  }
+
   async setModel(model: string, opts?: { contextWindow?: number }): Promise<void> {
     if (!this.runtime) {
-      if (opts?.contextWindow != null) throw new Error('ACP runtime is not ready')
+      // Picked before the agent started (a new session, a profile launch): applied once it is up.
+      if (opts?.contextWindow != null) this.pendingContextWindow = { model, contextWindow: opts.contextWindow }
       return
     }
     // A refused switch leaves the runtime on its old model; the caller decides
@@ -1662,7 +1679,11 @@ export class AcpBackend implements SessionBackend {
   async setSessionMode(modeId: string): Promise<void> {
     const effort = asGrokReasoningEffort(modeId)
     if (effort) this.grokReasoningEffort = effort
-    if (!this.runtime) return
+    if (!this.runtime) {
+      // An effort reaches the spawn itself; any other mode is applied once the agent is up.
+      if (!effort) this.pendingModeId = modeId
+      return
+    }
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null
     try {

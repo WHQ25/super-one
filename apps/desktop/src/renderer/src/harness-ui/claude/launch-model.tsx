@@ -34,7 +34,9 @@ export function claudeModelsForProvider(
   }))
 }
 
-export function ClaudeLaunchModel({ profile, catalog, apiProviderId, model, effort, onChange }: LaunchModelProps) {
+export function ClaudeLaunchModel({
+  profile, catalog, apiProviderId, model, effort, hideApiProvider, optionParams, onOptionParamChange, onChange,
+}: LaunchModelProps) {
   const profileOnly = catalog === 'profile'
   const live = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.claude?.models ?? EMPTY_MODELS))
   const profileCatalog = useProfileCatalog(profile)
@@ -43,6 +45,7 @@ export function ClaudeLaunchModel({ profile, catalog, apiProviderId, model, effo
     profile,
     profileOnly,
     apiProviderId,
+    hideApiProvider,
     onChange,
   })
 
@@ -81,6 +84,8 @@ export function ClaudeLaunchModel({ profile, catalog, apiProviderId, model, effo
       selectedEffortLabel={effortLabel(effortOptions, effort)}
       onSelectEffort={(value) => onChange({ effort: value })}
       {...selector}
+      optionParams={optionParams}
+      onOptionParamChange={onOptionParamChange}
       // Match ClaudeModelSelector's easter-egg trigger label for max.
       triggerLabel={!modelEnv && effort === 'max'
         ? <FireText>{`${(label ?? 'Model').toUpperCase()} · MAX`}</FireText>

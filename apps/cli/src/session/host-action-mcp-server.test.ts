@@ -1,6 +1,7 @@
 /**
  * Host Action loopback HTTP MCP — browser_snapshot → requestHostAction.
  */
+import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -262,6 +263,18 @@ describe('Host Action MCP server', () => {
     await client.close()
   })
 
+  const CLAUDE_AGENT: SessionAgentProfile = {
+    id: 'claude-base',
+    name: 'Claude',
+    harnessId: 'claude',
+    brandKey: 'claude',
+    description: 'claude harness',
+    defaultConfig: { model: 'sonnet', effort: 'high' },
+    models: [{ id: 'sonnet', name: 'Sonnet' }],
+    efforts: ['high'],
+    apiProviders: [],
+  }
+
   it('registers node-local session_collab tools without Host Action claim', async () => {
     const haCalls: string[] = []
     const listCalls: string[] = []
@@ -278,7 +291,7 @@ describe('Host Action MCP server', () => {
       collab: {
         listAgents: (sessionId) => {
           listCalls.push(sessionId)
-          return [{ id: 'claude', name: 'claude' }]
+          return [CLAUDE_AGENT]
         },
         request: async () => ({ status: 'approved', launches: [] }),
         start: async () => ({ status: 'started', sessionId: 'c1', reused: false }),
@@ -297,15 +310,23 @@ describe('Host Action MCP server', () => {
     expect(names).toContain('session_collab_send')
     expect(names).toContain('session_collab_retrieve')
 
-    const result = (await client.callTool({
-      name: 'session_collab_list_agents',
-      arguments: {},
-    })) as { content: Array<{ text: string }>; isError?: boolean }
-    expect(result.isError).toBeFalsy()
-    expect(JSON.parse(result.content[0]!.text)).toEqual({
-      agents: [{ id: 'claude', name: 'claude' }],
+    const list = async (args: Record<string, unknown>) => {
+      const result = (await client.callTool({ name: 'session_collab_list_agents', arguments: args })) as {
+        content: Array<{ text: string }>
+        isError?: boolean
+      }
+      return { isError: !!result.isError, body: JSON.parse(result.content[0]!.text) }
+    }
+    // The list picks an agent; its launch options load by id.
+    expect(await list({})).toEqual({
+      isError: false,
+      body: { agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', description: 'claude harness' }] },
     })
-    expect(listCalls).toEqual(['sess-collab'])
+    const { brandKey: _brandKey, ...detail } = CLAUDE_AGENT
+    expect(await list({ id: 'claude-base' })).toEqual({ isError: false, body: detail })
+    expect(await list({ id: 'nope' })).toMatchObject({ isError: true, body: { code: 'not_found', message: expect.stringMatching(/without id/) } })
+    expect(await list({ id: 'claude-base', environment: 'env-b' })).toMatchObject({ isError: true, body: { code: 'failed_precondition' } })
+    expect(listCalls).toEqual(['sess-collab', 'sess-collab', 'sess-collab'])
     expect(haCalls).toEqual([])
     await client.close()
   })

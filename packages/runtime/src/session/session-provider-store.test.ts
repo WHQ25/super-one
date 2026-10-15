@@ -71,6 +71,60 @@ describe('session-provider-store', () => {
     )
   })
 
+  it('validates and normalizes an agent profile on write', () => {
+    const store = openStore()
+    const created = store.profiles.create({
+      harnessId: 'claude',
+      name: 'Reviewer',
+      config: { profile: { version: 1, identity: { name: ' Reviewer ', description: 'Reviews diffs.' } } },
+    })
+    expect(created.config).toEqual({ profile: { version: 1, identity: { name: 'Reviewer', description: 'Reviews diffs.' } } })
+    expect(() => store.profiles.create({ harnessId: 'claude', name: 'x', config: { profile: { version: 1, identity: { name: 'x' } } } }))
+      .toThrow(expect.objectContaining({ code: 'invalid_argument', message: expect.stringMatching(/identity.description/) }))
+    expect(() => store.profiles.update(created.id, { config: { profile: { version: 2 } } }, created))
+      .toThrow(expect.objectContaining({ code: 'invalid_argument' }))
+  })
+
+  it("refuses another harness's options on a profile", () => {
+    const store = openStore()
+    const profile = { version: 1, identity: { name: 'Fast', description: 'd' }, runtime: { options: { fastMode: true } } }
+    expect(store.profiles.create({ harnessId: 'codex', name: 'Fast', config: { profile } }).config).toEqual({ profile })
+    expect(() => store.profiles.create({ harnessId: 'claude', name: 'Fast 2', config: { profile } }))
+      .toThrow(expect.objectContaining({ code: 'invalid_argument', message: expect.stringMatching(/fastMode is not a claude setting/) }))
+  })
+
+  it('refuses agent profile writes through the client-facing CRUD', () => {
+    const store = openStore()
+    const profile = { version: 1, identity: { name: 'Reviewer', description: 'Reviews diffs.' }, instructions: 'Never edit.' }
+    const refused = expect.objectContaining({ code: 'failed_precondition', message: expect.stringMatching(/agent_profile_apply/) })
+    expect(() => store.create({ harnessId: 'claude', name: 'Reviewer', config: { profile } })).toThrow(refused)
+
+    const plain = store.create({ harnessId: 'claude', name: 'Plain', config: {} })
+    expect(() => store.update(plain.id, { config: { profile } })).toThrow(refused)
+
+    const row = store.profiles.create({ harnessId: 'claude', name: 'Reviewer', config: { profile } })
+    // Dropping the whole profile, renaming it or deleting it are profile changes too.
+    expect(() => store.update(row.id, { config: {} })).toThrow(refused)
+    expect(() => store.update(row.id, { name: 'Other' })).toThrow(refused)
+    expect(() => store.delete(row.id)).toThrow(refused)
+    expect(store.get(row.id)?.config).toEqual({ profile })
+  })
+
+  it('writes a confirmed profile change only while the row still matches what the user saw', () => {
+    const store = openStore()
+    const profile = (description: string) => ({ version: 1, identity: { name: 'Reviewer', description } })
+    const seen = store.profiles.create({ harnessId: 'claude', name: 'Reviewer', config: { profile: profile('first') } })
+    const changed = store.profiles.update(seen.id, { config: { profile: profile('second') } }, seen)
+
+    const stale = expect.objectContaining({ code: 'aborted', message: expect.stringMatching(/changed while waiting/) })
+    expect(() => store.profiles.update(seen.id, { config: { profile: profile('third') } }, seen)).toThrow(stale)
+    expect(() => store.profiles.delete(seen.id, seen)).toThrow(stale)
+    expect(store.get(seen.id)?.config).toEqual({ profile: profile('second') })
+
+    expect(store.profiles.delete(seen.id, changed)).toBe(true)
+    expect(store.profiles.delete(seen.id, changed)).toBe(false)
+  })
+
   it('listByHarness filters', () => {
     const store = openStore()
     store.create({ harnessId: 'codex', name: 'extra' })
@@ -105,6 +159,14 @@ describe('settingsFromSessionProviderConfig', () => {
         effort: 'xhigh',
       },
     )
+  })
+
+  it('takes the runtime from the agent profile alone', () => {
+    expect(settingsFromSessionProviderConfig({
+      model: 'legacy',
+      reasoningEffort: 'low',
+      profile: { version: 1, identity: { name: 'R', description: 'd' }, runtime: { model: 'opus', options: { ultracode: true } } },
+    })).toEqual({ model: 'opus' })
   })
 
   it('returns empty for non-objects', () => {

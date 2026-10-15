@@ -3,7 +3,12 @@ import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memor
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
 import { ENVIRONMENT_GET_INFO_INPUT_SCHEMA } from '@superone/shared/environment/host-action-archive-descriptors'
-import { SESSION_SUGGEST_TASK_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
+import { SESSION_LIST_AGENTS_INPUT_SCHEMA, SESSION_SUGGEST_TASK_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
+import {
+  AGENT_PROFILE_APPLY_INPUT_SCHEMA,
+  AGENT_PROFILE_DELETE_INPUT_SCHEMA,
+  AGENT_PROFILE_LIST_INPUT_SCHEMA,
+} from '@superone/shared/environment/host-action-agent-profile-descriptors'
 export { MEDIA_GUIDE_TOPICS, MINIAPP_GUIDE_TOPICS, MANUAL_DOMAINS, PRODUCT_GUIDE_TOPICS, READ_MANUAL_INPUT_SCHEMA, type ManualDomain } from './manual-tool-defs'
 
 // Browser tool name lists live in @superone/shared so registration and
@@ -35,6 +40,12 @@ export const AUTOMATION_TOOL_NAMES = [
   'automation_list',
   'automation_apply',
   'automation_delete',
+] as const
+
+export const AGENT_PROFILE_TOOL_NAMES = [
+  'agent_profile_list',
+  'agent_profile_apply',
+  'agent_profile_delete',
 ] as const
 
 export const SESSION_COLLABORATION_TOOL_NAMES = [
@@ -109,6 +120,9 @@ import {
   AUTOMATION_LIST_DESCRIPTION,
   AUTOMATION_APPLY_DESCRIPTION,
   AUTOMATION_DELETE_DESCRIPTION,
+  AGENT_PROFILE_LIST_DESCRIPTION,
+  AGENT_PROFILE_APPLY_DESCRIPTION,
+  AGENT_PROFILE_DELETE_DESCRIPTION,
 } from '@superone/shared/superone-tool-descriptions'
 import { HOST_ACTION_TERMINAL_DESCRIPTORS } from '@superone/shared/environment/host-action-terminal-descriptors'
 export * from '@superone/shared/superone-tool-descriptions'
@@ -189,7 +203,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
   {
     name: 'session_collab_list_agents',
     description: SESSION_LIST_AGENTS_DESCRIPTION,
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema: SESSION_LIST_AGENTS_INPUT_SCHEMA,
   },
   {
     name: 'session_collab_request',
@@ -785,6 +799,9 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  { name: 'agent_profile_list', description: AGENT_PROFILE_LIST_DESCRIPTION, inputSchema: AGENT_PROFILE_LIST_INPUT_SCHEMA },
+  { name: 'agent_profile_apply', description: AGENT_PROFILE_APPLY_DESCRIPTION, inputSchema: AGENT_PROFILE_APPLY_INPUT_SCHEMA },
+  { name: 'agent_profile_delete', description: AGENT_PROFILE_DELETE_DESCRIPTION, inputSchema: AGENT_PROFILE_DELETE_INPUT_SCHEMA },
   {
     name: 'media_list_providers',
     description: LIST_MEDIA_PROVIDERS_DESCRIPTION,

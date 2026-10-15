@@ -15,7 +15,9 @@ import { toSelectorGroups, toSelectorModels } from '../selector-models'
 
 const EMPTY_MODELS: ModelOption[] = []
 
-export function OpenCodeLaunchModel({ profile, catalog, model, effort, onChange }: LaunchModelProps) {
+export function OpenCodeLaunchModel({
+  profile, catalog, model, effort, optionParams, onOptionParamChange, onChange,
+}: LaunchModelProps) {
   const live = useChatStore((s) => (catalog === 'profile' ? EMPTY_MODELS : s.harnessResources.opencode?.models ?? EMPTY_MODELS))
   const profileCatalog = useProfileCatalog(profile)
   const base = liveOrProfile(live, profileCatalog)
@@ -43,6 +45,8 @@ export function OpenCodeLaunchModel({ profile, catalog, model, effort, onChange 
       selectedEffort={effort ?? null}
       selectedEffortLabel={effortLabel(effortOptions, effort)}
       onSelectEffort={(value) => onChange({ effort: value })}
+      optionParams={optionParams}
+      onOptionParamChange={onOptionParamChange}
     />
   )
 }

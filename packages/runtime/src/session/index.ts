@@ -64,6 +64,7 @@ export {
   settingsFromSessionProviderConfig,
   type SessionProviderRecord,
   type SessionProviderStore,
+  type AgentProfileWriter,
   type CreateSessionProviderInput,
   type UpdateSessionProviderInput,
 } from './session-provider-store'

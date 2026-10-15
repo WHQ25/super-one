@@ -690,6 +690,24 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('applies a context window and a session mode picked before the runtime existed once it starts', async () => {
+    const setModel = vi.fn(async () => {})
+    const setConfigOption = vi.fn(async (_id: string, value: string) => [{
+      id: 'mode', name: 'Session Mode', category: 'mode' as const, type: 'select' as const, currentValue: value,
+      options: [{ value: 'ask', name: 'Ask' }, { value: 'code', name: 'Code' }],
+    }])
+    setAcpRuntimeFactory(async () => mockRuntime({ setModel, setConfigOption }))
+    const backend = new AcpBackend()
+    await backend.setModel('grok-4.5', { contextWindow: 1_000_000 })
+    await backend.setSessionMode('code')
+    expect(setModel).not.toHaveBeenCalled()
+    await backend.start(startOpts({ agentId: 'custom', command: 'mock' }))
+    await backend.send({ content: 'hi', assistantMessageId: 'm1' })
+    expect(setModel).toHaveBeenCalledWith('grok-4.5', expect.objectContaining({ contextWindow: 1_000_000 }))
+    expect(setConfigOption).toHaveBeenCalledWith('mode', 'code')
+    await backend.close()
+  })
+
   it('setModel uses session/set_model when model configId is null (Grok path)', async () => {
     const setModel = vi.fn(async () => {})
     const setConfigOption = vi.fn(async () => [])

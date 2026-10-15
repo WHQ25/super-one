@@ -41,6 +41,7 @@
     "./presenters/AppToolBlock": "./src/presenters/AppToolBlock.tsx",
     "./presenters/AskUserQuestionForm": "./src/presenters/AskUserQuestionForm.tsx",
     "./presenters/AskUserQuestionResult": "./src/presenters/AskUserQuestionResult.tsx",
+    "./presenters/AgentProfileToolBlock": "./src/presenters/AgentProfileToolBlock.tsx",
     "./presenters/AutomationToolBlock": "./src/presenters/AutomationToolBlock.tsx",
     "./presenters/BashTerminalPresenter": "./src/presenters/BashTerminalPresenter.tsx",
     "./presenters/BrowserListDownloadsView": "./src/presenters/BrowserListDownloadsView.tsx",

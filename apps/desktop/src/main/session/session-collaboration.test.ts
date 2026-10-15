@@ -375,6 +375,76 @@ describe('session collaboration', () => {
   })
 })
 
+describe('agent profile defaults', () => {
+  const reviewer = (runtime: Record<string, unknown>) => ({
+    id: 'claude-reviewer',
+    harnessId: 'claude',
+    name: 'Reviewer',
+    isBase: false,
+    config: { profile: { version: 1, identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' }, runtime } },
+    createdAt: 0,
+    updatedAt: 0,
+  })
+
+  beforeEach(() => {
+    state.resourceCache = {
+      claude: {
+        models: [
+          { id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] },
+          { id: 'opus', name: 'Opus', supportedEffortLevels: ['low', 'high', 'xhigh', 'max'] },
+        ],
+      },
+    }
+  })
+
+  it('puts the profile runtime over the global preference and shows its description', () => {
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus', effort: 'max', options: { ultracode: true } })]
+    const profile = listSessionAgentProfiles().find((item) => item.id === 'claude-reviewer')
+    expect(profile).toMatchObject({
+      name: 'Reviewer',
+      description: 'Reviews diffs without editing.',
+      defaultConfig: { model: 'opus', effort: 'max', options: { ultracode: true }, permissionMode: 'default' },
+    })
+    // The base row keeps the user's global defaults.
+    expect(listSessionAgentProfiles().find((item) => item.id === 'claude-base')?.defaultConfig)
+      .toMatchObject({ model: 'test-model', effort: 'high' })
+  })
+
+  it('keeps global fields the profile leaves out', () => {
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus' })]
+    expect(listSessionAgentProfiles().find((item) => item.id === 'claude-reviewer')?.defaultConfig)
+      .toMatchObject({ model: 'opus', effort: 'high' })
+  })
+
+  it('starts a profile launch with its harness options in place before the first turn', async () => {
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus', effort: 'max', options: { ultracode: true } })]
+    const parent = fakeSession('parent')
+    const { host, sessions, createSession } = fakeHost(parent)
+    const setSelectedSettings = vi.fn()
+    createSession.mockImplementation((options: SessionCreateOptions) => {
+      const child = { ...fakeSession(options.id!), lease: { assertMutation: vi.fn() }, setSelectedSettings } as unknown as Session
+      sessions.set(child.id, child)
+      return child
+    })
+    const request = requestSessionAgents(parent.id, {
+      launches: [{ launchId: 'launch-0', agentId: 'claude-reviewer', summary: 'Review', name: 'Rex', role: 'Reviewer', config: { cwd: TEST_CWD } }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
+    })
+    const [launch] = resultJson(await request).launches as ApprovedTestLaunch[]
+    await startLaunch(launch!, host)
+
+    const child = [...sessions.values()].find((session) => session.id !== parent.id)!
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'opus', effort: 'max' }))
+    expect(setSelectedSettings).toHaveBeenCalledWith(expect.objectContaining({ ultracode: true }))
+    const send = child.send as ReturnType<typeof vi.fn>
+    expect(setSelectedSettings.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]!)
+  })
+})
+
 describe('@agent mention targets', () => {
   it('gives a base provider the brand keyword rather than its "(Base)" row name', () => {
     state.providers = [{
@@ -2079,19 +2149,36 @@ describe('spawning a child on another machine', () => {
 
   it('lists the machines a child can run on with the agents they have ready', async () => {
     const listed = await listCollaborationAgents()
-    expect(listed.environments).toEqual([
-      expect.objectContaining({ environmentId: 'env-b', label: 'Studio Mac', agents: [expect.objectContaining({ id: 'claude-base' })] }),
-    ])
+    expect(listed).toMatchObject({ ok: true, value: { environments: [
+      { environmentId: 'env-b', label: 'Studio Mac', agents: [expect.objectContaining({ id: 'claude-base' })] },
+    ] } })
   })
 
-  it('lists the agents of a machine that serves its catalog from that catalog', async () => {
+  it('lists only what picks an agent, and its launch options once asked by id', async () => {
     remoteProfiles = [STUDIO_CLAUDE, { ...STUDIO_CLAUDE, id: 'claude-custom', name: 'Custom' }]
     const listed = await listCollaborationAgents()
-    expect(listed.environments).toEqual([expect.objectContaining({
-      environmentId: 'env-b',
+    expect(listed).toMatchObject({ ok: true, value: {
+      agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', description: expect.any(String) }],
       // Only base profiles: a remote launch runs the target's base provider.
-      agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders }],
-    })])
+      environments: [{ environmentId: 'env-b', label: 'Studio Mac', agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude' }] }],
+    } })
+    expect((listed as { value: { agents: object[] } }).value.agents[0]).not.toHaveProperty('models')
+
+    expect(await listCollaborationAgents({ id: 'claude-base', environment: 'env-b' })).toEqual({ ok: true, value: {
+      id: 'claude-base', name: 'Claude', harnessId: 'claude', models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders,
+    } })
+    const local = await listCollaborationAgents({ id: 'claude-base' })
+    expect(local).toMatchObject({ ok: true, value: { id: 'claude-base', defaultConfig: expect.any(Object), models: expect.any(Array), apiProviders: expect.any(Array) } })
+    expect((local as { value: object }).value).not.toHaveProperty('brandKey')
+  })
+
+  it('points an unknown id back at the list', async () => {
+    expect(await listCollaborationAgents({ id: 'nope' })).toEqual({
+      ok: false, error: 'Unknown agent nope. Call session_collab_list_agents without id to see the available agents.',
+    })
+    expect(await listCollaborationAgents({ id: 'claude-custom', environment: 'env-b' })).toMatchObject({
+      ok: false, error: expect.stringMatching(/not available on environment env-b.*environments\[\]\.agents/),
+    })
   })
 
   it('creates the child on the model and key picked from the target catalog', async () => {

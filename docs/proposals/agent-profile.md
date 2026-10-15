@@ -1,12 +1,51 @@
 # Agent Profile
 
-Status: draft · Updated: 2026-09-23
+Status: v1 shipped (minimal cut, §0); later phases remain draft · Updated: 2026-10-15
 
 Scope: turn a `session_providers` row ("run configuration") into a
 user-customizable **Agent Profile** — a named agent with its own identity,
 instructions, runtime defaults, permissions and capabilities — authored by the
 base agents through a confirm card, and usable first through collaboration
 (`@mention`, `session_collab_request`).
+
+## 0. What v1 shipped
+
+v1 is a minimal cut of this proposal. Everything below §0 that this section
+does not list is still open.
+
+| Area | Shipped in v1 | Where |
+|---|---|---|
+| Spec | `config.profile` = `{ version: 1, identity: { name, description }, instructions?, runtime?: { model?, effort?, permissionMode?, options? } }`; `permissionMode` must be one of the harness's `HARNESS_LAUNCH_OPTIONS.permissionModes` (none on OpenCode), parsed by the shared store on every write. Profile rows are written only through the store's `profiles` writer, which the desktop calls after the confirm card; `sessionProviders.*` RPC and IPC writes refuse them | `packages/shared/src/agent-profile.ts`, `packages/runtime/src/session/session-provider-store.ts`, `apps/desktop/src/main/session/agent-profile-store.ts` |
+| Harness options | `runtime.options` holds each harness's own session settings, the ones its selector offers: Claude `ultracode`, Codex `fastMode`, ACP `contextWindow` / `mode`, OpenCode `agent`, Cursor `modelParams`, dsh `agentPreset` (`HARNESS_PROFILE_OPTIONS`). Allowed values come from the catalog per model (`supportedEffortLevels` xhigh, `serviceTiers`, `contextWindows`, `parameters`) or from harness-wide lists (ACP modes, OpenCode agents, dsh presets) | `packages/shared/src/agent-profile-options.ts` |
+| Support checks | Model, effort and options are validated against the harness catalog; errors name the field and harness, and another harness's option is refused by name. A list the host cannot read yet is refused at write and left unchecked at launch | `validateAgentProfileRuntime`, `agentProfileModelSupport` |
+| Resolver | `resolveAgentLaunchDefaults`: explicit launch fields > row runtime > global preference (a CLI node has no preferences, so its global layer is the catalog default). The model is settled first; inherited effort and options are re-checked against it, and an explicit value the catalogued model cannot carry is rejected. Row runtime is the profile's whole, or the legacy top-level `model` / `effort` / `reasoningEffort` / `fastMode` of a row without one (`providerLaunchRuntime`). Used by desktop `profileResources` and CLI `listCollaborationProfiles` (closes gap 2) | same module |
+| Identity | Profile name and description flow to `session_collab_list_agents` and `@` mentions | `agent-profiles.ts`, `collaboration-profiles.ts` |
+| Instructions | A `<superone-agent-profile>` block (name, what it is for, then the instructions; `agentProfilePrompt`) composed ahead of the collaboration protocol into `systemPromptAppend`; desktop in `SessionManager` create/resume, CLI at collab start/reuse/rehydrate | `session-manager.ts`, `collaboration-start.ts` |
+| dsh | `systemPromptAppend` delivered as an agent-scoped `superone:session` section (closes gap 5) | `packages/deepseek/src/runtime.ts` |
+| Launch | Desktop applies options to the new session through the composer's settings path before its first turn (`applyDesktopSessionSettings`; Cursor parameters ride the first turn). Options have the same lifetime as a composer pick. A CLI node applies only the OpenCode agent; its other options resolve as unsupported there | `collaboration-start.ts` (desktop, CLI) |
+| Tools | `agent_profile_list` (id-less: id, name, harness, base, short description; with `id`: full profile, launch defaults and what the harness accepts) / `agent_profile_apply` (`create` \| `update`) / `agent_profile_delete`, host-confirmed (`agent_profile_confirm`, no always-allow); base rows read-only. A write applies only while the row still matches the one confirmed. Delete moves stored and live sessions to the harness base row. Desktop sessions only: not in the remote Host Action catalog | `apps/desktop/src/main/mcp/agent-profile-tools.ts` |
+| UI | Desktop confirm card: create is click-to-edit (name, description, instructions) with the composer's launch controls for model, effort, permission and harness options, the harness fixed and shown as the glyph before the name; the edited draft returns as `AGENT_PROFILE_DRAFT_FIELD` and is re-checked before the write. Update diff, destructive delete, shared chat-view tool rows, phone permission sheet with the same fields (instructions included) | `AgentProfileConfirmPrompt.tsx`, `chat-view/presenters/AgentProfileToolBlock.tsx` |
+
+Deviations from the sections below:
+
+- Harness options replace the proposed `runtime.fastMode`; there is no
+  context field outside a harness's own options (Claude's 1M is a catalog model).
+- An ACP context window or session mode picked before the agent starts is
+  applied once it is up (it used to throw / be dropped).
+- Instructions are read from the row on every create and resume, so editing a
+  profile also changes the instructions of its resumed sessions (§5 proposed a
+  launch-time snapshot). Model and effort still come from the session row.
+- An ACP profile pins the ACP agent in use at creation (`config.agentId`).
+- Remote spawn children (a desktop profile launched on another machine) do not
+  receive the profile's instructions yet.
+- On a CLI node the composed append is stored, and rebuilt for spawn and
+  handoff sessions after a restart, but its turn runners do not read
+  `systemPromptAppend` at all yet (pre-existing; collaboration prompt included).
+
+Deferred: `slug`, `projectPaths`, `runtime.apiProviderId`, `permissions` beyond the permission mode (sandbox, tool rules),
+`capabilities` (tools/MCP/skills/native agent), the `profile` capability entry,
+plaintext `apiKey` migration (gap 4), `agentName` (gap 6), Settings page,
+main-chat picker, remote-node/mobile authoring parity.
 
 ## 1. Decisions
 
@@ -36,13 +75,13 @@ Known gaps this plan closes:
 1. Config schemas describe *connection* (`apiKey`, `baseUrl`, `command`, `env`),
    not agent behavior. Codex `reasoningEffort` / `permissionPreset` are declared
    but never read by the backend.
-2. Desktop `profileResources` ignores row config when computing
+2. *(Closed in v1.)* Desktop `profileResources` ignores row config when computing
    `defaultConfig`; CLI `pushProfile` honors `model` / `effort`. Same row, two
    different defaults.
 3. `SessionManager.createSession` never applies row defaults.
 4. `apiKey` is stored in plaintext `config_json`; credentials already live in the
    credential store.
-5. dsh drops `systemPromptAppend` entirely — the collaboration system prompt
+5. *(Closed in v1.)* dsh drops `systemPromptAppend` entirely — the collaboration system prompt
    does not reach DeepSeek children today.
 6. `ClaudeRunConfig.agentName` (automations) is persisted but never applied.
 
@@ -118,7 +157,7 @@ supports it but SuperOne does not wire it, X = no hook.
 | MCP subset | S (explicit `mcpServers` map) | S (`mcp_servers.X.enabled=false`) | S (per-session list, filter) | S (`syncMcpServers` filter) | S (`buildCursorMcpServers` filter) | X (process-tree wide) |
 | Skills | S (per-session `skills` list; global today) | S (unverified per thread) | S Grok only, additive | S (`skill` permission) | coarse (`settingSources`) | X |
 | Native agent | S (SDK `agent`) | X | X (agentId picks a binary) | S (per-turn `agent` → default) | X | W (`agentPreset`) |
-| Instructions | W (preset append) | W (`developer_instructions`) | W (Grok `_meta.rules`, else first prompt) | W (per-prompt `system`) | W (first-turn prefix) | X (dropped — bug) |
+| Instructions | W (preset append) | W (`developer_instructions`) | W (Grok `_meta.rules`, else first prompt) | W (per-prompt `system`) | W (first-turn prefix) | W (agent-scoped section, v1) |
 | Permission / sandbox | W / W | W / preset | W / none | W / none | W / W (local) | W / preset |
 
 The support matrix becomes shared data, not UI branches. Add to

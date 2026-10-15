@@ -37,6 +37,8 @@ export function setPreferredProviderImpl(
   }
   /** Shared resets when leaving any harness on an empty draft. */
   const emptyDraftHarnessReset = {
+    // Provider/account bindings belong to the old harness; the new one uses its defaults.
+    apiProviderId: null,
     // Usage belongs to the disposed harness runtime, even before the first send.
     contextTokens: 0,
     contextWindow: null,

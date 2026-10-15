@@ -78,7 +78,11 @@ function initialChoice(parent: Pick<Session, 'snapshot' | 'getUiSettings'>, prof
       ...(ui.permissionMode ? { permissionMode: ui.permissionMode } : {}),
       ...(ui.selectedModel ? { model: ui.selectedModel } : {}),
       ...(ui.selectedEffort ? { effort: ui.selectedEffort } : {}),
-      ...(ui.apiProviderId ? { apiProviderId: ui.apiProviderId } : {}),
+      // Old sessions may carry an account from a previous harness, or a deleted key.
+      // Only inherit a binding this agent can use; otherwise keep its own defaults.
+      ...(ui.apiProviderId && own.apiProviders.some((provider) => provider.id === ui.apiProviderId)
+        ? { apiProviderId: ui.apiProviderId }
+        : {}),
     },
   }
 }

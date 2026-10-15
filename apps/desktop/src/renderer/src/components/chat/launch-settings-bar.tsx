@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react'
-import { Bot, ChevronDown } from 'lucide-react'
+import { Bot, Check, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
@@ -133,14 +132,19 @@ export function LaunchAgentPicker({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[60vh] min-w-44 overflow-y-auto">
-        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
-          {profiles.map((profile) => (
-            <DropdownMenuRadioItem key={profile.id} value={profile.id} className="gap-2 text-xs">
-              <HarnessGlyph profile={profile} />
-              <span className="min-w-0 truncate">{profile.name}</span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        {profiles.map((profile) => (
+          <DropdownMenuItem
+            key={profile.id}
+            role="menuitemradio"
+            aria-checked={profile.id === value}
+            onSelect={() => onChange(profile.id)}
+            className="gap-2 text-xs"
+          >
+            <HarnessGlyph profile={profile} />
+            <span className="min-w-0 flex-1 truncate">{profile.name}</span>
+            {profile.id === value && <Check className="text-primary" />}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )

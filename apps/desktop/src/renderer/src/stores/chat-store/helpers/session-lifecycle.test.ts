@@ -94,6 +94,7 @@ const mockWindowApp = {
     models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [],
   }),
   connectCodex: vi.fn().mockResolvedValue({ models: [], prompts: [] }),
+  codexListSkills: vi.fn().mockResolvedValue([]),
   listAcpAgents: vi.fn().mockResolvedValue({ agents: [], selectedAgentId: null, modelsByAgentId: {} }),
   refreshAcpModels: vi.fn().mockResolvedValue({ agents: [], selectedAgentId: null, modelsByAgentId: {} }),
 }
@@ -119,6 +120,7 @@ vi.stubGlobal('localStorage', mockLocalStorage)
 const { useChatStore } = await import('../index')
 const { useCodexRealtimeViewStore } = await import('../../codex-realtime-view')
 const { defaultPrefsCache } = await import('./prefs-cache')
+const { sessionTurnRequest } = await import('./session-turn')
 
 const PATH = '/p-test'
 
@@ -586,6 +588,23 @@ describe('ensureSessionImpl slashCommands', () => {
 })
 
 describe('setPreferredProviderImpl', () => {
+  it.each([
+    ['claude', 'codex', 'claude-account:cli'],
+    ['codex', 'claude', 'codex-account:cli'],
+    ['claude', 'acp', 'shared-key'],
+  ] as const)('drops the %s provider binding when switching an empty draft to %s', (source, provider, apiProviderId) => {
+    setupProject()
+    patchSession({ sessionProvider: source, preferredProvider: source, apiProviderId })
+    const sid = activeProjectState()._activeSessionId!
+
+    useChatStore.getState().setPreferredProvider(provider)
+
+    expect(activeSession().apiProviderId).toBeNull()
+    expect(sessionTurnRequest(useChatStore.getState(), PATH, sid, {
+      text: 'Start the task', clientMessageId: 'first-turn', firstTurn: true,
+    })).not.toHaveProperty('apiProviderId')
+  })
+
   it('refuses an automatic default reset after main owns the empty session', () => {
     setupProject()
     patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', hostSessionOwned: true, harnessUserChosen: false })

@@ -16,8 +16,16 @@ vi.mock('./session-collaboration', () => ({
 vi.mock('./collaboration-mailbox', () => ({ collaborationStore: () => ({ grantForLaunch: mocks.grantForLaunch }) }))
 vi.mock('./agent-profiles', () => ({
   listSessionAgentProfiles: () => [
-    { id: 'claude-base', defaultConfig: { sandboxMode: 'off', model: 'default-model' } },
-    { id: 'codex-base', defaultConfig: { sandboxMode: 'workspace-write', model: 'gpt-default', permissionMode: 'default' } },
+    {
+      id: 'claude-base',
+      defaultConfig: { sandboxMode: 'off', model: 'default-model', apiProviderId: 'claude-account:cli' },
+      apiProviders: [{ id: 'claude-account:cli' }, { id: 'shared-key' }],
+    },
+    {
+      id: 'codex-base',
+      defaultConfig: { sandboxMode: 'workspace-write', model: 'gpt-default', permissionMode: 'default', apiProviderId: 'codex-account:cli' },
+      apiProviders: [{ id: 'codex-account:cli' }, { id: 'shared-key' }],
+    },
   ],
   sessionAgentLaunchDefaults: (profile: { defaultConfig: object }) => profile.defaultConfig,
 }))
@@ -52,13 +60,13 @@ function transcript(input: Record<string, unknown> = INPUT): ChatMessage[] {
 }
 
 /** A session whose host events go through the same reducer as the real one. */
-function fakeSession(messages = transcript()) {
+function fakeSession(messages = transcript(), apiProviderId: string | null = null) {
   const session = {
     id: 'parent',
     cwd: '/repo',
     projectPath: '/repo',
     snapshot: { messages, providerId: 'claude-base' },
-    getUiSettings: () => ({ permissionMode: 'bypassPermissions', selectedModel: 'opus', selectedEffort: 'high', apiProviderId: null }),
+    getUiSettings: () => ({ permissionMode: 'bypassPermissions', selectedModel: 'opus', selectedEffort: 'high', apiProviderId }),
     emitHostEvent: vi.fn((event: AgentEvent) => {
       if (event.type === 'suggested_task_updated') {
         session.snapshot = { ...session.snapshot, messages: applySuggestedTaskUpdate(session.snapshot.messages, event.taskId, event.state) }
@@ -143,6 +151,17 @@ describe('launchSuggestedTask', () => {
     expect(mocks.startSessionAgent).not.toHaveBeenCalled()
   })
 
+  it('launches with Codex defaults when the suggesting Codex session has a stale Claude account', async () => {
+    const parent = fakeSession(transcript(), 'claude-account:cli')
+    parent.snapshot.providerId = 'codex-base'
+    const { host } = fakeHost(parent)
+    const { initial } = suggestedTaskLaunchOptions(host, 'parent', TASK_ID)
+
+    await launchSuggestedTask(host, 'parent', TASK_ID, initial)
+
+    expect(mocks.createGrants.mock.calls[0][1][0].config.apiProviderId).toBe('codex-account:cli')
+  })
+
   it('resumes a start that already made its session instead of approving twice', async () => {
     mocks.grantForLaunch.mockReturnValue({ grant_id: 'g1', started_at: '2026-10-14T00:00:00Z' })
     await launchSuggestedTask(fakeHost(fakeSession()).host, 'parent', TASK_ID, { agentId: 'codex-base', settings: {} })
@@ -199,6 +218,23 @@ describe('suggestedTaskLaunchOptions', () => {
     const parent = fakeSession()
     parent.snapshot = { ...parent.snapshot, providerId: 'unknown' }
     expect(suggestedTaskLaunchOptions(fakeHost(parent).host, 'parent', TASK_ID).initial).toEqual({ agentId: 'claude-base', settings: {} })
+  })
+
+  it.each(['claude-account:cli', 'removed-account'])(
+    'does not inherit an unavailable provider %s into a Codex launch',
+    (apiProviderId) => {
+      const parent = fakeSession(transcript(), apiProviderId)
+      parent.snapshot.providerId = 'codex-base'
+      const { initial } = suggestedTaskLaunchOptions(fakeHost(parent).host, 'parent', TASK_ID)
+      expect(initial.agentId).toBe('codex-base')
+      expect(initial.settings).not.toHaveProperty('apiProviderId')
+    },
+  )
+
+  it.each(['codex-account:cli', 'shared-key'])('keeps an available provider %s', (apiProviderId) => {
+    const parent = fakeSession(transcript(), apiProviderId)
+    parent.snapshot.providerId = 'codex-base'
+    expect(suggestedTaskLaunchOptions(fakeHost(parent).host, 'parent', TASK_ID).initial.settings.apiProviderId).toBe(apiProviderId)
   })
 })
 

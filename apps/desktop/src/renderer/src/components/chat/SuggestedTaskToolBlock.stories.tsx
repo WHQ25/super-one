@@ -4,6 +4,7 @@ import { expect, userEvent, within } from 'storybook/test'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import type { SuggestedTaskLaunchChoice, SuggestedTaskState } from '@superone/shared/suggested-task'
 import { SuggestedTaskCard } from '@superone/chat-view/presenters/SuggestedTaskCard'
+import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { SuggestedTaskLaunchControls, type LaunchOptionsState } from './SuggestedTaskToolBlock'
 import { renderToolMarkdown } from './tool-block-presenters/tool-markdown'
 import { ToolBlock } from './ToolBlock'
@@ -119,6 +120,13 @@ function suggestRow(opts: { status?: 'streaming' | 'complete'; result?: string; 
 const meta: Meta = {
   title: 'Tool UI/SuperOne MCP/Suggested Task',
   parameters: { layout: 'padded' },
+  decorators: [(Story) => {
+    for (const method of ['listPlatforms', 'listCredentials', 'listBindings', 'codexListModels']) {
+      mockIpc('app', method, async () => [])
+    }
+    mockIpc('app', 'getMediaServerPort', async () => 6006)
+    return <Story />
+  }],
 }
 
 export default meta
@@ -157,13 +165,20 @@ export const SwitchAgent: Story = {
     const canvas = within(canvasElement)
     const page = within(canvasElement.ownerDocument.body)
     await userEvent.click(canvas.getByRole('button', { name: 'Agent' }))
+    const selected = await page.findByRole('menuitemradio', { name: 'Claude' })
+    await expect(selected).toHaveAttribute('aria-checked', 'true')
+    await expect(selected.querySelector('.lucide-check')).toBeVisible()
+    await expect(selected.lastElementChild).toHaveClass('lucide-check')
     await userEvent.click(await page.findByRole('menuitemradio', { name: 'Codex' }))
     await expect(await canvas.findByText(/GPT.?5\.4 Codex/)).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: 'Agent' }))
+    await expect(await page.findByRole('menuitemradio', { name: 'Codex' })).toHaveAttribute('aria-checked', 'true')
     await userEvent.click(await page.findByRole('menuitemradio', { name: 'Claude' }))
     await expect(await canvas.findByText(/Opus/)).toBeVisible()
   },
 }
+
+export const SwitchAgentDark: Story = { ...SwitchAgent, globals: { theme: 'dark' } }
 
 /** While main lists the agents, and when it cannot; Launch still runs on the session's own agent. */
 export const LaunchOptionsStates: Story = {

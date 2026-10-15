@@ -1,40 +1,41 @@
-import { History } from 'lucide-react-native'
+import { History, X } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { useMobileLocale } from '../i18n/context'
 import { useMobileTheme } from '../theme/context'
+import { IconButton } from './icon-button'
 import { Text } from './text'
 
 /** What the composer offers for a long session whose prompt cache expired. */
 export type SessionContinuationControls = {
   onContinue(): void
+  /** Close: keep going in this session until its cache expires again. */
   onContinueHere(): void
-  onDontShowAgain(): void
 }
 
-/** The row above the composer, as the desktop draws it (docs/features/session-continuation.md). */
+/**
+ * The row above the composer (docs/features/session-continuation.md), drawn
+ * like `PendingPromptBar`: one 44 pt filled card. Turning the hint off is a
+ * desktop setting.
+ */
 export function SessionContinuationNotice({ controls }: { controls: SessionContinuationControls }) {
   const { t } = useMobileLocale()
   const { tokens: { colors, radius } } = useMobileTheme()
-  const link = (label: string, onPress: () => void) => <Pressable accessibilityRole="button" onPress={onPress} hitSlop={8}
-    style={({ pressed }) => ({ paddingVertical: 4, opacity: pressed ? 0.6 : 1 })}>
-    <Text style={{ fontSize: 12, color: colors.mutedForeground, textDecorationLine: 'underline' }}>{t(label)}</Text>
-  </Pressable>
   return <View testID="session-continuation-notice" accessibilityRole="summary"
-    style={{ gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-      <History size={14} color={colors.mutedForeground} style={{ marginTop: 2 }} />
-      <Text style={{ flex: 1, fontSize: 12, lineHeight: 18, color: colors.mutedForeground }}>
-        {t('This session is long and its cache has expired. Continuing here re-caches the whole context.')}
+    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingLeft: 12, paddingRight: 4,
+      borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface }}>
+    <History size={15} color={colors.mutedForeground} />
+    <Text numberOfLines={1} accessibilityHint={t('Continuing here re-caches the whole context.')}
+      style={{ flex: 1, fontSize: 13, color: colors.foreground }}>
+      {t('Long session cache expired')}
+    </Text>
+    <Pressable accessibilityRole="button" onPress={controls.onContinue}
+      style={({ pressed }) => ({ paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill,
+        backgroundColor: colors.primary, opacity: pressed ? 0.75 : 1 })}>
+      <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '600', color: colors.primaryForeground }}>
+        {t('Continue in New Session')}
       </Text>
-    </View>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 14, rowGap: 4, paddingLeft: 20 }}>
-      <Pressable accessibilityRole="button" onPress={controls.onContinue}
-        style={({ pressed }) => ({ paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm,
-          backgroundColor: colors.secondary, opacity: pressed ? 0.7 : 1 })}>
-        <Text style={{ fontSize: 12, fontWeight: '600', color: colors.foreground }}>{t('Continue in New Session')}</Text>
-      </Pressable>
-      {link('Continue Here', controls.onContinueHere)}
-      {link('Don’t Show Again', controls.onDontShowAgain)}
-    </View>
+    </Pressable>
+    <IconButton icon={X} label="Continue Here" chrome="plain" iconSize={16}
+      style={{ width: 32, height: 32 }} hitSlop={6} onPress={controls.onContinueHere} />
   </View>
 }

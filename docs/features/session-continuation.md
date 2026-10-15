@@ -25,9 +25,10 @@ Desktop and mobile run the same code, and neither polls the host.
   suppress it.
 
 Settings are `{ enabled, minContextTokens }`, default on at 300K, clamped to
-100K–1M. Desktop keeps them in `AppSettings.sessionContinuationHint` (Settings ›
-Appearance, and the `config_*` registry). Mobile keeps its own copy on the device
-(`mobile.sessionContinuationHint`), so Don't Show Again is per device.
+100K–1M. They live only on the desktop, in `AppSettings.sessionContinuationHint`
+(Settings › Appearance, and the `config_*` registry). The phone follows its paired
+desktop: `settings.get` reports them, read on connecting and on each session
+switch; a host that reports none gets the default.
 
 ## Actions
 
@@ -38,9 +39,9 @@ Appearance, and the `config_*` registry). Mobile keeps its own copy on the devic
   the old session on the device that acted. On desktop, the first send's reminder
   for that mention tells the agent it continues that session and took over its
   channels.
-- **Continue Here.** Hides the banner for that session until its cache expires
-  again after a later turn.
-- **Don't Show Again.** Turns the setting off.
+- **Continue Here** (the phone's close button). Hides the banner for that session
+  until its cache expires again after a later turn.
+- **Don't Show Again** (desktop only). Turns the setting off.
 
 Continuation drafts are never prewarmed and always reach the host through
 `session.create { continuesFrom }`, which is where the channels move. Until that

@@ -521,16 +521,17 @@ test('the model trigger carries Ultracode\'s mark while the switch is on, as the
 test('offers continuing a long session above the composer once its cache expired', async () => {
   const onContinue = jest.fn<() => void>()
   const onContinueHere = jest.fn<() => void>()
-  const onDontShowAgain = jest.fn<() => void>()
-  const continuation = { onContinue, onContinueHere, onDontShowAgain }
+  const continuation = { onContinue, onContinueHere }
   await renderScheduledComposer({ continuation }, 'light', 'zh')
+  expect(screen.getByText('长会话缓存已过期')).toBeTruthy()
   expect(screen.getByText('在新会话中继续')).toBeTruthy()
 
   await renderWithTheme(composer({ continuation }))
   fireEvent.press(screen.getByRole('button', { name: 'Continue in New Session' }))
+  // The close button keeps going here; turning the hint off is a desktop setting.
   fireEvent.press(screen.getByRole('button', { name: 'Continue Here' }))
-  fireEvent.press(screen.getByRole('button', { name: 'Don’t Show Again' }))
-  expect([onContinue, onContinueHere, onDontShowAgain].map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1])
+  expect(screen.queryByRole('button', { name: 'Don’t Show Again' })).toBeNull()
+  expect([onContinue, onContinueHere].map((fn) => fn.mock.calls.length)).toEqual([1, 1])
 
   // Restoring a session: the notice belongs to the one being left.
   await renderWithTheme(composer({ continuation, loadingConversation: true }))

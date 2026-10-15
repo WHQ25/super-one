@@ -2342,7 +2342,8 @@ export function MobileApp() {
   const canForkSession = !!sessionId && harnessSupportsFork(selectedProvider) && !sessionWorktree.isWorktree
   // A new session leaves a routed node for the workspace, so it cannot continue one there.
   const continuationHint = useSessionContinuationHint({
-    store: kv, sessionId: routedEnvironmentId ? null : sessionId, expiry: cacheExpiry, idle: !streaming && !perm && !plan,
+    clientRef: workspaceClientRef, connected: connectionState === 'connected',
+    sessionId: routedEnvironmentId ? null : sessionId, expiry: cacheExpiry, idle: !streaming && !perm && !plan,
   })
   /** Continue the open session in a new one (docs/features/session-continuation.md). */
   const continueInNewSession = () => {
@@ -2653,7 +2654,7 @@ export function MobileApp() {
       ) : null}
 
       {route === 'settings' ? (
-        <ConnectedAppSettingsScreen store={kv} />
+        <ConnectedAppSettingsScreen />
       ) : null}
 
       {route === 'files' ? (finderOpen ? (
@@ -2775,7 +2776,6 @@ export function MobileApp() {
           continuation={continuationHint.visible ? {
             onContinue: continueInNewSession,
             onContinueHere: continuationHint.dismiss,
-            onDontShowAgain: continuationHint.dontShowAgain,
           } : undefined}
           contextTokens={usage.contextTokens}
           contextWindow={ringContextWindow}

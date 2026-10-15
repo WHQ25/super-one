@@ -12,6 +12,7 @@ import type {
   SandboxProbeResult,
   SandboxSupportLevel,
 } from '../agent-types'
+import type { SessionContinuationHintSettings } from '../session-continuation'
 
 /** Per-harness agent defaults stored on the node. */
 export interface NodeClaudeAgentDefaults {
@@ -51,6 +52,11 @@ export interface NodeAgentSettings {
    * lacks. Empty or absent means {@link DEFAULT_NODE_PROJECTS_DIR}.
    */
   projectsDir?: string
+  /**
+   * The desktop's long-session continuation hint, which its phone follows
+   * (docs/features/session-continuation.md). Absent on hosts without one.
+   */
+  sessionContinuationHint?: SessionContinuationHintSettings
 }
 
 /** Default parent directory for clones a remote launch asks for (`~` is the node user's home). */

@@ -406,7 +406,7 @@ function SendingPreview() {
 export const SendAfterComposition = { render: () => <MobileThemeProvider><SendingPreview /></MobileThemeProvider> }
 
 /** A long session whose prompt cache expired offers continuing in a new one. */
-const continuation = { onContinue: noop, onContinueHere: noop, onDontShowAgain: noop }
+const continuation = { onContinue: noop, onContinueHere: noop }
 export const PhoneSessionContinuation = { name: 'Phone · continue a long session in a new one', args: { continuation } }
 export const PhoneSessionContinuationLight = {
   name: 'Phone · continue a long session, narrow light Chinese',

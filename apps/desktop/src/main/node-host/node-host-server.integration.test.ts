@@ -400,6 +400,7 @@ const B_APP_SETTINGS = {
   },
   experimentalClaudeOpenAiChatEnabled: true,
   defaultClonePaths: { local: '~/Code' },
+  sessionContinuationHint: { enabled: false, minContextTokens: 500_000 },
 } as unknown as Parameters<typeof desktopAgentSettings>[0]
 
 describe('DesktopNodeHost configuration', () => {
@@ -439,6 +440,8 @@ describe('DesktopNodeHost configuration', () => {
           codex: { defaultModel: 'gpt-5', defaultEffort: 'medium', permissionPreset: '' },
           experimentalClaudeOpenAiChatEnabled: true,
           projectsDir: '~/Code',
+          // The phone's continuation hint follows this desktop's setting.
+          sessionContinuationHint: { enabled: false, minContextTokens: 500_000 },
         },
       })
 

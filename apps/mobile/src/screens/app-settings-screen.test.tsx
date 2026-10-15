@@ -42,16 +42,3 @@ test('disables checking while an update check is running', async () => {
   await act(async () => { fireEvent.press(button) })
   expect(onCheckForUpdates).not.toHaveBeenCalled()
 })
-
-test('turns the long-session hint on and off and hides its threshold while off', async () => {
-  const onChange = jest.fn()
-  const settings = (enabled: boolean) => <AppSettingsScreen continuation={{ value: { enabled, minContextTokens: 300_000 }, onChange }} />
-  await renderWithTheme(settings(true))
-  expect(screen.getByText('Long Session Threshold')).toBeTruthy()
-  expect(screen.getByText('300K')).toBeTruthy()
-  await act(async () => { fireEvent(screen.getByLabelText('Suggest Continuing Long Sessions'), 'valueChange', false) })
-  expect(onChange).toHaveBeenCalledWith({ enabled: false })
-
-  await renderWithTheme(settings(false))
-  expect(screen.queryByText('Long Session Threshold')).toBeNull()
-})

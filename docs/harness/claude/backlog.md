@@ -26,6 +26,7 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 16 | `ui_prompt_autocomplete` mod host request | 0.3.292 (native schema observed) | A mod's completions in the SuperOne composer | Schema is `@internal`; a per-keystroke ask merged into the composer's menus, local sessions only (like G6) | open, wait for the protocol to become public |
 | 17 | `SDKRateLimitInfo.overageEnabled` | 0.3.295 | Tell a usage-limit warning apart for accounts with extra usage on, before overage starts | `rate_limit_event` handling reads only `resetsAt` / `isUsingOverage` today | open |
 | 18 | Settings hook `onFailure: 'block'` | 0.3.296 | Fail-closed hooks in the settings.json hook editor | Hook editor schema and shared hook types change | open |
+| 19 | Elicitation `property_order` | 0.3.299 | Field order for transports without JSON key order | Desktop IPC and the relay carry JSON, which keeps the server's order already | rejected |
 
 ## Integration gaps
 

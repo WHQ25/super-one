@@ -29,6 +29,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Give each Claude and Codex subscription account its own card with consistent
   account actions and usage refresh placement.
 - Keep unstarted suggested-task cards available and remove the dismiss action.
+- Upgrade Claude Agent SDK to 0.3.300 (Claude Code 2.1.300).
 
 ### Fixed
 

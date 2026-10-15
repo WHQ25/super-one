@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { DockviewReact } from 'dockview-react'
 import type { DockviewReadyEvent, DockviewApi, DockviewTheme, IDockviewHeaderActionsProps, IWatermarkPanelProps } from 'dockview-core'
@@ -11,7 +11,7 @@ import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useSlotBounds } from '@/hooks/useSlotBounds'
 import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
-import { ActivityHeaderPrefix } from './ActivityHeaderPrefix'
+import { ActivityHeaderGroupProvider, ActivityHeaderPrefix } from './ActivityHeaderPrefix'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { isLayoutSwapping, isModPanePanel, isPersonClosingModPane, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup, type ModPaneTabParams } from './activity-panel-api'
@@ -40,15 +40,17 @@ interface ActivityPanelProps {
   transitionMs?: number
 }
 
-function ActivityPrefixActions() {
-  return <ActivityHeaderPrefix />
+function ActivityPrefixActions({ group, panels }: IDockviewHeaderActionsProps) {
+  // Empty macOS groups host these controls in their watermark instead.
+  if (window.app.platform === 'darwin' && panels.length === 0) return null
+  return <ActivityHeaderPrefix group={group} />
 }
 
 function ActivityWatermark({ group }: IWatermarkPanelProps) {
   return (
     <div className="relative h-full">
       <div className="absolute inset-x-0 top-0 z-10 h-[34px]">
-        <ActivityHeaderPrefix />
+        <ActivityHeaderPrefix group={group} />
       </div>
       <ActivityLauncher group={group} />
     </div>
@@ -88,6 +90,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<DockviewApi | null>(null)
+  const [headerApi, setHeaderApi] = useState<DockviewApi | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
@@ -136,6 +139,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
 
   const onReady = useCallback((event: DockviewReadyEvent) => {
     apiRef.current = event.api
+    setHeaderApi(event.api)
     observeDockview(event.api)
     setDockApi(event.api)
     connectMcpAppTabs(event.api, toggleMaximizedActivityGroup)
@@ -270,20 +274,22 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
             panel must never be left without an owner for its own shortcuts. */}
         <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: maximized ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">
-            <DockviewReact
-              theme={SUPERONE_DOCKVIEW_THEME}
-              disableAutoResizing
-              disableDnd={maximized}
-              disableFloatingGroups={maximized}
-              scrollbars="native"
-              disableTabsOverflowList
-              onReady={onReady}
-              components={activityPanelComponents}
-              tabComponents={activityTabComponents}
-              watermarkComponent={ActivityWatermark}
-              prefixHeaderActionsComponent={ActivityPrefixActions}
-              leftHeaderActionsComponent={ActivityNewTabAction}
-            />
+            <ActivityHeaderGroupProvider api={headerApi}>
+              <DockviewReact
+                theme={SUPERONE_DOCKVIEW_THEME}
+                disableAutoResizing
+                disableDnd={maximized}
+                disableFloatingGroups={maximized}
+                scrollbars="native"
+                disableTabsOverflowList
+                onReady={onReady}
+                components={activityPanelComponents}
+                tabComponents={activityTabComponents}
+                watermarkComponent={ActivityWatermark}
+                prefixHeaderActionsComponent={ActivityPrefixActions}
+                leftHeaderActionsComponent={ActivityNewTabAction}
+              />
+            </ActivityHeaderGroupProvider>
           </div>
         </div>
       </div>

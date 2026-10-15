@@ -2106,6 +2106,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
+  getSpawnedSessionProject: (parentSessionId: string, childSessionId: string): Promise<string | null> =>
+    ipcRenderer.invoke(AgentIpcChannels.SPAWNED_SESSION_PROJECT, parentSessionId, childSessionId),
   readProjectFile: (folderPath: string, filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_FILE, folderPath, filePath),
   statPreviewFile: (root: string, filePath: string) =>

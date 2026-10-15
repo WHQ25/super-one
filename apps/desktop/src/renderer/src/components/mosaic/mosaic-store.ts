@@ -41,7 +41,8 @@ interface MosaicState {
   draggingSession: boolean
   draggedSession: { projectPath: string; sessionId: string } | null
   dropHint: DropPlan | null
-  addTile: (projectPath: string, sessionId: string, target?: DropTarget) => void
+  /** `focus: false` keeps focus on the tile that had it — an agent adding a pane must not move the user. */
+  addTile: (projectPath: string, sessionId: string, target?: DropTarget, options?: { focus?: boolean }) => void
   removeTile: (id: string) => void
   setFocus: (id: string) => void
   setRatio: (path: MosaicPath, ratio: number) => void
@@ -78,7 +79,8 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
   draggedSession: null,
   dropHint: null,
 
-  addTile: (projectPath, sessionId, target) => {
+  addTile: (projectPath, sessionId, target, options) => {
+    const focus = options?.focus !== false
     const id = mosaicTileId(projectPath, sessionId)
     const st = get()
     const chat = useChatStore.getState()
@@ -97,14 +99,14 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
       void chat.mountSession(projectPath, sessionId)
       void chat.mountSession(active.projectPath, active.sessionId)
       const activeLeaf = makeLeaf(activeId, active.projectPath, active.sessionId)
-      set({ mode: 'mosaic', root: addLeaf(activeLeaf, activeId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)), focusedTileId: id, lastLayout: null })
+      set({ mode: 'mosaic', root: addLeaf(activeLeaf, activeId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)), focusedTileId: focus ? id : activeId, lastLayout: null })
     } else {
       void chat.mountSession(projectPath, sessionId)
       const targetId = target?.tileId ?? st.focusedTileId ?? collectLeaves(st.root)[0]?.id
       const root = targetId ? addLeaf(st.root, targetId, target?.edge ?? 'right', makeLeaf(id, projectPath, sessionId)) : st.root
-      set({ root, focusedTileId: id })
+      set({ root, focusedTileId: focus ? id : st.focusedTileId })
     }
-    void chat.switchToSession(projectPath, sessionId)
+    if (focus) void chat.switchToSession(projectPath, sessionId)
   },
 
   setFocus: (id) => {

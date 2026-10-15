@@ -15,11 +15,13 @@ import {
 import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusIsolation } from './browser-focus-isolation'
 import { isBlankUrl } from './browser-url'
 import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-panel-api'
+import { recordDockOpener } from '@/components/activity/dock-ownership'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { captureBrowserScreenshot } from './browser-screenshot'
 import { startBrowserRecording, stopBrowserRecording } from './browser-recording'
 import { isMiniAppTargetId } from '@superone/shared/miniapp-automation-target'
 import type { MiniAppToolPreviewRequest } from '@superone/shared/miniapp-types'
+import type { LayoutActRequest } from '@superone/shared/layout-control'
 import {
   listMiniAppTargets,
   miniAppTargetWebContentsId,
@@ -641,6 +643,14 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   if (op === 'miniappPreview') {
     return showToolUiPreview(sessionId, rawInput as MiniAppToolPreviewRequest, signal)
   }
+  if (op === 'layoutSnapshot' || op === 'layoutAct') {
+    const { root, request } = (rawInput ?? {}) as { root?: string; request?: LayoutActRequest }
+    const { layoutAct, layoutSnapshot } = await import('@/lib/layout-control')
+    const caller = { sessionId, opener: { kind: 'agent' as const }, ...(root ? { root } : {}) }
+    if (op === 'layoutSnapshot') return layoutSnapshot(caller)
+    if (!request) throw new Error('layout_act needs an action.')
+    return layoutAct(caller, request)
+  }
   if (op === 'miniappReload') {
     const appId = String((rawInput as { appId?: unknown } | null)?.appId ?? '')
     return reloadMiniAppTargets(appId, sessionId, signal)
@@ -649,6 +659,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     const url = input.url ?? 'about:blank'
     assertNotMiniAppTarget(input.tab)
     const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
+    if (!input.tab) recordDockOpener(sessionId, targetId, 'agent')
     openBrowserTab(url, targetId, sessionId, { reveal: false })
     useAgentViewfinderStore.getState().activate(sessionId, 'browser', targetId)
     const store = useBrowserStore.getState()

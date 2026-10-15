@@ -304,6 +304,8 @@ const SUPERONE_TOOL_SUMMARY_FIELDS: Record<string, readonly string[]> = {
   read_manual: ['domain', 'topic'],
   // The card, never the brief: the phone cannot launch it.
   session_suggest_task: ['title', 'tldr'],
+  // The layout row's verb and subject; the row reads file names out of `tab`.
+  layout_act: ['action', 'path', 'line', 'side', 'tab'],
   miniapp_dev_register: ['name', 'directory', 'appDir'],
   miniapp_dev_update_types: ['appDir'],
   miniapp_dev_setup: ['name', 'directory', 'description'],

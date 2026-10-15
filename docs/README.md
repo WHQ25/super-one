@@ -47,6 +47,7 @@ the same commit.
 - [inline-files-previewer.md](features/inline-files-previewer.md) — `@native/files-previewer`
 - [3d-model-preview.md](features/3d-model-preview.md) — 3D formats, samples, USDZ composition
 - [terminal-agent-tools.md](features/terminal-agent-tools.md) — agent terminal control
+- [layout-control.md](features/layout-control.md) — `layout_snapshot` / `layout_act`: arranging the desktop layout without moving the user
 - [jev-fast-loop.md](features/jev-fast-loop.md) — Jev fast loop for browser, computer and device runs
 - [mcp-apps.md](features/mcp-apps.md) — hosting third-party MCP Apps Views (Codex, Claude; desktop, phone, remote)
 - [claude-mods.md](features/claude-mods.md) — drawing Claude Code mods (panes, band, transcript sites, `Client`; desktop, phone, remote)

@@ -1,8 +1,12 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi, beforeEach } from 'vitest'
+import type { LayoutActRequest, LayoutActResult, LayoutSnapshot } from '@superone/shared/layout-control'
+import type { SuperOneMiniAppLayoutRequest, SuperOneMiniAppLayoutResult, SuperOneMiniAppLayoutSnapshot } from '@superone/shared/miniapp-host-api'
 
-const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite } =
+const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, layoutSnapshot, layoutAct } =
   vi.hoisted(() => ({
+    layoutSnapshot: vi.fn(),
+    layoutAct: vi.fn(),
     toastFns: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
     setDraftText: vi.fn(),
     setMiniAppContext: vi.fn(),
@@ -13,6 +17,7 @@ const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExte
   }))
 
 vi.mock('sonner', () => ({ toast: toastFns }))
+vi.mock('@/lib/layout-control', () => ({ layoutSnapshot, layoutAct }))
 vi.mock('@/lib/external-link', () => ({ requestOpenExternalLink: openExternal }))
 vi.mock('@/lib/miniapp-clipboard', () => ({
   requestClipboardRead: clipboardRead,
@@ -33,7 +38,7 @@ vi.mock('@/stores/miniapp', () => ({
     getState: () => ({
       apps: [{ id: 'demo', manifest: { name: 'Demo App' } }],
       openApps: {
-        k1: { entry: { id: 'demo' }, projectDir: '/proj', holderSessions: new Set(['s1']) },
+        k1: { instanceKey: 'demo:p1', entry: { id: 'demo' }, projectDir: '/proj', holderSessions: new Set(['s1']) },
       },
     }),
   },
@@ -43,7 +48,7 @@ const { runMiniAppHostAction } = await import('./miniapp-host-actions')
 
 describe('MiniApp Host actions in the renderer', () => {
   beforeEach(() => {
-    for (const fn of [...Object.values(toastFns), setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite]) {
+    for (const fn of [...Object.values(toastFns), setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, layoutSnapshot, layoutAct]) {
       fn.mockReset()
     }
     window.miniapp = { showItemInFolder: vi.fn() } as never
@@ -98,5 +103,28 @@ describe('MiniApp Host actions in the renderer', () => {
     await expect(runMiniAppHostAction('demo', '/proj', 'agent.sendPrompt', { text: 42 })).rejects.toThrow(/must be a string/)
     await expect(runMiniAppHostAction('demo', '/proj', 'host.revealInFolder', {})).rejects.toThrow(/must be a string/)
     await expect(runMiniAppHostAction('demo', '/proj', 'nope', {})).rejects.toThrow(/Unknown host action/)
+  })
+
+  it('reads and changes the layout as the holder session, marked as this app', async () => {
+    layoutSnapshot.mockReturnValue({ self: 'miniapp-demo:p1' })
+    layoutAct.mockResolvedValue({ status: 'queued', visible: false })
+    const caller = { sessionId: 's1', opener: { kind: 'miniapp', appId: 'demo', instanceKey: 'demo:p1' } }
+
+    expect(await runMiniAppHostAction('demo', '/proj', 'layout.snapshot', {})).toEqual({ self: 'miniapp-demo:p1' })
+    expect(layoutSnapshot).toHaveBeenCalledWith(caller)
+    expect(await runMiniAppHostAction('demo', '/proj', 'layout.act', { action: 'maximize_panel', tab: 'miniapp-demo:p1' }))
+      .toEqual({ status: 'queued', visible: false })
+    expect(layoutAct).toHaveBeenCalledWith(caller, { action: 'maximize_panel', tab: 'miniapp-demo:p1' })
+  })
+
+  it('refuses layout calls from an app no session holds', async () => {
+    await expect(runMiniAppHostAction('demo', '/elsewhere', 'layout.snapshot', {})).rejects.toThrow(/no session holds/)
+    expect(layoutSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('keeps the author-facing layout types in step with the shared contract', () => {
+    expectTypeOf<LayoutSnapshot>().toEqualTypeOf<SuperOneMiniAppLayoutSnapshot>()
+    expectTypeOf<LayoutActRequest>().toEqualTypeOf<SuperOneMiniAppLayoutRequest>()
+    expectTypeOf<LayoutActResult>().toEqualTypeOf<SuperOneMiniAppLayoutResult>()
   })
 })

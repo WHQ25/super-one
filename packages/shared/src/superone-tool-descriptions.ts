@@ -305,3 +305,17 @@ export const ENVIRONMENT_GET_INFO_DESCRIPTION = 'Read SuperOne environments (thi
 export const ENVIRONMENT_GET_INFO_IDS_DESCRIPTION = 'Environments to read; omit for all.'
 export const ENVIRONMENT_GET_INFO_INCLUDE_DESCRIPTION = 'Detail groups to add. Default ["hardware"]; [] returns IDs, labels and state only.'
 export const ARCHIVE_ENVIRONMENT_DESCRIPTION = 'Target environment ID from environment_get_info. Omit or use localhost for the calling session host.'
+
+export const LAYOUT_SNAPSHOT_DESCRIPTION =
+  'Read the SuperOne desktop layout around your session: whether the user can see your chat, the sidebar, your activity panel (open, side, maximized) and its tabs (id, kind, title, active, openedBy), your bottom terminal, and the split view. ' +
+  'Call it for tab ids before layout_act focus/close/split, or to check what the user is looking at.'
+
+export const LAYOUT_ACT_DESCRIPTION =
+  'Arrange the SuperOne desktop for the user: open a file (path, line) as a tab; focus, split or close tabs by id; show, hide, maximize or move your activity panel; show or hide your bottom terminal; collapse the sidebar; put a session you launched beside yours (split_session / close_split). ' +
+  'Open browser and terminal tabs with browser_tabs / terminal_tabs. You can close only tabs and panes you opened. ' +
+  'It never moves the user: in the background your own layout changes wait for them (status queued) and window-wide ones are skipped. `visible` says whether the user sees the result now.'
+export const LAYOUT_ACT_PATH_DESCRIPTION = 'open_file: the file, absolute or relative to your working folder.'
+export const LAYOUT_ACT_LINE_DESCRIPTION = 'open_file: 1-based line to reveal.'
+export const LAYOUT_ACT_TAB_DESCRIPTION = 'Tab id from layout_snapshot (browser_tabs / terminal_tabs ids work too). focus_tab, close_tab, split_tab; maximize_panel defaults to the active tab.'
+export const LAYOUT_ACT_DIRECTION_DESCRIPTION = 'split_tab / split_session. Default right.'
+export const LAYOUT_ACT_SESSION_DESCRIPTION = 'split_session / close_split: a session you launched with session_collab_*.'

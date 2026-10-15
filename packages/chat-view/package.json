@@ -83,6 +83,7 @@
     "./presenters/SuggestedTaskCard": "./src/presenters/SuggestedTaskCard.tsx",
     "./presenters/SuperoneCompactToolRow": "./src/presenters/SuperoneCompactToolRow.tsx",
     "./presenters/TerminalToolBlock": "./src/presenters/TerminalToolBlock.tsx",
+    "./presenters/LayoutControlToolRow": "./src/presenters/LayoutControlToolRow.tsx",
     "./presenters/TerminalCommandOutput": "./src/presenters/TerminalCommandOutput.tsx",
     "./presenters/ToolGroup": "./src/presenters/ToolGroup.tsx",
     "./presenters/ToolIcon": "./src/presenters/ToolIcon.tsx",

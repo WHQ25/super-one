@@ -35,6 +35,9 @@ export type BrowserAutomationOp =
   | 'recordStop'
   | 'miniappPreview'
   | 'miniappReload'
+  // Desktop layout control (layout_snapshot / layout_act) rides the same renderer call channel.
+  | 'layoutSnapshot'
+  | 'layoutAct'
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -45,6 +48,11 @@ interface PendingCall {
 }
 
 const BROWSER_CALL_TIMEOUT_MS = 30_000
+
+/** How a failed call names itself to the agent: layout ops are not browser automation. */
+function callLabel(op: BrowserAutomationOp): string {
+  return op === 'layoutSnapshot' || op === 'layoutAct' ? 'Layout control' : 'Browser automation'
+}
 
 const pendingCalls = new Map<string, PendingCall>()
 
@@ -65,7 +73,7 @@ function failCallsOnRendererLoss(contents: WebContents): void {
       clearTimeout(pending.timer)
       pendingCalls.delete(callId)
       pending.reject(new Error(
-        `Browser automation '${pending.op}' was interrupted: ${reason}. It may have partly run; check the page before retrying.`,
+        `${callLabel(pending.op)} '${pending.op}' was interrupted: ${reason}. It may have partly run; check the page before retrying.`,
       ))
     }
   }
@@ -158,7 +166,7 @@ function dispatchBrowserAutomation(
           input: { callId },
         })
       }
-      reject(new Error(`Browser automation '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms; the renderer-side work was cancelled`))
+      reject(new Error(`${callLabel(op)} '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms; the renderer-side work was cancelled`))
     }, BROWSER_CALL_TIMEOUT_MS)
     pendingCalls.set(callId, { resolve, reject, timer, op, contents: win.webContents })
     win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input })

@@ -18,6 +18,8 @@ import {
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
+import { setChatFloating } from '@/lib/layout-actions'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -85,6 +87,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   )
 
   const sideChatAvailable = useCanOpenSideChat(sessionId)
+  const chatFloating = useActivityPanelStore(selectPanelFillsWindow)
 
   const afterMutate = useCallback(async () => {
     await useChatStore.getState().fetchSessions()
@@ -130,6 +133,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
       // the foreground chat of a local project. `resolveSideChatTarget` owns the
       // rest of the rule (forkable harness, non-empty, not already a side chat).
       onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
+      chatView: { floating: chatFloating, onToggle: () => setChatFloating(!chatFloating) },
     },
     { miniWindow: 'convert' },
   )

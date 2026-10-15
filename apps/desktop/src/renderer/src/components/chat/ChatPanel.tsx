@@ -14,6 +14,7 @@ import { createDragCapture } from '@/lib/drag-capture'
 import { clearUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
 import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
+import { HeaderSessionMenu } from './HeaderSessionMenu'
 
 const OFFSET = 8
 const DEFAULT_PANEL_W = 360
@@ -444,11 +445,19 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
             >
               <ChevronDown className="size-3.5" />
             </button>
-            <SessionTitleAnimated
-              projectPath={projectPath}
-              sessionId={sessionId}
-              className="min-w-0 flex-1 pr-3 text-xs text-muted-foreground"
-            />
+            <div className="group/htitle flex min-w-0 flex-1 items-center gap-1 pr-3">
+              <SessionTitleAnimated
+                projectPath={projectPath}
+                sessionId={sessionId}
+                className="min-w-0 text-xs text-muted-foreground"
+              />
+              {/* The header drags the panel; the menu's own press must not start a drag. */}
+              {sessionId && projectPath ? (
+                <span className="flex shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+                  <HeaderSessionMenu sessionId={sessionId} folderPath={projectPath} />
+                </span>
+              ) : null}
+            </div>
             <button
               onClick={() => resetSession()}
               className="shrink-0 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"

@@ -1,4 +1,4 @@
-import { Copy, Eye, EyeOff, FolderOpen, GitFork, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
+import { AppWindow, Columns2, Copy, Eye, EyeOff, FolderOpen, GitFork, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -19,6 +19,8 @@ export interface SessionMenuHandlers {
   onAddToChat?: () => void
   /** Chat-header affordance — opens an ephemeral side chat forked off this session. */
   onNewSideChat?: () => void
+  /** Chat-header affordance — float the chat over the activity panel, or dock it back. */
+  chatView?: { floating: boolean; onToggle: () => void }
 }
 
 export interface SessionMenuOptions {
@@ -135,6 +137,16 @@ export function buildSessionMenuItems(
           }],
     },
     { kind: 'separator' },
+    // How this chat is shown; the mini window is the other answer to the same question.
+    ...(handlers.chatView
+      ? [{
+          kind: 'item' as const,
+          id: 'chatView',
+          label: t(handlers.chatView.floating ? 'sidebar.contextMenu.dockChat' : 'sidebar.contextMenu.floatChat'),
+          icon: handlers.chatView.floating ? Columns2 : AppWindow,
+          onSelect: handlers.chatView.onToggle,
+        }]
+      : []),
     // Mini window is a desktop shell around the same chat store; remote: project keys work via selectProject/switchSession.
     {
       kind: 'item',

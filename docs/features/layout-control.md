@@ -95,10 +95,11 @@ the same bounds the resize sashes and the window-resize clamp in `App.tsx` use
 next open keeps that width instead of filling the window.
 
 **Chat mode.** The chat is a column beside the panel (`docked`) until the panel
-fills the window (`selectPanelFillsWindow`): a maximized tab, or the chat
-floated without one (`chatFloating`). Then it is the floating `ChatPanel`, expanded
+fills the window (`selectPanelFillsWindow`): a maximized tab, or the person
+floating the chat (`chatFloating`, the chat header's Float Chat menu item, next
+to Convert to Mini Window). Then it is the floating `ChatPanel`, expanded
 (`floating`) or collapsed to an icon (`icon`, chat store `isOpen`). `chat_mode`
-goes through `setChatFloating`: floating keeps every group
+goes through the same `setChatFloating` as the menu: floating keeps every group
 as laid out, and `docked` also leaves a maximized tab. Hiding the panel docks the
 chat. The split view refuses it as `unavailable`. `position` names the floating
 chat's snap anchors (chat store `corner`: corners and edge midpoints); given

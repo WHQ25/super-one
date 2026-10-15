@@ -3,6 +3,7 @@
 import { render, act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, beforeEach } from 'vitest'
+import { useActivityPanelStore } from '@/stores/activity-panel'
 import { HeaderSessionMenu } from './HeaderSessionMenu'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import type { ChatMessage, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -95,5 +96,24 @@ describe('HeaderSessionMenu item set', () => {
     // Still the shared actions the sidebar row has.
     expect(screen.getByRole('menuitem', { name: 'Rename Session' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
+  })
+
+  it('floats the chat from beside the mini window entry, and docks it back', async () => {
+    seedProject({ active: 'saved-1' })
+    act(() => { useActivityPanelStore.setState({ showPanel: false, maximized: false, chatFloating: false }) })
+    const user = userEvent.setup()
+    const { container } = render(<HeaderSessionMenu sessionId="saved-1" folderPath={FOLDER} />)
+
+    await user.click(trigger(container) as HTMLElement)
+    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent)
+    expect(items.indexOf('Float Chat')).toBe(items.indexOf('Convert to Mini Window') - 1)
+    await user.click(screen.getByRole('menuitem', { name: 'Float Chat' }))
+
+    expect(useActivityPanelStore.getState()).toMatchObject({ showPanel: true, chatFloating: true, maximized: false })
+    expect(useChatStore.getState().isOpen).toBe(true)
+
+    await user.click(trigger(container) as HTMLElement)
+    await user.click(await screen.findByRole('menuitem', { name: 'Dock Chat' }))
+    expect(useActivityPanelStore.getState().chatFloating).toBe(false)
   })
 })

@@ -562,6 +562,8 @@ export const zh: Messages = {
       copyWorkingDirectory: '复制工作目录',
       openFolder: '打开文件夹',
       openInMiniWindow: '在迷你窗口中打开',
+      floatChat: '浮窗显示聊天',
+      dockChat: '停靠聊天',
       convertToMiniWindow: '转为迷你窗口',
       dragToMiniWindow: '松开打开为小窗',
       forkToWorktree: 'Fork 到新 Worktree',

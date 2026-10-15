@@ -75,14 +75,14 @@ export function SessionContinuationBanner() {
     () => (continuedIn ? null : sessionCacheExpiresAt({ messages, contextTokens, settings })),
     [continuedIn, messages, contextTokens, settings],
   )
-  const [now, setNow] = useState(() => Date.now())
-  const [, setDismissals] = useState(0)
+  const [, setRenders] = useState(0)
   useEffect(() => {
-    if (expiresAt === null || expiresAt <= now) return
-    // Re-render at the expiry instant; setTimeout caps a delay near 24.8 days.
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(expiresAt - now, 2 ** 31 - 1))
+    const delay = expiresAt === null ? 0 : expiresAt - Date.now()
+    if (delay <= 0) return
+    // Re-render at the expiry instant; a TTL is at most an hour.
+    const timer = setTimeout(() => setRenders((n) => n + 1), delay)
     return () => clearTimeout(timer)
-  }, [expiresAt, now])
+  }, [expiresAt])
 
   if (!projectPath || !sessionId) return null
   if (continuedIn) {
@@ -96,7 +96,7 @@ export function SessionContinuationBanner() {
       />
     )
   }
-  if (expiresAt === null || now < expiresAt || status !== 'idle' || pending) return null
+  if (expiresAt === null || Date.now() < expiresAt || status !== 'idle' || pending) return null
   if (dismissedExpiry.get(sessionId) === expiresAt) return null
   return (
     <SessionContinuationNotice
@@ -104,7 +104,7 @@ export function SessionContinuationBanner() {
       onContinue={() => { continueInNewSession(projectPath, sessionId) }}
       onContinueHere={() => {
         dismissedExpiry.set(sessionId, expiresAt)
-        setDismissals((n) => n + 1)
+        setRenders((n) => n + 1)
       }}
       onDontShowAgain={() => { void setSettings({ enabled: false }) }}
     />

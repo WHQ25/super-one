@@ -61,15 +61,16 @@ function LongSession({ continuedIn = null }: { continuedIn?: string | null }) {
   )
 }
 
-const meta = {
+// Typed from the component: the props are a union, which `satisfies Meta` narrows to `never`.
+const meta: Meta<typeof SessionContinuationNotice> = {
   title: 'Chat/SessionContinuationBanner',
   component: SessionContinuationNotice,
   args: { kind: 'hint', onContinue: () => {}, onContinueHere: () => {}, onDontShowAgain: () => {} },
   parameters: { layout: 'padded' },
   decorators: [(Story) => <div style={{ width: 620, maxWidth: '100%' }}><Story /></div>],
-} satisfies Meta<typeof SessionContinuationNotice>
+}
 export default meta
-type Story = StoryObj<typeof meta>
+type Story = StoryObj<typeof SessionContinuationNotice>
 
 export const Hint: Story = {}
 export const Continued: Story = { args: { kind: 'continued', onOpen: () => {} } }

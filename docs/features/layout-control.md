@@ -1,20 +1,19 @@
 # Desktop layout control
 
-Agents and mini-apps can read and arrange the SuperOne desktop: open a file or a
-diff as a tab, manage tabs, show or hide the activity panel and the bottom
-terminal, collapse the sidebar, and put a child session beside the caller in the
-split view.
+Agents and mini-apps can read and arrange the SuperOne desktop: open a file as a
+tab, manage tabs, show or hide the activity panel and the bottom terminal,
+collapse the sidebar, and put a child session beside the caller in the split view.
 
 ## One implementation, two entry points
 
 All layout state lives in the renderer (zustand stores plus the dockview dock), so
-the single implementation is `apps/desktop/src/renderer/src/lib/ui-control.ts`:
-`uiSnapshot(caller)` and `uiAct(caller, request)`. The contract types are in
-`packages/shared/src/ui-control.ts`.
+the single implementation is `apps/desktop/src/renderer/src/lib/layout-control.ts`:
+`layoutSnapshot(caller)` and `layoutAct(caller, request)`. The contract types are in
+`packages/shared/src/layout-control.ts`.
 
 | Entry point | Path to the renderer | Caller |
 |---|---|---|
-| `ui_snapshot` / `ui_act` agent tools | `mcp/ui-control-tools.ts` → `browserAutomationCall` (ops `uiSnapshot` / `uiAct`) → `runBrowserOp` | The calling session; `root` is its working directory |
+| `layout_snapshot` / `layout_act` agent tools | `mcp/layout-control-tools.ts` → `browserAutomationCall` (ops `layoutSnapshot` / `layoutAct`) → `runBrowserOp` | The calling session; `root` is its working directory |
 | Mini-app `context.layout.snapshot()` / `act()` | Node Host `requestAction('layout.*')` → host-action bridge → `miniapp-host-actions.ts` | The mini-app's holder session (see below) |
 
 The renderer call bridge only targets the main window. Pop-out session windows
@@ -50,12 +49,12 @@ Agent-opened tabs are:
 
 - browser tabs from `browser_tabs` open;
 - terminals with `agentSessionId`;
-- files and diffs from `ui_act`.
+- files from `layout_act`.
 
 Focus, split and maximize work on any tab.
 
 **No duplicate entry points.** Browser and terminal tabs are opened with
-`browser_tabs` / `terminal_tabs`. `ui_act` only focuses, splits or closes them by
+`browser_tabs` / `terminal_tabs`. `layout_act` only focuses, splits or closes them by
 id. Terminal tabs are named by the bare id `terminal_tabs` uses.
 
 **No confirmation.** Every action is reversible and changes only SuperOne's own
@@ -66,17 +65,12 @@ may call them.
 
 | Area | Actions |
 |---|---|
-| Open tabs | `open_file` (`path`, `line`), `open_diff` (`commit` or uncommitted, optional `path`) |
+| Open tabs | `open_file` (`path`, `line`) |
 | Manage tabs | `focus_tab`, `close_tab`, `split_tab` (`direction` right / down), by `tab` |
 | Activity panel | `show_panel`, `hide_panel`, `maximize_panel` (optional `tab`), `restore_panel`, `panel_side` |
 | Window | `show_sidebar`, `hide_sidebar` |
 | Bottom terminal | `show_terminal`, `hide_terminal` |
 | Split view | `split_session`, `close_split` (`sessionId`) |
-
-`open_diff` opens the read-only diff tab (`components/coding/source-control/DiffPanel.tsx`).
-Uncommitted means the working tree against HEAD, untracked files included. A
-commit is shown against its first parent. Both read through the `GIT_PATCH` IPC
-(`main/git-patch.ts`); remote projects get an explicit `remote_project` error.
 
 `split_session` accepts only a session the caller spawned. Main checks the spawn
 grant (`SPAWNED_SESSION_PROJECT` IPC), and the same check serves agents and
@@ -89,10 +83,10 @@ so focus stays where the user had it.
   answers `{ status: 'unsupported', reason: 'remote_node' }`, because a node
   agent has no SuperOne window of its own.
 - **Phone.** Execution always targets the desktop. The phone renders the same row
-  (`packages/chat-view/src/presenters/UiControlToolRow.tsx`) from the projected
-  input (`ui_act` keeps `action`, `path`, `line`, `commit`, `side`, `tab`).
-- **Chat row.** One line per call: the action verb, its subject (file, commit,
-  side), and the outcome when it is not a plain `applied`.
+  (`packages/chat-view/src/presenters/LayoutControlToolRow.tsx`) from the projected
+  input (`layout_act` keeps `action`, `path`, `line`, `side`, `tab`).
+- **Chat row.** One line per call: the action verb, its subject (file or side),
+  and the outcome when it is not a plain `applied`.
 
 ## Mini-apps
 

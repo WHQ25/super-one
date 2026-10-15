@@ -64,7 +64,7 @@ export function drainDockChanges(sessionId: string): void {
     try {
       change.run()
     } catch (err) {
-      console.warn('[ui-control] queued layout change failed', change.kind, change.tab, err)
+      console.warn('[layout-control] queued layout change failed', change.kind, change.tab, err)
     }
   }
 }

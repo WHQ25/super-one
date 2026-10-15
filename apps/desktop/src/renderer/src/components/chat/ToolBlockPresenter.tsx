@@ -75,7 +75,7 @@ import { SuperoneCompactToolRowPresenter } from '@superone/chat-view/presenters/
 import { InputRequestToolRow } from '@superone/chat-view/presenters/InputRequestToolRow'
 import { WidgetToolRow } from '@superone/chat-view/presenters/WidgetToolRow'
 import { superoneToolDescriptor } from '@superone/chat-view/presenters/superone-tool-display'
-import { UI_CONTROL_TOOL_NAMES, UiControlToolRow } from '@superone/chat-view/presenters/UiControlToolRow'
+import { LAYOUT_CONTROL_TOOL_NAMES, LayoutControlToolRow } from '@superone/chat-view/presenters/LayoutControlToolRow'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -547,9 +547,9 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         />
       )
     }
-    if (UI_CONTROL_TOOL_NAMES.has(mcpInfo.mcpToolName)) {
+    if (LAYOUT_CONTROL_TOOL_NAMES.has(mcpInfo.mcpToolName)) {
       return (
-        <UiControlToolRow
+        <LayoutControlToolRow
           mcpToolName={mcpInfo.mcpToolName}
           params={params}
           result={cleanResult ?? null}

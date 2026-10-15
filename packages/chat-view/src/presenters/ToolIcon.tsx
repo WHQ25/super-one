@@ -35,7 +35,7 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'send': Send,
   // A subagent handing its report back to the agent that launched it.
   'reply': Reply,
-  // Desktop layout control (ui_snapshot / ui_act).
+  // Desktop layout control (layout_snapshot / layout_act).
   'layout': PanelsTopLeft,
 }
 

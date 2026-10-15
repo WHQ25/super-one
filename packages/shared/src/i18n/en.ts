@@ -1,4 +1,4 @@
-import type { UiActAction } from '../ui-control'
+import type { LayoutActAction } from '../layout-control'
 import { interactionMemoryEn } from './interaction-memory'
 import { mediaComposerEn } from './media-composer'
 /**
@@ -57,23 +57,6 @@ export type Messages = {
       eventsTitle: string
       eventsHint: string
       event: { submit: string; cancel: string; close: string }
-    }
-    diff: {
-      uncommitted: string
-      commit: string
-      fileCount_one: string
-      fileCount_other: string
-      refresh: string
-      loading: string
-      empty: string
-      emptyCommit: string
-      binary: string
-      renamedFrom: string
-      status: { added: string; deleted: string; renamed: string; modified: string }
-      omittedUntracked_one: string
-      omittedUntracked_other: string
-      error: { remote_project: string; not_git: string; bad_commit: string; failed: string }
-      retry: string
     }
     device: {
       title: string
@@ -2543,10 +2526,9 @@ export type Messages = {
       miniAppPacked: string
       generatingWidget: string
       generateWidget: string
-      uiControl: {
+      layoutControl: {
         snapshot: { streaming: string; done: string; action: string }
-        actions: Record<UiActAction, { streaming: string; done: string; action: string }>
-        uncommitted: string
+        actions: Record<LayoutActAction, { streaming: string; done: string; action: string }>
         side: { left: string; right: string }
         outcome: { queued: string; skipped: string; unsupported: string }
       }
@@ -4373,28 +4355,6 @@ export const en: Messages = {
       eventsTitle: 'Recorded Events',
       eventsHint: 'Submit, cancel, and close are recorded here; the tool does not run.',
       event: { submit: 'Submit', cancel: 'Cancel', close: 'Close' },
-    },
-    diff: {
-      uncommitted: 'Uncommitted Changes',
-      commit: 'Commit {{sha}}',
-      fileCount_one: '{{count}} file',
-      fileCount_other: '{{count}} files',
-      refresh: 'Refresh',
-      loading: 'Loading changes…',
-      empty: 'No uncommitted changes',
-      emptyCommit: 'This commit changes no files',
-      binary: 'Binary file not shown',
-      renamedFrom: 'Renamed from {{path}}',
-      status: { added: 'Added', deleted: 'Deleted', renamed: 'Renamed', modified: 'Modified' },
-      omittedUntracked_one: '{{count}} untracked file not shown (binary or too large): {{files}}',
-      omittedUntracked_other: '{{count}} untracked files not shown (binary or too large): {{files}}',
-      error: {
-        remote_project: 'Diffs are not available for remote projects yet.',
-        not_git: 'This folder is not a Git repository.',
-        bad_commit: 'That commit could not be found.',
-        failed: 'Could not read the changes.',
-      },
-      retry: 'Retry',
     },
     device: {
       title: 'Device',
@@ -6982,11 +6942,10 @@ export const en: Messages = {
       miniAppPacked: 'Mini-app Packed',
       generatingWidget: 'Generating widget…',
       generateWidget: 'Widget Generated',
-      uiControl: {
+      layoutControl: {
         snapshot: { streaming: 'Reading layout…', done: 'Layout Read', action: 'Read Layout' },
         actions: {
           open_file: { streaming: 'Opening file…', done: 'File Opened', action: 'Open File' },
-          open_diff: { streaming: 'Opening diff…', done: 'Diff Opened', action: 'Open Diff' },
           focus_tab: { streaming: 'Focusing tab…', done: 'Tab Focused', action: 'Focus Tab' },
           close_tab: { streaming: 'Closing tab…', done: 'Tab Closed', action: 'Close Tab' },
           split_tab: { streaming: 'Splitting tab…', done: 'Tab Split', action: 'Split Tab' },
@@ -7002,7 +6961,6 @@ export const en: Messages = {
           split_session: { streaming: 'Splitting in session…', done: 'Session Split In', action: 'Split In Session' },
           close_split: { streaming: 'Closing split…', done: 'Split Closed', action: 'Close Split' },
         },
-        uncommitted: 'uncommitted changes',
         side: { left: 'left', right: 'right' },
         outcome: { queued: 'when you open this session', skipped: 'skipped while you were elsewhere', unsupported: 'not available on a remote node' },
       },

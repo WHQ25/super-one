@@ -1,22 +1,20 @@
 import type { SerializedDockview } from 'dockview-core'
 import {
-  UiControlError,
-  type UiActRequest,
-  type UiActResult,
-  type UiControlCaller,
-  type UiSnapshot,
-  type UiTab,
-  type UiTabKind,
-} from '@superone/shared/ui-control'
+  LayoutControlError,
+  type LayoutActRequest,
+  type LayoutActResult,
+  type LayoutControlCaller,
+  type LayoutSnapshot,
+  type LayoutTab,
+  type LayoutTabKind,
+} from '@superone/shared/layout-control'
 import {
   closeActivityTab,
-  diffPanelId,
   dockSessionId,
   focusActivityTab,
   getDockApi,
   isDockReady,
   maximizeActivityTab,
-  openDiffTab,
   openNewFileTab,
   restoreActivityPanel,
   splitActivityTab,
@@ -46,8 +44,8 @@ import { normalizeFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
 import { setActivityPanelShown, toggleActivitySide, toggleSidebar } from '@/lib/layout-actions'
 
 /**
- * The single implementation behind `ui_snapshot` / `ui_act` and a mini-app's
- * `context.layout`. Contract and rules: docs/features/ui-control.md.
+ * The single implementation behind `layout_snapshot` / `layout_act` and a mini-app's
+ * `context.layout`. Contract and rules: docs/features/layout-control.md.
  *
  * Every call is scoped to the caller's session. Its own layout (activity panel,
  * tabs, bottom terminal) is changed even when the user is looking elsewhere —
@@ -55,9 +53,8 @@ import { setActivityPanelShown, toggleActivitySide, toggleSidebar } from '@/lib/
  * (sidebar, panel side, split view) changes only while the caller is on screen.
  */
 
-const COMPONENT_KINDS: Record<string, UiTabKind> = {
+const COMPONENT_KINDS: Record<string, LayoutTabKind> = {
   'file-preview': 'file',
-  diff: 'diff',
   browser: 'browser',
   terminal: 'terminal',
   miniapp: 'miniapp',
@@ -69,11 +66,11 @@ const COMPONENT_KINDS: Record<string, UiTabKind> = {
   'mod-pane': 'mod-pane',
 }
 
-function kindOf(component: string | undefined): UiTabKind {
+function kindOf(component: string | undefined): LayoutTabKind {
   return (component && COMPONENT_KINDS[component]) || 'other'
 }
 
-function openerKey(caller: UiControlCaller): DockOpener {
+function openerKey(caller: LayoutControlCaller): DockOpener {
   return caller.opener.kind === 'agent' ? 'agent' : `miniapp:${caller.opener.appId}`
 }
 
@@ -120,14 +117,14 @@ function publicTabId(panelId: string): string {
   return panelId.startsWith(TERMINAL_PANEL_PREFIX) ? panelId.slice(TERMINAL_PANEL_PREFIX.length) : panelId
 }
 
-function openedBy(sessionId: string, tab: string): UiTab['openedBy'] {
+function openedBy(sessionId: string, tab: string): LayoutTab['openedBy'] {
   const opener = dockOpener(sessionId, tab)
   if (opener === null) return 'user'
   return opener === 'agent' ? 'agent' : 'miniapp'
 }
 
 /** A snapshot row plus the dock panel id it stands for. */
-type TabRow = UiTab & { panelId: string }
+type TabRow = LayoutTab & { panelId: string }
 
 function liveTabs(sessionId: string): TabRow[] {
   const api = getDockApi()
@@ -180,7 +177,7 @@ function parkedTabs(sessionId: string): TabRow[] {
   }
   for (const change of queuedDockChanges(sessionId)) {
     if (change.kind === 'open' && change.tab && change.preview && !tabs.some((t) => t.panelId === change.tab)) {
-      tabs.push({ tab: publicTabId(change.tab), panelId: change.tab, kind: change.preview.kind as UiTabKind, title: change.preview.title, active: false, group: 0, openedBy: openedBy(sessionId, change.tab) })
+      tabs.push({ tab: publicTabId(change.tab), panelId: change.tab, kind: change.preview.kind as LayoutTabKind, title: change.preview.title, active: false, group: 0, openedBy: openedBy(sessionId, change.tab) })
     } else if (change.kind === 'close' && change.tab) {
       const at = tabs.findIndex((t) => t.panelId === change.tab)
       if (at >= 0) tabs.splice(at, 1)
@@ -194,7 +191,7 @@ function sessionTabs(sessionId: string): TabRow[] {
 }
 
 /** The session's working folder: its worktree when it has one. */
-function sessionRoot(caller: UiControlCaller): string | null {
+function sessionRoot(caller: LayoutControlCaller): string | null {
   if (caller.root) return caller.root
   const chat = useChatStore.getState()
   const target = findSessionTarget(chat, caller.sessionId)
@@ -202,7 +199,7 @@ function sessionRoot(caller: UiControlCaller): string | null {
   return chat.projectSessions[target.projectPath]?._sessions[target.sessionId]?._worktreePath ?? target.projectPath
 }
 
-export function uiSnapshot(caller: UiControlCaller): UiSnapshot {
+export function layoutSnapshot(caller: LayoutControlCaller): LayoutSnapshot {
   const sid = caller.sessionId
   const p = placement(sid)
   const ap = useActivityPanelStore.getState()
@@ -230,19 +227,19 @@ export function uiSnapshot(caller: UiControlCaller): UiSnapshot {
 }
 
 function invalid(message: string): never {
-  throw new UiControlError('invalid', message)
+  throw new LayoutControlError('invalid', message)
 }
 
 /** The dock panel id behind a tab id from the snapshot (or a terminal_tabs / browser_tabs id). */
 function requireTab(sessionId: string, tab: string | undefined): string {
-  if (!tab) invalid('tab is required. Use a tab id from ui_snapshot.')
+  if (!tab) invalid('tab is required. Use a tab id from layout_snapshot.')
   const row = sessionTabs(sessionId).find((t) => t.tab === tab || t.panelId === tab)
-  if (!row) throw new UiControlError('not_found', `No tab ${tab} in this session's layout. Call ui_snapshot for current tab ids.`)
+  if (!row) throw new LayoutControlError('not_found', `No tab ${tab} in this session's layout. Call layout_snapshot for current tab ids.`)
   return row.panelId
 }
 
 /** Apply a dock change now when the caller's layout is live, otherwise park it with that layout. */
-function dockChange(sessionId: string, change: QueuedDockChange): UiActResult {
+function dockChange(sessionId: string, change: QueuedDockChange): LayoutActResult {
   if (placement(sessionId).dockLive) {
     change.run()
     return { status: 'applied', visible: panelOnScreen(sessionId), ...(change.tab ? { tab: publicTabId(change.tab) } : {}) }
@@ -251,18 +248,18 @@ function dockChange(sessionId: string, change: QueuedDockChange): UiActResult {
   return { status: 'queued', visible: false, ...(change.tab ? { tab: publicTabId(change.tab) } : {}) }
 }
 
-function skipped(): UiActResult {
+function skipped(): LayoutActResult {
   return { status: 'skipped', visible: false, reason: 'not_visible' }
 }
 
 /** Open a tab and record who opened it — unless it is already there, in which case it stays the user's. */
-function openTab(caller: UiControlCaller, tab: string, preview: { kind: UiTabKind; title: string }, run: () => void): UiActResult {
+function openTab(caller: LayoutControlCaller, tab: string, preview: { kind: LayoutTabKind; title: string }, run: () => void): LayoutActResult {
   const sid = caller.sessionId
   if (!sessionTabs(sid).some((t) => t.panelId === tab)) recordDockOpener(sid, tab, openerKey(caller))
   return dockChange(sid, { kind: 'open', tab, preview, run })
 }
 
-export async function uiAct(caller: UiControlCaller, request: UiActRequest): Promise<UiActResult> {
+export async function layoutAct(caller: LayoutControlCaller, request: LayoutActRequest): Promise<LayoutActResult> {
   const sid = caller.sessionId
   switch (request.action) {
     case 'open_file': {
@@ -276,13 +273,6 @@ export async function uiAct(caller: UiControlCaller, request: UiActRequest): Pro
         openNewFileTab(openPath)
       })
     }
-    case 'open_diff': {
-      const root = sessionRoot(caller)
-      if (!root) throw new UiControlError('unavailable', 'This session has no project folder to diff.')
-      const target = { root, ...(request.commit ? { commit: request.commit } : {}), ...(request.path ? { path: request.path } : {}) }
-      const tab = diffPanelId(target)
-      return openTab(caller, tab, { kind: 'diff', title: request.path?.split('/').pop() ?? request.commit ?? 'Uncommitted changes' }, () => openDiffTab(target))
-    }
     case 'focus_tab': {
       const tab = requireTab(sid, request.tab)
       return dockChange(sid, { kind: 'focus', tab, run: () => { focusActivityTab(tab) } })
@@ -295,7 +285,7 @@ export async function uiAct(caller: UiControlCaller, request: UiActRequest): Pro
     case 'close_tab': {
       const tab = requireTab(sid, request.tab)
       if (dockOpener(sid, tab) !== openerKey(caller)) {
-        throw new UiControlError('not_owned', `Tab ${tab} was not opened by you; only tabs you opened can be closed.`)
+        throw new LayoutControlError('not_owned', `Tab ${tab} was not opened by you; only tabs you opened can be closed.`)
       }
       return dockChange(sid, {
         kind: 'close',
@@ -354,9 +344,9 @@ export async function uiAct(caller: UiControlCaller, request: UiActRequest): Pro
       if (!p.chatOnScreen) return skipped()
       const root = useMosaicStore.getState().root
       const leaf = root ? collectLeaves(root).find((candidate) => candidate.sessionId === child) : undefined
-      if (!leaf) throw new UiControlError('not_found', `Session ${child} is not in the split view.`)
+      if (!leaf) throw new LayoutControlError('not_found', `Session ${child} is not in the split view.`)
       if (dockOpener(sid, splitKey(child)) !== openerKey(caller)) {
-        throw new UiControlError('not_owned', `The pane for ${child} was not added by you; only panes you added can be closed.`)
+        throw new LayoutControlError('not_owned', `The pane for ${child} was not added by you; only panes you added can be closed.`)
       }
       useMosaicStore.getState().removeTile(leaf.id)
       forgetDockOpener(sid, splitKey(child))
@@ -367,14 +357,14 @@ export async function uiAct(caller: UiControlCaller, request: UiActRequest): Pro
   }
 }
 
-async function splitSession(caller: UiControlCaller, request: UiActRequest): Promise<UiActResult> {
+async function splitSession(caller: LayoutControlCaller, request: LayoutActRequest): Promise<LayoutActResult> {
   const sid = caller.sessionId
   const child = request.sessionId
   if (!child) invalid('sessionId is required for split_session.')
   if (child === sid) invalid('sessionId must be a session you launched, not your own.')
   if (!placement(sid).chatOnScreen) return skipped()
   const childProject = await window.app.getSpawnedSessionProject(sid, child)
-  if (!childProject) throw new UiControlError('not_child', `Session ${child} was not launched by this session. Only sessions you started with session_collab_* can be split in.`)
+  if (!childProject) throw new LayoutControlError('not_child', `Session ${child} was not launched by this session. Only sessions you started with session_collab_* can be split in.`)
   // The await gave the user time to move on; re-check before touching the window.
   const p = placement(sid)
   if (!p.chatOnScreen) return skipped()
@@ -385,7 +375,7 @@ async function splitSession(caller: UiControlCaller, request: UiActRequest): Pro
   const callerTile = p.split && mosaic.root
     ? collectLeaves(mosaic.root).find((leaf) => leaf.sessionId === sid)?.id
     : chat.activeProject ? mosaicTileId(chat.activeProject, sid) : undefined
-  if (!callerTile) throw new UiControlError('unavailable', 'Could not find this session on screen.')
+  if (!callerTile) throw new LayoutControlError('unavailable', 'Could not find this session on screen.')
   mosaic.addTile(projectPath, child, { tileId: callerTile, edge: request.direction === 'down' ? 'bottom' : 'right' }, { focus: false })
   recordDockOpener(sid, splitKey(child), openerKey(caller))
   return { status: 'applied', visible: p.windowVisible }

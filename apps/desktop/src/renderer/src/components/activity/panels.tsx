@@ -3,8 +3,6 @@ import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneBody } from '@/components/chat/mod/ModSurfaces'
 import type { ModPaneTabParams } from './activity-panel-api'
 import { FilePreview } from '@/components/coding/FilePreview'
-import { DiffPanel } from '@/components/coding/source-control/DiffPanel'
-import type { DiffTabParams } from './ActivityTab'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
 import { BrowserView } from '@/components/browser/BrowserView'
@@ -16,11 +14,6 @@ import { McpAppPanel } from '@/components/mcp-apps/McpAppPanel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
   return <FilePreview filePath={props.params.filePath} />
-}
-
-function DiffDockPanel(props: IDockviewPanelProps<DiffTabParams>) {
-  const { root, commit, path } = props.params
-  return <DiffPanel root={root} commit={commit} path={path} />
 }
 
 function MiniAppPanel(props: IDockviewPanelProps<{ instanceKey: string; appId: string }>) {
@@ -64,7 +57,6 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'mod-pane': ModPaneDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'mcp-app': McpAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'file-preview': FilePreviewPanel,
-  'diff': DiffDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'miniapp-tool-preview': ToolUiPreviewPanel as React.FunctionComponent<IDockviewPanelProps>,
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,

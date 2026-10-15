@@ -114,13 +114,13 @@ export interface SuperOneMiniAppAgentApi {
 
 /**
  * Desktop layout, scoped to the session holding this app — the same contract as
- * the agent's `ui_snapshot` / `ui_act`. Changes to that session's own layout wait
+ * the agent's `layout_snapshot` / `layout_act`. Changes to that session's own layout wait
  * for it when another session is in front (`queued`); window-wide changes are
  * refused then (`skipped`). Tabs and split panes can be closed only by whoever
  * opened them.
  */
 export type SuperOneMiniAppLayoutAction =
-  | 'open_file' | 'open_diff'
+  | 'open_file'
   | 'focus_tab' | 'close_tab' | 'split_tab'
   | 'show_panel' | 'hide_panel' | 'maximize_panel' | 'restore_panel' | 'panel_side'
   | 'show_sidebar' | 'hide_sidebar'
@@ -129,12 +129,10 @@ export type SuperOneMiniAppLayoutAction =
 
 export interface SuperOneMiniAppLayoutRequest {
   action: SuperOneMiniAppLayoutAction
-  /** open_file: the file. open_diff: limit the diff to this file. */
+  /** open_file: the file. */
   path?: string
   /** open_file: 1-based line to reveal. */
   line?: number
-  /** open_diff: commit sha or ref; omit for uncommitted changes. */
-  commit?: string
   /** A tab id from `snapshot().tabs`, or `snapshot().self` for this app's own tab. */
   tab?: string
   /** split_tab / split_session. Default right. */
@@ -155,7 +153,7 @@ export interface SuperOneMiniAppLayoutResult {
 
 export interface SuperOneMiniAppLayoutTab {
   tab: string
-  kind: 'file' | 'diff' | 'browser' | 'terminal' | 'miniapp' | 'device' | 'side-chat' | 'trajectory' | 'tool-preview' | 'mcp-app' | 'mod-pane' | 'other'
+  kind: 'file' | 'browser' | 'terminal' | 'miniapp' | 'device' | 'side-chat' | 'trajectory' | 'tool-preview' | 'mcp-app' | 'mod-pane' | 'other'
   title: string
   active: boolean
   group: number

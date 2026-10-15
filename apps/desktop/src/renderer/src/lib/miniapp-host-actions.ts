@@ -3,7 +3,7 @@ import { useChatStore, type SessionWriteTarget } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { requestClipboardRead, requestClipboardWrite } from '@/lib/miniapp-clipboard'
-import type { UiActRequest, UiControlCaller } from '@superone/shared/ui-control'
+import type { LayoutActRequest, LayoutControlCaller } from '@superone/shared/layout-control'
 
 /**
  * Executes the host actions a MiniApp Host asks for.
@@ -90,9 +90,9 @@ export async function runMiniAppHostAction(
       if (!target) throw new Error('layout: no session holds this mini-app; open it beside a chat first.')
       const instanceKey = Object.values(useMiniAppStore.getState().openApps)
         .find((a) => a.entry.id === appId && a.projectDir === projectDir)?.instanceKey
-      const caller: UiControlCaller = { sessionId: target.sessionId, opener: { kind: 'miniapp', appId, ...(instanceKey ? { instanceKey } : {}) } }
-      const { uiAct, uiSnapshot } = await import('@/lib/ui-control')
-      return action === 'layout.snapshot' ? uiSnapshot(caller) : uiAct(caller, args as unknown as UiActRequest)
+      const caller: LayoutControlCaller = { sessionId: target.sessionId, opener: { kind: 'miniapp', appId, ...(instanceKey ? { instanceKey } : {}) } }
+      const { layoutAct, layoutSnapshot } = await import('@/lib/layout-control')
+      return action === 'layout.snapshot' ? layoutSnapshot(caller) : layoutAct(caller, args as unknown as LayoutActRequest)
     }
     default:
       throw new Error(`Unknown host action: ${action}`)

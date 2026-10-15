@@ -1,15 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
-import { UI_ACT_ACTIONS } from '@superone/shared/ui-control'
-import { UiControlToolRow } from './UiControlToolRow'
+import { LAYOUT_ACT_ACTIONS } from '@superone/shared/layout-control'
+import { LayoutControlToolRow } from './LayoutControlToolRow'
 
 /**
- * `ui_snapshot` / `ui_act` rows. Params go through the real remote projection, so
+ * `layout_snapshot` / `layout_act` rows. Params go through the real remote projection, so
  * every story shows what the phone receives; the desktop renders the same row.
  * Results are the handler's real payloads.
  */
 function projected(params: Record<string, unknown>): Record<string, unknown> {
-  const input = sanitizeRemoteToolInput('mcp__superone__ui_act', JSON.stringify(params))
+  const input = sanitizeRemoteToolInput('mcp__superone__layout_act', JSON.stringify(params))
   return input ? JSON.parse(input) as Record<string, unknown> : {}
 }
 
@@ -21,9 +21,8 @@ const SNAPSHOT = 'visible: true\nwindow:\n  visible: true\n  sidebar: expanded\n
 
 const SAMPLE_PARAMS: Record<string, Record<string, unknown>> = {
   open_file: { path: '/Users/me/project/apps/desktop/src/main/index.ts', line: 3144 },
-  open_diff: { commit: '553f7bf6b0c1' },
   focus_tab: { tab: 'file:src/main.ts' },
-  close_tab: { tab: 'diff:uncommitted:src/app.ts' },
+  close_tab: { tab: 'file:src/app.ts' },
   split_tab: { tab: 'file:README.md', direction: 'down' },
   maximize_panel: { tab: 'browser-6a0f' },
   panel_side: { side: 'right' },
@@ -31,16 +30,16 @@ const SAMPLE_PARAMS: Record<string, Record<string, unknown>> = {
 
 const meta = {
   title: 'Chat/SuperOne/Layout control row',
-  component: UiControlToolRow,
+  component: LayoutControlToolRow,
   parameters: { layout: 'padded' },
   decorators: [(Story) => <div className="w-full max-w-2xl"><Story /></div>],
   args: {
-    mcpToolName: 'ui_act',
+    mcpToolName: 'layout_act',
     params: projected({ action: 'open_file', path: 'src/main.ts', line: 42 }),
     result: APPLIED,
     isStreaming: false,
   },
-} satisfies Meta<typeof UiControlToolRow>
+} satisfies Meta<typeof LayoutControlToolRow>
 
 export default meta
 type Story = StoryObj<typeof meta>
@@ -50,16 +49,6 @@ export const OpenFile: Story = { name: 'open_file · applied' }
 export const OpenFileStreaming: Story = {
   name: 'open_file · in flight',
   args: { isStreaming: true, result: null },
-}
-
-export const OpenUncommittedDiff: Story = {
-  name: 'open_diff · uncommitted',
-  args: { params: projected({ action: 'open_diff' }) },
-}
-
-export const OpenCommitFileDiff: Story = {
-  name: 'open_diff · one file of a commit',
-  args: { params: projected({ action: 'open_diff', commit: '553f7bf6b0c1', path: 'apps/desktop/src/main/git-run.ts' }) },
 }
 
 export const Queued: Story = {
@@ -92,13 +81,13 @@ export const Denied: Story = {
 }
 
 export const Snapshot: Story = {
-  name: 'ui_snapshot',
-  args: { mcpToolName: 'ui_snapshot', params: {}, result: SNAPSHOT },
+  name: 'layout_snapshot',
+  args: { mcpToolName: 'layout_snapshot', params: {}, result: SNAPSHOT },
 }
 
 export const SnapshotStreaming: Story = {
-  name: 'ui_snapshot · in flight',
-  args: { mcpToolName: 'ui_snapshot', params: {}, result: null, isStreaming: true },
+  name: 'layout_snapshot · in flight',
+  args: { mcpToolName: 'layout_snapshot', params: {}, result: null, isStreaming: true },
 }
 
 export const LongPathNarrow: Story = {
@@ -115,8 +104,8 @@ export const AllActions: Story = {
   name: 'every action · done',
   render: (args) => (
     <div className="flex flex-col gap-1">
-      {UI_ACT_ACTIONS.map((action) => (
-        <UiControlToolRow key={action} {...args} params={projected({ action, ...SAMPLE_PARAMS[action] })} result={APPLIED} />
+      {LAYOUT_ACT_ACTIONS.map((action) => (
+        <LayoutControlToolRow key={action} {...args} params={projected({ action, ...SAMPLE_PARAMS[action] })} result={APPLIED} />
       ))}
     </div>
   ),

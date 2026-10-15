@@ -318,42 +318,6 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
   })
 }
 
-export interface DiffTabRequest {
-  root: string
-  commit?: string
-  path?: string
-}
-
-export function diffPanelId(request: Pick<DiffTabRequest, 'commit' | 'path'>): string {
-  return `diff:${request.commit ?? 'uncommitted'}${request.path ? `:${request.path}` : ''}`
-}
-
-/** Open (or reveal) the read-only diff of uncommitted work or one commit. */
-export function openDiffTab(request: DiffTabRequest, options?: { direction?: 'right' | 'below'; referencePanel?: string }) {
-  ensureVisible()
-  execOrDefer(() => {
-    if (!dockApi) return
-    const panelId = diffPanelId(request)
-    const existing = dockApi.panels.find((p) => p.id === panelId)
-    if (existing) {
-      activateInMaximizedGroup(existing)
-      return
-    }
-    const position = positionInMaximizedGroup(options?.referencePanel
-      ? { referencePanel: options.referencePanel, direction: options.direction ?? 'within' }
-      : options?.direction ? { direction: options.direction } : undefined)
-    const title = request.path?.split('/').pop() ?? (request.commit ? request.commit.slice(0, 7) : 'Uncommitted changes')
-    dockApi.addPanel({
-      id: panelId,
-      component: 'diff',
-      tabComponent: 'diff-tab',
-      title,
-      params: { root: request.root, ...(request.commit ? { commit: request.commit } : {}), ...(request.path ? { path: request.path } : {}) },
-      ...(position ? { position } : {}),
-    })
-  })
-}
-
 /**
  * `reveal: false` is the agent's path while the Activity panel is closed: the tab is
  * laid out in the hidden dock and presented in picture-in-picture instead.

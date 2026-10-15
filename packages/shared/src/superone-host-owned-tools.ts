@@ -125,8 +125,8 @@ export const TERMINAL_TOOL_NAMES = [
   'terminal_wait_for',
 ] as const
 
-/** Desktop layout control (docs/features/ui-control.md); reversible, so no executor confirm. */
-export const UI_TOOL_NAMES = ['ui_snapshot', 'ui_act'] as const
+/** Desktop layout control (docs/features/layout-control.md); reversible, so no executor confirm. */
+export const LAYOUT_TOOL_NAMES = ['layout_snapshot', 'layout_act'] as const
 
 /**
  * Bare tool names registered as SuperOne MCP builtins (desktop surface).
@@ -175,7 +175,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   ...BROWSER_TOOL_NAMES,
   ...DEVICE_AGENT_TOOL_NAMES,
   ...TERMINAL_TOOL_NAMES,
-  ...UI_TOOL_NAMES,
+  ...LAYOUT_TOOL_NAMES,
 ] as const
 
 export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[number]

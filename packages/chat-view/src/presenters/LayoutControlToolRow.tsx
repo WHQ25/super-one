@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { UI_ACT_ACTIONS, type UiActAction } from '@superone/shared/ui-control'
+import { LAYOUT_ACT_ACTIONS, type LayoutActAction } from '@superone/shared/layout-control'
 import { ToolIcon } from './ToolIcon'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import {
@@ -11,9 +11,9 @@ import {
 } from './ToolRow'
 
 /** Bare names of the layout tools; both rows are drawn here on the desktop and the phone. */
-export const UI_CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(['ui_snapshot', 'ui_act'])
+export const LAYOUT_CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(['layout_snapshot', 'layout_act'])
 
-const ACTIONS: ReadonlySet<string> = new Set(UI_ACT_ACTIONS)
+const ACTIONS: ReadonlySet<string> = new Set(LAYOUT_ACT_ACTIONS)
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -23,28 +23,23 @@ function basename(path: string): string {
   return path.split('/').pop() ?? path
 }
 
-function iconFor(action: UiActAction | null): ToolIconName {
+function iconFor(action: LayoutActAction | null): ToolIconName {
   switch (action) {
     case 'open_file': return 'file-text'
-    case 'open_diff': return 'git-branch'
     case 'show_terminal':
     case 'hide_terminal': return 'terminal'
     default: return 'layout'
   }
 }
 
-/** A tab id read back for people: files and diffs by name, anything opaque (browser-<uuid>) not at all. */
+/** A tab id read back for people: files by name, anything opaque (browser-<uuid>) not at all. */
 function tabSubject(tab: string): string {
   if (tab.startsWith('file:')) return basename(tab.slice('file:'.length))
-  if (tab.startsWith('diff:')) {
-    const [scope, ...path] = tab.slice('diff:'.length).split(':')
-    return path.length ? basename(path.join(':')) : scope === 'uncommitted' ? '' : scope.slice(0, 7)
-  }
   return ''
 }
 
 /** The outcome worth telling the user beside the subject; a plain `applied` needs no words. */
-export function uiControlOutcome(result: string | null | undefined): 'queued' | 'skipped' | 'unsupported' | null {
+export function layoutControlOutcome(result: string | null | undefined): 'queued' | 'skipped' | 'unsupported' | null {
   if (!result) return null
   try {
     const status = (JSON.parse(result) as { status?: unknown }).status
@@ -55,8 +50,8 @@ export function uiControlOutcome(result: string | null | undefined): 'queued' | 
   }
 }
 
-export interface UiControlToolRowProps {
-  /** `ui_snapshot` or `ui_act`. */
+export interface LayoutControlToolRowProps {
+  /** `layout_snapshot` or `layout_act`. */
   mcpToolName: string
   params: Record<string, unknown>
   result?: string | null
@@ -66,29 +61,24 @@ export interface UiControlToolRowProps {
 }
 
 /** One line per layout call: what changed, on what, and whether it waits for the user. */
-export function UiControlToolRow({ mcpToolName, params, result, isStreaming, isError, isDenied }: UiControlToolRowProps) {
+export function LayoutControlToolRow({ mcpToolName, params, result, isStreaming, isError, isDenied }: LayoutControlToolRowProps) {
   const { t } = useTranslation()
   const rawAction = str(params.action)
-  const action = mcpToolName === 'ui_act' && ACTIONS.has(rawAction) ? rawAction as UiActAction : null
-  const keys = action ? `chat.toolBlock.uiControl.actions.${action}` : 'chat.toolBlock.uiControl.snapshot'
+  const action = mcpToolName === 'layout_act' && ACTIONS.has(rawAction) ? rawAction as LayoutActAction : null
+  const keys = action ? `chat.toolBlock.layoutControl.actions.${action}` : 'chat.toolBlock.layoutControl.snapshot'
 
   let subject = ''
   if (action === 'open_file') {
     const path = str(params.path)
     subject = path ? `${basename(path)}${typeof params.line === 'number' ? `:${params.line}` : ''}` : ''
-  } else if (action === 'open_diff') {
-    const commit = str(params.commit).slice(0, 7)
-    const path = str(params.path)
-    subject = [commit, path ? basename(path) : ''].filter(Boolean).join(' · ')
-      || (isStreaming ? '' : t('chat.toolBlock.uiControl.uncommitted'))
   } else if (action === 'panel_side') {
     const side = str(params.side)
-    subject = side === 'left' || side === 'right' ? t(`chat.toolBlock.uiControl.side.${side}`) : ''
+    subject = side === 'left' || side === 'right' ? t(`chat.toolBlock.layoutControl.side.${side}`) : ''
   } else if (action) {
     subject = tabSubject(str(params.tab))
   }
 
-  const outcome = !isStreaming && !isDenied && !isError ? uiControlOutcome(result) : null
+  const outcome = !isStreaming && !isDenied && !isError ? layoutControlOutcome(result) : null
 
   return (
     <CompactLabeledToolRow
@@ -108,7 +98,7 @@ export function UiControlToolRow({ mcpToolName, params, result, isStreaming, isE
       summary={subject || undefined}
     >
       {/* Outside the truncating subject: a long path must not hide that the change is waiting. */}
-      {outcome && <ToolSummary className="shrink-0">{t(`chat.toolBlock.uiControl.outcome.${outcome}`)}</ToolSummary>}
+      {outcome && <ToolSummary className="shrink-0">{t(`chat.toolBlock.layoutControl.outcome.${outcome}`)}</ToolSummary>}
     </CompactLabeledToolRow>
   )
 }

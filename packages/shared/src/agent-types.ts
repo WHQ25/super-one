@@ -1791,26 +1791,6 @@ export interface GitFileDiff {
   diff: string
 }
 
-/** Which change set the read-only diff panel shows: the working tree against HEAD, or one commit. */
-export interface GitPatchRequest {
-  /** Commit sha or ref; omitted for uncommitted changes (tracked and untracked). */
-  commit?: string
-  /** Limit the patch to one path, relative to the repository root or absolute. */
-  path?: string
-}
-
-export type GitPatchResult =
-  | {
-      ok: true
-      /** Unified diff text; empty when there is nothing to show. */
-      patch: string
-      /** Resolved commit, when the request named one. */
-      commit?: { sha: string; subject: string }
-      /** Untracked files listed without a body (binary, too large, or past the count cap). */
-      omittedUntracked?: string[]
-    }
-  | { ok: false; error: 'remote_project' | 'not_git' | 'bad_commit' | 'failed'; message?: string }
-
 export interface GitFileContent {
   path: string
   content: string
@@ -4411,7 +4391,6 @@ export const AgentIpcChannels = {
   CLIPBOARD_READ: 'app:clipboard-read',
   CLIPBOARD_WRITE: 'app:clipboard-write',
   GIT_DIFF_FILE: 'app:git-diff-file',
-  GIT_PATCH: 'app:git-patch',
   SPAWNED_SESSION_PROJECT: 'app:spawned-session-project',
   READ_PROJECT_FILE: 'app:read-project-file',
   STAT_PREVIEW_FILE: 'app:stat-preview-file',

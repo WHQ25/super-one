@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
 import { describe, expect, expectTypeOf, it, vi, beforeEach } from 'vitest'
-import type { UiActRequest, UiActResult, UiSnapshot } from '@superone/shared/ui-control'
+import type { LayoutActRequest, LayoutActResult, LayoutSnapshot } from '@superone/shared/layout-control'
 import type { SuperOneMiniAppLayoutRequest, SuperOneMiniAppLayoutResult, SuperOneMiniAppLayoutSnapshot } from '@superone/shared/miniapp-host-api'
 
-const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, uiSnapshot, uiAct } =
+const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, layoutSnapshot, layoutAct } =
   vi.hoisted(() => ({
-    uiSnapshot: vi.fn(),
-    uiAct: vi.fn(),
+    layoutSnapshot: vi.fn(),
+    layoutAct: vi.fn(),
     toastFns: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
     setDraftText: vi.fn(),
     setMiniAppContext: vi.fn(),
@@ -17,7 +17,7 @@ const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExte
   }))
 
 vi.mock('sonner', () => ({ toast: toastFns }))
-vi.mock('@/lib/ui-control', () => ({ uiSnapshot, uiAct }))
+vi.mock('@/lib/layout-control', () => ({ layoutSnapshot, layoutAct }))
 vi.mock('@/lib/external-link', () => ({ requestOpenExternalLink: openExternal }))
 vi.mock('@/lib/miniapp-clipboard', () => ({
   requestClipboardRead: clipboardRead,
@@ -48,7 +48,7 @@ const { runMiniAppHostAction } = await import('./miniapp-host-actions')
 
 describe('MiniApp Host actions in the renderer', () => {
   beforeEach(() => {
-    for (const fn of [...Object.values(toastFns), setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, uiSnapshot, uiAct]) {
+    for (const fn of [...Object.values(toastFns), setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, layoutSnapshot, layoutAct]) {
       fn.mockReset()
     }
     window.miniapp = { showItemInFolder: vi.fn() } as never
@@ -106,25 +106,25 @@ describe('MiniApp Host actions in the renderer', () => {
   })
 
   it('reads and changes the layout as the holder session, marked as this app', async () => {
-    uiSnapshot.mockReturnValue({ self: 'miniapp-demo:p1' })
-    uiAct.mockResolvedValue({ status: 'queued', visible: false })
+    layoutSnapshot.mockReturnValue({ self: 'miniapp-demo:p1' })
+    layoutAct.mockResolvedValue({ status: 'queued', visible: false })
     const caller = { sessionId: 's1', opener: { kind: 'miniapp', appId: 'demo', instanceKey: 'demo:p1' } }
 
     expect(await runMiniAppHostAction('demo', '/proj', 'layout.snapshot', {})).toEqual({ self: 'miniapp-demo:p1' })
-    expect(uiSnapshot).toHaveBeenCalledWith(caller)
+    expect(layoutSnapshot).toHaveBeenCalledWith(caller)
     expect(await runMiniAppHostAction('demo', '/proj', 'layout.act', { action: 'maximize_panel', tab: 'miniapp-demo:p1' }))
       .toEqual({ status: 'queued', visible: false })
-    expect(uiAct).toHaveBeenCalledWith(caller, { action: 'maximize_panel', tab: 'miniapp-demo:p1' })
+    expect(layoutAct).toHaveBeenCalledWith(caller, { action: 'maximize_panel', tab: 'miniapp-demo:p1' })
   })
 
   it('refuses layout calls from an app no session holds', async () => {
     await expect(runMiniAppHostAction('demo', '/elsewhere', 'layout.snapshot', {})).rejects.toThrow(/no session holds/)
-    expect(uiSnapshot).not.toHaveBeenCalled()
+    expect(layoutSnapshot).not.toHaveBeenCalled()
   })
 
   it('keeps the author-facing layout types in step with the shared contract', () => {
-    expectTypeOf<UiSnapshot>().toEqualTypeOf<SuperOneMiniAppLayoutSnapshot>()
-    expectTypeOf<UiActRequest>().toEqualTypeOf<SuperOneMiniAppLayoutRequest>()
-    expectTypeOf<UiActResult>().toEqualTypeOf<SuperOneMiniAppLayoutResult>()
+    expectTypeOf<LayoutSnapshot>().toEqualTypeOf<SuperOneMiniAppLayoutSnapshot>()
+    expectTypeOf<LayoutActRequest>().toEqualTypeOf<SuperOneMiniAppLayoutRequest>()
+    expectTypeOf<LayoutActResult>().toEqualTypeOf<SuperOneMiniAppLayoutResult>()
   })
 })

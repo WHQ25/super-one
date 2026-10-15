@@ -1,16 +1,16 @@
 /**
- * SuperOne MCP tools ui_snapshot / ui_act: thin adapters over the renderer's
- * layout control API (docs/features/ui-control.md). Every action is reversible
+ * SuperOne MCP tools layout_snapshot / layout_act: thin adapters over the renderer's
+ * layout control API (docs/features/layout-control.md). Every action is reversible
  * and scoped to the calling session, so none needs a confirmation.
  */
 import { encode as toonEncode } from '@toon-format/toon'
-import type { UiActRequest } from '@superone/shared/ui-control'
+import type { LayoutActRequest } from '@superone/shared/layout-control'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { currentHostActionConnection } from './artifact-registry'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
-export type UiSnapshotArgs = Record<string, never>
-export type UiActArgs = UiActRequest
+export type LayoutSnapshotArgs = Record<string, never>
+export type LayoutActArgs = LayoutActRequest
 
 function toolResult(value: unknown, isError = false) {
   return {
@@ -32,7 +32,7 @@ function unsupportedOnRemoteNode() {
   })
 }
 
-/** The folder relative paths and diffs resolve against: the session's working directory. */
+/** The folder relative file paths resolve against: the session's working directory. */
 function sessionRoot(deps: BuiltInSuperoneToolDeps): string | undefined {
   const session = deps.sessionHost?.getSession(deps.sessionId) as { cwd?: string; projectPath?: string } | null | undefined
   return session?.cwd || session?.projectPath || undefined
@@ -42,22 +42,22 @@ function errorText(err: unknown): string {
   return `[Error] ${err instanceof Error ? err.message : String(err)}`
 }
 
-export async function uiSnapshotHandler(_args: UiSnapshotArgs, deps: BuiltInSuperoneToolDeps) {
+export async function layoutSnapshotHandler(_args: LayoutSnapshotArgs, deps: BuiltInSuperoneToolDeps) {
   const unsupported = unsupportedOnRemoteNode()
   if (unsupported) return unsupported
   try {
-    const snapshot = await browserAutomationCall(deps.sessionId, 'uiSnapshot', { root: sessionRoot(deps) })
+    const snapshot = await browserAutomationCall(deps.sessionId, 'layoutSnapshot', { root: sessionRoot(deps) })
     return toolResult(toonEncode(snapshot))
   } catch (err) {
     return toolResult(errorText(err), true)
   }
 }
 
-export async function uiActHandler(args: UiActArgs, deps: BuiltInSuperoneToolDeps) {
+export async function layoutActHandler(args: LayoutActArgs, deps: BuiltInSuperoneToolDeps) {
   const unsupported = unsupportedOnRemoteNode()
   if (unsupported) return unsupported
   try {
-    return toolResult(await browserAutomationCall(deps.sessionId, 'uiAct', { root: sessionRoot(deps), request: args }))
+    return toolResult(await browserAutomationCall(deps.sessionId, 'layoutAct', { root: sessionRoot(deps), request: args }))
   } catch (err) {
     return toolResult(errorText(err), true)
   }

@@ -35,9 +35,9 @@ export type BrowserAutomationOp =
   | 'recordStop'
   | 'miniappPreview'
   | 'miniappReload'
-  // Desktop layout control (ui_snapshot / ui_act) rides the same renderer call channel.
-  | 'uiSnapshot'
-  | 'uiAct'
+  // Desktop layout control (layout_snapshot / layout_act) rides the same renderer call channel.
+  | 'layoutSnapshot'
+  | 'layoutAct'
 
 interface PendingCall {
   resolve: (result: unknown) => void
@@ -51,7 +51,7 @@ const BROWSER_CALL_TIMEOUT_MS = 30_000
 
 /** How a failed call names itself to the agent: layout ops are not browser automation. */
 function callLabel(op: BrowserAutomationOp): string {
-  return op === 'uiSnapshot' || op === 'uiAct' ? 'Layout control' : 'Browser automation'
+  return op === 'layoutSnapshot' || op === 'layoutAct' ? 'Layout control' : 'Browser automation'
 }
 
 const pendingCalls = new Map<string, PendingCall>()

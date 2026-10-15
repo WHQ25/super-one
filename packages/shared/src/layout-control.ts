@@ -1,12 +1,11 @@
 /**
- * Desktop layout control shared by the `ui_snapshot` / `ui_act` agent tools and
+ * Desktop layout control shared by the `layout_snapshot` / `layout_act` agent tools and
  * the mini-app Node Host's `context.layout`. One renderer implementation answers
- * both; see docs/features/ui-control.md.
+ * both; see docs/features/layout-control.md.
  */
 
-export const UI_ACT_ACTIONS = [
+export const LAYOUT_ACT_ACTIONS = [
   'open_file',
-  'open_diff',
   'focus_tab',
   'close_tab',
   'split_tab',
@@ -23,16 +22,14 @@ export const UI_ACT_ACTIONS = [
   'close_split',
 ] as const
 
-export type UiActAction = (typeof UI_ACT_ACTIONS)[number]
+export type LayoutActAction = (typeof LAYOUT_ACT_ACTIONS)[number]
 
-export interface UiActRequest {
-  action: UiActAction
-  /** open_file: the file. open_diff: limit the diff to this file. */
+export interface LayoutActRequest {
+  action: LayoutActAction
+  /** open_file: the file. */
   path?: string
   /** open_file: 1-based line to reveal. */
   line?: number
-  /** open_diff: commit sha or ref; omitted for uncommitted changes. */
-  commit?: string
   /** focus_tab / close_tab / split_tab / maximize_panel: a tab id from the snapshot. */
   tab?: string
   /** split_tab / split_session. Default right. */
@@ -48,10 +45,10 @@ export interface UiActRequest {
  * - `queued`: written into the caller's own layout, shown when the user next opens that session.
  * - `skipped`: window-wide change refused because the caller is not on screen (it must not steal focus).
  */
-export type UiActStatus = 'applied' | 'queued' | 'skipped'
+export type LayoutActStatus = 'applied' | 'queued' | 'skipped'
 
-export interface UiActResult {
-  status: UiActStatus
+export interface LayoutActResult {
+  status: LayoutActStatus
   visible: boolean
   /** The tab the action opened or targeted. */
   tab?: string
@@ -59,9 +56,8 @@ export interface UiActResult {
   reason?: 'not_visible'
 }
 
-export type UiTabKind =
+export type LayoutTabKind =
   | 'file'
-  | 'diff'
   | 'browser'
   | 'terminal'
   | 'miniapp'
@@ -73,20 +69,20 @@ export type UiTabKind =
   | 'mod-pane'
   | 'other'
 
-export type UiTabOpener = 'agent' | 'miniapp' | 'user'
+export type LayoutTabOpener = 'agent' | 'miniapp' | 'user'
 
-export interface UiTab {
+export interface LayoutTab {
   tab: string
-  kind: UiTabKind
+  kind: LayoutTabKind
   title: string
   /** The focused tab of the panel. */
   active: boolean
   /** Split group index, 0-based in layout order. */
   group: number
-  openedBy: UiTabOpener
+  openedBy: LayoutTabOpener
 }
 
-export interface UiSnapshot {
+export interface LayoutSnapshot {
   /** The caller's chat is on screen (foreground or a split pane) and the window is visible. */
   visible: boolean
   window: {
@@ -106,24 +102,24 @@ export interface UiSnapshot {
   }
   /** The caller's bottom terminal panel. */
   terminal: { open: boolean }
-  tabs: UiTab[]
+  tabs: LayoutTab[]
   /** Mini-app callers: the tab that shows the app itself, when it is open. */
   self?: string
 }
 
 /** Who is asking. The opener decides which tabs and panes the caller may close. */
-export interface UiControlCaller {
+export interface LayoutControlCaller {
   sessionId: string
   opener: { kind: 'agent' } | { kind: 'miniapp'; appId: string; instanceKey?: string }
-  /** The caller's working folder: relative paths and diffs resolve against it. */
+  /** The caller's working folder: relative file paths resolve against it. */
   root?: string
 }
 
-export type UiControlErrorCode = 'invalid' | 'not_found' | 'not_owned' | 'not_child' | 'unavailable'
+export type LayoutControlErrorCode = 'invalid' | 'not_found' | 'not_owned' | 'not_child' | 'unavailable'
 
-export class UiControlError extends Error {
-  constructor(readonly code: UiControlErrorCode, message: string) {
+export class LayoutControlError extends Error {
+  constructor(readonly code: LayoutControlErrorCode, message: string) {
     super(message)
-    this.name = 'UiControlError'
+    this.name = 'LayoutControlError'
   }
 }

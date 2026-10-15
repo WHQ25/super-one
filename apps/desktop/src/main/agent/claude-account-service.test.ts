@@ -47,7 +47,7 @@ describe('Claude managed account lifecycle', () => {
     expect(claudeAccountStore().defaultProviderId()).toBe(claudeAccountProviderId(b))
     expect((await listAccounts()).find((row) => row.isDefault)?.credentialDir).toBe(b)
     const config = claudeAccountConfig(claudeAccountProviderId(b))!
-    expect(config.extraEnv).toMatchObject({ CLAUDE_SECURESTORAGE_CONFIG_DIR: b, CLAUDE_CONFIG_DIR: b, ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' })
+    expect(config.extraEnv).toMatchObject({ CLAUDE_SECURESTORAGE_CONFIG_DIR: b, CLAUDE_CONFIG_DIR: b, ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_ARTIFACT: '1' })
     expect(realpathSync(join(b, 'projects'))).toBe(realpathSync(join(fixture.home, 'shared', 'projects')))
     expect(JSON.parse(readFileSync(join(b, '.claude.json'), 'utf8'))).toMatchObject({ oauthAccount: { emailAddress: 'b@example.test' }, mcpServers: { shared: { command: 'example' } } })
     expect(claudeAccountConfig(CLAUDE_CLI_ACCOUNT_PROVIDER_ID)?.extraEnv.CLAUDE_CONFIG_DIR).toBeUndefined()

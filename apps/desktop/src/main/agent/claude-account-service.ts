@@ -100,7 +100,11 @@ export async function setDefaultAccount(dir: string | null): Promise<void> {
   invalidateAccountListCache()
 }
 
-/** An explicit OAuth choice must override inherited proxy/API/environment credentials. */
+/**
+ * An explicit OAuth choice must override inherited proxy/API/environment credentials.
+ * `CLAUDE_CODE_ARTIFACT` opts SDK hosts into the claude.ai-published Artifact tool, which the
+ * CLI withholds from SDK entrypoints by default; account flags and org policy still apply.
+ */
 export function claudeAccountConfig(id: string | null): { extraEnv: Record<string, string> } | null {
   if (!isClaudeAccountProvider(id)) return null
   const dir = claudeAccountCredentialDir(id)
@@ -118,5 +122,6 @@ export function claudeAccountConfig(id: string | null): { extraEnv: Record<strin
     ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '',
     CLAUDE_CODE_OAUTH_TOKEN: dir ? '' : process.env.CLAUDE_CODE_OAUTH_TOKEN ?? '',
     CLAUDE_CODE_USE_BEDROCK: '0', CLAUDE_CODE_USE_VERTEX: '0', CLAUDE_CODE_USE_FOUNDRY: '0',
+    CLAUDE_CODE_ARTIFACT: '1',
   } }
 }

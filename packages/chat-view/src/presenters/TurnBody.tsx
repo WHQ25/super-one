@@ -78,6 +78,8 @@ export interface TurnToolPresenterProps {
   liveOutput?: string
   /** A command's process exit code (non-zero is an outcome, not a tool error). */
   exitCode?: number
+  /** Artifact only: the title of the page the result names. */
+  resultTitle?: string
   /** An MCP call that needs the user to sign in to its server. */
   authRequired?: boolean
 }
@@ -194,6 +196,7 @@ interface RenderOptions {
   outputPathMap: Map<string, string>
   bashEditDiffMap?: Map<string, BashEditDiff>
   exitCodeMap?: Map<string, number>
+  resultTitleMap?: Map<string, string>
   toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
   latestPlan?: LatestPlan
@@ -223,6 +226,7 @@ export function TurnBlockPresenter({
   outputPathMap,
   bashEditDiffMap,
   exitCodeMap,
+  resultTitleMap,
   toolAppMap,
   runContinuations,
   latestPlan,
@@ -242,6 +246,7 @@ export function TurnBlockPresenter({
   outputPathMap?: Map<string, string>
   bashEditDiffMap?: Map<string, BashEditDiff>
   exitCodeMap?: Map<string, number>
+  resultTitleMap?: Map<string, string>
   toolAppMap?: Map<string, ToolAppAttachment>
   latestPlan?: LatestPlan
   runContinuations?: GroupContentResult['runContinuations']
@@ -306,6 +311,7 @@ export function TurnBlockPresenter({
           suggestedTask={block.suggestedTask}
           liveOutput={block.liveOutput}
           exitCode={exitCodeMap?.get(block.toolUseId)}
+          resultTitle={resultTitleMap?.get(block.toolUseId)}
           authRequired={block.authRequired}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
@@ -459,6 +465,7 @@ function renderSegments(
           outputPathMap={options.outputPathMap}
           bashEditDiffMap={options.bashEditDiffMap}
           exitCodeMap={options.exitCodeMap}
+          resultTitleMap={options.resultTitleMap}
           toolAppMap={options.toolAppMap}
           runContinuations={options.runContinuations}
           latestPlan={options.latestPlan}
@@ -511,6 +518,7 @@ function renderBlocks(blocks: ContentBlock[], startIndex: number, options: Rende
       outputPathMap={options.outputPathMap}
       bashEditDiffMap={options.bashEditDiffMap}
       exitCodeMap={options.exitCodeMap}
+      resultTitleMap={options.resultTitleMap}
       toolAppMap={options.toolAppMap}
       runContinuations={options.runContinuations}
       latestPlan={options.latestPlan}
@@ -551,6 +559,7 @@ export function TurnBodyPresenter({
     outputPathMap: grouped.outputPathMap,
     bashEditDiffMap: grouped.bashEditDiffMap,
     exitCodeMap: grouped.exitCodeMap,
+    resultTitleMap: grouped.resultTitleMap,
     toolAppMap: grouped.toolAppMap,
     runContinuations: grouped.runContinuations,
     ...(latestPlanId ? { latestPlan: { id: latestPlanId, approval: planApproval } } : {}),

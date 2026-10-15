@@ -46,7 +46,7 @@ import { CodexCommandBlock } from './CodexCommandBlock'
 import { CodexMcpAuthAction } from './CodexMcpAuthAction'
 import { PrettyJSONCodeBlock, QuestionPreviewContent } from './tool-result-views'
 import { AppToolBlockPresenter, AppToolHeader, type AppToolBlockPresenterProps } from '@superone/chat-view/presenters/AppToolBlock'
-import { ArtifactLinkChip } from './ArtifactLinkChip'
+import { WebLink } from './link-preview/WebLink'
 import { RollingNumber } from './RollingNumber'
 import {
   CompactToolRow,
@@ -341,7 +341,7 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
       if (toolName === 'Write') return <WriteDiff params={params} isStreaming={diffStreaming} />
       return <FileChangeDiff params={params} isStreaming={diffStreaming} />
     },
-    renderArtifactChip: ({ url, label }) => <ArtifactLinkChip url={url} label={label} />,
+    renderArtifactLink: ({ url, label }) => <WebLink href={url}>{label}</WebLink>,
     renderCount: (value) => <RollingNumber value={value} />,
     renderJson: (text) => <PrettyJSONCodeBlock text={text} />,
     renderQuestionPreview: (preview) => <QuestionPreviewContent {...preview} />,

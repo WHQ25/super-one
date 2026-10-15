@@ -131,6 +131,8 @@ export interface ToolBlockProps {
   liveOutput?: string
   /** A command's process exit code. */
   exitCode?: number
+  /** Artifact only: the title of the page the result names. */
+  resultTitle?: string
   /** An MCP call rejected until the user signs in to its server. */
   authRequired?: boolean
 }
@@ -228,6 +230,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   isError,
   resultOutputPath,
   bashEditDiff,
+  resultTitle,
   autoExpand,
   backgroundActivity = false,
   grouped = false,
@@ -638,6 +641,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       status={status}
       elapsedSeconds={elapsedSeconds}
       result={result}
+      resultTitle={resultTitle}
       isError={isError}
       autoExpand={autoExpand}
       allowExpand={allowExpand}

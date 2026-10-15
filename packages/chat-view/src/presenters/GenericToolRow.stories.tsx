@@ -7,7 +7,7 @@ const ports: GenericToolRowPorts = {
   stallLevel: 'normal',
   renderFileChip: ({ name }) => name,
   renderFileDiff: () => null,
-  renderArtifactChip: ({ label }) => label,
+  renderArtifactLink: ({ url, label }) => <a href={url}>{label}</a>,
   renderCount: (value) => value,
   renderJson: (text) => text,
   renderQuestionPreview: ({ content }) => content,

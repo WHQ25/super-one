@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { AskUserQuestionResultPresenter } from './AskUserQuestionResult'
-import { resolveArtifactLink } from './artifact-link'
+import { parseArtifactList, resolveArtifactLink } from './artifact-link'
+import { ArtifactListResult, SINGLE_LINE_LINK_CLASS, type RenderArtifactLink } from './ArtifactListResult'
 import { getStallColor, type StallLevel } from './stall-color'
 import { ToolBrandIcon } from './ToolIcon'
 import { ToolErrorText, ToolName } from './ToolRow'
@@ -78,7 +79,8 @@ export interface GenericToolRowPorts {
   preferSentSummary?: boolean
   renderFileChip: (props: FileChipPortProps) => ReactNode
   renderFileDiff: (props: FileDiffPresenterProps) => ReactNode
-  renderArtifactChip: (props: { url: string; label: string }) => ReactNode
+  /** The web link an Artifact row names, drawn as the host's chat markdown link (favicon, preview). */
+  renderArtifactLink: RenderArtifactLink
   /** Line-delta counter; the desktop animates it, the phone prints it. */
   renderCount: (value: number) => ReactNode
   renderJson: (text: string) => ReactNode
@@ -118,6 +120,8 @@ export interface GenericToolRowProps {
   toolDiff?: string
   toolDiffTokens?: RemoteDiffTokens
   toolLineDelta?: { added: number; removed: number }
+  /** Artifact only: the title of the page the result names. */
+  resultTitle?: string
   /** Bash only: the working-tree diff the command produced (see BashTerminalPresenter). */
   bashEditDiff?: BashEditDiff
   autoExpand?: boolean
@@ -236,6 +240,7 @@ function GenericToolRow({
   toolDiff,
   toolDiffTokens,
   toolLineDelta,
+  resultTitle,
   autoExpand,
   allowExpand,
   defaultAutoExpand,
@@ -269,8 +274,12 @@ function GenericToolRow({
     [isMcp, rawResult],
   )
   const artifactLink = useMemo(
-    () => (toolName === 'Artifact' ? resolveArtifactLink(params, isDenied ? null : cleanResult) : null),
-    [toolName, params, isDenied, cleanResult],
+    () => (toolName === 'Artifact' ? resolveArtifactLink(params, isDenied ? null : cleanResult, resultTitle) : null),
+    [toolName, params, isDenied, cleanResult, resultTitle],
+  )
+  const artifactList = useMemo(
+    () => (toolName === 'Artifact' && params.action === 'list' && !isDenied && !isError && cleanResult ? parseArtifactList(cleanResult) : null),
+    [toolName, params.action, isDenied, isError, cleanResult],
   )
   const deniedFeedback = autoDeny
     ?? (isDenied && cleanResult && cleanResult !== 'User denied permission' ? cleanResult : '')
@@ -420,7 +429,13 @@ function GenericToolRow({
         ) : headerSummary ? (
           <span className="min-w-0 truncate text-muted-foreground">{headerSummary}</span>
         ) : null}
-        {!isDenied && !isError && artifactLink && ports.renderArtifactChip(artifactLink)}
+        {!isDenied && !isError && artifactLink && (
+          // The link stays on one line (its favicon body otherwise wraps), and a click
+          // on it — or inside its portalled preview card — opens it without toggling the row.
+          <span className={SINGLE_LINE_LINK_CLASS} onClick={(e) => e.stopPropagation()}>
+            {ports.renderArtifactLink(artifactLink)}
+          </span>
+        )}
         {lineDelta && (lineDelta.added > 0 || lineDelta.removed > 0) && (
           <span className="shrink-0 text-xs tabular-nums">
             {lineDelta.added > 0 && (
@@ -483,7 +498,9 @@ function GenericToolRow({
                   {showDeniedFeedback && <ToolErrorText className="text-error/70">{deniedFeedback}</ToolErrorText>}
                   {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
                     <div onClick={(e) => e.stopPropagation()}>
-                      {isMcp ? (
+                      {artifactList ? (
+                        <ArtifactListResult lines={artifactList} renderLink={ports.renderArtifactLink} />
+                      ) : isMcp ? (
                         ports.renderJson(cleanResult!)
                       ) : toolName === 'LS' || toolName === 'ToolSearch' || toolName === 'SearchTools' ? (
                         <ScrollableToolResult text={cleanResult!} />

@@ -26,18 +26,28 @@ describe('shortenPath', () => {
 })
 
 describe('getToolDisplay: Artifact', () => {
-  it('summarizes a publish by title only — the local path belongs in the expanded result', () => {
+  it('names a publish by title, else by its source file — the only locator a failed publish has', () => {
     expect(getToolDisplay('Artifact', { file_path: '/repo/report.html', title: 'Q3 Report' }, '/repo').summary).toBe('Q3 Report')
-    expect(getToolDisplay('Artifact', { file_path: '/repo/report.html' }, '/repo').summary).toBe('')
+    expect(getToolDisplay('Artifact', { action: 'publish', file_path: '/repo/out/report.html' }, '/repo').summary).toBe('report.html')
+    expect(getToolDisplay('Artifact', {}).summary).toBe('')
   })
 
-  it('names each asset sub-action, and nothing else — identity comes from the link chip', () => {
+  it('names every other action, including ones added after this table was written', () => {
     expect(getToolDisplay('Artifact', { action: 'upload_asset', url: 'https://x/y', file_path: '/repo/logo.png' }, '/repo').summary)
       .toBe('upload asset')
-    expect(getToolDisplay('Artifact', { action: 'list_assets', url: 'https://x/y' }).summary).toBe('list assets')
-    expect(getToolDisplay('Artifact', { action: 'read_asset', asset_id: 'abc123' }).summary).toBe('read asset')
-    expect(getToolDisplay('Artifact', { action: 'delete_asset', asset_id: 'abc123' }).summary).toBe('delete asset')
+    expect(getToolDisplay('Artifact', { action: 'read', url: 'https://claude.ai/artifact/9aV' }).summary).toBe('read')
+    expect(getToolDisplay('Artifact', { action: 'list_types' }).summary).toBe('list types')
+    expect(getToolDisplay('Artifact', { action: 'list', limit: 5 }).summary).toBe('list')
     expect(getToolDisplay('Artifact', { action: 'list', scope: 'all' }).summary).toBe('list · all')
+  })
+
+  it('gives the companion tools the artifact glyph and an action summary instead of raw input', () => {
+    const url = 'https://claude.ai/artifact/9aVirDdp2zQm7kXPpRjpfk'
+    expect(getToolDisplay('ArtifactComments', { action: 'read', url })).toEqual({ icon: 'canvas', summary: 'read' })
+    expect(getToolDisplay('ArtifactData', { action: 'list', url, collection: 'checks' })).toEqual({ icon: 'canvas', summary: 'list · checks' })
+    expect(getToolDisplay('ArtifactData', { action: 'set', url, collection: 'checks', doc_id: 'probe-1', data: { ok: true } }).summary)
+      .toBe('set · checks/probe-1')
+    expect(getToolDisplay('ArtifactCheck', { action: 'verify', url })).toEqual({ icon: 'canvas', summary: 'verify' })
   })
 })
 

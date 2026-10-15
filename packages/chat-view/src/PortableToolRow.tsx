@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
 import { stripLegacyCommandEcho } from './codex-command-detail'
-import { PortableMarkdown } from './PortableMarkdown'
+import { NativeWebLink, PortableMarkdown } from './PortableMarkdown'
 import { PortableFilesPreviewer } from './PortableFilesPreviewer'
 import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableWidgetBlock } from './PortableWidgetBlock'
@@ -235,6 +235,11 @@ export function PortableQuestionPreview({ content, format, scheme: own }: { cont
   return <PortableMarkdown text={content} isStreaming={false} scheme={scheme} />
 }
 
+function PortableArtifactLink({ url, label }: { url: string; label: string }) {
+  const { scheme } = useContext(PortableTurnContext)
+  return <NativeWebLink href={url} scheme={scheme}>{label}</NativeWebLink>
+}
+
 /**
  * WebView half of the shared tool row. Everything platform-bound is answered here; the
  * row itself — icon, label, summary, deltas, expansion — is the same code the desktop runs.
@@ -247,15 +252,7 @@ const PORTABLE_TOOL_ROW_PORTS: GenericToolRowPorts = {
   preferSentSummary: true,
   renderFileChip: (props) => <PortableFileChip {...props} />,
   renderFileDiff: (props) => <PortableFileDiff {...props} />,
-  renderArtifactChip: ({ url, label }) => (
-    <button
-      type="button"
-      className="shrink-0 truncate rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary"
-      onClick={(e) => { e.stopPropagation(); requestNative('openLink', { url }) }}
-    >
-      {label}
-    </button>
-  ),
+  renderArtifactLink: (props) => <PortableArtifactLink {...props} />,
   renderCount: (value) => <>{value}</>,
   renderJson: (text) => <PortableJson text={text} />,
   // Option previews arrive as markdown or as an HTML fragment the WebView will not eval.

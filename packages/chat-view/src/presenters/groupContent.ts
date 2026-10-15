@@ -49,6 +49,8 @@ export interface GroupContentResult {
   bashEditDiffMap: Map<string, BashEditDiff>
   /** Process exit codes from command results, keyed by toolUseId. */
   exitCodeMap: Map<string, number>
+  /** Titles of the pages Artifact results name, keyed by toolUseId. */
+  resultTitleMap: Map<string, string>
   /** MCP App attachments from tool results, keyed by toolUseId; newer than the call's own copy. */
   toolAppMap: Map<string, ToolAppAttachment>
   /**
@@ -77,6 +79,7 @@ export function groupContentPresenter(
   const outputPathMap = new Map<string, string>()
   const bashEditDiffMap = new Map<string, BashEditDiff>()
   const exitCodeMap = new Map<string, number>()
+  const resultTitleMap = new Map<string, string>()
   const toolAppMap = new Map<string, ToolAppAttachment>()
   const taskToolUseIds = new Set<string>()
   // Read-only calls whose consecutive runs fold into one summary group.
@@ -100,6 +103,7 @@ export function groupContentPresenter(
       if ('outputPath' in block && block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
       if ('bashEditDiff' in block && block.bashEditDiff) bashEditDiffMap.set(block.toolUseId, block.bashEditDiff)
       if ('exitCode' in block && block.exitCode !== undefined) exitCodeMap.set(block.toolUseId, block.exitCode)
+      if ('resultTitle' in block && block.resultTitle) resultTitleMap.set(block.toolUseId, block.resultTitle)
       if ('app' in block && block.app) toolAppMap.set(block.toolUseId, block.app)
     }
   }
@@ -291,6 +295,7 @@ export function groupContentPresenter(
     outputPathMap,
     bashEditDiffMap,
     exitCodeMap,
+    resultTitleMap,
     toolAppMap,
     runContinuations,
   }

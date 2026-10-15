@@ -74,6 +74,17 @@ describe('remote tool input exemptions', () => {
     ))).toEqual({ pattern: 'TODO', path: '/repo/src' })
   })
 
+  it('keeps the Artifact family\'s action and target without database payloads or companion links', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'ArtifactData',
+      JSON.stringify({ action: 'set', url: 'https://claude.ai/artifact/9aV', collection: 'checks', doc_id: 'probe-1', data: { note: 'private' } }),
+    ))).toEqual({ action: 'set', collection: 'checks', doc_id: 'probe-1' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Artifact',
+      JSON.stringify({ action: 'publish', file_path: '/repo/a.html', description: 'Test page', capabilities: { db: {} } }),
+    ))).toEqual({ action: 'publish', file_path: '/repo/a.html' })
+  })
+
   it('drops edited file bodies — the row renders from the transmitted diff', () => {
     expect(JSON.parse(sanitizeRemoteToolInput(
       'Edit',

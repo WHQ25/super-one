@@ -24,7 +24,7 @@ Desktop and mobile run the same code, and neither polls the host.
   the offer waits while the desktop editor has focus or the phone keyboard is up.
 
 The offer is a composer in the slot, "Handoff to New Session": a short reason,
-what a new session brings (a fresh context, a mention of this one, collaboration
+what a new session keeps (a mention of this one for the agent to read, collaboration
 carried over), and Approve and Dismiss. It stands in for the writable text
 composer only, so decisions, app forms, voice calls and read-only states keep
 priority ([composer.md](composer.md)). The phone shows the same form in its

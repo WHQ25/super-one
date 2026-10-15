@@ -1,14 +1,13 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AtSign, Forward, Network, Sparkles, type LucideIcon } from 'lucide-react'
+import { AtSign, Forward, Network, type LucideIcon } from 'lucide-react'
 import { continueInNewSession } from '@/lib/session-continuation'
 import { PermissionActionButton } from './PermissionActionBar'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import { claimDecisionFocus, setDecisionKeyboardPolicy, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
 import { dismissContinuationOffer, type SessionContinuationOffer } from './session-continuation-offer'
 
-const BENEFITS: Array<{ icon: LucideIcon; key: 'freshContext' | 'mentionsThis' | 'collaborationKept' }> = [
-  { icon: Sparkles, key: 'freshContext' },
+const BENEFITS: Array<{ icon: LucideIcon; key: 'mentionsThis' | 'collaborationKept' }> = [
   { icon: AtSign, key: 'mentionsThis' },
   { icon: Network, key: 'collaborationKept' },
 ]

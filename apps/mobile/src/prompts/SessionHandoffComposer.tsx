@@ -1,4 +1,4 @@
-import { AtSign, Forward, Network, Sparkles, type LucideIcon } from 'lucide-react-native'
+import { AtSign, Forward, Network, type LucideIcon } from 'lucide-react-native'
 import { View } from 'react-native'
 import { useMobileLocale } from '../i18n/context'
 import { useMobileTheme } from '../theme/context'
@@ -7,8 +7,7 @@ import { PromptActions } from './PromptControls'
 import { tint, usePromptStyles } from './styles'
 
 const BENEFITS: Array<{ icon: LucideIcon; text: string }> = [
-  { icon: Sparkles, text: 'A fresh context: faster, cheaper replies.' },
-  { icon: AtSign, text: 'The new session mentions this one, so the agent can still look up anything from it.' },
+  { icon: AtSign, text: 'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.' },
   { icon: Network, text: 'Keeps working with every collaborator of this session.' },
 ]
 
@@ -27,7 +26,7 @@ export function SessionHandoffComposer({ onApprove, onDismiss }: { onApprove(): 
       </View>
       <Text accessibilityRole="header" style={[styles.title, styles.grow]}>{t('Handoff to New Session')}</Text>
     </View>
-    <Text style={styles.meta}>{t('This session is long and its prompt cache has expired. The next message here sends the whole context again as input tokens: it costs more and uses a lot of your quota.')}</Text>
+    <Text style={styles.meta}>{t('This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.')}</Text>
     <View style={styles.tight}>
       {BENEFITS.map(({ icon: Icon, text }) => <View key={text} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         <Icon size={14} color={colors.mutedForeground} style={{ marginTop: 3 }} />

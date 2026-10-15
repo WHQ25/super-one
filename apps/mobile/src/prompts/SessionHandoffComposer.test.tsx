@@ -18,6 +18,6 @@ test('reads in Chinese', async () => {
   await renderWithTheme(<SessionHandoffComposer onApprove={() => {}} onDismiss={() => {}} />, 'light', 'zh')
   expect(screen.getByText('移交到新会话')).toBeTruthy()
   expect(screen.getByText('可以和原会话的所有协作者正常协作。')).toBeTruthy()
-  expect(screen.getByText(/Input Token/)).toBeTruthy()
+  expect(screen.getByText('新会话自动引用当前会话，上下文保留，agent 可按需读取。')).toBeTruthy()
   expect(screen.getByRole('button', { name: '批准' })).toBeTruthy()
 })

@@ -1569,7 +1569,6 @@ export type Messages = {
     sessionContinuation: {
       title: string
       lead: string
-      freshContext: string
       mentionsThis: string
       collaborationKept: string
       approve: string
@@ -6082,9 +6081,8 @@ export const en: Messages = {
   chat: {
     sessionContinuation: {
       title: 'Handoff to New Session',
-      lead: 'This session is long and its prompt cache has expired. The next message here sends the whole context again as input tokens: it costs more and uses a lot of your quota.',
-      freshContext: 'A fresh context: faster, cheaper replies.',
-      mentionsThis: 'The new session mentions this one, so the agent can still look up anything from it.',
+      lead: 'This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.',
+      mentionsThis: 'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.',
       collaborationKept: 'Keeps working with every collaborator of this session.',
       approve: 'Approve',
       dismiss: 'Dismiss',

@@ -1659,9 +1659,8 @@ export const zh: Messages = {
   chat: {
     sessionContinuation: {
       title: '移交到新会话',
-      lead: '这个会话较长，提示缓存已过期。在这里发送下一条消息会把整段上下文重新作为 Input Token 发送，费用更高，也会消耗大量用量。',
-      freshContext: '全新上下文：回复更快、更省。',
-      mentionsThis: '新会话会引用当前会话，agent 仍可随时查阅其中的内容。',
+      lead: '该会话较长且缓存已过期，在同一会话继续对话会重新上传整段上下文，速度慢，费用更高，会消耗大量订阅用量。建议移交到新会话。',
+      mentionsThis: '新会话自动引用当前会话，上下文保留，agent 可按需读取。',
       collaborationKept: '可以和原会话的所有协作者正常协作。',
       approve: '批准',
       dismiss: '关闭',

@@ -1,4 +1,4 @@
-import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, IDockviewGroupPanel, SerializedDockview } from 'dockview-core'
+import type { DockviewApi, AddPanelPositionOptions, DockviewGroupPanel, IDockviewPanel, IDockviewGroupPanel, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
@@ -785,18 +785,66 @@ export function focusActivityTab(panelId: string): boolean {
   return true
 }
 
-/** Move a tab into a new group beside its current one. */
-export function splitActivityTab(panelId: string, direction: 'right' | 'below'): boolean {
-  const panel = dockApi?.panels.find((candidate) => candidate.id === panelId)
-  if (!panel) return false
+type GridNode = { type: 'leaf' | 'branch'; data: unknown }
+
+/** Group ids in on-screen order (`api.groups` is creation order). */
+function groupIdsInLayout(node: GridNode, out: string[] = []): string[] {
+  if (node.type === 'leaf') out.push((node.data as { id: string }).id)
+  else for (const child of node.data as GridNode[]) groupIdsInLayout(child, out)
+  return out
+}
+
+/** The dock's groups in on-screen order. Snapshot group indices follow this. */
+export function groupsInLayoutOrder(): DockviewGroupPanel[] {
+  const api = dockApi
+  if (!api) return []
+  const byId = new Map(api.groups.map((group) => [group.id, group]))
+  return groupIdsInLayout(api.toJSON().grid.root as GridNode).flatMap((id) => byId.get(id) ?? [])
+}
+
+export type ActivityTabDirection = 'left' | 'right' | 'up' | 'down' | 'into'
+
+const DOCK_POSITIONS = { left: 'left', right: 'right', up: 'top', down: 'bottom', into: 'center' } as const
+
+/**
+ * Move a tab beside a group — into a new group on that side — or into it, at `index`
+ * among its tabs. `group` defaults to the tab's own: splitting it off, or reordering.
+ *
+ * A tab alone in its group is placed beside the group before it (or after it)
+ * instead — that is how a top/bottom pair turns side by side. Moving it beside its
+ * own group would make dockview drop that group before placing the tab against it
+ * ("Invalid grid element"), losing the tab. False when there is no such tab, or
+ * nothing to put it beside.
+ */
+export function moveActivityTab(
+  panelId: string,
+  move: { group?: DockviewGroupPanel; direction: ActivityTabDirection; index?: number },
+): boolean {
+  const api = dockApi
+  const panel = api?.panels.find((candidate) => candidate.id === panelId)
+  if (!api || !panel) return false
+  let target = move.group ?? panel.group
+  if (target === panel.group && panel.group.panels.length < 2) {
+    if (move.direction === 'into') return true
+    const order = groupsInLayoutOrder()
+    const at = order.indexOf(panel.group)
+    const neighbour = order[at - 1] ?? order[at + 1]
+    if (!neighbour) return false
+    target = neighbour
+  }
   ensureVisible()
-  // A maximized group hides every other group, so the new one would open unseen.
-  if (panel.api.isMaximized()) {
-    panel.api.exitMaximized()
+  // A maximized group hides every other group, so the moved tab could land unseen.
+  if (api.hasMaximizedGroup()) {
+    api.exitMaximizedGroup()
     useActivityPanelStore.getState().setMaximizedGroup(null)
   }
-  panel.api.moveTo({ group: panel.group, position: direction === 'right' ? 'right' : 'bottom' })
+  panel.api.moveTo({ group: target, position: DOCK_POSITIONS[move.direction], ...(move.index !== undefined ? { index: move.index } : {}) })
   return true
+}
+
+/** Move a tab into a new group beside its current one; see {@link moveActivityTab}. */
+export function splitActivityTab(panelId: string, direction: 'right' | 'below'): boolean {
+  return moveActivityTab(panelId, { direction: direction === 'right' ? 'right' : 'down' })
 }
 
 /** Maximize a tab's group, or the active tab's when none is named. */

@@ -27,7 +27,20 @@ Mini-apps use a VS Code-style split architecture: a trusted Node.js MiniApp Host
 
 The mini-app preload is the privileged bridge, and it never reaches an arbitrary URL: `evaluateWebviewAttach` (`miniapp-webview-guard.ts`) blocks any `<webview>` carrying another preload and attaches this one only to a `superone-app://<appId>` src in `persist:miniapp-<appId>`.
 
-Agent tools are declared in `manifest.tools` and implemented with `context.tools.handle()` from `manifest.main`. MCP calls route directly to the MiniApp Host and never wait for a mounted WebView. The WebView and MiniApp Host communicate through `context.webview` / `window.superone.node` structured messages.
+Agent tools are declared in `manifest.tools` and implemented with `context.tools.handle()` from `manifest.main`. MCP calls route directly to the MiniApp Host and never wait for a mounted WebView.
+
+**Agent access.** The agent reaches every app installed for its session's project
+(global installs plus the project's own) through three fixed tools: `miniapp_list`,
+`miniapp_call`, and `miniapp_open` (the app's UI as a background tab of the
+caller's panel, or its picture-in-picture while the panel is closed; same
+`shown` / `reveal` note as other agent openers, see
+[layout control](../../../../docs/features/layout-control.md)). The first call or
+open grants the app to the session — starts its host and registers its tools —
+through the same `authorizeMiniAppTools` path an @-mention or opening the panel
+uses (`setMiniAppCatalog` in `superone-mcp-server.ts`). Each app tool is still
+confirmed in the `miniapp_call` executor unless preapproved; `miniapp_open` is not
+host-owned, so the harness's own permission review (e.g. auto mode) decides it.
+A remote-node session has no local project and sees only already-granted apps. The WebView and MiniApp Host communicate through `context.webview` / `window.superone.node` structured messages.
 
 Handlers receive trusted `ctx.session`, `ctx.callId` and abort `ctx.signal` as
 their second argument. Mini-app HTML and widgets use

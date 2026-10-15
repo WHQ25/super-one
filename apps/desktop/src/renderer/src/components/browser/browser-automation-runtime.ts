@@ -645,6 +645,12 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     const { openedTabPresentation } = await import('@/lib/layout-control')
     return { ...shown, presentation: openedTabPresentation(sessionId, true) }
   }
+  if (op === 'miniappOpen') {
+    const { appId, projectDir } = (rawInput ?? {}) as { appId?: string; projectDir?: string }
+    if (!appId || !projectDir) throw new Error('miniapp_open needs an installed app.')
+    const { openMiniApp } = await import('@/lib/layout-control')
+    return openMiniApp({ sessionId, opener: { kind: 'agent' } }, appId, projectDir)
+  }
   if (op === 'tabPresentation') {
     const { openedTabPresentation } = await import('@/lib/layout-control')
     return openedTabPresentation(sessionId, (rawInput as { pip?: unknown } | null)?.pip === true)

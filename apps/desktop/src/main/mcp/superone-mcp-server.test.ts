@@ -68,6 +68,7 @@ import {
   cancelToolIntercept,
   setToolSyncCallbacks,
   setSessionHostProvider,
+  setMiniAppCatalog,
   addToolsChangedListener,
   clearSessionPendingCalls,
   executeAppTool,
@@ -435,13 +436,14 @@ describe('multi-project tool routing', () => {
 })
 
 describe('tool handler rejects closed app', () => {
-  it('returns error when app has been unregistered', async () => {
+  // Nothing installed here (no catalog), so the call cannot grant it back.
+  it('returns error when app has been unregistered and is not installed', async () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'test-app', makeTools('do_thing'))
 
     unregisterAppTools(PROJ_A, 'test-app')
 
     const result = await callMiniapp('test-app', 'do_thing', { x: 'hello' })
-    expect(result.content[0].text).toMatch(/not authorized/)
+    expect(result.content[0].text).toMatch(/not installed/)
   })
 
   it('works again after re-registering', async () => {
@@ -963,3 +965,39 @@ describe('basic scenario: session authorization is per-session (fixed MCP tool l
     expect(await authorizedAppIds(SID_B)).toContain('weather')
   })
 })
+
+describe('agent access to installed mini-apps', () => {
+  const SID = 'agent-grant-session'
+
+  beforeEach(() => {
+    setSessionHostProvider(() => ({ getSession: (id: string) => (id === SID ? { projectPath: '/proj-agent' } : null) }) as never)
+  })
+
+  afterEach(() => {
+    setMiniAppCatalog(null)
+    setSessionHostProvider(null as never)
+    unregisterAppTools(SID, 'notes')
+  })
+
+  it('lists and calls an app the user never mentioned, granting it on the first call', async () => {
+    const authorize = vi.fn(async (appIds: string[], projectDir: string, sessionId: string) => {
+      registerAppToolsPreapproved(sessionId, projectDir, 'notes', makeTools('add'))
+      return appIds
+    })
+    setMiniAppCatalog({ list: async () => [{ id: 'notes', manifest: { tools: makeTools('add') } }], authorize })
+
+    const list = JSON.parse((await executeSuperoneMcpTool(SID, 'miniapp_list', {})).content[0].text)
+    expect(list.apps.map((app: { appId: string }) => app.appId)).toContain('notes')
+    expect(authorize).not.toHaveBeenCalled()
+
+    const called = await executeSuperoneMcpTool(SID, 'miniapp_call', { appId: 'notes', tool: 'add', input: { x: 'hi' } })
+    expect(called.isError).toBeUndefined()
+    expect(authorize).toHaveBeenCalledWith(['notes'], '/proj-agent', SID)
+    expect(pluginExecutor).toHaveBeenCalled()
+  })
+
+  it('is not host-owned: opening an app goes through the harness permission review', () => {
+    expect(isToolPreapproved('mcp__superone__miniapp_open', { appId: 'notes' })).toBe(false)
+  })
+})
+

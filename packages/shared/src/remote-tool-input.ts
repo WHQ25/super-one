@@ -311,6 +311,7 @@ const SUPERONE_TOOL_SUMMARY_FIELDS: Record<string, readonly string[]> = {
   miniapp_dev_setup: ['name', 'directory', 'description'],
   miniapp_dev_preview: ['tool', 'phase'],
   miniapp_dev_reload: ['appId'],
+  miniapp_open: ['appId'],
 }
 
 /** Tag lists and the session count the `session_tag` row shows; ids stay opaque. */

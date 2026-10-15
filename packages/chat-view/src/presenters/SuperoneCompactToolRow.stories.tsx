@@ -84,6 +84,50 @@ export const MiniAppTypes: Story = {
   },
 }
 
+const MINIAPP_OPENED_IN_PIP = JSON.stringify({
+  status: 'applied',
+  appId: 'budget-tracker',
+  name: 'Budget Tracker',
+  tab: 'miniapp-budget-tracker:p1',
+  shown: 'pip',
+  reveal: 'Opened in the background: the user sees it only as a small picture-in-picture over the chat. If they want it in front, call layout_act action=focus_tab tab="miniapp-budget-tracker:p1".',
+})
+
+export const MiniAppOpen: Story = {
+  name: 'miniapp_open · app named by the result',
+  args: {
+    mcpToolName: 'miniapp_open',
+    params: projected('miniapp_open', { appId: 'budget-tracker' }),
+    result: MINIAPP_OPENED_IN_PIP,
+  },
+}
+
+export const MiniAppOpenStreaming: Story = {
+  name: 'miniapp_open · in flight, id until the result names it',
+  args: {
+    mcpToolName: 'miniapp_open',
+    params: projected('miniapp_open', { appId: 'budget-tracker' }),
+    result: null,
+    isStreaming: true,
+  },
+}
+
+export const MiniAppOpenNotInstalled: Story = {
+  name: 'miniapp_open · error (not installed)',
+  args: {
+    mcpToolName: 'miniapp_open',
+    params: projected('miniapp_open', { appId: 'ghost-app' }),
+    result: '[Error] No mini-app ghost-app is installed for this project. Call miniapp_list for installed apps.',
+    isError: true,
+  },
+}
+
+export const MiniAppOpenChinese: Story = {
+  ...MiniAppOpen,
+  name: 'miniapp_open · Chinese',
+  globals: { locale: 'zh' },
+}
+
 export const WidgetTemplates: Story = {
   name: 'widget_list_templates · label with no subject',
   args: { mcpToolName: 'widget_list_templates', params: {}, result: null },

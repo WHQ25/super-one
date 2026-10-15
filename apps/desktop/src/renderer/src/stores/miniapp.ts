@@ -56,6 +56,8 @@ export interface MiniAppSlot {
 export interface MiniAppPanelOptions {
   /** False while the Activity panel is closed: lay the tab out without showing the panel. */
   reveal?: boolean
+  /** The session that holds the app; defaults to the project's active session. */
+  sessionId?: string
 }
 
 interface MiniAppStoreState {
@@ -187,7 +189,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
     openAppInPanel: async (entry: MiniAppEntry, projectDir: string, opts?: MiniAppPanelOptions) => {
       const projectId = useAppStore.getState().currentProjectId
       const instanceKey = makeInstanceKey(entry.id, projectId)
-      const sid = activeSessionId(projectDir)
+      const sid = opts?.sessionId ?? activeSessionId(projectDir)
       const existing = get().openApps[instanceKey]
       await window.miniapp.open(entry.id, projectDir, sid)
       if (existing) {

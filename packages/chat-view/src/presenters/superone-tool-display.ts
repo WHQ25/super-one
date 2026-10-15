@@ -112,6 +112,22 @@ export const SUPERONE_TOOL_DESCRIPTORS: Record<string, SuperoneToolDescriptor> =
     doneKey: 'chat.toolBlock.previewedToolUi',
     summary: (params) => [str(params.tool), str(params.phase)].filter(Boolean).join(' · '),
   },
+  miniapp_open: {
+    icon: 'package',
+    streamingKey: 'chat.toolBlock.openingMiniApp',
+    actionKey: 'chat.toolBlock.openMiniApp',
+    doneKey: 'chat.toolBlock.openedMiniApp',
+    // The result names the app as the user knows it; the input only has its id.
+    summary: (params, result) => {
+      if (result) {
+        try {
+          const parsed = JSON.parse(result) as { name?: unknown }
+          if (typeof parsed?.name === 'string' && parsed.name) return parsed.name
+        } catch { /* error text falls back to the id */ }
+      }
+      return str(params.appId)
+    },
+  },
   miniapp_dev_reload: {
     icon: 'package',
     streamingKey: 'chat.toolBlock.reloadingMiniApp',

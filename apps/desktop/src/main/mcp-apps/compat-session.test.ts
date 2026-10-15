@@ -62,6 +62,10 @@ function deps(session: LocalCompatSession, approved = true): MiniappToolDeps {
     dispatchCompatToolCall: async (_session, id, tool, input) => session.call(id, tool, input),
     isAppToolPreapproved: () => approved,
     markAppToolPreapproved: () => undefined,
+    // Compatibility apps come from the session's catalog, never from installed mini-apps.
+    listInstalledApps: async () => [],
+    authorizeApp: async () => false,
+    openAppView: async () => { throw new Error('compatibility apps have no mini-app UI') },
     getEmitHostEvent: () => event => {
       if (event.type === 'permission_request') resolveMiniappCallConfirm(event.request.requestId, 'decline')
     },

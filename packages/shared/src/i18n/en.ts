@@ -2537,6 +2537,9 @@ export type Messages = {
       previewedToolUi: string
       previewToolUi: string
       reloadingMiniApp: string
+      openingMiniApp: string
+      openMiniApp: string
+      openedMiniApp: string
       reloadedMiniApp: string
       reloadMiniApp: string
       listingWidgetTemplates: string
@@ -7025,6 +7028,9 @@ export const en: Messages = {
       previewedToolUi: 'Tool UI Previewed',
       previewToolUi: 'Preview Tool UI',
       reloadingMiniApp: 'Reloading mini-app',
+      openingMiniApp: 'Opening mini-app…',
+      openMiniApp: 'Open Mini-app',
+      openedMiniApp: 'Mini-app Opened',
       reloadedMiniApp: 'Mini-app Reloaded',
       reloadMiniApp: 'Reload Mini-app',
       listingWidgetTemplates: 'Listing widget templates',

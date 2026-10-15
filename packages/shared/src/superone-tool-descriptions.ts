@@ -18,6 +18,23 @@ export const PACK_MINI_APP_DESCRIPTION =
 export const UPDATE_SUPERONE_TYPES_DESCRIPTION =
   'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.'
 
+export const MINIAPP_LIST_DESCRIPTION =
+  "List the mini-apps installed for this session's project and their tools. Omit appId for a compact catalog (tool names + one-line descriptions). Pass appId to inspect one app; includeSchema defaults true for that app's full tool definitions including inputSchema. Call this before miniapp_call when you do not know the tool names or parameters."
+export const MINIAPP_LIST_APP_ID_DESCRIPTION = "Optional mini-app id. When set, returns that app's tools only."
+export const MINIAPP_LIST_INCLUDE_SCHEMA_DESCRIPTION =
+  'When appId is set, include full tool definitions with inputSchema (default true). Ignored when listing all apps.'
+
+export const MINIAPP_CALL_DESCRIPTION =
+  "Execute a tool of an installed mini-app. Pass appId + tool name from miniapp_list, and tool arguments as input. Tools run in the app's host without its UI; show the UI with miniapp_open. Do not invent tools — call miniapp_list first when unsure."
+export const MINIAPP_CALL_APP_ID_DESCRIPTION = 'Mini-app id from miniapp_list.'
+export const MINIAPP_CALL_TOOL_DESCRIPTION = "Tool name declared by that app's manifest."
+export const MINIAPP_CALL_INPUT_DESCRIPTION = "Arguments for the app tool. Validated against the tool's inputSchema at dispatch time."
+
+export const MINIAPP_OPEN_DESCRIPTION =
+  "Open an installed mini-app's UI as a tab in your activity panel, in the background: the result says whether the user sees it and how to bring it forward. " +
+  'Use when the user wants to see or use the app itself; its tools run without the UI through miniapp_call.'
+export const MINIAPP_OPEN_APP_ID_DESCRIPTION = 'Mini-app id from miniapp_list.'
+
 export const MINIAPP_DEV_PREVIEW_DESCRIPTION =
   "Render a development mini-app tool's chat UI (intercept, result, or standalone template) from fixture input/result without running the tool. " +
   'Returns a view id to pass as tab to browser_* tools for snapshots, clicks, screenshots, and console. ' +

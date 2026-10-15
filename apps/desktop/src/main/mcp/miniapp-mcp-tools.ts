@@ -1,9 +1,11 @@
 /**
- * Fixed mini-app MCP surface: miniapp_list + miniapp_call.
+ * Fixed mini-app MCP surface: miniapp_list + miniapp_call + miniapp_open.
  *
  * Precedent: browser-action-mcp-tools.ts (list / do with opaque input record).
- * Per-app tools are no longer registered on the MCP server — authorization is
- * session-scoped via registerAppTools cache; agents discover tools via miniapp_list.
+ * Per-app tools are not registered on the MCP server. Any app installed for the
+ * session's project is available: the first call or open starts its host and
+ * registers its tools on the session (registerAppTools), the same grant an
+ * @-mention gives. Each app tool is still confirmed in the executor unless preapproved.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -12,9 +14,12 @@ import { z } from 'zod'
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { HOST_ACTION_MINIAPP_DESCRIPTORS } from '@superone/shared/environment/host-action-miniapp-descriptors'
+import { focusTabCall, openedTabNote, type OpenedTabPresentation } from '@superone/shared/layout-control'
 import {
   MINIAPP_CALL_TOOL_NAME,
   MINIAPP_LIST_TOOL_NAME,
+  MINIAPP_OPEN_TOOL_NAME,
   parseMiniappCallArgs,
 } from './miniapp-call-policy'
 import { awaitMiniappCallConfirm } from './miniapp-call-confirm'
@@ -67,6 +72,12 @@ export interface MiniappToolDeps {
     projectDir: string
     tools: MiniAppToolDefinition[]
   } | null
+  /** Apps installed for the session's project, granted or not; empty when it has no local project. */
+  listInstalledApps(sessionId: string): Promise<Array<{ appId: string; tools: MiniAppToolDefinition[] }>>
+  /** Start an installed app's host and register its tools on the session. False when it is not installed or has no tools. */
+  authorizeApp(sessionId: string, appId: string): Promise<boolean>
+  /** Open the app's UI in the session's activity panel, in the background. */
+  openAppView(sessionId: string, appId: string): Promise<{ status: string; tab: string; name: string; presentation: OpenedTabPresentation }>
   dispatchAppToolCall(
     sessionId: string,
     projectDir: string,
@@ -110,13 +121,16 @@ export async function executeMiniappList(
   deps: MiniappToolDeps,
 ): Promise<MiniappToolReply> {
   try {
-    const authorized = deps.getAuthorizedApps(sessionId)
+    const apps = deps.getAuthorizedApps(sessionId)
+    for (const installed of await deps.listInstalledApps(sessionId)) {
+      if (!apps.some((app) => app.appId === installed.appId)) apps.push(installed)
+    }
     if (args.appId) {
-      const entry = authorized.find((a) => a.appId === args.appId)
+      const entry = apps.find((a) => a.appId === args.appId)
       if (!entry) {
         return miniappErrorReply(
           new Error(
-            `App "${args.appId}" is not authorized for this session. Call miniapp_list without appId to see authorized apps.`,
+            `App "${args.appId}" is not installed for this session's project. Call miniapp_list without appId to see installed apps.`,
           ),
         )
       }
@@ -130,8 +144,8 @@ export async function executeMiniappList(
     }
 
     return miniappTextReply({
-      count: authorized.length,
-      apps: authorized.map((entry) => ({
+      count: apps.length,
+      apps: apps.map((entry) => ({
         appId: entry.appId,
         tools: entry.tools.map(summarizeTool),
       })),
@@ -156,12 +170,12 @@ export async function executeMiniappCall(
       return miniappErrorReply(new Error('miniapp_call requires string fields appId and tool'))
     }
 
-    const entry = deps.getAppEntry(sessionId, appId)
+    // Any installed app is callable; the first call starts its host and registers its tools.
+    let entry = deps.getAppEntry(sessionId, appId)
+    if (!entry && await deps.authorizeApp(sessionId, appId)) entry = deps.getAppEntry(sessionId, appId)
     if (!entry) {
       return miniappErrorReply(
-        new Error(
-          `App "${appId}" is not authorized in this session. Call miniapp_list to see authorized apps, or ask the user to @-mention / open the app.`,
-        ),
+        new Error(`App "${appId}" is not installed for this session's project. Call miniapp_list to see installed apps.`),
       )
     }
 
@@ -242,52 +256,77 @@ export async function executeMiniappCall(
   }
 }
 
+/** Open an app's UI; tools stay callable whether or not it is shown. */
+export async function executeMiniappOpen(
+  sessionId: string,
+  args: { appId: string },
+  deps: MiniappToolDeps,
+): Promise<MiniappToolReply> {
+  try {
+    const appId = args.appId.trim()
+    if (!appId) return miniappErrorReply(new Error('miniapp_open requires appId'))
+    const opened = await deps.openAppView(sessionId, appId)
+    return miniappTextReply({
+      status: opened.status,
+      appId,
+      name: opened.name,
+      tab: opened.tab,
+      ...openedTabNote(opened.presentation, focusTabCall(opened.tab)),
+    })
+  } catch (err) {
+    return miniappErrorReply(err)
+  }
+}
+
+function descriptor(name: string) {
+  const found = HOST_ACTION_MINIAPP_DESCRIPTORS.find((candidate) => candidate.name === name)
+  if (!found) throw new Error(`Missing mini-app tool descriptor: ${name}`)
+  return found
+}
+
+function stringArg(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function recordArg(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+/** Run a fixed mini-app tool by bare name; null for any other name. Shared by the in-process and HTTP surfaces. */
+export function executeMiniappFixedTool(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  deps: MiniappToolDeps,
+): Promise<MiniappToolReply> | null {
+  switch (toolName) {
+    case MINIAPP_LIST_TOOL_NAME:
+      return executeMiniappList(sessionId, {
+        appId: typeof args.appId === 'string' ? args.appId : undefined,
+        includeSchema: typeof args.includeSchema === 'boolean' ? args.includeSchema : undefined,
+      }, deps)
+    case MINIAPP_CALL_TOOL_NAME:
+      return executeMiniappCall(sessionId, { appId: stringArg(args.appId), tool: stringArg(args.tool), input: recordArg(args.input) }, deps)
+    case MINIAPP_OPEN_TOOL_NAME:
+      return executeMiniappOpen(sessionId, { appId: stringArg(args.appId) }, deps)
+    default:
+      return null
+  }
+}
+
 export function registerMiniappTools(
   server: McpServer,
   sessionId: string,
   deps: MiniappToolDeps,
 ): void {
-  server.registerTool(
-    MINIAPP_LIST_TOOL_NAME,
-    {
-      description:
-        'List mini-apps authorized for this session and their tools. Omit appId for a compact catalog (tool names + one-line descriptions). Pass appId to inspect one app; includeSchema defaults true for that app\'s full tool definitions including inputSchema. Call this before miniapp_call when you do not know the tool names or parameters.',
-      inputSchema: {
-        appId: z.string().optional().describe('Optional mini-app id. When set, returns that app\'s tools only.'),
-        includeSchema: z
-          .boolean()
-          .optional()
-          .describe('When appId is set, include full tool definitions with inputSchema (default true). Ignored when listing all apps.'),
-      },
-    },
-    async (raw) => executeMiniappList(sessionId, {
-      appId: typeof raw.appId === 'string' ? raw.appId : undefined,
-      includeSchema: typeof raw.includeSchema === 'boolean' ? raw.includeSchema : undefined,
-    }, deps),
-  )
-
-  server.registerTool(
-    MINIAPP_CALL_TOOL_NAME,
-    {
-      description:
-        'Execute a tool on a session-authorized mini-app. Pass appId + tool name from miniapp_list, and tool arguments as input. Panel open/close is implicit: non-standalone tools lazy-open the panel; standalone tools run without a panel. Do not invent tools — call miniapp_list first when unsure.',
-      inputSchema: {
-        appId: z.string().describe('Mini-app id (from miniapp_list or user @-mention).'),
-        tool: z.string().describe('Tool name declared by that app\'s manifest.'),
-        input: z
-          .record(z.string(), z.unknown())
-          .default({})
-          .describe('Arguments for the app tool. Validated against the tool\'s inputSchema at dispatch time.'),
-      },
-    },
-    async (raw) => executeMiniappCall(sessionId, {
-      appId: String(raw.appId ?? ''),
-      tool: String(raw.tool ?? ''),
-      input: (raw.input && typeof raw.input === 'object' && !Array.isArray(raw.input))
-        ? raw.input as Record<string, unknown>
-        : {},
-    }, deps),
-  )
+  for (const name of [MINIAPP_LIST_TOOL_NAME, MINIAPP_CALL_TOOL_NAME, MINIAPP_OPEN_TOOL_NAME]) {
+    const { description, inputSchema } = descriptor(name)
+    server.registerTool(
+      name,
+      { description, inputSchema: jsonSchemaToZodShape(inputSchema) },
+      async (raw) => executeMiniappFixedTool(sessionId, name, raw as Record<string, unknown>, deps)!,
+    )
+  }
 }
 
 export function getMiniappFixedToolDescriptors(): Array<{
@@ -295,41 +334,5 @@ export function getMiniappFixedToolDescriptors(): Array<{
   description: string
   inputSchema: Record<string, unknown>
 }> {
-  return [
-    {
-      name: MINIAPP_LIST_TOOL_NAME,
-      description:
-        'List mini-apps authorized for this session and their tools. Omit appId for a compact catalog (tool names + one-line descriptions). Pass appId to inspect one app; includeSchema defaults true for that app\'s full tool definitions including inputSchema. Call this before miniapp_call when you do not know the tool names or parameters.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          appId: { type: 'string', description: 'Optional mini-app id. When set, returns that app\'s tools only.' },
-          includeSchema: {
-            type: 'boolean',
-            description: 'When appId is set, include full tool definitions with inputSchema (default true). Ignored when listing all apps.',
-          },
-        },
-        additionalProperties: false,
-      },
-    },
-    {
-      name: MINIAPP_CALL_TOOL_NAME,
-      description:
-        'Execute a tool on a session-authorized mini-app. Pass appId + tool name from miniapp_list, and tool arguments as input. Panel open/close is implicit: non-standalone tools lazy-open the panel; standalone tools run without a panel. Do not invent tools — call miniapp_list first when unsure.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          appId: { type: 'string', description: 'Mini-app id (from miniapp_list or user @-mention).' },
-          tool: { type: 'string', description: 'Tool name declared by that app\'s manifest.' },
-          input: {
-            type: 'object',
-            additionalProperties: true,
-            description: 'Arguments for the app tool. Validated against the tool\'s inputSchema at dispatch time.',
-          },
-        },
-        required: ['appId', 'tool'],
-        additionalProperties: false,
-      },
-    },
-  ]
+  return HOST_ACTION_MINIAPP_DESCRIPTORS
 }

@@ -55,7 +55,7 @@ import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { registerBrowserWebAuthn } from './browser/browser-webauthn'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, sessionsAuthorizingApp } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, sessionsAuthorizingApp, setMiniAppCatalog } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { inputRequestUploadTarget } from './session/input-requests'
 import { openMiniAppInputRequest, type MiniAppInputRequest } from './miniapp/miniapp-input-requests'
@@ -5101,7 +5101,7 @@ function registerIpcHandlers(): void {
   })
   startSuperoneMcpStdioBridge().catch((err) => log.error('[mcp-stdio-ipc] failed to start:', err))
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, async (_e, projectDir?: string) => {
+  const listInstalledMiniApps = async (projectDir?: string) => {
     const apps = await discoverApps()
     if (projectDir) {
       const projectApps = await discoverProjectApps(projectDir)
@@ -5115,7 +5115,8 @@ function registerIpcHandlers(): void {
       setAppMediaPermissions(app.id, app.manifest)
     }
     return apps
-  })
+  }
+  ipcMain.handle(AgentIpcChannels.MINIAPP_LIST, (_e, projectDir?: string) => listInstalledMiniApps(projectDir))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string, sessionId: string) => {
     const { manifest, basePath, args } = await prepareMiniAppHostLaunch(appId, projectDir)
@@ -5137,7 +5138,7 @@ function registerIpcHandlers(): void {
     if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_AUTHORIZE, (_e, appIds: string[], projectDir: string, sessionId: string) =>
+  const authorizeMiniAppsForSession = (appIds: string[], projectDir: string, sessionId: string) =>
     authorizeMiniAppTools(appIds, projectDir, sessionId, {
       prepare: prepareMiniAppHostLaunch,
       start: startMiniAppHost,
@@ -5147,7 +5148,11 @@ function registerIpcHandlers(): void {
         loadPreapprovedTools(appId, basePath)
       },
       markNeedsRebuild: () => agentService.markSessionNeedsRebuild(sessionId, 'codex'),
-    }))
+    })
+  ipcMain.handle(AgentIpcChannels.MINIAPP_AUTHORIZE, (_e, appIds: string[], projectDir: string, sessionId: string) =>
+    authorizeMiniAppsForSession(appIds, projectDir, sessionId))
+  // The agent's own route to the same grant: miniapp_call / miniapp_open on any installed app.
+  setMiniAppCatalog({ list: listInstalledMiniApps, authorize: authorizeMiniAppsForSession })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNAUTHORIZE, async (_e, appIds: string[], _projectDir: string, sessionId: string) => {
     if (!Array.isArray(appIds) || appIds.length === 0) return

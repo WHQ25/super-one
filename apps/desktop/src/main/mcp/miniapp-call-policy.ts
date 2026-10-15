@@ -12,6 +12,8 @@ import { MCP_SUPERONE_TOOL_PREFIX } from './superone-host-owned-tools'
 
 export const MINIAPP_LIST_TOOL_NAME = 'miniapp_list' as const
 export const MINIAPP_CALL_TOOL_NAME = 'miniapp_call' as const
+/** Not host-owned: the harness's own permission review decides each open. */
+export const MINIAPP_OPEN_TOOL_NAME = 'miniapp_open' as const
 
 export const MINIAPP_LIST_QUALIFIED = `${MCP_SUPERONE_TOOL_PREFIX}${MINIAPP_LIST_TOOL_NAME}` as const
 export const MINIAPP_CALL_QUALIFIED = `${MCP_SUPERONE_TOOL_PREFIX}${MINIAPP_CALL_TOOL_NAME}` as const

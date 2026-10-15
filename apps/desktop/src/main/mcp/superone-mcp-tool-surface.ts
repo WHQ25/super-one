@@ -35,14 +35,9 @@ import {
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { HOST_ACTION_WIDGET_DESCRIPTORS } from '@superone/shared/environment/host-action-widget-descriptors'
 import {
-  executeMiniappCall,
-  executeMiniappList,
+  executeMiniappFixedTool,
   getMiniappFixedToolDescriptors,
 } from './miniapp-mcp-tools'
-import {
-  MINIAPP_CALL_TOOL_NAME,
-  MINIAPP_LIST_TOOL_NAME,
-} from './miniapp-call-policy'
 import {
   listWidgetTemplatesHandler,
   executeWidgetShowTool,
@@ -231,22 +226,8 @@ async function runSuperoneMcpTool(
     })
   }
 
-  if (toolName === MINIAPP_LIST_TOOL_NAME) {
-    return executeMiniappList(sessionId, {
-      appId: typeof args.appId === 'string' ? args.appId : undefined,
-      includeSchema: typeof args.includeSchema === 'boolean' ? args.includeSchema : undefined,
-    }, miniappToolDepsForSurface())
-  }
-
-  if (toolName === MINIAPP_CALL_TOOL_NAME) {
-    return executeMiniappCall(sessionId, {
-      appId: String(args.appId ?? ''),
-      tool: String(args.tool ?? ''),
-      input: (args.input && typeof args.input === 'object' && !Array.isArray(args.input))
-        ? args.input as Record<string, unknown>
-        : {},
-    }, miniappToolDepsForSurface())
-  }
+  const miniapp = executeMiniappFixedTool(sessionId, toolName, args, miniappToolDepsForSurface())
+  if (miniapp) return miniapp
 
   throw new Error(`Unknown SuperOne MCP tool: ${toolName}`)
 }

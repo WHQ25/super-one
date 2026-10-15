@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LayoutControlCaller } from '@superone/shared/layout-control'
 import { setDockApi } from '@/components/activity/activity-panel-api'
-import { _resetDockOwnershipForTest, recordDockOpener } from '@/components/activity/dock-ownership'
+import { _resetDockOwnershipForTest, dockOpener, recordDockOpener } from '@/components/activity/dock-ownership'
+import { miniAppPanelTargetId } from '@superone/shared/miniapp-automation-target'
 import { mosaicTileId, useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { collectLeaves } from '@/components/mosaic/mosaic-tree'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -12,7 +13,9 @@ import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useTerminalStore } from '@/stores/terminal'
 import { LAYOUT } from './layout-constants'
-import { layoutAct, layoutSnapshot, openedTabPresentation } from './layout-control'
+import { layoutAct, layoutSnapshot, openedTabPresentation, openMiniApp } from './layout-control'
+import { useMiniAppStore } from '@/stores/miniapp'
+import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 
 const PROJECT = '/work/app'
 const agentA: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'agent' }, root: PROJECT }
@@ -357,6 +360,49 @@ describe('where an agent-opened tab shows', () => {
     fakeDock()
     showSessionInFront('B')
     expect(openedTabPresentation('A', true)).toBe('background')
+  })
+})
+
+describe('opening a mini-app for the agent', () => {
+  const entry = { id: 'notes', manifest: { name: 'Notes' } }
+  let openAppInPanel: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    ;(window as unknown as { miniapp: unknown }).miniapp = { list: vi.fn(async () => [entry]) }
+    openAppInPanel = vi.fn(async () => {})
+    useMiniAppStore.setState({ openAppInPanel } as never)
+    useAgentViewfinderStore.setState({ activeBySession: {} })
+    useAppStore.setState({ currentFolder: PROJECT, currentProjectId: 'p1', recentFolders: [] } as never)
+  })
+
+  it('opens it in the caller\'s panel without revealing it, as the caller\'s own tab', async () => {
+    fakeDock()
+    const result = await openMiniApp(agentA, 'notes', PROJECT)
+
+    expect(result).toEqual({ status: 'applied', visible: false, tab: 'miniapp-notes:p1', name: 'Notes', presentation: 'pip' })
+    expect(openAppInPanel).toHaveBeenCalledWith(entry, PROJECT, { reveal: false, sessionId: 'A' })
+    // The session's picture-in-picture shows its viewfinder target while the panel is closed.
+    expect(useAgentViewfinderStore.getState().activeBySession.A).toEqual({ kind: 'miniapp', targetId: miniAppPanelTargetId('notes') })
+    // Recorded as the agent's, so close_tab may close it later.
+    expect(dockOpener('A', 'miniapp-notes:p1')).toBe('agent')
+  })
+
+  it('waits for the caller in the background instead of opening it in someone else\'s layout', async () => {
+    fakeDock()
+    showSessionInFront('B')
+    expect(await openMiniApp(agentA, 'notes', PROJECT)).toMatchObject({ status: 'queued', presentation: 'background' })
+    expect(openAppInPanel).not.toHaveBeenCalled()
+  })
+
+  it('reports a launch that fails instead of a tab that never appears', async () => {
+    fakeDock()
+    openAppInPanel.mockRejectedValueOnce(new Error('App not found: notes'))
+    await expect(openMiniApp(agentA, 'notes', PROJECT)).rejects.toThrow('App not found: notes')
+    expect(useAgentViewfinderStore.getState().activeBySession.A).toBeUndefined()
+  })
+
+  it('names miniapp_list for an app that is not installed', async () => {
+    await expect(openMiniApp(agentA, 'ghost', PROJECT)).rejects.toMatchObject({ code: 'not_found', message: expect.stringContaining('miniapp_list') })
   })
 })
 

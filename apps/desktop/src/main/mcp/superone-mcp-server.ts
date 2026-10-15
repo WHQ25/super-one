@@ -10,6 +10,9 @@ import log from '../logger'
 import { setJevRunHostEventResolver } from '../jev/run-events'
 import type { MiniAppToolDefinition, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
+import type { OpenedTabPresentation } from '@superone/shared/layout-control'
+import { browserAutomationCall } from '../browser/browser-automation-bridge'
+import { currentHostActionConnection } from './artifact-registry'
 import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { trace } from '../agent/event-trace'
 import {
@@ -110,10 +113,56 @@ export function getAppToolEntryForSession(
   return { projectDir: entry.projectDir, tools: entry.tools }
 }
 
+/**
+ * Installed apps and the session grant, owned by the main process entry (the same
+ * code the composer's @-mention and the app panel use). Set once at startup.
+ */
+export interface MiniAppCatalogPort {
+  list(projectDir: string): Promise<Array<{ id: string; manifest: { tools?: MiniAppToolDefinition[] } }>>
+  /** Returns the app ids whose tools were registered on the session. */
+  authorize(appIds: string[], projectDir: string, sessionId: string): Promise<string[]>
+}
+
+let miniAppCatalog: MiniAppCatalogPort | null = null
+
+export function setMiniAppCatalog(port: MiniAppCatalogPort | null): void {
+  miniAppCatalog = port
+}
+
+/** Mini-apps belong to the session's local project; a remote-node session has none here. */
+function sessionProjectDir(sessionId: string): string | null {
+  if (currentHostActionConnection() !== null) return null
+  const session = getSessionHost()?.getSession(sessionId) as { projectPath?: string } | null | undefined
+  return session?.projectPath || null
+}
+
 export function miniappToolDepsForSurface(): MiniappToolDeps {
   return {
     getAuthorizedApps: getAuthorizedAppsForSession,
     getAppEntry: getAppToolEntryForSession,
+    listInstalledApps: async (sessionId) => {
+      const projectDir = sessionProjectDir(sessionId)
+      if (!projectDir || !miniAppCatalog) return []
+      const apps = await miniAppCatalog.list(projectDir)
+      return apps.map((app) => ({ appId: app.id, tools: app.manifest.tools ?? [] }))
+    },
+    authorizeApp: async (sessionId, appId) => {
+      const projectDir = sessionProjectDir(sessionId)
+      if (!projectDir || !miniAppCatalog) return false
+      return (await miniAppCatalog.authorize([appId], projectDir, sessionId)).includes(appId)
+    },
+    openAppView: async (sessionId, appId) => {
+      const projectDir = sessionProjectDir(sessionId)
+      if (!projectDir) throw new Error('Mini-app UIs open only for sessions running on this desktop.')
+      // Grant first, so its tools are callable even while the open waits for this session to be shown.
+      await miniAppCatalog?.authorize([appId], projectDir, sessionId)
+      return await browserAutomationCall(sessionId, 'miniappOpen', { appId, projectDir }) as {
+        status: string
+        tab: string
+        name: string
+        presentation: OpenedTabPresentation
+      }
+    },
     dispatchAppToolCall,
     dispatchCompatToolCall: async (sessionId, appId, tool, input) => {
       const compat = getCompatSession(sessionId)

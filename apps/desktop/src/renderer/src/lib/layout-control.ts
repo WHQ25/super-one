@@ -40,7 +40,11 @@ import {
 } from '@/components/activity/dock-ownership'
 import { mosaicTileId, useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { collectLeaves, measureMin, type DropEdge } from '@/components/mosaic/mosaic-tree'
+import { miniAppPanelTargetId } from '@superone/shared/miniapp-automation-target'
+import { projectIdForDir } from '@/components/miniapp/use-miniapp-project-scope'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
+import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
+import { makeInstanceKey, useMiniAppStore } from '@/stores/miniapp'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useAppStore } from '@/stores/app'
 import { useBrowserStore } from '@/stores/browser'
@@ -408,6 +412,29 @@ function openTab(caller: LayoutControlCaller, tab: string, preview: { kind: Layo
   const sid = caller.sessionId
   if (!sessionTabs(sid).some((t) => t.panelId === tab)) recordDockOpener(sid, tab, openerKey(caller))
   return dockChange(sid, { kind: 'open', tab, preview, run })
+}
+
+/**
+ * `miniapp_open`: an installed app's UI as a tab of the caller's panel. Opened in the
+ * background like every agent opener; with the panel closed the session's
+ * picture-in-picture shows it, since it is the viewfinder target.
+ */
+export async function openMiniApp(
+  caller: LayoutControlCaller,
+  appId: string,
+  projectDir: string,
+): Promise<LayoutActResult & { tab: string; name: string; presentation: OpenedTabPresentation }> {
+  const entry = (await window.miniapp.list(projectDir)).find((app) => app.id === appId)
+  if (!entry) throw new LayoutControlError('not_found', `No mini-app ${appId} is installed for this project. Call miniapp_list for installed apps.`)
+  const tab = `miniapp-${makeInstanceKey(appId, projectIdForDir(useAppStore.getState(), projectDir))}`
+  let launched: Promise<void> | undefined
+  const result = openTab(caller, tab, { kind: 'miniapp', title: entry.manifest.name }, () => {
+    launched = useMiniAppStore.getState().openAppInPanel(entry, projectDir, { reveal: false, sessionId: caller.sessionId })
+  })
+  // A launch that fails now is the agent's error, not an "applied" tab that never appears.
+  await launched
+  useAgentViewfinderStore.getState().activate(caller.sessionId, 'miniapp', miniAppPanelTargetId(appId))
+  return { ...result, tab, name: entry.manifest.name, presentation: openedTabPresentation(caller.sessionId, true) }
 }
 
 export async function layoutAct(caller: LayoutControlCaller, request: LayoutActRequest): Promise<LayoutActResult> {

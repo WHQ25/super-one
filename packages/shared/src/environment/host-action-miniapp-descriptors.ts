@@ -1,49 +1,54 @@
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
+import {
+  MINIAPP_CALL_APP_ID_DESCRIPTION,
+  MINIAPP_CALL_DESCRIPTION,
+  MINIAPP_CALL_INPUT_DESCRIPTION,
+  MINIAPP_CALL_TOOL_DESCRIPTION,
+  MINIAPP_LIST_APP_ID_DESCRIPTION,
+  MINIAPP_LIST_DESCRIPTION,
+  MINIAPP_LIST_INCLUDE_SCHEMA_DESCRIPTION,
+  MINIAPP_OPEN_APP_ID_DESCRIPTION,
+  MINIAPP_OPEN_DESCRIPTION,
+} from '../superone-tool-descriptions'
 
+/** The fixed mini-app tools. Defined once: the desktop registrations reuse these descriptors. */
 export const HOST_ACTION_MINIAPP_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
   {
-    "name": "miniapp_list",
-    "description": "List mini-apps authorized for this session and their tools. Omit appId for a compact catalog (tool names + one-line descriptions). Pass appId to inspect one app; includeSchema defaults true for that app's full tool definitions including inputSchema. Call this before miniapp_call when you do not know the tool names or parameters.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "appId": {
-          "type": "string",
-          "description": "Optional mini-app id. When set, returns that app's tools only."
-        },
-        "includeSchema": {
-          "type": "boolean",
-          "description": "When appId is set, include full tool definitions with inputSchema (default true). Ignored when listing all apps."
-        }
+    name: 'miniapp_list',
+    description: MINIAPP_LIST_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: { type: 'string', description: MINIAPP_LIST_APP_ID_DESCRIPTION },
+        includeSchema: { type: 'boolean', description: MINIAPP_LIST_INCLUDE_SCHEMA_DESCRIPTION },
       },
-      "additionalProperties": false
-    }
+      additionalProperties: false,
+    },
   },
   {
-    "name": "miniapp_call",
-    "description": "Execute a tool on a session-authorized mini-app. Pass appId + tool name from miniapp_list, and tool arguments as input. Panel open/close is implicit: non-standalone tools lazy-open the panel; standalone tools run without a panel. Do not invent tools \u2014 call miniapp_list first when unsure.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "appId": {
-          "type": "string",
-          "description": "Mini-app id (from miniapp_list or user @-mention)."
-        },
-        "tool": {
-          "type": "string",
-          "description": "Tool name declared by that app's manifest."
-        },
-        "input": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "Arguments for the app tool. Validated against the tool's inputSchema at dispatch time."
-        }
+    name: 'miniapp_call',
+    description: MINIAPP_CALL_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: { type: 'string', description: MINIAPP_CALL_APP_ID_DESCRIPTION },
+        tool: { type: 'string', description: MINIAPP_CALL_TOOL_DESCRIPTION },
+        input: { type: 'object', additionalProperties: true, description: MINIAPP_CALL_INPUT_DESCRIPTION },
       },
-      "required": [
-        "appId",
-        "tool"
-      ],
-      "additionalProperties": false
-    }
-  }
+      required: ['appId', 'tool'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'miniapp_open',
+    description: MINIAPP_OPEN_DESCRIPTION,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: { type: 'string', description: MINIAPP_OPEN_APP_ID_DESCRIPTION },
+      },
+      required: ['appId'],
+      additionalProperties: false,
+    },
+  },
 ]

@@ -35,6 +35,7 @@ export type BrowserAutomationOp =
   | 'recordStop'
   | 'miniappPreview'
   | 'miniappReload'
+  | 'miniappOpen'
   // Desktop layout control (layout_snapshot / layout_act) rides the same renderer call channel.
   | 'layoutSnapshot'
   | 'layoutAct'

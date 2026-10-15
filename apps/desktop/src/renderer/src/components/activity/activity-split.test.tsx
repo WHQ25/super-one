@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -71,5 +71,12 @@ describe('splitting activity tabs', () => {
     await act(async () => { split = splitActivityTab('file:README.md', 'right') })
     expect(split).toBe(false)
     expect(getDockApi()!.panels.map((panel) => panel.id)).toEqual(['file:README.md'])
+  })
+
+  it('never floats a tab out of the grid on shift-drag', async () => {
+    await renderTabs('README.md', 'CLAUDE.md')
+    const tab = getDockApi()!.getPanel('file:CLAUDE.md')!.view.tab.element
+    await act(async () => { fireEvent.pointerDown(tab, { shiftKey: true, button: 0 }) })
+    expect(getDockApi()!.groups.map((group) => group.api.location.type)).toEqual(['grid'])
   })
 })

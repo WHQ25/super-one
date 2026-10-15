@@ -279,7 +279,9 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
                 theme={SUPERONE_DOCKVIEW_THEME}
                 disableAutoResizing
                 disableDnd={maximized}
-                disableFloatingGroups={maximized}
+                // Shift-dragging a tab out into a floating group is off: not every tab kind
+                // (webview hosts, terminals, devices) follows a group outside the grid.
+                disableFloatingGroups
                 scrollbars="native"
                 disableTabsOverflowList
                 onReady={onReady}

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, UsageInfo } from './agent-types'
 import {
+  continuationHintAt,
   DEFAULT_SESSION_CONTINUATION_HINT,
   readSessionContinuationHint,
   sessionCacheExpiresAt,
+  sessionCacheExpiry,
 } from './session-continuation'
 
 const COMPLETED = '2026-10-16T10:00:00.000Z'
@@ -67,5 +69,21 @@ describe('readSessionContinuationHint', () => {
     expect(readSessionContinuationHint(undefined)).toEqual(DEFAULT_SESSION_CONTINUATION_HINT)
     expect(readSessionContinuationHint({ enabled: false, minContextTokens: 5 })).toEqual({ enabled: false, minContextTokens: 100_000 })
     expect(readSessionContinuationHint({ enabled: 'yes', minContextTokens: 9e9 })).toEqual({ enabled: true, minContextTokens: 1_000_000 })
+  })
+})
+
+describe('continuationHintAt', () => {
+  const expiry = { expiresAt: COMPLETED_MS, contextTokens: 300_000 }
+
+  it('hints at the expiry for a session at or above the threshold while enabled', () => {
+    expect(continuationHintAt(expiry, settings)).toBe(COMPLETED_MS)
+    expect(continuationHintAt({ ...expiry, contextTokens: 299_999 }, settings)).toBeNull()
+    expect(continuationHintAt(expiry, { ...settings, enabled: false })).toBeNull()
+    expect(continuationHintAt(null, settings)).toBeNull()
+  })
+
+  it('reads the expiry independently of the hint settings', () => {
+    expect(sessionCacheExpiry({ messages: [assistant({ completedAt: COMPLETED, usage: usage(50_000, '5m') })] }))
+      .toEqual({ expiresAt: COMPLETED_MS + 5 * 60_000, contextTokens: 50_000 })
   })
 })

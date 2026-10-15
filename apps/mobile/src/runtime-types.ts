@@ -67,6 +67,8 @@ export type CreateSessionOptions = {
   agentPreset?: string
   /** Credential the draft resolved to; `null` is the host default. */
   apiProviderId?: string | null
+  /** The session this one continues; the host hands it that session's collaboration channels. */
+  continuesFrom?: string
 }
 
 export type SendMessageOptions = {

@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
 import type { AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, SessionGoal, TodoItem, SessionAgentLaunchProposal } from '@superone/shared/agent-types'
+import { DEFAULT_SESSION_CONTINUATION_HINT } from '@superone/shared/session-continuation'
 import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { MobileHeader, mobileHeaderTitle } from '../navigation/mobile-header'
 import { useMobileLocale } from '../i18n/context'
@@ -390,6 +391,8 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
   // sheet, and put away as the strip above the todos — the last is the one
   // worth seeing against the real composer and status row.
   const [pending, setPending] = useState<'none' | 'sheet' | 'collapsed'>('none')
+  const [continuationHint, setContinuationHint] = useState(false)
+  const [continuationSettings, setContinuationSettings] = useState(DEFAULT_SESSION_CONTINUATION_HINT)
   // What the document draws above the composer: the pending question, a command's output, both.
   const [dock, setDock] = useState<{ question: boolean; output: boolean }>({ question: false, output: false })
   const [documentInputFocused, setDocumentInputFocused] = useState(false)
@@ -466,6 +469,8 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
         onPress={() => setNativeEditor((value) => !value)} /> : null}
       {page === 'Chat' ? <Button variant="ghost" label={`Dock: ${dock.question ? (dock.output ? 'both' : 'question') : dock.output ? 'output' : 'none'}`}
         onPress={() => setDock((d) => !d.question && !d.output ? { question: true, output: false } : d.question && !d.output ? { question: false, output: true } : !d.question ? { question: true, output: true } : { question: false, output: false })} /> : null}
+      {page === 'Chat' ? <Button variant="ghost" label={`Continue: ${continuationHint ? 'on' : 'off'}`}
+        onPress={() => setContinuationHint((value) => !value)} /> : null}
       {page === 'Chat' ? <Button variant="ghost" label={`Pending: ${pending}`}
         onPress={() => setPending((value) => value === 'none' ? 'sheet' : value === 'sheet' ? 'collapsed' : 'none')} /> : null}
       {page === 'Chat' && goalCapability ? <Button variant="ghost" label={`Goal: ${goal?.status ?? 'none'}`}
@@ -537,6 +542,11 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             collapsedPrompts={page === 'Chat' && pending === 'collapsed' ? [{ kind: 'permission', request: ordinaryPermission }] : undefined}
             onExpandPrompt={() => setPending('sheet')}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
+            continuation={page === 'Chat' && continuationHint ? {
+              onContinue: () => { setContinuationHint(false); setPage('New session') },
+              onContinueHere: () => setContinuationHint(false),
+              onDontShowAgain: () => setContinuationHint(false),
+            } : undefined}
             goal={page === 'Chat' ? goal : null} goalCapability={goalCapability}
             onGoalEdit={() => changeDraft(`/goal ${goal?.objective ?? ''}`)}
             onGoalClear={() => setGoal(null)}
@@ -579,7 +589,8 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Session search' ? <SessionSearchScreen client={previewClient} onOpenSession={() => setPage('Chat')} onCancel={() => setPage('Chat')} /> : null}
           {page === 'Network ledger' ? <ScrollView><TrafficAndReset /><NarrowLedger /><EmptyLedger /></ScrollView> : null}
-          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42, onCheckForUpdates: () => {} }} ledger={networkLedger} /> : null}
+          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42, onCheckForUpdates: () => {} }} ledger={networkLedger}
+            continuation={{ value: continuationSettings, onChange: (patch) => setContinuationSettings((value) => ({ ...value, ...patch })) }} /> : null}
           {page === 'Update' ? <UpdatePromptGallery /> : null}
           {page === 'Project' ? <ProjectPickerScreen projects={projectList} activePath={projectPath}
             onSelect={(item) => { setProjectPath(item.path); setPage('New session') }} /> : null}

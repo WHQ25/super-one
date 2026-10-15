@@ -90,7 +90,7 @@ function SessionTransitionPreview() {
         worktree: { isWorktree: false, worktreePath: null, gitBranch: 'main' },
         contextTokens: 10_000, contextWindow: 200_000, totalCostUsd: 0.42,
         session: { sessionGoal: { objective: 'Finish the mobile fixes', status: 'active' },
-          sessionAgents: null, _worktreeRemoved: false, rateLimitInfo: null },
+          sessionAgents: null, _worktreeRemoved: false, rateLimitInfo: null, messages: [] },
       })}><Text>Open session with goal</Text></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Create new session" onPress={indicators.reset}>
         <Text>Create new session</Text>
@@ -404,6 +404,15 @@ function SendingPreview() {
   </View>
 }
 export const SendAfterComposition = { render: () => <MobileThemeProvider><SendingPreview /></MobileThemeProvider> }
+
+/** A long session whose prompt cache expired offers continuing in a new one. */
+const continuation = { onContinue: noop, onContinueHere: noop, onDontShowAgain: noop }
+export const PhoneSessionContinuation = { name: 'Phone · continue a long session in a new one', args: { continuation } }
+export const PhoneSessionContinuationLight = {
+  name: 'Phone · continue a long session, narrow light Chinese',
+  args: { continuation, frameWidth: 320, colorScheme: 'light', locale: 'zh' },
+}
+export const TabletSessionContinuation = { name: 'Tablet · continue a long session', args: { continuation, tablet: true, frameWidth: 700 } }
 
 export const AttachedContext = { args: { contextAttachments: [{ id: 'dial', title: 'Agent dial', source: 'Bits & Bolts', content: '{"part":"dial"}' }, { id: 'background', title: 'CAD context', content: 'Background selection' }], onRemoveContext: noop } }
 export const ContextRemovalError = { args: { contextAttachments: [{ id: 'dial', title: 'Agent dial', source: 'CAD' }], contextError: 'Could not remove context. The host is disconnected.', onRemoveContext: noop } }

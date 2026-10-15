@@ -1,6 +1,11 @@
 import type { Locale, ThemeMode } from '@superone/shared/agent-types'
 import { resolveSystemLocale } from '@superone/shared/i18n'
 import type { Kv } from '@superone/relay-client'
+import {
+  DEFAULT_SESSION_CONTINUATION_HINT,
+  readSessionContinuationHint,
+  type SessionContinuationHintSettings,
+} from '@superone/shared/session-continuation'
 
 export const MOBILE_THEME_MODE_KEY = 'mobile.themeMode'
 export const MOBILE_LOCALE_KEY = 'mobile.locale'
@@ -79,4 +84,22 @@ export async function saveLastUpdateCheckAt(
   atMs: number,
 ): Promise<void> {
   await store?.set(MOBILE_UPDATE_LAST_CHECKED_KEY, String(Math.floor(atMs)))
+}
+
+export const MOBILE_SESSION_CONTINUATION_HINT_KEY = 'mobile.sessionContinuationHint'
+
+/** Device-local, like the theme: the desktop's own setting covers its windows. */
+export async function loadSessionContinuationHint(
+  store: Pick<Kv, 'get'> | null | undefined,
+): Promise<SessionContinuationHintSettings> {
+  const raw = await store?.get(MOBILE_SESSION_CONTINUATION_HINT_KEY)
+  if (!raw) return DEFAULT_SESSION_CONTINUATION_HINT
+  try { return readSessionContinuationHint(JSON.parse(raw)) } catch { return DEFAULT_SESSION_CONTINUATION_HINT }
+}
+
+export async function saveSessionContinuationHint(
+  store: Pick<Kv, 'set'> | null | undefined,
+  settings: SessionContinuationHintSettings,
+): Promise<void> {
+  await store?.set(MOBILE_SESSION_CONTINUATION_HINT_KEY, JSON.stringify(settings))
 }

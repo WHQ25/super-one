@@ -34,20 +34,24 @@ export function readSessionContinuationHint(raw: unknown): SessionContinuationHi
 
 const CACHE_TTL_MS: Record<PromptCacheTtl, number> = { '5m': 5 * 60_000, '1h': 60 * 60_000 }
 
+/** When an idle session's prompt cache expires, and how much continuing it would re-cache. */
+export interface SessionCacheExpiry {
+  expiresAt: number
+  contextTokens: number
+}
+
 /**
- * When the session's prompt cache expires, if continuing it after that would
- * re-cache at least `settings.minContextTokens`; null when no hint applies.
+ * The prompt cache of a session whose newest assistant turn has finished;
+ * null while a turn runs or when no turn reported a TTL.
  *
- * Reads the newest finished assistant turn. The TTL is the newest one a turn
- * reported, so a harness that reports none never hints. `contextTokens` is the
- * session's tracked size; when it is unknown (0) the turn's usage stands in.
+ * The TTL is the newest one a turn reported, so a harness that reports none
+ * never hints. `contextTokens` is the session's tracked size; when it is
+ * unknown (0) the finished turn's usage stands in.
  */
-export function sessionCacheExpiresAt(input: {
+export function sessionCacheExpiry(input: {
   messages: readonly ChatMessage[]
   contextTokens?: number | null
-  settings: SessionContinuationHintSettings
-}): number | null {
-  if (!input.settings.enabled) return null
+}): SessionCacheExpiry | null {
   let finished: ChatMessage | undefined
   let ttl: PromptCacheTtl | undefined
   for (let index = input.messages.length - 1; index >= 0 && !ttl; index--) {
@@ -63,10 +67,31 @@ export function sessionCacheExpiresAt(input: {
   const completedAt = Date.parse(finished.metadata!.completedAt!)
   if (!Number.isFinite(completedAt)) return null
   const usage = finished.metadata?.usage
-  const tokens = input.contextTokens
+  const contextTokens = input.contextTokens
     || (usage ? usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens : 0)
-  if (tokens < input.settings.minContextTokens) return null
-  return completedAt + CACHE_TTL_MS[ttl]
+  return { expiresAt: completedAt + CACHE_TTL_MS[ttl], contextTokens }
+}
+
+/** When to hint for `expiry` under `settings`: null unless enabled and the session is long enough. */
+export function continuationHintAt(
+  expiry: SessionCacheExpiry | null,
+  settings: SessionContinuationHintSettings,
+): number | null {
+  if (!expiry || !settings.enabled || expiry.contextTokens < settings.minContextTokens) return null
+  return expiry.expiresAt
+}
+
+/**
+ * When the session's prompt cache expires, if continuing it after that would
+ * re-cache at least `settings.minContextTokens`; null when no hint applies.
+ */
+export function sessionCacheExpiresAt(input: {
+  messages: readonly ChatMessage[]
+  contextTokens?: number | null
+  settings: SessionContinuationHintSettings
+}): number | null {
+  if (!input.settings.enabled) return null
+  return continuationHintAt(sessionCacheExpiry(input), input.settings)
 }
 
 /** Threshold choices the settings screens offer, within {@link SESSION_CONTINUATION_MIN_CONTEXT_TOKENS}. */

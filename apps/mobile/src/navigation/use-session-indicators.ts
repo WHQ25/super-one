@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import type { OpenCodeAgentOption, SandboxInfo, SessionGoal } from '@superone/shared/agent-types'
+import { sessionCacheExpiry, type SessionCacheExpiry } from '@superone/shared/session-continuation'
 import type { LiveRateLimit } from '../harness-usage'
 import type { ChatRuntime, SessionWorktreeFacts } from '../runtime'
 
 export type SessionIndicatorSource = Pick<ChatRuntime,
   'sandboxInfo' | 'worktree' | 'contextTokens' | 'contextWindow' | 'totalCostUsd'
 > & {
-  session: Pick<ChatRuntime['session'], 'sessionGoal' | 'sessionAgents' | '_worktreeRemoved' | 'rateLimitInfo'>
+  session: Pick<ChatRuntime['session'], 'sessionGoal' | 'sessionAgents' | '_worktreeRemoved' | 'rateLimitInfo' | 'messages'>
 }
 
 /** Native readouts belong to the runtime being viewed, including during transitions. */
@@ -21,6 +22,8 @@ export function useSessionIndicators() {
   const [usage, setUsage] = useState({ contextTokens: 0, contextWindow: null as number | null, totalCostUsd: 0 })
   /** A live limit tints the meter before its next polled reading. */
   const [rateLimit, setRateLimit] = useState<LiveRateLimit | null>(null)
+  /** When an idle session's prompt cache expires; the continuation hint reads it. */
+  const [cacheExpiry, setCacheExpiry] = useState<SessionCacheExpiry | null>(null)
 
   const sync = (runtime: SessionIndicatorSource) => {
     setSandboxInfo(runtime.sandboxInfo)
@@ -39,6 +42,9 @@ export function useSessionIndicators() {
         : { contextTokens: runtime.contextTokens, contextWindow: runtime.contextWindow, totalCostUsd: runtime.totalCostUsd }
     ))
     setRateLimit(runtime.session.rateLimitInfo)
+    const expiry = sessionCacheExpiry({ messages: runtime.session.messages, contextTokens: runtime.contextTokens })
+    setCacheExpiry((current) => current?.expiresAt === expiry?.expiresAt && current?.contextTokens === expiry?.contextTokens
+      ? current : expiry)
   }
 
   const reset = () => {
@@ -48,7 +54,8 @@ export function useSessionIndicators() {
     setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
     setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
     setRateLimit(null)
+    setCacheExpiry(null)
   }
 
-  return { sandboxInfo, sessionGoal, sessionAgents, sessionWorktree, usage, rateLimit, sync, reset }
+  return { sandboxInfo, sessionGoal, sessionAgents, sessionWorktree, usage, rateLimit, cacheExpiry, sync, reset }
 }

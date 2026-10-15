@@ -23,5 +23,6 @@ export function createSessionPayload(project: ProjectRef, sessionId: string, opt
     ...(opts.apiProviderId !== undefined ? { apiProviderId: opts.apiProviderId } : {}),
     ...(opts.sandboxMode ? { sandboxMode: opts.sandboxMode } : {}),
     ...(opts.draftId ? { draftId: opts.draftId, draftLeaseId: opts.draftLeaseId } : {}),
+    ...(opts.continuesFrom ? { continuesFrom: opts.continuesFrom } : {}),
   }
 }

@@ -30,6 +30,8 @@ import { useScheduledSend } from './use-scheduled-send'
 import { useMcpAppFullscreen } from './use-mcp-app-fullscreen'
 import { useTranscriptSync } from './use-transcript-sync'
 import { useSessionIndicators } from './use-session-indicators'
+import { useSessionContinuationHint } from './use-session-continuation-hint'
+import { continuationComposer } from '../session-continuation'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
@@ -74,7 +76,7 @@ import { usePairingDeepLink } from '../pairing-deep-link'
 import { shouldSubmitFromKeyboard } from '../composer-state'
 import { replaceFirstLine } from '../composer-first-line'
 import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, restoredChatWindow, type ChatViewState } from '../chat-view-state'
-import { composerDraftKey, SessionComposerDrafts } from '../composer-session-drafts'
+import { composerDraftKey, EMPTY_SESSION_COMPOSER, SessionComposerDrafts, type SessionComposerSnapshot } from '../composer-session-drafts'
 import { useComposerDraft } from './use-composer-draft'
 import { useMobileDraftSession } from './use-mobile-draft-session'
 import { EMPTY_COMPOSER_DRAFT } from '../composer-draft-state'
@@ -236,6 +238,8 @@ export function MobileApp() {
   // header's confirm writes it through.
   const [worktreeDraft, setWorktreeDraft] = useState<NewSessionWorktreeSelection>(LOCAL_WORKTREE_SELECTION)
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
+  /** The session the new-session draft continues; its first send hands it to the host. */
+  const [continuesFrom, setContinuesFrom] = useState<string | null>(null)
   const composerDraft = useComposerDraft()
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
   // What the next turn runs as, for the composer border (desktop `ChatInput` rule).
@@ -292,7 +296,7 @@ export function MobileApp() {
   )
   const [workflowsOpen, setWorkflowsOpen] = useState(false)
   const {
-    sandboxInfo, sessionGoal, sessionAgents, sessionWorktree, usage, rateLimit,
+    sandboxInfo, sessionGoal, sessionAgents, sessionWorktree, usage, rateLimit, cacheExpiry,
     sync: syncSessionIndicators, reset: resetSessionIndicators,
   } = useSessionIndicators()
   /**
@@ -441,6 +445,7 @@ export function MobileApp() {
     kv, pairingId: activePairingId, clientRef: workspaceClientRef, composer: composerDraft, attachments, sessionId,
     project, projects, selection: harnessSelection, worktree: worktreeSelection, sandbox: composerSandboxInfo,
     sessionDirs: additionalDirs.sessionDirs, restoreSessionDirs: additionalDirs.restoreSessionDirs,
+    continuesFrom, setContinuesFrom,
     setWorktree: setWorktreeSelection, setSandbox: setPendingSandboxMode, setAttachments, setHarness,
     applyText: suggestions.applyProgrammatic,
     openProject: (target) => openProject(target, true, true),
@@ -1762,17 +1767,27 @@ export function MobileApp() {
       runSessionOp(() => removeSession(row, 'delete_session', p), 'failed to delete session'),
   }
 
-  const startNewSession = (targetProject = project) => runWorkspaceTransition(async () => {
+  /**
+   * `continuation` opens the draft continuing the open session instead of an
+   * empty one: its composer and checkout, and the old session's draft moves.
+   */
+  const startNewSession = (targetProject = project, continuation?: {
+    from: string; composer: SessionComposerSnapshot; worktree: NewSessionWorktreeSelection
+  }) => runWorkspaceTransition(async () => {
     const wasRouted = !!routedEnvironmentIdRef.current
     restoreWorkspaceRoute()
     if (wasRouted && !projects.some(row => row.path === targetProject?.path)) targetProject = projects[0] ?? null
     await remoteDrafts.park()
+    const fromKey = composerLocationRef.current.key
     switchComposerDraft(null, targetProject?.path, null)
-    composerDraft.replaceWith(EMPTY_COMPOSER_DRAFT)
-    setAttachments([])
-    suggestions.applyProgrammatic('')
+    if (continuation) sessionDrafts.stash(fromKey, EMPTY_SESSION_COMPOSER)
+    const composer = continuation?.composer ?? EMPTY_SESSION_COMPOSER
+    composerDraft.replaceWith(composer)
+    setAttachments(composer.attachments)
+    suggestions.applyProgrammatic(composer.text)
     leaveActiveSession()
-    setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+    setWorktreeSelection(continuation?.worktree ?? LOCAL_WORKTREE_SELECTION)
+    setContinuesFrom(continuation?.from ?? null)
     setStatus('')
     setActiveSessionTitle('New session')
     setScreen('chat')
@@ -1919,6 +1934,7 @@ export function MobileApp() {
       await runtime.create(p.path, {
         ...draftControl,
         sessionId: id,
+        ...(continuesFrom ? { continuesFrom } : {}),
         ...sessionCreationOptions({
           provider: selectedProvider, acpAgentId: selectedAcpAgentId, permissionMode: permMode,
           model: selectedModel, effort: selectedEffort, serviceTier: harnessSelection.serviceTier,
@@ -1929,6 +1945,7 @@ export function MobileApp() {
         }),
       })
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+      setContinuesFrom(null)
       if (runtime.sessionId !== id) setSessionId(runtime.sessionId)
       if (forSchedule) {
         // Keep this editable draft under its new session when navigating away.
@@ -2323,6 +2340,21 @@ export function MobileApp() {
   // Same gate as the desktop menu: a worktree session forks nowhere new, and a
   // harness without a transcript fork would hand back an amnesiac session.
   const canForkSession = !!sessionId && harnessSupportsFork(selectedProvider) && !sessionWorktree.isWorktree
+  // A new session leaves a routed node for the workspace, so it cannot continue one there.
+  const continuationHint = useSessionContinuationHint({
+    store: kv, sessionId: routedEnvironmentId ? null : sessionId, expiry: cacheExpiry, idle: !streaming && !perm && !plan,
+  })
+  /** Continue the open session in a new one (docs/features/session-continuation.md). */
+  const continueInNewSession = () => {
+    if (!sessionId || !project) return
+    const composer = continuationComposer({ sessionId, title: activeSessionTitle },
+      { ...composerDraft.exportSnapshot(), attachments: attachmentsRef.current })
+    const worktree: NewSessionWorktreeSelection = sessionWorktree.isWorktree && sessionWorktree.worktreePath && !sessionWorktree.removed
+      ? { kind: 'existing', path: sessionWorktree.worktreePath, ...(sessionWorktree.gitBranch ? { branch: sessionWorktree.gitBranch } : {}) }
+      : LOCAL_WORKTREE_SELECTION
+    continuationHint.dismiss()
+    runUiAction(() => startNewSession(project, { from: sessionId, composer, worktree }), setStatus, 'failed to continue in a new session')
+  }
 
   const activePairing = pairings.find((item) => item.id === activePairingId)
   const deviceName = activePairing?.hostName ?? 'Desktop'
@@ -2621,7 +2653,7 @@ export function MobileApp() {
       ) : null}
 
       {route === 'settings' ? (
-        <ConnectedAppSettingsScreen />
+        <ConnectedAppSettingsScreen store={kv} />
       ) : null}
 
       {route === 'files' ? (finderOpen ? (
@@ -2740,6 +2772,11 @@ export function MobileApp() {
           onGoalPause={() => runGoalTransition((actions) => actions.pause())}
           onGoalResume={() => runGoalTransition((actions) => actions.resume())}
           onGoalDismiss={() => runtimeRef.current?.dismissGoal()}
+          continuation={continuationHint.visible ? {
+            onContinue: continueInNewSession,
+            onContinueHere: continuationHint.dismiss,
+            onDontShowAgain: continuationHint.dontShowAgain,
+          } : undefined}
           contextTokens={usage.contextTokens}
           contextWindow={ringContextWindow}
           totalCostUsd={usage.totalCostUsd}

@@ -517,3 +517,22 @@ test('the model trigger carries Ultracode\'s mark while the switch is on, as the
   await renderWithTheme(composer({ selection: selection(false) }))
   expect(screen.getByLabelText('Model: Opus, High')).toBeTruthy()
 })
+
+test('offers continuing a long session above the composer once its cache expired', async () => {
+  const onContinue = jest.fn<() => void>()
+  const onContinueHere = jest.fn<() => void>()
+  const onDontShowAgain = jest.fn<() => void>()
+  const continuation = { onContinue, onContinueHere, onDontShowAgain }
+  await renderScheduledComposer({ continuation }, 'light', 'zh')
+  expect(screen.getByText('在新会话中继续')).toBeTruthy()
+
+  await renderWithTheme(composer({ continuation }))
+  fireEvent.press(screen.getByRole('button', { name: 'Continue in New Session' }))
+  fireEvent.press(screen.getByRole('button', { name: 'Continue Here' }))
+  fireEvent.press(screen.getByRole('button', { name: 'Don’t Show Again' }))
+  expect([onContinue, onContinueHere, onDontShowAgain].map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1])
+
+  // Restoring a session: the notice belongs to the one being left.
+  await renderWithTheme(composer({ continuation, loadingConversation: true }))
+  expect(screen.queryByTestId('session-continuation-notice')).toBeNull()
+})

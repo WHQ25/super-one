@@ -15,6 +15,9 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
   worktree: NewSessionWorktreeSelection
   sandbox: SandboxInfo | null
   sessionDirs: string[]
+  /** The session this draft continues, which its first send hands to the host. */
+  continuesFrom: string | null
+  setContinuesFrom(sessionId: string | null): void
   restoreSessionDirs(dirs: string[]): void
   setWorktree(value: NewSessionWorktreeSelection): void
   setSandbox(value: SandboxMode): void
@@ -41,6 +44,7 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
       openCodeAgentId: s.selectedAgentId, selectedAcpModeId: s.selectedModeId, apiProviderId: s.selectedProviderId,
       sandboxEnabled: opts.sandbox?.enabled, sandboxAutoAllowBash: opts.sandbox?.autoAllowBash,
       additionalDirs: opts.sessionDirs, ...draftWorktreeSettings(opts.worktree),
+      ...(opts.continuesFrom ? { continuesFrom: opts.continuesFrom } : {}),
     },
     apply: async (row) => {
       if (!row.projectPath) throw new Error('This draft has no project')
@@ -56,6 +60,7 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
       opts.setWorktree(worktreeFromDraft(row.settings))
       if (row.settings.sandboxEnabled !== undefined) opts.setSandbox(row.settings.sandboxEnabled ? row.settings.sandboxAutoAllowBash ? 'auto' : 'on' : 'off')
       opts.restoreSessionDirs(row.settings.additionalDirs ?? [])
+      opts.setContinuesFrom(row.settings.continuesFrom ?? null)
       const restored = composerFromRemoteDraft(row)
       opts.composer.replaceWith(restored)
       opts.applyText(restored.text)

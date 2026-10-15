@@ -12,7 +12,7 @@ const source: SessionIndicatorSource = {
   session: {
     sessionGoal: { objective: 'Finish the mobile fixes', status: 'active' },
     sessionAgents: [{ id: 'project-agent', name: 'Project agent' }],
-    _worktreeRemoved: false, rateLimitInfo: null,
+    _worktreeRemoved: false, rateLimitInfo: null, messages: [],
   },
 }
 const noop = () => {}
@@ -53,4 +53,17 @@ test('clears session-defined agents and other readouts while the next session lo
   await act(async () => indicators.sync(source))
   expect(screen.getByLabelText('Goal: Active')).toBeTruthy()
   expect(indicators.sessionAgents).toEqual(source.session.sessionAgents)
+})
+
+test('reads when an idle session\'s prompt cache expires and clears it on leave', async () => {
+  await renderWithTheme(<Probe />)
+  const finished = { id: 'a1', role: 'assistant' as const, status: 'complete' as const, content: [], createdAt: '2026-10-16T09:59:00.000Z', providerId: 'claude-base', metadata: {
+    completedAt: '2026-10-16T10:00:00.000Z',
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, cacheTtl: '5m' as const },
+  } }
+  await act(async () => indicators.sync({ ...source, session: { ...source.session, messages: [finished] } }))
+  expect(indicators.cacheExpiry).toEqual({ expiresAt: Date.parse('2026-10-16T10:05:00.000Z'), contextTokens: 10_000 })
+
+  await act(async () => indicators.reset())
+  expect(indicators.cacheExpiry).toBeNull()
 })

@@ -195,6 +195,22 @@ describe('createClaudeAgentEventMapper', () => {
     })
   })
 
+  it('carries an Artifact page title beside the model-facing result text', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+    const text = 'Published /tmp/a.html at https://claude.ai/artifact/9aV (Version 1, version id 1792092641-f221)'
+
+    mapper.apply({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'art-1', name: 'Artifact', input: { file_path: '/tmp/a.html' } }] } })
+    mapper.apply({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'art-1', content: text }] },
+      tool_use_result: { url: 'https://claude.ai/artifact/9aV', path: '/tmp/a.html', title: 'Artifact Tool Check' },
+    })
+
+    const result = events.find((event) => event.type === 'content_delta' && event.delta.type === 'tool_result')
+    expect(result).toMatchObject({ delta: { toolUseId: 'art-1', summary: text, resultTitle: 'Artifact Tool Check' } })
+  })
+
   it('maps rich system, progress, suggestion, and rate-limit events', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })

@@ -14,6 +14,7 @@ import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
 import { mapPluginErrors, mapPluginUiMessage } from './plugin-notice-wire'
+import { artifactResultTitle } from './artifact-result'
 
 type Raw = Record<string, any>
 
@@ -263,6 +264,7 @@ export function createClaudeAgentEventMapper(
     const outputPath = isBash ? extractBashOutputPath(text) : undefined
     const isTimedOut = isBash ? extractBashKilled(toolUseResult) : undefined
     const taskCreateTodo = extractTaskCreateTodo(toolName, toolUseResult, text)
+    const resultTitle = artifactResultTitle(toolName, toolUseResult)
     const isError = isClaudeToolLayerError(toolName, sdkIsError, text)
     const app = options.toolApps?.toolResult(toolUseId, toolUseResult, sdkIsError, content)
     emit({
@@ -276,6 +278,7 @@ export function createClaudeAgentEventMapper(
         ...(isTimedOut ? { isTimedOut } : {}),
         ...(isError ? { isError: true } : {}),
         ...(taskCreateTodo ?? {}),
+        ...(resultTitle ? { resultTitle } : {}),
         parentToolUseId,
         ...(app ? { app } : {}),
       },

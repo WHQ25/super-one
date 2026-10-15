@@ -68,6 +68,26 @@ on:
         description: 'Branch or commit SHA to publish'
         required: false
         default: 'main'
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+      android_channel:
+        required: true
+        type: string
+      ios_channel:
+        required: true
+        type: string
+      message:
+        required: true
+        type: string
+      dry_run:
+        type: boolean
+        default: true
+      ref:
+        required: true
+        type: string
 
 concurrency:
   group: update-mobile

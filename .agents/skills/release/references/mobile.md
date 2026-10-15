@@ -31,6 +31,11 @@ What differs is fixed, not chosen:
 The two platforms are decided and shipped independently: one can take an OTA
 while the other takes a binary.
 
+When accompanying a desktop release, publish only after that desktop Release
+is public and set-latest succeeds. OTA platforms run through
+`release-followups.yml`; native platforms dispatch afterwards from the same
+desktop commit. A standalone `/release mobile` keeps the flow below.
+
 Two facts decide which of the two you can use:
 
 - **The runtime version is a fingerprint** of everything shaping the native binary

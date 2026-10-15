@@ -1,11 +1,10 @@
 name: Release
 
-# One dispatch per release. Builds the three platforms, then promotes their
-# artifacts to a draft GitHub Release + R2 archive, with the CLI, harness
-# mirror and relay deploys as optional parallel legs. It stops there on
-# purpose: publishing the draft and running set-latest stay explicit steps
-# (see .agents/skills/release/SKILL.md), so nothing reaches a user's updater
-# from this workflow alone.
+# Desktop preparation only: build the three platforms, then promote their
+# artifacts to a draft GitHub Release + R2 archive. Publish the desktop and
+# run set-latest before dispatching release-followups.yml for CLI, harness,
+# relay and mobile OTA publication. Cancelling desktop preparation must not
+# leave other products published.
 #
 # Every leg is still its own reusable workflow and keeps its own
 # workflow_dispatch, so a single platform can be rebuilt and re-promoted by
@@ -33,21 +32,6 @@ on:
         description: 'Alpha/dev sequence after the tag (1 → 0.63.0-alpha.1). Blank/0 = no suffix. Ignored — and rejected — for stable.'
         required: false
         default: ''
-      publish_cli:
-        description: 'Publish @super-one/cli at the same version (lockstep; needed for SSH registry install)'
-        required: false
-        type: boolean
-        default: true
-      publish_harness:
-        description: 'Refresh the harness R2 mirror + manifest for this channel (only when pins changed, or a stable cut)'
-        required: false
-        type: boolean
-        default: false
-      deploy_relay:
-        description: "Deploy apps/relay to this variant's relay (only when apps/relay changed since that relay's last deploy)"
-        required: false
-        type: boolean
-        default: false
       mac_bridge:
         description: 'Also build the macOS bridge (retired bundle id → latest-mac.yml). Only for the one release that moves the bundle id; see packaging.md.'
         required: false
@@ -204,40 +188,3 @@ jobs:
       mac_bridge: ${{ inputs.mac_bridge }}
       win_run_id: ${{ github.run_id }}
       linux_run_id: ${{ github.run_id }}
-
-  publish-cli:
-    if: ${{ inputs.publish_cli }}
-    needs: plan
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/publish-cli.yml
-    secrets: inherit
-    with:
-      ref: ${{ inputs.ref }}
-      version: ${{ needs.plan.outputs.version }}
-      tag: ${{ needs.plan.outputs.npm_tag }}
-      dry_run: false
-
-  publish-harness:
-    if: ${{ inputs.publish_harness }}
-    needs: plan
-    permissions:
-      contents: read
-    uses: ./.github/workflows/publish-harness.yml
-    secrets: inherit
-    with:
-      ref: ${{ inputs.ref }}
-      channel: ${{ inputs.variant }}
-      app_version: ${{ needs.plan.outputs.version }}
-      dry_run: false
-
-  deploy-relay:
-    if: ${{ inputs.deploy_relay }}
-    needs: plan
-    uses: ./.github/workflows/deploy-relay.yml
-    secrets: inherit
-    with:
-      ref: ${{ inputs.ref }}
-      channel: ${{ inputs.variant }}
-      message: ${{ needs.plan.outputs.release_tag }} (${{ needs.plan.outputs.sha }})

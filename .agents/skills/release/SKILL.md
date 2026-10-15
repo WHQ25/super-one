@@ -13,13 +13,18 @@ argument, then read **one** reference file and follow it end to end:
 
 | Command | Reads | What it does |
 |---|---|---|
-| `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG, `release.yml` (builds + promote + CLI / harness / relay legs), plus every mobile update that is due → publish → set-latest |
+| `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG → desktop build + promote → publish → set-latest → `release-followups.yml` (CLI / harness / relay / due mobile OTA), then any due native mobile builds |
 | `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable `X.Y.0`, then the stable phone apps from the same commit; writes no file |
 | `/release mobile` | `references/mobile.md` | Mobile only, between desktop releases: per platform, OTA or native build, whichever is due (the alpha phone apps) |
 
 The crossing points: an alpha release's Step 1 runs `mobile.md` → **Decide**,
 and the mobile updates it finds ride along in the same release; a stable cut
 ends with the stable phone apps.
+
+Desktop publication comes first. Do not dispatch CLI, harness, relay or mobile
+publication alongside desktop builds. After the desktop Release is public and
+set-latest succeeds, `release-followups.yml` checks the published tag and all
+three authoritative R2 desktop feeds, then publishes from that exact tag commit.
 
 ## Arguments
 
@@ -86,3 +91,7 @@ it with the first real case.) `nextAlphaRelease` in
   `GITHUB_TOKEN` cannot hold. Mobile runs are not affected — their Android
   GitHub Release attaches to a tag that already exists.
 - **`bun.lock` is never modified by a release.**
+- **Check npm reservations after an interrupted release.** A cancelled desktop
+  release may already have published its CLI version under the old flow. Read
+  npm versions/dist-tags and advance the alpha sequence past any used version;
+  an npm version is immutable even when its desktop tag was never created.

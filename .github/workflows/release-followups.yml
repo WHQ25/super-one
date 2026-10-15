@@ -1,0 +1,116 @@
+name: Publish Release Follow-ups
+
+# Only a published desktop whose three live feeds match can release the rest.
+# Every publisher uses the desktop tag's immutable commit, never a moving branch.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Published desktop tag, after set-latest succeeds'
+        required: true
+      variant:
+        description: 'Desktop app variant'
+        required: true
+        type: choice
+        options: [alpha, stable]
+      publish_cli:
+        description: 'Publish the matching CLI npm version'
+        type: boolean
+        default: true
+      publish_harness:
+        description: 'Refresh harness mirrors and app-version pins'
+        type: boolean
+        default: false
+      deploy_relay:
+        description: 'Deploy this variant relay'
+        type: boolean
+        default: false
+      mobile_ota:
+        description: 'Mobile platforms that passed the runtime preflight'
+        type: choice
+        options: [none, android, ios, both]
+        default: none
+
+concurrency:
+  group: release-followups-${{ inputs.variant }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.ready.outputs.version }}
+      npm_tag: ${{ steps.ready.outputs.npm_tag }}
+      sha: ${{ steps.ready.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_tag }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify published desktop and all live update feeds
+        id: ready
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+          INPUT_VARIANT: ${{ inputs.variant }}
+        run: bun scripts/release-followups-preflight.ts "$INPUT_TAG" "$INPUT_VARIANT"
+
+  publish-cli:
+    if: ${{ inputs.publish_cli }}
+    needs: ready
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish-cli.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.ready.outputs.sha }}
+      version: ${{ needs.ready.outputs.version }}
+      tag: ${{ needs.ready.outputs.npm_tag }}
+      dry_run: false
+
+  publish-harness:
+    if: ${{ inputs.publish_harness }}
+    needs: ready
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish-harness.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.ready.outputs.sha }}
+      channel: ${{ inputs.variant }}
+      app_version: ${{ needs.ready.outputs.version }}
+      dry_run: false
+
+  deploy-relay:
+    if: ${{ inputs.deploy_relay }}
+    needs: ready
+    uses: ./.github/workflows/deploy-relay.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.ready.outputs.sha }}
+      channel: ${{ inputs.variant }}
+      message: ${{ inputs.release_tag }} (${{ needs.ready.outputs.sha }})
+
+  mobile-ota:
+    if: ${{ inputs.mobile_ota != 'none' }}
+    needs: ready
+    uses: ./.github/workflows/update-mobile.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.ready.outputs.sha }}
+      platform: ${{ inputs.mobile_ota }}
+      android_channel: ${{ inputs.variant == 'alpha' && 'alpha' || 'internal' }}
+      ios_channel: ${{ inputs.variant == 'alpha' && 'alpha' || 'production' }}
+      message: ${{ inputs.release_tag }}
+      dry_run: false

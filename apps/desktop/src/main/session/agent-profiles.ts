@@ -22,10 +22,17 @@ import type {
 } from '@superone/shared/agent-types'
 import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import {
+  agentLaunchErrors,
+  launchConfigFromDefaults,
+  launchDefaultsFromConfig,
+  providerLaunchRuntime,
   readAgentProfile,
   resolveAgentLaunchDefaults,
+  type AgentLaunchDefaults,
   type AgentProfileCatalog,
 } from '@superone/shared/agent-profile'
+import type { AgentProfileListChoice, AgentProfileListOptionKey } from '@superone/shared/agent-profile-options'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
@@ -82,26 +89,43 @@ export function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp'>): Model
 /**
  * What a profile on this row can be checked against, and what a launch on it
  * defaults to. The global preference layer is computed here per harness; the
- * row's agent profile goes over it through the shared resolver, the same rule
- * the CLI node applies.
+ * row's launch runtime and then the launch's own fields go over it through the
+ * shared resolver, the same rule the CLI node applies.
+ *
+ * `lists` adds harness-wide option lists only an async read can produce (dsh
+ * presets); without one, a value from that list goes unchecked at launch.
  */
 export function profileResources(
   provider: ReturnType<typeof listSessionProviders>[number],
-  acpAgentId?: string | null,
+  opts: {
+    acpAgentId?: string | null
+    launch?: AgentLaunchDefaults
+    lists?: Partial<Record<AgentProfileListOptionKey, AgentProfileListChoice[]>>
+  } = {},
 ): {
   models: ModelOption[]
   efforts: string[]
   catalog: AgentProfileCatalog
   defaultConfig: SessionAgentLaunchConfig
 } {
-  const profile = readAgentProfile(provider.config)?.runtime
+  const { acpAgentId, launch } = opts
+  const harnessId = provider.harnessId
+  const profile = providerLaunchRuntime(provider.config)
+  const lists: Partial<Record<AgentProfileListOptionKey, AgentProfileListChoice[]>> = { ...opts.lists }
+  if (harnessId === 'opencode') {
+    const agents = getCachedHarnessResources('opencode')?.agents
+    if (agents) lists.agent = agents.map((agent) => ({ value: agent.id, label: agent.name || agent.id }))
+  }
   // No catalog to check against: a written profile was validated already.
-  const uncatalogued = () => ({
-    models: [],
-    efforts: [],
-    catalog: { models: [] },
-    defaultConfig: resolveAgentLaunchDefaults({ catalog: { models: [] }, base: {}, profile }),
-  })
+  const uncatalogued = () => {
+    const catalog: AgentProfileCatalog = { models: [], host: { lists } }
+    return {
+      models: [],
+      efforts: [],
+      catalog,
+      defaultConfig: launchConfigFromDefaults(resolveAgentLaunchDefaults({ harnessId, catalog, base: {}, profile, launch })),
+    }
+  }
   let models: ModelOption[]
   const efforts = new Set<string>()
   let harnessEfforts: string[] | undefined
@@ -116,7 +140,9 @@ export function profileResources(
     const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
     models = sessionCatalog?.models ?? []
     // Only Grok reasoning effort is an effort; a real session mode is not.
-    const acpEfforts = acpModeCatalog(sessionCatalog).efforts.map((option) => option.value)
+    const modeCatalog = acpModeCatalog(sessionCatalog)
+    const acpEfforts = modeCatalog.efforts.map((option) => option.value)
+    lists.mode = modeCatalog.modes.map((mode) => ({ value: mode.id, label: mode.name }))
     harnessEfforts = acpEfforts
     for (const effort of acpEfforts) efforts.add(effort)
     defaultModel = models.find((model) => model.id === sessionCatalog?.selectedModelId)
@@ -161,20 +187,22 @@ export function profileResources(
     for (const effort of model.supportedEffortLevels ?? []) efforts.add(effort)
     for (const effort of model.supportedReasoningEfforts ?? []) efforts.add(effort.value)
   }
-  const catalog: AgentProfileCatalog = { models, ...(harnessEfforts ? { efforts: harnessEfforts } : {}) }
+  const catalog: AgentProfileCatalog = { models, ...(harnessEfforts ? { efforts: harnessEfforts } : {}), host: { lists } }
   return {
     models,
     efforts: [...efforts],
     catalog,
-    defaultConfig: resolveAgentLaunchDefaults({
+    defaultConfig: launchConfigFromDefaults(resolveAgentLaunchDefaults({
+      harnessId,
       catalog,
       base: {
         ...(defaultModel ? { model: defaultModel.id } : {}),
         ...(defaultEffort ? { effort: defaultEffort } : {}),
-        ...(defaultFastMode !== undefined ? { fastMode: defaultFastMode } : {}),
+        ...(defaultFastMode !== undefined ? { options: { fastMode: defaultFastMode } } : {}),
       },
       profile,
-    }),
+      launch,
+    })),
   }
 }
 
@@ -290,9 +318,29 @@ function usableProviders(): Array<{
     }))
 }
 
+/**
+ * The defaults one launch of `profile` starts from. A launch that names its
+ * own model, effort or fast mode re-resolves the rest against that model, so
+ * an inherited value the model cannot carry is dropped; an explicit one is
+ * rejected. Explicit launch fields still go over the result.
+ */
+export function sessionAgentLaunchDefaults(
+  profile: SessionAgentProfile,
+  launch: Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode'> | undefined,
+): SessionAgentLaunchConfig {
+  const explicit = launchDefaultsFromConfig(launch)
+  const provider = Object.keys(explicit).length ? listSessionProviders().find((row) => row.id === profile.id) : undefined
+  if (!provider) return profile.defaultConfig
+  const resources = profileResources(provider, { acpAgentId: profile.acpAgentId ?? null, launch: explicit })
+  const harness = { id: provider.harnessId, name: HARNESS_CAPABILITIES[provider.harnessId]?.displayName ?? provider.harnessId }
+  const errors = agentLaunchErrors(harness, resources.catalog, resources.defaultConfig.model, explicit)
+  if (errors.length) throw new Error(errors.join(' '))
+  return launchDefaultConfig(provider.harnessId, resources.defaultConfig)
+}
+
 export function listSessionAgentProfiles(): SessionAgentProfile[] {
   return usableProviders().map(({ provider, acpAgentId }) => {
-    const resources = profileResources(provider, acpAgentId)
+    const resources = profileResources(provider, { acpAgentId })
     const models = resources.models.map((model) => ({
       id: model.id,
       name: provider.harnessId === 'codex'

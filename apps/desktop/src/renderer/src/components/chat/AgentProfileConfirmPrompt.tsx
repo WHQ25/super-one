@@ -2,9 +2,10 @@
  * HITL prompt for agent_profile_apply / agent_profile_delete.
  *
  * Create shows the whole profile, update shows only the fields that change as
- * before → after, delete lists the agents in the destructive style. Fields the
- * harness or model cannot carry are explicit "Not supported" rows, driven by
- * the payload rather than by harness branches here.
+ * before → after, delete lists the agents in the destructive style. The option
+ * rows are the harness's own (`HARNESS_PROFILE_OPTIONS`); fields the harness or
+ * model cannot carry are explicit "Not supported" rows, driven by the payload
+ * rather than by harness branches here.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -19,6 +20,7 @@ import type {
 import { acpAgentDisplayName } from '@superone/shared/acp-brand'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_PROFILE_OPTIONS } from '@superone/shared/agent-profile-options'
 import { cn } from '@superone/ui/lib/utils'
 import { useScopedSessionActions } from '@/stores/chat'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
@@ -37,7 +39,7 @@ function harnessLabel(view: Pick<AgentProfileConfirmView, 'harnessId' | 'acpAgen
 function FieldRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-2 text-xs leading-snug">
-      <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
+      <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
       <div className="min-w-0 flex-1 break-words text-foreground">{children}</div>
     </div>
   )
@@ -78,8 +80,9 @@ function ProfileBody({ view }: { view: AgentProfileConfirmView }) {
       <p className="whitespace-pre-wrap break-words text-xs leading-snug text-foreground/90">{view.description}</p>
       <RuntimeRow view={view} field="model" value={model} />
       <RuntimeRow view={view} field="effort" value={view.effort ? formatEffortLabel(view.effort) : undefined} />
-      <RuntimeRow view={view} field="fastMode" value={view.fastMode === undefined ? undefined : t(`${P}.${view.fastMode ? 'on' : 'off'}`)} />
-      <RuntimeRow view={view} field="context" value={view.context === '1m' ? '1M' : undefined} />
+      {HARNESS_PROFILE_OPTIONS[view.harnessId].map((key) => (
+        <RuntimeRow key={key} view={view} field={key} value={optionText(view.options?.[key], t)} />
+      ))}
       <FieldRow label={t(`${P}.fields.instructions`)}>
         {view.instructions ? (
           <ExpandablePrompt
@@ -95,13 +98,18 @@ function ProfileBody({ view }: { view: AgentProfileConfirmView }) {
   )
 }
 
+/** A host display value: toggles arrive as `on` / `off` and are translated here. */
+function optionText(raw: string | undefined, t: (key: string) => string): string | undefined {
+  if (!raw) return undefined
+  return raw === 'on' || raw === 'off' ? t(`${P}.${raw}`) : raw
+}
+
 function changeText(change: AgentProfileConfirmChange, side: 'from' | 'to', t: (key: string) => string): string | undefined {
   const raw = change[side]
   if (!raw) return undefined
   if (change.field === 'effort') return formatEffortLabel(raw)
-  if (change.field === 'fastMode') return t(`${P}.${raw === 'on' ? 'on' : 'off'}`)
-  if (change.field === 'context') return raw === '1m' ? '1M' : raw
-  return raw
+  if (['name', 'description', 'instructions', 'model'].includes(change.field)) return raw
+  return optionText(raw, t)
 }
 
 function ChangeRow({ change }: { change: AgentProfileConfirmChange }) {

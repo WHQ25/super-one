@@ -76,6 +76,22 @@ export function isNodeLocalSuperoneTool(name: string): boolean {
   return (NODE_LOCAL_SUPERONE_TOOL_NAMES as readonly string[]).includes(name)
 }
 
+/**
+ * Tools that act on the desktop's own state for one of its own sessions, so a
+ * remote session cannot use them: agent profiles are rows of the host that
+ * launches them (a node delegates to its own), and their confirm card opens in
+ * the calling desktop session. Never advertised as Host Actions.
+ */
+export const LOCAL_SESSION_ONLY_SUPERONE_TOOL_NAMES = [
+  'agent_profile_list',
+  'agent_profile_apply',
+  'agent_profile_delete',
+] as const
+
+export function isLocalSessionOnlySuperoneTool(name: string): boolean {
+  return (LOCAL_SESSION_ONLY_SUPERONE_TOOL_NAMES as readonly string[]).includes(name)
+}
+
 /** Read-only / idempotent SuperOne tools outside browser. */
 const SUPERONE_READ_NAMES = new Set<string>([
   'read_manual',
@@ -134,9 +150,9 @@ export function classifyHostActionBrowserTool(name: string) {
   return classifyHostActionTool(name)
 }
 
-/** Full SuperOne Host Action tool list (discovery + policy), excluding node-local tools. */
+/** Full SuperOne Host Action tool list (discovery + policy), excluding node-local and local-session-only tools. */
 export const HOST_ACTION_BROWSER_TOOL_CATALOG: HostActionBrowserToolEntry[] =
-  HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.filter((d) => !isNodeLocalSuperoneTool(d.name)).map(
+  HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.filter((d) => !isNodeLocalSuperoneTool(d.name) && !isLocalSessionOnlySuperoneTool(d.name)).map(
     (d) => {
       const cls = classifyHostActionTool(d.name)
       return {

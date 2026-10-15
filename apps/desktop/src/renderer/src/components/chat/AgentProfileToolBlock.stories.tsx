@@ -12,23 +12,23 @@ const LIST_RESULT = toonEncode({
   status: 'ok',
   count: 3,
   profiles: [
-    { id: 'claude-base', name: 'Claude (Base)', harness: 'claude', base: true, available: true, description: "Claude with the user's default configuration.", model: '', effort: '', fastMode: null, context: '' },
-    { id: 'codex-base', name: 'Codex (Base)', harness: 'codex', base: true, available: true, description: "Codex with the user's default configuration.", model: '', effort: '', fastMode: null, context: '' },
-    { id: 'claude-reviewer', name: 'Reviewer', harness: 'claude', base: false, available: true, description: 'Reviews diffs for correctness and security without editing files. Delegate code review here, especially for payment…', model: 'opus', effort: 'xhigh', fastMode: null, context: '1m' },
+    { id: 'claude-base', name: 'Claude (Base)', harness: 'claude', base: true, available: true, description: "Claude with the user's default configuration.", model: '', effort: '', options: '' },
+    { id: 'codex-base', name: 'Codex (Base)', harness: 'codex', base: true, available: true, description: "Codex with the user's default configuration.", model: '', effort: '', options: '' },
+    { id: 'claude-reviewer', name: 'Reviewer', harness: 'claude', base: false, available: true, description: 'Reviews diffs for correctness and security without editing files. Delegate code review here, especially for payment…', model: 'opus', effort: 'xhigh', options: 'ultracode: on' },
   ],
 })
 
 const DETAIL_RESULT = JSON.stringify({
   status: 'ok',
-  profile: { id: 'claude-reviewer', name: 'Reviewer', harnessId: 'claude', base: false, available: true, description: 'Reviews diffs without editing files.', instructions: 'Never edit files.', runtime: { model: 'opus', effort: 'xhigh', context: '1m' } },
+  profile: { id: 'claude-reviewer', name: 'Reviewer', harnessId: 'claude', base: false, available: true, description: 'Reviews diffs without editing files.', instructions: 'Never edit files.', runtime: { model: 'opus', effort: 'xhigh', options: { ultracode: true } } },
   launchDefaults: { model: 'opus[1m]', effort: 'xhigh', permissionMode: 'default' },
-  options: { models: [{ id: 'opus', name: 'Opus 5.5', efforts: ['low', 'high', 'xhigh', 'max'], fastMode: false, contexts: ['default', '1m'] }] },
+  available: { keys: ['ultracode'], harness: {}, models: [{ id: 'opus', name: 'Opus 5.5', efforts: ['low', 'high', 'xhigh', 'max'], options: { ultracode: 'boolean' } }] },
 })
 
 const CREATE_RESULT = JSON.stringify({
   status: 'ok',
   action: 'create',
-  profile: { id: 'claude-1f2e', name: 'Reviewer', harnessId: 'claude', description: 'Reviews diffs without editing files.', hasInstructions: true, runtime: { model: 'opus', effort: 'xhigh', context: '1m' } },
+  profile: { id: 'claude-1f2e', name: 'Reviewer', harnessId: 'claude', description: 'Reviews diffs without editing files.', hasInstructions: true, runtime: { model: 'opus', effort: 'xhigh', options: { ultracode: true } } },
   next: 'Delegate with session_collab_request({ agentId: "claude-1f2e" }); the user can @-mention it as Reviewer.',
 })
 
@@ -36,11 +36,11 @@ const UPDATE_RESULT = JSON.stringify({
   status: 'ok',
   action: 'update',
   profile: { id: 'claude-1f2e', name: 'Reviewer', harnessId: 'claude', description: 'Reviews diffs without editing files.', hasInstructions: true, runtime: { model: 'opus', effort: 'max' } },
-  changed: ['effort', 'context'],
+  changed: ['effort', 'ultracode'],
 })
 
 const REJECTED = JSON.stringify({ status: 'rejected', message: 'The user did not approve this change. Do not retry on your own; wait for the user.', feedback: 'Keep Sonnet' })
-const INVALID = JSON.stringify({ status: 'error', message: 'runtime.fastMode is not supported by Claude model "opus".' })
+const INVALID = JSON.stringify({ status: 'error', message: 'options.ultracode is not supported by Claude model "haiku".' })
 const DELETE_RESULT = JSON.stringify({ status: 'ok', deleted: [{ id: 'claude-1f2e', name: 'Reviewer' }, { id: 'codex-9a', name: 'Speedy' }] })
 const DELETE_PARTIAL = JSON.stringify({ status: 'partial', deleted: [{ id: 'claude-1f2e', name: 'Reviewer' }], failed: [{ id: 'codex-9a', name: 'Speedy', error: 'database is locked' }] })
 const DELETE_BUILT_IN = JSON.stringify({ status: 'not_found', deleted: [], builtIn: ['claude-base'], message: 'Built-in <harness>-base agents cannot be deleted.' })

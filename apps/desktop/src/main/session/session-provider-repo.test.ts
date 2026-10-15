@@ -54,6 +54,8 @@ import {
   deleteSessionProvider,
   listByHarness,
   sessionProviderStore,
+  clientSessionProviderStore,
+  updateBaseProviderConfig,
 } from './session-provider-repo'
 import { dispatchSessionProviderRpc } from '@superone/runtime/server/rpc-session-providers'
 import type { AuthenticatedClient } from '@superone/runtime/server'
@@ -172,6 +174,21 @@ describe('session-provider-repo', () => {
       ])
     })
 
+    it("moves a node client's deleted row's sessions too", () => {
+      const p = createSessionProvider({ harnessId: 'codex', name: 'tmp', config: {} })
+      const db = getDbMock() as Database.Database
+      db.prepare('INSERT INTO sessions (id, provider_id) VALUES (?, ?)').run('s1', p.id)
+      const admin = {
+        clientSessionId: 'c1',
+        scopes: ['environment:read', 'node:admin'],
+        devicePublicKeyFingerprint: 'fp',
+        devicePublicKeyPem: 'pem',
+      } as AuthenticatedClient
+      const res = dispatchSessionProviderRpc('sessionProviders.delete', { id: p.id }, { client: admin, sessionProviders: clientSessionProviderStore() })
+      expect(res?.result).toEqual({ ok: true })
+      expect(db.prepare('SELECT provider_id FROM sessions').get()).toEqual({ provider_id: 'codex-base' })
+    })
+
     it('returns false for unknown id', () => {
       expect(deleteSessionProvider('nope')).toBe(false)
     })
@@ -179,5 +196,12 @@ describe('session-provider-repo', () => {
     it('throws when deleting a base provider', () => {
       expect(() => deleteSessionProvider('claude-base')).toThrow(/base/)
     })
+  })
+
+  it('never lets a built-in row carry an agent profile', () => {
+    getDbMock.mockReturnValue(new Database(':memory:'))
+    expect(() => updateBaseProviderConfig('claude', { profile: { version: 1, identity: { name: 'x', description: 'y' } } }))
+      .toThrow(/cannot carry an agent profile/)
+    expect(getBaseProvider('claude').config).not.toHaveProperty('profile')
   })
 })

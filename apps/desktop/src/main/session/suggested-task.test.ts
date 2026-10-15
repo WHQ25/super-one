@@ -19,6 +19,7 @@ vi.mock('./agent-profiles', () => ({
     { id: 'claude-base', defaultConfig: { sandboxMode: 'off', model: 'default-model' } },
     { id: 'codex-base', defaultConfig: { sandboxMode: 'workspace-write', model: 'gpt-default', permissionMode: 'default' } },
   ],
+  sessionAgentLaunchDefaults: (profile: { defaultConfig: object }) => profile.defaultConfig,
 }))
 vi.mock('./collaboration-child-project', () => ({
   resolveCwd: (config: { cwd?: string }, parent: { cwd: string }) => config.cwd ?? parent.cwd,

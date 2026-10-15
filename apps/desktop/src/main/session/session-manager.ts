@@ -85,6 +85,7 @@ function profileSystemPromptAppend(provider: SessionProvider, hostAppend: string
   return composeSystemPromptAppend(readAgentProfile(provider.config)?.instructions, hostAppend)
 }
 
+
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
   if (!data.worktreePath) return { cwd: data.projectPath, missingWorktreePath: null }
   if (worktreeExists(data.worktreePath, data.projectPath)) {
@@ -144,6 +145,13 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (const cwd of cwds) this.projectResources.invalidate(cwd)
     const { disposeSuperoneMcpServer } = await import('../mcp/superone-mcp-server')
     for (const { sid } of targets) disposeSuperoneMcpServer(sid)
+  }
+
+  /** Move live sessions off a deleted provider row, so their next state save cannot write it back. */
+  rebindProviderSessions(fromProviderId: string, toProviderId: string): void {
+    for (const session of this.sessions.values()) {
+      if (session.providerId === fromProviderId) session.rebindProvider(toProviderId)
+    }
   }
 
   forEachSession(fn: (session: SessionContract) => void): void {

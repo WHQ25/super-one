@@ -306,6 +306,9 @@ describe('built-in superone tool registration surfaces', () => {
     expect(del!.inputSchema.required).toEqual(['ids'])
     expect(classifyHostActionTool('agent_profile_list').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('agent_profile_apply').replayPolicy).toBe('unsafe')
+    // Profiles are rows of the host that launches them; a remote session is never offered these.
+    const remote = new Set(listHostActionSuperoneTools().map((tool) => tool.name))
+    expect(AGENT_PROFILE_TOOL_NAMES.filter((name) => remote.has(name))).toEqual([])
   })
 
   it('points automation tools at each other for discovery and delete', () => {

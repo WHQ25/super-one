@@ -2217,9 +2217,14 @@ export type Messages = {
           instructions: string
           model: string
           effort: string
-          fastMode: string
-          context: string
           name: string
+          ultracode: string
+          fastMode: string
+          contextWindow: string
+          mode: string
+          agent: string
+          agentPreset: string
+          modelParams: string
         }
       }
     }
@@ -6692,8 +6697,13 @@ export const en: Messages = {
           instructions: 'Instructions',
           model: 'Model',
           effort: 'Effort',
+          ultracode: 'Ultracode',
           fastMode: 'Fast Mode',
-          context: 'Context',
+          contextWindow: 'Context Window',
+          mode: 'Mode',
+          agent: 'Agent',
+          agentPreset: 'Preset',
+          modelParams: 'Model Options',
           name: 'Name',
         },
       },

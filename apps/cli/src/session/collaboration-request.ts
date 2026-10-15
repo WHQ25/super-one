@@ -17,6 +17,7 @@ import {
   type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { resolveProfile, type CollaborationContext, type NodeLaunchConfig } from './collaboration-context'
+import { collaborationLaunchDefaults } from './collaboration-profiles'
 
 export interface CollaborationRequestInput {
   parentSessionId: string
@@ -118,7 +119,7 @@ function normalizeLaunches(
       name,
       role,
       config: {
-        ...profile.defaultConfig,
+        ...collaborationLaunchDefaults(ctx.deps, profile, safe),
         ...safe,
         permissionMode: 'default',
         sandboxMode: 'off',

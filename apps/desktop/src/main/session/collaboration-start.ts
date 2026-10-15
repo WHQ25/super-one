@@ -25,10 +25,12 @@ import {
   readOnlyTargetMessage as collaborationTargetReadOnlyMessage,
   type CollaborationGrantRow as GrantRow,
 } from '@superone/runtime/collaboration'
+import type { NodeSessionSettings } from '@superone/runtime/session'
 import { activateWorktree } from '../git/worktree-ops'
 import { getDb } from '../database'
 import { createSession as createSessionRecord, hideSession } from '../db-sessions'
 import log from '../logger'
+import { applyDesktopSessionSettings } from '../node-host/desktop-session-mutations'
 import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import { ensureChildProject, isManagedWorktreePath, resolveCwd } from './collaboration-child-project'
@@ -62,6 +64,18 @@ function initialTaskContent(grant: GrantRow): string {
     parentTitle: parentSessionInfo(grant).title,
     task: grant.task,
   })
+}
+
+/** A launch's harness options as session settings; Cursor model parameters ride the first turn instead. */
+function launchOptionSettings(options: SessionAgentLaunchConfig['options']): NodeSessionSettings {
+  const { ultracode, contextWindow, mode, agent, agentPreset } = options ?? {}
+  return {
+    ...(ultracode !== undefined ? { ultracode } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(mode !== undefined ? { mode } : {}),
+    ...(agent !== undefined ? { agent } : {}),
+    ...(agentPreset !== undefined ? { agentPreset } : {}),
+  }
 }
 
 /**
@@ -98,6 +112,8 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
     content: initialTaskContent(grant),
     model: config.model,
     effort: config.effort as EffortLevel | undefined,
+    // Cursor takes model parameters per turn and keeps the last ones it was given.
+    ...(config.options?.modelParams ? { cursor: { params: config.options.modelParams } } : {}),
     clientMessageId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     source: 'collaboration',
     collaboration: {
@@ -351,6 +367,9 @@ export async function startSessionAgent(
       host.clearActiveSession(projectPath)
     }
     child.setTitle(title, 'agent')
+    // The profile's harness options, through the path a composer pick takes; before the first turn starts the runtime.
+    const optionSettings = launchOptionSettings(config.options)
+    if (Object.keys(optionSettings).length) await applyDesktopSessionSettings(child, optionSettings)
     // Persist provider + ACP agent immediately so sidebar brand icons work before first save.
     //
     // api_provider_id / selected_model / selected_effort belong here for the same

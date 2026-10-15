@@ -1,20 +1,90 @@
-import type { SessionAgentProfile } from '@superone/shared/agent-types'
-import { composeSystemPromptAppend, readAgentProfile, resolveAgentLaunchDefaults } from '@superone/shared/agent-profile'
+import type { SessionAgentLaunchConfig, SessionAgentProfile } from '@superone/shared/agent-types'
+import {
+  agentLaunchErrors,
+  composeSystemPromptAppend,
+  launchConfigFromDefaults,
+  launchDefaultsFromConfig,
+  providerLaunchRuntime,
+  readAgentProfile,
+  resolveAgentLaunchDefaults,
+  type AgentLaunchDefaults,
+  type AgentProfileCatalog,
+} from '@superone/shared/agent-profile'
+import type { AgentProfileOptionKey } from '@superone/shared/agent-profile-options'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
 import { listHarnessApiProviders, listHarnessModels } from '../provider/resolve-service'
+import { CollaborationError, collaborationSystemPrompt, type CollaborationGrantRow } from '@superone/runtime/collaboration'
 import type { CollaborationDeps } from './collaboration-context'
+
+function providerOptions(deps: CollaborationDeps) {
+  return { experimentalClaudeOpenAiChatEnabled: deps.experimentalClaudeOpenAiChatEnabled?.() ?? false }
+}
+
+/**
+ * The profile options a session on this node can start with: its runtime
+ * takes the OpenCode agent at create and refuses every other harness setting
+ * (`SessionRuntime.validateSettings`), so the rest never reach a launch here.
+ */
+const NODE_APPLIABLE_OPTIONS: readonly AgentProfileOptionKey[] = ['agent']
+
+/**
+ * A row's catalog and launch defaults. This node keeps no agent preferences,
+ * so its global layer is the catalog default; the row's launch runtime and
+ * then the launch's own fields go over it, the rule desktop applies too.
+ */
+function launchResolution(
+  deps: CollaborationDeps,
+  harnessId: HarnessId,
+  config: unknown,
+  launch?: AgentLaunchDefaults,
+) {
+  const harnessModels = listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
+  const defaultModel = harnessModels.find((m) => m.isDefault) ?? harnessModels[0]
+  const efforts = new Set<string>()
+  for (const m of harnessModels) {
+    for (const e of m.supportedEffortLevels ?? []) efforts.add(e)
+  }
+  const catalog: AgentProfileCatalog = { models: harnessModels, host: { appliable: NODE_APPLIABLE_OPTIONS } }
+  const defaults = resolveAgentLaunchDefaults({
+    harnessId,
+    catalog,
+    base: {
+      model: defaultModel?.id,
+      effort: efforts.has('high') ? 'high' : efforts.has('medium') ? 'medium' : [...efforts][0],
+    },
+    profile: providerLaunchRuntime(config),
+    launch,
+  })
+  return { harnessModels, efforts, catalog, defaults }
+}
+
+/**
+ * The defaults one launch of `profile` starts from: a launch naming its own
+ * model, effort or fast mode re-resolves the inherited rest against that
+ * model, and an explicit value the model cannot carry is rejected.
+ */
+export function collaborationLaunchDefaults(
+  deps: CollaborationDeps,
+  profile: SessionAgentProfile,
+  launch: Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode'>,
+): SessionAgentLaunchConfig {
+  const explicit: AgentLaunchDefaults = launchDefaultsFromConfig(launch)
+  if (!Object.keys(explicit).length) return profile.defaultConfig
+  const { catalog, defaults } = launchResolution(deps, profile.harnessId, deps.sessionProviders?.get(profile.id)?.config, explicit)
+  const harness = { id: profile.harnessId, name: HARNESS_CAPABILITIES[profile.harnessId]?.displayName ?? profile.harnessId }
+  const errors = agentLaunchErrors(harness, catalog, defaults.model, explicit)
+  if (errors.length) throw new CollaborationError(errors.join(' '), 'invalid_argument')
+  return launchConfigFromDefaults(defaults)
+}
 
 /** Agent profiles from session_providers (+ ready-harness fallback). */
 export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgentProfile[] {
   const { harnesses, providers, sessions, sessionProviders } = deps
   const profiles: SessionAgentProfile[] = []
   const seen = new Set<string>()
-  const providerOptions = {
-    experimentalClaudeOpenAiChatEnabled:
-      deps.experimentalClaudeOpenAiChatEnabled?.() ?? false,
-  }
 
   const pushProfile = (
     profileId: string,
@@ -30,18 +100,13 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
     // remote @codex mention means the same thing on both sides.
     if (!harnesses.isSessionHarnessRunnable(harnessId)) return
     seen.add(profileId)
-    const harnessModels = listHarnessModels(providers, harnessId, null, providerOptions)
+    const { harnessModels, efforts, defaults } = launchResolution(deps, harnessId, profileConfig)
     const models = harnessModels.map((m) => ({
       id: m.id,
       name: m.name || m.id,
       ...(m.description ? { description: m.description } : {}),
       ...(m.serviceTiers?.length ? { serviceTiers: m.serviceTiers } : {}),
     }))
-    const defaultModel = harnessModels.find((m) => m.isDefault) ?? harnessModels[0]
-    const efforts = new Set<string>()
-    for (const m of harnessModels) {
-      for (const e of m.supportedEffortLevels ?? []) efforts.add(e)
-    }
     const cfg =
       profileConfig && typeof profileConfig === 'object' && !Array.isArray(profileConfig)
         ? (profileConfig as Record<string, unknown>)
@@ -53,17 +118,6 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
         ? cfg.agentId.trim()
         : null
     const profile = readAgentProfile(profileConfig)
-    // The node's global layer is the catalog default; the shared resolver puts
-    // the row's agent profile over it exactly as desktop does.
-    const defaults = resolveAgentLaunchDefaults({
-      catalog: { models: harnessModels },
-      base: {
-        model: defaultModel?.id,
-        effort: efforts.has('high') ? 'high' : efforts.has('medium') ? 'medium' : [...efforts][0],
-        ...(harnessId === 'codex' ? { fastMode: false } : {}),
-      },
-      profile: profile?.runtime,
-    })
     profiles.push({
       id: profileId,
       name: profile ? name : harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
@@ -71,10 +125,10 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       ...(acpAgentId ? { acpAgentId } : {}),
       brandKey: resolveHarnessBrandKey(harnessId, acpAgentId),
       description: profile?.identity.description ?? description,
-      defaultConfig: defaults,
+      defaultConfig: launchConfigFromDefaults(defaults),
       models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
       efforts: [...efforts],
-      apiProviders: listHarnessApiProviders(providers, harnessId, providerOptions),
+      apiProviders: listHarnessApiProviders(providers, harnessId, providerOptions(deps)),
     })
   }
 
@@ -122,4 +176,20 @@ export function collaborationAgentPromptAppend(
 ): string | undefined {
   const instructions = readAgentProfile(deps.sessionProviders?.get(agentId)?.config)?.instructions
   return composeSystemPromptAppend(instructions, protocol)
+}
+
+/**
+ * The append of a session a spawn or handoff grant launched, from the agent's
+ * current row: a spawn child also gets the collaboration protocol, a handoff
+ * (one-way by construction) only the profile's instructions.
+ */
+export function launchedSessionPromptAppend(
+  deps: Pick<CollaborationDeps, 'sessionProviders'>,
+  grant: Pick<CollaborationGrantRow, 'agent_id' | 'kind' | 'parent_session_id'>,
+): string | undefined {
+  return collaborationAgentPromptAppend(
+    deps,
+    grant.agent_id,
+    grant.kind === 'handoff' ? undefined : collaborationSystemPrompt(grant.parent_session_id),
+  )
 }

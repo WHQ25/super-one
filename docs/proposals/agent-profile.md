@@ -15,26 +15,31 @@ does not list is still open.
 
 | Area | Shipped in v1 | Where |
 |---|---|---|
-| Spec | `config.profile` = `{ version: 1, identity: { name, description }, instructions?, runtime?: { model?, effort?, fastMode?, context?: '1m' } }`, parsed by the shared store on every write | `packages/shared/src/agent-profile.ts`, `packages/runtime/src/session/session-provider-store.ts` |
-| Support checks | Model, effort, fast mode and 1M context are validated against the harness model catalog (`[1m]` catalog rows, model efforts, fast service tier); errors name the field and harness. No `profile` entry in `HarnessCapabilities` was needed for these fields | `validateAgentProfileRuntime`, `agentProfileModelSupport` |
-| Resolver | `resolveAgentLaunchDefaults`: launch args > profile > global preference, used by desktop `profileResources` and CLI `listCollaborationProfiles` (closes gap 2) | same module |
+| Spec | `config.profile` = `{ version: 1, identity: { name, description }, instructions?, runtime?: { model?, effort?, options? } }`, parsed by the shared store on every write. Profile rows are written only through the store's `profiles` writer, which the desktop calls after the confirm card; `sessionProviders.*` RPC and IPC writes refuse them | `packages/shared/src/agent-profile.ts`, `packages/runtime/src/session/session-provider-store.ts`, `apps/desktop/src/main/session/agent-profile-store.ts` |
+| Harness options | `runtime.options` holds each harness's own session settings, the ones its selector offers: Claude `ultracode`, Codex `fastMode`, ACP `contextWindow` / `mode`, OpenCode `agent`, Cursor `modelParams`, dsh `agentPreset` (`HARNESS_PROFILE_OPTIONS`). Allowed values come from the catalog per model (`supportedEffortLevels` xhigh, `serviceTiers`, `contextWindows`, `parameters`) or from harness-wide lists (ACP modes, OpenCode agents, dsh presets) | `packages/shared/src/agent-profile-options.ts` |
+| Support checks | Model, effort and options are validated against the harness catalog; errors name the field and harness, and another harness's option is refused by name. A list the host cannot read yet is refused at write and left unchecked at launch | `validateAgentProfileRuntime`, `agentProfileModelSupport` |
+| Resolver | `resolveAgentLaunchDefaults`: explicit launch fields > row runtime > global preference (a CLI node has no preferences, so its global layer is the catalog default). The model is settled first; inherited effort and options are re-checked against it, and an explicit value the catalogued model cannot carry is rejected. Row runtime is the profile's whole, or the legacy top-level `model` / `effort` / `reasoningEffort` / `fastMode` of a row without one (`providerLaunchRuntime`). Used by desktop `profileResources` and CLI `listCollaborationProfiles` (closes gap 2) | same module |
 | Identity | Profile name and description flow to `session_collab_list_agents` and `@` mentions | `agent-profiles.ts`, `collaboration-profiles.ts` |
 | Instructions | Composed ahead of the collaboration protocol into `systemPromptAppend`; desktop in `SessionManager` create/resume, CLI at collab start/reuse/rehydrate | `session-manager.ts`, `collaboration-start.ts` |
 | dsh | `systemPromptAppend` delivered as an agent-scoped `superone:session` section (closes gap 5) | `packages/deepseek/src/runtime.ts` |
-| Tools | `agent_profile_list` / `agent_profile_apply` (`create` \| `update`) / `agent_profile_delete`, host-confirmed (`agent_profile_confirm`, no always-allow); base rows read-only; delete moves sessions to the harness base row | `apps/desktop/src/main/mcp/agent-profile-tools.ts` |
-| UI | Desktop confirm card (create, update diff, destructive delete, explicit "Not supported" rows), shared chat-view tool rows, phone permission-sheet copy | `AgentProfileConfirmPrompt.tsx`, `chat-view/presenters/AgentProfileToolBlock.tsx` |
+| Launch | Desktop applies options to the new session through the composer's settings path before its first turn (`applyDesktopSessionSettings`; Cursor parameters ride the first turn). Options have the same lifetime as a composer pick. A CLI node applies only the OpenCode agent; its other options resolve as unsupported there | `collaboration-start.ts` (desktop, CLI) |
+| Tools | `agent_profile_list` / `agent_profile_apply` (`create` \| `update`) / `agent_profile_delete`, host-confirmed (`agent_profile_confirm`, no always-allow); base rows read-only. A write applies only while the row still matches the one confirmed. Delete moves stored and live sessions to the harness base row. Desktop sessions only: not in the remote Host Action catalog | `apps/desktop/src/main/mcp/agent-profile-tools.ts` |
+| UI | Desktop confirm card (create, update diff, destructive delete, explicit "Not supported" rows), shared chat-view tool rows, phone permission sheet with the same fields (instructions included) | `AgentProfileConfirmPrompt.tsx`, `chat-view/presenters/AgentProfileToolBlock.tsx` |
 
 Deviations from the sections below:
 
-- `runtime.context` (`'1m'`, requires `model`) is new; the spec stores the base
-  model id and the launch appends `[1m]`.
+- Harness options replace the proposed `runtime.fastMode`; there is no
+  context field outside a harness's own options (Claude's 1M is a catalog model).
+- An ACP context window or session mode picked before the agent starts is
+  applied once it is up (it used to throw / be dropped).
 - Instructions are read from the row on every create and resume, so editing a
   profile also changes the instructions of its resumed sessions (§5 proposed a
   launch-time snapshot). Model and effort still come from the session row.
 - An ACP profile pins the ACP agent in use at creation (`config.agentId`).
 - Remote spawn children (a desktop profile launched on another machine) do not
   receive the profile's instructions yet.
-- On a CLI node the composed append is stored but its turn runners do not read
+- On a CLI node the composed append is stored, and rebuilt for spawn and
+  handoff sessions after a restart, but its turn runners do not read
   `systemPromptAppend` at all yet (pre-existing; collaboration prompt included).
 
 Deferred: `slug`, `projectPaths`, `runtime.apiProviderId`, `permissions`,

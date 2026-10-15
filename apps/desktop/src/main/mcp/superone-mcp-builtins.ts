@@ -175,6 +175,7 @@ export interface SessionTitleHost {
   getSession(sessionId: string): SessionTitleSetter | null
   /** A desktop view (pane, mosaic tile or mini window) is drawing this session. */
   isSessionForeground?(sessionId: string): boolean
+  rebindProviderSessions?(fromProviderId: string, toProviderId: string): void
 }
 
 function collaborationHost(deps: BuiltInSuperoneToolDeps): SessionManager {
@@ -927,8 +928,15 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         instructions: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'instructions')),
         model: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'model')),
         effort: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'effort')),
-        fastMode: z.boolean().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'fastMode')),
-        context: z.enum(['default', '1m']).optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'context')),
+        options: z.object({
+          ultracode: z.boolean().nullable().optional().describe(agentProfileOptionField('ultracode')),
+          fastMode: z.boolean().nullable().optional().describe(agentProfileOptionField('fastMode')),
+          contextWindow: z.number().int().positive().nullable().optional().describe(agentProfileOptionField('contextWindow')),
+          mode: z.string().nullable().optional().describe(agentProfileOptionField('mode')),
+          agent: z.string().nullable().optional().describe(agentProfileOptionField('agent')),
+          agentPreset: z.string().nullable().optional().describe(agentProfileOptionField('agentPreset')),
+          modelParams: z.record(z.string(), z.string()).nullable().optional().describe(agentProfileOptionField('modelParams')),
+        }).strict().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'options')),
       },
     },
     async (args, extra) => (await import('./agent-profile-tools')).agentProfileApplyHandler(args, {
@@ -957,4 +965,9 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
 /** Field description from the shared JSON schema, so the Zod surface cannot drift from it. */
 function agentProfileField(schema: { properties: Record<string, { description?: string }> }, field: string): string {
   return schema.properties[field]?.description ?? ''
+}
+
+function agentProfileOptionField(option: string): string {
+  const options = AGENT_PROFILE_APPLY_INPUT_SCHEMA.properties.options as { properties: Record<string, { description?: string }> }
+  return options.properties[option]?.description ?? ''
 }

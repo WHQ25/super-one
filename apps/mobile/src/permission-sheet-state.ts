@@ -1,9 +1,15 @@
 import {
   CONFIG_APPLY_FIELD,
   VIDEO_GEN_PARAMS_FIELD,
+  type AgentProfileConfirmChange,
+  type AgentProfileConfirmView,
   type ElicitationFormField,
   type PermissionRequest,
 } from '@superone/shared/agent-types'
+import { acpAgentDisplayName } from '@superone/shared/acp-brand'
+import { formatEffortLabel } from '@superone/shared/effort-labels'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_PROFILE_OPTIONS } from '@superone/shared/agent-profile-options'
 import { schemaFormForResourceHost, type SchemaForm, type SchemaFormField } from '@superone/shared/schema-form'
 import { buildCollaborationFormAnswers } from './collaboration-state'
 
@@ -11,6 +17,8 @@ export type PermissionSheetItem = {
   title: string
   subtitle?: string
   warning?: boolean
+  /** The title is fixed copy (a field label) to translate, not user content. */
+  label?: boolean
 }
 
 export type PermissionSheetPresentation = {
@@ -23,6 +31,47 @@ export type PermissionSheetPresentation = {
   sessionLabel?: string
   items: PermissionSheetItem[]
   destructive?: boolean
+}
+
+const AGENT_PROFILE_FIELD_LABELS: Record<AgentProfileConfirmChange['field'], string> = {
+  name: 'Name',
+  description: 'Description',
+  instructions: 'Instructions',
+  model: 'Model',
+  effort: 'Effort',
+  ultracode: 'Ultracode',
+  fastMode: 'Fast mode',
+  contextWindow: 'Context window',
+  mode: 'Mode',
+  agent: 'Agent',
+  agentPreset: 'Preset',
+  modelParams: 'Model options',
+}
+
+/** Host display values arrive as `on` / `off` for toggles; the sheet translates them. */
+function agentProfileValue(raw: string | undefined): string | undefined {
+  return raw === 'on' ? 'On' : raw === 'off' ? 'Off' : raw
+}
+
+function agentProfileHarness(profile: AgentProfileConfirmView): string {
+  const harness = HARNESS_CAPABILITIES[profile.harnessId]?.displayName ?? profile.harnessId
+  return profile.acpAgentId ? `${harness} · ${acpAgentDisplayName(profile.acpAgentId)}` : harness
+}
+
+/** The whole profile being approved, the desktop card's fields: instructions included, unset and unsupported fields explicit. */
+function agentProfileItems(profile: AgentProfileConfirmView): PermissionSheetItem[] {
+  const field = (key: AgentProfileConfirmChange['field'], value: string | undefined, unset = 'User default'): PermissionSheetItem => ({
+    title: AGENT_PROFILE_FIELD_LABELS[key],
+    label: true,
+    subtitle: (profile.unsupported as readonly string[] | undefined)?.includes(key) ? 'Not supported' : value || unset,
+  })
+  return [
+    { title: profile.name, subtitle: [agentProfileHarness(profile), profile.description].filter(Boolean).join(' · ') },
+    field('instructions', profile.instructions, 'None'),
+    field('model', profile.modelName ?? profile.model),
+    field('effort', profile.effort ? formatEffortLabel(profile.effort) : undefined),
+    ...HARNESS_PROFILE_OPTIONS[profile.harnessId].map((key) => field(key, agentProfileValue(profile.options?.[key]))),
+  ]
 }
 
 function valueLabel(value: unknown, secret = false): string {
@@ -200,13 +249,16 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         destructive: operation === 'delete',
         items: operation === 'update'
           ? (payload?.changes ?? []).map((change) => ({
-            title: change.field,
-            subtitle: `${change.from || '—'} → ${change.to || '—'}`,
+            title: AGENT_PROFILE_FIELD_LABELS[change.field],
+            label: true,
+            subtitle: `${agentProfileValue(change.from) || '—'} → ${agentProfileValue(change.to) || '—'}`,
           }))
-          : (payload?.profiles ?? []).map((profile) => ({
-            title: profile.name,
-            subtitle: [profile.harnessId, profile.model, profile.description].filter(Boolean).join(' · '),
-          })),
+          : operation === 'create'
+            ? (payload?.profiles ?? []).flatMap(agentProfileItems)
+            : (payload?.profiles ?? []).map((profile) => ({
+              title: profile.name,
+              subtitle: [agentProfileHarness(profile), profile.description].filter(Boolean).join(' · '),
+            })),
       }
     }
     case 'webmcp_trust_confirm': {

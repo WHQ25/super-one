@@ -14,7 +14,7 @@ import {
   type SuggestedTaskLaunchOptions,
 } from '@superone/shared/suggested-task'
 import { resolveMainWorktreeDir } from '../git/worktree-ops'
-import { listSessionAgentProfiles } from './agent-profiles'
+import { listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
 import { resolveCwd } from './collaboration-child-project'
 import { resolveLiveSession } from './collaboration-host'
 import { collaborationStore as store } from './collaboration-mailbox'
@@ -132,6 +132,7 @@ async function launch(host: SessionManager, parentSessionId: string, taskId: str
     const worktree = await defaultWorktree(cwd, input.title, taskId)
     const name = input.title
     const role = 'Task'
+    const settings = pickSettings(choice.settings ?? {})
     createGrants(parentSessionId, [{
       launchId,
       mode: 'handoff',
@@ -140,8 +141,8 @@ async function launch(host: SessionManager, parentSessionId: string, taskId: str
       name,
       role,
       config: {
-        ...profile.defaultConfig,
-        ...pickSettings(choice.settings ?? {}),
+        ...sessionAgentLaunchDefaults(profile, settings),
+        ...settings,
         cwd,
         ...(worktree ? { worktree } : {}),
         name,

@@ -7,7 +7,7 @@
  */
 
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
-import { CollaborationStore, collaborationSystemPrompt } from '@superone/runtime/collaboration'
+import { CollaborationStore, parseGrantConfig } from '@superone/runtime/collaboration'
 import type { CollaborationContext, CollaborationDeps } from './collaboration-context'
 import {
   retrieveCollaborationMessages,
@@ -15,7 +15,7 @@ import {
   type CollaborationRetrieveInput,
   type CollaborationSendInput,
 } from './collaboration-messaging'
-import { collaborationAgentPromptAppend, listCollaborationProfiles } from './collaboration-profiles'
+import { launchedSessionPromptAppend, listCollaborationProfiles } from './collaboration-profiles'
 import { requestCollaboration, type CollaborationRequestInput } from './collaboration-request'
 import { startCollaboration, type CollaborationStartInput } from './collaboration-start'
 
@@ -59,14 +59,18 @@ export class CollaborationService {
     return retrieveCollaborationMessages(this.ctx, input)
   }
 
-  /** Reconstruct system-prompt append for spawn children after restart (never link). */
+  /** Reconstruct the system-prompt append of launched sessions after restart (never link). */
   rehydrateSystemPrompts(): void {
-    for (const grant of this.ctx.store.startedSpawnGrants()) {
-      if (!grant.child_session_id || !this.deps.sessions.get(grant.child_session_id)) continue
-      this.deps.sessions.setSystemPromptAppend(
-        grant.child_session_id,
-        collaborationAgentPromptAppend(this.deps, grant.agent_id, collaborationSystemPrompt(grant.parent_session_id)),
-      )
+    const launched = [
+      ...this.ctx.store.startedSpawnGrants().map((grant) => ({ grant, sessionId: grant.child_session_id })),
+      ...this.ctx.store.startedHandoffGrants().map((grant) => ({
+        grant,
+        sessionId: parseGrantConfig<{ handoffSessionId?: string }>(grant.config_json).handoffSessionId,
+      })),
+    ]
+    for (const { grant, sessionId } of launched) {
+      if (!sessionId || !this.deps.sessions.get(sessionId)) continue
+      this.deps.sessions.setSystemPromptAppend(sessionId, launchedSessionPromptAppend(this.deps, grant))
     }
   }
 }

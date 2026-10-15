@@ -28,7 +28,7 @@ export function PermissionContent({ request, remembering = false }: { request: P
       {presentation.description && request.requestKind !== 'video_gen_confirm' ? <Text style={styles.meta}>{t(presentation.description)}</Text> : null}
       {presentation.items.length && !['video_gen_confirm', 'config_confirm', 'automation_confirm'].includes(request.requestKind) ? <View style={styles.card}>{presentation.items.map((item, index) => <View key={index} style={styles.tight}>
         {index ? <View style={styles.divider} /> : null}
-        <Text selectable style={[styles.body, item.warning && { color: colors.warning }]}>{item.title}</Text>
+        <Text selectable style={[styles.body, item.warning && { color: colors.warning }]}>{item.label ? t(item.title) : item.title}</Text>
         {item.subtitle ? <Text selectable style={styles.meta}>{t(item.subtitle)}</Text> : null}
       </View>)}</View> : null}
     </> : <>

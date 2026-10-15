@@ -6,12 +6,11 @@ import {
   type SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
-import { collaborationAgentPromptAppend } from './collaboration-profiles'
+import { launchedSessionPromptAppend } from './collaboration-profiles'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   CollaborationError,
   collaborationSessionTitle,
-  collaborationSystemPrompt,
   deriveCollaborationName,
   deriveCollaborationRole,
   describeLaunchedPeer,
@@ -198,12 +197,7 @@ export async function startCollaboration(
     if (isHandoff && !existing) {
       throw new CollaborationError(`The handoff session no longer exists: ${existingSessionId}`, 'not_found')
     }
-    if (existing && !isHandoff) {
-      ctx.deps.sessions.setSystemPromptAppend(
-        existing.sessionId,
-        collaborationAgentPromptAppend(ctx.deps, grant.agent_id, collaborationSystemPrompt(grant.parent_session_id)),
-      )
-    }
+    if (existing) ctx.deps.sessions.setSystemPromptAppend(existing.sessionId, launchedSessionPromptAppend(ctx.deps, grant))
     if (existing) await deliverInitialTask(ctx, grant, existingSessionId)
     const peer = describeLaunchedPeer(grant)
     return {
@@ -255,14 +249,10 @@ export async function startCollaboration(
       permissionMode: config.permissionMode ?? null,
       sandboxMode: config.sandboxMode ?? null,
       apiProviderId: config.apiProviderId ?? null,
+      // The one profile option this node's runtime takes (see NODE_APPLIABLE_OPTIONS).
+      agent: config.options?.agent ?? null,
       controllerClientSessionId: input.controllerClientSessionId ?? parent.controllerClientSessionId,
-      // Handoff is one-way by construction: the receiver gets no collaboration
-      // prompt, only its profile's instructions.
-      systemPromptAppend: collaborationAgentPromptAppend(
-        ctx.deps,
-        grant.agent_id,
-        isHandoff ? undefined : collaborationSystemPrompt(grant.parent_session_id),
-      ) ?? null,
+      systemPromptAppend: launchedSessionPromptAppend(ctx.deps, grant) ?? null,
     })
     ctx.store.bindStartedSession(grant, child.sessionId, config)
   } catch (err) {

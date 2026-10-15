@@ -46,15 +46,37 @@ describe('permission sheet state', () => {
     expect(permissionSheetPresentation(update)).toMatchObject({
       title: 'Update agent?',
       destructive: false,
-      items: [{ title: 'effort', subtitle: 'high → max' }, { title: 'model', subtitle: '— → opus' }],
+      items: [{ title: 'Effort', label: true, subtitle: 'high → max' }, { title: 'Model', label: true, subtitle: '— → opus' }],
     })
     const remove = request('agent_profile_confirm')
     remove.agentProfileConfirm = { operation: 'delete', profiles: [{ harnessId: 'codex', name: 'Speedy', description: 'Fast fixes.' }] }
     expect(permissionSheetPresentation(remove)).toMatchObject({
       title: 'Delete agents?',
       destructive: true,
-      items: [{ title: 'Speedy', subtitle: 'codex · Fast fixes.' }],
+      items: [{ title: 'Speedy', subtitle: 'Codex · Fast fixes.' }],
     })
+  })
+
+  it('shows everything a new agent profile is approved with: instructions and the harness\'s own options', () => {
+    const create = request('agent_profile_confirm')
+    create.agentProfileConfirm = {
+      operation: 'create',
+      profiles: [{
+        harnessId: 'acp', acpAgentId: 'grok-build', name: 'Reviewer', description: 'Reviews diffs.', instructions: 'Never edit files.\nCite line numbers.',
+        model: 'grok-4', modelName: 'Grok 4', effort: 'max', options: { contextWindow: '1M' }, unsupported: ['mode'],
+      }],
+    }
+    expect(permissionSheetPresentation(create).items).toEqual([
+      { title: 'Reviewer', subtitle: 'Others · Grok · Reviews diffs.' },
+      { title: 'Instructions', label: true, subtitle: 'Never edit files.\nCite line numbers.' },
+      { title: 'Model', label: true, subtitle: 'Grok 4' },
+      { title: 'Effort', label: true, subtitle: 'Max' },
+      { title: 'Context window', label: true, subtitle: '1M' },
+      { title: 'Mode', label: true, subtitle: 'Not supported' },
+    ])
+    create.agentProfileConfirm!.profiles[0] = { harnessId: 'codex', name: 'Speedy', description: 'Fast fixes.', options: { fastMode: 'on' } }
+    expect(permissionSheetPresentation(create).items.slice(1).map((item) => [item.title, item.subtitle]))
+      .toEqual([['Instructions', 'None'], ['Model', 'User default'], ['Effort', 'User default'], ['Fast mode', 'On']])
   })
 
   it('uses device-scoped actions for device control approval', () => {

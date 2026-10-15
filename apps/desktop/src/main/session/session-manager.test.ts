@@ -807,6 +807,13 @@ describe('SessionManager', () => {
       expect(appendOf(mgr2.resumeSession('sid-r'))).toBe('Never edit files.\n\nCollaboration protocol')
     })
 
+    it('moves live sessions off a deleted profile, so their next state save names the base row', () => {
+      seedProfile()
+      const onProfile = mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer' })
+      mgr.rebindProviderSessions('claude-reviewer', 'claude-base')
+      expect(onProfile.snapshot.providerId).toBe('claude-base')
+    })
+
     it('leaves a base row launch untouched', () => {
       expect(appendOf(mgr.createSession({ projectPath: '/p', providerId: 'claude-base', systemPromptAppend: 'Protocol' }))).toBe('Protocol')
       expect(appendOf(mgr.createSession({ projectPath: '/q', providerId: 'claude-base' }))).toBeUndefined()

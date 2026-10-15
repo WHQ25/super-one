@@ -4,12 +4,25 @@
  * harness connection fields. Every provider row is already a launchable agent;
  * the profile adds who it is, what it is told, and how it runs by default.
  *
- * Runtime values are checked against the harness's model catalog — a field the
+ * Runtime values are checked against the harness's model catalog, and options
+ * against what the harness offers (`agent-profile-options.ts`) — a value the
  * catalog cannot carry is rejected by name, never dropped silently.
  */
 
-import { hasOneM, ONE_M_SUFFIX, stripOneM, type ModelOption } from './agent-types'
-import { findCodexFastServiceTier } from './codex-fast-mode'
+import type { HarnessId, SessionAgentLaunchConfig } from './agent-types'
+import {
+  agentProfileOptionChoices,
+  HARNESS_PROFILE_OPTIONS,
+  isModelBoundOption,
+  MODEL_REQUIRED_OPTIONS,
+  optionShapeError,
+  optionValueError,
+  type AgentProfileOptionChoices,
+  type AgentProfileOptionHost,
+  type AgentProfileOptionKey,
+  type AgentProfileOptions,
+  type OptionCatalogModel,
+} from './agent-profile-options'
 
 export const AGENT_PROFILE_VERSION = 1
 
@@ -17,16 +30,12 @@ export const AGENT_PROFILE_NAME_MAX = 60
 export const AGENT_PROFILE_DESCRIPTION_MAX = 500
 export const AGENT_PROFILE_INSTRUCTIONS_MAX = 20_000
 
-/** `1m`: the model's 1M-token context variant (the catalog's `<id>[1m]` row). */
-export type AgentProfileContext = 'default' | '1m'
-
 export interface AgentProfileRuntime {
-  /** Base catalog id; the context variant is chosen by {@link context}. */
+  /** A catalog model id of the harness. */
   model?: string
   effort?: string
-  fastMode?: boolean
-  /** Requires {@link model}. Absent means the default window. */
-  context?: '1m'
+  /** The harness's own settings, keys from `HARNESS_PROFILE_OPTIONS`. */
+  options?: AgentProfileOptions
 }
 
 export interface AgentProfileSpec {
@@ -42,33 +51,27 @@ export interface AgentProfileSpec {
   runtime?: AgentProfileRuntime
 }
 
-/** Launch fields a profile or a global preference can default. */
-export interface AgentLaunchDefaults {
-  model?: string
-  effort?: string
-  fastMode?: boolean
-}
+/** Launch fields a profile, a global preference or the launch itself can set. */
+export type AgentLaunchDefaults = AgentProfileRuntime
 
 /** The model fields a profile is checked against — structural, so desktop and CLI catalogs both fit. */
-interface CatalogModel {
-  id: string
-  supportedEffortLevels?: readonly string[]
+export interface CatalogModel extends OptionCatalogModel {
   supportedReasoningEfforts?: ReadonlyArray<{ value: string }>
   defaultReasoningEffort?: string | null
-  serviceTiers?: ModelOption['serviceTiers']
 }
 
 export interface AgentProfileCatalog {
   models: readonly CatalogModel[]
   /** Efforts a catalog lists outside its models (ACP session modes). */
   efforts?: readonly string[]
+  /** Harness-wide option lists and what this host can apply. */
+  host?: AgentProfileOptionHost
 }
 
-/** What one model can carry — the honest per-field support a profile is checked against. */
+/** What one model can carry: its efforts and the harness options it allows. */
 export interface AgentProfileModelSupport {
   efforts: string[]
-  fastMode: boolean
-  contexts: AgentProfileContext[]
+  options: Partial<Record<AgentProfileOptionKey, AgentProfileOptionChoices | null>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,16 +84,31 @@ function nonEmpty(value: unknown): string | undefined {
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
-function parseRuntime(raw: unknown): Parsed<AgentProfileRuntime | undefined> {
+function parseOptions(raw: unknown, harnessId: HarnessId | undefined): Parsed<AgentProfileOptions | undefined> {
+  if (raw === undefined) return { ok: true, value: undefined }
+  if (!isRecord(raw)) return { ok: false, error: 'profile.runtime.options must be an object.' }
+  const allowed = harnessId ? HARNESS_PROFILE_OPTIONS[harnessId] : undefined
+  const options: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    const shape = optionShapeError(key, value)
+    if (shape) return { ok: false, error: shape }
+    if (allowed && !allowed.includes(key as AgentProfileOptionKey)) {
+      return { ok: false, error: `profile.runtime.options.${key} is not a ${harnessId} setting (${harnessId} has: ${allowed.join(', ') || 'none'}).` }
+    }
+    options[key] = typeof value === 'string' ? value.trim() : value
+  }
+  return { ok: true, value: Object.keys(options).length ? options as AgentProfileOptions : undefined }
+}
+
+function parseRuntime(raw: unknown, harnessId: HarnessId | undefined): Parsed<AgentProfileRuntime | undefined> {
   if (raw === undefined) return { ok: true, value: undefined }
   if (!isRecord(raw)) return { ok: false, error: 'profile.runtime must be an object.' }
-  const unknown = Object.keys(raw).filter((key) => !['model', 'effort', 'fastMode', 'context'].includes(key))
+  const unknown = Object.keys(raw).filter((key) => !['model', 'effort', 'options'].includes(key))
   if (unknown.length) return { ok: false, error: `profile.runtime has unknown field(s): ${unknown.join(', ')}.` }
   const runtime: AgentProfileRuntime = {}
   if (raw.model !== undefined) {
     const model = nonEmpty(raw.model)
     if (!model) return { ok: false, error: 'profile.runtime.model must be a non-empty string.' }
-    if (hasOneM(model)) return { ok: false, error: `profile.runtime.model takes the base id; use context "1m" instead of "${ONE_M_SUFFIX}".` }
     runtime.model = model
   }
   if (raw.effort !== undefined) {
@@ -98,20 +116,21 @@ function parseRuntime(raw: unknown): Parsed<AgentProfileRuntime | undefined> {
     if (!effort) return { ok: false, error: 'profile.runtime.effort must be a non-empty string.' }
     runtime.effort = effort
   }
-  if (raw.fastMode !== undefined) {
-    if (typeof raw.fastMode !== 'boolean') return { ok: false, error: 'profile.runtime.fastMode must be a boolean.' }
-    runtime.fastMode = raw.fastMode
-  }
-  if (raw.context !== undefined) {
-    if (raw.context !== '1m') return { ok: false, error: 'profile.runtime.context must be "1m" when set.' }
-    if (!runtime.model) return { ok: false, error: 'profile.runtime.context requires profile.runtime.model.' }
-    runtime.context = '1m'
+  const options = parseOptions(raw.options, harnessId)
+  if (!options.ok) return options
+  if (options.value) {
+    const needsModel = Object.keys(options.value).find((key) => MODEL_REQUIRED_OPTIONS.has(key as AgentProfileOptionKey))
+    if (needsModel && !runtime.model) return { ok: false, error: `profile.runtime.options.${needsModel} requires profile.runtime.model.` }
+    runtime.options = options.value
   }
   return { ok: true, value: Object.keys(runtime).length ? runtime : undefined }
 }
 
-/** Structural check of a stored or proposed profile. Catalog support is {@link validateAgentProfileRuntime}. */
-export function parseAgentProfileSpec(raw: unknown): Parsed<AgentProfileSpec> {
+/**
+ * Structural check of a stored or proposed profile; with `harnessId`, option
+ * keys must be that harness's. Catalog support is {@link validateAgentProfileRuntime}.
+ */
+export function parseAgentProfileSpec(raw: unknown, harnessId?: HarnessId): Parsed<AgentProfileSpec> {
   if (!isRecord(raw)) return { ok: false, error: 'profile must be an object.' }
   if (raw.version !== AGENT_PROFILE_VERSION) {
     return { ok: false, error: `profile.version must be ${AGENT_PROFILE_VERSION}.` }
@@ -137,7 +156,7 @@ export function parseAgentProfileSpec(raw: unknown): Parsed<AgentProfileSpec> {
       return { ok: false, error: `profile.instructions must be at most ${AGENT_PROFILE_INSTRUCTIONS_MAX} characters.` }
     }
   }
-  const runtime = parseRuntime(raw.runtime)
+  const runtime = parseRuntime(raw.runtime, harnessId)
   if (!runtime.ok) return runtime
   return {
     ok: true,
@@ -157,10 +176,23 @@ export function readAgentProfile(config: unknown): AgentProfileSpec | null {
   return parsed.ok ? parsed.value : null
 }
 
-/** The model id a launch sends: the base id, with the context variant applied. */
-export function agentProfileModelId(runtime: AgentProfileRuntime | undefined): string | undefined {
-  if (!runtime?.model) return undefined
-  return runtime.context === '1m' ? `${runtime.model}${ONE_M_SUFFIX}` : runtime.model
+/**
+ * The runtime defaults a provider row asks its launches for. A profile owns
+ * them whole once it exists; a row written before profiles carries them as
+ * top-level `model` / `effort` (codex `reasoningEffort`) / `fastMode`.
+ */
+export function providerLaunchRuntime(config: unknown): AgentProfileRuntime | undefined {
+  const profile = readAgentProfile(config)
+  if (profile) return profile.runtime
+  if (!isRecord(config)) return undefined
+  const model = nonEmpty(config.model)
+  const effort = nonEmpty(config.effort) ?? nonEmpty(config.reasoningEffort)
+  const runtime: AgentProfileRuntime = {
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    ...(typeof config.fastMode === 'boolean' ? { options: { fastMode: config.fastMode } } : {}),
+  }
+  return Object.keys(runtime).length ? runtime : undefined
 }
 
 /** Profile instructions first, then any host protocol (collaboration), blank-line separated. */
@@ -179,21 +211,15 @@ function modelEfforts(catalog: AgentProfileCatalog, model: CatalogModel | undefi
   return [...(catalog.efforts ?? [])]
 }
 
-/** Per-field support for a base model id, or null when the catalog does not list it. */
+/** What a catalog model can carry on this harness, or null when the catalog does not list it. */
 export function agentProfileModelSupport(
+  harnessId: HarnessId,
   catalog: AgentProfileCatalog,
   modelId: string,
 ): AgentProfileModelSupport | null {
-  const base = stripOneM(modelId)
-  const standard = findModel(catalog, base)
-  const extended = findModel(catalog, `${base}${ONE_M_SUFFIX}`)
-  const model = standard ?? extended
+  const model = findModel(catalog, modelId)
   if (!model) return null
-  return {
-    efforts: modelEfforts(catalog, model),
-    fastMode: !!findCodexFastServiceTier(model),
-    contexts: [...(standard ? ['default' as const] : []), ...(extended ? ['1m' as const] : [])],
-  }
+  return { efforts: modelEfforts(catalog, model), options: agentProfileOptionChoices(harnessId, [model], catalog.host) }
 }
 
 /**
@@ -203,43 +229,45 @@ export function agentProfileModelSupport(
 export function validateAgentProfileRuntime(
   runtime: AgentProfileRuntime | undefined,
   catalog: AgentProfileCatalog,
-  harnessName: string,
+  harness: { id: HarnessId; name: string },
 ): string[] {
   if (!runtime) return []
-  if (catalog.models.length === 0) {
-    return [`${harnessName} has no model catalog yet. Open a ${harnessName} session once, or leave runtime out.`]
+  const optionKeys = Object.keys(runtime.options ?? {}) as AgentProfileOptionKey[]
+  const needsCatalog = !!runtime.model || !!runtime.effort || optionKeys.some(isModelBoundOption)
+  if (needsCatalog && catalog.models.length === 0) {
+    return [`${harness.name} has no model catalog yet. Open a ${harness.name} session once, or leave runtime out.`]
   }
   const errors: string[] = []
-  if (runtime.model) {
-    const support = agentProfileModelSupport(catalog, runtime.model)
-    if (!support) {
-      const ids = [...new Set(catalog.models.map((model) => stripOneM(model.id)))]
-      return [`runtime.model "${runtime.model}" is not in the ${harnessName} catalog. Available: ${ids.slice(0, 30).join(', ')}.`]
-    }
-    const label = `${harnessName} model "${runtime.model}"`
-    if (runtime.effort && !support.efforts.includes(runtime.effort)) {
-      errors.push(support.efforts.length
-        ? `runtime.effort "${runtime.effort}" is not supported by ${label} (supported: ${support.efforts.join(', ')}).`
+  const model = findModel(catalog, runtime.model)
+  if (runtime.model && !model) {
+    const ids = catalog.models.map((option) => option.id)
+    return [`runtime.model "${runtime.model}" is not in the ${harness.name} catalog. Available: ${ids.slice(0, 30).join(', ')}.`]
+  }
+  const label = model ? `${harness.name} model "${model.id}"` : harness.name
+  if (runtime.effort) {
+    const efforts = model
+      ? modelEfforts(catalog, model)
+      : [...new Set(catalog.models.flatMap((option) => modelEfforts(catalog, option)))]
+    if (!efforts.includes(runtime.effort)) {
+      errors.push(efforts.length
+        ? `runtime.effort "${runtime.effort}" is not supported by ${model ? label : `any ${harness.name} model`} (supported: ${efforts.join(', ')}).`
         : `runtime.effort is not supported by ${label}.`)
     }
-    if (runtime.fastMode && !support.fastMode) errors.push(`runtime.fastMode is not supported by ${label}.`)
-    if (runtime.context === '1m' && !support.contexts.includes('1m')) {
-      errors.push(`runtime.context "1m" is not supported by ${label}.`)
-    }
-    if (!runtime.context && !support.contexts.includes('default')) {
-      errors.push(`${label} only has a 1M-context variant; set runtime.context to "1m".`)
-    }
-    return errors
   }
-  if (runtime.effort) {
-    const efforts = new Set(catalog.models.flatMap((model) => modelEfforts(catalog, model)))
-    if (!efforts.has(runtime.effort)) {
-      errors.push(efforts.size
-        ? `runtime.effort "${runtime.effort}" is not supported by any ${harnessName} model (supported: ${[...efforts].join(', ')}).`
-        : `runtime.effort is not supported by ${harnessName}.`)
+  const choices = agentProfileOptionChoices(harness.id, model ? [model] : catalog.models, catalog.host)
+  for (const key of optionKeys) {
+    const choice = choices[key]
+    if (choice === undefined) {
+      errors.push(`options.${key} is not a ${harness.name} setting.`)
+    } else if (choice === null) {
+      errors.push(`options.${key} is not supported by ${label}.`)
+    } else if (choice.kind === 'unlisted') {
+      errors.push(`${harness.name} has not listed its ${key} values yet. Open a ${harness.name} session once, or leave options.${key} out.`)
+    } else {
+      const invalid = optionValueError(key, runtime.options![key], choice)
+      if (invalid) errors.push(invalid)
     }
   }
-  if (runtime.fastMode) errors.push('runtime.fastMode requires runtime.model.')
   return errors
 }
 
@@ -251,32 +279,96 @@ function fallbackEffort(model: CatalogModel | undefined, supported: readonly str
 }
 
 /**
- * The defaults a launch inherits: profile over the host's global preference
- * layer (`base`), each kept only while the effective model supports it.
- * Explicit launch arguments are spread over the result by the caller.
+ * What a launch runs with: its explicit values (`launch`), then the row's
+ * runtime (`profile`, see {@link providerLaunchRuntime}), then the host's
+ * global preference layer (`base`). The model is settled first; inherited
+ * effort and options are kept only while that model (and this host) can carry
+ * them. A launch model the catalog does not list (a provider's own model)
+ * leaves nothing to check the inherited values against.
  */
 export function resolveAgentLaunchDefaults(input: {
+  harnessId: HarnessId
   catalog: AgentProfileCatalog
   base: AgentLaunchDefaults
   profile?: AgentProfileRuntime | null
+  launch?: AgentLaunchDefaults
 }): AgentLaunchDefaults {
-  const { catalog, base, profile } = input
-  const profileModel = agentProfileModelId(profile ?? undefined)
-  const hasFastField = base.fastMode !== undefined || profile?.fastMode !== undefined
-  const result = (model: string | undefined, effort: string | undefined, fastMode: boolean | undefined): AgentLaunchDefaults => ({
-    ...(model ? { model } : {}),
-    ...(effort ? { effort } : {}),
-    ...(fastMode !== undefined ? { fastMode } : {}),
-  })
-  if (catalog.models.length === 0) {
-    // Nothing to check against: the profile was validated when it was written.
-    return result(profileModel ?? base.model, profile?.effort ?? base.effort, hasFastField ? (profile?.fastMode ?? base.fastMode) : undefined)
+  const { harnessId, catalog, base, profile } = input
+  const launch = input.launch ?? {}
+  const appliable = catalog.host?.appliable
+  const uncatalogued = catalog.models.length === 0 || (!!launch.model && !findModel(catalog, launch.model))
+  const model = uncatalogued
+    ? undefined
+    : findModel(catalog, launch.model) ?? findModel(catalog, profile?.model) ?? findModel(catalog, base.model)
+  const choices = agentProfileOptionChoices(harnessId, model ? [model] : [], catalog.host)
+  const options: Record<string, unknown> = {}
+  for (const key of HARNESS_PROFILE_OPTIONS[harnessId]) {
+    if (launch.options?.[key] !== undefined) {
+      options[key] = launch.options[key]
+      continue
+    }
+    const value = profile?.options?.[key] ?? base.options?.[key]
+    if (value === undefined || (appliable && !appliable.includes(key))) continue
+    // Nothing to check a model-bound value against: it was validated when written.
+    const choice = model || !isModelBoundOption(key) ? choices[key] : { kind: 'unlisted' as const }
+    if (choice && !optionValueError(key, value, choice)) options[key] = value
   }
-  // A profile model the catalog no longer lists falls back to the user's default.
-  const model = findModel(catalog, profileModel) ?? findModel(catalog, base.model)
+  const result = (modelId: string | undefined, effort: string | undefined): AgentLaunchDefaults => ({
+    ...(modelId ? { model: modelId } : {}),
+    ...(effort ? { effort } : {}),
+    ...(Object.keys(options).length ? { options: options as AgentProfileOptions } : {}),
+  })
+  if (uncatalogued) {
+    return result(launch.model ?? profile?.model ?? base.model, launch.effort ?? profile?.effort ?? base.effort)
+  }
   const supported = modelEfforts(catalog, model)
-  const effort = [profile?.effort, base.effort].find((value) => value && supported.includes(value))
+  const effort = launch.effort
+    ?? [profile?.effort, base.effort].find((value) => value && supported.includes(value))
     ?? fallbackEffort(model, supported)
-  const fastMode = hasFastField ? !!findCodexFastServiceTier(model) && (profile?.fastMode ?? base.fastMode ?? false) : undefined
-  return result(model?.id ?? base.model, effort, fastMode)
+  return result(model?.id ?? base.model, effort)
+}
+
+/**
+ * Explicit launch effort / options the launch's catalogued model cannot carry,
+ * named by the launch `config` field. Uncatalogued models pass.
+ */
+export function agentLaunchErrors(
+  harness: { id: HarnessId; name: string },
+  catalog: AgentProfileCatalog,
+  model: string | undefined,
+  launch: AgentLaunchDefaults,
+): string[] {
+  const options = launch.options && Object.keys(launch.options).length ? launch.options : undefined
+  if (!model || !findModel(catalog, model) || (!launch.effort && !options)) return []
+  return validateAgentProfileRuntime({
+    model,
+    ...(launch.effort ? { effort: launch.effort } : {}),
+    ...(options ? { options } : {}),
+  }, catalog, harness).map((message) => message
+    .replace(/^runtime\./, 'config.')
+    .replace(/^options\.fastMode/, 'config.fastMode')
+    .replace(/^options\./, 'config.options.'))
+}
+
+type LaunchRuntimeFields = Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode' | 'options'>
+
+/** Resolved defaults as launch config fields: Codex Fast keeps its own `fastMode` field. */
+export function launchConfigFromDefaults(defaults: AgentLaunchDefaults): LaunchRuntimeFields {
+  const { fastMode, ...options } = defaults.options ?? {}
+  return {
+    ...(defaults.model ? { model: defaults.model } : {}),
+    ...(defaults.effort ? { effort: defaults.effort } : {}),
+    ...(fastMode !== undefined ? { fastMode } : {}),
+    ...(Object.keys(options).length ? { options } : {}),
+  }
+}
+
+/** The fields a launch config sets explicitly, as resolver input. */
+export function launchDefaultsFromConfig(config: LaunchRuntimeFields | undefined): AgentLaunchDefaults {
+  const options = { ...config?.options, ...(typeof config?.fastMode === 'boolean' ? { fastMode: config.fastMode } : {}) }
+  return {
+    ...(config?.model ? { model: config.model } : {}),
+    ...(config?.effort ? { effort: config.effort } : {}),
+    ...(Object.keys(options).length ? { options } : {}),
+  }
 }

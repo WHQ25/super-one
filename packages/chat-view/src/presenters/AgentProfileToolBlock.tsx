@@ -10,6 +10,12 @@ import { useTranslation } from 'react-i18next'
 import { Bot } from 'lucide-react'
 import { decode as toonDecode } from '@toon-format/toon'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
+import {
+  AGENT_PROFILE_OPTION_KEYS,
+  optionDisplayValue,
+  type AgentProfileOptionKey,
+  type AgentProfileOptions,
+} from '@superone/shared/agent-profile-options'
 import { ExpandableToolRow } from './ToolRow'
 
 export type AgentProfileToolName = 'agent_profile_list' | 'agent_profile_apply' | 'agent_profile_delete'
@@ -160,10 +166,19 @@ export function AgentProfileToolBlockPresenter({
           <div className="space-y-1">
             <FieldRow label={t(`${k}.fields.harness`)} value={str(profile.harnessId)} />
             {str(profile.description) ? <FieldRow label={t(`${k}.fields.description`)} value={str(profile.description)} /> : null}
-            {str(runtime?.model) ? (
-              <FieldRow label={t(`${k}.fields.model`)} value={`${str(runtime?.model)}${runtime?.context === '1m' ? ' · 1M' : ''}`} />
-            ) : null}
+            {str(runtime?.model) ? <FieldRow label={t(`${k}.fields.model`)} value={str(runtime?.model)} /> : null}
             {str(runtime?.effort) ? <FieldRow label={t(`${k}.fields.effort`)} value={formatEffortLabel(str(runtime?.effort))} /> : null}
+            {Object.entries(asRecord(runtime?.options) ?? {}).map(([key, value]) => {
+              if (!(AGENT_PROFILE_OPTION_KEYS as string[]).includes(key)) return null
+              const text = optionDisplayValue(key as AgentProfileOptionKey, value as AgentProfileOptions[AgentProfileOptionKey])
+              return (
+                <FieldRow
+                  key={key}
+                  label={t(`chat.permission.agentProfile.fields.${key}`)}
+                  value={text === 'on' || text === 'off' ? t(`chat.permission.agentProfile.${text}`) : text}
+                />
+              )
+            })}
             {changed.length ? <FieldRow label={t(`${k}.fields.changed`)} value={changed.join(', ')} /> : null}
           </div>
         ) : null}

@@ -33,8 +33,7 @@ const CREATE: AgentProfileConfirmPayload = {
     model: 'opus',
     modelName: 'Opus 5.5',
     effort: 'xhigh',
-    context: '1m',
-    unsupported: ['fastMode'],
+    options: { ultracode: 'on' },
   }],
 }
 
@@ -45,9 +44,19 @@ const CREATE_DEFAULTS: AgentProfileConfirmPayload = {
     acpAgentId: 'grok-build',
     name: 'Grok Scout',
     description: 'Fast codebase exploration and summaries.',
-    unsupported: ['fastMode', 'context'],
+    unsupported: ['mode'],
   }],
 }
+
+/** One profile per harness: each card shows only that harness's own options. */
+const EVERY_HARNESS: AgentProfileConfirmPayload[] = [
+  CREATE,
+  { operation: 'create', profiles: [{ harnessId: 'codex', name: 'Speedy', description: 'Quick fixes.', model: 'gpt-5.6', effort: 'medium', options: { fastMode: 'on' } }] },
+  { operation: 'create', profiles: [{ harnessId: 'acp', acpAgentId: 'grok-build', name: 'Grok Scout', description: 'Large-context exploration.', model: 'grok-4', modelName: 'Grok 4', effort: 'high', options: { contextWindow: '1M' }, unsupported: ['mode'] }] },
+  { operation: 'create', profiles: [{ harnessId: 'opencode', name: 'Planner', description: 'Plans before building.', model: 'anthropic/claude-sonnet-5-5', options: { agent: 'Plan' } }] },
+  { operation: 'create', profiles: [{ harnessId: 'cursor', name: 'Cursor Fast', description: 'Small edits on the fast tier.', model: 'claude-opus-5-5', options: { modelParams: 'Fast: On, Context: 1M' } }] },
+  { operation: 'create', profiles: [{ harnessId: 'dsh', name: 'DeepSeek Minimal', description: 'Lean tool set.', model: 'deepseek-v4-pro', options: { agentPreset: 'Minimal' } }] },
+]
 
 const UPDATE: AgentProfileConfirmPayload = {
   operation: 'update',
@@ -55,8 +64,7 @@ const UPDATE: AgentProfileConfirmPayload = {
   changes: [
     { field: 'model', from: 'sonnet', to: 'opus' },
     { field: 'effort', from: 'high', to: 'max' },
-    { field: 'context', to: '1m' },
-    { field: 'fastMode', from: 'on' },
+    { field: 'ultracode', from: 'off', to: 'on' },
   ],
 }
 
@@ -101,8 +109,12 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Create: Story = { args: { payload: CREATE } }
-/** Every runtime field left to the user's default; the harness carries neither fast mode nor 1M. */
+/** Every runtime field left to the user's default; this ACP agent lists no session modes. */
 export const CreateWithDefaults: Story = { args: { payload: CREATE_DEFAULTS } }
+export const EveryHarness: Story = {
+  args: { payload: CREATE },
+  render: () => <div className="space-y-3">{EVERY_HARNESS.map((payload, index) => <Review key={index} payload={payload} />)}</div>,
+}
 export const UpdateDiff: Story = { args: { payload: UPDATE } }
 export const UpdateLongContent: Story = { args: { payload: UPDATE_LONG } }
 export const Delete: Story = { args: { payload: DELETE } }

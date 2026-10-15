@@ -18,27 +18,36 @@ import type {
 } from '@superone/shared/agent-types'
 import {
   AGENT_PROFILE_VERSION,
-  agentProfileModelSupport,
   parseAgentProfileSpec,
+  providerLaunchRuntime,
   readAgentProfile,
-  validateAgentProfileRuntime,
   type AgentProfileCatalog,
   type AgentProfileRuntime,
   type AgentProfileSpec,
 } from '@superone/shared/agent-profile'
-import { stripOneM, hasOneM } from '@superone/shared/agent-types'
+import {
+  agentProfileOptionChoices,
+  HARNESS_PROFILE_OPTIONS,
+  isModelBoundOption,
+  optionDisplayValue,
+  type AgentProfileOptionChoices,
+  type AgentProfileOptionKey,
+  type AgentProfileOptions,
+} from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import log from '../logger'
 import { isProviderUsable, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
 import { profileConfirms, type ConfirmOutcome } from './agent-profile-confirm'
 import {
-  createSessionProvider,
-  deleteSessionProvider,
-  getBaseProvider,
-  getSessionProvider,
-  listSessionProviders,
-  updateSessionProvider,
-} from '../session/session-provider-repo'
+  agentProfileCatalog,
+  agentProfileCatalogError,
+  agentProfileNameTaken,
+  createAgentProfile,
+  deleteAgentProfile,
+  harnessDisplayName,
+  updateAgentProfile,
+} from '../session/agent-profile-store'
+import { getBaseProvider, getSessionProvider, listSessionProviders } from '../session/session-provider-repo'
 import type { SessionProvider } from '../session/types'
 import type { BuiltInSuperoneToolDeps, SessionTitleSetter } from './superone-mcp-builtins'
 
@@ -57,12 +66,8 @@ function errorResult(message: string) {
 
 const HARNESS_IDS = Object.keys(HARNESS_CAPABILITIES) as HarnessId[]
 
-function harnessName(harnessId: HarnessId): string {
-  return HARNESS_CAPABILITIES[harnessId]?.displayName ?? harnessId
-}
-
 function builtInDescription(row: SessionProvider): string {
-  return `${harnessName(row.harnessId)} with the user's default configuration.`
+  return `${harnessDisplayName(row.harnessId)} with the user's default configuration.`
 }
 
 function preview(text: string): string {
@@ -74,30 +79,44 @@ function rowAcpAgentId(row: SessionProvider): string | null {
   return row.harnessId === 'acp' ? resolveAcpAgentId(row) : null
 }
 
-function catalogFor(row: SessionProvider): AgentProfileCatalog {
-  return profileResources(row, rowAcpAgentId(row)).catalog
-}
-
 // ─── Views ───
 
+type OptionChoices = Partial<Record<AgentProfileOptionKey, AgentProfileOptionChoices | null>>
+
+function findModel(catalog: AgentProfileCatalog, model: string | undefined) {
+  return model ? catalog.models.find((option) => option.id === model) : undefined
+}
+
 function modelName(catalog: AgentProfileCatalog, model: string | undefined): string | undefined {
-  if (!model) return undefined
-  const found = catalog.models.find((option) => stripOneM(option.id) === model) as { name?: string } | undefined
-  return found?.name && found.name !== model ? found.name : undefined
+  const name = (findModel(catalog, model) as { name?: string } | undefined)?.name
+  return name && name !== model ? name : undefined
+}
+
+/** The harness's options for the profile's model (any model when it names none). */
+function optionChoicesFor(harnessId: HarnessId, catalog: AgentProfileCatalog, model: string | undefined): OptionChoices {
+  const found = findModel(catalog, model)
+  return agentProfileOptionChoices(harnessId, found ? [found] : catalog.models, catalog.host)
 }
 
 /** Fields no model this view could launch on supports — shown as explicit "not supported" rows. */
-function unsupportedFields(catalog: AgentProfileCatalog, model: string | undefined): AgentProfileRuntimeField[] {
-  // An uncached catalog proves nothing; do not claim a field is unsupported.
-  if (catalog.models.length === 0) return []
-  const supports = (model ? [model] : catalog.models.map((option) => option.id))
-    .map((id) => agentProfileModelSupport(catalog, id))
-    .filter((support) => support !== null)
+function unsupportedFields(harnessId: HarnessId, catalog: AgentProfileCatalog, model: string | undefined): AgentProfileRuntimeField[] {
+  // An uncached catalog proves nothing about model-bound fields; do not claim them unsupported.
+  const uncached = catalog.models.length === 0
+  const found = findModel(catalog, model)
   const unsupported: AgentProfileRuntimeField[] = []
-  if (!supports.some((support) => support.efforts.length > 0)) unsupported.push('effort')
-  if (!supports.some((support) => support.fastMode)) unsupported.push('fastMode')
-  if (!supports.some((support) => support.contexts.includes('1m'))) unsupported.push('context')
+  const efforts = (found ? [found] : catalog.models).some((option) =>
+    (option.supportedEffortLevels?.length ?? 0) > 0 || (option.supportedReasoningEfforts?.length ?? 0) > 0)
+  if (!uncached && !efforts && !catalog.efforts?.length) unsupported.push('effort')
+  const choices = optionChoicesFor(harnessId, catalog, model)
+  for (const key of HARNESS_PROFILE_OPTIONS[harnessId]) {
+    if (choices[key] === null && !(uncached && isModelBoundOption(key))) unsupported.push(key)
+  }
   return unsupported
+}
+
+function optionLabels(options: AgentProfileOptions | undefined, choices: OptionChoices): Partial<Record<AgentProfileOptionKey, string>> {
+  return Object.fromEntries(Object.entries(options ?? {}).map(([key, value]) =>
+    [key, optionDisplayValue(key as AgentProfileOptionKey, value, choices[key as AgentProfileOptionKey])]))
 }
 
 function toView(
@@ -106,8 +125,9 @@ function toView(
 ): AgentProfileConfirmView {
   const { spec } = input
   const runtime = spec.runtime ?? {}
-  const unsupported = unsupportedFields(catalog, runtime.model)
+  const unsupported = unsupportedFields(input.harnessId, catalog, runtime.model)
   const name = modelName(catalog, runtime.model)
+  const options = optionLabels(runtime.options, optionChoicesFor(input.harnessId, catalog, runtime.model))
   return {
     ...(input.id ? { id: input.id } : {}),
     harnessId: input.harnessId,
@@ -118,13 +138,12 @@ function toView(
     ...(runtime.model ? { model: runtime.model } : {}),
     ...(name ? { modelName: name } : {}),
     ...(runtime.effort ? { effort: runtime.effort } : {}),
-    ...(runtime.fastMode !== undefined ? { fastMode: runtime.fastMode } : {}),
-    ...(runtime.context ? { context: runtime.context } : {}),
+    ...(Object.keys(options).length ? { options } : {}),
     ...(unsupported.length ? { unsupported } : {}),
   }
 }
 
-function fieldText(spec: AgentProfileSpec, field: AgentProfileConfirmChange['field']): string {
+function fieldText(spec: AgentProfileSpec, field: AgentProfileConfirmChange['field'], choices: OptionChoices): string {
   const runtime = spec.runtime ?? {}
   switch (field) {
     case 'name': return spec.identity.name
@@ -132,19 +151,27 @@ function fieldText(spec: AgentProfileSpec, field: AgentProfileConfirmChange['fie
     case 'instructions': return spec.instructions ?? ''
     case 'model': return runtime.model ?? ''
     case 'effort': return runtime.effort ?? ''
-    case 'fastMode': return runtime.fastMode === undefined ? '' : runtime.fastMode ? 'on' : 'off'
-    case 'context': return runtime.context ?? ''
+    default: {
+      const value = runtime.options?.[field]
+      return value === undefined ? '' : optionDisplayValue(field, value, choices[field])
+    }
   }
 }
 
-const CHANGE_FIELDS: AgentProfileConfirmChange['field'][] = [
-  'name', 'description', 'instructions', 'model', 'effort', 'fastMode', 'context',
-]
-
-function diffSpecs(before: AgentProfileSpec, after: AgentProfileSpec): AgentProfileConfirmChange[] {
-  return CHANGE_FIELDS.flatMap((field) => {
-    const from = fieldText(before, field)
-    const to = fieldText(after, field)
+function diffSpecs(
+  harnessId: HarnessId,
+  catalog: AgentProfileCatalog,
+  before: AgentProfileSpec,
+  after: AgentProfileSpec,
+): AgentProfileConfirmChange[] {
+  const fields: AgentProfileConfirmChange['field'][] = [
+    'name', 'description', 'instructions', 'model', 'effort', ...HARNESS_PROFILE_OPTIONS[harnessId],
+  ]
+  const beforeChoices = optionChoicesFor(harnessId, catalog, before.runtime?.model)
+  const afterChoices = optionChoicesFor(harnessId, catalog, after.runtime?.model)
+  return fields.flatMap((field) => {
+    const from = fieldText(before, field, beforeChoices)
+    const to = fieldText(after, field, afterChoices)
     return from === to ? [] : [{ field, ...(from ? { from } : {}), ...(to ? { to } : {}) }]
   })
 }
@@ -209,7 +236,9 @@ async function confirmOrRefusal(
     if (/timed out|cancelled/i.test(message)) return toolResult({ status: 'cancelled', message })
     return errorResult(message)
   }
-  if (outcome.action === 'accept') return null
+  if (outcome.action === 'accept') {
+    return deps.signal?.aborted ? toolResult({ status: 'cancelled', message: 'The tool call was cancelled.' }) : null
+  }
   return toolResult({
     status: outcome.action === 'cancel' ? 'cancelled' : 'rejected',
     message: 'The user did not approve this change. Do not retry on your own; wait for the user.',
@@ -225,7 +254,7 @@ export interface AgentProfileListArgs {
 
 function listRow(row: SessionProvider) {
   const spec = readAgentProfile(row.config)
-  const runtime = spec?.runtime ?? {}
+  const runtime = providerLaunchRuntime(row.config) ?? {}
   return {
     id: row.id,
     name: row.name,
@@ -235,24 +264,43 @@ function listRow(row: SessionProvider) {
     description: preview(spec?.identity.description ?? (row.isBase ? builtInDescription(row) : '')),
     model: runtime.model ?? '',
     effort: runtime.effort ?? '',
-    fastMode: runtime.fastMode ?? null,
-    context: runtime.context ?? '',
+    options: Object.entries(optionLabels(runtime.options, {})).map(([key, value]) => `${key}: ${value}`).join('; '),
   }
 }
 
-function modelOptions(catalog: AgentProfileCatalog) {
-  const seen = new Set<string>()
-  return catalog.models.flatMap((option) => {
-    const id = stripOneM(option.id)
-    if (seen.has(id)) return []
-    seen.add(id)
-    const support = agentProfileModelSupport(catalog, id)!
-    const name = (option as { name?: string }).name
-    return [{ id, ...(name && name !== id ? { name } : {}), ...support }]
-  })
+/** What an option accepts, as the authoring agent reads it: null = not supported. */
+function choicesView(choices: AgentProfileOptionChoices | null | undefined) {
+  if (!choices) return null
+  switch (choices.kind) {
+    case 'toggle': return 'boolean'
+    case 'unlisted': return 'any (not listed yet)'
+    case 'choice': return choices.values.map((choice) => choice.value)
+    case 'params': return Object.fromEntries(choices.params.map((param) => [param.id, param.values.map((value) => value.value)]))
+  }
 }
 
-export function agentProfileListHandler(args: AgentProfileListArgs) {
+/** Per model: its efforts and the model-bound options; harness-wide lists once at the top. */
+function optionsView(harnessId: HarnessId, catalog: AgentProfileCatalog) {
+  const keys = HARNESS_PROFILE_OPTIONS[harnessId]
+  const harnessWide = agentProfileOptionChoices(harnessId, [], catalog.host)
+  return {
+    keys,
+    harness: Object.fromEntries(keys.filter((key) => !isModelBoundOption(key)).map((key) => [key, choicesView(harnessWide[key])])),
+    models: catalog.models.map((model) => {
+      const name = (model as { name?: string }).name
+      const choices = agentProfileOptionChoices(harnessId, [model], catalog.host)
+      const efforts = model.supportedEffortLevels ?? model.supportedReasoningEfforts?.map((effort) => effort.value) ?? catalog.efforts ?? []
+      return {
+        id: model.id,
+        ...(name && name !== model.id ? { name } : {}),
+        efforts: [...efforts],
+        options: Object.fromEntries(keys.filter(isModelBoundOption).map((key) => [key, choicesView(choices[key])])),
+      }
+    }),
+  }
+}
+
+export async function agentProfileListHandler(args: AgentProfileListArgs) {
   const id = typeof args.id === 'string' ? args.id.trim() : ''
   if (!id) {
     const profiles = listSessionProviders().map(listRow)
@@ -261,7 +309,8 @@ export function agentProfileListHandler(args: AgentProfileListArgs) {
   const row = getSessionProvider(id)
   if (!row) return errorResult(`Agent profile not found: ${id}. Call agent_profile_list without id to discover ids.`)
   const spec = readAgentProfile(row.config)
-  const resources = profileResources(row, rowAcpAgentId(row))
+  const catalog = await agentProfileCatalog(row)
+  const launchDefaults = profileResources(row, { acpAgentId: rowAcpAgentId(row) }).defaultConfig
   const acpAgentId = rowAcpAgentId(row)
   return toolResult({
     status: 'ok',
@@ -274,10 +323,10 @@ export function agentProfileListHandler(args: AgentProfileListArgs) {
       available: isProviderUsable(row),
       description: spec?.identity.description ?? (row.isBase ? builtInDescription(row) : ''),
       instructions: spec?.instructions ?? '',
-      runtime: spec?.runtime ?? {},
+      runtime: providerLaunchRuntime(row.config) ?? {},
     },
-    launchDefaults: resources.defaultConfig,
-    options: { models: modelOptions(resources.catalog) },
+    launchDefaults,
+    available: optionsView(row.harnessId, catalog),
     ...(row.isBase ? { note: 'Built-in agent: read-only. Create a profile on this harness to customize it.' } : {}),
   })
 }
@@ -293,36 +342,41 @@ export interface AgentProfileApplyArgs {
   instructions?: string
   model?: string
   effort?: string
-  fastMode?: boolean
-  context?: 'default' | '1m'
+  /** The harness's own settings; `null` clears one. */
+  options?: Partial<Record<AgentProfileOptionKey, unknown>>
 }
 
 /**
  * Lay the call's runtime fields over `base`. An empty string clears model or
- * effort, `context: "default"` clears the 1M variant, and a `[1m]` model id is
- * read as the base id plus context "1m".
+ * effort, a `null` option clears that option. Options that belong to a model
+ * are dropped when the model changes, unless the call sets them again.
  */
 function mergeRuntime(base: AgentProfileRuntime | undefined, args: AgentProfileApplyArgs): AgentProfileRuntime | undefined {
   const next: AgentProfileRuntime = { ...base }
+  const options: Record<string, unknown> = { ...base?.options }
   if (typeof args.model === 'string') {
     const model = args.model.trim()
-    // The 1M variant belongs to a model; a different model starts on the default window.
-    if (stripOneM(model) !== base?.model) delete next.context
-    if (!model) delete next.model
-    else if (hasOneM(model)) Object.assign(next, { model: stripOneM(model), context: '1m' })
-    else next.model = model
+    if (model !== base?.model) {
+      for (const key of Object.keys(options)) if (isModelBoundOption(key as AgentProfileOptionKey)) delete options[key]
+    }
+    if (model) next.model = model
+    else delete next.model
   }
   if (typeof args.effort === 'string') {
     if (args.effort.trim()) next.effort = args.effort.trim()
     else delete next.effort
   }
-  if (typeof args.fastMode === 'boolean') next.fastMode = args.fastMode
-  if (args.context === '1m') next.context = '1m'
-  else if (args.context === 'default') delete next.context
+  for (const [key, value] of Object.entries(args.options ?? {})) {
+    if (value === null) delete options[key]
+    else if (value !== undefined) options[key] = value
+  }
+  if (Object.keys(options).length) next.options = options as AgentProfileOptions
+  else delete next.options
   return Object.keys(next).length ? next : undefined
 }
 
 function buildSpec(
+  harnessId: HarnessId,
   identity: { name: string; description: string },
   instructions: string | undefined,
   runtime: AgentProfileRuntime | undefined,
@@ -332,18 +386,29 @@ function buildSpec(
     identity,
     ...(instructions !== undefined ? { instructions } : {}),
     ...(runtime ? { runtime } : {}),
-  })
+  }, harnessId)
   return parsed.ok ? { spec: parsed.value } : { error: parsed.error.replace(/^profile\./, '') }
 }
 
-function catalogErrors(spec: AgentProfileSpec, harnessId: HarnessId, catalog: AgentProfileCatalog): string | null {
-  const errors = validateAgentProfileRuntime(spec.runtime, catalog, harnessName(harnessId))
-  return errors.length ? errors.join(' ') : null
+/** A write that failed after the user confirmed; a row changed meanwhile must be reviewed again. */
+function writeFailed(action: 'create' | 'update', err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  log.warn('[agent_profile_apply] %s failed: %s', action, message)
+  if ((err as { code?: unknown })?.code === 'aborted') {
+    return errorResult(`${message} Nothing was saved. Call agent_profile_list for its current state and apply again.`)
+  }
+  return errorResult(message)
 }
 
-function nameTaken(name: string, exceptId?: string): SessionProvider | undefined {
-  const key = name.trim().toLowerCase()
-  return listSessionProviders().find((row) => row.id !== exceptId && row.name.trim().toLowerCase() === key)
+/** A legacy row's runtime, with only the options its harness has. */
+function harnessRuntime(harnessId: HarnessId, runtime: AgentProfileRuntime | undefined): AgentProfileRuntime | undefined {
+  if (!runtime?.options) return runtime
+  const keys = HARNESS_PROFILE_OPTIONS[harnessId]
+  const options = Object.fromEntries(Object.entries(runtime.options).filter(([key]) => keys.includes(key as AgentProfileOptionKey)))
+  const next: AgentProfileRuntime = { ...runtime }
+  if (Object.keys(options).length) next.options = options
+  else delete next.options
+  return Object.keys(next).length ? next : undefined
 }
 
 function profileResultView(row: SessionProvider) {
@@ -366,17 +431,17 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const name = args.name?.trim() ?? ''
   const description = args.description?.trim() ?? ''
   if (!name || !description) return errorResult('create requires name and description (what this agent is for).')
-  const taken = nameTaken(name)
+  const taken = agentProfileNameTaken(name)
   if (taken) return errorResult(`An agent named "${name}" already exists (${taken.id}). Pick another name or update that one.`)
 
-  const built = buildSpec({ name, description }, args.instructions, mergeRuntime(undefined, args))
+  const built = buildSpec(harnessId, { name, description }, args.instructions, mergeRuntime(undefined, args))
   if ('error' in built) return errorResult(built.error)
   // ACP is a container: pin the agent the user runs today, so the profile keeps its catalog.
   const acpAgentId = harnessId === 'acp' ? resolveAcpAgentId(getBaseProvider('acp')) : null
   const config = { ...(acpAgentId ? { agentId: acpAgentId } : {}), profile: built.spec }
   const draft: SessionProvider = { id: '', harnessId, name, isBase: false, config, createdAt: 0, updatedAt: 0 }
-  const catalog = profileResources(draft, acpAgentId).catalog
-  const invalid = catalogErrors(built.spec, harnessId, catalog)
+  const catalog = await agentProfileCatalog(draft)
+  const invalid = agentProfileCatalogError(draft, catalog)
   if (invalid) return errorResult(invalid)
 
   const refusal = await confirmOrRefusal(deps, {
@@ -389,7 +454,7 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   if (refusal) return refusal
 
   try {
-    const created = createSessionProvider({ harnessId, name, config })
+    const created = await createAgentProfile({ harnessId, name, config })
     return toolResult({
       status: 'ok',
       action: 'create',
@@ -397,9 +462,7 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
       next: `Delegate with session_collab_request({ agentId: "${created.id}" }); the user can @-mention it as ${name}.`,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    log.warn('[agent_profile_apply] create failed: %s', message)
-    return errorResult(message)
+    return writeFailed('create', err)
   }
 }
 
@@ -419,20 +482,22 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const description = args.description !== undefined ? args.description.trim() : existing?.identity.description ?? ''
   if (!description) return errorResult('This profile has no description yet; pass description (what this agent is for).')
   if (args.name !== undefined) {
-    const taken = nameTaken(name, row.id)
+    const taken = agentProfileNameTaken(name, row.id)
     if (taken) return errorResult(`An agent named "${name}" already exists (${taken.id}).`)
   }
   const instructions = args.instructions !== undefined ? args.instructions : existing?.instructions
-  const built = buildSpec({ name, description }, instructions, mergeRuntime(existing?.runtime, args))
+  // A row from before profiles keeps the launch defaults it already had; the profile owns them from now on.
+  const runtime = existing ? existing.runtime : harnessRuntime(row.harnessId, providerLaunchRuntime(row.config))
+  const built = buildSpec(row.harnessId, { name, description }, instructions, mergeRuntime(runtime, args))
   if ('error' in built) return errorResult(built.error)
-  const before = existing ?? { version: AGENT_PROFILE_VERSION, identity: { name: row.name, description: '' } }
-  const changes = diffSpecs(before, built.spec)
-  if (changes.length === 0) return errorResult('Nothing to change: every field already has that value.')
-
   const config = { ...(row.config as Record<string, unknown>), profile: built.spec }
   const next: SessionProvider = { ...row, name, config }
-  const catalog = catalogFor(next)
-  const invalid = catalogErrors(built.spec, row.harnessId, catalog)
+  const catalog = await agentProfileCatalog(next)
+  const before = existing
+    ?? { version: AGENT_PROFILE_VERSION, identity: { name: row.name, description: '' }, ...(runtime ? { runtime } : {}) }
+  const changes = diffSpecs(row.harnessId, catalog, before, built.spec)
+  if (changes.length === 0) return errorResult('Nothing to change: every field already has that value.')
+  const invalid = agentProfileCatalogError(next, catalog)
   if (invalid) return errorResult(invalid)
 
   const refusal = await confirmOrRefusal(deps, {
@@ -449,12 +514,10 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   if (refusal) return refusal
 
   try {
-    const updated = updateSessionProvider(id, { name, config })
+    const updated = await updateAgentProfile(row, { name, config })
     return toolResult({ status: 'ok', action: 'update', profile: profileResultView(updated), changed: changes.map((c) => c.field) })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    log.warn('[agent_profile_apply] update failed: %s', message)
-    return errorResult(message)
+    return writeFailed('update', err)
   }
 }
 
@@ -520,7 +583,7 @@ export async function agentProfileDeleteHandler(args: AgentProfileDeleteArgs, de
   const failed: Array<{ id: string; name: string; error: string }> = []
   for (const row of found) {
     try {
-      if (deleteSessionProvider(row.id)) deleted.push({ id: row.id, name: row.name })
+      if (deleteAgentProfile(row, deps.sessionHost)) deleted.push({ id: row.id, name: row.name })
       else failed.push({ id: row.id, name: row.name, error: 'not found at delete time' })
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)

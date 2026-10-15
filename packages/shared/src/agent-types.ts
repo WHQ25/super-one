@@ -10,6 +10,7 @@ import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
+import type { AgentProfileOptionKey, AgentProfileOptions } from './agent-profile-options'
 import type { WidgetLayout } from './generative-ui/types'
 import type { SchemaForm } from './schema-form'
 import type { MediaVideoCapabilities } from './media-composer'
@@ -1127,6 +1128,11 @@ export interface SessionAgentLaunchConfig {
   worktree?: SessionAgentWorktreeConfig
   harnessConfig?: Record<string, unknown>
   /**
+   * The harness's own settings the launch starts with, from its agent profile
+   * (Codex Fast travels as {@link fastMode}). Not agent- or user-editable.
+   */
+  options?: Omit<AgentProfileOptions, 'fastMode'>
+  /**
    * Agent-chosen human display name (not harness brand). Combined with role for
    * titles: `Name - Role`. Not user-editable in the confirm UI.
    */
@@ -1404,8 +1410,8 @@ export interface AutomationConfirmPayload {
   changes?: AutomationConfirmChange[]
 }
 
-/** Runtime fields an agent profile can set; the ones a harness/model cannot carry are listed as unsupported. */
-export type AgentProfileRuntimeField = 'effort' | 'fastMode' | 'context'
+/** Runtime fields an agent profile can set beyond its model; the ones a harness/model cannot carry are listed as unsupported. */
+export type AgentProfileRuntimeField = 'effort' | AgentProfileOptionKey
 
 /** One agent profile as the confirm card shows it: the result on create/update, the subject on delete. */
 export interface AgentProfileConfirmView {
@@ -1416,20 +1422,22 @@ export interface AgentProfileConfirmView {
   name: string
   description: string
   instructions?: string
-  /** Base catalog id; `context` picks its 1M variant. */
   model?: string
   /** Catalog display name for {@link model}. */
   modelName?: string
   effort?: string
-  fastMode?: boolean
-  context?: '1m'
+  /**
+   * The set harness options as display values (`on` / `off` for toggles,
+   * translated by the client). Rows follow `HARNESS_PROFILE_OPTIONS[harnessId]`.
+   */
+  options?: Partial<Record<AgentProfileOptionKey, string>>
   /** Fields this harness (or the chosen model) cannot carry — rendered as explicit "not supported" rows. */
   unsupported?: AgentProfileRuntimeField[]
 }
 
-/** One field an update changes. Empty `from`/`to` means unset (the global default applies). */
+/** One field an update changes, as display values. Empty `from`/`to` means unset (the global default applies). */
 export interface AgentProfileConfirmChange {
-  field: 'name' | 'description' | 'instructions' | 'model' | 'effort' | 'fastMode' | 'context'
+  field: 'name' | 'description' | 'instructions' | 'model' | AgentProfileRuntimeField
   from?: string
   to?: string
 }

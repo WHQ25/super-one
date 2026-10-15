@@ -17,6 +17,7 @@
  */
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
+import { isLocalSessionOnlySuperoneTool } from '@superone/shared/environment/host-action-browser-catalog'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
@@ -96,6 +97,16 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
               message:
                 `${claimed.toolName} is node-local (SessionRuntime collab). `
                 + 'It is not advertised as a Host Action; upgrade the remote node.',
+            },
+          }
+        }
+
+        if (isLocalSessionOnlySuperoneTool(claimed.toolName)) {
+          return {
+            outcome: 'failed',
+            error: {
+              code: 'failed_precondition',
+              message: `${claimed.toolName} works only in a session on this desktop; it is not advertised as a Host Action.`,
             },
           }
         }

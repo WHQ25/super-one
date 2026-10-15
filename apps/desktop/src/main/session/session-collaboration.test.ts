@@ -461,20 +461,19 @@ describe('agent profile defaults', () => {
       claude: {
         models: [
           { id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] },
-          { id: 'opus', name: 'Opus', supportedEffortLevels: ['low', 'high', 'max'] },
-          { id: 'opus[1m]', name: 'Opus 1M', supportedEffortLevels: ['low', 'high', 'max'] },
+          { id: 'opus', name: 'Opus', supportedEffortLevels: ['low', 'high', 'xhigh', 'max'] },
         ],
       },
     }
   })
 
   it('puts the profile runtime over the global preference and shows its description', () => {
-    state.providers = [state.providers[0]!, reviewer({ model: 'opus', effort: 'max', context: '1m' })]
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus', effort: 'max', options: { ultracode: true } })]
     const profile = listSessionAgentProfiles().find((item) => item.id === 'claude-reviewer')
     expect(profile).toMatchObject({
       name: 'Reviewer',
       description: 'Reviews diffs without editing.',
-      defaultConfig: { model: 'opus[1m]', effort: 'max', permissionMode: 'default' },
+      defaultConfig: { model: 'opus', effort: 'max', options: { ultracode: true }, permissionMode: 'default' },
     })
     // The base row keeps the user's global defaults.
     expect(listSessionAgentProfiles().find((item) => item.id === 'claude-base')?.defaultConfig)
@@ -485,6 +484,34 @@ describe('agent profile defaults', () => {
     state.providers = [state.providers[0]!, reviewer({ model: 'opus' })]
     expect(listSessionAgentProfiles().find((item) => item.id === 'claude-reviewer')?.defaultConfig)
       .toMatchObject({ model: 'opus', effort: 'high' })
+  })
+
+  it('starts a profile launch with its harness options in place before the first turn', async () => {
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus', effort: 'max', options: { ultracode: true } })]
+    const parent = fakeSession('parent')
+    const { host, sessions, createSession } = fakeHost(parent)
+    const setSelectedSettings = vi.fn()
+    createSession.mockImplementation((options: SessionCreateOptions) => {
+      const child = { ...fakeSession(options.id!), lease: { assertMutation: vi.fn() }, setSelectedSettings } as unknown as Session
+      sessions.set(child.id, child)
+      return child
+    })
+    const request = requestSessionAgents(parent.id, {
+      launches: [{ launchId: 'launch-0', agentId: 'claude-reviewer', summary: 'Review', name: 'Rex', role: 'Reviewer', config: { cwd: TEST_CWD } }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
+    })
+    const [launch] = resultJson(await request).launches as ApprovedTestLaunch[]
+    await startLaunch(launch!, host)
+
+    const child = [...sessions.values()].find((session) => session.id !== parent.id)!
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'opus', effort: 'max' }))
+    expect(setSelectedSettings).toHaveBeenCalledWith(expect.objectContaining({ ultracode: true }))
+    const send = child.send as ReturnType<typeof vi.fn>
+    expect(setSelectedSettings.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]!)
   })
 })
 

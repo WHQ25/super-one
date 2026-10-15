@@ -95,8 +95,8 @@ export const permissionExamples = {
     toolName: 'mcp__superone__agent_profile_apply', input: {},
     agentProfileConfirm: {
       operation: 'update',
-      profiles: [{ id: 'claude-reviewer', harnessId: 'claude', name: 'Reviewer', description: 'Reviews diffs without editing files.', model: 'opus', effort: 'max' }],
-      changes: [{ field: 'effort', from: 'high', to: 'max' }, { field: 'context', to: '1m' }],
+      profiles: [{ id: 'claude-reviewer', harnessId: 'claude', name: 'Reviewer', description: 'Reviews diffs without editing files.', model: 'opus', effort: 'max', options: { ultracode: 'on' } }],
+      changes: [{ field: 'effort', from: 'high', to: 'max' }, { field: 'ultracode', to: 'on' }],
     },
   },
   webmcp_trust_confirm: {

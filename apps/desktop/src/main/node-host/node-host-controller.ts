@@ -18,7 +18,7 @@ import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteControlle
 import { disableDesktopHarness, enableDesktopHarness, getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { ensureShellPath } from '../shell-path'
 import { readAppSettings } from '../app-settings-service'
-import { sessionProviderStore } from '../session/session-provider-repo'
+import { clientSessionProviderStore } from '../session/session-provider-repo'
 import { desktopAgentSettings } from './desktop-agent-settings'
 import { createDesktopAutomationsPort } from './desktop-automations-port'
 import { desktopHarnessResolver } from '../harness/host'
@@ -186,7 +186,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
     },
     agentSettings: () => desktopAgentSettings(readAppSettings()),
     phoneLabel: (deviceId) => findPairedPhone({ id: deviceId })?.deviceName ?? null,
-    config: { sessionProviders: sessionProviderStore(), automations: createDesktopAutomationsPort() },
+    config: { sessionProviders: clientSessionProviderStore(), automations: createDesktopAutomationsPort() },
   })
   getEnvironmentHost().registry.getLocal().bindProtocol(new InProcessRpcClient(domain))
   return domain

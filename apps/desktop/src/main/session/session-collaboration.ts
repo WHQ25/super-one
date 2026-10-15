@@ -25,7 +25,7 @@ import {
   type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { getDb } from '../database'
-import { listSessionAgentProfiles } from './agent-profiles'
+import { listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
 import { collaborationStore as store } from './collaboration-mailbox'
 import { defaultLaunchCwd } from './collaboration-child-project'
 import {
@@ -212,7 +212,7 @@ function normalizeLaunches(
       config: {
         permissionMode: 'default',
         sandboxMode: 'off',
-        ...profile.defaultConfig,
+        ...sessionAgentLaunchDefaults(profile, launch.config),
         cwd: defaultLaunchCwd(parent),
         ...launch.config,
         name,

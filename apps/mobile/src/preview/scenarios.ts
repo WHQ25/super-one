@@ -65,6 +65,14 @@ export const nativeScenarios: NativeScenario[] = [
     requestId: 'preview-delete-automation', toolName: 'mcp__superone__automation_delete', input: {}, allowAlwaysAllow: false, requestKind: 'automation_confirm',
     automationConfirm: { operation: 'delete', items: [{ name: 'Daily review', scheduleSummary: 'Every weekday at 09:00' }] },
   } },
+  { id: 'permission/create-agent-profile', category: 'Permissions', title: 'Create agent profile', description: 'Whole Grok profile with its own options, long instructions, unset and unsupported fields.', request: {
+    requestId: 'preview-create-agent-profile', toolName: 'mcp__superone__agent_profile_apply', input: {}, allowAlwaysAllow: false, requestKind: 'agent_profile_confirm',
+    agentProfileConfirm: { operation: 'create', profiles: [{
+      harnessId: 'acp', acpAgentId: 'grok-build', name: 'Reviewer', description: 'Reviews diffs without editing files.', model: 'grok-4', modelName: 'Grok 4', effort: 'high',
+      options: { contextWindow: '1M' }, unsupported: ['mode'],
+      instructions: Array.from({ length: 8 }, (_, index) => `${index + 1}. Read the whole diff before commenting; cite file and line. 先通读改动，再逐条给出带行号的意见。`).join('\n'),
+    }] },
+  } },
   { id: 'plan/default', category: 'Plans', title: 'Plan approval', description: 'Approve, reject with feedback, or continue with accepted edits.', request: plan, continueMode: 'acceptEdits' },
   { id: 'plan/long', category: 'Plans', title: 'Long plan / auto continuation', description: 'Scroll a long plan and inspect the action footer.', continueMode: 'auto', request: {
     ...plan, requestId: 'preview-plan-long', planContent: `${plan.planContent}\n\n${Array.from({ length: 24 }, (_, index) => `## Check ${index + 1}\n\nVerify typography, spacing, and the visible action labels. 检查长内容滚动和按钮位置。`).join('\n\n')}`,

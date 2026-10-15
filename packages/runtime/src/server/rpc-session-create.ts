@@ -91,6 +91,11 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
   if (p.externalParent != null && !externalParentSessionId) {
     return { error: { code: 'invalid_argument', message: 'externalParent.sessionId is required' } }
   }
+  // Continue that session: the new one takes over its collaboration channels.
+  if (p.continuesFrom != null && typeof p.continuesFrom !== 'string') {
+    return { error: { code: 'invalid_argument', message: 'continuesFrom must be a string' } }
+  }
+  const continuesFrom = typeof p.continuesFrom === 'string' && p.continuesFrom.trim() ? p.continuesFrom.trim() : null
   try {
     // Resolve agent defaults at create so the client can seed UI without a second round-trip.
     // Precedence: explicit create options → session_providers.config → node agent defaults.
@@ -162,9 +167,21 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
       ctx.drafts.assertControl(selections.draftId, ctx.client.clientSessionId, selections.draftLeaseId!)
     }
     assertCreate()
+    const continuation = continuesFrom && !ctx.sessions.createOnHost ? ctx.collaboration : undefined
+    if (continuesFrom && !ctx.sessions.createOnHost) {
+      if (!continuation?.assertContinuable || !continuation.continueSession) {
+        throw Object.assign(new Error('This host cannot continue a session in a new one'), { code: 'unsupported' })
+      }
+      continuation.assertContinuable(continuesFrom)
+    }
     let session = ctx.sessions.createOnHost
-      ? await ctx.sessions.createOnHost({ ...createInput, ...selections }, { settings: initialSettings, assertCreate })
+      ? await ctx.sessions.createOnHost(
+        { ...createInput, ...selections, ...(continuesFrom ? { continuesFrom } : {}) },
+        { settings: initialSettings, assertCreate },
+      )
       : ctx.sessions.create(createInput)
+    // Same synchronous stretch as create: nothing can wake the old session in between.
+    if (continuesFrom && continuation) continuation.continueSession!(continuesFrom, session.sessionId)
     // Seed durable settings from create-time options / profile / agent defaults so later
     // session.send without options reuses the same model/effort/etc.
     if (!ctx.sessions.createOnHost && (model || effort || permissionMode || sandboxMode || Object.keys(extras).length)) {

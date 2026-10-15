@@ -4,6 +4,7 @@
  */
 
 export { CollaborationError, type CollaborationErrorCode } from './errors'
+export * from './continuation'
 export * from './launch'
 export * from './mailbox'
 export * from './schema'

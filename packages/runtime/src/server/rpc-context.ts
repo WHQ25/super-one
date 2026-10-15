@@ -207,6 +207,10 @@ export interface CollaborationPort {
   }): Promise<unknown>
   send(input: { sessionId: string; to?: string; content: string; clientMessageId?: string }): unknown
   retrieve(input: { sessionId: string; from?: string[]; max?: number }): unknown
+  /** Throws when the session cannot be continued in a new one now (session.create `continuesFrom`). */
+  assertContinuable?(from: string): void
+  /** Hand `from`'s collaboration channels to `to`, created to continue it. */
+  continueSession?(from: string, to: string): void
 }
 
 /** Durable + in-process idempotency (CLI: IdempotencyService). */
@@ -276,7 +280,11 @@ export interface SessionHostPort {
   callOperation?(sessionId: string, method: string, input: Record<string, unknown>, assertControl?: () => void): unknown | Promise<unknown>
   create(input: SessionRuntimeInput<'create'>): NodeSessionRecord
   /** Desktop-native creation, including worktree and promoted-draft choices. */
-  createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>
+  /**
+   * `continuesFrom`: the new session continues that one and takes over its
+   * collaboration channels (docs/features/session-continuation.md).
+   */
+  createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections & { continuesFrom?: string }, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>
   get(sessionId: string): NodeSessionRecord | null
   /** Newest first; `limit`/`offset` paginate after sorting. No projectId spans every project. */
   list(projectId?: string, options?: { limit?: number; offset?: number }): NodeSessionRecord[]

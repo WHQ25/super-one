@@ -9,7 +9,14 @@
 import type { AgentEvent, SessionAgentProfile } from '@superone/shared/agent-types'
 import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
 import { isNodeRestartInterruption } from '@superone/shared/session-interruption'
-import { CollaborationStore, CollaborationWakeQueue, parseGrantConfig } from '@superone/runtime/collaboration'
+import {
+  assertContinuable,
+  CollaborationStore,
+  CollaborationWakeQueue,
+  continueCollaboration,
+  parseGrantConfig,
+  type ContinuedSessionState,
+} from '@superone/runtime/collaboration'
 import type { CollaborationContext, CollaborationDeps } from './collaboration-context'
 import {
   retrieveCollaborationMessages,
@@ -97,6 +104,32 @@ export class CollaborationService {
 
   retrieve(input: CollaborationRetrieveInput) {
     return retrieveCollaborationMessages(this.ctx, input)
+  }
+
+  /** The session `sessionId` was continued in; null when it was not. */
+  successorOf(sessionId: string): string | null { return this.ctx.store.successorOf(sessionId) }
+
+  /** Throws when `from` cannot be continued in a new session now. */
+  assertContinuable(from: string): void {
+    assertContinuable(this.ctx.store, this.ctx.wakes, from, this.continuedState(from))
+  }
+
+  /**
+   * `to` was just created to continue `from`: it takes over `from`'s channels
+   * and wakes, and the child prompt moves with a spawn grant.
+   */
+  continueSession(from: string, to: string): void {
+    continueCollaboration(this.ctx.store, this.ctx.wakes, from, to, this.continuedState(from))
+    const grant = this.ctx.store.spawnGrantForChild(to)
+    if (grant) {
+      this.deps.sessions.setSystemPromptAppend(to, launchedSessionPromptAppend(this.deps, grant))
+      this.deps.sessions.setSystemPromptAppend(from, null)
+    }
+  }
+
+  private continuedState(sessionId: string): ContinuedSessionState | null {
+    const session = this.deps.sessions.get(sessionId)
+    return session ? { busy: session.status === 'streaming' || session.pendingInteraction != null } : null
   }
 
   /** Reconstruct the system-prompt append of launched sessions after restart (never link). */

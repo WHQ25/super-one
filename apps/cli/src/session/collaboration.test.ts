@@ -653,3 +653,43 @@ describe('collaboration grants + mailbox', () => {
     await expect(start()).rejects.toThrow(/no longer exists/i)
   })
 })
+
+describe('continuing a session in a new one', () => {
+  async function spawnChild() {
+    const booted = bootCollab()
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-proj-'))
+    dirs.push(projectDir)
+    const project = booted.projects.open(projectDir)
+    const parent = booted.sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'parent' })
+    const req = await booted.collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ agentId: 'claude', name: 'Worker', role: 'Implementer', summary: 'Do it.', config: { cwd: projectDir } }],
+    })
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const child = await booted.collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Do it' })
+    const create = () => booted.sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'next' })
+    return { ...booted, parent, childId: child.sessionId, create }
+  }
+
+  it('moves a child\'s channel and prompt to its successor', async () => {
+    const { collab, sessions, parent, childId, create } = await spawnChild()
+    await vi.waitFor(() => expect(sessions.get(childId)?.status).not.toBe('streaming'))
+    const successor = create()
+
+    collab.assertContinuable(childId)
+    collab.continueSession(childId, successor.sessionId)
+
+    expect(sessions.getSystemPromptAppend(successor.sessionId)).toContain(parent.sessionId)
+    expect(sessions.getSystemPromptAppend(childId)).toBeUndefined()
+    // The parent still names the old child; the message reaches the successor.
+    collab.send({ sessionId: parent.sessionId, to: childId, content: 'more work' })
+    const read = collab.retrieve({ sessionId: successor.sessionId })
+    expect(read.messages.map((message) => message.content)).toEqual(['more work'])
+    expect(() => collab.assertContinuable(childId)).toThrow(/already continued/)
+  })
+
+  it('refuses a session that no longer exists', async () => {
+    const { collab } = await spawnChild()
+    expect(() => collab.assertContinuable('missing')).toThrow(/no longer exists/)
+  })
+})

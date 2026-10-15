@@ -54,6 +54,8 @@ export interface SessionCreateRequest {
   settings?: SessionSettingsPatch
   /** Native creation choices (a draft's session id, worktree, ACP agent) the host resolves before persisting. */
   selections?: SessionCreateSelections
+  /** The session this one continues; it takes over that session's collaboration channels. */
+  continuesFrom?: string
 }
 
 export type SessionSettingsPatch = Omit<PatchSessionSettingsInput, 'session' | 'leaseId' | 'generation'>

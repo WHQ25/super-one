@@ -46,6 +46,7 @@ import { ModCommandOutputSite, PromptEditRelay, clientKeyEvent, promptHintProps,
 import { MOD_PROMPT_HINT_INSTANCE } from '@superone/shared/mod-ui'
 import { PromptSuggestionChips } from './PromptSuggestionChips'
 import { PluginStatusLines } from './PluginNotice'
+import { SessionContinuationBanner } from './SessionContinuationBanner'
 import { ModAbovePrompt } from './mod/ModSurfaces'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
@@ -2021,6 +2022,7 @@ export function ChatInput({
           <PromptSuggestionChips suggestions={alternateSuggestions} onSelect={applySuggestion} />
         )}
         <ModAbovePrompt isWorking={status === 'streaming'} sessionId={displayedSessionId ?? null} isComposerEmpty={isComposerEmpty} />
+        <SessionContinuationBanner />
         <PluginStatusLines statuses={pluginStatus} />
         <div
           className={cn(

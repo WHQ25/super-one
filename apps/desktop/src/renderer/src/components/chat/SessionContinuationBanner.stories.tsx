@@ -1,0 +1,104 @@
+import type { Meta, StoryObj } from '@storybook/react'
+import { useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import type { ChatMessage } from '@superone/shared/agent-types'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
+import { plainTextToTiptapDoc } from './chat-input/plainTextToTiptapDoc'
+import { SessionContinuationBanner, SessionContinuationNotice } from './SessionContinuationBanner'
+
+const projectPath = '/storybook/long-session'
+const sessionId = 'long-session'
+const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
+
+const finishedTurn: ChatMessage = {
+  id: 'a1', role: 'assistant', status: 'complete', providerId: 'claude', createdAt: twoHoursAgo,
+  content: [{ type: 'text', text: 'Refactor done.' }],
+  metadata: {
+    completedAt: twoHoursAgo,
+    usage: { inputTokens: 12, outputTokens: 400, cacheReadInputTokens: 410_000, cacheCreationInputTokens: 2_000, cacheTtl: '1h' },
+  },
+}
+
+/** A long Claude session whose 1h cache expired an hour ago, with an unsent draft. */
+function LongSession({ continuedIn = null }: { continuedIn?: string | null }) {
+  const [ready, setReady] = useState(false)
+  const active = useChatStore(useShallow((state) => {
+    const project = state.projectSessions[projectPath]
+    const session = project?._activeSessionId ? project._sessions[project._activeSessionId] : undefined
+    return { id: project?._activeSessionId, draft: session?.draftText ?? '', continuesFrom: session?.continuesFrom ?? null }
+  }))
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    const previousHint = useAppStore.getState().sessionContinuationHint
+    const session = createDefaultPerSessionState()
+    Object.assign(session, {
+      sessionProvider: 'claude', preferredProvider: 'claude', status: 'idle', messages: [finishedTurn],
+      contextTokens: 412_012, draftText: 'also update the docs', draftJson: plainTextToTiptapDoc('also update the docs'),
+      _continuedIn: continuedIn,
+    })
+    useChatStore.setState({ activeProject: projectPath, projectSessions: {
+      [projectPath]: { ...createDefaultProjectState(), _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
+    } })
+    useAppStore.setState({ sessionContinuationHint: { enabled: true, minContextTokens: 300_000 } })
+    setReady(true)
+    return () => {
+      useChatStore.setState(previous)
+      useAppStore.setState({ sessionContinuationHint: previousHint })
+    }
+  }, [continuedIn])
+  if (!ready) return null
+  return (
+    <div style={{ width: 620, maxWidth: '100%' }}>
+      <SessionContinuationBanner />
+      <dl className="mx-3 mt-3 grid grid-cols-[auto_1fr] gap-x-3 text-xs text-muted-foreground" data-testid="active-session">
+        <dt>Active session</dt><dd>{active.id === sessionId ? 'original' : 'new'}</dd>
+        <dt>Composer</dt><dd>{active.draft || '—'}</dd>
+        <dt>Continues</dt><dd>{active.continuesFrom ?? '—'}</dd>
+      </dl>
+    </div>
+  )
+}
+
+const meta = {
+  title: 'Chat/SessionContinuationBanner',
+  component: SessionContinuationNotice,
+  args: { kind: 'hint', onContinue: () => {}, onContinueHere: () => {}, onDontShowAgain: () => {} },
+  parameters: { layout: 'padded' },
+  decorators: [(Story) => <div style={{ width: 620, maxWidth: '100%' }}><Story /></div>],
+} satisfies Meta<typeof SessionContinuationNotice>
+export default meta
+type Story = StoryObj<typeof meta>
+
+export const Hint: Story = {}
+export const Continued: Story = { args: { kind: 'continued', onOpen: () => {} } }
+export const Narrow: Story = { decorators: [(Story) => <div style={{ width: 300 }}><Story /></div>] }
+export const Dark: Story = { globals: { theme: 'dark' } }
+export const Chinese: Story = { globals: { locale: 'zh' } }
+export const ChineseNarrow: Story = { globals: { locale: 'zh' }, decorators: [(Story) => <div style={{ width: 300 }}><Story /></div>] }
+
+/** The real banner on an expired long session: Continue opens a new session holding the mention and the moved draft. */
+export const ContinueInNewSession: Story = {
+  render: () => <LongSession />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Continue in New Session' }))
+    await waitFor(() => expect(canvas.getByTestId('active-session')).toHaveTextContent('new'))
+    await expect(canvas.getByTestId('active-session')).toHaveTextContent(/Composer@\S.* also update the docs/)
+    await expect(canvas.getByTestId('active-session')).toHaveTextContent(`Continues${sessionId}`)
+  },
+}
+
+/** Continue Here hides the banner until the cache expires again. */
+export const ContinueHere: Story = {
+  render: () => <LongSession />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Continue Here' }))
+    await waitFor(() => expect(canvas.queryByTestId('session-continuation-notice')).toBeNull())
+  },
+}
+
+/** The old session after its continuation was created. */
+export const AlreadyContinued: Story = { render: () => <LongSession continuedIn="next-session" /> }

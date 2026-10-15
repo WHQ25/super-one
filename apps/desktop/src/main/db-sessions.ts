@@ -327,6 +327,8 @@ export interface StoredSessionState {
   provider: string
   providerSessionId: string | null
   parentSessionId: string | null
+  /** The session this one was continued in (docs/features/session-continuation.md). */
+  continuedIn: string | null
   apiProviderId: string | null
   acpAgentId: string | null
   selectedModel: string | null
@@ -357,9 +359,10 @@ export function loadStoredSessionState(sessionId: string): StoredSessionState | 
       provider, provider_id, provider_session_id, api_provider_id, acp_agent_id,
       selected_model, selected_effort, codex_service_tier, remote_controller_json,
       (SELECT parent_session_id FROM session_collaboration_grants
-        WHERE child_session_id = sessions.id AND COALESCE(kind, 'spawn') = 'spawn') AS parent_session_id
+        WHERE child_session_id = sessions.id AND COALESCE(kind, 'spawn') = 'spawn') AS parent_session_id,
+      (SELECT to_session_id FROM session_continuations WHERE from_session_id = sessions.id) AS continued_in
     FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; provider_session_id: string | null; parent_session_id: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null; codex_service_tier: string | null; remote_controller_json: string | null }) | undefined
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; provider_session_id: string | null; parent_session_id: string | null; continued_in: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null; codex_service_tier: string | null; remote_controller_json: string | null }) | undefined
 
   if (!session) return null
 
@@ -373,6 +376,7 @@ export function loadStoredSessionState(sessionId: string): StoredSessionState | 
     provider,
     providerSessionId: session.provider_session_id ?? null,
     parentSessionId: session.parent_session_id ?? null,
+    continuedIn: session.continued_in ?? null,
     apiProviderId: session.api_provider_id ?? null,
     acpAgentId: session.acp_agent_id ?? null,
     selectedModel: storedSelectedModel(provider, session.selected_model),

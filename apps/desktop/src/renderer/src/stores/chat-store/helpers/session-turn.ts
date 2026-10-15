@@ -118,6 +118,21 @@ function draftSettings(state: ChatStore, projectPath: string, session: PerSessio
   }
 }
 
+/** The host continued `from` in `to`; a reload reads the same from the host. */
+function markContinued(set: ChatStoreSet, projectPath: string, from: string, to: string): void {
+  set((s) => {
+    const project = getProject(s, projectPath)
+    const old = project._sessions[from]
+    if (!old) return {}
+    return {
+      projectSessions: {
+        ...s.projectSessions,
+        [projectPath]: { ...project, _sessions: { ...project._sessions, [from]: { ...old, _continuedIn: to } } },
+      },
+    }
+  })
+}
+
 /** Move the composer's draft entry to the id its host gave the session. */
 function adoptSessionId(set: ChatStoreSet, projectPath: string, from: string | null, to: string): void {
   set((s) => {
@@ -191,6 +206,7 @@ export async function ensureHostSession(
       })
       sid = created.sessionId
       if (record && candidate && !desktop) void removeSession(projectPath, candidate).catch(() => {})
+      if (session.continuesFrom) markContinued(set, projectPath, session.continuesFrom, sid)
     }
   }
   if (!sid) throw new Error('No session to send to')

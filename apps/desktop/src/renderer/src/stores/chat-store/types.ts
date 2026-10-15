@@ -114,6 +114,8 @@ export interface PerSessionState extends ChatCoreSession {
   _providerSessionId: string | null
   /** Authoritative spawn relationship restored from the host, including null for roots. */
   _parentSessionId?: string | null
+  /** The session this one was continued in; it no longer collaborates (docs/features/session-continuation.md). */
+  _continuedIn?: string | null
   /**
    * The dsh agent preset this session composes from — a draft until the session
    * has an agent, after which dsh's own log is authoritative and the picker
@@ -374,6 +376,8 @@ export type PersistedSessionState = {
   provider: ChatProvider
   providerSessionId?: string | null
   parentSessionId?: string | null
+  /** The session this one was continued in. */
+  continuedIn?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
   selectedModel?: string | null

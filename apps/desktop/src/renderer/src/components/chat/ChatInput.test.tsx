@@ -362,6 +362,10 @@ vi.mock('./ContextUsage', () => ({
   ContextUsage: () => null,
 }))
 
+vi.mock('./SessionContinuationBanner', () => ({
+  SessionContinuationBanner: () => null,
+}))
+
 vi.mock('./MentionPopup', () => ({
   MentionPopup: (props: { query: string; onResultState?: (q: string, isEmpty: boolean) => void }) => {
     mentionPopup.props = props

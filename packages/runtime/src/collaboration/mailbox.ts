@@ -144,7 +144,8 @@ export function resolveSendChannel(
 ): MailboxChannel {
   const channels = listMailboxChannels(store, callerSessionId, sessionTitle)
   const peers = peersOf(channels)
-  const target = to?.trim()
+  // A peer may have been continued in a new session since the caller learned its id.
+  const target = to?.trim() ? store.currentSessionFor(to.trim()) : undefined
   if (!target) {
     if (peers.length === 0) throw new CollaborationError(NO_PEERS_HINT, 'failed_precondition')
     const parent = channels.find((channel) => channel.peer.relation === 'parent')
@@ -199,7 +200,7 @@ export function readCallerMailbox(
 ): { messages: MailboxMessage[]; peers: CollaborationPeer[]; acks: MailboxAck[] } {
   const channels = listMailboxChannels(store, callerSessionId, sessionTitle)
   const peers = peersOf(channels)
-  const from = options.from?.map((id) => id.trim()).filter(Boolean) ?? []
+  const from = options.from?.map((id) => id.trim()).filter(Boolean).map((id) => store.currentSessionFor(id)) ?? []
   if (from.length > 0) {
     const known = new Set(peers.map((peer) => peer.sessionId))
     const unknown = from.filter((id) => !known.has(id))

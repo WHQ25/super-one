@@ -49,6 +49,22 @@ export interface MailboxAck {
   lastSequence: number
 }
 
+/**
+ * Which session continues which (docs/features/session-continuation.md). No
+ * foreign keys: a successor outlives the deletion of either session, and the
+ * chain only ever resolves ids, never loads them.
+ */
+export const SESSION_CONTINUATION_TABLE_DDL = `
+CREATE TABLE IF NOT EXISTS session_continuations (
+  from_session_id TEXT PRIMARY KEY NOT NULL,
+  to_session_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+`
+
+/** Bounds a corrupt (cyclic) chain; real chains are a handful of hops. */
+const MAX_CONTINUATION_HOPS = 64
+
 const GRANT_COLUMNS = `credential_hash AS grant_id, parent_session_id, child_session_id,
   agent_id, task, config_json, task_sent, COALESCE(kind, 'spawn') AS kind, started_at`
 
@@ -230,6 +246,68 @@ export class CollaborationStore {
           WHERE credential_hash = ? AND child_session_id IS NULL
         `).run(sessionId, nowIso(), grant.grant_id).changes
     if (changes !== 1) throw new CollaborationError('This launch was already started', 'failed_precondition')
+  }
+
+  // --- continuation --------------------------------------------------------
+
+  /** The session `sessionId` was continued in; null when it was not. */
+  successorOf(sessionId: string): string | null {
+    const row = this.db.prepare('SELECT to_session_id FROM session_continuations WHERE from_session_id = ?')
+      .get(sessionId) as { to_session_id: string } | undefined
+    return row?.to_session_id ?? null
+  }
+
+  /** The session `sessionId` continues; null when it continues none. */
+  predecessorOf(sessionId: string): string | null {
+    const row = this.db.prepare('SELECT from_session_id FROM session_continuations WHERE to_session_id = ?')
+      .get(sessionId) as { from_session_id: string } | undefined
+    return row?.from_session_id ?? null
+  }
+
+  /** The newest session in `sessionId`'s continuation chain (itself when never continued). */
+  currentSessionFor(sessionId: string): string {
+    let current = sessionId
+    for (let hop = 0; hop < MAX_CONTINUATION_HOPS; hop++) {
+      const next = this.successorOf(current)
+      if (!next) return current
+      current = next
+    }
+    return current
+  }
+
+  /**
+   * Record that `to` continues `from`, and move `from`'s mailbox channels
+   * (spawn grants with a bound child, started link grants) with their
+   * messages and read cursors to `to`. Handoff and not-yet-started grants
+   * stay: their launch ids live in `from`'s transcript.
+   *
+   * Messages move on both sides so idempotency keys and report history follow
+   * the session, and deleting `from` no longer cascades them away. Returns the
+   * moved grants as they are now.
+   */
+  continueSession(from: string, to: string): CollaborationGrantRow[] {
+    return this.transaction(() => {
+      const successor = this.successorOf(from)
+      if (successor) {
+        throw new CollaborationError(`Session ${from} was already continued in ${successor}`, 'failed_precondition')
+      }
+      this.db.prepare('INSERT INTO session_continuations (from_session_id, to_session_id, created_at) VALUES (?, ?, ?)')
+        .run(from, to, nowIso())
+      const grantIds = this.channelsFor(from).map((grant) => grant.grant_id)
+      for (const grantId of grantIds) {
+        for (const column of ['parent_session_id', 'child_session_id'] as const) {
+          this.db.prepare(`UPDATE session_collaboration_grants SET ${column} = ? WHERE credential_hash = ? AND ${column} = ?`)
+            .run(to, grantId, from)
+        }
+        for (const column of ['sender_session_id', 'recipient_session_id'] as const) {
+          this.db.prepare(`UPDATE session_collaboration_messages SET ${column} = ? WHERE credential_hash = ? AND ${column} = ?`)
+            .run(to, grantId, from)
+        }
+        this.db.prepare('UPDATE session_collaboration_cursors SET session_id = ? WHERE credential_hash = ? AND session_id = ?')
+          .run(to, grantId, from)
+      }
+      return grantIds.map((grantId) => this.grantById(grantId)!)
+    })
   }
 
   // --- mailbox -------------------------------------------------------------

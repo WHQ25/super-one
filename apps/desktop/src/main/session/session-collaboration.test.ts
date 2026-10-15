@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_AGENT_LAUNCHES_FIELD, type AgentEvent, type SessionAgentProfile } from '@superone/shared/agent-types'
-import { ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
+import { SESSION_CONTINUATION_TABLE_DDL, ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
 import type { Session, SessionCreateOptions, SessionManager } from './types'
 
 const TEST_CWD = process.cwd()
@@ -273,6 +273,7 @@ function createSchema(db: Database.Database): void {
       PRIMARY KEY(credential_hash, session_id)
     );
   `)
+  db.exec(SESSION_CONTINUATION_TABLE_DDL)
   ensureCollaborationGrantUniqueness(db)
 }
 

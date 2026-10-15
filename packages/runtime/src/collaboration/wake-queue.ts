@@ -114,6 +114,28 @@ export class CollaborationWakeQueue {
     }
   }
 
+  /** True while a wake for `sessionId` is being prepared or handed to its harness. */
+  hasInFlight(sessionId: string): boolean {
+    if (this.delivering.has(sessionId)) return true
+    return Boolean(this.db.prepare(`SELECT 1 FROM collaboration_wakes
+      WHERE session_id = ? AND state IN ('preparing', 'dispatching') LIMIT 1`).get(sessionId))
+  }
+
+  /**
+   * Hand `from`'s wakes to `to`, the session that continues it. Settled rows
+   * move too, so deduplication by notification id keeps holding for the new
+   * recipient. `to` starts paused: its own first output (see {@link observe})
+   * releases the moved wakes, so none runs ahead of the turn the user starts.
+   * Throws while a wake for `from` is in flight.
+   */
+  migrate(from: string, to: string): void {
+    if (this.hasInFlight(from)) throw new Error(`A collaboration wake for ${from} is being delivered`)
+    this.db.prepare('UPDATE collaboration_wakes SET session_id = ? WHERE session_id = ?').run(to, from)
+    this.db.prepare('DELETE FROM collaboration_wake_recipients WHERE session_id = ?').run(from)
+    this.paused.delete(from)
+    this.pause(to)
+  }
+
   private pause(sessionId: string): void {
     if (this.paused.has(sessionId)) return
     this.db.prepare(`INSERT INTO collaboration_wake_recipients (session_id, paused)

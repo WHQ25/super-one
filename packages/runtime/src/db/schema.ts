@@ -1,8 +1,10 @@
 /** SQLite schema generation 1 — Phase 1 vertical slice. */
+import { SESSION_CONTINUATION_TABLE_DDL } from '../collaboration/store'
 import { COLLABORATION_WAKE_TABLE_DDL } from '../collaboration/wake-queue'
 
 export const SCHEMA_SQL = `
 ${COLLABORATION_WAKE_TABLE_DDL}
+${SESSION_CONTINUATION_TABLE_DDL}
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS meta (

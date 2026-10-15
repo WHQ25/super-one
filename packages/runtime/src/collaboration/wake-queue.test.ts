@@ -204,4 +204,42 @@ describe('durable collaboration notification delivery', () => {
     await settle()
     expect(admit).not.toHaveBeenCalled()
   })
+  describe('migrate', () => {
+    const rows = () => db.prepare('SELECT session_id, notification_id, state FROM collaboration_wakes ORDER BY notification_id').all()
+
+    it('hands every settled wake to the successor and holds them until its first output', async () => {
+      const { queue, admit } = makeQueue(undefined, () => false)
+      queue.enqueue('parent', 'message:1', 'mailbox ready')
+      db.prepare("INSERT INTO collaboration_wakes (session_id, notification_id, content, state, created_at) VALUES ('parent', 'message:0', 'old', 'admitted', 0)").run()
+
+      queue.migrate('parent', 'parent2')
+
+      expect(rows()).toEqual([
+        { session_id: 'parent2', notification_id: 'message:0', state: 'admitted' },
+        { session_id: 'parent2', notification_id: 'message:1', state: 'queued' },
+      ])
+      // An admitted notification stays deduplicated for the new recipient.
+      queue.enqueue('parent2', 'message:0', 'old')
+      expect(rows()).toHaveLength(2)
+
+      const live = makeQueue()
+      live.queue.start()
+      await settle()
+      expect(live.admit).not.toHaveBeenCalled()
+      live.queue.observe('parent2', { type: 'message_complete' } as never)
+      await settle()
+      expect(live.admit).toHaveBeenCalledExactlyOnceWith('parent2', 'mailbox ready', 'message:1', expect.any(Function), expect.any(Function))
+      expect(admit).not.toHaveBeenCalled()
+    })
+
+    it('refuses while a wake for the old session is being delivered', async () => {
+      const { queue } = makeQueue(vi.fn(() => new Promise<void>(() => {})))
+      queue.enqueue('parent', 'message:1', 'mailbox ready')
+      await settle()
+
+      expect(queue.hasInFlight('parent')).toBe(true)
+      expect(() => queue.migrate('parent', 'parent2')).toThrow(/being delivered/)
+      expect(rows()).toEqual([{ session_id: 'parent', notification_id: 'message:1', state: 'preparing' }])
+    })
+  })
 })

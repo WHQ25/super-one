@@ -9,7 +9,7 @@ import { tint, usePromptStyles } from './styles'
 const BENEFITS: Array<{ icon: LucideIcon; text: string }> = [
   { icon: Sparkles, text: 'A fresh context: faster, cheaper replies.' },
   { icon: AtSign, text: 'The new session mentions this one, so the agent can still look up anything from it.' },
-  { icon: Network, text: 'Collaboration carries over: parent, child and linked sessions reach the new session.' },
+  { icon: Network, text: 'Keeps working with every collaborator of this session.' },
 ]
 
 /**
@@ -27,7 +27,7 @@ export function SessionHandoffComposer({ onApprove, onDismiss }: { onApprove(): 
       </View>
       <Text accessibilityRole="header" style={[styles.title, styles.grow]}>{t('Handoff to New Session')}</Text>
     </View>
-    <Text style={styles.meta}>{t('This session is long and its prompt cache has expired, so the next message here re-reads the whole context.')}</Text>
+    <Text style={styles.meta}>{t('This session is long and its prompt cache has expired. The next message here sends the whole context again as input tokens: it costs more and uses a lot of your quota.')}</Text>
     <View style={styles.tight}>
       {BENEFITS.map(({ icon: Icon, text }) => <View key={text} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         <Icon size={14} color={colors.mutedForeground} style={{ marginTop: 3 }} />

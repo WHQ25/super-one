@@ -66,7 +66,7 @@ export function SessionHandoffPrompt({ onApprove, onDismiss, shortcutKey }: {
             </li>
           ))}
         </ul>
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid max-w-sm grid-cols-2 gap-2">
           <PermissionActionButton tone="primary" kbd="⏎" onClick={onApprove}>
             {t('chat.sessionContinuation.approve')}
           </PermissionActionButton>

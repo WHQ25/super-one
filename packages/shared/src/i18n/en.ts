@@ -6082,10 +6082,10 @@ export const en: Messages = {
   chat: {
     sessionContinuation: {
       title: 'Handoff to New Session',
-      lead: 'This session is long and its prompt cache has expired, so the next message here re-reads the whole context.',
+      lead: 'This session is long and its prompt cache has expired. The next message here sends the whole context again as input tokens: it costs more and uses a lot of your quota.',
       freshContext: 'A fresh context: faster, cheaper replies.',
       mentionsThis: 'The new session mentions this one, so the agent can still look up anything from it.',
-      collaborationKept: 'Collaboration carries over: parent, child and linked sessions reach the new session.',
+      collaborationKept: 'Keeps working with every collaborator of this session.',
       approve: 'Approve',
       dismiss: 'Dismiss',
       continuedIn: 'This session continues in a new session.',

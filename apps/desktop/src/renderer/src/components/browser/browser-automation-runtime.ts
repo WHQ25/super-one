@@ -641,7 +641,13 @@ async function waitForCondition(
 export async function runBrowserOp(sessionId: string, op: string, rawInput: unknown, signal?: AbortSignal): Promise<unknown> {
   const input = (rawInput ?? {}) as BaseInput
   if (op === 'miniappPreview') {
-    return showToolUiPreview(sessionId, rawInput as MiniAppToolPreviewRequest, signal)
+    const shown = await showToolUiPreview(sessionId, rawInput as MiniAppToolPreviewRequest, signal)
+    const { openedTabPresentation } = await import('@/lib/layout-control')
+    return { ...shown, presentation: openedTabPresentation(sessionId, true) }
+  }
+  if (op === 'tabPresentation') {
+    const { openedTabPresentation } = await import('@/lib/layout-control')
+    return openedTabPresentation(sessionId, (rawInput as { pip?: unknown } | null)?.pip === true)
   }
   if (op === 'layoutSnapshot' || op === 'layoutAct') {
     const { root, request } = (rawInput ?? {}) as { root?: string; request?: LayoutActRequest }
@@ -670,7 +676,8 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(targetId)
       store.markAutomationPreviewReady(targetId)
       const tab = useBrowserStore.getState().tabs[targetId]
-      return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '' }
+      const { openedTabPresentation } = await import('@/lib/layout-control')
+      return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '', presentation: openedTabPresentation(sessionId, true) }
     } finally {
       store.endAutomation(targetId)
     }

@@ -18,6 +18,8 @@ import {
   type TerminalRuleStore,
 } from './terminal-command-gate'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
+import { focusTabCall } from '@superone/shared/layout-control'
+import { openedTabNoteFor } from './layout-control-tools'
 
 /** What the handlers need from `TerminalManager`; kept narrow so tests pass a stub. */
 export interface TerminalToolHost {
@@ -333,6 +335,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
     }, deps.signal)
     if (refused) return refused
 
+    const opened = !target
     if (!target) {
       target = terminals.manager.create({
         cwd,
@@ -357,7 +360,10 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
     const hint = target.status === 'running' && tab.control === 'none'
       ? 'The command already exited. Read the screen, then terminal_tabs action=close this tab unless you still need it.'
       : undefined
-    return toolResult({ status: 'ok', ...(hint ? { hint } : {}), ...tab })
+    const note = opened
+      ? await openedTabNoteFor(session.sessionId, { pip: false, bringForward: focusTabCall(target.terminalId) })
+      : {}
+    return toolResult({ status: 'ok', ...(hint ? { hint } : {}), ...note, ...tab })
   }
 
   if (action === 'attach') {

@@ -12,7 +12,7 @@ import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useTerminalStore } from '@/stores/terminal'
 import { LAYOUT } from './layout-constants'
-import { layoutAct, layoutSnapshot } from './layout-control'
+import { layoutAct, layoutSnapshot, openedTabPresentation } from './layout-control'
 
 const PROJECT = '/work/app'
 const agentA: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'agent' }, root: PROJECT }
@@ -337,6 +337,26 @@ describe('chat mode', () => {
     await expect(layoutAct(agentA, { action: 'chat_mode', mode: 'pip' as never })).rejects.toMatchObject({ code: 'invalid' })
     showSessionInFront('B')
     expect(await layoutAct(agentA, { action: 'chat_mode', mode: 'floating' })).toMatchObject({ status: 'skipped' })
+  })
+})
+
+describe('where an agent-opened tab shows', () => {
+  it('is in the panel only while the panel is on screen', () => {
+    fakeDock()
+    useActivityPanelStore.setState({ showPanel: true })
+    expect(openedTabPresentation('A', true)).toBe('panel')
+  })
+
+  it('falls back to the picture-in-picture for kinds that have one, else out of sight', () => {
+    fakeDock()
+    expect(openedTabPresentation('A', true)).toBe('pip')
+    expect(openedTabPresentation('A', false)).toBe('background')
+  })
+
+  it('is out of sight while the caller is in the background', () => {
+    fakeDock()
+    showSessionInFront('B')
+    expect(openedTabPresentation('A', true)).toBe('background')
   })
 })
 

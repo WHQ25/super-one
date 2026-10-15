@@ -25,6 +25,7 @@ import type { TouchDeviceBackend } from './types'
 import { recordAction } from './record-action'
 import { actionRecordingFromPath, adoptActionRecording } from '../agent/action-recording-store'
 import { recordingNote } from '../mcp/show-your-work-notes'
+import { openedTabNoteFor } from '../mcp/layout-control-tools'
 import { executeDeviceRun } from '../jev/device-run-tool'
 import { jevSettingError } from '../jev/run-tool-common'
 import { DeviceAgentError } from './types'
@@ -248,7 +249,7 @@ export async function executeDeviceAgentTool(
     }
     if (name === 'device_request_control') {
       const { description, device } = args as { description?: string; device?: string }
-      return reply(await requestDeviceControl({
+      const granted = await requestDeviceControl({
         sessionId,
         ports: platformPortsFactory(),
         emitHostEvent: emitHostEventFor(sessionId),
@@ -259,7 +260,13 @@ export async function executeDeviceAgentTool(
           ...(description ? { reason: description } : {}),
         },
         ...(signal ? { signal } : {}),
-      }))
+      })
+      // Granted, the device shows as a picture-in-picture while the panel is closed;
+      // opening the panel hands it a tab (use-device-handover).
+      const note = granted.controlled === true
+        ? await openedTabNoteFor(sessionId, { pip: true, bringForward: 'layout_act action=show_panel' })
+        : {}
+      return reply({ ...granted, ...note })
     }
     if (name === 'device_release') {
       const { device, shutdown } = args as { device?: string; shutdown?: boolean }

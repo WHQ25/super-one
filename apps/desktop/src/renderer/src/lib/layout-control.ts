@@ -13,6 +13,7 @@ import {
   type LayoutGroup,
   type LayoutSizes,
   type LayoutSnapshot,
+  type OpenedTabPresentation,
   type LayoutTab,
   type LayoutTabKind,
 } from '@superone/shared/layout-control'
@@ -199,6 +200,17 @@ function setChatMode(sessionId: string, request: LayoutActRequest): LayoutActRes
 
 function clampWidth(width: number, range: { min: number; max: number }): number {
   return Math.min(range.max, Math.max(range.min, Math.round(width)))
+}
+
+/**
+ * Where a tab this session's agent opens now is shown. Agent openers do not reveal the
+ * panel, so it is in front only when the panel already is; otherwise kinds with a
+ * picture-in-picture (`pip`) show there while the chat is in front.
+ */
+export function openedTabPresentation(sessionId: string, pip: boolean): OpenedTabPresentation {
+  if (panelOnScreen(sessionId)) return 'panel'
+  const p = placement(sessionId)
+  return pip && p.chatOnScreen && p.windowVisible ? 'pip' : 'background'
 }
 
 const TERMINAL_PANEL_PREFIX = 'terminal-'

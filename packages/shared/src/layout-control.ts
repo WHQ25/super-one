@@ -199,3 +199,29 @@ export class LayoutControlError extends Error {
     this.name = 'LayoutControlError'
   }
 }
+
+/**
+ * Where a tab the agent just opened is shown. Agent openers never take the user's
+ * focus, so unless the caller's activity panel is on screen the tab lands in the
+ * background — drawn as a picture-in-picture over the chat for kinds that have one.
+ */
+export type OpenedTabPresentation = 'panel' | 'pip' | 'background'
+
+/** What an open result adds when the user cannot see the tab in the panel. */
+export interface OpenedTabNote {
+  shown: Exclude<OpenedTabPresentation, 'panel'>
+  reveal: string
+}
+
+/** `bringForward` is the layout_act call that puts the tab in front, e.g. focus_tab with its id. */
+export function openedTabNote(presentation: OpenedTabPresentation, bringForward: string): OpenedTabNote | null {
+  if (presentation === 'panel') return null
+  const where = presentation === 'pip'
+    ? 'Opened in the background: the user sees it only as a small picture-in-picture over the chat.'
+    : 'Opened in the background: the user cannot see it now.'
+  return { shown: presentation, reveal: `${where} If they want it in front, call ${bringForward}.` }
+}
+
+export function focusTabCall(tab: string): string {
+  return `layout_act action=focus_tab tab="${tab}"`
+}

@@ -4,7 +4,7 @@
  * and scoped to the calling session, so none needs a confirmation.
  */
 import { encode as toonEncode } from '@toon-format/toon'
-import type { LayoutActRequest } from '@superone/shared/layout-control'
+import { openedTabNote, type LayoutActRequest, type OpenedTabNote, type OpenedTabPresentation } from '@superone/shared/layout-control'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { currentHostActionConnection } from './artifact-registry'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
@@ -36,6 +36,25 @@ function unsupportedOnRemoteNode() {
 function sessionRoot(deps: BuiltInSuperoneToolDeps): string | undefined {
   const session = deps.sessionHost?.getSession(deps.sessionId) as { cwd?: string; projectPath?: string } | null | undefined
   return session?.cwd || session?.projectPath || undefined
+}
+
+/**
+ * The note an open result carries when the tab it opened is not in front of the user
+ * (see `openedTabNote`); empty when it is, or when there is no desktop window to ask.
+ * `pip`: the kind has a picture-in-picture that shows while the panel is closed.
+ */
+export async function openedTabNoteFor(
+  sessionId: string,
+  opts: { pip: boolean; bringForward: string },
+): Promise<OpenedTabNote | Record<string, never>> {
+  if (currentHostActionConnection() !== null) return {}
+  try {
+    const presentation = await browserAutomationCall(sessionId, 'tabPresentation', { pip: opts.pip }) as OpenedTabPresentation
+    return openedTabNote(presentation, opts.bringForward) ?? {}
+  } catch {
+    // The note is a courtesy; the tab itself opened fine.
+    return {}
+  }
 }
 
 function errorText(err: unknown): string {

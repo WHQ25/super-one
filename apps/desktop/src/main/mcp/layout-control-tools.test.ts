@@ -16,7 +16,7 @@ const { mockCall, mockConnection } = vi.hoisted(() => ({
 vi.mock('../browser/browser-automation-bridge', () => ({ browserAutomationCall: mockCall }))
 vi.mock('./artifact-registry', () => ({ currentHostActionConnection: mockConnection }))
 
-const { layoutActHandler, layoutSnapshotHandler } = await import('./layout-control-tools')
+const { layoutActHandler, layoutSnapshotHandler, openedTabNoteFor } = await import('./layout-control-tools')
 const { BUILT_IN_SUPERONE_TOOL_DEFS } = await import('./superone-mcp-builtin-defs')
 
 function deps(session: { cwd?: string; projectPath?: string } | null = { cwd: '/work/app-wt', projectPath: '/work/app' }): BuiltInSuperoneToolDeps {
@@ -111,5 +111,34 @@ describe('layout tool contract', () => {
     expect(act.description).toMatch(/terminal_tabs/)
     expect(act.description).toMatch(/layout_snapshot|`visible`/)
     expect(BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === 'layout_snapshot')!.description).toMatch(/layout_act/)
+  })
+})
+
+describe('opened tab note', () => {
+  const focus = 'layout_act action=focus_tab tab="t1"'
+
+  it('tells the agent a tab landed in the picture-in-picture or out of sight, and how to bring it forward', async () => {
+    mockCall.mockResolvedValueOnce('pip')
+    expect(await openedTabNoteFor('s1', { pip: true, bringForward: focus })).toEqual({
+      shown: 'pip',
+      reveal: `Opened in the background: the user sees it only as a small picture-in-picture over the chat. If they want it in front, call ${focus}.`,
+    })
+    expect(mockCall).toHaveBeenCalledWith('s1', 'tabPresentation', { pip: true })
+
+    mockCall.mockResolvedValueOnce('background')
+    expect(await openedTabNoteFor('s1', { pip: false, bringForward: focus })).toMatchObject({ shown: 'background', reveal: expect.stringContaining('cannot see it now') })
+  })
+
+  it('says nothing when the tab is in the panel on screen, on a remote node, or with no window to ask', async () => {
+    mockCall.mockResolvedValueOnce('panel')
+    expect(await openedTabNoteFor('s1', { pip: true, bringForward: focus })).toEqual({})
+
+    mockCall.mockRejectedValueOnce(new Error('No renderer window available for browser automation'))
+    expect(await openedTabNoteFor('s1', { pip: true, bringForward: focus })).toEqual({})
+
+    mockConnection.mockReturnValue('node-1')
+    mockCall.mockClear()
+    expect(await openedTabNoteFor('s1', { pip: true, bringForward: focus })).toEqual({})
+    expect(mockCall).not.toHaveBeenCalled()
   })
 })

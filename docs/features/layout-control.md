@@ -110,6 +110,18 @@ grant (`SPAWNED_SESSION_PROJECT` IPC), and the same check serves agents and
 mini-apps. The pane is added beside the caller with `addTile(…, { focus: false })`,
 so focus stays where the user had it.
 
+## Tabs opened in the background
+
+Agent openers never reveal the panel or take focus: `browser_tabs` open,
+`terminal_tabs` run in a new tab, `miniapp_dev_preview` and
+`device_request_control`. Their results add `shown` (`pip` or `background`) and a
+`reveal` sentence naming the `layout_act` call that brings the tab forward
+(`focus_tab`, or `show_panel` for a device, whose tab is created when the panel
+opens). Nothing is added while the caller's panel is on screen. The renderer
+answers from session state (`openedTabPresentation`, bridge op `tabPresentation`),
+not from the tab, because terminal and device tabs are docked asynchronously;
+the wording is `openedTabNote` in the shared contract.
+
 ## Surfaces
 
 - **Remote node.** The tools are advertised as Host Actions. The desktop executor

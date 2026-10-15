@@ -53,6 +53,7 @@ import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { imageNote } from './show-your-work-notes'
 import { BROWSER_RUN_DESCRIPTION, browserRunInputShape, executeBrowserRun } from '../jev/browser-run-tool'
 import { browserDescriptionField as descriptionField, browserTabField as tabField, makeBrowserCapturingServer, type BrowserToolHandler } from './browser-tool-registration'
+import { focusTabCall, openedTabNote, type OpenedTabPresentation } from '@superone/shared/layout-control'
 export { BROWSER_TOOL_NAMES, BROWSER_COMPACT_TOOL_NAMES, BROWSER_LEGACY_TOOL_NAMES }
 
 interface ScreenshotResult {
@@ -1130,14 +1131,16 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
       // would let a direct-download link (or a first-paint script) start a
       // download while the tab still had no driver, and the file would land in
       // the Downloads folder instead of the session zone (§6).
-      const opened = (await browserAutomationCall(sessionId, 'open', { ...args, url: undefined, readiness: 'none' })) as {
+      const { presentation, ...opened } = (await browserAutomationCall(sessionId, 'open', { ...args, url: undefined, readiness: 'none' })) as {
         tab?: string
         url?: string
         title?: string
+        presentation?: OpenedTabPresentation
       }
+      const note = presentation && typeof opened.tab === 'string' ? openedTabNote(presentation, focusTabCall(opened.tab)) : null
       if (!args.url || typeof opened.tab !== 'string') {
         if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
-        return textReply(opened)
+        return textReply({ ...opened, ...note })
       }
       // Attribution is a precondition for the initial navigation, not a
       // best-effort side errand: a cold-started view is registered before its
@@ -1156,7 +1159,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         url: args.url,
         readiness: args.readiness,
       })) as { url?: string; title?: string }
-      return textReply({ ...opened, url: navigated.url ?? args.url, title: navigated.title ?? opened.title })
+      return textReply({ ...opened, url: navigated.url ?? args.url, title: navigated.title ?? opened.title, ...note })
     },
   )
 

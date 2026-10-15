@@ -9,6 +9,7 @@ import { getAppBasePath, isActiveDevApp, readManifest } from '../miniapp/miniapp
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { miniappErrorReply, miniappTextReply, type MiniappToolReply } from './miniapp-mcp-tools'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
+import { focusTabCall, openedTabNote, type OpenedTabPresentation } from '@superone/shared/layout-control'
 
 export interface MiniAppDevPreviewArgs {
   appId: string
@@ -85,13 +86,14 @@ export async function miniappDevPreviewHandler(args: MiniAppDevPreviewArgs, deps
   try {
     sessionProjectDir(deps)
     const request = previewRequest(await devManifest(args.appId), args)
-    const shown = await browserAutomationCall(deps.sessionId, 'miniappPreview', request) as { target: string }
+    const shown = await browserAutomationCall(deps.sessionId, 'miniappPreview', request) as { target: string; tab: string; presentation: OpenedTabPresentation }
     return miniappTextReply({
       status: 'previewing',
       target: shown.target,
       tool: request.tool,
       phase: request.phase,
       next: `Drive it with browser_* tools using tab "${shown.target}". The tool does not run; submit/cancel/close are logged as info console entries.`,
+      ...openedTabNote(shown.presentation, focusTabCall(shown.tab)),
     })
   } catch (error) {
     return miniappErrorReply(error)

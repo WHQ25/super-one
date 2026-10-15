@@ -167,7 +167,8 @@ export async function ensureHostSession(
     const record = candidate
       ? await window.environment.getSession(connectionId, candidate) as { harnessId?: string } | null
       : null
-    if (!record || record.harnessId !== harness) {
+    // A continuation is always created: create is where it takes over the old session's channels.
+    if (!record || record.harnessId !== harness || session.continuesFrom) {
       const desktop = hostTakesDesktopChoices(projectPath)
       // This desktop's host keeps the draft's id, so an empty session on
       // another harness (a prewarmed runtime) goes first.
@@ -178,6 +179,7 @@ export async function ensureHostSession(
         harnessId: harness,
         settings: draftSettings(get(), projectPath, session),
         ...(cwd ? { cwd } : {}),
+        ...(session.continuesFrom ? { continuesFrom: session.continuesFrom } : {}),
         ...(desktop ? { selections: {
           ...(candidate ? { sessionId: candidate } : {}),
           ...HARNESS_STRATEGIES[harness].createSelections?.(session),
@@ -194,7 +196,7 @@ export async function ensureHostSession(
   if (!sid) throw new Error('No session to send to')
   adoptSessionId(set, projectPath, candidate, sid)
   writeScope.target = { projectPath, sessionId: sid }
-  writeScope.patch(() => ({ hostSessionOwned: true, sessionProvider: harness, preferredProvider: harness, _historyHydrated: true }))
+  writeScope.patch(() => ({ hostSessionOwned: true, sessionProvider: harness, preferredProvider: harness, _historyHydrated: true, continuesFrom: null }))
   // Keep window presence in sync; commands always retain their explicit session id.
   await window.agent.activateSession(projectPath, sid, _getSessionCwd(projectPath, getScopedPerSession(get(), writeScope.target))).catch(() => undefined)
   return sid

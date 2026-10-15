@@ -174,6 +174,7 @@ export function snapshotDraftSettings(
     sandboxEnabled: project?.sandboxInfo?.enabled,
     sandboxAutoAllowBash: project?.sandboxInfo?.autoAllowBash,
     additionalDirs: session.additionalDirs?.length ? [...session.additionalDirs] : [],
+    ...(session.continuesFrom ? { continuesFrom: session.continuesFrom } : {}),
   }
 }
 
@@ -228,6 +229,7 @@ export function sessionFieldsFromSettings(
     patch.additionalDirs = [...settings.additionalDirs]
     patch.additionalDirsDirty = settings.additionalDirs.length > 0
   }
+  if (settings.continuesFrom) patch.continuesFrom = settings.continuesFrom
   return patch
 }
 

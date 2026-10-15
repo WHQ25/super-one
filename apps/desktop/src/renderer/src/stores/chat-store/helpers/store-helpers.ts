@@ -47,6 +47,8 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
   if (!key) return
   if (parseRemoteProjectKey(key)) return
   const session = getActivePerSession(state, key)
+  // Its host must create it on first send to hand over the old session's channels.
+  if (session.continuesFrom) return
   const provider = resolveProvider(session)
   if (typeof window.agent?.prewarm !== 'function') return
   const dirs = mergeCallerScopedDirs(getProject(state, key), session)

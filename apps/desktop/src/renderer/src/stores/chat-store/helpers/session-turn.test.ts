@@ -206,6 +206,17 @@ describe('ensureHostSession', () => {
     expect(project(NODE)._sessions['node-live'].hostSessionOwned).toBe(true)
   })
 
+  it('always creates a continuation, replacing an empty runtime under its id, and names the session it continues', async () => {
+    seed(LOCAL, 'next', { preferredProvider: 'claude', continuesFrom: 'old' })
+    getSession.mockResolvedValueOnce({ sessionId: 'next', harnessId: 'claude' })
+
+    await expect(ensure(LOCAL).done).resolves.toBe('next')
+
+    expect(removeSession).toHaveBeenCalledWith('local', 'next')
+    expect(createSession).toHaveBeenCalledWith('local', expect.objectContaining({ continuesFrom: 'old', selections: { sessionId: 'next' } }))
+    expect(project(LOCAL)._sessions.next.continuesFrom).toBeNull()
+  })
+
   it('neither looks up nor creates a session that has carried a turn', async () => {
     seed(LOCAL, 'sid-history', { sessionProvider: 'claude', messages: [historyMessage] })
 

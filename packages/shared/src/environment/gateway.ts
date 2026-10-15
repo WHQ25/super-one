@@ -57,6 +57,8 @@ export interface CreateSessionInput {
   systemPromptAppend?: string
   /** The collaboration parent on the creating machine, for a child launched there. */
   externalParent?: { sessionId: string }
+  /** The session this one continues (see SessionCreateRequest.continuesFrom). */
+  continuesFrom?: string
   /** Opaque harness-specific options. */
   options?: Record<string, unknown>
 }

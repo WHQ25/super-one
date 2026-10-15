@@ -72,6 +72,8 @@ export interface DraftSessionSettings {
   sandboxEnabled?: boolean
   sandboxAutoAllowBash?: boolean
   additionalDirs?: string[]
+  /** The session this draft continues; its host hands that session's channels to the new one. */
+  continuesFrom?: string | null
 }
 
 export interface DraftRecord {

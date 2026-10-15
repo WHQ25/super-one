@@ -17,6 +17,7 @@ export async function createRemoteSession(input: RemoteSessionCreateInput, ports
   const { sessionId } = await ports.gateway.sessions.create({
     project: { environmentId: ports.environmentId, projectId: input.projectId },
     providerId, title: input.title, options: { harnessId, ...input.selections },
+    ...(input.continuesFrom ? { continuesFrom: input.continuesFrom } : {}),
   })
   if (input.settings) {
     const control = await ports.control(sessionId)

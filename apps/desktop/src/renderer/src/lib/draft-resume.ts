@@ -64,7 +64,8 @@ function applyPersistedFields(sess: PerSessionState, draft: DraftListEntry): Per
   }
 }
 
-function activateSession(
+/** Put a minted or restored unsent session into the store as the project's active one. */
+export function activateSession(
   projectPath: string,
   sessionId: string,
   session: PerSessionState,

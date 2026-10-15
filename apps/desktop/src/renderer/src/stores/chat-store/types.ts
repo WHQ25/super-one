@@ -235,6 +235,11 @@ export interface PerSessionState extends ChatCoreSession {
    * When set, the pane is a draft surface — not a fresh ChatSuggestions landing.
    */
   draftId: string | null
+  /**
+   * The session this unsent one continues. Its host creates it on first send
+   * and hands it that session's collaboration channels.
+   */
+  continuesFrom?: string | null
   draftRemoteDeviceId?: string | null
   /** Another device started this session through this computer's node surface; read-only here while it holds control. */
   remoteController?: SessionRemoteControllerInfo | null

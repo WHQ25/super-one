@@ -219,6 +219,13 @@ export async function sendMessageImpl(
       seen.add(m.value)
       lines.push(`- "${m.displayName || m.value}" (sessionId: ${m.value})`)
     }
+    if (session.continuesFrom && seen.has(session.continuesFrom)) {
+      lines.push(
+        '',
+        `This session continues ${session.continuesFrom} in a fresh context. It took over that session's collaboration`
+        + ' channels: its parent, children and linked peers now reach this session. Call session_collab_retrieve to list them.',
+      )
+    }
     sessionReminderSuffix = `\n\n<superone-session-reminder>\n${lines.join('\n')}\n</superone-session-reminder>`
   }
   let capabilityReminderSuffix = ''

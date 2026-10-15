@@ -1290,6 +1290,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
           ...(input.externalParent ? { externalParent: input.externalParent } : {}),
+          ...(input.continuesFrom ? { continuesFrom: input.continuesFrom } : {}),
           ...(input.options ? { options: input.options } : {}),
         })
         return { sessionId: result.sessionId }

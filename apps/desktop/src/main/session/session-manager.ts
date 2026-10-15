@@ -14,7 +14,7 @@ import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '
 import { worktreeExists } from '../git/worktree-alive'
 import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
-import { composeSystemPromptAppend, readAgentProfile } from '@superone/shared/agent-profile'
+import { providerSystemPromptAppend } from '@superone/shared/agent-profile'
 import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { closeSuperoneMcpHttpSessions } from '../mcp/superone-mcp-http-state'
@@ -74,15 +74,6 @@ export interface SessionManagerPersistence {
    * reach `createSession` with no renderer to compose the directory set.
    */
   getProjectExtraDirs?: (projectPath: string) => string[]
-}
-
-/**
- * The row's agent-profile instructions ahead of the host's append (the
- * collaboration protocol). Read from the row on every create and resume, so
- * each launch path — collab, handoff, cold send, resume — gets the same text.
- */
-function profileSystemPromptAppend(provider: SessionProvider, hostAppend: string | undefined): string | undefined {
-  return composeSystemPromptAppend(readAgentProfile(provider.config)?.instructions, hostAppend)
 }
 
 
@@ -296,7 +287,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       missingWorktreePath,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
-      systemPromptAppend: profileSystemPromptAppend(provider, opts.systemPromptAppend),
+      systemPromptAppend: providerSystemPromptAppend(provider.config, opts.systemPromptAppend),
       unattended: opts.unattended,
       firstTurnPreamble: opts.firstTurnPreamble,
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
@@ -412,7 +403,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: data.selectedEffort ?? undefined,
       model: data.selectedModel ?? undefined,
       codexServiceTier: data.codexServiceTier,
-      systemPromptAppend: profileSystemPromptAppend(provider, data.systemPromptAppend),
+      systemPromptAppend: providerSystemPromptAppend(provider.config, data.systemPromptAppend),
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),

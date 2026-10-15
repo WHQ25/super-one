@@ -1,10 +1,10 @@
 import type { SessionAgentLaunchConfig, SessionAgentProfile } from '@superone/shared/agent-types'
 import {
   agentLaunchErrors,
-  composeSystemPromptAppend,
   launchConfigFromDefaults,
   launchDefaultsFromConfig,
   providerLaunchRuntime,
+  providerSystemPromptAppend,
   readAgentProfile,
   resolveAgentLaunchDefaults,
   type AgentLaunchDefaults,
@@ -166,16 +166,15 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
 }
 
 /**
- * The system-prompt append for a session of `agentId`: its profile's
- * instructions first, then the collaboration protocol (absent for a handoff).
+ * The system-prompt append for a session of `agentId`: its profile block
+ * first, then the collaboration protocol (absent for a handoff).
  */
 export function collaborationAgentPromptAppend(
   deps: Pick<CollaborationDeps, 'sessionProviders'>,
   agentId: string,
   protocol?: string,
 ): string | undefined {
-  const instructions = readAgentProfile(deps.sessionProviders?.get(agentId)?.config)?.instructions
-  return composeSystemPromptAppend(instructions, protocol)
+  return providerSystemPromptAppend(deps.sessionProviders?.get(agentId)?.config, protocol)
 }
 
 /**

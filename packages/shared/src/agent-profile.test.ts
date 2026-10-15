@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   agentLaunchErrors,
   agentProfileModelSupport,
+  agentProfilePrompt,
   composeSystemPromptAppend,
   launchConfigFromDefaults,
   launchDefaultsFromConfig,
   parseAgentProfileSpec,
   providerLaunchRuntime,
+  providerSystemPromptAppend,
   readAgentProfile,
   resolveAgentLaunchDefaults,
   validateAgentProfileRuntime,
@@ -315,5 +317,32 @@ describe('permission mode', () => {
     expect(resolve({ profile: { permissionMode: 'auto' }, launch: { permissionMode: 'bypassPermissions' } })).toBe('bypassPermissions')
     expect(resolve({ base: { permissionMode: 'default' }, profile: { permissionMode: 'plan' } })).toBe('default')
     expect(launchConfigFromDefaults({ model: 'gpt-5.6', permissionMode: 'auto' })).toEqual({ model: 'gpt-5.6', permissionMode: 'auto' })
+  })
+})
+
+describe('agent profile prompt', () => {
+  const reviewer = { version: 1 as const, identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' } }
+
+  it('tells the agent who it is, what it is for, and the user\'s instructions', () => {
+    expect(agentProfilePrompt({ ...reviewer, instructions: '## Rules\nNever edit files.' })).toBe([
+      '<superone-agent-profile>',
+      'You are running as "Reviewer", an agent profile the user saved in SuperOne. What it is for: Reviews diffs without editing.',
+      'Follow the profile instructions below for this whole session.',
+      '<instructions>',
+      '## Rules\nNever edit files.',
+      '</instructions>',
+      '</superone-agent-profile>',
+    ].join('\n'))
+    expect(agentProfilePrompt(reviewer)).toBe([
+      '<superone-agent-profile>',
+      'You are running as "Reviewer", an agent profile the user saved in SuperOne. What it is for: Reviews diffs without editing.',
+      '</superone-agent-profile>',
+    ].join('\n'))
+  })
+
+  it('puts the profile block ahead of the host protocol, and adds nothing for a built-in row', () => {
+    expect(providerSystemPromptAppend({ profile: reviewer }, 'Protocol')).toBe(`${agentProfilePrompt(reviewer)}\n\nProtocol`)
+    expect(providerSystemPromptAppend({}, 'Protocol')).toBe('Protocol')
+    expect(providerSystemPromptAppend({})).toBeUndefined()
   })
 })

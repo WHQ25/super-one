@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { agentProfilePrompt } from '@superone/shared/agent-profile'
 import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
 import { ControlLeaseService } from './control-lease'
@@ -169,7 +170,11 @@ describe('collaboration grants + mailbox', () => {
     if (req.status !== 'approved') throw new Error('expected approved')
     const started = await collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Review it' })
     const append = sessions.getSystemPromptAppend(started.sessionId) ?? ''
-    expect(append.startsWith('Never edit files.\n\n')).toBe(true)
+    expect(append.startsWith(`${agentProfilePrompt({
+      version: 1,
+      identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' },
+      instructions: 'Never edit files.',
+    })}\n\n`)).toBe(true)
     expect(append).toContain(parent.sessionId)
   })
 
@@ -215,9 +220,8 @@ describe('collaboration grants + mailbox', () => {
 
   it('restores a profile handoff session\'s instructions after restart, from the current row', async () => {
     const { collab, sessions, projects, sessionProviders } = bootCollab()
-    const profile = (instructions: string) => ({
-      profile: { version: 1, identity: { name: 'Finisher', description: 'Finishes migrations.' }, instructions },
-    })
+    const spec = (instructions: string) => ({ version: 1 as const, identity: { name: 'Finisher', description: 'Finishes migrations.' }, instructions })
+    const profile = (instructions: string) => ({ profile: spec(instructions) })
     const finisher = sessionProviders.profiles.create({ harnessId: 'claude', name: 'Finisher', config: profile('Never edit files.') })
     const projectDir = mkdtempSync(join(tmpdir(), 'collab-handoff-profile-'))
     dirs.push(projectDir)
@@ -229,17 +233,17 @@ describe('collaboration grants + mailbox', () => {
     if (req.status !== 'approved') throw new Error('expected approved')
     const start = () => collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Finish it.' })
     const started = await start()
-    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe('Never edit files.')
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe(agentProfilePrompt(spec('Never edit files.')))
 
     // A restart loses the in-memory append; rehydrate rebuilds it without the collaboration protocol.
     sessions.setSystemPromptAppend(started.sessionId, undefined)
     collab.rehydrateSystemPrompts()
-    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe('Never edit files.')
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe(agentProfilePrompt(spec('Never edit files.')))
 
     sessionProviders.profiles.update(finisher.id, { config: profile('Review only.') }, sessionProviders.get(finisher.id)!)
     sessions.setSystemPromptAppend(started.sessionId, undefined)
     expect(await start()).toMatchObject({ reused: true })
-    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe('Review only.')
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toBe(agentProfilePrompt(spec('Review only.')))
   })
 
   it('request creates durable grants; start is idempotent; send/retrieve advance cursor', async () => {

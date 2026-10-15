@@ -220,6 +220,38 @@ export function composeSystemPromptAppend(...parts: Array<string | null | undefi
   return text || undefined
 }
 
+/**
+ * Who a session of this profile is and what it is for, then the user's
+ * instructions. Tagged like the collaboration block, so Markdown headings in
+ * the instructions never clash with the prompt around them.
+ */
+export function agentProfilePrompt(profile: AgentProfileSpec): string {
+  const { name, description } = profile.identity
+  return [
+    '<superone-agent-profile>',
+    `You are running as "${name}", an agent profile the user saved in SuperOne. What it is for: ${description}`,
+    ...(profile.instructions
+      ? [
+          'Follow the profile instructions below for this whole session.',
+          '<instructions>',
+          profile.instructions,
+          '</instructions>',
+        ]
+      : []),
+    '</superone-agent-profile>',
+  ].join('\n')
+}
+
+/**
+ * The append a session on this provider row starts with: its profile block
+ * (none for a built-in row), then the host protocol. Read from the row on
+ * every create and resume, so a profile edit reaches its sessions' next launch.
+ */
+export function providerSystemPromptAppend(config: unknown, protocol?: string): string | undefined {
+  const profile = readAgentProfile(config)
+  return composeSystemPromptAppend(profile ? agentProfilePrompt(profile) : undefined, protocol)
+}
+
 function findModel(catalog: AgentProfileCatalog, id: string | undefined): CatalogModel | undefined {
   return id ? catalog.models.find((model) => model.id === id) : undefined
 }

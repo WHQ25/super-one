@@ -127,12 +127,14 @@ the wording is `openedTabNote` in the shared contract.
 - **Remote node.** The tools are advertised as Host Actions. The desktop executor
   answers `{ status: 'unsupported', reason: 'remote_node' }`, because a node
   agent has no SuperOne window of its own.
-- **Phone.** Execution always targets the desktop. The phone renders the same row
-  (`packages/chat-view/src/presenters/LayoutControlToolRow.tsx`) from the projected
-  input (`layout_act` keeps `action`, `path`, `line`, `side`, `tab`, `width`,
-  `height`, `mode`, `position`).
-- **Chat row.** One line per call: the action verb, its subject (file, side, size
-  or chat mode), and the outcome when it is not a plain `applied`.
+- **Chat.** Hidden on the desktop and the phone, like `session_rename`: the layout
+  change on screen is the feedback. Both names sit in `HIDDEN_SUPERONE_MCP_TOOLS`
+  (`packages/shared/src/tool-ui.ts`); dropping them there brings back the row,
+  which stays implemented and routed (`packages/chat-view/src/presenters/LayoutControlToolRow.tsx`,
+  one line per call: verb, subject, and the outcome when not a plain `applied`).
+  The phone row reads the projected input (`layout_act` keeps `action`, `path`,
+  `line`, `side`, `tab`, `width`, `height`, `mode`, `position`). Execution always
+  targets the desktop.
 
 ## Mini-apps
 

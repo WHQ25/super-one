@@ -5,6 +5,7 @@ import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { LayoutControlToolRow } from '@superone/chat-view/presenters/LayoutControlToolRow'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { isAlwaysHiddenToolName } from '@superone/shared/tool-ui'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
 function projected(params: Record<string, unknown>): Record<string, unknown> {
@@ -56,7 +57,11 @@ describe('layout control rows', () => {
     expect(screen.getByText('main.ts')).toBeTruthy()
   })
 
-  it('reaches the phone through the portable turn', () => {
+  // The row stays implemented for when it is shown again; for now both tools are hidden like session_rename.
+  it('is hidden on the desktop and in the portable turn the phone draws', () => {
+    expect(isAlwaysHiddenToolName('mcp__superone__layout_act')).toBe(true)
+    expect(isAlwaysHiddenToolName('mcp__superone__layout_snapshot')).toBe(true)
+
     const full = 'mcp__superone__layout_act'
     const content = applyContentDelta(
       [{ type: 'tool_use', toolName: full, toolUseId: 'u1', status: 'streaming', input: sanitizeRemoteToolInput(full, JSON.stringify({ action: 'open_file', path: 'src/main.ts', line: 42 })) } as ContentBlock],
@@ -64,7 +69,6 @@ describe('layout control rows', () => {
     )
     const message = { id: 't1', role: 'assistant', status: 'complete', createdAt: '2026-01-01T00:00:00.000Z', providerId: 'claude', content } as ChatMessage
     const { container } = render(<PortableMessage message={message} scheme="dark" pendingPermission={null} isLastAssistant sessionStreaming={false} />)
-    expect(container.textContent).toContain('File Opened')
-    expect(container.textContent).toContain('main.ts:42')
+    expect(container.textContent).not.toContain('File Opened')
   })
 })

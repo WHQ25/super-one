@@ -203,6 +203,9 @@ const HIDDEN_HARNESS_TOOL_KEYS = new Set(['toolsearch', 'searchtool', 'searchtoo
 const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
   'session_rename',
   'session_tag_list',
+  // Layout changes show on screen; a row for them reads as plumbing.
+  'layout_snapshot',
+  'layout_act',
   'session_collab_list_agents',
   'session_list_agents',
   'miniapp_list',

@@ -328,8 +328,8 @@ export const LAYOUT_SNAPSHOT_DESCRIPTION =
   'Call it for tab and group ids before layout_act, for sizes before a resize, or to check what the user is looking at.'
 
 export const LAYOUT_ACT_DESCRIPTION =
-  'Arrange the SuperOne desktop for the user: open a file as a tab; focus or close tabs, move one beside or into a group or reorder it (move_tab), resize a group; show, hide, maximize, move or resize your activity panel; show or hide your terminal; show, hide or resize the sidebar (widen a column to narrow the chat); dock, float or iconify the chat; put a session you launched beside yours. ' +
-  'Open browser and terminal tabs with browser_tabs / terminal_tabs. You can close only tabs and panes you opened. ' +
+  'Arrange the SuperOne desktop for the user: open a file as a tab; focus or close tabs, move one beside or into a group or reorder it (move_tab), resize a group; show, hide, maximize, move or resize your activity panel; show or hide your terminal; show, hide or resize the sidebar (widen a column to narrow the chat); dock, float or iconify the chat; put any other session beside yours. ' +
+  'Open browser and terminal tabs with browser_tabs / terminal_tabs. ' +
   'It never moves the user: in the background your own layout changes wait for them (status queued) and window-wide ones are skipped. `visible` says whether the user sees the result now.'
 export const LAYOUT_ACT_PATH_DESCRIPTION = 'open_file: the file, absolute or relative to your working folder.'
 export const LAYOUT_ACT_LINE_DESCRIPTION = 'open_file: 1-based line to reveal.'
@@ -341,4 +341,4 @@ export const LAYOUT_ACT_WIDTH_DESCRIPTION = 'resize_sidebar / resize_panel / res
 export const LAYOUT_ACT_HEIGHT_DESCRIPTION = 'resize_group: target height in px.'
 export const LAYOUT_ACT_MODE_DESCRIPTION = 'chat_mode: docked (a column beside the panel), floating (a movable window over the panel, which then fills the window) or icon (that window collapsed).'
 export const LAYOUT_ACT_POSITION_DESCRIPTION = 'chat_mode: where the floating chat or its icon snaps. Alone it moves the chat without changing mode; while docked it is kept for the next float.'
-export const LAYOUT_ACT_SESSION_DESCRIPTION = 'split_session / close_split: a session you launched with session_collab_*.'
+export const LAYOUT_ACT_SESSION_DESCRIPTION = 'split_session / close_split: a session id from session_list, session_search or session_collab_*.'

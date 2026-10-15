@@ -65,7 +65,7 @@ export interface LayoutActRequest {
   index?: number
   /** panel_side. */
   side?: 'left' | 'right'
-  /** split_session / close_split: a session the caller launched. */
+  /** split_session / close_split: any session other than the caller's own. */
   sessionId?: string
   /** resize_sidebar / resize_panel / resize_group: target width in px, clamped to the snapshot's `sizes` range. */
   width?: number
@@ -183,7 +183,7 @@ export interface LayoutSizes {
   chat: { width: number; min: number }
 }
 
-/** Who is asking. The opener decides which tabs and panes the caller may close. */
+/** Who is asking. The opener is recorded on the tabs the caller opens (`openedBy`). */
 export interface LayoutControlCaller {
   sessionId: string
   opener: { kind: 'agent' } | { kind: 'miniapp'; appId: string; instanceKey?: string }
@@ -191,7 +191,7 @@ export interface LayoutControlCaller {
   root?: string
 }
 
-export type LayoutControlErrorCode = 'invalid' | 'not_found' | 'not_owned' | 'not_child' | 'unavailable'
+export type LayoutControlErrorCode = 'invalid' | 'not_found' | 'unavailable'
 
 export class LayoutControlError extends Error {
   constructor(readonly code: LayoutControlErrorCode, message: string) {

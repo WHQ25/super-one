@@ -3166,11 +3166,10 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.SPAWNED_SESSION_PROJECT, async (_event, parentSessionId: string, childSessionId: string) => {
-    // The spawn grant is the authority on parentage; the renderer only knows the sessions it loaded.
-    const { loadStoredSessionState, projectPathOfSession } = await import('./db-sessions')
-    if (loadStoredSessionState(childSessionId)?.parentSessionId !== parentSessionId) return null
-    return projectPathOfSession(childSessionId)
+  ipcMain.handle(AgentIpcChannels.SESSION_PROJECT, async (_event, sessionId: string) => {
+    // The renderer only knows the sessions it loaded; the database knows every local one.
+    const { projectPathOfSession } = await import('./db-sessions')
+    return projectPathOfSession(sessionId)
   })
 
   const BINARY_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS

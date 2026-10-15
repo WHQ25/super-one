@@ -79,9 +79,9 @@ await context.layout.act({ action: 'open_file', path: 'src/app.ts', line: 42 })
   floating chat, alone or with a mode.
 - `'skipped'`: a window-wide change (sidebar, panel side, widths, chat mode, split view) is refused
   while the holder is not in front, so the user is never moved.
-- Tabs and split panes can be closed only by whoever opened them. Browser and
-  terminal tabs are opened by agents with their own tools; the app can focus,
-  split or maximize any tab.
+- Browser and terminal tabs are opened by agents with their own tools; the app
+  can focus, split, maximize or close any tab, and close any split pane but the
+  holder's own.
 
 ## Session input forms
 

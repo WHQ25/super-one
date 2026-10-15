@@ -90,10 +90,6 @@ function openerKey(caller: LayoutControlCaller): DockOpener {
   return caller.opener.kind === 'agent' ? 'agent' : `miniapp:${caller.opener.appId}`
 }
 
-function splitKey(sessionId: string): string {
-  return `split:${sessionId}`
-}
-
 interface Placement {
   split: boolean
   splitSessions: string[]
@@ -489,9 +485,6 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
     }
     case 'close_tab': {
       const tab = requireTab(sid, request.tab)
-      if (dockOpener(sid, tab) !== openerKey(caller)) {
-        throw new LayoutControlError('not_owned', `Tab ${tab} was not opened by you; only tabs you opened can be closed.`)
-      }
       return dockChange(sid, {
         kind: 'close',
         tab,
@@ -563,16 +556,13 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
     case 'close_split': {
       const child = request.sessionId
       if (!child) invalid('sessionId is required for close_split.')
+      if (child === sid) invalid('sessionId must be another session, not your own.')
       const p = placement(sid)
       if (!p.chatOnScreen) return skipped()
       const root = useMosaicStore.getState().root
       const leaf = root ? collectLeaves(root).find((candidate) => candidate.sessionId === child) : undefined
       if (!leaf) throw new LayoutControlError('not_found', `Session ${child} is not in the split view.`)
-      if (dockOpener(sid, splitKey(child)) !== openerKey(caller)) {
-        throw new LayoutControlError('not_owned', `The pane for ${child} was not added by you; only panes you added can be closed.`)
-      }
       useMosaicStore.getState().removeTile(leaf.id)
-      forgetDockOpener(sid, splitKey(child))
       return { status: 'applied', visible: p.windowVisible }
     }
     default:
@@ -588,22 +578,20 @@ async function splitSession(caller: LayoutControlCaller, request: LayoutActReque
   if (!child) invalid('sessionId is required for split_session.')
   const direction = request.direction ?? 'right'
   if (direction === 'into' || !(direction in SESSION_EDGES)) invalid('direction must be right, down, left or up for split_session.')
-  if (child === sid) invalid('sessionId must be a session you launched, not your own.')
+  if (child === sid) invalid('sessionId must be another session, not your own.')
   if (!placement(sid).chatOnScreen) return skipped()
-  const childProject = await window.app.getSpawnedSessionProject(sid, child)
-  if (!childProject) throw new LayoutControlError('not_child', `Session ${child} was not launched by this session. Only sessions you started with session_collab_* can be split in.`)
+  const projectPath = findSessionTarget(useChatStore.getState(), child)?.projectPath ?? await window.app.getSessionProject(child)
+  if (!projectPath) throw new LayoutControlError('not_found', `Session ${child} was not found. Use session_list or session_search for ids.`)
   // The await gave the user time to move on; re-check before touching the window.
   const p = placement(sid)
   if (!p.chatOnScreen) return skipped()
   const mosaic = useMosaicStore.getState()
   if (p.splitSessions.includes(child)) return { status: 'applied', visible: p.windowVisible }
   const chat = useChatStore.getState()
-  const projectPath = findSessionTarget(chat, child)?.projectPath ?? childProject
   const callerTile = p.split && mosaic.root
     ? collectLeaves(mosaic.root).find((leaf) => leaf.sessionId === sid)?.id
     : chat.activeProject ? mosaicTileId(chat.activeProject, sid) : undefined
   if (!callerTile) throw new LayoutControlError('unavailable', 'Could not find this session on screen.')
   mosaic.addTile(projectPath, child, { tileId: callerTile, edge: SESSION_EDGES[direction] }, { focus: false })
-  recordDockOpener(sid, splitKey(child), openerKey(caller))
   return { status: 'applied', visible: p.windowVisible }
 }

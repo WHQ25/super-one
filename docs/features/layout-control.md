@@ -2,7 +2,7 @@
 
 Agents and mini-apps can read and arrange the SuperOne desktop: open a file as a
 tab, manage tabs, show or hide the activity panel and the bottom terminal,
-collapse or resize the sidebar, resize the panel, dock or float the chat, and put a child session beside the caller in the split view.
+collapse or resize the sidebar, resize the panel, dock or float the chat, and put any other session beside the caller in the split view.
 
 ## One implementation, two entry points
 
@@ -40,10 +40,12 @@ sessions' layouts are parked as JSON (`stores/activity-view-state.ts`).
 - `visible` tells the caller whether the user can see the result now. It also
   requires the window itself to be visible.
 
-**Close only what you opened.** `dock-ownership.ts` records who opened each tab
-and split pane, per session: `agent`, `miniapp:<appId>`, or nobody (the user).
-`close_tab` and `close_split` refuse anything the caller did not open. Opening a
-tab that already exists keeps it the user's.
+**Openers are reported, not enforced.** `dock-ownership.ts` records who opened
+each tab, per session: `agent`, `miniapp:<appId>`, or nobody (the user), and the
+snapshot reports it as `openedBy` so a caller can clean up after itself. Opening
+a tab that already exists keeps it the user's. A closed tab or split pane is
+cheap to reopen, so `close_tab` closes any tab and `close_split` any pane but
+the caller's own.
 
 Agent-opened tabs are:
 
@@ -51,7 +53,7 @@ Agent-opened tabs are:
 - terminals with `agentSessionId`;
 - files from `layout_act`.
 
-Focus, split and maximize work on any tab.
+Focus, split, maximize and close work on any tab.
 
 **No duplicate entry points.** Browser and terminal tabs are opened with
 `browser_tabs` / `terminal_tabs`. `layout_act` only focuses, splits or closes them by
@@ -105,10 +107,10 @@ chat. The split view refuses it as `unavailable`. `position` names the floating
 chat's snap anchors (chat store `corner`: corners and edge midpoints); given
 alone it moves the chat without changing the mode.
 
-`split_session` accepts only a session the caller spawned. Main checks the spawn
-grant (`SPAWNED_SESSION_PROJECT` IPC), and the same check serves agents and
-mini-apps. The pane is added beside the caller with `addTile(…, { focus: false })`,
-so focus stays where the user had it.
+`split_session` accepts any session but the caller's own. Its project comes from
+the chat store, or from main (`SESSION_PROJECT` IPC) for a local session the
+renderer has not loaded. The pane is added beside the caller with
+`addTile(…, { focus: false })`, so focus stays where the user had it.
 
 ## Tabs opened in the background
 
@@ -144,7 +146,7 @@ holds the app, otherwise the first holder. This is the existing binding with its
 known ambiguity when several sessions hold one app (`docs/proposals/miniapp-agent-api.md`).
 
 The snapshot's `self` is the app's own tab, so the app can focus, maximize or
-split itself. Tabs and panes the app opens are recorded as `miniapp:<appId>`, and
+split itself. Tabs the app opens are recorded as `miniapp:<appId>`, and
 only the app can close them. Author types are in
 `packages/shared/src/miniapp-host-api.d.ts`; a type test keeps them equal to
 the shared contract. The author guide is the `api-host` manual topic.

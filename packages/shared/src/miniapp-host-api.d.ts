@@ -116,8 +116,7 @@ export interface SuperOneMiniAppAgentApi {
  * Desktop layout, scoped to the session holding this app — the same contract as
  * the agent's `layout_snapshot` / `layout_act`. Changes to that session's own layout wait
  * for it when another session is in front (`queued`); window-wide changes are
- * refused then (`skipped`). Tabs and split panes can be closed only by whoever
- * opened them.
+ * refused then (`skipped`).
  */
 export type SuperOneMiniAppLayoutAction =
   | 'open_file'
@@ -143,7 +142,7 @@ export interface SuperOneMiniAppLayoutRequest {
   index?: number
   /** panel_side. */
   side?: 'left' | 'right'
-  /** split_session / close_split: a session the holder session launched. */
+  /** split_session / close_split: any session other than the holder session. */
   sessionId?: string
   /** resize_sidebar / resize_panel / resize_group: target width in px; sidebar and panel clamp to `snapshot().sizes`. */
   width?: number
@@ -204,7 +203,7 @@ export interface SuperOneMiniAppLayoutSnapshot {
 export interface SuperOneMiniAppLayoutApi {
   /** Rejects when no session holds this app. */
   snapshot(): Promise<SuperOneMiniAppLayoutSnapshot>
-  /** Rejects with a readable message for an unknown tab, a tab or pane the app did not open, or a session the holder did not launch. */
+  /** Rejects with a readable message for an unknown tab or session. */
   act(request: SuperOneMiniAppLayoutRequest): Promise<SuperOneMiniAppLayoutResult>
 }
 

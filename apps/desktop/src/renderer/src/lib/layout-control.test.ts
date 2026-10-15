@@ -93,7 +93,7 @@ beforeEach(() => {
   _resetDockOwnershipForTest()
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   ;(window as unknown as { terminal: unknown }).terminal = { list: vi.fn(async () => []) }
-  ;(window as unknown as { app: unknown }).app = { getSpawnedSessionProject: vi.fn(async () => null) }
+  ;(window as unknown as { app: unknown }).app = { getSessionProject: vi.fn(async () => null) }
   useAppStore.setState({ view: 'main', showSidebar: true })
   useActivityPanelStore.setState({ showPanel: false, side: 'left', maximized: false, maximizedGroupId: null, userResized: true })
   useActivityViewStateStore.getState()._resetForTest()
@@ -122,14 +122,14 @@ describe('caller in front', () => {
     ])
   })
 
-  it('leaves a tab the user already had as theirs', async () => {
+  it('leaves a tab the user already had as theirs, and can still close it', async () => {
     const dock = fakeDock()
     dock.addPanel({ id: 'file:src/main.ts', component: 'file-preview', title: 'main.ts' })
 
     await layoutAct(agentA, { action: 'open_file', path: 'src/main.ts' })
 
     expect(layoutSnapshot(agentA).tabs[0].openedBy).toBe('user')
-    await expect(layoutAct(agentA, { action: 'close_tab', tab: 'file:src/main.ts' })).rejects.toMatchObject({ code: 'not_owned' })
+    expect(await layoutAct(agentA, { action: 'close_tab', tab: 'file:src/main.ts' })).toMatchObject({ status: 'applied' })
   })
 
   it('closes a tab it opened', async () => {
@@ -407,13 +407,13 @@ describe('opening a mini-app for the agent', () => {
 })
 
 describe('session split', () => {
-  it('refuses a session it did not launch', async () => {
-    await expect(layoutAct(agentA, { action: 'split_session', sessionId: 'X' })).rejects.toMatchObject({ code: 'not_child' })
+  it('reports a session that does not exist', async () => {
+    await expect(layoutAct(agentA, { action: 'split_session', sessionId: 'X' })).rejects.toMatchObject({ code: 'not_found' })
     expect(useMosaicStore.getState().mode).toBe('single')
   })
 
-  it('adds its child beside itself without moving focus, and only it can close that pane', async () => {
-    vi.mocked(window.app.getSpawnedSessionProject).mockResolvedValue(PROJECT)
+  it('adds another session beside itself without moving focus, and any caller can close that pane', async () => {
+    vi.mocked(window.app.getSessionProject).mockResolvedValue(PROJECT)
 
     expect(await layoutAct(agentA, { action: 'split_session', sessionId: 'C' })).toEqual({ status: 'applied', visible: true })
 
@@ -424,10 +424,10 @@ describe('session split', () => {
     expect(useChatStore.getState().switchToSession).not.toHaveBeenCalled()
     expect(layoutSnapshot(agentA).window).toMatchObject({ layout: 'split', splitSessions: ['A', 'C'] })
 
-    const miniApp: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'miniapp', appId: 'demo' } }
-    await expect(layoutAct(miniApp, { action: 'close_split', sessionId: 'C' })).rejects.toMatchObject({ code: 'not_owned' })
+    await expect(layoutAct(agentA, { action: 'close_split', sessionId: 'A' })).rejects.toMatchObject({ code: 'invalid' })
 
-    await layoutAct(agentA, { action: 'close_split', sessionId: 'C' })
+    const miniApp: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'miniapp', appId: 'demo' } }
+    await layoutAct(miniApp, { action: 'close_split', sessionId: 'C' })
     expect(useMosaicStore.getState().mode).toBe('single')
   })
 })
@@ -443,7 +443,7 @@ describe('tab ids', () => {
 })
 
 describe('mini-app caller', () => {
-  it('finds its own tab and cannot close what the agent opened', async () => {
+  it('finds its own tab and can close what the agent opened', async () => {
     const dock = fakeDock()
     dock.addPanel({ id: 'miniapp-demo:p1', component: 'miniapp', title: 'Demo' })
     dock.addPanel({ id: 'browser-1', component: 'browser', title: 'Docs' })
@@ -451,7 +451,7 @@ describe('mini-app caller', () => {
     const miniApp: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'miniapp', appId: 'demo', instanceKey: 'demo:p1' } }
 
     expect(layoutSnapshot(miniApp).self).toBe('miniapp-demo:p1')
-    await expect(layoutAct(miniApp, { action: 'close_tab', tab: 'browser-1' })).rejects.toMatchObject({ code: 'not_owned' })
     expect(await layoutAct(miniApp, { action: 'maximize_panel', tab: 'miniapp-demo:p1' })).toMatchObject({ status: 'applied' })
+    expect(await layoutAct(miniApp, { action: 'close_tab', tab: 'browser-1' })).toMatchObject({ status: 'applied' })
   })
 })

@@ -31,6 +31,7 @@ import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { useCodexConversationActivation } from './use-codex-conversation-activation'
 import { ComposerSwitch } from './ComposerSwitch'
+import { useSessionContinuationOffer } from './session-continuation-offer'
 import { resolveComposer } from './composer-slot/resolve-composer'
 import { COMPOSER_CONTENT_MAX_HEIGHT, renderComposer } from './composer-slot/composer-registry'
 import { topComposer, useComposerStacks } from './composer-slot/composer-stack'
@@ -446,12 +447,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     const entry = projectPath && displayedSessionId ? topComposer({ projectPath, sessionId: displayedSessionId }, state) : null
     return entry ? { key: entry.key, id: entry.id, target: entry.target, lifetime: entry.lifetime } : null
   }))
-  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, appInput: !!appInput, voiceEngaged: showRealtimeComposer, openedComposerId: openedComposer?.id })
+  const containerRef = useRef<HTMLDivElement>(null)
+  const continuation = useSessionContinuationOffer(containerRef)
+  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, appInput: !!appInput, voiceEngaged: showRealtimeComposer, openedComposerId: openedComposer?.id, continuationOffered: !!continuation })
   const composerKey = composerKind === 'decision' && decision
     ? `${decision.kind}:${decision.request.requestId}`
     : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}`
     : composerKind === 'app-input' && appInput ? `app-input:${appInput.requestId}`
-    : openedComposer?.id === composerKind ? openedComposer.key : composerKind
+    : openedComposer?.id === composerKind ? openedComposer.key
+    : composerKind === 'continuation' && continuation ? `continuation:${continuation.sessionId}:${continuation.expiresAt}`
+    : composerKind
   // The local snapshot needs no backing thread, so every Codex session on screen
   // restores it; only the provider reconcile waits for the thread id, because
   // reaching Codex would otherwise start a backend just to read history.
@@ -503,7 +508,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     }),
   }), [])
 
-  const containerRef = useRef<HTMLDivElement>(null)
   // Read by the empty-pane landing (ChatSuggestions) and the transcript's follow
   // line (useChatScroll) to stay put while a composer other than the text one
   // occupies the slot.
@@ -650,6 +654,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               appConsent: consentHead,
               appInput,
               openedComposer,
+              continuation,
             })}
           />
         </>

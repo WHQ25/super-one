@@ -6,6 +6,8 @@ import { DecisionComposer } from '../DecisionComposer'
 import { InputRequestComposer } from '../InputRequestComposer'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import { RealtimeCallComposer } from '../RealtimeCallComposer'
+import { SessionContinuationComposer } from '../SessionContinuationComposer'
+import type { SessionContinuationOffer } from '../session-continuation-offer'
 import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
 import type { PendingMcpConsent } from '@/components/mcp-apps/consent-store'
@@ -94,6 +96,7 @@ export interface ComposerRenderOptions {
   appConsent?: PendingMcpConsent
   appInput?: PermissionRequest | null
   openedComposer?: ComposerHandle | null
+  continuation?: SessionContinuationOffer | null
 }
 
 type ComposerFactory = (sessionId: string, options: ComposerRenderOptions) => ReactNode
@@ -105,6 +108,9 @@ const composerRegistry: Record<BuiltinComposerId, ComposerFactory> = {
   voice: (_sessionId, options) => (
     <RealtimeCallComposer microphoneShortcutEnabled={options.microphoneShortcutEnabled} />
   ),
+  continuation: (_sessionId, options) => options.continuation
+    ? <SessionContinuationComposer offer={options.continuation} />
+    : null,
   text: (_sessionId, options) => (
     <ChatComposerShell
       showTodoPopup={options.showTodoPopup}

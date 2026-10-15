@@ -50,6 +50,7 @@ import { previewAddProjectRequest } from './add-project-fixtures'
 import { previewAppContext } from './context-attachment-fixtures'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { AppSettingsScreen } from '../screens/app-settings-screen'
+import { SessionHandoffComposer } from '../prompts/SessionHandoffComposer'
 import { UpdatePromptGallery } from './UpdatePromptGallery'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { TerminalScreen } from '../screens/terminal-screen'
@@ -540,10 +541,9 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             collapsedPrompts={page === 'Chat' && pending === 'collapsed' ? [{ kind: 'permission', request: ordinaryPermission }] : undefined}
             onExpandPrompt={() => setPending('sheet')}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
-            continuation={page === 'Chat' && continuationHint ? {
-              onContinue: () => { setContinuationHint(false); setPage('New session') },
-              onContinueHere: () => setContinuationHint(false),
-            } : undefined}
+            inputComposer={page === 'Chat' && continuationHint
+              ? <SessionHandoffComposer onApprove={() => { setContinuationHint(false); setPage('New session') }}
+                onDismiss={() => setContinuationHint(false)} /> : undefined}
             goal={page === 'Chat' ? goal : null} goalCapability={goalCapability}
             onGoalEdit={() => changeDraft(`/goal ${goal?.objective ?? ''}`)}
             onGoalClear={() => setGoal(null)}

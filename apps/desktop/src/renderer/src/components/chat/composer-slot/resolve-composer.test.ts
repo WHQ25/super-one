@@ -37,4 +37,13 @@ describe('resolveComposer', () => {
     expect(resolveComposer({ ...inputs, needsDecision: true })).toBe('decision')
     expect(resolveComposer({ ...inputs, decisionAvailable: false })).toBe('voice')
   })
+
+  it('offers the session handoff only in place of a writable text composer', () => {
+    const inputs = { needsDecision: false, appConsent: false, voiceEngaged: false, continuationOffered: true }
+    expect(resolveComposer(inputs)).toBe('continuation')
+    expect(resolveComposer({ ...inputs, voiceEngaged: true })).toBe('voice')
+    expect(resolveComposer({ ...inputs, needsDecision: true })).toBe('decision')
+    expect(resolveComposer({ ...inputs, openedComposerId: 'superone.image' })).toBe('superone.image')
+    expect(resolveComposer({ ...inputs, decisionAvailable: false })).toBe('text')
+  })
 })

@@ -32,6 +32,8 @@ import { useTranscriptSync } from './use-transcript-sync'
 import { useSessionIndicators } from './use-session-indicators'
 import { useSessionContinuationHint } from './use-session-continuation-hint'
 import { continuationComposer } from '../session-continuation'
+import { SessionHandoffComposer } from '../prompts/SessionHandoffComposer'
+import { useKeyboardVisible } from '../ui/use-keyboard-visible'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
@@ -2341,9 +2343,12 @@ export function MobileApp() {
   // harness without a transcript fork would hand back an amnesiac session.
   const canForkSession = !!sessionId && harnessSupportsFork(selectedProvider) && !sessionWorktree.isWorktree
   // A new session leaves a routed node for the workspace, so it cannot continue one there.
+  // The handoff takes the composer's place, so it waits while the keyboard is up for typing.
+  const keyboardVisible = useKeyboardVisible()
   const continuationHint = useSessionContinuationHint({
     clientRef: workspaceClientRef, connected: connectionState === 'connected',
-    sessionId: routedEnvironmentId ? null : sessionId, expiry: cacheExpiry, idle: !streaming && !perm && !plan,
+    sessionId: routedEnvironmentId ? null : sessionId, expiry: cacheExpiry,
+    idle: !streaming && !perm && !plan && !keyboardVisible,
   })
   /** Continue the open session in a new one (docs/features/session-continuation.md). */
   const continueInNewSession = () => {
@@ -2725,7 +2730,8 @@ export function MobileApp() {
           }}
           loadingConversation={sessionLoading || remoteDrafts.opening}
           composerHidden={!!mcpApp.view && !mcpApp.composerOpen && !nativeInputs.slot}
-          inputComposer={nativeInputs.slot}
+          inputComposer={nativeInputs.slot ?? (continuationHint.visible
+            ? <SessionHandoffComposer onApprove={continueInNewSession} onDismiss={continuationHint.dismiss} /> : null)}
           voiceComposer={voiceUi.composer}
           voiceEntry={voiceUi.entry}
           // The tablet keeps the session list on screen, so it has nothing to
@@ -2773,10 +2779,6 @@ export function MobileApp() {
           onGoalPause={() => runGoalTransition((actions) => actions.pause())}
           onGoalResume={() => runGoalTransition((actions) => actions.resume())}
           onGoalDismiss={() => runtimeRef.current?.dismissGoal()}
-          continuation={continuationHint.visible ? {
-            onContinue: continueInNewSession,
-            onContinueHere: continuationHint.dismiss,
-          } : undefined}
           contextTokens={usage.contextTokens}
           contextWindow={ringContextWindow}
           totalCostUsd={usage.totalCostUsd}

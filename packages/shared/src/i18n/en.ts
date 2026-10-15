@@ -1567,13 +1567,15 @@ export type Messages = {
   }
   chat: {
     sessionContinuation: {
-      hint: string
-      continueInNew: string
-      continueHere: string
-      dontShowAgain: string
+      title: string
+      lead: string
+      freshContext: string
+      mentionsThis: string
+      collaborationKept: string
+      approve: string
+      dismiss: string
       continuedIn: string
       openSuccessor: string
-      failed: string
     }
     remoteController: {
       badge: string
@@ -6079,13 +6081,15 @@ export const en: Messages = {
   },
   chat: {
     sessionContinuation: {
-      hint: 'This session is long and its cache has expired. Continuing here re-caches the whole context.',
-      continueInNew: 'Continue in New Session',
-      continueHere: 'Continue Here',
-      dontShowAgain: 'Don’t Show Again',
+      title: 'Handoff to New Session',
+      lead: 'This session is long and its prompt cache has expired, so the next message here re-reads the whole context.',
+      freshContext: 'A fresh context: faster, cheaper replies.',
+      mentionsThis: 'The new session mentions this one, so the agent can still look up anything from it.',
+      collaborationKept: 'Collaboration carries over: parent, child and linked sessions reach the new session.',
+      approve: 'Approve',
+      dismiss: 'Dismiss',
       continuedIn: 'This session continues in a new session.',
       openSuccessor: 'Open',
-      failed: 'Could not continue in a new session: {{message}}',
     },
     remoteController: {
       badge: 'Started from {{label}}',

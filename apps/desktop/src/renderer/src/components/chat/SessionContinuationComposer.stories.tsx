@@ -1,15 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { plainTextToTiptapDoc } from './chat-input/plainTextToTiptapDoc'
-import { SessionContinuationBanner, SessionContinuationNotice } from './SessionContinuationBanner'
+import { SessionContinuationComposer, SessionHandoffPrompt } from './SessionContinuationComposer'
+import { SessionContinuationBanner } from './SessionContinuationBanner'
+import { useSessionContinuationOffer } from './session-continuation-offer'
 
 const projectPath = '/storybook/long-session'
-const sessionId = 'long-session'
 const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
 
 const finishedTurn: ChatMessage = {
@@ -22,13 +23,8 @@ const finishedTurn: ChatMessage = {
 }
 
 /** A long Claude session whose 1h cache expired an hour ago, with an unsent draft. */
-function LongSession({ continuedIn = null }: { continuedIn?: string | null }) {
+function LongSession({ sessionId, continuedIn = null }: { sessionId: string; continuedIn?: string | null }) {
   const [ready, setReady] = useState(false)
-  const active = useChatStore(useShallow((state) => {
-    const project = state.projectSessions[projectPath]
-    const session = project?._activeSessionId ? project._sessions[project._activeSessionId] : undefined
-    return { id: project?._activeSessionId, draft: session?.draftText ?? '', continuesFrom: session?.continuesFrom ?? null }
-  }))
   useEffect(() => {
     const previous = useChatStore.getState()
     const previousHint = useAppStore.getState().sessionContinuationHint
@@ -47,11 +43,24 @@ function LongSession({ continuedIn = null }: { continuedIn?: string | null }) {
       useChatStore.setState(previous)
       useAppStore.setState({ sessionContinuationHint: previousHint })
     }
-  }, [continuedIn])
-  if (!ready) return null
+  }, [sessionId, continuedIn])
+  return ready ? <Slot sessionId={sessionId} /> : null
+}
+
+/** What the composer slot shows for the active session, and where Approve took it. */
+function Slot({ sessionId }: { sessionId: string }) {
+  const offer = useSessionContinuationOffer()
+  const active = useChatStore(useShallow((state) => {
+    const project = state.projectSessions[projectPath]
+    const session = project?._activeSessionId ? project._sessions[project._activeSessionId] : undefined
+    return { id: project?._activeSessionId, draft: session?.draftText ?? '', continuesFrom: session?.continuesFrom ?? null }
+  }))
   return (
     <div style={{ width: 620, maxWidth: '100%' }}>
       <SessionContinuationBanner />
+      {offer
+        ? <SessionContinuationComposer offer={offer} />
+        : <div data-testid="text-composer" className="mx-3 rounded-xl border border-border px-3 py-2 text-xs text-muted-foreground">Text composer</div>}
       <dl className="mx-3 mt-3 grid grid-cols-[auto_1fr] gap-x-3 text-xs text-muted-foreground" data-testid="active-session">
         <dt>Active session</dt><dd>{active.id === sessionId ? 'original' : 'new'}</dd>
         <dt>Composer</dt><dd>{active.draft || '—'}</dd>
@@ -61,45 +70,47 @@ function LongSession({ continuedIn = null }: { continuedIn?: string | null }) {
   )
 }
 
-// Typed from the component: the props are a union, which `satisfies Meta` narrows to `never`.
-const meta: Meta<typeof SessionContinuationNotice> = {
-  title: 'Chat/SessionContinuationBanner',
-  component: SessionContinuationNotice,
-  args: { kind: 'hint', onContinue: () => {}, onContinueHere: () => {}, onDontShowAgain: () => {} },
+const meta: Meta<typeof SessionHandoffPrompt> = {
+  title: 'Chat/SessionContinuationComposer',
+  component: SessionHandoffPrompt,
+  args: { onApprove: fn(), onDismiss: fn() },
   parameters: { layout: 'padded' },
   decorators: [(Story) => <div style={{ width: 620, maxWidth: '100%' }}><Story /></div>],
 }
 export default meta
-type Story = StoryObj<typeof SessionContinuationNotice>
+type Story = StoryObj<typeof SessionHandoffPrompt>
 
-export const Hint: Story = {}
-export const Continued: Story = { args: { kind: 'continued', onOpen: () => {} } }
-export const Narrow: Story = { decorators: [(Story) => <div style={{ width: 300 }}><Story /></div>] }
+export const Handoff: Story = {}
 export const Dark: Story = { globals: { theme: 'dark' } }
 export const Chinese: Story = { globals: { locale: 'zh' } }
-export const ChineseNarrow: Story = { globals: { locale: 'zh' }, decorators: [(Story) => <div style={{ width: 300 }}><Story /></div>] }
+export const Narrow: Story = { decorators: [(Story) => <div style={{ width: 320 }}><Story /></div>] }
+export const ChineseNarrowDark: Story = {
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div style={{ width: 320 }}><Story /></div>],
+}
 
-/** The real banner on an expired long session: Continue opens a new session holding the mention and the moved draft. */
-export const ContinueInNewSession: Story = {
-  render: () => <LongSession />,
+/** Approve opens a new session holding the mention and the moved draft. */
+export const ApproveHandoff: Story = {
+  render: () => <LongSession sessionId="approve-handoff" />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Continue in New Session' }))
+    await userEvent.click(await canvas.findByRole('button', { name: /Approve/ }))
     await waitFor(() => expect(canvas.getByTestId('active-session')).toHaveTextContent('new'))
     await expect(canvas.getByTestId('active-session')).toHaveTextContent(/Composer@\S.* also update the docs/)
-    await expect(canvas.getByTestId('active-session')).toHaveTextContent(`Continues${sessionId}`)
+    await expect(canvas.getByTestId('active-session')).toHaveTextContent('Continuesapprove-handoff')
   },
 }
 
-/** Continue Here hides the banner until the cache expires again. */
-export const ContinueHere: Story = {
-  render: () => <LongSession />,
+/** Dismiss returns the text composer until the cache expires again. */
+export const DismissHandoff: Story = {
+  render: () => <LongSession sessionId="dismiss-handoff" />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Continue Here' }))
-    await waitFor(() => expect(canvas.queryByTestId('session-continuation-notice')).toBeNull())
+    await userEvent.click(await canvas.findByRole('button', { name: /Dismiss/ }))
+    await waitFor(() => expect(canvas.queryByTestId('session-handoff-prompt')).toBeNull())
+    await expect(canvas.getByTestId('text-composer')).toBeInTheDocument()
   },
 }
 
-/** The old session after its continuation was created. */
-export const AlreadyContinued: Story = { render: () => <LongSession continuedIn="next-session" /> }
+/** The old session after its continuation was created: no offer, a row that opens the successor. */
+export const AlreadyContinued: Story = { render: () => <LongSession sessionId="continued" continuedIn="next-session" /> }

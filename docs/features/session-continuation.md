@@ -7,7 +7,7 @@ new session takes over the old one's collaboration channels, so a parent keeps
 its children and a child keeps its parent. Desktop and mobile; local sessions
 and remote nodes.
 
-## When the hint shows
+## When the handoff is offered
 
 `packages/shared/src/session-continuation.ts` decides from the transcript alone.
 Desktop and mobile run the same code, and neither polls the host.
@@ -20,9 +20,15 @@ Desktop and mobile run the same code, and neither polls the host.
   Background subagents that keep the cache warm after the turn are not counted.
 - **Size.** The session's tracked context tokens, or the finished turn's usage
   while that is unknown (a cold node session), at least the threshold.
-- **State.** No turn running and no pending prompt. The banner renders only in
-  the regular text composer, so decisions, read-only states and remote locks
-  suppress it.
+- **State.** No turn running and no pending prompt, and the person is not typing:
+  the offer waits while the desktop editor has focus or the phone keyboard is up.
+
+The offer is a composer in the slot, "Handoff to New Session": a short reason,
+what a new session brings (a fresh context, a mention of this one, collaboration
+carried over), and Approve and Dismiss. It stands in for the writable text
+composer only, so decisions, app forms, voice calls and read-only states keep
+priority ([composer.md](composer.md)). The phone shows the same form in its
+composer slot.
 
 Settings are `{ enabled, minContextTokens }`, default on at 300K, clamped to
 100K–1M. They live only on the desktop, in `AppSettings.sessionContinuationHint`
@@ -32,16 +38,16 @@ switch; a host that reports none gets the default.
 
 ## Actions
 
-- **Continue in New Session.** Opens an unsent draft on the same project,
+- **Approve** (Enter on desktop). Opens an unsent draft on the same project,
   checkout, harness, provider, model, effort and permission settings, carrying
   `continuesFrom`. Its composer holds a session mention of the old session
   followed by the old session's unsent draft and attachments; the draft moves off
   the old session on the device that acted. On desktop, the first send's reminder
   for that mention tells the agent it continues that session and took over its
   channels.
-- **Continue Here** (the phone's close button). Hides the banner for that session
-  until its cache expires again after a later turn.
-- **Don't Show Again** (desktop only). Turns the setting off.
+- **Dismiss** (Escape on desktop). Returns the text composer for that session
+  until its cache expires again after a later turn. Turning the offer off is the
+  desktop setting.
 
 Continuation drafts are never prewarmed and always reach the host through
 `session.create { continuesFrom }`, which is where the channels move. Until that

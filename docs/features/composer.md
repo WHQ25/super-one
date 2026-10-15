@@ -2,8 +2,8 @@
 
 Desktop chat renders one composer in a shared slot below the transcript. The
 slot's registry resolves the current entry by priority: session decisions,
-MCP App consent, app/widget input forms, an explicitly opened composer, realtime voice, then the regular
-text composer. A decision pauses the lower-priority composer until it clears. Plan approval retains its
+MCP App consent, app/widget input forms, an explicitly opened composer, realtime voice, a session
+handoff offer, then the regular text composer. A decision pauses the lower-priority composer until it clears. Plan approval retains its
 original full-screen review in the chat pane.
 
 ## Opening native composers
@@ -234,12 +234,13 @@ trust, and mini-app calls. They enter the session permission queue regardless
 of the active harness; replies resolve the host confirmation before reaching
 the harness backend. MCP elicitation forms use the same permission composer.
 
-## Notice rows
+## Session handoff
 
-The text composer draws session notices above its status lines. A long session
-whose prompt cache expired offers to continue in a new session there
-([session-continuation.md](session-continuation.md)); being part of the text
-composer, it yields to decisions and read-only states like the rest.
+Below voice and above the text composer, a long session whose prompt cache
+expired offers a handoff to a new session
+([session-continuation.md](session-continuation.md)). It replaces only a
+writable text composer and waits while the editor has focus; once the session
+is continued, the text composer shows a row that opens the new session.
 
 ## Draft, focus, and keyboard rules
 

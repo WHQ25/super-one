@@ -44,7 +44,6 @@ import { ComposerModeBorder } from '../ui/composer-mode-border'
 import type { ComposerMode } from '@superone/shared/composer-mode'
 import type { ScheduledSendControls } from '../navigation/use-scheduled-send'
 import { ScheduledSendControl } from '../ui/scheduled-send-control'
-import { SessionContinuationNotice, type SessionContinuationControls } from '../ui/session-continuation-notice'
 
 export type ComposerSelection = {
   model: string; models: ModelOption[]; effort: string; efforts: RemoteEffortOption[]
@@ -61,8 +60,6 @@ export type ComposerSelection = {
 
 export type ChatComposerProps = {
   scheduledSend?: ScheduledSendControls
-  /** Offered above the composer once a long session's prompt cache expired. */
-  continuation?: SessionContinuationControls
   hasConversation?: boolean
   voiceEntry?: ReactNode
   nativeDraft?: NativeComposerBinding
@@ -271,7 +268,6 @@ export function ChatComposer(props: ChatComposerProps) {
   // `keyboardShouldPersistTaps` keeps `/` and `@` from dismissing the keyboard
   // before they can write into the still-focused field.
   return <View style={{ paddingHorizontal: COMPOSER_HORIZONTAL_INSET, paddingTop: COMPOSER_TOP_GAP, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
-    {props.continuation && !props.loadingConversation ? <SessionContinuationNotice controls={props.continuation} /> : null}
     {!tablet && !props.loadingConversation ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: CHIP_HEIGHT }}>{controls}</View> : null}
     {props.overlay ?? <>
       {/* Only while there is nothing to send: a draft, or a typed `/` or `@`, is an

@@ -31,7 +31,6 @@ import { useMobileLocale } from '../i18n/context'
 import type { ComposerMode } from '@superone/shared/composer-mode'
 import type { ScheduledSendControls } from '../navigation/use-scheduled-send'
 import { handleScheduledSendAction } from '../scheduled-send-webview'
-import type { SessionContinuationControls } from '../ui/session-continuation-notice'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 
@@ -45,7 +44,6 @@ const coverStyle = { zIndex: 1, elevation: 4, shadowColor: 'transparent' } as co
 
 export function ChatScreen(props: {
   scheduledSend?: ScheduledSendControls
-  continuation?: SessionContinuationControls
   hasConversation?: boolean
   voiceEntry?: ReactNode
   voiceComposer?: ReactNode

@@ -15,6 +15,69 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Create reusable agent profiles with instructions, model, effort, permission
+  mode and harness-specific settings. Review and edit proposed profiles before
+  saving, and use their defaults across desktop and remote collaboration.
+- Let agents and mini-apps inspect and arrange their session's desktop layout:
+  open files, manage tabs and panels, and show child sessions side by side.
+  Background changes wait for that session without moving the user's focus.
+- Choose the agent and launch settings for a suggested task, and expand its
+  full prompt before starting it.
+
+### Changed
+
+- Give each Claude and Codex subscription account its own card with consistent
+  account actions and usage refresh placement.
+- Keep unstarted suggested-task cards available and remove the dismiss action.
+
+### Fixed
+
+- Persist collaboration wake delivery with bounded retries so unavailable
+  parents are not woken indefinitely after a child stops.
+- Deliver session instructions and the collaboration protocol to DeepSeek.
+- Show failed Claude usage refreshes beside the cached reading, and keep the
+  refresh tooltip from opening automatically with the usage popover.
+- Keep Markdown table copy and expand buttons clickable.
+
+## [0.74.0-alpha] - 2026-10-15
+
+### Added
+
+- Create reusable agent profiles with instructions, model, effort, permission
+  mode and harness-specific settings. Review and edit proposed profiles before
+  saving, and use their defaults across desktop and remote collaboration.
+- Let agents and mini-apps inspect and arrange their session's desktop layout:
+  open files, manage tabs and panels, and show child sessions side by side.
+  Background changes wait for that session without moving the user's focus.
+- Choose the agent and launch settings for a suggested task, and expand its
+  full prompt before starting it.
+
+### Changed
+
+- Give each Claude and Codex subscription account its own card with consistent
+  account actions and usage refresh placement.
+- Keep unstarted suggested-task cards available and remove the dismiss action.
+- Use `layout_snapshot` and `layout_act` in place of the interim `ui_snapshot`
+  and `ui_act` names; remove the `open_diff` action and `commit` field.
+
+### Fixed
+
+- Persist collaboration wake delivery with bounded retries so unavailable
+  parents are not woken indefinitely after a child stops.
+- Deliver session instructions and the collaboration protocol to DeepSeek.
+- Show failed Claude usage refreshes beside the cached reading, and keep the
+  refresh tooltip from opening automatically with the usage popover.
+- Keep Markdown table copy and expand buttons clickable.
+
+### CI
+
+- Read the stable desktop prerequisite for mobile releases through
+  authenticated R2 access and fail closed on read errors.
+
+## [0.73.0] - 2026-10-14
+
+### Added
+
 - Run native OpenCode V2 on desktop and remote nodes with native catalogs,
   streaming tool previews, leased approvals, queued steering, pending-input
   controls, MCP OAuth and rewind/fork. Recover interrupted turns without
@@ -185,343 +248,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Subscribe to remote terminal output and list changes instead of polling full
   screens; run remote Git reads asynchronously with timeouts and shared locks.
 - Reuse unchanged Workflow transcripts and count each Agent's tokens accurately.
-
-## [0.73.0-alpha.8] - 2026-10-14
-
-### Added
-
-- Show Claude `/recap` as a transcript recap row on desktop and phone,
-  including after history restore.
-- Launch collaborators with the user's saved defaults and Claude/Codex accounts;
-  identify each account's usage with its matching launch provider.
-- Suggest separate tasks for out-of-scope issues from the shared host prompt.
-- Fade Markdown table edges while more columns remain hidden.
-
-### Fixed
-
-- Keep desktop history steady while composers grow or switch, and preserve
-  the reader's position during streaming until they return to the live tail.
-- Keep the phone composer height stable when switching harnesses or showing
-  voice controls.
-- Refresh Claude and Codex account usage independently, retain cached meters
-  through transient failures, and remove signed-out profiles without deleting history.
-- Align delegated task bubbles' timestamps and copy controls with user bubbles
-  and remove extra Markdown spacing.
-
-### Tests
-
-- Cover recap persistence, collaborator launch defaults, account usage refresh
-  and transcript scroll anchoring; align remote quota reads with their new defaults.
-
-## [0.73.0-alpha.7] - 2026-10-14
-
-### Added
-
-- Use a paired desktop's full session operations, models, Git, provider profiles,
-  automations, harness controls, Skills, MCP servers, Plugins, Agents and Hooks.
-- Manage a paired desktop's Codex accounts, usage and limits; complete remote
-  MCP OAuth in the controller's browser and run its sessions' MCP Apps.
-- Show Workflow agents as phase-grouped status tiles with nested workflows,
-  hover details and corrected per-agent token counts.
-- Show a read-only notice on phones when a session's worktree has been removed.
-
-### Changed
-
-- Move Windows sidebar and chat-side controls beside the logo in the title bar.
-- Inspect, edit and cancel scheduled phone messages from one panel. Accepted
-  quota-recovery offers leave the transcript; editing the time keeps the message.
-
-### Fixed
-
-- Name the device controlling a session and require an explicit desktop takeover;
-  release revoked clients' control and avoid taking control just to read a timeline.
-- Synchronize remote session and project lists, unread marks and running state,
-  including after reconnects and changes made by another client.
-- Update remote terminal ownership across all tabs, acquire control only on real
-  input, and recover correctly after disconnects, expired leases or failed closes.
-- Redact remote profile and MCP secrets, preserve stored keys when a pushed bundle
-  has no readable key, and keep masked edits within their original config scope.
-- Reject unsafe MCP resource names and non-web OAuth links; cancel abandoned
-  device-code sign-ins and avoid blocking local browser login behind them.
-- Keep remote MCP App views attached to their host and acknowledge artifact wakes
-  when admitted, without waiting for the Agent's whole turn to finish.
-- Preserve each draft's own worktree, restore drafts onto their origin sessions,
-  and clear deleted drafts from composers and in-memory sessions.
-- Keep long-chat Detail animations and height measurements stable, collapse
-  completed reasoning after remounts, and place async answers between whole blocks.
-- Load visible phone history edges automatically, with only an active Loading
-  indicator and no repeated reads when pagination makes no progress.
-- Keep Windows acrylic sidebars readable in dark mode and title bars transparent.
-- Remove doubled spacing and unrelated host metadata from phone settings cards.
-
-### Performance
-
-- Stream paired desktops' terminal output and list changes through subscriptions
-  instead of repeatedly polling full terminal screens.
-- Reuse unchanged Workflow transcripts and run remote Git reads asynchronously
-  with timeouts and shared worktree-operation locks.
-
-### Tests
-
-- Extend remote-control, transcript ordering and Windows title-bar coverage.
-
-## [0.73.0-alpha.6] - 2026-10-13
-
-### Added
-
-- Run native OpenCode V2 on desktop and remote nodes with native catalogs,
-  queued steering, pending-input controls, MCP OAuth, rewind/fork and streaming
-  tool previews; recover interrupted turns without resending input.
-
-### Changed
-
-- Show scroll-rail ticks only for user messages and compaction points, with the
-  first assistant text as the reply preview.
-
-### Fixed
-
-- Synchronize session and application settings across desktop and phone, and
-  preserve newer selections when queued messages run.
-- Correct phone scheduled-send controls and startup timing, and refresh the
-  session worktree branch and commit after changes.
-- Preserve the reading position on the first upward scroll and keep virtual
-  transcript spacing, reasoning groups and detail disclosures consistent.
-- Keep messages sent during manual compaction below the compaction divider.
-- Anchor link previews to the first hovered text line and keep favicons with
-  their link when a URL wraps.
-- Ignore transient shell directory changes when reconciling Claude session paths.
-- Hide automatic host wake messages while retaining user-authored messages.
-
-### Performance
-
-- Open and restore phone chats as bounded transcript windows, load older
-  content on demand, and reuse unchanged fragments across pages and reconnects.
-- Keep phone-local rows and visible transcript rows stable during live updates,
-  including sessions routed through another host; retain older-host fallback.
-
-### Tests
-
-- Cover transcript-window payloads and align history navigation, native service
-  and leased steering fixtures with the current contracts.
-
-## [0.73.0-alpha.5] - 2026-10-13
-
-### Added
-
-- Copy Markdown tables from their toolbar or open them in an expanded preview.
-- Schedule phone messages and see prompts when provider quota recovers.
-- Open collaboration peers through session chips with their host and harness icon.
-
-### Changed
-
-- Render Codex replies, reasoning, plans, commands, file changes and agent work
-  through the shared desktop and phone turn view, with live command output and
-  one session todo list; keep older stored turns readable.
-- Use each harness's own launch defaults, model catalog and permission controls
-  for sessions, collaboration tasks and automations.
-- Hide unavailable voice-call entries while a task runs or a call connects,
-  and keep controls available for active calls.
-
-### Fixed
-
-- Deduplicate Codex async-answer echoes, hide dismissed question bubbles and
-  preserve turn content when a question is answered.
-- Keep text navigation anchors within a turn without adding paragraph gaps;
-  split the transcript at compaction and accepted async answers.
-- Keep remote voice playback decoding across pauses and time delegated work
-  from the latest Codex turn.
-- Retire disconnected phone connections so old reconnect attempts cannot
-  replace a new connection; expire desktop phone-connection notifications.
-- Follow Claude worktree directory changes when resuming a session.
-- Show coordination tool summaries and messages, and full legacy Codex turns
-  in session archive reads.
-- Show file diffs when remote summarized changes are opened, and completed
-  Codex-generated images on remote clients.
-- Center link previews on the cursor and reuse media players in file previews.
-- Restore the sidebar title animation when a first-message title arrives
-  before its row mounts, and remove duplicate slash commands.
-- Emit a portable Computer Use zoom schema for MCP clients.
-
-### Performance
-
-- Virtualize shared turn activity details to keep long-running sessions
-  responsive when scrolling or resizing panes.
-
-### Tests
-
-- Add recorded Codex turn replay coverage and align navigation, restore and
-  voice-entry integration tests with the current session contracts.
-
-## [0.73.0-alpha.4] - 2026-10-12
-
-### Added
-
-- Queue Codex async questions in the composer and keep answers as quoted
-  bubbles on desktop and phone, including after history restore.
-- Suggest a separate task for an issue outside the current scope; its card
-  stays available until the user starts or dismisses it.
-- Add audio and video playback controls to Markdown media, including audio
-  cover art, lyrics and a progress bar.
-
-### Changed
-
-- Use the same session commands for local and remote sends, answers, steering,
-  rewinds, forks, scheduled messages and composer forms.
-- Clarify phone voice status and reorder call controls.
-
-### Fixed
-
-- Send attachments with scheduled messages and clear the delivered draft.
-- Search phone @ mentions in the asking chat's checkout and worktree.
-- Clear the phone composer as soon as Send is tapped; failed sends retain
-  Resend and Edit, and rejected session creation restores the draft.
-- Keep the chosen phone permission mode after creating a session, and apply
-  Codex permission selection before starting its runtime.
-- Preserve Codex delegated work and the backing thread when voice calls end;
-  bind Android audio routing before the call starts.
-- Keep the desktop composer locked while a phone renews its control lease.
-- Preserve local session icons and branch details, and record a phone's branch
-  selection as a worktree branch only for worktree sessions.
-- Keep frontend control grants out of agent runtime work so collaboration
-  commands use the host's own authority.
-- Retain the submitted Codex inline review turn and advertise only Mini App
-  tools whose authorization succeeded.
-- Clear the phone pairing status once its pairing code is displayed.
-
-### Tests
-
-- Align file-search mocks, history navigation and async-question events with
-  the current session contracts; control the voice cue test clock explicitly.
-
-## [0.73.0-alpha.3] - 2026-10-11
-
-### Added
-
-- Get the phone app that matches this desktop from Settings → Remote Control:
-  iOS (TestFlight) and Android (APK) QR codes, open until a phone is paired.
-- Draw bare web links with the site's favicon in the composer and sent
-  messages, with an Open Graph preview on hover; the phone composer draws
-  them the same way.
-- Phone: open app settings from the device list, before any pairing.
-
-### Changed
-
-- Alpha phone builds ship as a separate "SuperOne Alpha" app on iOS and
-  Android, with its own updates and an Alpha icon, so they never replace the
-  stable app. Install SuperOne Alpha and pair it again to use an alpha
-  desktop.
-- Only pastes over three lines or 500 characters become chips, on desktop and
-  phone; shorter pastes insert as text.
-- Keep Codex voice playback buffered across pauses, permission dialogs and
-  app backgrounding; the voice button stays visible but disabled while a turn
-  runs.
-
-### Fixed
-
-- Show the right harness icon and Git branch for sessions created from a
-  phone or remote node.
-- Align list markers with an item that opens with a file chip, and keep wide
-  Markdown blocks clear of the turn scroll indicator.
-
-### CI
-
-- Release phone apps per track with a check that a stable phone never needs
-  an unreleased desktop; Android builds are attached to GitHub releases and
-  either platform can roll back to an existing build.
-
-## [0.73.0-alpha.2] - 2026-10-11
-
-### Added
-
-- Add native phone audio and private, lease-fenced signaling for Codex
-  realtime voice; keep calls active while browsing other chats.
-- Expand Markdown tables and Mermaid previews, and scale Markdown preview
-  text with the pane width.
-
-### Changed
-
-- Phones, controller desktops and the local window use one remote protocol
-  and session/terminal control leases. Take control to edit a session another
-  device controls; the previous controller's writes are fenced and the source
-  desktop's control badge updates.
-- Phones require a desktop or node host on this release. Older or unreported
-  hosts show an upgrade prompt and keep their pairing; upgrade desktop and
-  node hosts before the phone update.
-- Update the managed Codex runtime to 0.162.1 and preserve subagent creation
-  models, reasoning effort and turn roots across session persistence.
-- Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
-- Paginate session text reads by content block rather than line count.
-- Show image and video model loading, empty catalogs and catalog errors in the
-  model selector, with a provider-settings button in its Models heading.
-
-### Fixed
-
-- Start a new session in its project directory instead of the focused
-  session's worktree; a Codex session whose directory changes resumes the
-  same thread.
-- Restore session state at one snapshot boundary, recover missed updates and
-  load full tool and voice-message details on demand.
-- Stop voice calls on control takeover or pairing removal; preserve the call
-  across chat navigation and short LAN-to-relay interruptions.
-- Preserve parked draft attachments, goal submissions and session-link icons;
-  keep phone goal state and project names current after session changes.
-- Deliver each phone its subscribed updates and report revoked routed control
-  before accepting another session or terminal write.
-
-### Performance
-
-- Virtualize long transcripts and activity details.
-- Compress and batch remote streams, share routed session subscriptions and
-  keep full tool-result bodies out of summary streams.
-- Coalesce relay draft saves for five seconds while LAN saves remain
-  immediate; version ranges preserve recovery across compacted saves.
-
-### Tests
-
-- Verify native phone and routed desktop control through isolated LAN/Alpha
-  Relay CDP acceptance, including simulated voice without harness downloads.
-
-## [0.73.0-alpha] - 2026-10-09
-
-### Added
-
-- Run tasks on another desktop: pair two desktops through a phone already
-  paired with one of them, then reach the other desktop over LAN, Tailscale
-  or the relay.
-- Control who may drive a desktop with an Allow Control switch and one
-  switch per controlling desktop or phone. Sessions started from another
-  device show a "Started from <device>" badge and are read-only locally.
-- Spawn collaboration children on another connected machine, using that
-  machine's own models and keys. The child clones or fetches the repository
-  and works in a fresh worktree there.
-- Wake the parent when a child stops without reporting, and notify when a
-  child stalls.
-- `environment_get_info` replaces `environment_list`: hardware (OS, CPU,
-  GPUs, total and free memory) and subscription usage (Claude, Codex, Grok,
-  OpenCode Go, Cursor) for each environment.
-- Show message times on hover and day separators in the transcript.
-
-### Changed
-
-- Each paired phone now uses its own encrypted channel with per-connection
-  keys and replay protection. Phones paired earlier must be paired again:
-  remove each device marked "Re-pair Required" on the desktop and pair it
-  from Pair New Phone. Older phone and desktop builds cannot connect.
-- Alpha builds connect through a dedicated alpha relay.
-- The Grok credits gauge reads the Grok CLI login directly, with no running
-  agent.
-
-### Fixed
-
-- Keep a send that never started, or a refused queued send, as a failed row
-  that can be retried; hold duplicate sends instead of running them twice.
-- Restore the session goal and todo list after a reconnect or reload.
-- Keep newly spawned sessions under their parent in the sidebar.
-- Show every file read by a single Codex shell command.
-- Phone: paste chips match desktop, file diffs are highlighted with line
-  numbers that scroll with the code, and restores retry until they reach
-  the current connection.
-- Retry usage readings whose connection was reset by a proxy or VPN.
 
 ## [0.72.2] - 2026-10-08
 

@@ -3,7 +3,7 @@ import { useAppStore } from './app'
 import { useActivityPanelStore } from './activity-panel'
 import { useChatStore } from './chat'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
-import { LAYOUT } from '@/lib/layout-constants'
+import { LAYOUT, maxPanelWidth } from '@/lib/layout-constants'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-url'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult, MiniAppHostInfo } from '@superone/shared/miniapp-types'
 import { withoutKey } from '@/lib/record'
@@ -26,7 +26,7 @@ function applyPreferWidth(preferWidth: number): void {
   if (typeof window === 'undefined') return
   const appState = useAppStore.getState()
   const sidebarReserved = appState.showSidebar ? appState.sidebarWidth : 0
-  const maxAp = window.innerWidth - sidebarReserved - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER
+  const maxAp = maxPanelWidth(window.innerWidth, sidebarReserved)
   if (maxAp < LAYOUT.MIN_AP) return
   const clamped = Math.max(LAYOUT.MIN_AP, Math.min(preferWidth, maxAp))
   useActivityPanelStore.getState().setPanelWidth(clamped)

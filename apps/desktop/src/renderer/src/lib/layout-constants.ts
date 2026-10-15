@@ -29,3 +29,8 @@ export const ACTIVITY_PANEL_TRANSITION = {
 export function maxSidebarWidth(innerWidth: number, mainMin: number, apReserved: number): number {
   return Math.min(LAYOUT.MAX_SIDEBAR, innerWidth - apReserved - mainMin - LAYOUT.CARD_GUTTER)
 }
+
+/** Largest the activity panel may grow to beside a sidebar of `sidebarReserved` (0 when collapsed). */
+export function maxPanelWidth(innerWidth: number, sidebarReserved: number, mainMin: number = LAYOUT.MIN_MAIN): number {
+  return innerWidth - sidebarReserved - mainMin - LAYOUT.CARD_GUTTER
+}

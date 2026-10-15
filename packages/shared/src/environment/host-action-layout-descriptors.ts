@@ -1,5 +1,5 @@
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
-import { LAYOUT_ACT_ACTIONS } from '../layout-control'
+import { LAYOUT_ACT_ACTIONS, LAYOUT_CHAT_MODES, LAYOUT_CHAT_POSITIONS, LAYOUT_DIRECTIONS } from '../layout-control'
 import {
   LAYOUT_SNAPSHOT_DESCRIPTION,
   LAYOUT_ACT_DESCRIPTION,
@@ -7,7 +7,13 @@ import {
   LAYOUT_ACT_LINE_DESCRIPTION,
   LAYOUT_ACT_TAB_DESCRIPTION,
   LAYOUT_ACT_DIRECTION_DESCRIPTION,
+  LAYOUT_ACT_GROUP_DESCRIPTION,
+  LAYOUT_ACT_INDEX_DESCRIPTION,
+  LAYOUT_ACT_HEIGHT_DESCRIPTION,
   LAYOUT_ACT_SESSION_DESCRIPTION,
+  LAYOUT_ACT_WIDTH_DESCRIPTION,
+  LAYOUT_ACT_MODE_DESCRIPTION,
+  LAYOUT_ACT_POSITION_DESCRIPTION,
 } from '../superone-tool-descriptions'
 
 /**
@@ -31,9 +37,15 @@ export const HOST_ACTION_LAYOUT_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
         path: { type: 'string', description: LAYOUT_ACT_PATH_DESCRIPTION },
         line: { type: 'integer', minimum: 1, description: LAYOUT_ACT_LINE_DESCRIPTION },
         tab: { type: 'string', description: LAYOUT_ACT_TAB_DESCRIPTION },
-        direction: { type: 'string', enum: ['right', 'down'], description: LAYOUT_ACT_DIRECTION_DESCRIPTION },
+        group: { type: 'integer', minimum: 0, description: LAYOUT_ACT_GROUP_DESCRIPTION },
+        direction: { type: 'string', enum: [...LAYOUT_DIRECTIONS], description: LAYOUT_ACT_DIRECTION_DESCRIPTION },
+        index: { type: 'integer', minimum: 0, description: LAYOUT_ACT_INDEX_DESCRIPTION },
         side: { type: 'string', enum: ['left', 'right'], description: 'panel_side.' },
         sessionId: { type: 'string', description: LAYOUT_ACT_SESSION_DESCRIPTION },
+        width: { type: 'integer', minimum: 1, description: LAYOUT_ACT_WIDTH_DESCRIPTION },
+        height: { type: 'integer', minimum: 1, description: LAYOUT_ACT_HEIGHT_DESCRIPTION },
+        mode: { type: 'string', enum: [...LAYOUT_CHAT_MODES], description: LAYOUT_ACT_MODE_DESCRIPTION },
+        position: { type: 'string', enum: [...LAYOUT_CHAT_POSITIONS], description: LAYOUT_ACT_POSITION_DESCRIPTION },
       },
       required: ['action'],
       additionalProperties: false,

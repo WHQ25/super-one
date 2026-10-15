@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 import { DockviewReact } from 'dockview-react'
 import type { DockviewReadyEvent, DockviewApi, DockviewTheme, IDockviewHeaderActionsProps, IWatermarkPanelProps } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useActivityDropStore } from '@/stores/activity-drop'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -86,6 +86,7 @@ function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
 
 export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps) {
   const { side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
+  const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const visible = useActivityPanelOnScreen()
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -264,7 +265,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
         data-activity-outer=""
         className={cn('relative shrink-0 overflow-hidden transition-[width]')}
         style={{
-          width: visible ? (maximized ? '100%' : panelWidth) : 0,
+          width: visible ? (fillsWindow ? '100%' : panelWidth) : 0,
           order: side === 'left' ? 0 : 2,
           transitionDuration: `${transitionMs ?? ACTIVITY_PANEL_TRANSITION.durationMs}ms`,
           transitionTimingFunction: ACTIVITY_PANEL_TRANSITION.easing,
@@ -272,7 +273,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
       >
         {/* tabIndex makes this a focus sink — see activity-focus.ts for why the
             panel must never be left without an owner for its own shortcuts. */}
-        <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: maximized ? '100%' : panelWidth }}>
+        <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: fillsWindow ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">
             <ActivityHeaderGroupProvider api={headerApi}>
               <DockviewReact
@@ -296,7 +297,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
         </div>
       </div>
 
-      {visible && !maximized && (
+      {visible && !fillsWindow && (
         <div
           onMouseDown={onResizeStart}
           className="group absolute inset-y-0 z-30 w-2 cursor-col-resize"

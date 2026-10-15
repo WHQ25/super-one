@@ -1,9 +1,11 @@
 import { flushSync } from 'react-dom'
 import { useAppStore } from '@/stores/app'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
+import { useChatStore } from '@/stores/chat'
+import { restoreActivityPanel } from '@/components/activity/activity-panel-api'
 import { useBrowserStore } from '@/stores/browser'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { LAYOUT } from './layout-constants'
+import { LAYOUT, maxPanelWidth } from './layout-constants'
 
 const SWAP_DURATION = 300
 const SWAP_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)'
@@ -22,8 +24,8 @@ export function toggleSidebar(): void {
   const ap = useActivityPanelStore.getState()
   const next = !showSidebar
 
-  if (ap.showPanel && !ap.maximized) {
-    const maxAp = window.innerWidth - (next ? sidebarWidth : 0) - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER
+  if (ap.showPanel && !selectPanelFillsWindow(ap)) {
+    const maxAp = maxPanelWidth(window.innerWidth, next ? sidebarWidth : 0)
     const target = next ? ap.panelWidth - sidebarWidth : ap.panelWidth + sidebarWidth
     ap.setPanelWidth(Math.max(LAYOUT.MIN_AP, Math.min(target, maxAp)))
   }
@@ -40,10 +42,27 @@ export function setActivityPanelShown(show: boolean): void {
   if (show === ap.showPanel) return
   if (show && !ap.userResized) {
     const { showSidebar, sidebarWidth } = useAppStore.getState()
-    const maxAp = window.innerWidth - (showSidebar ? sidebarWidth : 0) - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER
+    const maxAp = maxPanelWidth(window.innerWidth, showSidebar ? sidebarWidth : 0)
     if (maxAp >= LAYOUT.MIN_AP) ap.setPanelWidth(Math.max(LAYOUT.MIN_AP, maxAp))
   }
   ap.setShowPanel(show)
+}
+
+/**
+ * Float the chat over the whole activity panel — every group stays as laid out, no
+ * tab is maximized — or dock it back as the column beside the panel. Docking also
+ * leaves a maximized tab, since that is the other thing that floats the chat.
+ */
+export function setChatFloating(floating: boolean): void {
+  const ap = useActivityPanelStore.getState()
+  if (floating) {
+    setActivityPanelShown(true)
+    ap.setChatFloating(true)
+    useChatStore.setState({ isOpen: true })
+    return
+  }
+  if (ap.maximized) restoreActivityPanel()
+  ap.setChatFloating(false)
 }
 
 /**

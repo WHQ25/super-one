@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useSyncExternalStore, type ReactNode } from 'react'
 import type { DockviewApi, IDockviewGroupPanel } from 'dockview-core'
 import { useAppStore } from '@/stores/app'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { cn } from '@superone/ui/lib/utils'
@@ -39,13 +39,13 @@ export function ActivityHeaderGroupProvider({ api: dockApi, children }: { api: D
 export function useActivityHeaderLayout() {
   const showSidebar = useAppStore(s => s.showSidebar)
   const side = useActivityPanelStore(s => s.side)
-  const maximized = useActivityPanelStore(s => s.maximized)
+  const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   return {
     isMac,
-    hostsLayoutToggle: (maximized || side === 'left') && !(isMac && showSidebar),
-    needsTrafficLightPadding: isMac && !isFullscreen && !showSidebar && (maximized || side === 'left'),
+    hostsLayoutToggle: (fillsWindow || side === 'left') && !(isMac && showSidebar),
+    needsTrafficLightPadding: isMac && !isFullscreen && !showSidebar && (fillsWindow || side === 'left'),
   }
 }
 

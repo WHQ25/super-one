@@ -2,7 +2,7 @@
 
 Agents and mini-apps can read and arrange the SuperOne desktop: open a file as a
 tab, manage tabs, show or hide the activity panel and the bottom terminal,
-collapse the sidebar, and put a child session beside the caller in the split view.
+collapse or resize the sidebar, resize the panel, dock or float the chat, and put a child session beside the caller in the split view.
 
 ## One implementation, two entry points
 
@@ -34,7 +34,7 @@ sessions' layouts are parked as JSON (`stores/activity-view-state.ts`).
   that layout is next restored (`showSession`), and the result is
   `status: queued`. Opening or hiding the panel is written into the parked view
   state instead.
-- Window-wide state (sidebar, panel side, split view) changes only while the
+- Window-wide state (sidebar, panel side, column widths, chat mode, split view) changes only while the
   caller's chat is on screen. Otherwise the result is `status: skipped` with
   `reason: not_visible`.
 - `visible` tells the caller whether the user can see the result now. It also
@@ -66,11 +66,43 @@ may call them.
 | Area | Actions |
 |---|---|
 | Open tabs | `open_file` (`path`, `line`) |
-| Manage tabs | `focus_tab`, `close_tab`, `split_tab` (`direction` right / down), by `tab` |
+| Manage tabs | `focus_tab`, `close_tab`, `move_tab` (`group`, `direction` right / down / left / up / into, `index`), by `tab` |
+| Tab groups | `resize_group` (`group`, `width` / `height` px) |
 | Activity panel | `show_panel`, `hide_panel`, `maximize_panel` (optional `tab`), `restore_panel`, `panel_side` |
 | Window | `show_sidebar`, `hide_sidebar` |
+| Widths | `resize_sidebar`, `resize_panel` (`width` px) |
+| Chat | `chat_mode` (`mode` docked / floating / icon, `position` one of 8 snap anchors) |
 | Bottom terminal | `show_terminal`, `hide_terminal` |
-| Split view | `split_session`, `close_split` (`sessionId`) |
+| Split view | `split_session` (`sessionId`, `direction` any side), `close_split` (`sessionId`) |
+
+**Tab groups.** `snapshot.groups` lists the panel's groups in on-screen order (the
+grid depth-first; floating groups are disabled) with a px box inside the panel, computed
+from the serialized grid so parked layouts report it too; a tab's `group` indexes
+this list. `move_tab` is dockview's own `moveTo`: beside a group (`right` / `down` /
+`left` / `up`, a new group on that side) or `into` it at `index`, which also
+merges a split back or reorders. `group` defaults to the tab's own. A tab alone
+in its group is placed against the group before it (else after it) instead —
+moving it beside its own group would make dockview drop that group first and
+lose the tab. `resize_group` is the group's `setSize`; neighbours' minimums
+clamp it, and the result reports the size it got.
+
+**Widths.** The window is sidebar | chat | activity panel; the chat is the flex
+remainder, so narrowing it means widening a neighbour. `snapshot.sizes` reports
+each column's width and the `min`/`max` it can take while the others stay put —
+the same bounds the resize sashes and the window-resize clamp in `App.tsx` use
+(`lib/layout-constants.ts`). A resize clamps to that range and returns the applied
+`width`. `resize_panel` counts as the user's own sizing (`userResized`), so the
+next open keeps that width instead of filling the window.
+
+**Chat mode.** The chat is a column beside the panel (`docked`) until the panel
+fills the window (`selectPanelFillsWindow`): a maximized tab, or the chat
+floated without one (`chatFloating`). Then it is the floating `ChatPanel`, expanded
+(`floating`) or collapsed to an icon (`icon`, chat store `isOpen`). `chat_mode`
+goes through `setChatFloating`: floating keeps every group
+as laid out, and `docked` also leaves a maximized tab. Hiding the panel docks the
+chat. The split view refuses it as `unavailable`. `position` names the floating
+chat's snap anchors (chat store `corner`: corners and edge midpoints); given
+alone it moves the chat without changing the mode.
 
 `split_session` accepts only a session the caller spawned. Main checks the spawn
 grant (`SPAWNED_SESSION_PROJECT` IPC), and the same check serves agents and
@@ -84,9 +116,10 @@ so focus stays where the user had it.
   agent has no SuperOne window of its own.
 - **Phone.** Execution always targets the desktop. The phone renders the same row
   (`packages/chat-view/src/presenters/LayoutControlToolRow.tsx`) from the projected
-  input (`layout_act` keeps `action`, `path`, `line`, `side`, `tab`).
-- **Chat row.** One line per call: the action verb, its subject (file or side),
-  and the outcome when it is not a plain `applied`.
+  input (`layout_act` keeps `action`, `path`, `line`, `side`, `tab`, `width`,
+  `height`, `mode`, `position`).
+- **Chat row.** One line per call: the action verb, its subject (file, side, size
+  or chat mode), and the outcome when it is not a plain `applied`.
 
 ## Mini-apps
 

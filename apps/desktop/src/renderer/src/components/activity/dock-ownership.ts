@@ -35,7 +35,7 @@ export function forgetDockOpener(sessionId: string, id: string): void {
  * JSON each change runs against the live dock the moment it belongs to the session.
  */
 export interface QueuedDockChange {
-  kind: 'open' | 'close' | 'focus' | 'split' | 'maximize' | 'restore'
+  kind: 'open' | 'close' | 'focus' | 'move' | 'resize' | 'maximize' | 'restore'
   /** Target tab; for `open`, the tab it will create. */
   tab?: string
   /** For `open`: how the tab will be listed until it exists. */

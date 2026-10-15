@@ -1,9 +1,17 @@
 import type { SerializedDockview } from 'dockview-core'
 import {
+  LAYOUT_CHAT_MODES,
+  LAYOUT_CHAT_POSITIONS,
+  LAYOUT_DIRECTIONS,
   LayoutControlError,
   type LayoutActRequest,
   type LayoutActResult,
+  type LayoutChatMode,
+  type LayoutChatPosition,
   type LayoutControlCaller,
+  type LayoutDirection,
+  type LayoutGroup,
+  type LayoutSizes,
   type LayoutSnapshot,
   type LayoutTab,
   type LayoutTabKind,
@@ -13,11 +21,12 @@ import {
   dockSessionId,
   focusActivityTab,
   getDockApi,
+  groupsInLayoutOrder,
   isDockReady,
   maximizeActivityTab,
+  moveActivityTab,
   openNewFileTab,
   restoreActivityPanel,
-  splitActivityTab,
 } from '@/components/activity/activity-panel-api'
 import {
   dockOpener,
@@ -29,19 +38,21 @@ import {
   type QueuedDockChange,
 } from '@/components/activity/dock-ownership'
 import { mosaicTileId, useMosaicStore } from '@/components/mosaic/mosaic-store'
-import { collectLeaves } from '@/components/mosaic/mosaic-tree'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { collectLeaves, measureMin, type DropEdge } from '@/components/mosaic/mosaic-tree'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useAppStore } from '@/stores/app'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 import { findSessionTarget } from '@/stores/chat-store/helpers/store-helpers'
+import type { Corner } from '@/stores/chat-store/types'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useTerminalStore } from '@/stores/terminal'
 import { selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini-mode'
 import { normalizeFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
-import { setActivityPanelShown, toggleActivitySide, toggleSidebar } from '@/lib/layout-actions'
+import { setActivityPanelShown, setChatFloating, toggleActivitySide, toggleSidebar } from '@/lib/layout-actions'
+import { LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
 
 /**
  * The single implementation behind `layout_snapshot` / `layout_act` and a mini-app's
@@ -110,6 +121,86 @@ function panelOnScreen(sessionId: string): boolean {
     && !selectPanelsFolded(useWindowMiniModeStore.getState())
 }
 
+/** The chat area's floor: one chat, or the split view's measured minimum. */
+function chatMinWidth(): number {
+  const mosaic = useMosaicStore.getState()
+  const tiles = mosaic.mode === 'mosaic' && mosaic.root ? measureMin(mosaic.root).w : 0
+  return Math.max(LAYOUT.MIN_MAIN, tiles)
+}
+
+/** The same bounds the resize sashes and the window-resize clamp in App.tsx enforce. */
+function layoutSizes(): LayoutSizes {
+  const { showSidebar, sidebarWidth } = useAppStore.getState()
+  const ap = useActivityPanelStore.getState()
+  const windowWidth = window.innerWidth
+  const chatMin = chatMinWidth()
+  const sidebarReserved = showSidebar ? sidebarWidth : 0
+  const fills = ap.showPanel && selectPanelFillsWindow(ap)
+  const panelReserved = ap.showPanel && !fills ? ap.panelWidth : 0
+  return {
+    window: windowWidth,
+    sidebar: {
+      width: sidebarWidth,
+      min: LAYOUT.MIN_SIDEBAR,
+      max: Math.max(LAYOUT.MIN_SIDEBAR, maxSidebarWidth(windowWidth, fills ? LAYOUT.MIN_AP : chatMin, panelReserved)),
+    },
+    panel: {
+      width: ap.panelWidth,
+      min: LAYOUT.MIN_AP,
+      max: Math.max(LAYOUT.MIN_AP, maxPanelWidth(windowWidth, sidebarReserved, chatMin)),
+    },
+    chat: {
+      width: fills ? 0 : Math.max(0, windowWidth - sidebarReserved - panelReserved - LAYOUT.CARD_GUTTER),
+      min: chatMin,
+    },
+  }
+}
+
+/** A panel filling the window turns the chat into a floating window, collapsed to an icon when closed. */
+function chatMode(sessionId: string): LayoutChatMode {
+  if (!placement(sessionId).dockLive || !selectPanelFillsWindow(useActivityPanelStore.getState())) return 'docked'
+  return useChatStore.getState().isOpen ? 'floating' : 'icon'
+}
+
+/** The floating chat's snap anchors (`ChatPanel`), named for the agent. */
+const CHAT_ANCHORS: Record<LayoutChatPosition, Corner> = {
+  'top-left': 'tl',
+  top: 'tm',
+  'top-right': 'tr',
+  right: 'rm',
+  'bottom-right': 'br',
+  bottom: 'bm',
+  'bottom-left': 'bl',
+  left: 'lm',
+}
+
+function chatPosition(): LayoutChatPosition {
+  const corner = useChatStore.getState().corner
+  return LAYOUT_CHAT_POSITIONS.find((position) => CHAT_ANCHORS[position] === corner) ?? 'bottom-right'
+}
+
+/** Mode, position, or both; an omitted one stays as it is. */
+function setChatMode(sessionId: string, request: LayoutActRequest): LayoutActResult {
+  const { mode, position } = request
+  if (mode === undefined && position === undefined) invalid('chat_mode needs mode, position, or both.')
+  if (mode !== undefined && !(LAYOUT_CHAT_MODES as readonly unknown[]).includes(mode)) invalid('mode must be "docked", "floating" or "icon".')
+  if (position !== undefined && !(position in CHAT_ANCHORS)) invalid(`position must be one of ${LAYOUT_CHAT_POSITIONS.join(', ')}.`)
+  const p = placement(sessionId)
+  if (!p.chatOnScreen) return skipped()
+  if (!p.dockLive) throw new LayoutControlError('unavailable', 'The split view shows chats side by side; the chat mode applies once it is closed.')
+  if (position) useChatStore.getState().setCorner(CHAT_ANCHORS[position])
+  if (mode) {
+    setChatFloating(mode !== 'docked')
+    if (mode === 'icon') useChatStore.setState({ isOpen: false })
+  }
+  // A position alone, while docked, waits for the next float.
+  return { status: 'applied', visible: p.windowVisible && (mode !== undefined || chatMode(sessionId) !== 'docked') }
+}
+
+function clampWidth(width: number, range: { min: number; max: number }): number {
+  return Math.min(range.max, Math.max(range.min, Math.round(width)))
+}
+
 const TERMINAL_PANEL_PREFIX = 'terminal-'
 
 /** terminal_tabs names a terminal by its bare id, so the snapshot does too. */
@@ -129,7 +220,7 @@ type TabRow = LayoutTab & { panelId: string }
 function liveTabs(sessionId: string): TabRow[] {
   const api = getDockApi()
   if (!api) return []
-  const groupIndex = new Map(api.groups.map((group, index) => [group.id, index]))
+  const groupIndex = new Map(groupsInLayoutOrder().map((group, index) => [group.id, index]))
   return api.panels.map((panel) => ({
     tab: publicTabId(panel.id),
     panelId: panel.id,
@@ -141,22 +232,49 @@ function liveTabs(sessionId: string): TabRow[] {
   }))
 }
 
-type GridNode = { type: 'leaf' | 'branch'; data: unknown }
+type GridNode = { type: 'leaf' | 'branch'; data: unknown; size: number }
 interface GroupState { id: string; views: string[]; activeView?: string }
+type SerializedGrid = SerializedDockview['grid']
+type GridGroup = Omit<LayoutGroup, 'group'> & { state: GroupState }
 
-function layoutGroups(node: GridNode | undefined, out: GroupState[] = []): GroupState[] {
-  if (!node) return out
-  if (node.type === 'leaf') out.push(node.data as GroupState)
-  else for (const child of node.data as GridNode[]) layoutGroups(child, out)
+/**
+ * The grid's groups in on-screen order with their px box. A branch lays its children
+ * along its axis, each `size` long; nesting alternates the axis from the root's.
+ */
+function gridGroups(grid: SerializedGrid | undefined): GridGroup[] {
+  const out: GridGroup[] = []
+  const walk = (node: GridNode, horizontal: boolean, x: number, y: number, width: number, height: number): void => {
+    if (node.type === 'leaf') {
+      out.push({ state: node.data as GroupState, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+      return
+    }
+    let offset = 0
+    for (const child of node.data as GridNode[]) {
+      if (horizontal) walk(child, false, x + offset, y, child.size, height)
+      else walk(child, true, x, y + offset, width, child.size)
+      offset += child.size
+    }
+  }
+  if (grid) walk(grid.root as GridNode, grid.orientation === 'HORIZONTAL', 0, 0, grid.width, grid.height)
   return out
+}
+
+function parkedLayout(sessionId: string): SerializedDockview | null {
+  return (useActivityViewStateStore.getState().perSession[sessionId]?.layout as SerializedDockview | null | undefined) ?? null
+}
+
+/** The caller's tab groups as the snapshot reports them; tab `group` indices point here. */
+function sessionGroups(sessionId: string): LayoutGroup[] {
+  const grid = placement(sessionId).dockLive ? getDockApi()?.toJSON().grid : parkedLayout(sessionId)?.grid
+  return gridGroups(grid).map(({ state: _state, ...box }, group) => ({ group, ...box }))
 }
 
 /** A parked session's tabs: its saved layout, the browser tabs it will materialize, then its queued changes. */
 function parkedTabs(sessionId: string): TabRow[] {
-  const layout = useActivityViewStateStore.getState().perSession[sessionId]?.layout as SerializedDockview | null | undefined
+  const layout = parkedLayout(sessionId)
   const tabs: TabRow[] = []
   if (layout) {
-    for (const [index, group] of layoutGroups(layout.grid.root as GridNode).entries()) {
+    for (const [index, { state: group }] of gridGroups(layout.grid).entries()) {
       for (const view of group.views) {
         const panel = layout.panels[view]
         tabs.push({
@@ -221,6 +339,10 @@ export function layoutSnapshot(caller: LayoutControlCaller): LayoutSnapshot {
       maximized: p.dockLive && ap.maximized,
     },
     terminal: { open: useTerminalStore.getState().openBySession[sid] ?? false },
+    chatMode: chatMode(sid),
+    chatPosition: chatPosition(),
+    sizes: layoutSizes(),
+    groups: sessionGroups(sid),
     tabs,
     ...(selfTab && tabs.some((t) => t.tab === selfTab) ? { self: selfTab } : {}),
   }
@@ -236,6 +358,23 @@ function requireTab(sessionId: string, tab: string | undefined): string {
   const row = sessionTabs(sessionId).find((t) => t.tab === tab || t.panelId === tab)
   if (!row) throw new LayoutControlError('not_found', `No tab ${tab} in this session's layout. Call layout_snapshot for current tab ids.`)
   return row.panelId
+}
+
+/** A group index from the snapshot, checked against the caller's layout. */
+function requireGroup(sessionId: string, group: number | undefined): number {
+  if (group === undefined) invalid('group is required. Use a group index from layout_snapshot.')
+  const count = placement(sessionId).dockLive ? groupsInLayoutOrder().length : sessionGroups(sessionId).length
+  if (!Number.isInteger(group) || group < 0 || group >= count) {
+    throw new LayoutControlError('not_found', `No group ${group} in this session's layout. Call layout_snapshot for current groups.`)
+  }
+  return group
+}
+
+/** The live group behind an index, when a queued change finally runs. */
+function liveGroup(group: number) {
+  const target = groupsInLayoutOrder()[group]
+  if (!target) throw new LayoutControlError('not_found', `No group ${group} in this session's layout. Call layout_snapshot for current groups.`)
+  return target
 }
 
 /** Apply a dock change now when the caller's layout is live, otherwise park it with that layout. */
@@ -277,10 +416,37 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
       const tab = requireTab(sid, request.tab)
       return dockChange(sid, { kind: 'focus', tab, run: () => { focusActivityTab(tab) } })
     }
-    case 'split_tab': {
+    case 'move_tab': {
       const tab = requireTab(sid, request.tab)
-      const direction = request.direction === 'down' ? 'below' : 'right'
-      return dockChange(sid, { kind: 'split', tab, run: () => { splitActivityTab(tab, direction) } })
+      const direction = request.direction ?? 'right'
+      if (!(LAYOUT_DIRECTIONS as readonly unknown[]).includes(direction)) invalid(`direction must be one of ${LAYOUT_DIRECTIONS.join(', ')}.`)
+      const { index } = request
+      if (index !== undefined && (!Number.isInteger(index) || index < 0)) invalid('index must be a non-negative integer.')
+      const group = request.group === undefined ? undefined : requireGroup(sid, request.group)
+      return dockChange(sid, {
+        kind: 'move',
+        tab,
+        run: () => {
+          const target = group === undefined ? undefined : liveGroup(group)
+          if (!moveActivityTab(tab, { group: target, direction, index })) {
+            invalid(`Tab ${request.tab} is the only one in your activity panel; there is nothing to put it beside.`)
+          }
+        },
+      })
+    }
+    case 'resize_group': {
+      const { width, height } = request
+      if (width === undefined && height === undefined) invalid('resize_group needs width, height, or both.')
+      for (const size of [width, height]) {
+        if (size !== undefined && (typeof size !== 'number' || !Number.isFinite(size) || size <= 0)) invalid('width and height are positive px.')
+      }
+      const group = requireGroup(sid, request.group)
+      const size = { ...(width !== undefined ? { width: Math.round(width) } : {}), ...(height !== undefined ? { height: Math.round(height) } : {}) }
+      const result = dockChange(sid, { kind: 'resize', run: () => { liveGroup(group).api.setSize(size) } })
+      if (result.status !== 'applied') return result
+      // Its neighbours' minimums clamp the request; report what it got.
+      const applied = liveGroup(group).api
+      return { ...result, width: Math.round(applied.width), height: Math.round(applied.height) }
     }
     case 'close_tab': {
       const tab = requireTab(sid, request.tab)
@@ -335,6 +501,24 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
       if (useAppStore.getState().showSidebar !== (request.action === 'show_sidebar')) toggleSidebar()
       return { status: 'applied', visible: p.windowVisible }
     }
+    case 'resize_sidebar':
+    case 'resize_panel': {
+      if (typeof request.width !== 'number' || !Number.isFinite(request.width)) invalid(`width (px) is required for ${request.action}.`)
+      const p = placement(sid)
+      if (!p.chatOnScreen) return skipped()
+      const sizes = layoutSizes()
+      if (request.action === 'resize_sidebar') {
+        const width = clampWidth(request.width, sizes.sidebar)
+        useAppStore.getState().setSidebarWidth(width)
+        return { status: 'applied', visible: p.windowVisible && useAppStore.getState().showSidebar, width }
+      }
+      const width = clampWidth(request.width, sizes.panel)
+      // As if the user dragged the sash, so the next open keeps this width instead of filling the window.
+      useActivityPanelStore.getState().setPanelWidthByUser(width)
+      return { status: 'applied', visible: panelOnScreen(sid) && !selectPanelFillsWindow(useActivityPanelStore.getState()), width }
+    }
+    case 'chat_mode':
+      return setChatMode(sid, request)
     case 'split_session':
       return splitSession(caller, request)
     case 'close_split': {
@@ -357,10 +541,14 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
   }
 }
 
+const SESSION_EDGES: Record<Exclude<LayoutDirection, 'into'>, DropEdge> = { right: 'right', down: 'bottom', left: 'left', up: 'top' }
+
 async function splitSession(caller: LayoutControlCaller, request: LayoutActRequest): Promise<LayoutActResult> {
   const sid = caller.sessionId
   const child = request.sessionId
   if (!child) invalid('sessionId is required for split_session.')
+  const direction = request.direction ?? 'right'
+  if (direction === 'into' || !(direction in SESSION_EDGES)) invalid('direction must be right, down, left or up for split_session.')
   if (child === sid) invalid('sessionId must be a session you launched, not your own.')
   if (!placement(sid).chatOnScreen) return skipped()
   const childProject = await window.app.getSpawnedSessionProject(sid, child)
@@ -376,7 +564,7 @@ async function splitSession(caller: LayoutControlCaller, request: LayoutActReque
     ? collectLeaves(mosaic.root).find((leaf) => leaf.sessionId === sid)?.id
     : chat.activeProject ? mosaicTileId(chat.activeProject, sid) : undefined
   if (!callerTile) throw new LayoutControlError('unavailable', 'Could not find this session on screen.')
-  mosaic.addTile(projectPath, child, { tileId: callerTile, edge: request.direction === 'down' ? 'bottom' : 'right' }, { focus: false })
+  mosaic.addTile(projectPath, child, { tileId: callerTile, edge: SESSION_EDGES[direction] }, { focus: false })
   recordDockOpener(sid, splitKey(child), openerKey(caller))
   return { status: 'applied', visible: p.windowVisible }
 }

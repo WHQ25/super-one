@@ -4,17 +4,17 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppStore } from '@/stores/app'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { toggleSidebar, toggleActivitySide } from '@/lib/layout-actions'
 
 export function LayoutToggle({ placement = 'content' }: { placement?: 'content' | 'titlebar' }) {
   const { t } = useTranslation()
   const showSidebar = useAppStore((s) => s.showSidebar)
   const showPanel = useActivityPanelStore((s) => s.showPanel)
-  const maximized = useActivityPanelStore((s) => s.maximized)
+  const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const side = useActivityPanelStore((s) => s.side)
-  // When maximized, chat is a floating overlay — side swap is meaningless.
-  const showSideToggle = showPanel && !maximized
+  // When the panel fills the window, chat is a floating overlay — side swap is meaningless.
+  const showSideToggle = showPanel && !fillsWindow
   const platform = window.app.platform
   // Windows owns these controls in its window chrome in every workspace layout.
   if ((platform === 'win32') !== (placement === 'titlebar')) return null

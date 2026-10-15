@@ -121,9 +121,9 @@ export interface SuperOneMiniAppAgentApi {
  */
 export type SuperOneMiniAppLayoutAction =
   | 'open_file'
-  | 'focus_tab' | 'close_tab' | 'split_tab'
+  | 'focus_tab' | 'close_tab' | 'move_tab' | 'resize_group'
   | 'show_panel' | 'hide_panel' | 'maximize_panel' | 'restore_panel' | 'panel_side'
-  | 'show_sidebar' | 'hide_sidebar'
+  | 'show_sidebar' | 'hide_sidebar' | 'resize_sidebar' | 'resize_panel' | 'chat_mode'
   | 'show_terminal' | 'hide_terminal'
   | 'split_session' | 'close_split'
 
@@ -135,13 +135,28 @@ export interface SuperOneMiniAppLayoutRequest {
   line?: number
   /** A tab id from `snapshot().tabs`, or `snapshot().self` for this app's own tab. */
   tab?: string
-  /** split_tab / split_session. Default right. */
-  direction?: 'right' | 'down'
+  /** move_tab / resize_group: a group index from `snapshot().groups`. move_tab defaults to the tab's own group. */
+  group?: number
+  /** move_tab: beside the group as a new group, or `into` it. split_session: any side. Default right. */
+  direction?: 'right' | 'down' | 'left' | 'up' | 'into'
+  /** move_tab: 0-based position among the destination group's tabs. */
+  index?: number
   /** panel_side. */
   side?: 'left' | 'right'
   /** split_session / close_split: a session the holder session launched. */
   sessionId?: string
+  /** resize_sidebar / resize_panel / resize_group: target width in px; sidebar and panel clamp to `snapshot().sizes`. */
+  width?: number
+  /** resize_group: target height in px. */
+  height?: number
+  /** chat_mode: a column beside the panel, a floating window over the panel (which then fills the window), or that window collapsed to an icon. */
+  mode?: 'docked' | 'floating' | 'icon'
+  /** chat_mode: where the floating chat snaps; alone it moves the chat without changing mode. */
+  position?: SuperOneMiniAppLayoutChatPosition
 }
+
+export type SuperOneMiniAppLayoutChatPosition =
+  | 'top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left'
 
 export interface SuperOneMiniAppLayoutResult {
   status: 'applied' | 'queued' | 'skipped'
@@ -149,6 +164,9 @@ export interface SuperOneMiniAppLayoutResult {
   visible: boolean
   tab?: string
   reason?: 'not_visible'
+  /** resize_sidebar / resize_panel / resize_group: the size applied after clamping. */
+  width?: number
+  height?: number
 }
 
 export interface SuperOneMiniAppLayoutTab {
@@ -166,6 +184,18 @@ export interface SuperOneMiniAppLayoutSnapshot {
   window: { visible: boolean; sidebar: 'expanded' | 'collapsed'; layout: 'single' | 'split'; splitSessions?: string[] }
   panel: { open: boolean; onScreen: boolean; side: 'left' | 'right'; maximized: boolean }
   terminal: { open: boolean }
+  chatMode: 'docked' | 'floating' | 'icon'
+  chatPosition: SuperOneMiniAppLayoutChatPosition
+  /** Window-wide px widths. The chat takes what the sidebar and panel leave; each range holds the other columns still. */
+  sizes: {
+    window: number
+    sidebar: { width: number; min: number; max: number }
+    panel: { width: number; min: number; max: number }
+    /** 0 while the panel is maximized over it. */
+    chat: { width: number; min: number }
+  }
+  /** The panel's tab groups in on-screen order, px box inside the panel; a tab's `group` indexes this. */
+  groups: Array<{ group: number; x: number; y: number; width: number; height: number }>
   tabs: SuperOneMiniAppLayoutTab[]
   /** This app's own tab, when it is open in the holder session's panel. */
   self?: string

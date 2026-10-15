@@ -307,15 +307,21 @@ export const ENVIRONMENT_GET_INFO_INCLUDE_DESCRIPTION = 'Detail groups to add. D
 export const ARCHIVE_ENVIRONMENT_DESCRIPTION = 'Target environment ID from environment_get_info. Omit or use localhost for the calling session host.'
 
 export const LAYOUT_SNAPSHOT_DESCRIPTION =
-  'Read the SuperOne desktop layout around your session: whether the user can see your chat, the sidebar, your activity panel (open, side, maximized) and its tabs (id, kind, title, active, openedBy), your bottom terminal, and the split view. ' +
-  'Call it for tab ids before layout_act focus/close/split, or to check what the user is looking at.'
+  'Read the SuperOne desktop layout around your session: whether the user can see your chat, the sidebar, your activity panel (open, side, maximized), its tab groups (index and px box, so you can tell top/bottom from side by side) and tabs (id, kind, title, active, group, openedBy), your bottom terminal, the split view, chatMode and chatPosition, and sizes: px widths of the window, sidebar, panel and chat, with the min/max each column can take. ' +
+  'Call it for tab and group ids before layout_act, for sizes before a resize, or to check what the user is looking at.'
 
 export const LAYOUT_ACT_DESCRIPTION =
-  'Arrange the SuperOne desktop for the user: open a file (path, line) as a tab; focus, split or close tabs by id; show, hide, maximize or move your activity panel; show or hide your bottom terminal; collapse the sidebar; put a session you launched beside yours (split_session / close_split). ' +
+  'Arrange the SuperOne desktop for the user: open a file as a tab; focus or close tabs, move one beside or into a group or reorder it (move_tab), resize a group; show, hide, maximize, move or resize your activity panel; show or hide your terminal; show, hide or resize the sidebar (widen a column to narrow the chat); dock, float or iconify the chat; put a session you launched beside yours. ' +
   'Open browser and terminal tabs with browser_tabs / terminal_tabs. You can close only tabs and panes you opened. ' +
   'It never moves the user: in the background your own layout changes wait for them (status queued) and window-wide ones are skipped. `visible` says whether the user sees the result now.'
 export const LAYOUT_ACT_PATH_DESCRIPTION = 'open_file: the file, absolute or relative to your working folder.'
 export const LAYOUT_ACT_LINE_DESCRIPTION = 'open_file: 1-based line to reveal.'
-export const LAYOUT_ACT_TAB_DESCRIPTION = 'Tab id from layout_snapshot (browser_tabs / terminal_tabs ids work too). focus_tab, close_tab, split_tab; maximize_panel defaults to the active tab.'
-export const LAYOUT_ACT_DIRECTION_DESCRIPTION = 'split_tab / split_session. Default right.'
+export const LAYOUT_ACT_TAB_DESCRIPTION = 'Tab id from layout_snapshot (browser_tabs / terminal_tabs ids work too). focus_tab, close_tab, move_tab; maximize_panel defaults to the active tab.'
+export const LAYOUT_ACT_GROUP_DESCRIPTION = 'Group index from layout_snapshot groups. resize_group; move_tab target, default the tab\'s own group (a tab alone there goes beside the group before it).'
+export const LAYOUT_ACT_DIRECTION_DESCRIPTION = 'move_tab: right / down / left / up of the group as a new group, or into it. split_session: any side. Default right.'
+export const LAYOUT_ACT_INDEX_DESCRIPTION = 'move_tab: 0-based position among the destination group\'s tabs; with into and your own group it reorders.'
+export const LAYOUT_ACT_WIDTH_DESCRIPTION = 'resize_sidebar / resize_panel / resize_group: target width in px. Sidebar and panel clamp to layout_snapshot sizes; the result has the applied size.'
+export const LAYOUT_ACT_HEIGHT_DESCRIPTION = 'resize_group: target height in px.'
+export const LAYOUT_ACT_MODE_DESCRIPTION = 'chat_mode: docked (a column beside the panel), floating (a movable window over the panel, which then fills the window) or icon (that window collapsed).'
+export const LAYOUT_ACT_POSITION_DESCRIPTION = 'chat_mode: where the floating chat or its icon snaps. Alone it moves the chat without changing mode; while docked it is kept for the next float.'
 export const LAYOUT_ACT_SESSION_DESCRIPTION = 'split_session / close_split: a session you launched with session_collab_*.'

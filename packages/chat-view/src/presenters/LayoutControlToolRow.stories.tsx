@@ -17,15 +17,19 @@ const APPLIED = JSON.stringify({ status: 'applied', visible: true })
 const QUEUED = JSON.stringify({ status: 'queued', visible: false, tab: 'file:src/main.ts' })
 const SKIPPED = JSON.stringify({ status: 'skipped', visible: false, reason: 'not_visible' })
 const UNSUPPORTED = JSON.stringify({ status: 'unsupported', reason: 'remote_node', message: 'Layout control is only available to sessions running on this desktop.' })
-const SNAPSHOT = 'visible: true\nwindow:\n  visible: true\n  sidebar: expanded\n  layout: single\npanel:\n  open: true\n  onScreen: true\n  side: left\n  maximized: false\nterminal:\n  open: false\ntabs[1]{tab,kind,title,active,group,openedBy}:\n  file:src/main.ts,file,main.ts,true,0,agent'
+const SNAPSHOT = 'visible: true\nwindow:\n  visible: true\n  sidebar: expanded\n  layout: single\npanel:\n  open: true\n  onScreen: true\n  side: left\n  maximized: false\nterminal:\n  open: false\nchatMode: docked\nchatPosition: bottom-right\nsizes:\n  window: 1600\n  sidebar:\n    width: 320\n    min: 320\n    max: 500\n  panel:\n    width: 560\n    min: 400\n    max: 908\n  chat:\n    width: 708\n    min: 360\ngroups[1]{group,x,y,width,height}:\n  0,0,0,560,800\ntabs[1]{tab,kind,title,active,group,openedBy}:\n  file:src/main.ts,file,main.ts,true,0,agent'
 
 const SAMPLE_PARAMS: Record<string, Record<string, unknown>> = {
   open_file: { path: '/Users/me/project/apps/desktop/src/main/index.ts', line: 3144 },
   focus_tab: { tab: 'file:src/main.ts' },
   close_tab: { tab: 'file:src/app.ts' },
-  split_tab: { tab: 'file:README.md', direction: 'down' },
+  move_tab: { tab: 'file:README.md', direction: 'down' },
+  resize_group: { width: 640, height: 360 },
   maximize_panel: { tab: 'browser-6a0f' },
   panel_side: { side: 'right' },
+  resize_sidebar: { width: 400 },
+  resize_panel: { width: 720 },
+  chat_mode: { mode: 'floating', position: 'top-right' },
 }
 
 const meta = {
@@ -64,6 +68,11 @@ export const Skipped: Story = {
 export const Unsupported: Story = {
   name: 'remote node · unsupported',
   args: { params: projected({ action: 'show_panel' }), result: UNSUPPORTED },
+}
+
+export const ResizeClamped: Story = {
+  name: 'resize_panel · clamped to what the chat can spare',
+  args: { params: projected({ action: 'resize_panel', width: 5000 }), result: JSON.stringify({ status: 'applied', visible: true, width: 908 }) },
 }
 
 export const ErrorNotOwned: Story = {

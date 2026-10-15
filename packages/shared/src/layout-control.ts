@@ -8,7 +8,8 @@ export const LAYOUT_ACT_ACTIONS = [
   'open_file',
   'focus_tab',
   'close_tab',
-  'split_tab',
+  'move_tab',
+  'resize_group',
   'show_panel',
   'hide_panel',
   'maximize_panel',
@@ -16,6 +17,9 @@ export const LAYOUT_ACT_ACTIONS = [
   'panel_side',
   'show_sidebar',
   'hide_sidebar',
+  'resize_sidebar',
+  'resize_panel',
+  'chat_mode',
   'show_terminal',
   'hide_terminal',
   'split_session',
@@ -24,20 +28,53 @@ export const LAYOUT_ACT_ACTIONS = [
 
 export type LayoutActAction = (typeof LAYOUT_ACT_ACTIONS)[number]
 
+/**
+ * move_tab: beside a group (a new group on that side) or `into` it. split_session
+ * takes the four sides.
+ */
+export const LAYOUT_DIRECTIONS = ['right', 'down', 'left', 'up', 'into'] as const
+
+export type LayoutDirection = (typeof LAYOUT_DIRECTIONS)[number]
+
+/**
+ * How the caller's chat is shown: a column beside the activity panel, or — while the
+ * panel fills the window — a floating window over it, or that window collapsed to an icon.
+ */
+export const LAYOUT_CHAT_MODES = ['docked', 'floating', 'icon'] as const
+
+export type LayoutChatMode = (typeof LAYOUT_CHAT_MODES)[number]
+
+/** Where the floating chat (or its icon) snaps: the corners and edge midpoints of the window. */
+export const LAYOUT_CHAT_POSITIONS = ['top-left', 'top', 'top-right', 'right', 'bottom-right', 'bottom', 'bottom-left', 'left'] as const
+
+export type LayoutChatPosition = (typeof LAYOUT_CHAT_POSITIONS)[number]
+
 export interface LayoutActRequest {
   action: LayoutActAction
   /** open_file: the file. */
   path?: string
   /** open_file: 1-based line to reveal. */
   line?: number
-  /** focus_tab / close_tab / split_tab / maximize_panel: a tab id from the snapshot. */
+  /** focus_tab / close_tab / move_tab / maximize_panel: a tab id from the snapshot. */
   tab?: string
-  /** split_tab / split_session. Default right. */
-  direction?: 'right' | 'down'
+  /** move_tab / resize_group: a group index from the snapshot. move_tab defaults to the tab's own group. */
+  group?: number
+  /** move_tab / split_session. Default right. */
+  direction?: LayoutDirection
+  /** move_tab: 0-based position among the destination group's tabs. */
+  index?: number
   /** panel_side. */
   side?: 'left' | 'right'
   /** split_session / close_split: a session the caller launched. */
   sessionId?: string
+  /** resize_sidebar / resize_panel / resize_group: target width in px, clamped to the snapshot's `sizes` range. */
+  width?: number
+  /** resize_group: target height in px. */
+  height?: number
+  /** chat_mode. */
+  mode?: LayoutChatMode
+  /** chat_mode: where the floating chat snaps. Kept while docked for the next float. */
+  position?: LayoutChatPosition
 }
 
 /**
@@ -54,6 +91,9 @@ export interface LayoutActResult {
   tab?: string
   /** Why a `skipped` action did nothing. */
   reason?: 'not_visible'
+  /** resize_sidebar / resize_panel / resize_group: the size applied after clamping. */
+  width?: number
+  height?: number
 }
 
 export type LayoutTabKind =
@@ -82,6 +122,15 @@ export interface LayoutTab {
   openedBy: LayoutTabOpener
 }
 
+/** A tab group of the activity panel: px box inside the panel, origin top-left. */
+export interface LayoutGroup {
+  group: number
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface LayoutSnapshot {
   /** The caller's chat is on screen (foreground or a split pane) and the window is visible. */
   visible: boolean
@@ -102,9 +151,36 @@ export interface LayoutSnapshot {
   }
   /** The caller's bottom terminal panel. */
   terminal: { open: boolean }
+  chatMode: LayoutChatMode
+  /** Where the floating chat snaps; remembered while docked. */
+  chatPosition: LayoutChatPosition
+  /** Window-wide widths in px. Each range holds the other columns at their current width. */
+  sizes: LayoutSizes
+  /** The panel's tab groups in on-screen order; a tab's `group` indexes this. */
+  groups: LayoutGroup[]
   tabs: LayoutTab[]
   /** Mini-app callers: the tab that shows the app itself, when it is open. */
   self?: string
+}
+
+export interface LayoutWidthRange {
+  width: number
+  min: number
+  max: number
+}
+
+/**
+ * The window is split into sidebar | chat | activity panel. The chat takes what the
+ * others leave, so narrowing it means widening the sidebar or the panel.
+ */
+export interface LayoutSizes {
+  window: number
+  /** Width while expanded; it keeps its width when collapsed. */
+  sidebar: LayoutWidthRange
+  /** Width while open and not maximized. */
+  panel: LayoutWidthRange
+  /** 0 while the panel is maximized over it. */
+  chat: { width: number; min: number }
 }
 
 /** Who is asking. The opener decides which tabs and panes the caller may close. */

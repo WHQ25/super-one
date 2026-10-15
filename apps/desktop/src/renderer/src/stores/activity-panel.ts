@@ -21,6 +21,11 @@ interface ActivityPanelState {
   maximized: boolean
   maximizedGroupId: string | null
   /**
+   * The person floated the chat over the panel without maximizing a tab: the panel
+   * fills the window with all its groups, the chat floats as it does when maximized.
+   */
+  chatFloating: boolean
+  /**
    * Where the panel is on screen. Published because the browser and mini-app
    * webviews live in host layers OUTSIDE the panel's clipping box, so each one
    * has to work out for itself whether it sits on the card's rounded corner.
@@ -41,6 +46,7 @@ interface ActivityPanelState {
   toggleSide: () => void
   setHasPanels: (has: boolean) => void
   setMaximizedGroup: (groupId: string | null) => void
+  setChatFloating: (floating: boolean) => void
   setBounds: (bounds: ActivityPanelBounds | null) => void
 }
 
@@ -54,6 +60,7 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
       userResized: false,
       maximized: false,
       maximizedGroupId: null,
+      chatFloating: false,
       bounds: null,
       revealedForTab: false,
 
@@ -62,6 +69,8 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
         revealedForTab: show && opts?.forTab === true,
         maximized: show ? state.maximized : false,
         maximizedGroupId: show ? state.maximizedGroupId : null,
+        // Hiding the panel leaves nothing to float over; the chat docks again.
+        chatFloating: show ? state.chatFloating : false,
       })),
       setSide: (side) => set({ side }),
       setPanelWidth: (w) => set({ panelWidth: w }),
@@ -77,6 +86,7 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
         maximized: groupId !== null && state.showPanel,
         maximizedGroupId: state.showPanel ? groupId : null,
       })),
+      setChatFloating: (floating) => set((state) => ({ chatFloating: floating && state.showPanel })),
       // Measured every frame the layout moves, so it is compared before it is
       // stored — consumers re-render on identity and the rect is usually equal.
       setBounds: (bounds) => set((state) => {
@@ -101,3 +111,11 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
     },
   ),
 )
+
+/**
+ * The panel takes the whole window and the chat floats over it: a maximized tab, or
+ * the person floating the chat. Layout follows this; tab-level behaviour (drag and
+ * drop, the tab's maximize button) follows `maximized` alone.
+ */
+export const selectPanelFillsWindow = (s: Pick<ActivityPanelState, 'maximized' | 'chatFloating'>): boolean =>
+  s.maximized || s.chatFloating

@@ -30,6 +30,26 @@ describe('layout control rows', () => {
     expect(screen.getByText('not available on a remote node')).toBeTruthy()
   })
 
+  it('shows the width a resize applied, not the one it asked for', () => {
+    const params = projected({ action: 'resize_panel', width: 5000 })
+    const { rerender } = render(<LayoutControlToolRow mcpToolName="layout_act" params={params} result={null} isStreaming />)
+    expect(screen.getByText('5000px')).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={params} result={JSON.stringify({ status: 'applied', visible: true, width: 908 })} isStreaming={false} />)
+    expect(screen.getByText('Panel Resized')).toBeTruthy()
+    expect(screen.getByText('908px')).toBeTruthy()
+  })
+
+  it('names the chat mode it switched to', () => {
+    render(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'chat_mode', mode: 'icon' })} result={JSON.stringify({ status: 'applied', visible: true })} isStreaming={false} />)
+    expect(screen.getByText('Chat View Changed')).toBeTruthy()
+    expect(screen.getByText('icon')).toBeTruthy()
+  })
+
+  it('names where the floating chat moved', () => {
+    render(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'chat_mode', mode: 'floating', position: 'top-right' })} result={JSON.stringify({ status: 'applied', visible: true })} isStreaming={false} />)
+    expect(screen.getByText('floating · top right')).toBeTruthy()
+  })
+
   it('uses the action label and no outcome on an error', () => {
     render(<LayoutControlToolRow mcpToolName="layout_act" params={{ action: 'close_tab', tab: 'file:src/main.ts' }} result="Tab file:src/main.ts was not opened by you" isError isStreaming={false} />)
     expect(screen.getByText('Close Tab')).toBeTruthy()

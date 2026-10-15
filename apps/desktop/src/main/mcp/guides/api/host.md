@@ -49,7 +49,7 @@ The entry must export `activate(context)`. `deactivate()` is optional.
 | `subscriptions` | Push disposables here for automatic reverse-order cleanup. |
 | `agent.sendPrompt / setContext / clearContext / onContextConsumed` | Reach the chat without a WebView. See `api-agent`. |
 | `host.toast / revealInFolder / openExternal / clipboard` | Host actions that need no DOM coordinates. See `api-system`. |
-| `layout.snapshot() / act(request)` | Read and arrange the desktop layout of the session holding the app: open a file tab, focus / split / close tabs, show or maximize the activity panel (`snapshot().self` is the app's own tab), the bottom terminal, the sidebar, a launched session in the split view. Same contract as the agent's `layout_snapshot` / `layout_act`; see Layout below. |
+| `layout.snapshot() / act(request)` | Read and arrange the desktop layout of the session holding the app: open a file tab, focus / close tabs, move them beside or into a group (`move_tab`, groups in `snapshot().groups`), resize groups, show or maximize the activity panel (`snapshot().self` is the app's own tab), the bottom terminal, the sidebar, sidebar and panel widths (`snapshot().sizes`), the chat docked / floating / icon (`chat_mode`), a launched session in the split view. Same contract as the agent's `layout_snapshot` / `layout_act`; see Layout below. |
 | `locale.get / onChange` | Current SuperOne language. |
 | `version` | SuperOne version running this mini-app. |
 | `setStatus(text)` | Show a short runtime status in the sidebar. A host with a status set also counts as a background task, so quitting SuperOne asks for confirmation — pass `''` when the work is done. |
@@ -70,7 +70,14 @@ await context.layout.act({ action: 'open_file', path: 'src/app.ts', line: 42 })
   user sees it.
 - `'queued'`: the holder session is not in front, so its own layout takes the
   change when the user opens it.
-- `'skipped'`: a window-wide change (sidebar, panel side, split view) is refused
+- `resize_sidebar` / `resize_panel` take a px `width`, clamped to the range in
+  `snapshot().sizes`; the result's `width` is what was applied. The chat takes
+  the rest, so widen a neighbour to narrow it.
+- `chat_mode` with `mode: 'floating' | 'icon'` lets the panel fill the window and
+  shows the chat over it as a floating window or an icon; `'docked'` puts it back
+  beside the panel. `position` (`'top-left'` … `'left'`, 8 snap anchors) moves the
+  floating chat, alone or with a mode.
+- `'skipped'`: a window-wide change (sidebar, panel side, widths, chat mode, split view) is refused
   while the holder is not in front, so the user is never moved.
 - Tabs and split panes can be closed only by whoever opened them. Browser and
   terminal tabs are opened by agents with their own tools; the app can focus,

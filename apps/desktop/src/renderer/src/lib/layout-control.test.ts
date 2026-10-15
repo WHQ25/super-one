@@ -11,6 +11,7 @@ import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useTerminalStore } from '@/stores/terminal'
+import { LAYOUT } from './layout-constants'
 import { layoutAct, layoutSnapshot } from './layout-control'
 
 const PROJECT = '/work/app'
@@ -59,8 +60,19 @@ function fakeDock() {
       return panel
     }),
     clear: vi.fn(() => { dock.panels = []; group.panels = [] }),
+    hasMaximizedGroup: () => false,
+    exitMaximizedGroup: vi.fn(),
     fromJSON: vi.fn(),
-    toJSON: vi.fn(() => null),
+    // One group filling a 600×400 panel.
+    toJSON: vi.fn(() => ({
+      grid: {
+        root: { type: 'branch', size: 400, data: [{ type: 'leaf', size: 600, data: { id: group.id, views: group.panels.map((p) => p.id) } }] },
+        width: 600,
+        height: 400,
+        orientation: 'HORIZONTAL',
+      },
+      panels: {},
+    })),
   }
   setDockApi(dock as never)
   return dock
@@ -145,7 +157,7 @@ describe('caller in front', () => {
     dock.addPanel({ id: 'file:a.ts', component: 'file-preview', title: 'a.ts' })
     dock.addPanel({ id: 'file:b.ts', component: 'file-preview', title: 'b.ts' })
 
-    await layoutAct(agentA, { action: 'split_tab', tab: 'file:b.ts', direction: 'down' })
+    await layoutAct(agentA, { action: 'move_tab', tab: 'file:b.ts', direction: 'down' })
 
     expect(dock.panels[1].api.moveTo).toHaveBeenCalledWith({ group: dock.groups[0], position: 'bottom' })
   })
@@ -197,6 +209,134 @@ describe('caller in the background', () => {
   it('reports itself as not visible', () => {
     fakeDock()
     expect(layoutSnapshot(agentA)).toMatchObject({ visible: false, panel: { onScreen: false } })
+  })
+})
+
+describe('widths', () => {
+  const { MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, MIN_MAIN, CARD_GUTTER } = LAYOUT
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { value: 1600, configurable: true })
+    useAppStore.setState({ sidebarWidth: 320 })
+    useActivityPanelStore.setState({ showPanel: true, panelWidth: 560, userResized: false })
+    fakeDock()
+  })
+
+  it('reports each column with the range it can take while the others stay put', () => {
+    expect(layoutSnapshot(agentA).sizes).toEqual({
+      window: 1600,
+      sidebar: { width: 320, min: MIN_SIDEBAR, max: Math.min(MAX_SIDEBAR, 1600 - 560 - MIN_MAIN - CARD_GUTTER) },
+      panel: { width: 560, min: MIN_AP, max: 1600 - 320 - MIN_MAIN - CARD_GUTTER },
+      chat: { width: 1600 - 320 - 560 - CARD_GUTTER, min: MIN_MAIN },
+    })
+  })
+
+  it('narrows the chat by widening the panel, clamped to what the chat can spare', async () => {
+    const max = 1600 - 320 - MIN_MAIN - CARD_GUTTER
+
+    expect(await layoutAct(agentA, { action: 'resize_panel', width: 5000 })).toEqual({ status: 'applied', visible: true, width: max })
+    expect(useActivityPanelStore.getState()).toMatchObject({ panelWidth: max, userResized: true })
+    expect(layoutSnapshot(agentA).sizes.chat.width).toBe(MIN_MAIN)
+  })
+
+  it('resizes the sidebar within its bounds', async () => {
+    expect(await layoutAct(agentA, { action: 'resize_sidebar', width: 100 })).toMatchObject({ status: 'applied', width: MIN_SIDEBAR })
+    expect(await layoutAct(agentA, { action: 'resize_sidebar', width: 420.4 })).toMatchObject({ width: 420 })
+    expect(useAppStore.getState().sidebarWidth).toBe(420)
+  })
+
+  it('counts no chat width under a maximized panel', () => {
+    useActivityPanelStore.setState({ maximized: true })
+    expect(layoutSnapshot(agentA).sizes.chat.width).toBe(0)
+  })
+
+  it('needs a width', async () => {
+    await expect(layoutAct(agentA, { action: 'resize_panel' })).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('leaves widths alone while the caller is in the background', async () => {
+    showSessionInFront('B')
+    expect(await layoutAct(agentA, { action: 'resize_sidebar', width: 400 })).toMatchObject({ status: 'skipped' })
+    expect(useAppStore.getState().sidebarWidth).toBe(320)
+  })
+})
+
+describe('chat mode', () => {
+  beforeEach(() => {
+    useChatStore.setState({ isOpen: false })
+    useActivityPanelStore.setState({ chatFloating: false })
+  })
+
+  it('floats the chat over the whole panel without maximizing a tab, iconifies it, and docks it back', async () => {
+    const dock = fakeDock()
+    dock.addPanel({ id: 'file:a.ts', component: 'file-preview', title: 'a.ts' })
+    expect(layoutSnapshot(agentA).chatMode).toBe('docked')
+
+    expect(await layoutAct(agentA, { action: 'chat_mode', mode: 'floating' })).toEqual({ status: 'applied', visible: true })
+    expect(dock.panels[0].api.maximize).not.toHaveBeenCalled()
+    expect(useActivityPanelStore.getState()).toMatchObject({ showPanel: true, chatFloating: true, maximized: false })
+    expect(layoutSnapshot(agentA)).toMatchObject({ chatMode: 'floating', sizes: { chat: { width: 0 } } })
+
+    await layoutAct(agentA, { action: 'chat_mode', mode: 'icon' })
+    expect(layoutSnapshot(agentA).chatMode).toBe('icon')
+
+    await layoutAct(agentA, { action: 'chat_mode', mode: 'docked' })
+    expect(layoutSnapshot(agentA).chatMode).toBe('docked')
+  })
+
+  it('floats over an empty panel too', async () => {
+    fakeDock()
+    expect(await layoutAct(agentA, { action: 'chat_mode', mode: 'icon' })).toMatchObject({ status: 'applied' })
+    expect(layoutSnapshot(agentA).chatMode).toBe('icon')
+  })
+
+  it('docks the chat out of a maximized tab', async () => {
+    const dock = fakeDock()
+    dock.addPanel({ id: 'file:a.ts', component: 'file-preview', title: 'a.ts' })
+    await layoutAct(agentA, { action: 'maximize_panel' })
+    expect(layoutSnapshot(agentA).chatMode).not.toBe('docked')
+
+    await layoutAct(agentA, { action: 'chat_mode', mode: 'docked' })
+    expect(useActivityPanelStore.getState().maximized).toBe(false)
+    expect(layoutSnapshot(agentA).chatMode).toBe('docked')
+  })
+
+  it('docks again when the panel is hidden', async () => {
+    fakeDock()
+    await layoutAct(agentA, { action: 'chat_mode', mode: 'floating' })
+    await layoutAct(agentA, { action: 'hide_panel' })
+    expect(layoutSnapshot(agentA).chatMode).toBe('docked')
+  })
+
+  it('snaps the floating chat to a named position, alone or with a mode', async () => {
+    fakeDock()
+    useChatStore.setState({ corner: 'br' })
+    expect(layoutSnapshot(agentA).chatPosition).toBe('bottom-right')
+
+    expect(await layoutAct(agentA, { action: 'chat_mode', mode: 'floating', position: 'top' })).toEqual({ status: 'applied', visible: true })
+    expect(useChatStore.getState().corner).toBe('tm')
+
+    await layoutAct(agentA, { action: 'chat_mode', position: 'left' })
+    expect(layoutSnapshot(agentA)).toMatchObject({ chatMode: 'floating', chatPosition: 'left' })
+  })
+
+  it('remembers a position set while docked', async () => {
+    fakeDock()
+    expect(await layoutAct(agentA, { action: 'chat_mode', position: 'top-left' })).toEqual({ status: 'applied', visible: false })
+    expect(layoutSnapshot(agentA)).toMatchObject({ chatMode: 'docked', chatPosition: 'top-left' })
+  })
+
+  it('needs a mode or a position, and a known one', async () => {
+    fakeDock()
+    await expect(layoutAct(agentA, { action: 'chat_mode' })).rejects.toMatchObject({ code: 'invalid' })
+    await expect(layoutAct(agentA, { action: 'chat_mode', position: 'center' as never })).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('rejects an unknown mode and skips while the caller is in the background', async () => {
+    fakeDock()
+    await expect(layoutAct(agentA, { action: 'chat_mode', mode: 'pip' as never })).rejects.toMatchObject({ code: 'invalid' })
+    showSessionInFront('B')
+    expect(await layoutAct(agentA, { action: 'chat_mode', mode: 'floating' })).toMatchObject({ status: 'skipped' })
   })
 })
 

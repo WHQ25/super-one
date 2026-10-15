@@ -47,7 +47,7 @@ import { useMobileConnectionToasts } from '@/hooks/useMobileConnectionToasts'
 import { useAppStore, startProjectMirror } from '@/stores/app'
 import { FOLD_PANEL_MS, selectMiniDriven, selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini-mode'
 import { useDevToolsStore } from '@/stores/dev-tools'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { useTerminalStore } from '@/stores/terminal'
@@ -64,7 +64,7 @@ import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { startAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
-import { LAYOUT, maxSidebarWidth } from '@/lib/layout-constants'
+import { LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
 import { setActivityPanelShown, toggleSidebar } from '@/lib/layout-actions'
 
 export { LAYOUT }
@@ -95,6 +95,7 @@ function App(): React.JSX.Element {
   const activitySide = useActivityPanelStore((s) => s.side)
   const hasActivityPanels = useActivityPanelStore((s) => s.hasPanels)
   const activityMaximized = useActivityPanelStore((s) => s.maximized)
+  const activityFillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   // Whether the panel is really on screen — `showPanel` alone misses the mosaic and
   // mini-window-fold hides. See the hook for why the two must never drift apart.
   const activityOnScreen = useActivityPanelOnScreen()
@@ -349,7 +350,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     if (inMiniWindow) return
     let minW = view === 'main'
-      ? (activityMaximized ? LAYOUT.MIN_AP : LAYOUT.MIN_MAIN + (showActivityPanel ? LAYOUT.MIN_AP : 0))
+      ? (activityFillsWindow ? LAYOUT.MIN_AP : LAYOUT.MIN_MAIN + (showActivityPanel ? LAYOUT.MIN_AP : 0))
         + (showSidebar ? LAYOUT.MIN_SIDEBAR : 0)
         + (showSidebar || showActivityPanel ? LAYOUT.CARD_GUTTER : 0)
       : LAYOUT.MIN_MAIN + LAYOUT.MIN_SIDEBAR + LAYOUT.MIN_AP
@@ -361,7 +362,7 @@ function App(): React.JSX.Element {
       minH = Math.max(minH, mosaicMinH + 10)
     }
     window.app.setMinWindowSize(minW, minH)
-  }, [view, showSidebar, showActivityPanel, activityMaximized, mosaicMinW, mosaicMinH, inMiniWindow])
+  }, [view, showSidebar, showActivityPanel, activityFillsWindow, mosaicMinW, mosaicMinH, inMiniWindow])
 
   const { MIN_MAIN, MIN_SIDEBAR, MAX_SIDEBAR, MIN_AP, CARD_GUTTER } = LAYOUT
   // In mosaic mode the main area can't shrink below what the current split needs,
@@ -376,7 +377,7 @@ function App(): React.JSX.Element {
 
   const getLinkedPanel = useCallback((newW: number, prevW: number) => {
     const ap = useActivityPanelStore.getState()
-    if (!ap.showPanel || ap.maximized || ap.side !== 'left') return null
+    if (!ap.showPanel || selectPanelFillsWindow(ap) || ap.side !== 'left') return null
     const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
     const inner = document.querySelector<HTMLElement>('[data-activity-inner]')
     if (!outer || !inner) return null
@@ -387,7 +388,7 @@ function App(): React.JSX.Element {
     if (delta > 0) {
       newApW = Math.max(MIN_AP, currentApW - delta)
     } else {
-      const maxAp = window.innerWidth - newW - MIN_MAIN - CARD_GUTTER
+      const maxAp = maxPanelWidth(window.innerWidth, newW)
       newApW = Math.min(maxAp, currentApW - delta)
     }
     return { width: newApW, outer, inner }
@@ -397,7 +398,7 @@ function App(): React.JSX.Element {
 
   const onSidebarDragEnd = useCallback(() => {
     setSidebarResizing(false)
-    if (useActivityPanelStore.getState().maximized) return
+    if (selectPanelFillsWindow(useActivityPanelStore.getState())) return
     const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
     if (!outer) return
     const w = parseFloat(outer.style.width)
@@ -440,22 +441,23 @@ function App(): React.JSX.Element {
       prevWidth = curWidth
 
       const mainMin = mainMinWRef.current
-      if (delta !== 0 && ap.showPanel && !ap.maximized) {
-        const maxAp = curWidth - (sb ? sw : 0) - mainMin - CARD_GUTTER
+      const fills = selectPanelFillsWindow(ap)
+      if (delta !== 0 && ap.showPanel && !fills) {
+        const maxAp = maxPanelWidth(curWidth, sb ? sw : 0, mainMin)
         ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
       }
 
       if (sb) {
-        const maxSw = maxSidebarWidth(curWidth, ap.maximized ? MIN_AP : mainMin, ap.showPanel && !ap.maximized ? ap.panelWidth : 0)
+        const maxSw = maxSidebarWidth(curWidth, fills ? MIN_AP : mainMin, ap.showPanel && !fills ? ap.panelWidth : 0)
         if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
       }
 
-      const activityWidth = ap.showPanel && !ap.maximized ? ap.panelWidth : 0
-      const contentMin = ap.maximized ? MIN_AP : mainMin
+      const activityWidth = ap.showPanel && !fills ? ap.panelWidth : 0
+      const contentMin = fills ? MIN_AP : mainMin
       const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + activityWidth
       let overflow = totalPanels + contentMin + CARD_GUTTER - curWidth
       if (overflow <= 0) return
-      if (ap.showPanel && !ap.maximized) {
+      if (ap.showPanel && !fills) {
         const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
         if (shrink > 0) { ap.setPanelWidth(ap.panelWidth - shrink); overflow -= shrink }
       }
@@ -483,7 +485,7 @@ function App(): React.JSX.Element {
     const unsubAP = useActivityPanelStore.subscribe((state, prev) => {
       if (state.showPanel && !prev.showPanel) {
         const { showSidebar: sb, sidebarWidth: sw } = useAppStore.getState()
-        const maxAp = window.innerWidth - (sb ? sw : 0) - MIN_MAIN - CARD_GUTTER
+        const maxAp = maxPanelWidth(window.innerWidth, sb ? sw : 0)
         const clamped = Math.max(MIN_AP, Math.min(state.panelWidth, maxAp))
         if (clamped !== state.panelWidth) {
           useActivityPanelStore.getState().setPanelWidth(clamped)
@@ -515,7 +517,7 @@ function App(): React.JSX.Element {
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
-    return window.innerWidth - (sb.showSidebar ? sb.sidebarWidth : 0) - MIN_MAIN - CARD_GUTTER
+    return maxPanelWidth(window.innerWidth, sb.showSidebar ? sb.sidebarWidth : 0)
   }, [])
 
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
@@ -651,7 +653,7 @@ function App(): React.JSX.Element {
         {/* Main area */}
         <div data-main-area="" className={cn(
           'relative z-10 flex-1 flex-col overflow-hidden',
-          activityMaximized && !inMiniWindow ? 'hidden' : 'flex',
+          activityFillsWindow && !inMiniWindow ? 'hidden' : 'flex',
           activityOnScreen && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
         )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
@@ -746,7 +748,7 @@ function App(): React.JSX.Element {
       </div>
       </div>
       </>
-      {activityMaximized && !inMiniWindow && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
+      {activityFillsWindow && !inMiniWindow && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}

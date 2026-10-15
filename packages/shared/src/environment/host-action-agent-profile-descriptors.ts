@@ -31,6 +31,10 @@ export const AGENT_PROFILE_APPLY_INPUT_SCHEMA = {
     instructions: { type: 'string', description: 'Added to the agent\'s system prompt on every launch.' },
     model: { type: 'string', description: 'Base model id from the harness catalog. Omit to follow the user\'s default.' },
     effort: { type: 'string', description: 'Effort level the model supports.' },
+    permissionMode: {
+      type: 'string',
+      description: 'Permission mode new sessions start in; one of the harness\'s modes (agent_profile_list({ id }) lists them). Omit to follow the user\'s default.',
+    },
     options: {
       type: 'object',
       description: 'The harness\'s own settings; agent_profile_list({ id }) lists which ones its models accept. null clears one.',

@@ -15,6 +15,7 @@ import type {
   AgentProfileConfirmView,
   AgentProfileRuntimeField,
   HarnessId,
+  PermissionMode,
 } from '@superone/shared/agent-types'
 import {
   AGENT_PROFILE_VERSION,
@@ -35,6 +36,7 @@ import {
   type AgentProfileOptions,
 } from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import log from '../logger'
 import { isProviderUsable, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
 import { profileConfirms, type ConfirmOutcome } from './agent-profile-confirm'
@@ -107,6 +109,7 @@ function unsupportedFields(harnessId: HarnessId, catalog: AgentProfileCatalog, m
   const efforts = (found ? [found] : catalog.models).some((option) =>
     (option.supportedEffortLevels?.length ?? 0) > 0 || (option.supportedReasoningEfforts?.length ?? 0) > 0)
   if (!uncached && !efforts && !catalog.efforts?.length) unsupported.push('effort')
+  if (HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes.length === 0) unsupported.push('permissionMode')
   const choices = optionChoicesFor(harnessId, catalog, model)
   for (const key of HARNESS_PROFILE_OPTIONS[harnessId]) {
     if (choices[key] === null && !(uncached && isModelBoundOption(key))) unsupported.push(key)
@@ -138,6 +141,7 @@ function toView(
     ...(runtime.model ? { model: runtime.model } : {}),
     ...(name ? { modelName: name } : {}),
     ...(runtime.effort ? { effort: runtime.effort } : {}),
+    ...(runtime.permissionMode ? { permissionMode: runtime.permissionMode } : {}),
     ...(Object.keys(options).length ? { options } : {}),
     ...(unsupported.length ? { unsupported } : {}),
   }
@@ -151,6 +155,7 @@ function fieldText(spec: AgentProfileSpec, field: AgentProfileConfirmChange['fie
     case 'instructions': return spec.instructions ?? ''
     case 'model': return runtime.model ?? ''
     case 'effort': return runtime.effort ?? ''
+    case 'permissionMode': return runtime.permissionMode ?? ''
     default: {
       const value = runtime.options?.[field]
       return value === undefined ? '' : optionDisplayValue(field, value, choices[field])
@@ -165,7 +170,7 @@ function diffSpecs(
   after: AgentProfileSpec,
 ): AgentProfileConfirmChange[] {
   const fields: AgentProfileConfirmChange['field'][] = [
-    'name', 'description', 'instructions', 'model', 'effort', ...HARNESS_PROFILE_OPTIONS[harnessId],
+    'name', 'description', 'instructions', 'model', 'effort', 'permissionMode', ...HARNESS_PROFILE_OPTIONS[harnessId],
   ]
   const beforeChoices = optionChoicesFor(harnessId, catalog, before.runtime?.model)
   const afterChoices = optionChoicesFor(harnessId, catalog, after.runtime?.model)
@@ -264,6 +269,7 @@ function listRow(row: SessionProvider) {
     description: preview(spec?.identity.description ?? (row.isBase ? builtInDescription(row) : '')),
     model: runtime.model ?? '',
     effort: runtime.effort ?? '',
+    permissionMode: runtime.permissionMode ?? '',
     options: Object.entries(optionLabels(runtime.options, {})).map(([key, value]) => `${key}: ${value}`).join('; '),
   }
 }
@@ -284,6 +290,7 @@ function optionsView(harnessId: HarnessId, catalog: AgentProfileCatalog) {
   const keys = HARNESS_PROFILE_OPTIONS[harnessId]
   const harnessWide = agentProfileOptionChoices(harnessId, [], catalog.host)
   return {
+    permissionModes: HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes,
     keys,
     harness: Object.fromEntries(keys.filter((key) => !isModelBoundOption(key)).map((key) => [key, choicesView(harnessWide[key])])),
     models: catalog.models.map((model) => {
@@ -342,13 +349,14 @@ export interface AgentProfileApplyArgs {
   instructions?: string
   model?: string
   effort?: string
+  permissionMode?: string
   /** The harness's own settings; `null` clears one. */
   options?: Partial<Record<AgentProfileOptionKey, unknown>>
 }
 
 /**
- * Lay the call's runtime fields over `base`. An empty string clears model or
- * effort, a `null` option clears that option. Options that belong to a model
+ * Lay the call's runtime fields over `base`. An empty string clears model,
+ * effort or permission mode, a `null` option clears that option. Options that belong to a model
  * are dropped when the model changes, unless the call sets them again.
  */
 function mergeRuntime(base: AgentProfileRuntime | undefined, args: AgentProfileApplyArgs): AgentProfileRuntime | undefined {
@@ -365,6 +373,10 @@ function mergeRuntime(base: AgentProfileRuntime | undefined, args: AgentProfileA
   if (typeof args.effort === 'string') {
     if (args.effort.trim()) next.effort = args.effort.trim()
     else delete next.effort
+  }
+  if (typeof args.permissionMode === 'string') {
+    if (args.permissionMode.trim()) next.permissionMode = args.permissionMode.trim() as PermissionMode
+    else delete next.permissionMode
   }
   for (const [key, value] of Object.entries(args.options ?? {})) {
     if (value === null) delete options[key]

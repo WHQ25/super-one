@@ -263,13 +263,13 @@ export const AUTOMATION_DELETE_DESCRIPTION =
   'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
 
 export const AGENT_PROFILE_LIST_DESCRIPTION =
-  'List agent profiles: named agents (identity, instructions, model defaults) that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
-  'Pass id for full instructions, launch defaults, and what that harness accepts: models, their efforts, and its own options (each harness has different ones). ' +
+  'List agent profiles: named agents (identity, instructions, model and permission defaults) that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
+  'Pass id for full instructions, launch defaults, and what that harness accepts: models, their efforts, permission modes, and its own options (each harness has different ones). ' +
   'Read this before agent_profile_apply or agent_profile_delete.'
 
 export const AGENT_PROFILE_APPLY_DESCRIPTION =
-  'Create or update an agent profile. create needs harnessId, name, description; update needs id plus the fields to change (empty string clears model, effort or instructions; null clears an option). ' +
-  'description is what other agents read to pick a delegate, so say what this agent is for. model, effort and options must be ones the harness accepts: read agent_profile_list with the <harness>-base id first. ' +
+  'Create or update an agent profile. create needs harnessId, name, description; update needs id plus the fields to change (empty string clears model, effort, permissionMode or instructions; null clears an option). ' +
+  'description is what other agents read to pick a delegate, so say what this agent is for. model, effort, permissionMode and options must be ones the harness accepts: read agent_profile_list with the <harness>-base id first. ' +
   'Built-in <harness>-base rows are read-only; remove profiles with agent_profile_delete. Always opens a user confirmation dialog and applies nothing without approval.'
 
 export const AGENT_PROFILE_DELETE_DESCRIPTION =

@@ -2217,6 +2217,7 @@ export type Messages = {
           instructions: string
           model: string
           effort: string
+          permissionMode: string
           name: string
           ultracode: string
           fastMode: string
@@ -6697,6 +6698,7 @@ export const en: Messages = {
           instructions: 'Instructions',
           model: 'Model',
           effort: 'Effort',
+          permissionMode: 'Permission',
           ultracode: 'Ultracode',
           fastMode: 'Fast Mode',
           contextWindow: 'Context Window',

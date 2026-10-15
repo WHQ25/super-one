@@ -1411,7 +1411,7 @@ export interface AutomationConfirmPayload {
 }
 
 /** Runtime fields an agent profile can set beyond its model; the ones a harness/model cannot carry are listed as unsupported. */
-export type AgentProfileRuntimeField = 'effort' | AgentProfileOptionKey
+export type AgentProfileRuntimeField = 'effort' | 'permissionMode' | AgentProfileOptionKey
 
 /** One agent profile as the confirm card shows it: the result on create/update, the subject on delete. */
 export interface AgentProfileConfirmView {
@@ -1426,6 +1426,8 @@ export interface AgentProfileConfirmView {
   /** Catalog display name for {@link model}. */
   modelName?: string
   effort?: string
+  /** One of the harness's launch permission modes; the client labels it in the harness's vocabulary. */
+  permissionMode?: PermissionMode
   /**
    * The set harness options as display values (`on` / `off` for toggles,
    * translated by the client). Rows follow `HARNESS_PROFILE_OPTIONS[harnessId]`.

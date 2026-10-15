@@ -12,6 +12,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { HARNESS_PROFILE_OPTIONS } from '@superone/shared/agent-profile-options'
 import { schemaFormForResourceHost, type SchemaForm, type SchemaFormField } from '@superone/shared/schema-form'
 import { buildCollaborationFormAnswers } from './collaboration-state'
+import { permissionModeLabel } from './ui/permission-mode-data'
 
 export type PermissionSheetItem = {
   title: string
@@ -39,6 +40,7 @@ const AGENT_PROFILE_FIELD_LABELS: Record<AgentProfileConfirmChange['field'], str
   instructions: 'Instructions',
   model: 'Model',
   effort: 'Effort',
+  permissionMode: 'Permission',
   ultracode: 'Ultracode',
   fastMode: 'Fast mode',
   contextWindow: 'Context window',
@@ -51,6 +53,17 @@ const AGENT_PROFILE_FIELD_LABELS: Record<AgentProfileConfirmChange['field'], str
 /** Host display values arrive as `on` / `off` for toggles; the sheet translates them. */
 function agentProfileValue(raw: string | undefined): string | undefined {
   return raw === 'on' ? 'On' : raw === 'off' ? 'Off' : raw
+}
+
+/** An update's side as text: permission modes in the harness's own vocabulary. */
+function agentProfileChangeValue(
+  change: AgentProfileConfirmChange,
+  raw: string | undefined,
+  payload: { profiles: AgentProfileConfirmView[] } | undefined,
+): string | undefined {
+  const harnessId = payload?.profiles[0]?.harnessId
+  if (change.field === 'permissionMode' && raw && harnessId) return permissionModeLabel(raw, harnessId)
+  return agentProfileValue(raw)
 }
 
 function agentProfileHarness(profile: AgentProfileConfirmView): string {
@@ -70,6 +83,7 @@ function agentProfileItems(profile: AgentProfileConfirmView): PermissionSheetIte
     field('instructions', profile.instructions, 'None'),
     field('model', profile.modelName ?? profile.model),
     field('effort', profile.effort ? formatEffortLabel(profile.effort) : undefined),
+    field('permissionMode', profile.permissionMode ? permissionModeLabel(profile.permissionMode, profile.harnessId) : undefined),
     ...HARNESS_PROFILE_OPTIONS[profile.harnessId].map((key) => field(key, agentProfileValue(profile.options?.[key]))),
   ]
 }
@@ -251,7 +265,7 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
           ? (payload?.changes ?? []).map((change) => ({
             title: AGENT_PROFILE_FIELD_LABELS[change.field],
             label: true,
-            subtitle: `${agentProfileValue(change.from) || '—'} → ${agentProfileValue(change.to) || '—'}`,
+            subtitle: `${agentProfileChangeValue(change, change.from, payload) || '—'} → ${agentProfileChangeValue(change, change.to, payload) || '—'}`,
           }))
           : operation === 'create'
             ? (payload?.profiles ?? []).flatMap(agentProfileItems)

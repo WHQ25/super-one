@@ -168,6 +168,12 @@ export function AgentProfileToolBlockPresenter({
             {str(profile.description) ? <FieldRow label={t(`${k}.fields.description`)} value={str(profile.description)} /> : null}
             {str(runtime?.model) ? <FieldRow label={t(`${k}.fields.model`)} value={str(runtime?.model)} /> : null}
             {str(runtime?.effort) ? <FieldRow label={t(`${k}.fields.effort`)} value={formatEffortLabel(str(runtime?.effort))} /> : null}
+            {str(runtime?.permissionMode) ? (
+              <FieldRow
+                label={t('chat.permission.agentProfile.fields.permissionMode')}
+                value={t(`chat.permissionModes.${str(runtime?.permissionMode)}.label`, { defaultValue: str(runtime?.permissionMode) })}
+              />
+            ) : null}
             {Object.entries(asRecord(runtime?.options) ?? {}).map(([key, value]) => {
               if (!(AGENT_PROFILE_OPTION_KEYS as string[]).includes(key)) return null
               const text = optionDisplayValue(key as AgentProfileOptionKey, value as AgentProfileOptions[AgentProfileOptionKey])

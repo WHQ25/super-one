@@ -293,3 +293,27 @@ describe('providerLaunchRuntime', () => {
     expect(providerLaunchRuntime({ model: 'legacy', profile: spec() })).toBeUndefined()
   })
 })
+
+describe('permission mode', () => {
+  it('accepts only a mode the harness offers, naming its modes otherwise', () => {
+    expect(parseAgentProfileSpec(spec({ runtime: { permissionMode: 'plan' } }), 'claude'))
+      .toMatchObject({ ok: true, value: { runtime: { permissionMode: 'plan' } } })
+    expect(parseAgentProfileSpec(spec({ runtime: { permissionMode: 'plan' } }), 'codex')).toEqual({
+      ok: false,
+      error: 'profile.runtime.permissionMode "plan" is not a codex mode (codex has: default, auto, bypassPermissions).',
+    })
+    expect(parseAgentProfileSpec(spec({ runtime: { permissionMode: 'default' } }), 'opencode')).toEqual({
+      ok: false,
+      error: 'profile.runtime.permissionMode is not supported by opencode: it runs its own permission configuration.',
+    })
+  })
+
+  it('resolves launch > profile > global, skipping a mode the harness does not offer', () => {
+    const resolve = (input: { base?: object; profile?: object; launch?: object }) =>
+      resolveAgentLaunchDefaults({ harnessId: 'codex', catalog: { models: [] }, base: {}, ...input }).permissionMode
+    expect(resolve({ base: { permissionMode: 'default' }, profile: { permissionMode: 'auto' } })).toBe('auto')
+    expect(resolve({ profile: { permissionMode: 'auto' }, launch: { permissionMode: 'bypassPermissions' } })).toBe('bypassPermissions')
+    expect(resolve({ base: { permissionMode: 'default' }, profile: { permissionMode: 'plan' } })).toBe('default')
+    expect(launchConfigFromDefaults({ model: 'gpt-5.6', permissionMode: 'auto' })).toEqual({ model: 'gpt-5.6', permissionMode: 'auto' })
+  })
+})

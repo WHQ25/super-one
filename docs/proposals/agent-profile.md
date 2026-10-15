@@ -15,7 +15,7 @@ does not list is still open.
 
 | Area | Shipped in v1 | Where |
 |---|---|---|
-| Spec | `config.profile` = `{ version: 1, identity: { name, description }, instructions?, runtime?: { model?, effort?, options? } }`, parsed by the shared store on every write. Profile rows are written only through the store's `profiles` writer, which the desktop calls after the confirm card; `sessionProviders.*` RPC and IPC writes refuse them | `packages/shared/src/agent-profile.ts`, `packages/runtime/src/session/session-provider-store.ts`, `apps/desktop/src/main/session/agent-profile-store.ts` |
+| Spec | `config.profile` = `{ version: 1, identity: { name, description }, instructions?, runtime?: { model?, effort?, permissionMode?, options? } }`; `permissionMode` must be one of the harness's `HARNESS_LAUNCH_OPTIONS.permissionModes` (none on OpenCode), parsed by the shared store on every write. Profile rows are written only through the store's `profiles` writer, which the desktop calls after the confirm card; `sessionProviders.*` RPC and IPC writes refuse them | `packages/shared/src/agent-profile.ts`, `packages/runtime/src/session/session-provider-store.ts`, `apps/desktop/src/main/session/agent-profile-store.ts` |
 | Harness options | `runtime.options` holds each harness's own session settings, the ones its selector offers: Claude `ultracode`, Codex `fastMode`, ACP `contextWindow` / `mode`, OpenCode `agent`, Cursor `modelParams`, dsh `agentPreset` (`HARNESS_PROFILE_OPTIONS`). Allowed values come from the catalog per model (`supportedEffortLevels` xhigh, `serviceTiers`, `contextWindows`, `parameters`) or from harness-wide lists (ACP modes, OpenCode agents, dsh presets) | `packages/shared/src/agent-profile-options.ts` |
 | Support checks | Model, effort and options are validated against the harness catalog; errors name the field and harness, and another harness's option is refused by name. A list the host cannot read yet is refused at write and left unchecked at launch | `validateAgentProfileRuntime`, `agentProfileModelSupport` |
 | Resolver | `resolveAgentLaunchDefaults`: explicit launch fields > row runtime > global preference (a CLI node has no preferences, so its global layer is the catalog default). The model is settled first; inherited effort and options are re-checked against it, and an explicit value the catalogued model cannot carry is rejected. Row runtime is the profile's whole, or the legacy top-level `model` / `effort` / `reasoningEffort` / `fastMode` of a row without one (`providerLaunchRuntime`). Used by desktop `profileResources` and CLI `listCollaborationProfiles` (closes gap 2) | same module |
@@ -42,7 +42,7 @@ Deviations from the sections below:
   handoff sessions after a restart, but its turn runners do not read
   `systemPromptAppend` at all yet (pre-existing; collaboration prompt included).
 
-Deferred: `slug`, `projectPaths`, `runtime.apiProviderId`, `permissions`,
+Deferred: `slug`, `projectPaths`, `runtime.apiProviderId`, `permissions` beyond the permission mode (sandbox, tool rules),
 `capabilities` (tools/MCP/skills/native agent), the `profile` capability entry,
 plaintext `apiKey` migration (gap 4), `agentName` (gap 6), Settings page,
 main-chat picker, remote-node/mobile authoring parity.

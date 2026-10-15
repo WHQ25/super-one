@@ -292,7 +292,8 @@ function launchDefaultConfig(harnessId: HarnessId, resources: SessionAgentLaunch
     : null
   return {
     ...resources,
-    permissionMode,
+    // A profile's own mode wins over the user's per-harness default.
+    permissionMode: resources.permissionMode ?? permissionMode,
     ...(sandboxMode ? { sandboxMode } : {}),
     ...(apiProviderId ? { apiProviderId } : {}),
   }

@@ -928,6 +928,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         instructions: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'instructions')),
         model: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'model')),
         effort: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'effort')),
+        permissionMode: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'permissionMode')),
         options: z.object({
           ultracode: z.boolean().nullable().optional().describe(agentProfileOptionField('ultracode')),
           fastMode: z.boolean().nullable().optional().describe(agentProfileOptionField('fastMode')),

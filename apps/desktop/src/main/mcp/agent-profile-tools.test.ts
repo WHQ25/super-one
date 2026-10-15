@@ -150,6 +150,7 @@ describe('agent_profile_list', () => {
     const { parsed } = parse(await agentProfileListHandler({ id: 'claude-reviewer' }))
     expect(parsed.profile).toMatchObject({ instructions: 'Never edit files.', runtime: { model: 'opus', effort: 'high' } })
     expect(parsed.available).toEqual({
+      permissionModes: ['default', 'plan', 'auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'],
       keys: ['ultracode'],
       harness: {},
       models: [
@@ -250,6 +251,21 @@ describe('agent_profile_apply create', () => {
       .toMatch(/name and description/)
     expect(parse(await agentProfileApplyHandler({ action: 'create', harnessId: 'claude', name: 'reviewer', description: 'd' }, deps)).parsed.message)
       .toMatch(/already exists \(claude-reviewer\)/)
+  })
+
+  it('saves a permission mode the harness offers and refuses one it does not', async () => {
+    const { deps, requests } = makeDeps()
+    const run = agentProfileApplyHandler({ action: 'create', harnessId: 'claude', name: 'Planner', description: 'Plans.', permissionMode: 'plan' }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]?.agentProfileConfirm?.profiles[0]).toMatchObject({ permissionMode: 'plan' })
+    await answer(run, requests, 'accept')
+    expect(profiles.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: { profile: expect.objectContaining({ runtime: { permissionMode: 'plan' } }) },
+    }))
+
+    const refused = parse(await agentProfileApplyHandler({ action: 'create', harnessId: 'codex', name: 'Planner 2', description: 'Plans.', permissionMode: 'plan' }, deps))
+    expect(refused.isError).toBe(true)
+    expect(refused.parsed.message).toBe('runtime.permissionMode "plan" is not a codex mode (codex has: default, auto, bypassPermissions).')
   })
 
   it('returns a neutral refusal with the user feedback and writes nothing on decline', async () => {

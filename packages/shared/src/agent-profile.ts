@@ -9,7 +9,8 @@
  * catalog cannot carry is rejected by name, never dropped silently.
  */
 
-import type { HarnessId, SessionAgentLaunchConfig } from './agent-types'
+import type { HarnessId, PermissionMode, SessionAgentLaunchConfig } from './agent-types'
+import { HARNESS_LAUNCH_OPTIONS } from './launch-options'
 import {
   agentProfileOptionChoices,
   HARNESS_PROFILE_OPTIONS,
@@ -36,6 +37,8 @@ export interface AgentProfileRuntime {
   effort?: string
   /** The harness's own settings, keys from `HARNESS_PROFILE_OPTIONS`. */
   options?: AgentProfileOptions
+  /** One of the harness's `HARNESS_LAUNCH_OPTIONS.permissionModes`; a harness without modes has none. */
+  permissionMode?: PermissionMode
 }
 
 export interface AgentProfileSpec {
@@ -103,7 +106,7 @@ function parseOptions(raw: unknown, harnessId: HarnessId | undefined): Parsed<Ag
 function parseRuntime(raw: unknown, harnessId: HarnessId | undefined): Parsed<AgentProfileRuntime | undefined> {
   if (raw === undefined) return { ok: true, value: undefined }
   if (!isRecord(raw)) return { ok: false, error: 'profile.runtime must be an object.' }
-  const unknown = Object.keys(raw).filter((key) => !['model', 'effort', 'options'].includes(key))
+  const unknown = Object.keys(raw).filter((key) => !['model', 'effort', 'options', 'permissionMode'].includes(key))
   if (unknown.length) return { ok: false, error: `profile.runtime has unknown field(s): ${unknown.join(', ')}.` }
   const runtime: AgentProfileRuntime = {}
   if (raw.model !== undefined) {
@@ -115,6 +118,22 @@ function parseRuntime(raw: unknown, harnessId: HarnessId | undefined): Parsed<Ag
     const effort = nonEmpty(raw.effort)
     if (!effort) return { ok: false, error: 'profile.runtime.effort must be a non-empty string.' }
     runtime.effort = effort
+  }
+  if (raw.permissionMode !== undefined) {
+    const mode = nonEmpty(raw.permissionMode)
+    if (!mode) return { ok: false, error: 'profile.runtime.permissionMode must be a non-empty string.' }
+    if (harnessId) {
+      const offered = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+      if (!offered.includes(mode as PermissionMode)) {
+        return {
+          ok: false,
+          error: offered.length
+            ? `profile.runtime.permissionMode "${mode}" is not a ${harnessId} mode (${harnessId} has: ${offered.join(', ')}).`
+            : `profile.runtime.permissionMode is not supported by ${harnessId}: it runs its own permission configuration.`,
+        }
+      }
+    }
+    runtime.permissionMode = mode as PermissionMode
   }
   const options = parseOptions(raw.options, harnessId)
   if (!options.ok) return options
@@ -313,10 +332,15 @@ export function resolveAgentLaunchDefaults(input: {
     const choice = model || !isModelBoundOption(key) ? choices[key] : { kind: 'unlisted' as const }
     if (choice && !optionValueError(key, value, choice)) options[key] = value
   }
+  // Not model-bound: the first mode this harness still offers.
+  const offeredModes = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  const permissionMode = [launch.permissionMode, profile?.permissionMode, base.permissionMode]
+    .find((mode) => mode && offeredModes.includes(mode))
   const result = (modelId: string | undefined, effort: string | undefined): AgentLaunchDefaults => ({
     ...(modelId ? { model: modelId } : {}),
     ...(effort ? { effort } : {}),
     ...(Object.keys(options).length ? { options: options as AgentProfileOptions } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
   })
   if (uncatalogued) {
     return result(launch.model ?? profile?.model ?? base.model, launch.effort ?? profile?.effort ?? base.effort)
@@ -350,7 +374,7 @@ export function agentLaunchErrors(
     .replace(/^options\./, 'config.options.'))
 }
 
-type LaunchRuntimeFields = Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode' | 'options'>
+type LaunchRuntimeFields = Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode' | 'options' | 'permissionMode'>
 
 /** Resolved defaults as launch config fields: Codex Fast keeps its own `fastMode` field. */
 export function launchConfigFromDefaults(defaults: AgentLaunchDefaults): LaunchRuntimeFields {
@@ -360,6 +384,7 @@ export function launchConfigFromDefaults(defaults: AgentLaunchDefaults): LaunchR
     ...(defaults.effort ? { effort: defaults.effort } : {}),
     ...(fastMode !== undefined ? { fastMode } : {}),
     ...(Object.keys(options).length ? { options } : {}),
+    ...(defaults.permissionMode ? { permissionMode: defaults.permissionMode } : {}),
   }
 }
 

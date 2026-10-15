@@ -2312,6 +2312,7 @@ export const zh: Messages = {
           instructions: '指令',
           model: '模型',
           effort: '推理强度',
+          permissionMode: '权限',
           ultracode: 'Ultracode',
           fastMode: '快速模式',
           contextWindow: '上下文窗口',

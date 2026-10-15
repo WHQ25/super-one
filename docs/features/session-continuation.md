@@ -23,7 +23,7 @@ Desktop and mobile run the same code, and neither polls the host.
 - **State.** No turn running and no pending prompt, and the person is not typing:
   the offer waits while the desktop editor has focus or the phone keyboard is up.
 
-The offer is a composer in the slot, "Handoff to New Session": a short reason,
+The offer is a composer in the slot, "Hand Off to New Session": a short reason,
 what a new session keeps (a mention of this one for the agent to read, collaboration
 carried over), and Approve and Dismiss. It stands in for the writable text
 composer only, so decisions, app forms, voice calls and read-only states keep

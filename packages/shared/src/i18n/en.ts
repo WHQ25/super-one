@@ -6080,10 +6080,10 @@ export const en: Messages = {
   },
   chat: {
     sessionContinuation: {
-      title: 'Handoff to New Session',
-      lead: 'This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.',
-      mentionsThis: 'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.',
-      collaborationKept: 'Keeps working with every collaborator of this session.',
+      title: 'Hand Off to New Session',
+      lead: 'This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.',
+      mentionsThis: 'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.',
+      collaborationKept: 'Collaborate with all of the original session’s collaborators as usual.',
       approve: 'Approve',
       dismiss: 'Dismiss',
       continuedIn: 'This session continues in a new session.',

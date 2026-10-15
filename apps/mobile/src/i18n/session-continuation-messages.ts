@@ -1,12 +1,12 @@
 export const sessionContinuationEnglish = {
-  'Handoff to New Session': 'Handoff to New Session',
-  'This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.': 'This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.',
-  'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.': 'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.',
-  'Keeps working with every collaborator of this session.': 'Keeps working with every collaborator of this session.',
+  'Hand Off to New Session': 'Hand Off to New Session',
+  'This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.': 'This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.',
+  'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.': 'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.',
+  'Collaborate with all of the original session’s collaborators as usual.': 'Collaborate with all of the original session’s collaborators as usual.',
 }
 export const sessionContinuationChinese: Record<keyof typeof sessionContinuationEnglish, string> = {
-  'Handoff to New Session': '移交到新会话',
-  'This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.': '该会话较长且缓存已过期，在同一会话继续对话会重新上传整段上下文，速度慢，费用更高，会消耗大量订阅用量。建议移交到新会话。',
-  'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.': '新会话自动引用当前会话，上下文保留，agent 可按需读取。',
-  'Keeps working with every collaborator of this session.': '可以和原会话的所有协作者正常协作。',
+  'Hand Off to New Session': '移交到新会话',
+  'This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.': '该会话较长且缓存已过期，在同一会话继续对话会重新上传整段上下文，速度慢，费用更高，会消耗大量订阅用量。建议移交到新会话。',
+  'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.': '新会话自动引用当前会话，上下文保留，agent 可按需读取。',
+  'Collaborate with all of the original session’s collaborators as usual.': '可以和原会话的所有协作者正常协作。',
 }

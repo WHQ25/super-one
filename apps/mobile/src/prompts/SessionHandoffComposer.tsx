@@ -7,8 +7,8 @@ import { PromptActions } from './PromptControls'
 import { tint, usePromptStyles } from './styles'
 
 const BENEFITS: Array<{ icon: LucideIcon; text: string }> = [
-  { icon: AtSign, text: 'The new session mentions this one automatically, so its context is kept and the agent reads it as needed.' },
-  { icon: Network, text: 'Keeps working with every collaborator of this session.' },
+  { icon: AtSign, text: 'The new session automatically references this one. Its context is preserved, and the agent can read it as needed.' },
+  { icon: Network, text: 'Collaborate with all of the original session’s collaborators as usual.' },
 ]
 
 /**
@@ -24,9 +24,9 @@ export function SessionHandoffComposer({ onApprove, onDismiss }: { onApprove(): 
       <View style={{ width: 32, height: 32, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: tint(colors.primary, '1f') }}>
         <Forward size={16} color={colors.primary} />
       </View>
-      <Text accessibilityRole="header" style={[styles.title, styles.grow]}>{t('Handoff to New Session')}</Text>
+      <Text accessibilityRole="header" style={[styles.title, styles.grow]}>{t('Hand Off to New Session')}</Text>
     </View>
-    <Text style={styles.meta}>{t('This session is long and its cache has expired. Continuing it here uploads the whole context again: slower, more expensive, and heavy on your subscription usage. Handing off to a new session is recommended.')}</Text>
+    <Text style={styles.meta}>{t('This session is long and its cache has expired. Continuing in this session re-uploads the entire context, which is slow, costs more, and uses a lot of your subscription quota. We recommend handing off to a new session.')}</Text>
     <View style={styles.tight}>
       {BENEFITS.map(({ icon: Icon, text }) => <View key={text} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
         <Icon size={14} color={colors.mutedForeground} style={{ marginTop: 3 }} />

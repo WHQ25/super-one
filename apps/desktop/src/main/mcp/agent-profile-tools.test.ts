@@ -143,12 +143,12 @@ beforeEach(() => {
 })
 
 describe('agent_profile_list', () => {
-  it('lists base and custom rows as a flat table', async () => {
+  it('lists only what picks a row; runtime waits for the id', async () => {
     const { parsed } = parse(await agentProfileListHandler({}))
     expect(parsed.count).toBe(4)
     expect(parsed.profiles).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'claude-base', base: true, model: '' }),
-      expect.objectContaining({ id: 'claude-reviewer', base: false, description: 'Reviews diffs without editing.', model: 'opus', effort: 'high' }),
+      { id: 'claude-base', name: 'claude', harness: 'claude', base: true, description: 'Claude with the user\'s default configuration.' },
+      { id: 'claude-reviewer', name: 'Reviewer', harness: 'claude', base: false, description: 'Reviews diffs without editing.' },
     ]))
   })
 

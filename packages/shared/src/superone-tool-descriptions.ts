@@ -263,8 +263,9 @@ export const AUTOMATION_DELETE_DESCRIPTION =
   'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
 
 export const AGENT_PROFILE_LIST_DESCRIPTION =
-  'List agent profiles: named agents (identity, instructions, model and permission defaults) that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
-  'Pass id for full instructions, launch defaults, and what that harness accepts: models, their efforts, permission modes, and its own options (each harness has different ones). ' +
+  'List agent profiles: named agents that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
+  'Without id: one row per profile (id, name, harness, base, short description). ' +
+  'Pass id for its full description and instructions, runtime, launch defaults, and what that harness accepts: models, their efforts, permission modes, and its own options (each harness has different ones). ' +
   'Read this before agent_profile_apply or agent_profile_delete.'
 
 export const AGENT_PROFILE_APPLY_DESCRIPTION =

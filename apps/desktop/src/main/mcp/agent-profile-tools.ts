@@ -264,20 +264,15 @@ export interface AgentProfileListArgs {
   id?: string
 }
 
+/** Enough to pick a row; its runtime, availability and instructions come with `agent_profile_list({ id })`. */
 function listRow(row: SessionProvider) {
   const spec = readAgentProfile(row.config)
-  const runtime = providerLaunchRuntime(row.config) ?? {}
   return {
     id: row.id,
     name: row.name,
     harness: row.harnessId,
     base: row.isBase,
-    available: isProviderUsable(row),
     description: preview(spec?.identity.description ?? (row.isBase ? builtInDescription(row) : '')),
-    model: runtime.model ?? '',
-    effort: runtime.effort ?? '',
-    permissionMode: runtime.permissionMode ?? '',
-    options: Object.entries(optionLabels(runtime.options, {})).map(([key, value]) => `${key}: ${value}`).join('; '),
   }
 }
 

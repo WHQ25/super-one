@@ -8,6 +8,7 @@ import {
   ToolName,
   ToolStatusBadge,
   ToolStatusIcon,
+  toolOutcomeLabel,
   toolRowSurfaceClass,
   type ToolRowTone,
 } from './ToolRow'
@@ -242,6 +243,9 @@ export function SessionCollabToolBlockPresenter({
   const [expanded, setExpanded] = useState(false)
   const parsed = parseCollabResult(result)
   const status = typeof parsed?.status === 'string' ? parsed.status : ''
+  const collabTone: ToolRowTone = isDenied || status === 'rejected' || status === 'cancelled'
+    ? 'denied'
+    : isError ? 'error' : 'default'
 
   let Icon: typeof Users | typeof Send | typeof Inbox = Users
   let label = toolName
@@ -274,15 +278,13 @@ export function SessionCollabToolBlockPresenter({
       resultLaunches,
       (count) => t('chat.toolBlock.collab.agentCount', { count }),
     )
-    if (isStreaming) {
-      label = t('chat.toolBlock.collab.requestingCollaboration')
-    } else if (status === 'cancelled') {
-      label = t('chat.toolBlock.settingsChangeCancelled')
-    } else if (status === 'rejected') {
-      label = t('chat.toolBlock.settingsChangeRejected')
-    } else {
-      label = t('chat.toolBlock.collab.collaborationRequested')
-    }
+    label = toolOutcomeLabel({
+      streaming: isStreaming,
+      interrupted: collabTone !== 'default',
+      streamingLabel: t('chat.toolBlock.collab.requestingCollaboration'),
+      actionLabel: t('chat.toolBlock.collab.requestCollaboration'),
+      doneLabel: t('chat.toolBlock.collab.collaborationRequested'),
+    })
   } else if (isStart) {
     Icon = Users
     const name = typeof parsed?.name === 'string' ? parsed.name : ''
@@ -405,9 +407,6 @@ export function SessionCollabToolBlockPresenter({
   }
 
   const streamingDots = isStreaming && !/[.…]$/.test(label) ? '…' : ''
-  const collabTone: ToolRowTone = isDenied || status === 'rejected' || status === 'cancelled'
-    ? 'denied'
-    : isError ? 'error' : 'default'
   const header = (
     <>
       <ToolStatusIcon

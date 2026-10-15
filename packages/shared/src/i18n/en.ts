@@ -2581,6 +2581,7 @@ export type Messages = {
       }
       collab: {
         requestingCollaboration: string
+        requestCollaboration: string
         collaborationRequested: string
         startingCollaborationSession: string
         collaborationSessionStarted: string
@@ -7075,6 +7076,7 @@ export const en: Messages = {
       },
       collab: {
         requestingCollaboration: 'Requesting collaboration…',
+        requestCollaboration: 'Request Collaboration',
         collaborationRequested: 'Collaboration Requested',
         startingCollaborationSession: 'Starting session',
         collaborationSessionStarted: 'Session Started',

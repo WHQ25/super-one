@@ -2679,6 +2679,7 @@ export const zh: Messages = {
       },
       collab: {
         requestingCollaboration: '正在请求协作…',
+        requestCollaboration: '请求协作',
         collaborationRequested: '已请求协作',
         startingCollaborationSession: '正在启动会话',
         collaborationSessionStarted: '会话已启动',

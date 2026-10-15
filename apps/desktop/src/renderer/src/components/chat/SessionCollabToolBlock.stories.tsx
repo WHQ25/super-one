@@ -347,6 +347,35 @@ export const CollabRequest: Story = {
   ),
 };
 
+export const CollabRequestDenied: Story = {
+  name: "session_collab_request · denied / cancelled",
+  render: () => (
+    <StoryShell>
+      {block("session_collab_request", LAUNCHES_ONE, {
+        result: JSON.stringify({ status: "rejected" }),
+      })}
+      {block("session_collab_request", LAUNCHES_ONE, {
+        result: JSON.stringify({ status: "cancelled" }),
+      })}
+      {block("session_collab_request", LAUNCHES_ONE, {
+        result: "[denied] User declined",
+      })}
+    </StoryShell>
+  ),
+};
+
+export const CollabRequestError: Story = {
+  name: "session_collab_request · error",
+  render: () => (
+    <StoryShell>
+      {block("session_collab_request", LAUNCHES_ONE, {
+        result: "Agent profile not found",
+        isError: true,
+      })}
+    </StoryShell>
+  ),
+};
+
 export const MultipleAgents: Story = {
   name: "session_collab_request · Permission Prompt · multiple agents",
   ...permissionPromptStory("multiple agents"),

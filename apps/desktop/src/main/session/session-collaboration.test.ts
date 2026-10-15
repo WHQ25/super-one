@@ -183,6 +183,8 @@ vi.mock('../recent-folders', () => ({
   },
 }))
 
+import { fakeHost, fakeSession } from './collaboration-test-fixtures'
+import { collaborationWakeQueue, stopCollaborationWakes } from './collaboration-wakes'
 import { listAgentMentionTargets } from './agent-profiles'
 import { setRemoteCollaborationPort, type RemoteCollaborationPort } from './collaboration-remote'
 import {
@@ -274,79 +276,6 @@ function createSchema(db: Database.Database): void {
   ensureCollaborationGrantUniqueness(db)
 }
 
-function fakeSession(
-  id: string,
-  eventsOrOpts: AgentEvent[] | { events?: AgentEvent[]; cwd?: string; projectPath?: string } = [],
-): Session {
-  const opts = Array.isArray(eventsOrOpts) ? { events: eventsOrOpts } : eventsOrOpts
-  const events = opts.events ?? []
-  const listeners = new Set<(event: AgentEvent) => void>()
-  return {
-    id,
-    projectPath: opts.projectPath ?? TEST_CWD,
-    cwd: opts.cwd ?? TEST_CWD,
-    snapshot: { id, providerId: 'claude-base', harnessId: 'claude', status: 'idle' } as never,
-    emitHostEvent: vi.fn((event: AgentEvent) => events.push(event)),
-    send: vi.fn(async () => {}),
-    setTitle: vi.fn(),
-    isStreaming: vi.fn(() => false),
-    activityStatus: vi.fn(() => 'idle'),
-    getPendingInteractions: vi.fn(() => []),
-    lastRuntimeActivityAt: 0,
-    injectTaskNotification: vi.fn(async () => {}),
-    appendTranscriptMessage: vi.fn(),
-    on: vi.fn((handler: (event: AgentEvent) => void) => {
-      listeners.add(handler)
-      return () => { listeners.delete(handler) }
-    }),
-  } as unknown as Session
-}
-
-function fakeHost(parent: Session, options: { activeSessionId?: string | null } = {}) {
-  const sessions = new Map<string, Session>([[parent.id, parent]])
-  const createSession = vi.fn((options: SessionCreateOptions) => {
-    const child = fakeSession(options.id!)
-    sessions.set(child.id, child)
-    return child
-  })
-  // Active session is per project in the real manager — a child attributed to
-  // another project must not disturb the parent project's routing, and vice versa.
-  const activeByProject = new Map<string, string>()
-  const initialActive = options.activeSessionId === undefined ? parent.id : options.activeSessionId
-  if (initialActive) activeByProject.set(parent.projectPath, initialActive)
-  const host = {
-    getSession: (id: string) => sessions.get(id) ?? null,
-    getActiveSession: (projectPath: string) => {
-      const activeId = activeByProject.get(projectPath)
-      return activeId ? sessions.get(activeId) ?? null : null
-    },
-    setActiveSession: (projectPath: string, sessionId: string) => {
-      if (!sessions.has(sessionId)) throw new Error(`Session not found: ${sessionId}`)
-      activeByProject.set(projectPath, sessionId)
-    },
-    clearActiveSession: (projectPath: string) => {
-      activeByProject.delete(projectPath)
-    },
-    createSession: vi.fn((options: SessionCreateOptions) => {
-      const child = createSession(options)
-      activeByProject.set(options.projectPath, child.id)
-      return child
-    }),
-    disposeSession: vi.fn(async (id: string) => { sessions.delete(id) }),
-    resumeSession: vi.fn((id: string) => {
-      const existing = sessions.get(id)
-      if (existing) return existing
-      throw new Error(`Session ${id} not found`)
-    }),
-  } as unknown as SessionManager
-  return {
-    host,
-    sessions,
-    createSession: host.createSession as ReturnType<typeof vi.fn>,
-    activeIn: (projectPath: string) => activeByProject.get(projectPath) ?? null,
-  }
-}
-
 async function approveLaunches(
   parent: Session,
   host: SessionManager,
@@ -373,6 +302,7 @@ async function approveLaunches(
 }
 
 beforeEach(() => {
+  if (state.db) stopCollaborationWakes()
   state.db?.close()
   state.db = new Database(':memory:')
   createSchema(state.db)
@@ -901,7 +831,7 @@ describe('@agent mention targets', () => {
         send: vi.fn(() => sendDone),
         setTitle: vi.fn(),
         isStreaming: vi.fn(() => false),
-        injectTaskNotification: vi.fn(async () => {}),
+        admitTaskNotification: vi.fn(async () => {}),
         appendTranscriptMessage: vi.fn(),
         on: vi.fn((handler: (event: AgentEvent) => void) => {
           listeners.add(handler)
@@ -982,7 +912,7 @@ describe('@agent mention targets', () => {
       clientMessageId: 'parent-1',
     }, host))
     expect(retried).toMatchObject({ messageId: sent.messageId, reused: true, to: { sessionId: childId, relation: 'child' } })
-    const wake = sessions.get(childId)?.injectTaskNotification as ReturnType<typeof vi.fn>
+    const wake = sessions.get(childId)?.admitTaskNotification as ReturnType<typeof vi.fn>
     expect(wake).toHaveBeenCalledTimes(1)
     expect(wake.mock.calls[0][0]).toMatch(/^A collaboration mailbox message is ready\. It is from SuperOne session parent/)
 
@@ -1146,7 +1076,21 @@ describe('@agent mention targets', () => {
     }
   })
 
-  it('wakes the recipient even while streaming without duplicating collab transcript bubbles', async () => {
+  it('rolls back the mailbox write if its durable notification cannot be enqueued', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const childId = resultJson(await startLaunch(grant, host)).sessionId as string
+    collaborationWakeQueue(host)
+    state.db!.exec(`CREATE TRIGGER reject_wake BEFORE INSERT ON collaboration_wakes
+      BEGIN SELECT RAISE(ABORT, 'inbox unavailable'); END;`)
+    const result = await sendSessionMessage('parent', { to: childId, content: 'must stay atomic' }, host)
+    expect(result.isError).toBe(true)
+    expect(listUnreadCollaborationMessages(childId)).toEqual([])
+    expect(state.db!.prepare('SELECT notification_id FROM collaboration_wakes').all()).toEqual([])
+  })
+
+  it('holds a wake durably while the recipient is streaming without duplicating transcript bubbles', async () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
@@ -1161,7 +1105,11 @@ describe('@agent mention targets', () => {
       clientMessageId: 'wake-1',
     }, host)
 
-    expect(child.injectTaskNotification).toHaveBeenCalledTimes(1)
+    expect(child.admitTaskNotification).not.toHaveBeenCalled()
+    expect(state.db!.prepare("SELECT state FROM collaboration_wakes WHERE session_id = ?").get(childId)).toMatchObject({ state: 'queued' })
+    ;(child.isStreaming as ReturnType<typeof vi.fn>).mockReturnValue(false)
+    collaborationWakeQueue(host).start()
+    await vi.waitFor(() => expect(child.admitTaskNotification).toHaveBeenCalledTimes(1))
     // Mailbox content is shown via tool UI only — no collab transcript bubbles.
     expect(child.appendTranscriptMessage).not.toHaveBeenCalled()
     expect(parent.appendTranscriptMessage).not.toHaveBeenCalled()
@@ -1182,7 +1130,7 @@ describe('@agent mention targets', () => {
     const childId = started.sessionId as string
     const child = sessions.get(childId)!
     markWorktreeRemoved(childId)
-    ;(child.injectTaskNotification as ReturnType<typeof vi.fn>).mockClear()
+    ;(child.admitTaskNotification as ReturnType<typeof vi.fn>).mockClear()
 
     const sent = resultJson(await sendSessionMessage('parent', {
       to: childId,
@@ -1192,7 +1140,7 @@ describe('@agent mention targets', () => {
 
     expect(sent).toMatchObject({ status: 'error' })
     expect(String(sent.message)).toMatch(/worktree directory has been removed/i)
-    expect(child.injectTaskNotification).not.toHaveBeenCalled()
+    expect(child.admitTaskNotification).not.toHaveBeenCalled()
 
     const retrieved = resultJson(await retrieveSessionMessages(childId, {}, host))
     expect(retrieved.status).toBe('empty')
@@ -1245,7 +1193,7 @@ describe('@agent mention targets', () => {
     const linked = resultJson(await startLaunch(grant, host))
     expect(linked).toMatchObject({ status: 'error' })
     expect(String(linked.message)).toMatch(/worktree directory has been removed/i)
-    expect(peer.injectTaskNotification).not.toHaveBeenCalled()
+    expect(peer.admitTaskNotification).not.toHaveBeenCalled()
   })
 
   it('restores the parent as the project active session after starting a child', async () => {
@@ -1367,7 +1315,7 @@ describe('@agent mention targets', () => {
       ).get() as { n: number }
       expect(undelivered.n).toBe(0)
 
-      const wake = sessions.get(childId)?.injectTaskNotification as ReturnType<typeof vi.fn>
+      const wake = sessions.get(childId)?.admitTaskNotification as ReturnType<typeof vi.fn>
       wake.mockClear()
       noteParentMainThreadCall('parent', 'tc-send', 'superone__session_collab_send')
       const sent = await sendSessionMessage('parent', { to: childId, content: 'thanks', clientMessageId: 'review-1' }, host)
@@ -1424,9 +1372,9 @@ describe('@agent mention targets', () => {
 
     const linked = resultJson(await startLaunch(grant, host))
     expect(linked).toMatchObject({ status: 'linked', mode: 'link', sessionId: 'peer-session' })
-    expect(peer.injectTaskNotification).toHaveBeenCalled()
+    expect(peer.admitTaskNotification).toHaveBeenCalled()
     // The wake tells the peer whom to answer.
-    const linkWake = (peer.injectTaskNotification as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    const linkWake = (peer.admitTaskNotification as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
     expect(linkWake).toContain('session_collab_send({ to: "parent" })')
     // Opening delivered as mailbox, not system prompt.
     expect(getSessionCollaborationSystemPrompt('peer-session')).toBeUndefined()
@@ -2261,7 +2209,7 @@ describe('spawning a child on another machine', () => {
     expect(calls.fetch).toEqual(['p-cloned'])
   })
 
-  it('clears a stop wake only when a retrieve reports the child stopped', async () => {
+  it('does not use an agent retrieve as notification admission acknowledgement', async () => {
     const { parent, host } = remoteParent()
     await requestRemote(parent, host)
     await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
@@ -2277,7 +2225,7 @@ describe('spawning a child on another machine', () => {
 
     remoteSession = { status: 'idle', pendingInteraction: null }
     expect(resultJson(await retrieveSessionMessages('parent', {}, host)).peers[0].state).toBe('idle')
-    expect(config().pendingStopWake).toBeUndefined()
+    expect(config().pendingStopWake).toMatchObject({ key: '50' })
   })
 
   it('runs the remote child mailbox tools against this mailbox, both ways', async () => {
@@ -2288,7 +2236,10 @@ describe('spawning a child on another machine', () => {
     // Child → parent arrives as a Host Action from the child's machine and wakes the parent.
     const sent = await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_send', { content: 'Pushed superone/builder' })
     expect(resultJson(sent.reply).status).toBe('sent')
-    expect(parent.injectTaskNotification).toHaveBeenCalledWith(expect.stringContaining('Builder - Implementer'))
+    expect(parent.admitTaskNotification).toHaveBeenCalledWith(expect.stringContaining('Builder - Implementer'), {
+      clientMessageId: expect.stringContaining('collab-message:'), onInputAccepted: expect.any(Function),
+      beforeInput: expect.any(Function),
+    })
     const parentRead = resultJson(await retrieveSessionMessages('parent', {}, host))
     expect(parentRead.messages.map((m: { content: string }) => m.content)).toEqual(['Pushed superone/builder'])
     expect(parentRead.peers[0]).toMatchObject({ sessionId: 'remote-child', relation: 'child', state: 'running' })

@@ -13,6 +13,7 @@ import { isEnvironment } from '@superone/shared/environment/client-view'
 import type { AgentEvent, SessionAgentRemoteLaunch, SessionAgentRunState } from '@superone/shared/agent-types'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import { createNodeSessionEventMapper, type NodeSessionEventMapper } from '@superone/shared/node-session-event-map'
+import { isNodeRestartInterruption } from '@superone/shared/session-interruption'
 import { parseGrantConfig, type CollaborationGrantRow } from '@superone/runtime/collaboration'
 import log from '../logger'
 import { collaborationStore } from './collaboration-mailbox'
@@ -169,8 +170,8 @@ export class RemoteChildWatcher {
         if (restarted || events.some((event) => event.type === 'status_change')) statusSeen.add(sessionId)
         // A stop records its parent wake with the cursor past it, or neither.
         store.transaction(() => {
-          for (const event of events) this.feed.handleEvent(sessionId, event, false, envelope.sequence)
           if (restarted && this.feed.runState(sessionId)) this.feed.stopRun(sessionId, restarted, envelope.sequence)
+          for (const event of events) this.feed.handleEvent(sessionId, event, false, envelope.sequence)
           this.save(children, sessionId, at, 'run')
         })
       }
@@ -222,6 +223,10 @@ export class RemoteChildWatcher {
 
 /** The stop a node logged for a run its restart ended; null for any other event. */
 function restartStop(envelope: EnvironmentEventEnvelope): string | null {
+  if (envelope.eventType === SESSION_DURABLE_EVENT.turnInterrupted) {
+    const reason = (envelope.payload as { reason?: unknown } | null)?.reason
+    return isNodeRestartInterruption(reason) ? 'interrupted (its machine restarted)' : null
+  }
   if (envelope.eventType !== SESSION_DURABLE_EVENT.reconciled) return null
   const status = (envelope.payload as { status?: unknown } | null)?.status
   if (typeof status !== 'string' || status === 'streaming') return null

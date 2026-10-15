@@ -18,6 +18,8 @@ import { SessionShutdown } from './session-shutdown'
 import { SessionLease, type SessionLeaseAuthority } from './session-lease'
 import { hostOwned, runHostReaction } from './control-context'
 import { untilAdmitted } from './admission'
+import { deliverTaskNotification } from './task-notification-delivery'
+import { CollaborationWakeDeferredError } from '@superone/runtime/collaboration'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer, isBackendSteerCommand } from './dispatch-backend-steer'
@@ -109,6 +111,8 @@ import {
   type SessionSnapshot,
   type SessionStateChange,
   type SessionStatus,
+  type SessionSendOptions,
+  type TaskNotificationAdmissionOptions,
 } from './types'
 
 /** What `Session` learns about one send while the backend runs it. */
@@ -746,7 +750,7 @@ export class Session implements SessionContract {
     } as AgentEvent)
   }
 
-  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: (receipt?: DuplicateSend) => void }): Promise<DuplicateSend | void> {
+  async send(request: SendMessageRequest, opts?: SessionSendOptions): Promise<DuplicateSend | void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertNotDisposed()
     this.assertCanSend(providerOrigin)
@@ -796,7 +800,7 @@ export class Session implements SessionContract {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin, selectionRevision: queuedAt })
           this.emitQueuedMessages()
         }
-        const delivery = this.createSendDelivery(request)
+        const delivery = this.createSendDelivery(request, opts?.onInputAccepted)
         try {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
@@ -839,8 +843,10 @@ export class Session implements SessionContract {
       if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
-      const delivery = this.createSendDelivery(request)
-      this._delivery = delivery
+      const delivery = this.createSendDelivery(request, opts?.onInputAccepted)
+      // Stable notifications must not attribute a backend continuation's
+      // output during preparation to input that has not been submitted yet.
+      if (!opts?.beforeInput) this._delivery = delivery
       try {
         this.liveness.beginSend()
         this.snapEffectiveApiProviderId()
@@ -868,6 +874,8 @@ export class Session implements SessionContract {
         }
         this.assertNotDisposed()
         this.assertCanSend(providerOrigin)
+        opts?.beforeInput?.()
+        this._delivery = delivery
         this._status = 'streaming'
         try {
           this.flushFirstTurnPreamble()
@@ -878,6 +886,9 @@ export class Session implements SessionContract {
         // A backend that reports a failed start by event rather than by throwing.
         if (!delivery.delivered && delivery.error !== null) {
           this.recordSendFailure(request, delivery.error, delivery.openedMessageIds)
+        }
+        if (opts?.onInputAccepted && !delivery.delivered) {
+          throw new Error(delivery.error ?? `Session ${this.id} did not accept the notification input`)
         }
       } catch (error) {
         // Delivered input is held: a resend could run the task twice.
@@ -908,7 +919,7 @@ export class Session implements SessionContract {
     // A late event of the turn before belongs to that turn, not to this send.
     const messageId = 'messageId' in event && typeof event.messageId === 'string' ? event.messageId : null
     if (messageId !== null && !delivery.openedMessageIds.includes(messageId)) return
-    if (isAgentOutputEvent(event)) delivery.delivered = true
+    if (isAgentOutputEvent(event)) delivery.onInputAccepted()
     else if (event.type === 'message_error') delivery.error ??= event.error
   }
 
@@ -918,12 +929,16 @@ export class Session implements SessionContract {
    * attributed to it, and a failure before its input was handed over is
    * recorded on its row, as for a send that runs at once.
    */
-  private createSendDelivery(request: SendMessageRequest): SendDeliveryState {
+  private createSendDelivery(request: SendMessageRequest, onInputAccepted?: () => void): SendDeliveryState {
     const state: SendDeliveryState = {
       delivered: false,
       openedMessageIds: [],
       error: null,
-      onInputAccepted: () => { state.delivered = true },
+      onInputAccepted: () => {
+        if (state.delivered) return
+        state.delivered = true
+        onInputAccepted?.()
+      },
       ...(request.priority === 'next' || request.priority === 'later' ? {} : { assertControl: this.lease.captureMutation() }),
       runDeferred: async (run) => {
         this._delivery = state
@@ -2932,46 +2947,39 @@ export class Session implements SessionContract {
   }
 
   /**
-   * The same wake for a caller that must know it landed: resolves once the
-   * backend takes it or the idle turn is queued, and rejects when neither
-   * happens. It does not wait for that turn.
+   * The same wake for a caller that must know it landed. Stable inbox work
+   * resolves when the backend takes its input; legacy callers may accept a
+   * backend queue slot. Neither waits for the turn to complete.
    */
-  admitTaskNotification(content: string): Promise<void> {
+  admitTaskNotification(content: string, opts?: TaskNotificationAdmissionOptions): Promise<void> {
     return untilAdmitted(
-      (onAccepted) => this.deliverTaskNotification(content, onAccepted),
+      (onAccepted) => this.deliverTaskNotification(content, onAccepted, opts),
       () => new Error(`Session ${this.id} did not admit the task notification`),
     )
   }
 
-  private async deliverTaskNotification(content: string, onAccepted?: () => void): Promise<void> {
-    this.assertNotDisposed()
-    const worktreeErr = this.rejectIfWorktreeRemoved()
-    if (worktreeErr) throw worktreeErr
-    const text = content.trim()
-    if (!text) {
-      onAccepted?.()
-      return
-    }
-    this.touchRuntimeActivity()
-    await this.ensureStarted()
-    if (this.backend.injectTaskNotification) {
-      try {
-        const outcome = await this.backend.injectTaskNotification(text)
-        if (outcome === 'sent-inline' || outcome === 'deferred') {
-          onAccepted?.()
-          return
-        }
-      } catch (err) {
-        log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
-      }
-    }
-    await this.send(
-      {
-        ...taskNotificationRequest(text),
-        priority: this.isStreaming() ? 'next' : 'now',
+  private deliverTaskNotification(content: string, onAccepted?: () => void, opts?: TaskNotificationAdmissionOptions): Promise<void> {
+    return deliverTaskNotification(content, {
+      assertAvailable: () => {
+        this.assertNotDisposed()
+        const error = this.rejectIfWorktreeRemoved()
+        if (error) throw error
       },
-      { providerOrigin: 'host', onAccepted },
-    )
+      start: async () => { this.touchRuntimeActivity(); await this.ensureStarted() },
+      inject: (text) => this.backend.injectTaskNotification?.(text) ?? Promise.resolve('unhandled'),
+      send: (request, accepted) => this.send(request, {
+        providerOrigin: 'host',
+        ...(opts ? {
+          beforeInput: () => {
+            opts.beforeInput?.()
+            if (this.isStreaming()) throw new CollaborationWakeDeferredError('Notification recipient became busy')
+          },
+          onInputAccepted: () => { opts.onInputAccepted?.(); accepted?.() },
+        } : { onAccepted: accepted }),
+      }),
+      isStreaming: () => this.isStreaming(),
+      warn: (error) => log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, error instanceof Error ? error.message : String(error)),
+    }, onAccepted, opts)
   }
 
   private computeTitle(): string | null {

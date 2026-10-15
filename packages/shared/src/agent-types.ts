@@ -1931,7 +1931,7 @@ export type AgentEventBase =
   /** A failed user send was taken again under the same id; its row is no longer a failed send. */
   | { type: 'user_message_send_retried'; clientMessageId: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
-  | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
+  | { type: 'message_interrupted'; messageId: string; reason?: string; metadata?: MessageMetadata }
   | { type: 'message_error'; messageId: string; error: string; errorInfo?: AgentErrorInfo; metadata?: MessageMetadata }
   | { type: 'status_change'; status: AgentStatus }
   | { type: 'permission_request'; request: PermissionRequest }

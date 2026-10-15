@@ -1109,11 +1109,33 @@ response returns them again. The parent's desktop follows the child's runs
 from the node event log with a cursor and the open run's state persisted per
 child, across its own restarts and reconnects and the node's
 (`collaboration-remote-watch.ts`; a node restart that ends a run logs
-`session.reconciled`). They drive the same stop-wake and stall notice as a
+`session.turn_interrupted` and `session.reconciled`). They drive the same stop-wake and stall notice as a
 local child (`apps/desktop/src/main/session/collaboration-lifecycle.ts`). A
-stop wake stays recorded on the grant until the parent observes the stop (a
-retrieve that reports the child idle or in error) or the child runs again, and
-is sent again while the parent sits idle: it may repeat, it is not lost.
+stop wake stays recorded on the grant until it is admitted to the host's
+durable `collaboration_wakes` inbox, or the child runs again. Enqueue is the
+delivery acknowledgement; the parent's retrieve never controls retries.
+The inbox retains stable notification IDs across restart and holds wakes while
+the recipient is busy or awaiting approval. Harness admission failures get
+at most three attempts (10-second then 30-second backoff); exhaustion preserves
+the payload and error and pauses the recipient without further automatic attempts. Provider failures
+after admission do not re-enqueue or resend the notification. Errors and user
+interruptions pause that recipient's inbox across restart; new notifications
+still enqueue. Confirmed provider output resumes consumption without resetting
+exhausted admission budgets.
+Desktop and CLI-local admission are confirmed when the backend accepts the input, after runtime
+preparation and backend rebuild, rather than when it enters Session's in-memory
+send chain. Confirmation is persisted synchronously, including during graceful
+shutdown. Preparation has its own durable state: a crash resumes it with the
+attempt count intact, while cancellation during graceful shutdown does not
+spend an attempt. The `dispatching` state starts inside the input-handoff
+callback; a failure to persist its final receipt leaves an `uncertain` row on
+restart and pauses automatic consumption instead of replaying potentially
+executed work. If a desktop backend becomes busy during preparation, admission
+returns to the inbox until a later readiness event, without spending an attempt.
+Machine-restart interruptions retain their reason through event mapping and do
+not pause the inbox or clear an existing error or human-stop pause. The node
+also reads persisted interruption provenance when deciding whether an interrupted
+recipient can accept new collaboration mail after startup reconciliation.
 Before cutting the child's worktree the node fetches `origin` (`git.fetch`);
 an existing checkout is fetched too.
 

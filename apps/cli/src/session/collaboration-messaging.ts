@@ -38,19 +38,10 @@ function sessionTitle(ctx: CollaborationContext) {
   return (sessionId: string) => ctx.deps.sessions.get(sessionId)?.title ?? null
 }
 
-async function wakePeer(ctx: CollaborationContext, sessionId: string, fromSessionId: string): Promise<void> {
-  if (!ctx.deps.sessions.get(sessionId)) return
+function wakePeer(ctx: CollaborationContext, sessionId: string, fromSessionId: string, messageId: string): void {
   const fromTitle = ctx.deps.sessions.get(fromSessionId)?.title?.trim() || fromSessionId.slice(0, 8)
-  try {
-    await ctx.deps.sessions.sendWithoutLease({
-      sessionId,
-      text: mailboxWakeText({ sessionId: fromSessionId, title: fromTitle }),
-      source: 'task-notification',
-      requestId: `collab-wake-${fromSessionId.slice(0, 8)}-${Date.now()}`,
-    })
-  } catch {
-    /* best-effort */
-  }
+  ctx.wakes.enqueue(sessionId, `collab-message:${messageId}`,
+    mailboxWakeText({ sessionId: fromSessionId, title: fromTitle }))
 }
 
 export function sendCollaborationMessage(ctx: CollaborationContext, input: CollaborationSendInput): {
@@ -64,13 +55,17 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
   const channel = resolveSendChannel(ctx.store, input.sessionId, input.to, sessionTitle(ctx))
   const content = normalizeMailboxContent(input.content)
   const recipientSessionId = channel.peer.sessionId
-  const insert = ctx.store.appendMessage({
-    grantId: channel.grant.grant_id,
-    senderSessionId: input.sessionId,
-    recipientSessionId,
-    clientMessageId: input.clientMessageId,
-    content,
-  })
+  const insert = ctx.deps.db.transaction(() => {
+    const inserted = ctx.store.appendMessage({
+      grantId: channel.grant.grant_id,
+      senderSessionId: input.sessionId,
+      recipientSessionId,
+      clientMessageId: input.clientMessageId,
+      content,
+    })
+    wakePeer(ctx, recipientSessionId, input.sessionId, inserted.row.id)
+    return inserted
+  })()
 
   if (!insert.reused) {
     ctx.deps.events.append({
@@ -84,8 +79,6 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
         sequence: insert.row.sequence,
       },
     })
-    // Best-effort peer wake via host-initiated turn (non-blocking).
-    void wakePeer(ctx, recipientSessionId, input.sessionId)
   }
 
   return {

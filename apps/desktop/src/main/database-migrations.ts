@@ -19,7 +19,7 @@ import {
   type ServiceEndpoint,
   type WireProtocol,
 } from '@superone/shared/platform-registry'
-import { ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
+import { COLLABORATION_WAKE_TABLE_DDL, ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
 import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type Database from 'better-sqlite3'
@@ -37,7 +37,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 13
+export const SCHEMA_VERSION = 14
 
 /**
  * The oldest schema revision that can still read this database.
@@ -689,6 +689,7 @@ function applyMigrations(db: Database.Database): void {
   }
   // Several sessions may link the same peer; only spawn parentage stays unique.
   ensureCollaborationGrantUniqueness(db, { warn: (message) => log.warn(message) })
+  db.exec(COLLABORATION_WAKE_TABLE_DDL)
   // Composer scheduled sends, local and remote-node; DDL owned by the module.
   ensureScheduledSendsSchema(db, { warn: (message) => log.warn(message) })
 

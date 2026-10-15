@@ -24,8 +24,6 @@ vi.mock('./collaboration-remote', () => ({
 
 const {
   CHILD_STALL_MS,
-  acknowledgeStoppedChild,
-  pendingStopKey,
   CollaborationChildMonitor,
   childActivityView,
   describeChildStatus,
@@ -87,7 +85,8 @@ describe('CollaborationChildMonitor', () => {
     spawnChild('child')
     state.times = new Map()
     state.remote = new Map()
-    state.wake.mockClear()
+    state.wake.mockReset()
+    state.wake.mockResolvedValue(undefined)
     parent = { status: 'idle', queued: false }
     child = { status: 'streaming', pending: [], activityAt: 1_000, lastUserMessageAt: 1_000, messages: [] }
     notifyStalled = vi.fn()
@@ -123,7 +122,7 @@ describe('CollaborationChildMonitor', () => {
     feed({ type: 'status_change', status: 'idle' })
     await settle()
     expect(state.wake).toHaveBeenCalledTimes(1)
-    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle')
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle', expect.any(String))
   })
 
   it('waits for background work to finish before treating the child as stopped', async () => {
@@ -169,7 +168,7 @@ describe('CollaborationChildMonitor', () => {
     feed({ type: 'message_error', messageId: 'm1', error: '429 Too Many Requests' })
     feed({ type: 'status_change', status: 'error' })
     await settle()
-    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'error: rate limited or out of quota')
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'error: rate limited or out of quota', expect.any(String))
   })
 
   it('does not wake when the initial task never reached the child', async () => {
@@ -183,7 +182,7 @@ describe('CollaborationChildMonitor', () => {
     expect(state.wake).not.toHaveBeenCalled()
   })
 
-  describe('a stop wake', () => {
+  describe('a durable stop wake', () => {
     let grantId: string
     const stop = async () => {
       feed({ type: 'status_change', status: 'streaming' })
@@ -191,104 +190,90 @@ describe('CollaborationChildMonitor', () => {
       await settle()
     }
     const later = (ms: number) => { now += ms }
-
-    beforeEach(() => {
-      grantId = state.store.spawnGrantForChild('child')!.grant_id
+    const restart = () => new CollaborationChildMonitor({
+      host: {} as SessionManager, view: () => null, lastUserMessageAt: () => null,
+      notifyStalled, clearStalled, now: () => now,
     })
 
-    it('is sent again once the busy parent that dropped it sits idle', async () => {
+    beforeEach(() => { grantId = state.store.spawnGrantForChild('child')!.grant_id })
+
+    it('does not resend an admitted stop wake when the parent errors without retrieving it', async () => {
+      await stop()
+      parent.status = 'error'
+      for (let tick = 0; tick < 5; tick++) {
+        later(60_000)
+        await monitor.retryStopWakeEnqueue()
+      }
+      expect(state.wake).toHaveBeenCalledTimes(1)
+      expect(pendingWake(grantId)).toBeUndefined()
+    })
+
+    it('can enqueue while the parent is busy or awaiting approval', async () => {
       parent.status = 'streaming'
-      // Sent at once; the busy parent's harness queue drops it (overflow, close, interrupt).
-      await stop()
-      expect(state.wake).toHaveBeenCalledTimes(1)
-      later(60_000)
-      await monitor.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(1)
-
-      parent.status = 'idle'
       parent.queued = true
-      await monitor.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(1)
-      parent.queued = false
-      await monitor.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(2)
-      expect(state.wake).toHaveBeenLastCalledWith(expect.anything(), 'parent', 'child', 'idle')
-      // Not again within the interval.
-      await monitor.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(2)
-    })
-
-    it('is not sent again while the parent waits on the human', async () => {
-      await stop()
-      later(60_000)
       parent.prompting = true
-      await monitor.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(1)
-    })
-
-    it('ends when the parent retrieves the stopped child, also across a restart', async () => {
       await stop()
-      const key = pendingStopKey('child')
-      acknowledgeStoppedChild('parent', 'child', 'running', key)
-      acknowledgeStoppedChild('parent', 'child', 'unreachable', key)
-      acknowledgeStoppedChild('stranger', 'child', 'idle', key)
-      expect(pendingWake(grantId)).toBeDefined()
-      acknowledgeStoppedChild('parent', 'child', 'idle', key)
+      expect(state.wake).toHaveBeenCalledTimes(1)
       expect(pendingWake(grantId)).toBeUndefined()
-
-      const restarted = new CollaborationChildMonitor({
-        host: {} as SessionManager, view: () => null, lastUserMessageAt: () => null, notifyStalled, clearStalled, now: () => now + 120_000,
-      })
-      await restarted.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(1)
-    })
-
-    it('keeps a stop recorded while the retrieve looked the child up', async () => {
-      await stop()
-      const seen = pendingStopKey('child')
-      // The child runs and stops again before the lookup returns.
-      await stop()
-      acknowledgeStoppedChild('parent', 'child', 'idle', seen)
-      expect(pendingWake(grantId)).toBeDefined()
-    })
-
-    it('stays when an errored child reports idle once its runtime is released', async () => {
-      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '1')
-      monitor.handleEvent('child', { type: 'status_change', status: 'error' }, false, '2')
-      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '3')
-      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '4')
-      expect(pendingWake(grantId)).toMatchObject({ key: '2', status: 'error' })
-      await settle()
       later(60_000)
-      await monitor.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(2)
+      await monitor.retryStopWakeEnqueue()
+      expect(state.wake).toHaveBeenCalledTimes(1)
     })
 
-    it('ends only for a run that opened after the stop', () => {
-      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '20')
-      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '21')
-      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '19')
-      expect(pendingWake(grantId)).toBeDefined()
-      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '19')
-      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '22')
+    it('does not resend an admitted wake after restart even without an agent read', async () => {
+      await stop()
+      later(120_000)
+      await restart().retryStopWakeEnqueue()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries a failed enqueue at most three times across restart', async () => {
+      state.wake.mockRejectedValue(new Error('queue unavailable'))
+      await stop()
+      expect(pendingWake(grantId)).toMatchObject({ attempts: 1 })
+      await monitor.retryStopWakeEnqueue()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+      for (let i = 0; i < 5; i++) {
+        later(60_000)
+        await restart().retryStopWakeEnqueue()
+      }
+      expect(state.wake).toHaveBeenCalledTimes(3)
+      expect(pendingWake(grantId)).toMatchObject({ attempts: 3 })
+    })
+
+    it('retries an unacknowledged enqueue with the same notification identity after restart', async () => {
+      state.wake.mockImplementationOnce(() => new Promise(() => {}))
+      await stop()
+      const first = state.wake.mock.calls[0]
+      expect(pendingWake(grantId)).toMatchObject({ attempts: 1 })
+      later(60_000)
+      await restart().retryStopWakeEnqueue()
+      expect(state.wake.mock.calls[1].slice(1)).toEqual(first.slice(1))
       expect(pendingWake(grantId)).toBeUndefined()
     })
 
-    it('is sent after a restart when the parent never saw it', async () => {
+    it('does not clear a newer stop when an older enqueue is acknowledged', async () => {
+      let accept!: () => void
+      state.wake.mockImplementationOnce(() => new Promise<void>((resolve) => { accept = resolve }))
       await stop()
-      const restarted = new CollaborationChildMonitor({
-        host: { getSession: () => null } as unknown as SessionManager, view: () => null, lastUserMessageAt: () => null, notifyStalled, clearStalled, now: () => now + 60_000,
-      })
-      await restarted.resendStopWakes()
-      expect(state.wake).toHaveBeenCalledTimes(2)
+      const old = pendingWake(grantId)
+      await stop()
+      expect(pendingWake(grantId)).not.toEqual(old)
+      accept()
+      await settle()
+      expect(pendingWake(grantId)).toBeDefined()
+      later(60_000)
+      await monitor.retryStopWakeEnqueue()
+      expect(pendingWake(grantId)).toBeUndefined()
     })
 
-    it('ends when the child runs again', async () => {
+    it('ends an unqueued stop when the child runs again', async () => {
+      state.wake.mockRejectedValueOnce(new Error('queue unavailable'))
       await stop()
       feed({ type: 'status_change', status: 'streaming' })
       expect(pendingWake(grantId)).toBeUndefined()
       later(60_000)
-      await monitor.resendStopWakes()
+      await monitor.retryStopWakeEnqueue()
       expect(state.wake).toHaveBeenCalledTimes(1)
     })
   })
@@ -326,7 +311,7 @@ describe('CollaborationChildMonitor', () => {
       feed({ type: 'status_change', status: 'streaming' }, 'remote-child')
       feed({ type: 'status_change', status: 'idle' }, 'remote-child')
       await settle()
-      expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'remote-child', 'idle')
+      expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'remote-child', 'idle', expect.any(String))
     })
 
     it('notifies the human when no event arrived for the stall window while its node reports it streaming', async () => {

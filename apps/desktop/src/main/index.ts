@@ -103,6 +103,7 @@ import { localSessionEnvironmentId } from './environment/session-identity'
 import { PROTOCOL_GENERATION } from '@superone/shared/environment/protocol'
 import { spawnParentOf } from './session/collaboration-mailbox'
 import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
+import { collaborationWakeQueue, stopCollaborationWakes } from './session/collaboration-wakes'
 import { RemoteChildWatcher } from './session/collaboration-remote-watch'
 import { remoteChildLabel } from './session/collaboration-remote'
 import { watchProjectList, watchSessionDeletes } from './session-list-watch'
@@ -901,8 +902,10 @@ const desktopNotificationChannel = new DesktopNotificationChannel({
 notificationService.registerChannel(desktopNotificationChannel)
 
 /** Spawn-child stops wake the parent; stalls notify the human. See `CollaborationChildMonitor`. */
+collaborationWakeQueue(sessionManager).start()
 const collaborationChildMonitor = new CollaborationChildMonitor({
   host: sessionManager,
+  observeNotification: (sessionId, event) => collaborationWakeQueue(sessionManager).observe(sessionId, event),
   view: (sessionId) => childActivityView(sessionManager, sessionId).then((view) => (view === 'unreachable' ? null : view)),
   lastUserMessageAt: (sessionId) => sessionManager.getSession(sessionId)?.snapshot.lastUserMessageAt ?? null,
   notifyStalled: (sessionId) => notificationService.notifyStalled(sessionId),
@@ -916,8 +919,8 @@ sessionEvents.subscribe({
 })
 setInterval(() => {
   void collaborationChildMonitor.checkStalls()
-  // Stop wakes an idle parent has not observed yet, from this run or before a restart.
-  void collaborationChildMonitor.resendStopWakes()
+  // Only retry failed inbox writes, including legacy records from before upgrade.
+  void collaborationChildMonitor.retryStopWakeEnqueue()
 }, CHILD_STALL_CHECK_INTERVAL_MS).unref()
 // Children on other machines: their runs reach the monitor from the node's event log.
 const remoteChildWatcher = new RemoteChildWatcher(collaborationChildMonitor)
@@ -5681,6 +5684,7 @@ function disposeAgentSessions(): Promise<void> {
 }
 
 function performQuit(): void {
+  stopCollaborationWakes()
   quitting = true
   rendererAgentEventTransport.dispose()
   destroyComputerUsePermissionFloat()
@@ -5729,6 +5733,7 @@ function performQuit(): void {
 
 let signalQuitting = false
 const handleSignalQuit = (sig: NodeJS.Signals): void => {
+  stopCollaborationWakes()
   if (signalQuitting) return
   signalQuitting = true
   rendererAgentEventTransport.dispose()

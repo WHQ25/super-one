@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { openNodeDatabase } from '@superone/runtime/db'
-import { CollaborationStore } from '@superone/runtime/collaboration'
+import { CollaborationStore, CollaborationWakeQueue } from '@superone/runtime/collaboration'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
 import type { SessionManager } from './types'
 
@@ -74,7 +75,7 @@ function remoteOf() {
 }
 
 /** This desktop as it starts: a fresh monitor and watcher over the persisted grants. */
-function startDesktop(now = Date.now) {
+function startDesktop(now = Date.now, observeNotification?: (sessionId: string, event: AgentEvent) => void) {
   const monitor = new CollaborationChildMonitor({
     host: { getSession: () => null } as unknown as SessionManager,
     now,
@@ -82,6 +83,7 @@ function startDesktop(now = Date.now) {
     lastUserMessageAt: () => null,
     notifyStalled: vi.fn(),
     clearStalled: vi.fn(),
+    observeNotification,
   })
   return { monitor, watcher: new RemoteChildWatcher(monitor) }
 }
@@ -121,7 +123,7 @@ describe('RemoteChildWatcher', () => {
     expect(remoteOf().eventCursor).toBe('12')
     expect(remoteOf().run).toBeUndefined()
     expect(state.wake).toHaveBeenCalledTimes(1)
-    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle')
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle', '12')
   })
 
   it('reads again when the node pushes an event of a child or a machine reconnects', async () => {
@@ -132,7 +134,7 @@ describe('RemoteChildWatcher', () => {
 
     state.events.push(statusEvent(12, 'idle'))
     state.watchers.get('child')!()
-    await vi.waitFor(() => expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle'))
+    await vi.waitFor(() => expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle', '12'))
 
     state.connected = false
     for (const listener of state.connectionListeners) listener()
@@ -175,9 +177,29 @@ describe('RemoteChildWatcher', () => {
     await tick(desktop)
     state.events.push(envelope(12, 'session.reconciled', { status: 'interrupted', reason: 'node_restart_non_reattachable' }))
     await tick(desktop)
-    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'interrupted (its machine restarted)')
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'interrupted (its machine restarted)', '12')
     expect(remoteOf().run).toBeUndefined()
   })
+
+  it.each(['node_restart', 'node_restart_non_reattachable'])(
+    'preserves %s provenance through the remote watcher without pausing new mail', async (reason) => {
+      const db = openNodeDatabase(':memory:')
+      const admit = vi.fn(async () => {})
+      const queue = new CollaborationWakeQueue(db, { admit, warn: vi.fn() })
+      try {
+        const observe = vi.fn((id: string, event: AgentEvent) => queue.observe(id, event))
+        const desktop = startDesktop(Date.now, observe)
+        await tick(desktop)
+        state.events.push(envelope(12, 'session.turn_interrupted', { reason, messageId: 'm1' }))
+        await tick(desktop)
+        expect(observe).toHaveBeenCalledWith('child', expect.objectContaining({ type: 'message_interrupted', messageId: 'm1', reason }))
+        expect(state.wake).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'parent', 'child', 'interrupted (its machine restarted)', '12')
+        expect(remoteOf().run).toBeUndefined()
+        queue.enqueue('child', 'message:after-restart', 'new collaboration mail')
+        await vi.waitFor(() => expect(admit).toHaveBeenCalledTimes(1))
+      } finally { queue.dispose(); db.close() }
+    },
+  )
 
   it('wakes once when both machines restarted during the run', async () => {
     await tick(startDesktop())
@@ -192,11 +214,11 @@ describe('RemoteChildWatcher', () => {
     // An older node: the run ended in its restart and nothing says so in its log.
     state.status = 'interrupted'
     await tick(startDesktop())
-    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'interrupted')
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'interrupted', expect.any(String))
     expect(remoteOf().run).toBeUndefined()
   })
 
-  it('keeps a stop wake the parent never saw and sends it again after a restart', async () => {
+  it('retries a stop that was not durably enqueued before a restart', async () => {
     await tick(startDesktop())
     // This desktop dies before the wake reaches the parent.
     state.wake.mockImplementationOnce(() => new Promise(() => {}))
@@ -206,7 +228,7 @@ describe('RemoteChildWatcher', () => {
 
     const restarted = startDesktop(() => Date.now() + 60_000)
     await tick(restarted)
-    await restarted.monitor.resendStopWakes()
+    await restarted.monitor.retryStopWakeEnqueue()
     expect(state.wake).toHaveBeenCalledTimes(2)
   })
 
@@ -233,6 +255,7 @@ describe('RemoteChildWatcher', () => {
 
     beforeEach(async () => {
       await tick(startDesktop())
+      state.wake.mockRejectedValueOnce(new Error('queue unavailable'))
       state.events.push(statusEvent(12, 'idle'))
       await tick(startDesktop())
       expect(pending()).toMatchObject({ key: '12' })
@@ -244,7 +267,8 @@ describe('RemoteChildWatcher', () => {
       const restarted = startDesktop(() => Date.now() + 60_000)
       await tick(restarted)
       expect(pending()).toMatchObject({ key: '12' })
-      await restarted.monitor.resendStopWakes()
+      await restarted.monitor.retryStopWakeEnqueue()
+      expect(pending()).toBeUndefined()
       expect(state.wake).toHaveBeenCalledTimes(2)
     })
 
@@ -254,7 +278,7 @@ describe('RemoteChildWatcher', () => {
       const restarted = startDesktop(() => Date.now() + 60_000)
       await tick(restarted)
       expect(pending()).toBeUndefined()
-      await restarted.monitor.resendStopWakes()
+      await restarted.monitor.retryStopWakeEnqueue()
       expect(state.wake).toHaveBeenCalledTimes(1)
     })
 
@@ -264,7 +288,7 @@ describe('RemoteChildWatcher', () => {
       const restarted = startDesktop(() => Date.now() + 60_000)
       await tick(restarted)
       expect(pending()).toBeUndefined()
-      await restarted.monitor.resendStopWakes()
+      await restarted.monitor.retryStopWakeEnqueue()
       expect(state.wake).toHaveBeenCalledTimes(1)
     })
   })

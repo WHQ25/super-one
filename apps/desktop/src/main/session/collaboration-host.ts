@@ -3,7 +3,6 @@
  * session titles, and waking a peer session without touching a read-only one.
  */
 
-import { existsSync, statSync } from 'fs'
 import type { SessionAgentLaunchConfig } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import {
@@ -16,11 +15,12 @@ import {
   type CollaborationPeer,
 } from '@superone/runtime/collaboration'
 import { getDb } from '../database'
-import log from '../logger'
 import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore } from './collaboration-mailbox'
-import { remoteChildTarget, sendToRemoteChild } from './collaboration-remote'
-import type { Session, SessionManager } from './types'
+import { remoteChildTarget } from './collaboration-remote'
+import { collaborationWakeQueue } from './collaboration-wakes'
+export { isCollaborationTargetReadOnly, resolveLiveSession } from './collaboration-target'
+import type { SessionManager } from './types'
 
 let sessionsChangedListener: (() => void) | null = null
 
@@ -79,81 +79,13 @@ export function resolveCodexServiceTier(
   return findCodexFastServiceTier(model)?.id ?? null
 }
 
-/** Resolve a live session, resuming a passive one when the process has released it. */
-export function resolveLiveSession(host: SessionManager, sessionId: string): Session | null {
-  const live = host.getSession(sessionId)
-  if (live) return live
-  try {
-    return host.resumeSession(sessionId, { passive: true })
-  } catch (error) {
-    log.debug(
-      '[session-collaboration] resumeSession failed sid=%s: %s',
-      sessionId,
-      error instanceof Error ? error.message : String(error),
-    )
-    return null
-  }
+/** Acknowledge after persisting the wake; execution is owned by the inbox consumer. */
+function wakeSession(host: SessionManager, sessionId: string, text: string, notificationId: string): void {
+  collaborationWakeQueue(host).enqueue(sessionId, notificationId, text)
 }
 
-/**
- * UI withdraws the composer when a worktree checkout is gone. Collab must not
- * resume/inject a turn into that session (it would run against the fallback
- * project checkout).
- */
-export function isCollaborationTargetReadOnly(sessionId: string, live: Session | null): boolean {
-  if (live?.snapshot.worktreeMissing) return true
-  if (live?.snapshot.isWorktree) {
-    const dir = live.cwd
-    if (dir && (!existsSync(dir) || !statSync(dir).isDirectory())) return true
-  }
-  const row = getDb().prepare('SELECT worktree_path FROM sessions WHERE id = ?')
-    .get(sessionId) as { worktree_path: string | null } | undefined
-  const stored = row?.worktree_path?.trim()
-  if (!stored) return false
-  try {
-    return !existsSync(stored) || !statSync(stored).isDirectory()
-  } catch {
-    return true
-  }
-}
-
-/** Start a host turn in `sessionId`; queues behind an in-flight turn. Best-effort. */
-async function wakeSession(host: SessionManager, sessionId: string, text: string): Promise<void> {
-  if (remoteChildTarget(sessionId)) {
-    // A child on another machine: a turn through the gateway, under this desktop's lease.
-    try {
-      await sendToRemoteChild(sessionId, text)
-    } catch (error) {
-      log.warn(
-        '[session-collaboration] remote wake failed sid=%s: %s',
-        sessionId,
-        error instanceof Error ? error.message : String(error),
-      )
-    }
-    return
-  }
-  const session = resolveLiveSession(host, sessionId)
-  if (!session) {
-    log.debug('[session-collaboration] peer not available for wake sid=%s', sessionId)
-    return
-  }
-  if (isCollaborationTargetReadOnly(sessionId, session)) {
-    log.debug('[session-collaboration] skip wake; worktree removed sid=%s', sessionId)
-    return
-  }
-  try {
-    await session.injectTaskNotification(text)
-  } catch (error) {
-    log.warn(
-      '[session-collaboration] wake failed sid=%s: %s',
-      sessionId,
-      error instanceof Error ? error.message : String(error),
-    )
-  }
-}
-
-export function wakeCollaborationPeer(host: SessionManager, sessionId: string, fromSessionId: string): Promise<void> {
-  return wakeSession(host, sessionId, mailboxWakeText({ sessionId: fromSessionId, title: sessionLabelTitle(fromSessionId) }))
+export function wakeCollaborationPeer(host: SessionManager, sessionId: string, fromSessionId: string, messageId: string): void {
+  return wakeSession(host, sessionId, mailboxWakeText({ sessionId: fromSessionId, title: sessionLabelTitle(fromSessionId) }), `collab-message:${messageId}`)
 }
 
 /** Fallback wake: a spawn child stopped (`status`) without messaging its parent since its last input. */
@@ -162,12 +94,13 @@ export function wakeParentOfStoppedChild(
   parentSessionId: string,
   childSessionId: string,
   status: string,
-): Promise<void> {
+  stopKey: string,
+): void {
   return wakeSession(host, parentSessionId, childStoppedWakeText({
     sessionId: childSessionId,
     title: sessionLabelTitle(childSessionId),
     status,
-  }))
+  }), `collab-stop:${childSessionId}:${stopKey}`)
 }
 
 export function wakeLinkPeer(
@@ -175,10 +108,10 @@ export function wakeLinkPeer(
   sessionId: string,
   grant: GrantRow,
   hasOpening: boolean,
-): Promise<void> {
+): void {
   return wakeSession(host, sessionId, linkActivationWakeText({
     initiatorSessionId: grant.parent_session_id,
     initiatorTitle: initiatorTitleOf(grant),
     hasOpening,
-  }))
+  }), `collab-link:${grant.grant_id}`)
 }

@@ -293,6 +293,21 @@ export interface TaskNotificationSendOptions extends TaskNotificationOptions {
   clientMessageId?: string
 }
 
+export interface TaskNotificationAdmissionOptions {
+  clientMessageId: string
+  /** Persist the receipt synchronously when the backend takes the input. */
+  onInputAccepted?: () => void
+  /** May reject preparation before backend state changes; never an acceptance guard. */
+  beforeInput?: () => void
+}
+
+export interface SessionSendOptions {
+  providerOrigin?: SendProviderOrigin
+  onAccepted?: (receipt?: import('@superone/shared/send-failure').DuplicateSend) => void
+  onInputAccepted?: () => void
+  beforeInput?: () => void
+}
+
 export class SessionLockedError extends Error {
   readonly sessionId: string
   readonly reason: SessionLockReason
@@ -492,7 +507,7 @@ export interface Session {
   releaseRuntime(reason: 'idle', afterRelease?: () => Promise<void>): Promise<boolean>
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   /** Resolves (and accepts with) `{ duplicate: true }` when the host already took this user message id; nothing runs again. */
-  send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: (receipt?: import('@superone/shared/send-failure').DuplicateSend) => void }): Promise<import('@superone/shared/send-failure').DuplicateSend | void>
+  send(request: SendMessageRequest, opts?: SessionSendOptions): Promise<import('@superone/shared/send-failure').DuplicateSend | void>
   interrupt(): Promise<boolean>
   /** Worktree deleted under the live session: go read-only and stop the turn. */
   markWorktreeRemoved(): Promise<void>
@@ -527,7 +542,7 @@ export interface Session {
   appendTranscriptMessage(message: import('@superone/shared/agent-types').ChatMessage): void
   injectTaskNotification(content: string): Promise<void>
   /** Resolves once the wake is admitted and rejects when it is not; does not wait for its turn. */
-  admitTaskNotification(content: string): Promise<void>
+  admitTaskNotification(content: string, opts?: TaskNotificationAdmissionOptions): Promise<void>
   respondToPermission(
     requestId: string,
     allow: boolean,
@@ -632,5 +647,5 @@ export interface SessionManager {
   forEachSession(fn: (session: Session) => void): void
 
   on(sessionId: string, handler: (event: AgentEvent) => void): () => void
-  onAny(handler: (sessionId: string, event: AgentEvent) => void): () => void
+  onAny(handler: (sessionId: string, event: AgentEvent, replay: boolean) => void): () => void
 }

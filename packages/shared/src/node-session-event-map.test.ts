@@ -463,6 +463,13 @@ describe('mapNodeSessionEvents (text-only)', () => {
     expect(events).toEqual([])
   })
 
+  it('preserves node restart interruption provenance', () => {
+    const mapper = createNodeSessionEventMapper(ctx)
+    const events = mapper.map(envelope({ eventType: 'session.turn_interrupted',
+      payload: { reason: 'node_restart', messageId: 'restart-message' } }))
+    expect(events[0]).toMatchObject({ type: 'message_interrupted', messageId: 'restart-message', reason: 'node_restart' })
+  })
+
   it('maps interrupt and error against the current assistant message', () => {
     const mapper = createNodeSessionEventMapper(ctx)
     mapper.map(

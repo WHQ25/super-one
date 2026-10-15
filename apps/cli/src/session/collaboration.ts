@@ -6,8 +6,10 @@
  * authorization, and agent-facing text come from @superone/runtime/collaboration.
  */
 
-import type { SessionAgentProfile } from '@superone/shared/agent-types'
-import { CollaborationStore, collaborationSystemPrompt } from '@superone/runtime/collaboration'
+import type { AgentEvent, SessionAgentProfile } from '@superone/shared/agent-types'
+import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
+import { isNodeRestartInterruption } from '@superone/shared/session-interruption'
+import { CollaborationStore, CollaborationWakeQueue, collaborationSystemPrompt } from '@superone/runtime/collaboration'
 import type { CollaborationContext, CollaborationDeps } from './collaboration-context'
 import {
   retrieveCollaborationMessages,
@@ -27,14 +29,52 @@ export type { CollaborationDeps } from './collaboration-context'
  */
 export class CollaborationService {
   private readonly ctx: CollaborationContext
+  private readonly unsubscribe: () => void
 
   constructor(private readonly deps: CollaborationDeps) {
+    const wakes = new CollaborationWakeQueue(deps.db, {
+      canAdmit: (sessionId) => {
+        const session = deps.sessions.get(sessionId)
+        if (!session) return true
+        if (session.status === 'error' || session.status === 'streaming' || session.pendingInteraction) return false
+        if (session.status !== 'interrupted') return true
+        // Reconciliation runs before this service subscribes. Recover its
+        // durable reason without treating a human stop as a machine restart.
+        const latest = deps.db.prepare(`SELECT payload_json FROM environment_events
+          WHERE aggregate_type = 'session' AND aggregate_id = ? AND event_type = ?
+          ORDER BY sequence DESC LIMIT 1`).get(sessionId, SESSION_DURABLE_EVENT.turnInterrupted) as { payload_json: string } | undefined
+        if (!latest) return false
+        try { return isNodeRestartInterruption(JSON.parse(latest.payload_json)?.reason) } catch { return false }
+      },
+      admit: (sessionId, text, requestId, onInputAccepted, beforeInput) => deps.sessions.sendWithoutLease({
+        sessionId, text, requestId, source: 'task-notification',
+      }, { onInputAccepted, beforeInput }),
+      warn: (message) => console.warn(message),
+    })
     this.ctx = {
       deps,
       store: new CollaborationStore(deps.db),
+      wakes,
       listProfiles: () => this.listProfiles(),
     }
+    this.unsubscribe = deps.events.onAppend((event) => {
+      if (event.aggregateType !== 'session') return
+      const agentEvent = (event.payload as { event?: AgentEvent } | null)?.event
+      if (agentEvent) wakes.observe(event.aggregateId, agentEvent)
+      if (event.eventType === SESSION_DURABLE_EVENT.turnError) {
+        wakes.observe(event.aggregateId, { type: 'message_error', messageId: '', error: 'turn failed' })
+      } else if (event.eventType === SESSION_DURABLE_EVENT.turnInterrupted) {
+        const reason = (event.payload as { reason?: string } | null)?.reason
+        wakes.observe(event.aggregateId, { type: 'message_interrupted', messageId: '', reason })
+      } else if (event.eventType === SESSION_DURABLE_EVENT.turnCompleted) {
+        wakes.observe(event.aggregateId, { type: 'message_complete', messageId: '' })
+      }
+      if (!event.ephemeral) wakes.start()
+    })
+    wakes.start()
   }
+
+  dispose(): void { this.unsubscribe(); this.ctx.wakes.dispose() }
 
   /** Agent profiles from session_providers (+ ready-harness fallback). */
   isSpawnChild(sessionId: string): boolean { return this.ctx.store.isSpawnChild(sessionId) }

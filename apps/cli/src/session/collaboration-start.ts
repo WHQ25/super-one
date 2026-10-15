@@ -112,27 +112,18 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
   ctx.store.markTaskSent(grant.grant_id)
 }
 
-async function wakeLinkPeer(
+function wakeLinkPeer(
   ctx: CollaborationContext,
   sessionId: string,
   grant: GrantRow,
   hasOpening: boolean,
-): Promise<void> {
-  if (!ctx.deps.sessions.get(sessionId)) return
-  try {
-    await ctx.deps.sessions.sendWithoutLease({
-      sessionId,
-      text: linkActivationWakeText({
+): void {
+  ctx.wakes.enqueue(sessionId, `collab-link:${grant.grant_id}`,
+    linkActivationWakeText({
         initiatorSessionId: grant.parent_session_id,
         initiatorTitle: initiatorTitleOf(ctx, grant),
         hasOpening,
-      }),
-      source: 'task-notification',
-      requestId: `collab-link-wake-${grant.grant_id.slice(0, 12)}-${Date.now()}`,
-    })
-  } catch {
-    /* best-effort */
-  }
+    }))
 }
 
 async function startLink(ctx: CollaborationContext, grant: GrantRow): Promise<CollaborationStartResult> {

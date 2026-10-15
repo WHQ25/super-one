@@ -14,7 +14,7 @@ import {
 } from '@superone/runtime/collaboration'
 import type { CollaborationPeer } from '@superone/runtime/collaboration'
 import { denyMainThreadOnlyIfSubagent } from '../mcp/main-thread-session-guard'
-import { acknowledgeStoppedChild, describeCollaborationChild, pendingStopKey } from './collaboration-lifecycle'
+import { describeCollaborationChild } from './collaboration-lifecycle'
 import { forwardToExternalParent } from './collaboration-external-parent'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import {
@@ -25,6 +25,7 @@ import {
   wakeCollaborationPeer,
 } from './collaboration-host'
 import type { SessionManager } from './types'
+import { getDb } from '../database'
 
 export interface SessionSendArgs {
   /** Peer session id. Optional for a spawn child (its parent) or a caller with one peer. */
@@ -62,19 +63,25 @@ export async function sendSessionMessage(
     }, true)
   }
 
-  const insert = grants.appendMessage({
-    grantId: channel.grant.grant_id,
-    senderSessionId: callerSessionId,
-    recipientSessionId,
-    clientMessageId: args.clientMessageId,
-    content,
-  })
-  if (!insert.reused) {
-    notifyCollaborationMailboxChanged(recipientSessionId)
-    // Mailbox traffic is already visible via session_send / session_retrieve tool UI.
-    // Do not also inject collab transcript bubbles (that doubled the UI).
-    void wakeCollaborationPeer(host, recipientSessionId, callerSessionId)
+  let insert: ReturnType<typeof grants.appendMessage>
+  try {
+    insert = getDb().transaction(() => {
+      const inserted = grants.appendMessage({
+        grantId: channel.grant.grant_id,
+        senderSessionId: callerSessionId,
+        recipientSessionId,
+        clientMessageId: args.clientMessageId,
+        content,
+      })
+      // Mailbox content and its wake are committed together. Reused sends
+      // also repair legacy mailbox rows without duplicating an admitted wake.
+      wakeCollaborationPeer(host, recipientSessionId, callerSessionId, inserted.row.id)
+      return inserted
+    })()
+  } catch (error) {
+    return errorResult(error)
   }
+  if (!insert.reused) notifyCollaborationMailboxChanged(recipientSessionId)
   return toolResult({
     status: 'sent',
     messageId: insert.row.id,
@@ -92,17 +99,13 @@ export interface SessionRetrieveArgs {
 
 /**
  * Child peers also carry what they are doing, so a woken parent can decide
- * without reading transcripts. `acks` gets the stop wakes this report
- * observes, to clear once the reply is returned.
+ * without reading transcripts. Reading does not control notification delivery.
  */
-function withChildStatus(callerSessionId: string, peers: CollaborationPeer[], host: SessionManager, acks: Array<() => void>) {
+function withChildStatus(peers: CollaborationPeer[], host: SessionManager) {
   const now = Date.now()
   return Promise.all(peers.map(async (peer) => {
     if (peer.relation !== 'child') return peer
-    // Read before the lookup: a stop recorded during it is not observed by this report.
-    const stopKey = pendingStopKey(peer.sessionId)
     const status = await describeCollaborationChild(host, peer.sessionId, now)
-    acks.push(() => acknowledgeStoppedChild(callerSessionId, peer.sessionId, status.state, stopKey))
     return { ...peer, ...status }
   }))
 }
@@ -135,17 +138,15 @@ export async function retrieveSessionMessages(
     return errorResult(error)
   }
   const { messages, acks } = read
-  const observed: Array<() => void> = []
   let peers: Awaited<ReturnType<typeof withChildStatus>>
   try {
-    peers = await withChildStatus(callerSessionId, read.peers, host, observed)
+    peers = await withChildStatus(read.peers, host)
   } catch (error) {
     return errorResult(error)
   }
-  // What the reader now has: its messages, and the stops it saw.
+  // Only mailbox read acknowledgement belongs here; wake admission is separate.
   const commit = () => {
     if (deferAck && messages.length > 0) store().ackMailbox(callerSessionId, acks)
-    for (const ack of observed) ack()
     if (messages.length > 0) notifyCollaborationMailboxChanged(callerSessionId)
   }
   if (deferAck) deferAck(commit)

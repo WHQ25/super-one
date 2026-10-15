@@ -478,7 +478,8 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         // After a node restart the interrupted message is named in the event.
         const interruptedId = lastAssistantId ?? asString(payload.messageId)
         if (interruptedId) {
-          push({ type: 'message_interrupted', messageId: interruptedId })
+          push({ type: 'message_interrupted', messageId: interruptedId,
+            ...(typeof payload.reason === 'string' ? { reason: payload.reason } : {}) })
         }
         lastAssistantId = null
         push({ type: 'status_change', status: 'idle' })

@@ -7,6 +7,7 @@ import { mcpAppResourceHashes, mcpAppModelContextInput, mcpAppModelInput } from 
 import { McpAppAttachmentIndex } from './mcp-apps-index'
 import { hydrateMcpAppResource, mcpAppStatePatch } from '../mcp-apps/attachment-state'
 import { ArtifactWakes } from './artifact-wakes'
+import { InputAdmission } from './input-admission'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
@@ -1159,7 +1160,7 @@ export class SessionRuntime {
     source?: ChatMessageSource
     /** A launch task from an agent on this node, named after its session. */
     collaboration?: MessageDisplayFields['collaboration']
-  }): Promise<NodeSessionRecord> {
+  }, delivery?: { onInputAccepted: () => void; beforeInput?: () => void }): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
     }
@@ -1179,7 +1180,9 @@ export class SessionRuntime {
       return stored ?? undefined
     }
 
+    const admission = delivery ? new InputAdmission(delivery) : undefined
     const turnOpts: TurnOpts = {
+      inputAdmission: admission,
       text: input.text,
       requestId: input.requestId,
       model: pick(input.model, session.model),
@@ -1214,13 +1217,16 @@ export class SessionRuntime {
           turnOpts.turnKind = 'steer'
         }
         this.beginTurn(session, turnOpts)
+        if (admission) await admission.promise
         return this.clone(session)
       }
       this.enqueueTurn(session, turnOpts)
+      if (admission) await admission.promise
       return this.clone(session)
     }
 
     this.beginTurn(session, turnOpts)
+    if (admission) await admission.promise
     return this.clone(session)
   }
 
@@ -1515,7 +1521,8 @@ export class SessionRuntime {
     // from the agent. A runner that throws before either never delivered the
     // message, so the failure is the message's, not a reply's.
     let started = false
-    const markStarted = () => { started = true }
+    const markStarted = () => { opts.inputAdmission?.accept(); started = true }
+    let inputFailure: unknown = new Error('Harness did not accept notification input')
     const permissionMode =
       typeof opts.permissionMode === 'string' && opts.permissionMode.trim()
         ? opts.permissionMode.trim()
@@ -1526,6 +1533,9 @@ export class SessionRuntime {
         : undefined
     try {
       const modelInput = mcpAppModelInput({ text: opts.text, images: opts.images?.map(image => ({ ...image, name: image.name ?? 'Attachment' })) }, this.mcpAppContextInput(session.sessionId))
+      // Reject preparation before the backend owns a turn; its acceptance
+      // callback only records the receipt, even if readiness changes later.
+      opts.inputAdmission?.beforeInput()
       const result = await this.turnRunner({
         session: this.clone(session),
         messageId: assistantId,
@@ -1553,7 +1563,7 @@ export class SessionRuntime {
         onInputAccepted: markStarted,
         onProviderResume: (resume) => { session.providerResume = resume; this.persist(session) },
         onDelta: (delta) => {
-          if (delta) started = true
+          if (delta) markStarted()
           if (abort.signal.aborted) return
           assistantText += delta
           this.events.appendSession({
@@ -1564,13 +1574,13 @@ export class SessionRuntime {
           })
         },
         onEvent: (event) => {
-          if (event.kind !== 'status') started = true
+          if (event.kind !== 'status') markStarted()
           this.projectOnEvent(session, event, abort.signal, requestId, (delta) => {
             assistantText += delta
           })
         },
         onAgentEvent: (event) => {
-          if (isAgentOutputEvent(event)) started = true
+          if (isAgentOutputEvent(event)) markStarted()
           if (abort.signal.aborted) return
           this.appendAgentEvent(session.sessionId, event, requestId)
           if (session.harnessId === 'opencode' && event.type === 'message_interrupted' && event.messageId === assistantId) abort.abort()
@@ -1600,6 +1610,8 @@ export class SessionRuntime {
           (markStarted(), this.waitForPlanDecision(session, interaction, abort.signal, requestId)),
       })
 
+      if (result.finalText) markStarted()
+      if (opts.inputAdmission && !started) throw inputFailure
       if (session.closed) {
         // close() already tombstoned the session; do not overwrite status.
       } else if (abort.signal.aborted) {
@@ -1644,6 +1656,7 @@ export class SessionRuntime {
         }
       }
     } catch (err) {
+      inputFailure = err
       if (session.closed) {
         /* keep ended */
       } else if (abort.signal.aborted) {
@@ -1680,6 +1693,7 @@ export class SessionRuntime {
         }
       }
     } finally {
+      if (!started) opts.inputAdmission?.reject(inputFailure)
       const sid = session.sessionId
       // Decrement first so concurrent completions and FIFO drain see accurate counts.
       const remainingAfter = Math.max(0, (this.activeTurnCounts.get(sid) ?? 1) - 1)
@@ -1731,6 +1745,7 @@ export class SessionRuntime {
       } else if (session.closed || session.status === 'interrupted' || session.status === 'error') {
         const dropped = this.turnQueues.get(sid) ?? []
         this.turnQueues.delete(sid)
+        for (const item of dropped) item.inputAdmission?.reject(new Error(QUEUED_SEND_DROPPED))
         // Queued messages never ran: keep each as a failed row to resend.
         if (!session.closed) {
           const marked = dropped.filter((item) => this.markSendFailed(session, item.userBlockId, QUEUED_SEND_DROPPED))

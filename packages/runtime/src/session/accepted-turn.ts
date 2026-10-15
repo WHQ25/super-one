@@ -1,8 +1,10 @@
 import type { MessageDisplayFields } from '@superone/shared/message-display'
 import type { ChatMessageSource } from '@superone/shared/agent-types'
 import type { TurnImageAttachment } from './types'
+import type { InputAdmission } from './input-admission'
 
 export interface TurnOpts extends MessageDisplayFields {
+  inputAdmission?: InputAdmission
   parkInComposer?: boolean
   clientMessageId?: string
   echoUserMessage?: boolean

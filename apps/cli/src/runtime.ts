@@ -356,6 +356,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       // 2) Stop accepting new RPC connections.
       // 3) Drain in-flight turns (Codex SIGTERM→SIGKILL) before closing DB.
       automationService.stop()
+      collaboration.dispose()
       const disposePromise = sessions.dispose()
       await server.close()
       await disposePromise

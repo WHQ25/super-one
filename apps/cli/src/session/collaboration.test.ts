@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
 import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
 import { ControlLeaseService } from './control-lease'
@@ -11,7 +12,7 @@ import { ProviderStore } from '../provider/provider-store'
 import { ProjectRegistry } from '../workspace/project-registry'
 import { WorkspaceGitService } from '@superone/runtime/workspace/git-service'
 import { CollaborationService } from './collaboration'
-import { createSessionProviderStore } from '@superone/runtime/session'
+import { createSessionProviderStore, type TurnRunner } from '@superone/runtime/session'
 import type { NodeDatabase } from '../db/database'
 
 function grantIdFor(db: NodeDatabase, launchId: string): string {
@@ -22,22 +23,24 @@ function grantIdFor(db: NodeDatabase, launchId: string): string {
 }
 
 const dirs: string[] = []
+const collaborations: CollaborationService[] = []
 
 afterEach(() => {
+  for (const collab of collaborations.splice(0)) collab.dispose()
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
-function bootCollab(opts?: { simulateReady?: boolean }) {
+function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner }) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'collab-unit-'))
   dirs.push(nodeHome)
   const db = openNodeDatabase(join(nodeHome, 'state.sqlite'))
   const environmentId = 'env-test'
   const events = new EventLog(db, environmentId)
   const leases = new ControlLeaseService(db)
-  const sessions = new SessionRuntime(db, events, leases, environmentId, async ({ onDelta }) => {
+  const sessions = new SessionRuntime(db, events, leases, environmentId, opts?.turnRunner ?? (async ({ onDelta }) => {
     onDelta('ok')
     return { finalText: 'ok' }
-  })
+  }))
   const harnesses = new HarnessManager(db)
   // listProfiles only offers agents this node can actually launch (same gate as
   // session.create). Without this the catalog is all-disabled and there are no
@@ -47,7 +50,7 @@ function bootCollab(opts?: { simulateReady?: boolean }) {
   const projects = new ProjectRegistry(db)
   const workspaceGit = new WorkspaceGitService(projects)
   const sessionProviders = createSessionProviderStore(db)
-  const collab = new CollaborationService({
+  const deps = {
     db,
     events,
     environmentId,
@@ -57,8 +60,10 @@ function bootCollab(opts?: { simulateReady?: boolean }) {
     projects,
     workspaceGit,
     sessionProviders,
-  })
-  return { db, sessions, collab, projects, providers, nodeHome, sessionProviders, harnesses }
+  }
+  const collab = new CollaborationService(deps)
+  collaborations.push(collab)
+  return { db, sessions, collab, projects, providers, nodeHome, sessionProviders, harnesses, events, deps, leases }
 }
 
 describe('collaboration grants + mailbox', () => {
@@ -243,6 +248,10 @@ describe('collaboration grants + mailbox', () => {
     })
     expect(sentDup.reused).toBe(true)
     expect(sentDup.messageId).toBe(sent.messageId)
+    expect(db.prepare('SELECT state, attempts FROM collaboration_wakes WHERE notification_id = ?')
+      .get(`collab-message:${sent.messageId}`)).toMatchObject({ state: 'queued', attempts: 0 })
+    expect(db.prepare('SELECT notification_id FROM collaboration_wakes WHERE notification_id = ?')
+      .all(`collab-message:${sent.messageId}`)).toHaveLength(1)
 
     const retrieved = collab.retrieve({
       sessionId: started.sessionId,
@@ -265,6 +274,101 @@ describe('collaboration grants + mailbox', () => {
       )
       .get(grantId, started.sessionId) as { last_sequence: number }
     expect(cursor.last_sequence).toBe(1)
+  })
+
+  it('keeps new mail queued after a native turn error and resumes only on confirmed completion', async () => {
+    const { collab, sessions, projects, db, events, nodeHome } = bootCollab()
+    const project = projects.open(nodeHome)
+    const parent = sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'parent' })
+    const peer = sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'peer' })
+    const request = await collab.request({ parentSessionId: parent.sessionId,
+      launches: [{ mode: 'link', sessionId: peer.sessionId, summary: 'Sync' }] })
+    if (request.status !== 'approved') throw new Error('expected approval')
+    await collab.start({ callerSessionId: parent.sessionId, launchId: request.launches[0].launchId })
+    await vi.waitFor(() => expect(db.prepare("SELECT state FROM collaboration_wakes WHERE notification_id LIKE 'collab-link:%'").get())
+      .toMatchObject({ state: 'admitted' }))
+    events.appendSession({ sessionId: peer.sessionId, eventType: SESSION_DURABLE_EVENT.turnError, payload: { message: 'unavailable' } })
+    const sent = collab.send({ sessionId: parent.sessionId, to: peer.sessionId, content: 'pending update' })
+    const state = () => db.prepare('SELECT state, attempts FROM collaboration_wakes WHERE notification_id = ?').get(`collab-message:${sent.messageId}`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(state()).toMatchObject({ state: 'queued', attempts: 0 })
+    events.appendSession({ sessionId: peer.sessionId, eventType: SESSION_DURABLE_EVENT.statusChanged, payload: { status: 'idle' } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(state()).toMatchObject({ state: 'queued', attempts: 0 })
+    events.appendSession({ sessionId: peer.sessionId, eventType: SESSION_DURABLE_EVENT.turnCompleted, payload: { status: 'idle' } })
+    await vi.waitFor(() => expect(state()).toMatchObject({ state: 'admitted', attempts: 1 }))
+  })
+
+  it.each([false, true])('tracks CLI input acceptance before a harness failure (accepted=%s)', async (accepted) => {
+    let input!: Parameters<TurnRunner>[0]
+    let fail!: (error: Error) => void
+    const { collab, sessions, projects, nodeHome, db, events } = bootCollab({
+      turnRunner: async (args) => { input = args; return new Promise((_resolve, reject) => { fail = reject }) },
+    })
+    const project = projects.open(nodeHome)
+    const parent = sessions.create({ projectId: project.projectId, harnessId: 'claude' })
+    const child = sessions.create({ projectId: project.projectId, harnessId: 'claude' })
+    const request = await collab.request({ parentSessionId: parent.sessionId,
+      launches: [{ mode: 'link', sessionId: child.sessionId, summary: 'Sync' }] })
+    if (request.status !== 'approved') throw new Error('expected approval')
+    await collab.start({ callerSessionId: parent.sessionId, launchId: request.launches[0].launchId })
+    await vi.waitFor(() => expect(input).toBeDefined())
+    const row = () => db.prepare('SELECT state, last_error FROM collaboration_wakes').get()
+    expect(row()).not.toMatchObject({ state: 'admitted' })
+    if (accepted) {
+      events.appendSession({ sessionId: child.sessionId, eventType: SESSION_DURABLE_EVENT.turnInterrupted,
+        payload: { reason: 'client_interrupt' } })
+      expect(() => input.onInputAccepted?.()).not.toThrow()
+      expect(row()).toMatchObject({ state: 'admitted' })
+    }
+    fail(new Error('harness spawn failed'))
+    await vi.waitFor(() => expect(sessions.get(child.sessionId)?.status).toBe('error'))
+    await vi.waitFor(() => expect(row()).toMatchObject(accepted
+      ? { state: 'admitted', last_error: null } : { state: 'queued', last_error: 'harness spawn failed' }))
+    expect(sessions.get(child.sessionId)?.transcript).toHaveLength(0)
+  })
+
+  it.each(['node_restart', 'client_interrupt'] as const)('restores notification admission according to persisted %s provenance', async (reason) => {
+    const first = bootCollab({ turnRunner: async ({ signal, onInputAccepted }) => new Promise((resolve) => {
+      onInputAccepted?.()
+      signal.addEventListener('abort', () => resolve({ finalText: '' }), { once: true })
+    }) })
+    const { db, sessions, projects, collab, nodeHome, deps } = first
+    const project = projects.open(nodeHome)
+    const parent = sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'parent' })
+    const child = sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'child' })
+    const request = await collab.request({ parentSessionId: parent.sessionId,
+      launches: [{ mode: 'link', sessionId: child.sessionId, summary: 'Sync' }] })
+    if (request.status !== 'approved') throw new Error('expected approval')
+    await collab.start({ callerSessionId: parent.sessionId, launchId: request.launches[0].launchId })
+    await vi.waitFor(() => expect(db.prepare("SELECT state FROM collaboration_wakes WHERE notification_id LIKE 'collab-link:%'").get())
+      .toMatchObject({ state: 'admitted' }))
+    expect(sessions.get(child.sessionId)?.status).toBe('streaming')
+    collab.dispose()
+    if (reason === 'client_interrupt') {
+      // Stop while collaboration is offline, so startup must use the durable
+      // reason rather than a pause observed by a running service.
+      const lease = first.leases.acquire({ resource: { environmentId: deps.environmentId, sessionId: child.sessionId },
+        holderClientId: 'client', ttlMs: 30_000 })
+      sessions.interrupt(child.sessionId, { clientSessionId: 'client' }, lease.leaseId, lease.generation)
+      await vi.waitFor(() => expect(db.prepare(`SELECT payload_json FROM environment_events
+        WHERE aggregate_id = ? AND event_type = ? ORDER BY sequence DESC LIMIT 1`)
+        .get(child.sessionId, SESSION_DURABLE_EVENT.turnInterrupted)).toMatchObject({ payload_json: expect.stringContaining('client_interrupt') }))
+    }
+    const events = new EventLog(db, deps.environmentId)
+    const restartedSessions = new SessionRuntime(db, events, new ControlLeaseService(db), deps.environmentId,
+      async ({ onDelta }) => { onDelta('resumed'); return { finalText: 'resumed' } })
+    expect(restartedSessions.get(child.sessionId)?.status).toBe('interrupted')
+    const restarted = new CollaborationService({ ...deps, events, sessions: restartedSessions })
+    collaborations.push(restarted)
+    const sent = restarted.send({ sessionId: parent.sessionId, to: child.sessionId, content: 'continue with this new input' })
+    const row = () => db.prepare('SELECT state, attempts FROM collaboration_wakes WHERE notification_id = ?')
+      .get(`collab-message:${sent.messageId}`)
+    if (reason === 'node_restart') await vi.waitFor(() => expect(row()).toMatchObject({ state: 'admitted' }))
+    else {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(row()).toMatchObject({ state: 'queued', attempts: 0 })
+    }
   })
 
   it('rejects send to a session that is not a collaboration peer', async () => {

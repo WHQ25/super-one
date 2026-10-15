@@ -4,6 +4,7 @@ import type { SessionProviderStore } from '@superone/runtime/session'
 import type {
   CollaborationGrantRow,
   CollaborationStore,
+  CollaborationWakeQueue,
 } from '@superone/runtime/collaboration'
 import type { NodeDatabase } from '../db/database'
 import type { ProviderStore } from '../provider/provider-store'
@@ -31,6 +32,7 @@ export interface CollaborationDeps {
 export interface CollaborationContext {
   deps: CollaborationDeps
   store: CollaborationStore
+  wakes: CollaborationWakeQueue
   listProfiles(): SessionAgentProfile[]
 }
 

@@ -31,6 +31,14 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
       || deps.rows.loadMessages(sessionId, 1).messages.length || existing?.snapshot.messages.length) throw refused('Session already exists')
     if (existing?.isStreaming()) throw refused('Draft session is running')
   }
+  // Continuing a session: refuse before any work, and move its channels last.
+  const continuesFrom = input.continuesFrom
+  const continuations = continuesFrom ? await deps.continuations?.() : undefined
+  if (continuesFrom && !continuations) throw Object.assign(new Error('This host cannot continue a session in a new one'), { code: 'unsupported' })
+  const continued = () => ({ live: deps.sessions.getSession(continuesFrom!), stored: !!deps.rows.get(continuesFrom!) })
+  if (continuesFrom) continuations!.assert(continuesFrom, continued())
+  // A spawn child's successor runs as that child: its prompt and approved settings.
+  const launch = continuesFrom ? continuations!.launch(continuesFrom) : null
   options.assertCreate()
   let cwd = input.cwd ?? projectPath
   // A session's branch names the worktree it lives in. Picking a branch for the
@@ -68,9 +76,9 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
     const previousActive = controller ? deps.sessions.getActiveSession(projectPath)?.id ?? null : undefined
     const session = deps.sessions.createSession({
       id: sessionId, projectPath, cwd, providerId, title: input.title,
-      systemPromptAppend: input.systemPromptAppend ?? undefined,
-      permissionMode: settings.permissionMode as PermissionMode | undefined,
-      sandboxMode: settings.sandboxMode as SandboxMode | undefined,
+      systemPromptAppend: input.systemPromptAppend ?? launch?.systemPromptAppend ?? undefined,
+      permissionMode: launch?.permissionMode ?? settings.permissionMode as PermissionMode | undefined,
+      sandboxMode: launch?.sandboxMode ?? settings.sandboxMode as SandboxMode | undefined,
       model: settings.model ?? undefined, effort: settings.effort as SendMessageRequest['effort'] | undefined,
       apiProviderId: input.apiProviderId, acpAgentId: input.acpAgentId ?? null,
       additionalDirectories: settings.additionalDirectories ?? undefined,
@@ -81,6 +89,12 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
     session.lease.grantCreatedSession()
     options.assertCreate()
     await applyDesktopSessionSettings(session, settings)
+    if (continuesFrom) {
+      // Last, and rechecked in the same transaction: a failure above leaves the
+      // channels with the old session, so removing this row cascades nothing.
+      continuations!.continue(continuesFrom, sessionId, continued())
+      if (deps.sessions.getSession(continuesFrom)) await deps.sessions.disposeSession(continuesFrom)
+    }
     return session
   } catch (error) {
     if (!existingRow && persisted) {

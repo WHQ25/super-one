@@ -41,6 +41,11 @@ export function collaborationWakeQueue(host: SessionManager): CollaborationWakeQ
   return queue
 }
 
+/** The queue {@link collaborationWakeQueue} started for the current database; null before startup. */
+export function startedCollaborationWakeQueue(): CollaborationWakeQueue | null {
+  return queues.get(getDb()) ?? null
+}
+
 export function stopCollaborationWakes(): void {
   const db = getDb()
   queues.get(db)?.dispose()

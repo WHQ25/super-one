@@ -1005,6 +1005,27 @@ describe('@agent mention targets', () => {
     expect(childInbox.peers[0]).not.toHaveProperty('state')
   })
 
+  it('hands a continued child\'s channel and launch to its successor, still reached by the old id', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const childId = resultJson(await startLaunch(grant, host)).sessionId as string
+    await sendSessionMessage('parent', { to: childId, content: 'before' }, host)
+    insertSessionRow('child-next', TEST_CWD, 'Next', { providerId: 'claude-base' })
+    const { desktopContinuations } = await import('./session-continuation')
+    const stored = { live: null, stored: true }
+
+    expect(desktopContinuations.launch(childId)?.systemPromptAppend).toContain('parent')
+    desktopContinuations.continue(childId, 'child-next', stored)
+
+    expect(getSessionCollaborationSystemPrompt('child-next')).toContain('parent')
+    expect(getSessionCollaborationSystemPrompt(childId)).toBeUndefined()
+    await sendSessionMessage('parent', { to: childId, content: 'after' }, host)
+    const inbox = resultJson(await retrieveSessionMessages('child-next', {}, host))
+    expect(inbox.messages.map((message: { content: string }) => message.content)).toEqual(['before', 'after'])
+    expect(() => desktopContinuations.assert(childId, stored)).toThrow(/already continued/)
+  })
+
   it('retrieves messages from multiple child sessions in one call', async () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)

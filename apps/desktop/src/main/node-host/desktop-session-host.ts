@@ -23,6 +23,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { ControlLeasePort, DraftsPort, McpAppsPort, SessionHostPort } from '@superone/runtime/server'
 import type { ControlLeaseService } from '@superone/runtime/lease'
+import type { DesktopContinuations } from '../session/session-continuation'
 import type { NodeSessionRecord } from '@superone/runtime/session'
 import { unsupportedMethodError } from '@superone/runtime/server'
 import {
@@ -100,6 +101,8 @@ export interface DesktopSessionHostDeps extends DesktopSessionReadsDeps<DesktopS
   }
   /** The window's MCP App HTML store (`mcp-apps/resource-store.ts`). */
   mcpAppResources?: () => McpAppResourceStore
+  /** Continuing a session in a new one (session.create `continuesFrom`); loaded on first use. */
+  continuations?: () => Promise<DesktopContinuations>
 }
 
 /**

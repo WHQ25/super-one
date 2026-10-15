@@ -168,6 +168,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
     },
     rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
     mcpAppResources: getMcpAppResourceStore,
+    continuations: async () => (await import('../session/session-continuation')).desktopContinuations,
     restore: desktopRestorePorts,
     projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
     harnesses: getHarnessManager(),

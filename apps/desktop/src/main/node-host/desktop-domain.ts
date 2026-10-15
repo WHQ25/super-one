@@ -124,6 +124,7 @@ export interface DesktopDomainDeps {
   sideChats?: DesktopSessionHostDeps['sideChats']
   scheduledSends?: DesktopSessionHostDeps['scheduledSends']
   mcpAppResources?: DesktopSessionHostDeps['mcpAppResources']
+  continuations?: DesktopSessionHostDeps['continuations']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
   /** The name a phone paired with this desktop under, for who holds a session. */
@@ -187,6 +188,7 @@ export class DesktopDomain {
         sideChats: deps.sideChats,
         scheduledSends: deps.scheduledSends,
         mcpAppResources: deps.mcpAppResources,
+        continuations: deps.continuations,
         leases,
         events,
         hostActions: createSqliteHostActionStore(db),

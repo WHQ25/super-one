@@ -12,15 +12,16 @@ vi.mock('../../git-run', () => ({ gitRun: vi.fn(async () => ''), ghRun: vi.fn() 
 import { activateWorktree } from '../../git/worktree-ops'
 import { gitRun } from '../../git-run'
 import { connectPhone, phoneDomain } from '../phone-endpoint-test-fixtures'
+import type { DesktopContinuations } from '../../session/session-continuation'
 
 const cleanup: Array<() => void> = []
 afterEach(() => { while (cleanup.length) cleanup.pop()!(); vi.clearAllMocks() })
 
-function createDomain() {
+function createDomain(extra: Parameters<typeof phoneDomain>[1] = {}) {
   const db = new Database(':memory:')
   cleanup.push(() => db.close())
   const drafts = new DraftControl(createDraftStore(db))
-  return { ...phoneDomain(cleanup, { drafts }), drafts }
+  return { ...phoneDomain(cleanup, { drafts, ...extra }), drafts }
 }
 
 describe('phone endpoint: native creation', () => {
@@ -96,5 +97,61 @@ describe('phone endpoint: native creation', () => {
     await expect(phone.rpc('session.create', { projectId: 'p1', ...selection })).rejects.toMatchObject({ code: 'invalid_argument' })
     expect(store.rows.size).toBe(before)
     expect(activateWorktree).not.toHaveBeenCalled()
+  })
+})
+
+describe('phone endpoint: continuing a session', () => {
+  function continuations(overrides: Partial<DesktopContinuations> = {}) {
+    const calls: string[] = []
+    const port: DesktopContinuations = {
+      assert: (from, source) => { calls.push(`assert ${from} stored=${source.stored} live=${!!source.live}`) },
+      continue: (from, to) => { calls.push(`continue ${from}->${to}`) },
+      launch: () => ({ systemPromptAppend: 'child prompt', permissionMode: 'plan' }),
+      ...overrides,
+    }
+    return { calls, extra: { continuations: async () => port } }
+  }
+  const refuse = () => { throw Object.assign(new Error('Session own is working'), { code: 'failed_precondition' }) }
+
+  it('starts the successor as the old session ran, then hands over its channels and releases it', async () => {
+    const { calls, extra } = continuations()
+    const { domain, sessions } = createDomain(extra)
+    const created = vi.spyOn(sessions, 'createSession')
+    const phone = await connectPhone(domain)
+    cleanup.push(phone.close)
+
+    expect(await phone.rpc('session.create', { projectId: 'p1', harnessId: 'claude', sessionId: 'next', continuesFrom: 'own' }))
+      .toMatchObject({ sessionId: 'next' })
+
+    expect(created).toHaveBeenCalledWith(expect.objectContaining({ id: 'next', systemPromptAppend: 'child prompt', permissionMode: 'plan' }))
+    expect(calls).toEqual(['assert own stored=true live=true', 'continue own->next'])
+    expect(sessions.getSession('own')).toBeNull()
+  })
+
+  it('refuses before doing any work when the old session cannot be continued', async () => {
+    const { extra } = continuations({ assert: refuse })
+    const { domain, sessions, store } = createDomain(extra)
+    const created = vi.spyOn(sessions, 'createSession')
+    const phone = await connectPhone(domain)
+    cleanup.push(phone.close)
+
+    await expect(phone.rpc('session.create', { projectId: 'p1', sessionId: 'next', worktreeBranch: 'HEAD', continuesFrom: 'own' }))
+      .rejects.toMatchObject({ code: 'failed_precondition' })
+    expect(activateWorktree).not.toHaveBeenCalled()
+    expect(created).not.toHaveBeenCalled()
+    expect(store.rows.has('next')).toBe(false)
+  })
+
+  it('removes the new session when the handover fails, leaving the old one as it was', async () => {
+    const { extra } = continuations({ continue: refuse })
+    const { domain, sessions, store, own } = createDomain(extra)
+    const phone = await connectPhone(domain)
+    cleanup.push(phone.close)
+
+    await expect(phone.rpc('session.create', { projectId: 'p1', sessionId: 'next', continuesFrom: 'own' }))
+      .rejects.toMatchObject({ code: 'failed_precondition' })
+    expect(store.rows.has('next')).toBe(false)
+    expect(sessions.getSession('next')).toBeNull()
+    expect(sessions.getSession('own')).toBe(own)
   })
 })

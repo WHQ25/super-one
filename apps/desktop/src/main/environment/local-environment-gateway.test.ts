@@ -85,7 +85,7 @@ describe('LocalEnvironmentGateway', () => {
       dataDir: tempDir(),
       sessions: {
         create: () => ({ sessionId: 'x' }),
-        get: () => null,
+        get: () => ({ sessionId: 's1', title: 't', transcript: ['message'] }),
         list: (projectId, options) => {
           listed.push({ projectId, options })
           return [{ sessionId: 's1', title: 't' }]
@@ -105,6 +105,9 @@ describe('LocalEnvironmentGateway', () => {
     )
     expect(rows).toEqual([{ sessionId: 's1', title: 't' }])
     expect(listed).toEqual([{ projectId: 'proj-1', options: { limit: 10, offset: 5 } }])
+    const ref = { environmentId: gw.getEnvironmentId(), sessionId: 's1' }
+    expect(await gw.sessions.get(ref)).toEqual({ sessionId: 's1', title: 't', transcript: ['message'] })
+    expect(await gw.sessions.get(ref, { includeTranscript: false })).toEqual({ sessionId: 's1', title: 't' })
   })
 
   it('subscribeEvents completes without yielding when no local event log exists', async () => {

@@ -19,12 +19,19 @@
 
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { NotificationIntent, NotificationKind } from '@superone/shared/notifications'
+import { displayHostPath, parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+
+export interface NotificationSessionDescription {
+  title?: string | null
+  projectPath?: string
+  environmentLabel?: string
+}
 
 export interface IntentContext {
   /** Localizer — main-process `t()` in production. */
   t(key: string, options?: Record<string, unknown>): string
   /** Session title / project for the notification title. Missing session → undefined. */
-  describeSession(sessionId: string): { title?: string | null; projectPath?: string } | undefined
+  describeSession(sessionId: string, projectPath?: string): NotificationSessionDescription | undefined
   now(): number
   /** True only for the `status_change: idle` that closes a clean run — see `RunTracker`. */
   runCompleted?: boolean
@@ -33,6 +40,12 @@ export interface IntentContext {
 /** Stable per-session id so one completion banner replaces the previous one. */
 export function completedIntentId(sessionId: string): string {
   return `completed:${sessionId}`
+}
+
+/** Session and interaction ids belong to their execution host. */
+function scopedId(id: string, projectPath?: string): string {
+  const remote = projectPath && parseRemoteProjectKey(projectPath)
+  return remote ? `remote:${remote.connectionId}:${id}` : id
 }
 
 /**
@@ -46,13 +59,13 @@ export function completedIntentId(sessionId: string): string {
  * only `idle` closes the run (same reasoning as `Session._backendStreaming`).
  */
 export class RunTracker {
-  /** sessionId → still clean (no interrupt / error seen since the stream opened). */
+  /** Host-scoped session id → no interrupt / error since the stream opened. */
   private readonly runs = new Map<string, boolean>()
 
   /** Feed every event; returns true for the idle that ends a clean run. */
   observe(event: AgentEvent): boolean {
-    const sessionId = event.sessionId
-    if (!sessionId) return false
+    if (!event.sessionId) return false
+    const sessionId = scopedId(event.sessionId, event.projectPath)
     switch (event.type) {
       case 'status_change': {
         if (event.status === 'streaming' || event.status === 'background') {
@@ -78,13 +91,18 @@ export class RunTracker {
  * string — a brand-new session often has no title yet, and that is exactly
  * when a permission gate tends to fire.
  */
-function sessionLabel(ctx: IntentContext, sessionId: string): { label: string; projectPath?: string } {
-  const info = ctx.describeSession(sessionId)
+export function withSessionDescription(
+  intent: NotificationIntent,
+  info: NotificationSessionDescription | undefined,
+  t: IntentContext['t'],
+): NotificationIntent {
+  // Preserve the event's explicit host route even if metadata is unavailable.
+  const projectPath = intent.projectPath ?? info?.projectPath
   const title = info?.title?.trim()
-  if (title) return { label: title, projectPath: info?.projectPath }
-  const projectPath = info?.projectPath
-  const base = projectPath?.split(/[\\/]/).filter(Boolean).pop()
-  return { label: base || ctx.t('notifications.untitledSession'), projectPath }
+  const base = projectPath && displayHostPath(projectPath).split(/[\\/]/).filter(Boolean).pop()
+  const label = title || base || t('notifications.untitledSession')
+  const environmentLabel = info?.environmentLabel?.trim()
+  return { ...intent, projectPath, title: environmentLabel ? `${environmentLabel} · ${label}` : label }
 }
 
 /** Body per kind — a fixed status, never content from the request itself. */
@@ -103,10 +121,11 @@ const BODY_KEY: Record<NotificationKind, string> = {
  * question, the plan) belongs in the app the click lands on, and only bloats
  * the banner.
  */
-function build(ctx: IntentContext, kind: NotificationKind, id: string, sessionId: string): NotificationIntent {
-  const { label, projectPath } = sessionLabel(ctx, sessionId)
+function build(ctx: IntentContext, kind: NotificationKind, id: string, sessionId: string, projectPath?: string): NotificationIntent {
   const body = ctx.t(BODY_KEY[kind])
-  return { id, kind, sessionId, projectPath, title: label, body, createdAt: ctx.now() }
+  return withSessionDescription({
+    id: scopedId(id, projectPath), kind, sessionId, projectPath, title: '', body, createdAt: ctx.now(),
+  }, ctx.describeSession(sessionId, projectPath), ctx.t)
 }
 
 /** One banner per session: a later stall replaces it, renewed activity withdraws it. */
@@ -141,15 +160,15 @@ export function intentForEvent(event: AgentEvent, ctx: IntentContext): Notificat
   switch (event.type) {
     case 'permission_request': {
       const req = event.request
-      return build(ctx, req.requestKind ? 'confirm' : 'permission', req.requestId, sessionId)
+      return build(ctx, req.requestKind ? 'confirm' : 'permission', req.requestId, sessionId, event.projectPath)
     }
     case 'ask_user_question':
-      return build(ctx, 'question', event.request.requestId, sessionId)
+      return build(ctx, 'question', event.request.requestId, sessionId, event.projectPath)
     case 'plan_approval':
-      return build(ctx, 'plan', event.request.requestId, sessionId)
+      return build(ctx, 'plan', event.request.requestId, sessionId, event.projectPath)
     case 'status_change':
       if (!ctx.runCompleted) return null
-      return build(ctx, 'completed', completedIntentId(sessionId), sessionId)
+      return build(ctx, 'completed', completedIntentId(sessionId), sessionId, event.projectPath)
     default:
       return null
   }
@@ -171,9 +190,9 @@ export function intentForEvent(event: AgentEvent, ctx: IntentContext): Notificat
  * completion ring after one that was suppressed.
  */
 export function withdrawIdForEvent(event: AgentEvent): string | null {
-  if (event.type === 'interaction_resolved') return event.requestId
+  if (event.type === 'interaction_resolved') return scopedId(event.requestId, event.projectPath)
   if (event.type === 'status_change' && event.status === 'streaming' && event.sessionId) {
-    return completedIntentId(event.sessionId)
+    return scopedId(completedIntentId(event.sessionId), event.projectPath)
   }
   return null
 }

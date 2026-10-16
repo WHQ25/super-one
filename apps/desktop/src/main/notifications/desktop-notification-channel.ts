@@ -6,19 +6,19 @@
  */
 
 import { Notification } from 'electron'
+import { createHash } from 'node:crypto'
 import type { NativeImage } from 'electron'
 import type { NotificationIntent } from '@superone/shared/notifications'
 import log from '../logger'
 import type { NotificationChannel } from './notification-channel'
+import { windowsToastXml } from './windows-toast'
 
 export interface DesktopNotificationChannelDeps {
   /** Focus the app and route to the session the user just acted on. */
   onActivate(intent: NotificationIntent): void
   /**
-   * App icon for the banner on Linux (libnotify) and Windows, which want it
-   * explicitly or fall back to a generic placeholder. Not consulted on macOS:
-   * the app icon there comes from the bundle, and Electron turns `icon` into a
-   * UNNotificationAttachment — a second, trailing thumbnail of the same icon.
+   * App icon for Linux (libnotify). macOS and Windows use the bundle/shortcut
+   * icon; passing one also adds a duplicate image inside the notification.
    */
   getIcon?(): NativeImage | null
 }
@@ -60,29 +60,37 @@ export class DesktopNotificationChannel implements NotificationChannel {
   }
 
   deliver(intent: NotificationIntent): void {
-    const icon = process.platform === 'darwin' ? undefined : this.deps.getIcon?.() ?? undefined
+    const isWindows = process.platform === 'win32'
+    const icon = process.platform === 'linux' ? this.deps.getIcon?.() ?? undefined : undefined
     const notification = new Notification({
       title: intent.title,
       body: intent.body,
-      // Let the OS dedupe/replace by our own key instead of a random UUID.
-      id: intent.id,
+      // Windows Tag is limited to 16 characters. Keep host-scoped keys in
+      // `shown` and the activation payload; only shorten the native OS tag.
+      id: isWindows
+        ? createHash('sha256').update(intent.id).digest('hex').slice(0, 16)
+        : intent.id,
       silent: false,
       ...(icon ? { icon } : {}),
-      /**
-       * The whole point of this notification is to survive the user having
-       * walked away, so it must not time out on its own (Linux + Windows).
-       * macOS has no equivalent option — banner-vs-alert persistence there is
-       * a per-app user setting we cannot override; an unseen banner still
-       * lands in Notification Center.
-       */
-      timeoutType: 'never',
+      // Windows banners auto-hide and stay in Action Center. `never` would
+      // select reminder mode and add a full-width dismiss button. Linux stays
+      // persistent; macOS banner duration is controlled by system settings.
+      timeoutType: isWindows ? 'default' : 'never',
+      ...(isWindows ? { toastXml: windowsToastXml(intent.title, intent.body) } : {}),
     })
+    const forget = () => {
+      // A late close from the banner this one replaced cannot remove this one.
+      if (this.shown.get(intent.id) === notification) this.shown.delete(intent.id)
+    }
     notification.on('click', () => {
-      this.shown.delete(intent.id)
+      forget()
       this.deps.onActivate(intent)
     })
-    notification.on('close', () => {
-      this.shown.delete(intent.id)
+    notification.on('close', (details) => {
+      // A timed-out Windows banner is still clickable in Action Center.
+      // Keep its object alive so clicks and later withdraws keep working.
+      if (isWindows && details?.reason === 'timedOut') return
+      forget()
     })
     /**
      * Delivery receipt. `show()` only hands the notification to the OS — it

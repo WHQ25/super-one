@@ -1295,9 +1295,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         })
         return { sessionId: result.sessionId }
       },
-      get: async (ref: SessionRef) => {
+      get: async (ref: SessionRef, options?: { includeTranscript?: boolean }) => {
         this.assertEnv(ref.environmentId)
-        return this.client.rpc('session.get', { sessionId: ref.sessionId })
+        return this.client.rpc('session.get', { sessionId: ref.sessionId, ...options })
       },
       list: async (project: ProjectRef, options: { limit: number; offset: number }) => {
         this.assertEnv(project.environmentId)

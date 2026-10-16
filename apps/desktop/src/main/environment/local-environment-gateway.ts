@@ -298,7 +298,12 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
         })
         return { sessionId: created.sessionId }
       },
-      get: async (ref: SessionRef) => port.get(ref.sessionId),
+      get: async (ref: SessionRef, options?: { includeTranscript?: boolean }) => {
+        const session = port.get(ref.sessionId)
+        if (options?.includeTranscript !== false || !session || typeof session !== 'object') return session
+        const { transcript: _transcript, ...metadata } = session as Record<string, unknown>
+        return metadata
+      },
       list: async (project: ProjectRef, options: { limit: number; offset: number }) =>
         port.list(project.projectId, options),
       send: async (input: SendMessageInput) => {

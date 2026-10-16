@@ -113,6 +113,7 @@ import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-
 import { installDraftOpenFlush } from './remote/draft-open-flush'
 import { installComposerDraftMirror } from './composer-draft-mirror'
 import { NotificationService } from './notifications/notification-service'
+import { createNotificationSessionResolver } from './notifications/notification-session'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
@@ -875,13 +876,16 @@ const notificationService = new NotificationService({
   // shows the request, and an OS banner would only duplicate it.
   isAppFocused: () => [...allWindows].some((win) => !win.isDestroyed() && win.isFocused()),
   hasMobileOnline: () => remoteControlService.hasReachableDevice(),
-  describeSession: (sessionId) => {
-    const session = sessionManager.getSession(sessionId)
-    if (session) return { title: session.snapshot.title, projectPath: session.projectPath }
-    // A collaboration child on another machine (stalled notices name it and its machine).
-    const remoteChild = remoteChildLabel(sessionId)
-    return remoteChild ? { title: remoteChild } : undefined
-  },
+  describeSession: createNotificationSessionResolver({
+    getHost: async () => (await import('./environment')).getEnvironmentHost(),
+    describeLocal: (sessionId) => {
+      const session = sessionManager.getSession(sessionId)
+      if (session) return { title: session.snapshot.title, projectPath: session.projectPath }
+      // A collaboration child on another machine (stalled notices name it and its machine).
+      const remoteChild = remoteChildLabel(sessionId)
+      return remoteChild ? { title: remoteChild } : undefined
+    },
+  }),
   t: (key, options) => t(key, options),
 })
 const desktopNotificationChannel = new DesktopNotificationChannel({

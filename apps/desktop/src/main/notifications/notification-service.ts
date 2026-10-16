@@ -17,7 +17,9 @@ import {
   stalledIntent,
   stalledIntentId,
   withdrawIdForEvent,
+  withSessionDescription,
   type IntentContext,
+  type NotificationSessionDescription,
 } from './notification-intent'
 
 export interface NotificationServiceDeps {
@@ -36,7 +38,7 @@ export interface NotificationServiceDeps {
    * channel exists.
    */
   hasMobileOnline(): boolean
-  describeSession: IntentContext['describeSession']
+  describeSession(sessionId: string, projectPath?: string): NotificationSessionDescription | undefined | Promise<NotificationSessionDescription | undefined>
   t: IntentContext['t']
   now?: () => number
 }
@@ -48,7 +50,7 @@ export class NotificationService {
    * interactions are replayed verbatim on reconnect / window reopen, and
    * without this every reconnect would re-ring the same permission gate.
    */
-  private readonly active = new Set<string>()
+  private readonly active = new Map<string, symbol>()
   private readonly runs = new RunTracker()
   private readonly now: () => number
 
@@ -97,7 +99,8 @@ export class NotificationService {
   }
 
   private intentContext(): IntentContext {
-    return { t: this.deps.t, describeSession: this.deps.describeSession, now: this.now }
+    // Resolve metadata only after policy admits a real notification.
+    return { t: this.deps.t, describeSession: () => undefined, now: this.now }
   }
 
   private raise(intent: NotificationIntent, settings: NotificationSettings): void {
@@ -108,7 +111,8 @@ export class NotificationService {
     // verbatim on every reconnect, so a request the user already saw in-app
     // must not ring later just because the window happens to be blurred by
     // then — that reads as a banner arriving out of nowhere.
-    this.active.add(intent.id)
+    const generation = Symbol()
+    this.active.set(intent.id, generation)
     // Logged, not silent: "why did I not get a notification" is the first
     // question this feature will ever be debugged for.
     if (this.deps.isAppFocused()) {
@@ -120,7 +124,25 @@ export class NotificationService {
       return
     }
 
-    this.dispatch(intent)
+    const deliver = (info: NotificationSessionDescription | undefined) => {
+      // Resolution may finish after the user answered, another run started,
+      // or dispose. Reusing the same id must not revive the old notification.
+      if (this.active.get(intent.id) !== generation) return
+      if (!isNotificationKindEnabled(this.deps.readSettings(), intent.kind)) return
+      if (this.deps.isAppFocused() || this.deps.hasMobileOnline()) return
+      this.dispatch(withSessionDescription(intent, info, this.deps.t))
+    }
+    const failed = (err: unknown) => {
+      log.warn('[notifications] session lookup failed id=%s: %s', intent.id, err instanceof Error ? err.message : String(err))
+      deliver(undefined)
+    }
+    try {
+      const info = this.deps.describeSession(intent.sessionId, intent.projectPath)
+      if (info instanceof Promise) void info.then(deliver, failed)
+      else deliver(info)
+    } catch (err) {
+      failed(err)
+    }
   }
 
   private dispatch(intent: NotificationIntent): void {

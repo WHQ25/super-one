@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NotificationIntent } from '@superone/shared/notifications'
+import { NOTIFICATION_KINDS } from '@superone/shared/notifications'
 
 /** One fake Electron `Notification`, recording what the channel did to it. */
 class FakeNotification {
   static instances: FakeNotification[] = []
   static supported = true
-  readonly handlers = new Map<string, () => void>()
+  readonly handlers = new Map<string, (details?: { reason?: string }) => void>()
   shown = false
   closed = false
 
@@ -16,11 +17,12 @@ class FakeNotification {
     silent?: boolean
     icon?: unknown
     timeoutType?: string
+    toastXml?: string
   }) {
     FakeNotification.instances.push(this)
   }
 
-  on(event: string, handler: () => void): this {
+  on(event: string, handler: (details?: { reason?: string }) => void): this {
     this.handlers.set(event, handler)
     return this
   }
@@ -77,20 +79,110 @@ describe('DesktopNotificationChannel', () => {
     })
   })
 
-  it('never lets the OS time the banner out — the user may be away for hours', () => {
+  it('keeps Linux banners persistent while Windows banners use the system duration', () => {
     const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
     channel.deliver(intent())
 
-    // Linux + Windows honour this; without it the one notification that matters
-    // disappears while nobody is at the machine.
-    expect(FakeNotification.instances[0].options.timeoutType).toBe('never')
+    expect(FakeNotification.instances[0].options.timeoutType).toBe(process.platform === 'win32' ? 'default' : 'never')
   })
 
   it('keys the OS notification by our request id instead of a random UUID', () => {
     const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
     channel.deliver(intent({ id: 'req-42' }))
 
-    expect(FakeNotification.instances[0].options.id).toBe('req-42')
+    const id = FakeNotification.instances[0].options.id
+    channel.deliver(intent({ id: 'req-42' }))
+    expect(FakeNotification.instances[1].options.id).toBe(id)
+    if (process.platform !== 'win32') expect(id).toBe('req-42')
+  })
+
+  describe('Windows host-scoped ids', () => {
+    const platform = process.platform
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    })
+
+    it('fits Windows tag limits while keeping node identities, activation and withdrawal intact', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+      const onActivate = vi.fn()
+      const channel = new DesktopNotificationChannel({ onActivate })
+      const remote = intent({ id: 'remote:node-a:completed:same-session', projectPath: 'remote:node-a:/srv/project' })
+      channel.deliver(remote)
+      channel.deliver(intent({ id: 'remote:node-b:completed:same-session' }))
+      const [a, b] = FakeNotification.instances
+      expect(a.options.id!.length).toBeLessThanOrEqual(16)
+      expect(a.options.id).not.toBe(b.options.id)
+      a.handlers.get('click')!()
+      expect(onActivate).toHaveBeenCalledWith(remote)
+
+      channel.deliver(remote)
+      const replacement = FakeNotification.instances[2]
+      expect(replacement.options.id).toBe(a.options.id)
+      channel.withdraw(remote.id)
+      expect(replacement.closed).toBe(true)
+    })
+  })
+
+  describe('compact Windows banners', () => {
+    const platform = process.platform
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    })
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    })
+
+    it.each(NOTIFICATION_KINDS)('auto-hides %s without a duplicate logo or action row', kind => {
+      const getIcon = vi.fn()
+      const channel = new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon })
+      channel.deliver(intent({ kind }))
+      const options = FakeNotification.instances[0].options
+      expect(options.timeoutType).toBe('default')
+      expect(options.toastXml).toContain('hint-maxLines="1"')
+      expect(options.toastXml).not.toMatch(/<(image|actions)\b|scenario="reminder"/)
+      expect(options).not.toHaveProperty('icon')
+      expect(getIcon).not.toHaveBeenCalled()
+    })
+
+    it('can retract a notification from Action Center after its banner times out', () => {
+      const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+      channel.deliver(intent())
+      const notification = FakeNotification.instances[0]
+      notification.handlers.get('close')!({ reason: 'timedOut' })
+      expect(notification.closed).toBe(false)
+      channel.withdraw('req-1')
+      expect(notification.closed).toBe(true)
+    })
+
+    it('keeps remote session activation available after the banner times out', () => {
+      const onActivate = vi.fn()
+      const channel = new DesktopNotificationChannel({ onActivate })
+      const remote = intent({ projectPath: 'remote:vps:/srv/project', title: 'VPS · Fix login' })
+      channel.deliver(remote)
+      const notification = FakeNotification.instances[0]
+      notification.handlers.get('close')!({ reason: 'timedOut' })
+      expect(notification.closed).toBe(false)
+      notification.handlers.get('click')!()
+      expect(onActivate).toHaveBeenCalledWith(remote)
+    })
+
+    it('releases a notification the user explicitly dismisses', () => {
+      const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+      channel.deliver(intent())
+      const notification = FakeNotification.instances[0]
+      notification.handlers.get('close')!({ reason: 'userCanceled' })
+      channel.withdraw('req-1')
+      expect(notification.closed).toBe(false)
+    })
+
+    it('does not lose a replacement when Windows closes its earlier banner', () => {
+      const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+      channel.deliver(intent())
+      channel.deliver(intent())
+      FakeNotification.instances[0].handlers.get('close')!({ reason: 'applicationHidden' })
+      channel.withdraw('req-1')
+      expect(FakeNotification.instances[1].closed).toBe(true)
+    })
   })
 
   describe('icon', () => {
@@ -100,7 +192,7 @@ describe('DesktopNotificationChannel', () => {
       Object.defineProperty(process, 'platform', { value: platform, configurable: true })
     })
 
-    it('passes the host icon on Linux/Windows, and omits it when the host has none', () => {
+    it('passes the host icon on Linux, and omits it when the host has none', () => {
       Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
       new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon: () => icon }).deliver(intent())
       expect(FakeNotification.instances[0].options.icon).toBe(icon)

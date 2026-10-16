@@ -174,6 +174,13 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     }
     expect(status).toBe('idle')
 
+    const ref = { environmentId: descriptor.environmentId, sessionId }
+    const full = await gw.sessions.get(ref) as { transcript: unknown[] }
+    expect(full.transcript.length).toBeGreaterThan(0)
+    const header = await gw.sessions.get(ref, { includeTranscript: false })
+    expect(header).toMatchObject({ sessionId, status: 'idle' })
+    expect(header).not.toHaveProperty('transcript')
+
     // watch via gateway
     const watchIter = gw.workspace.watch({ project: projectRef, relativePath: '.' })
     const iter = watchIter[Symbol.asyncIterator]()

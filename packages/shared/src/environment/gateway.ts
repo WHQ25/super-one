@@ -125,7 +125,8 @@ export interface SessionGateway {
   getMetadataBatch?(refs: SessionRef[]): Promise<import('../session-link').SessionLinkMetadataResult[]>
   archive?(request: import('../session-archive').SessionArchiveRequest): Promise<import('../session-archive').ArchiveToolResult>
   create(input: CreateSessionInput): Promise<{ sessionId: string }>
-  get(ref: SessionRef): Promise<unknown | null>
+  /** Header-only consumers can avoid transferring the transcript. */
+  get(ref: SessionRef, options?: { includeTranscript?: boolean }): Promise<unknown | null>
   /** Product session list is always paginated (limit + offset required). */
   list(project: ProjectRef, options: ListSessionsOptions): Promise<unknown[]>
   /**

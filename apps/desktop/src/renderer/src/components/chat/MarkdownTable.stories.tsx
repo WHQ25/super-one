@@ -27,6 +27,14 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const copy = canvas.getByRole('button', { name: /Copy Table|复制表格/ })
+    const expand = canvas.getByRole('button', { name: /Expand|展开/ })
+    const table = canvas.getByRole('table')
+    const viewport = table.parentElement!
+    const icon = expand.querySelector('svg')!
+    await waitFor(() => {
+      const visibleRight = Math.min(table.getBoundingClientRect().right, viewport.getBoundingClientRect().right)
+      expect(Math.abs(icon.getBoundingClientRect().right - visibleRight)).toBeLessThanOrEqual(1)
+    })
     const descriptor = Object.getOwnPropertyDescriptor(navigator.clipboard, 'writeText')
     let copiedText = ''
     Object.defineProperty(navigator.clipboard, 'writeText', {
@@ -37,7 +45,7 @@ export const Default: Story = {
       await userEvent.click(copy)
       await waitFor(() => expect(copiedText).toBe(TABLE))
       expect(copy.querySelector('.lucide-check')).not.toBeNull()
-      await userEvent.click(canvas.getByRole('button', { name: /Expand|展开/ }))
+      await userEvent.click(expand)
       const body = within(canvasElement.ownerDocument.body)
       const dialog = await body.findByRole('dialog', { name: 'Table' })
       expect(within(dialog).getByRole('table')).toHaveTextContent('Alice')

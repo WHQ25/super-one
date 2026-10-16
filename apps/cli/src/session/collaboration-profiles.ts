@@ -13,6 +13,7 @@ import {
 import type { AgentProfileOptionKey } from '@superone/shared/agent-profile-options'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
 import { listHarnessApiProviders, listHarnessModels } from '../provider/resolve-service'
@@ -138,7 +139,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       pushProfile(
         p.id,
         p.harnessId,
-        p.name,
+        sessionProviderDisplayName(p),
         p.isBase
           ? `${p.harnessId} harness with the built-in configuration`
           : `Custom ${p.harnessId} profile`,

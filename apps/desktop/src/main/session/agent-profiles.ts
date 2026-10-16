@@ -33,6 +33,7 @@ import {
 } from '@superone/shared/agent-profile'
 import type { AgentProfileListChoice, AgentProfileListOptionKey } from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
@@ -236,8 +237,9 @@ function profileDisplayName(
   provider: ReturnType<typeof listSessionProviders>[number],
   acpAgentId: string | null,
 ): string {
-  // A user-named agent keeps its name; only the built-in ACP row reads as its agent.
-  if (provider.harnessId !== 'acp' || readAgentProfile(provider.config)) return provider.name
+  // A user-named agent keeps its name, a base row reads as its harness, and the
+  // built-in ACP row as its agent.
+  if (provider.harnessId !== 'acp' || readAgentProfile(provider.config)) return sessionProviderDisplayName(provider)
   const cached = getCachedHarnessResources('acp')
   const catalogName = acpAgentId
     ? cached?.agents?.find((agent) => agent.id === acpAgentId)?.name

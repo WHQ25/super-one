@@ -1,4 +1,5 @@
 import type { HarnessId } from './agent-types'
+import { HARNESS_CAPABILITIES } from './harness/harness-capabilities'
 
 export interface BaseSessionProviderSpec {
   id: string
@@ -30,4 +31,12 @@ export const BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefi
 
 export function baseSessionProviderId(harnessId: HarnessId): string {
   return BASE_SESSION_PROVIDERS[harnessId].id
+}
+
+/**
+ * How an agent picker names a provider row: a base row is its harness
+ * ("Claude", not the stored "Claude (Base)"); a user-named row keeps its name.
+ */
+export function sessionProviderDisplayName(row: { harnessId: HarnessId; name: string; isBase: boolean }): string {
+  return row.isBase ? HARNESS_CAPABILITIES[row.harnessId].displayName : row.name
 }

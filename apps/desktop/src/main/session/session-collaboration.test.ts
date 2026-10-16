@@ -463,6 +463,14 @@ describe('@agent mention targets', () => {
     ])
   })
 
+  it('names a base profile after its harness, not its "(Base)" row name', () => {
+    state.providers = [
+      { id: 'codex-base', harnessId: 'codex', name: 'Codex (Base)', isBase: true, config: {}, createdAt: 0, updatedAt: 0 },
+      { id: 'codex-9b2c', harnessId: 'codex', name: 'High Effort Codex', isBase: false, config: {}, createdAt: 1, updatedAt: 1 },
+    ]
+    expect(listSessionAgentProfiles().map((profile) => profile.name)).toEqual(['Codex', 'High Effort Codex'])
+  })
+
   it('resolves the ACP base provider to the agent behind it', () => {
     state.providers = [{
       id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', isBase: true,

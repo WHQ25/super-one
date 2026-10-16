@@ -16,7 +16,7 @@ export class BufferedVoicePlayback {
   private paused = false
   private readonly receiverAudio = new Audio()
   private readonly context = new AudioContext({ latencyHint: 'interactive', sampleRate: 48_000 })
-  constructor(private readonly interrupted: () => void, private readonly failed: (error: Error) => void) {
+  constructor(private readonly interrupted: () => void, private readonly failed: (error: Error) => void, private readonly onLevel: (rms: number) => void = () => {}) {
     this.context.onstatechange = () => {
       // Browser/OS audio suspension is an interruption; window blur is not.
       if (!this.closed && this.context.state !== 'running') this.interrupted()
@@ -42,7 +42,10 @@ export class BufferedVoicePlayback {
     const node = new AudioWorkletNode(this.context, 'superone-voice-playback', { numberOfInputs: 0, outputChannelCount: [1] })
     node.port.onmessage = ({ data }) => {
       if (data.type === 'error') this.failed(new Error(data.message))
-      else if (data.type === 'consumed') this.bufferedFrames = Math.max(0, this.bufferedFrames - data.frames)
+      else if (data.type === 'consumed') {
+        this.bufferedFrames = Math.max(0, this.bufferedFrames - data.frames)
+        this.onLevel(this.paused ? 0 : data.level ?? 0)
+      }
     }
     node.port.postMessage({ type: 'pause', paused: this.paused })
     this.node = node
@@ -71,7 +74,7 @@ export class BufferedVoicePlayback {
       } finally { frame.close() }
     }
   }
-  pause(): void { this.paused = true; this.node?.port.postMessage({ type: 'pause', paused: true }) }
+  pause(): void { this.paused = true; this.onLevel(0); this.node?.port.postMessage({ type: 'pause', paused: true }) }
   async resume(): Promise<void> {
     await this.context.resume()
     if (this.closed || this.context.state !== 'running') throw new Error('Audio playback is unavailable. Try again shortly.')
@@ -79,12 +82,13 @@ export class BufferedVoicePlayback {
   }
   close(): void {
     this.closed = true
+    this.onLevel(0)
     this.context.onstatechange = null
     this.receiverAudio.pause()
     this.receiverAudio.srcObject = null
     void this.reader?.cancel().catch(() => {})
     this.reader = undefined; this.pending = []; this.bufferedFrames = 0
-    this.node?.disconnect()
+    if (this.node) { this.node.port.onmessage = null; this.node.disconnect() }
     void this.context.close()
   }
 }

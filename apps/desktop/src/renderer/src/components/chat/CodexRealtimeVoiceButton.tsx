@@ -1,8 +1,10 @@
 import { AudioLines } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { startRealtimeCall, useRealtimeCallStore } from '@/stores/realtime-call'
-import { RealtimeCallControls } from './RealtimeCallControls'
+import { realtimeVoiceAudioLevels, startRealtimeCall, useRealtimeCallStore } from '@/stores/realtime-call'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { useChatStore } from '@/stores/chat'
+import { VoiceWaveform } from './VoiceWaveform'
 
 export interface CodexRealtimeVoiceButtonProps {
   projectPath: string
@@ -11,12 +13,7 @@ export interface CodexRealtimeVoiceButtonProps {
   disabled?: boolean
 }
 
-/**
- * Realtime voice entry point for the composer toolbar.
- *
- * Idle it is a single button; connected it hands over to `RealtimeCallControls`, the
- * same set the voice composer shows, so a call is controllable from both views.
- */
+/** Start a call, or return from text to the current voice conversation. */
 export function CodexRealtimeVoiceButton({
   projectPath,
   sessionId,
@@ -24,23 +21,26 @@ export function CodexRealtimeVoiceButton({
   disabled = false,
 }: CodexRealtimeVoiceButtonProps) {
   const { t } = useTranslation()
-  const otherCallEngaged = useRealtimeCallStore((store) => (
-    store.state !== 'idle' && store.sessionId !== sessionId
-  ))
-  const callState = useRealtimeCallStore((store) => (
-    store.sessionId === sessionId ? store.state : 'idle'
-  ))
+  const callState = useRealtimeCallStore(store => store.state)
+  const callSessionId = useRealtimeCallStore(store => store.sessionId)
+  const callProjectPath = useRealtimeCallStore(store => store.projectPath)
+  const paused = useRealtimeCallStore(store => store.paused)
 
-  if (otherCallEngaged) return null
-
-  // Connected, the button becomes the call's whole control set. It lives here rather
-  // than on the indicator above the composer because this strip is where every other
-  // action on a turn already is.
-  if (callState === 'active' || callState === 'stopping') {
-    return <RealtimeCallControls disabled={callState === 'stopping'} />
+  if (callState !== 'idle' && callSessionId) {
+    return <IconButton size="sm" variant="ghost" className="rounded-full"
+      tooltip={t('chat.realtimeVoice.returnToVoice')}
+      onClick={() => {
+        if (callProjectPath && (callSessionId !== sessionId || callProjectPath !== projectPath)) {
+          void useChatStore.getState().switchToSession(callProjectPath, callSessionId).then(() => {
+            useCodexRealtimeViewStore.getState().setView(callSessionId, 'realtime')
+          })
+        } else useCodexRealtimeViewStore.getState().setView(callSessionId, 'realtime')
+      }}>
+      <VoiceWaveform levels={realtimeVoiceAudioLevels} compact paused={paused || callState !== 'active'} />
+    </IconButton>
   }
 
-  if (disabled || callState === 'starting') return null
+  if (disabled) return null
 
   return (
     <IconButton

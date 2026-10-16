@@ -9,7 +9,7 @@ import { pauseRealtimeCall, resetRealtimeCallForTests, useRealtimeCallStore } fr
 import { VOICE_READY_CUE_MIC_GUARD_MS } from '@/lib/audio-cue'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 import { RealtimeCallControls } from './RealtimeCallControls'
-import { RealtimeCallIndicator } from './RealtimeCallIndicator'
+import { RealtimeCallComposer } from './RealtimeCallComposer'
 import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
 
 const { playVoiceReadyCue } = vi.hoisted(() => ({ playVoiceReadyCue: vi.fn() }))
@@ -60,9 +60,10 @@ function driveConnectionState(state: RTCPeerConnectionState): void {
  * cannot see the handover between them.
  */
 function VoiceSurfaces({ sessionId = 'session-1' }: { sessionId?: string }) {
+  const engaged = useRealtimeCallStore(store => store.state !== 'idle')
   return (
     <>
-      <RealtimeCallIndicator />
+      {engaged && <RealtimeCallComposer microphoneShortcutEnabled={false} />}
       <CodexRealtimeVoiceButton projectPath="/repo" sessionId={sessionId} additionalDirs={['/extra']} />
     </>
   )
@@ -131,6 +132,7 @@ describe('realtime voice surfaces', () => {
   })
 
   afterEach(() => {
+    resetRealtimeCallForTests()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -156,10 +158,10 @@ describe('realtime voice surfaces', () => {
     await waitFor(() => expect(microphoneTrack.enabled).toBe(true))
   }
 
-  it('hides other session voice entries until the global call is idle', () => {
+  it('keeps a return entry reachable from other sessions while a call runs', () => {
     useRealtimeCallStore.setState({ sessionId: 'session-1', state: 'starting' })
     render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-2" />)
-    expect(screen.queryByRole('button', { name: 'Start Voice Conversation' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Return to Voice Conversation' })).toBeEnabled()
     for (const state of ['active', 'stopping', 'idle'] as const) {
       act(() => useRealtimeCallStore.setState({ state }))
       expect(screen.queryByRole('button', { name: 'Start Voice Conversation' }) !== null).toBe(state === 'idle')
@@ -173,22 +175,21 @@ describe('realtime voice surfaces', () => {
     expect(screen.getByRole('button', { name: 'Start Voice Conversation' })).toBeEnabled()
   })
 
-  it('hides the start entry while connecting and keeps the active call controls reachable', () => {
+  it('returns to the call from the text composer, even while a task is running', () => {
     useRealtimeCallStore.setState({ sessionId: 'session-1', state: 'starting' })
-    const { container, rerender } = render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
-    expect(container).toBeEmptyDOMElement()
+    const { rerender } = render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
+    expect(screen.getByRole('button', { name: 'Return to Voice Conversation' })).toBeEnabled()
     rerender(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" disabled />)
     act(() => useRealtimeCallStore.setState({ state: 'active' }))
-    expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeEnabled()
-    act(() => useRealtimeCallStore.setState({ state: 'stopping' }))
-    expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeDisabled()
+    useCodexRealtimeViewStore.getState().setView('session-1', 'thread')
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Voice Conversation' }))
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.view).toBe('realtime')
   })
 
   it('uses M only in the voice view and ignores typing and modified or repeated keys', async () => {
     render(<VoiceSurfaces />)
     await reachConnectedCall()
-    const controls = render(<RealtimeCallControls layout="centered" microphoneShortcutEnabled />)
+    const controls = render(<RealtimeCallControls layout="composer" microphoneShortcutEnabled />)
     fireEvent.keyDown(window, { key: 'm' })
     expect(microphoneTrack.enabled).toBe(false)
     fireEvent.keyDown(window, { key: 'm', repeat: true })
@@ -201,7 +202,7 @@ describe('realtime voice surfaces', () => {
     expect(microphoneTrack.enabled).toBe(false)
     fireEvent.keyDown(window, { key: 'm' })
     expect(microphoneTrack.enabled).toBe(true)
-    controls.rerender(<RealtimeCallControls layout="centered" microphoneShortcutEnabled={false} />)
+    controls.rerender(<RealtimeCallControls layout="composer" microphoneShortcutEnabled={false} />)
     fireEvent.keyDown(window, { key: 'm' })
     expect(microphoneTrack.enabled).toBe(true)
   })
@@ -215,8 +216,8 @@ describe('realtime voice surfaces', () => {
       expect(view?.starting).toBe(true)
     })
     expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.realtimeSessionId).toBeNull()
-    // The mark is up from the first click, breathing in its final place.
-    expect(screen.getByTestId('realtime-voice-mark')).toHaveAttribute('data-activity', 'connecting')
+    expect(screen.getByText('Starting voice session…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeEnabled()
   })
 
   it('clears the starting state when the call never connects', async () => {
@@ -287,94 +288,43 @@ describe('realtime voice surfaces', () => {
     await waitFor(() => expect(screen.queryByTestId('realtime-call-indicator')).toBeNull())
   })
 
-  it('flanks the voice mark with the agent on the left and the user on the right', async () => {
-    const { container } = render(<VoiceSurfaces />)
+  it('places the waveform between microphone and playback, with hangup last', async () => {
+    render(<VoiceSurfaces />)
     await reachConnectedCall()
-
-    const row = screen.getByTestId('realtime-call-indicator')
-    expect(row).toHaveClass('justify-center')
-    const mark = screen.getByTestId('realtime-voice-mark')
-    expect(mark).toHaveAttribute('data-activity', 'listening')
-    expect(mark.querySelector('.lucide-audio-lines')).not.toBeNull()
-    expect(mark.querySelector('.realtime-voice-mark-shell')).not.toBeNull()
-    expect(mark.querySelector('.realtime-voice-halo')).not.toBeNull()
-    expect(mark.querySelectorAll('.realtime-voice-halo-outline')).toHaveLength(3)
-
-    const sides = [...row.querySelectorAll('[data-testid^="realtime-caption-"]')]
-    expect(sides.map((node) => node.getAttribute('data-testid')))
-      .toEqual(['realtime-caption-assistant', 'realtime-caption-user'])
-    // Each column's text hugs the cloud rather than the outer edge.
-    expect(sides[0]!.querySelector('p')).toHaveClass('text-right')
-    expect(sides[1]!.querySelector('p')).toHaveClass('text-left')
+    const bar = screen.getByTestId('realtime-call-composer')
+    expect(bar.querySelector('[data-testid="voice-waveform"]')).not.toBeNull()
+    expect([...bar.children].map(node => node.getAttribute('aria-label') ?? node.getAttribute('data-testid')))
+      .toEqual(['Mute microphone', 'Listening…', 'Pause Voice', 'Stop Voice Conversation'])
   })
 
   it('maps transcript lifecycle events onto the voice indicator activity', async () => {
     render(<VoiceSurfaces />)
     await reachConnectedCall()
-    const mark = screen.getByTestId('realtime-voice-mark')
+
 
     emit?.({
       type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'started',
       itemId: 'user-activity', realtimeSessionId: 'rt-1', role: 'user', text: '', seq: 1,
     })
-    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'user-speaking'))
+    await waitFor(() => expect(useRealtimeCallStore.getState().activity).toBe('user-speaking'))
 
     emit?.({
       type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'completed',
       itemId: 'user-activity', realtimeSessionId: 'rt-1', role: 'user', text: 'Plan it.', seq: 2,
     })
-    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'thinking'))
+    await waitFor(() => expect(useRealtimeCallStore.getState().activity).toBe('thinking'))
 
     emit?.({
       type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'started',
       itemId: 'assistant-activity', realtimeSessionId: 'rt-1', role: 'assistant', text: '', seq: 3,
     })
-    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'assistant-speaking'))
+    await waitFor(() => expect(useRealtimeCallStore.getState().activity).toBe('assistant-speaking'))
 
     emit?.({
       type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'completed',
       itemId: 'assistant-activity', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Done.', seq: 4,
     })
-    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'listening'))
-  })
-
-  it('gives each caption the cloud\'s height, centred until it needs to scroll', async () => {
-    render(<VoiceSurfaces />)
-    await reachConnectedCall()
-
-    for (const testId of ['realtime-caption-assistant', 'realtime-caption-user']) {
-      const column = screen.getByTestId(testId)
-      expect(column).toHaveClass('overflow-y-auto')
-      expect(column.style.height).toBe('84px')
-      // Centring lives on an inner wrapper, never on the scroll container itself:
-      // an overflowing item centred inside a scroller loses its first lines to a
-      // scrollTop that cannot go negative.
-      expect(column).not.toHaveClass('items-center')
-      expect(column.firstElementChild).toHaveClass('min-h-full', 'items-center')
-      // Long speech wraps instead of being cut off at one line.
-      expect(column.querySelector('p')).toHaveClass('break-words')
-      expect(column.querySelector('p')).not.toHaveClass('truncate')
-    }
-  })
-
-  it('keeps a growing caption scrolled to its newest words', async () => {
-    render(<VoiceSurfaces />)
-    await reachConnectedCall()
-
-    const column = screen.getByTestId('realtime-caption-user')
-    Object.defineProperty(column, 'scrollHeight', { configurable: true, value: 240 })
-
-    emit?.({
-      type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'started',
-      itemId: 'user-long', realtimeSessionId: 'rt-1', role: 'user', text: '', seq: 30,
-    })
-    emit?.({
-      type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'delta',
-      itemId: 'user-long', text: 'a very long spoken sentence that wraps well past the box',
-      seq: 31,
-    })
-
-    await waitFor(() => expect(column.scrollTop).toBe(240))
+    await waitFor(() => expect(useRealtimeCallStore.getState().activity).toBe('listening'))
   })
 
   it('pauses output and capture, attaches a late remote track paused, and manually resumes without closing the stream', async () => {
@@ -428,10 +378,10 @@ describe('realtime voice surfaces', () => {
     expect(microphoneTrack.enabled).toBe(false)
     expect(useRealtimeCallStore.getState().paused).toBe(true)
   })
-  it('keeps hangup centered in the voice panel and replaces the existing speaker position with pause/play', () => {
-    const controls = render(<RealtimeCallControls layout="centered" />)
+  it('keeps the same control order in the voice panel and compact toolbar', () => {
+    const controls = render(<RealtimeCallControls layout="composer" />)
     expect([...controls.container.querySelectorAll('button')].map(button => button.getAttribute('aria-label')))
-      .toEqual(['Mute microphone', 'Stop Voice Conversation', 'Pause Voice'])
+      .toEqual(['Mute microphone', 'Pause Voice', 'Stop Voice Conversation'])
     controls.rerender(<RealtimeCallControls layout="toolbar" />)
     expect([...controls.container.querySelectorAll('button')].map(button => button.getAttribute('aria-label')))
       .toEqual(['Mute microphone', 'Pause Voice', 'Stop Voice Conversation'])
@@ -465,7 +415,7 @@ describe('realtime voice surfaces', () => {
     expect(screen.getByRole('button', { name: 'Unmute microphone' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('shows user and assistant transcript deltas only in the ephemeral voice caption', async () => {
+  it('keeps user and assistant deltas ephemeral until committed', async () => {
     render(<VoiceSurfaces />)
     await reachConnectedCall()
 
@@ -486,8 +436,10 @@ describe('realtime voice surfaces', () => {
       itemId: 'assistant-1', text: 'Checking now', seq: 13,
     })
 
-    await waitFor(() => expect(screen.getByTestId('realtime-caption-user')).toHaveTextContent('Inspecting'))
-    expect(screen.getByTestId('realtime-caption-assistant')).toHaveTextContent('Checking now')
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.liveItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user', text: 'Inspecting', done: false }),
+      expect.objectContaining({ role: 'assistant', text: 'Checking now', done: false }),
+    ]))
     const view = useCodexRealtimeViewStore.getState().sessions['session-1']!
     expect(mergeCodexRealtimeMessages([], view)).toEqual([])
   })
@@ -504,14 +456,14 @@ describe('realtime voice surfaces', () => {
       type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'delta',
       itemId: 'user-1', text: 'Please fix it', seq: 21,
     })
-    await waitFor(() => expect(screen.getByTestId('realtime-caption-user')).toHaveTextContent('Please fix it'))
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.liveItems[0]).toMatchObject({ text: 'Please fix it', done: false })
 
     emit?.({
       type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'completed',
       itemId: 'user-1', realtimeSessionId: 'rt-1', role: 'user', text: 'Please fix it.', seq: 22,
     })
 
-    await waitFor(() => expect(screen.getByTestId('realtime-caption-user')).toHaveTextContent(''))
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.liveItems[0]).toMatchObject({ done: true })
     const view = useCodexRealtimeViewStore.getState().sessions['session-1']!
     expect(mergeCodexRealtimeMessages([], view)).toMatchObject([{
       role: 'user',

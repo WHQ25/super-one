@@ -1,3 +1,4 @@
+import { monitorVoiceAudioLevels, SILENT_VOICE_LEVELS, VoiceAudioLevelStore } from '@superone/shared/voice-audio-levels'
 import { redactVoiceText, type VoiceIdentity } from '@superone/shared/realtime-voice'
 import { create } from 'zustand'
 import { toast } from 'sonner'
@@ -13,6 +14,7 @@ export type RealtimeCallActivity = 'listening' | 'user-speaking' | 'thinking' | 
 interface RealtimeCallStore {
   /** Session the live call belongs to; null while idle. */
   sessionId: string | null
+  projectPath: string | null
   state: RealtimeCallState
   microphoneMuted: boolean
   paused: boolean
@@ -20,8 +22,6 @@ interface RealtimeCallStore {
   resuming: boolean
   /** Presentation state for the live call indicator. */
   activity: RealtimeCallActivity
-  /** Smoothed microphone RMS, normalized to 0...1. */
-  inputLevel: number
 }
 
 /**
@@ -32,13 +32,15 @@ interface RealtimeCallStore {
  *
  * Only one call runs at a time, which is why this is a singleton and not a map.
  */
+export const realtimeVoiceAudioLevels = new VoiceAudioLevelStore()
+
 export const useRealtimeCallStore = create<RealtimeCallStore>(() => ({
   sessionId: null,
+  projectPath: null,
   state: 'idle',
   microphoneMuted: false,
   paused: false, pauseReason: null, resuming: false,
   activity: 'listening',
-  inputLevel: 0,
 }))
 
 interface CallMedia {
@@ -96,52 +98,6 @@ function applyMicrophoneEnabled(): void {
   for (const track of media.stream?.getAudioTracks() ?? []) track.enabled = enabled
 }
 
-/**
- * Sample the already-open microphone stream for the indicator. This does not add a
- * second capture request or route audio anywhere; the source only feeds an analyser.
- */
-function startInputLevelMonitor(stream: MediaStream): () => void {
-  if (typeof window.AudioContext !== 'function') return () => {}
-
-  let context: AudioContext | null = null
-  try {
-    context = new window.AudioContext()
-    const source = context.createMediaStreamSource(stream)
-    const analyser = context.createAnalyser()
-    analyser.fftSize = 256
-    source.connect(analyser)
-
-    const samples = new Float32Array(analyser.fftSize)
-    let frame = 0
-    let smoothed = 0
-    let published = 0
-    const sample = () => {
-      analyser.getFloatTimeDomainData(samples)
-      let energy = 0
-      for (const value of samples) energy += value * value
-      const rms = Math.sqrt(energy / samples.length)
-      const normalized = Math.min(1, Math.max(0, (rms - 0.012) / 0.16))
-      smoothed += (normalized - smoothed) * 0.28
-      if (Math.abs(smoothed - published) >= 0.025) {
-        published = smoothed
-        useRealtimeCallStore.setState({ inputLevel: smoothed })
-      }
-      frame = window.requestAnimationFrame(sample)
-    }
-    frame = window.requestAnimationFrame(sample)
-
-    return () => {
-      window.cancelAnimationFrame(frame)
-      source.disconnect()
-      analyser.disconnect()
-      void context?.close()
-    }
-  } catch {
-    void context?.close()
-    return () => {}
-  }
-}
-
 function releaseMedia(): void {
   if (!media) return
   if (media.negotiationTimer !== null) window.clearTimeout(media.negotiationTimer)
@@ -158,7 +114,7 @@ function releaseMedia(): void {
     navigator.mediaSession.setActionHandler('play', null)
   }
   media = null
-  useRealtimeCallStore.setState({ inputLevel: 0 })
+  realtimeVoiceAudioLevels.publish(SILENT_VOICE_LEVELS)
 }
 
 /** Tear the call down locally and return the UI to its resting state. */
@@ -166,11 +122,11 @@ function finishCall(sessionId: string, projectPath: string): void {
   releaseMedia()
   useRealtimeCallStore.setState({
     sessionId: null,
+    projectPath: null,
     state: 'idle',
     microphoneMuted: false,
     paused: false, pauseReason: null, resuming: false,
     activity: 'listening',
-    inputLevel: 0,
   })
   view().setRealtimeSession(sessionId, null)
   void refreshTimeline(projectPath, sessionId)
@@ -298,11 +254,11 @@ export async function startRealtimeCall({
   if (useRealtimeCallStore.getState().state !== 'idle') return
   useRealtimeCallStore.setState({
     sessionId,
+    projectPath,
     state: 'starting',
     microphoneMuted: false,
     paused: false, pauseReason: null, resuming: false,
     activity: 'listening',
-    inputLevel: 0,
   })
   view().setRealtimeStarting(sessionId, true)
   view().setView(sessionId, 'realtime')
@@ -341,9 +297,16 @@ export async function startRealtimeCall({
     })
     if (media !== callMedia) { for (const track of stream.getTracks()) track.stop(); return }
     media.stream = stream
-    media.stopInputLevelMonitor = startInputLevelMonitor(stream)
     const peer = new RTCPeerConnection()
     media.peer = peer
+    media.stopInputLevelMonitor = monitorVoiceAudioLevels(peer, levels => {
+      if (media !== callMedia) return
+      const state = useRealtimeCallStore.getState()
+      realtimeVoiceAudioLevels.publish({
+        input: state.microphoneMuted || state.paused || callMedia.cueGuarded ? 0 : levels.input,
+        output: realtimeVoiceAudioLevels.snapshot().output,
+      })
+    })
     if (import.meta.env.DEV) {
       media.stopDiagnostics = startWebRtcDiagnostics(peer, (type, data) => {
         window.app?.trace?.('realtime.webrtc', type, data, sessionId)
@@ -359,6 +322,8 @@ export async function startRealtimeCall({
       }, error => {
         if (media !== callMedia) return
         reportError(error); void stopRealtimeCall()
+      }, output => {
+        if (media === callMedia) realtimeVoiceAudioLevels.publish({ ...realtimeVoiceAudioLevels.snapshot(), output })
       })
       media.audio = audio
       if (useRealtimeCallStore.getState().paused) audio.pause()
@@ -427,7 +392,7 @@ export async function startRealtimeCall({
         if (media !== callMedia || useRealtimeCallStore.getState().state !== 'starting') return
         void window.agent.stopRealtimeVoice(projectPath, sessionId, callMedia.attemptId)
         releaseMedia()
-        useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+        useRealtimeCallStore.setState({ sessionId: null, projectPath: null, state: 'idle' })
         view().setRealtimeStarting(sessionId, false)
         toast.error(messages.connectionTimedOut)
       }, NEGOTIATION_TIMEOUT_MS)
@@ -436,7 +401,7 @@ export async function startRealtimeCall({
     if (media !== callMedia) return
     void window.agent.stopRealtimeVoice(projectPath, sessionId, callMedia.attemptId).catch(() => {})
     releaseMedia()
-    useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+    useRealtimeCallStore.setState({ sessionId: null, projectPath: null, state: 'idle' })
     view().setRealtimeStarting(sessionId, false)
     reportError(error)
   }
@@ -460,7 +425,8 @@ export async function stopRealtimeCall(): Promise<void> {
 
 export function toggleRealtimeMicrophone(): void {
   const next = !useRealtimeCallStore.getState().microphoneMuted
-  useRealtimeCallStore.setState({ microphoneMuted: next, ...(next ? { inputLevel: 0 } : {}) })
+  useRealtimeCallStore.setState({ microphoneMuted: next })
+  if (next) realtimeVoiceAudioLevels.publish({ ...realtimeVoiceAudioLevels.snapshot(), input: 0 })
   applyMicrophoneEnabled()
 }
 
@@ -468,7 +434,8 @@ export function pauseRealtimeCall(reason: 'manual' | 'interrupted' = 'manual'): 
   if (!media || !['active', 'starting'].includes(useRealtimeCallStore.getState().state)) return
   media.audio?.pause()
   media.pauseEpoch++
-  useRealtimeCallStore.setState({ paused: true, pauseReason: reason, inputLevel: 0 })
+  useRealtimeCallStore.setState({ paused: true, pauseReason: reason })
+  realtimeVoiceAudioLevels.publish(SILENT_VOICE_LEVELS)
   applyMicrophoneEnabled()
 }
 
@@ -492,13 +459,14 @@ export async function toggleRealtimePlayback(): Promise<void> {
 /** Test seam: drop any live call without going through the agent IPC. */
 export function resetRealtimeCallForTests(): void {
   releaseMedia()
+  realtimeVoiceAudioLevels.publish(SILENT_VOICE_LEVELS)
   timelineLoadedFor = null
   useRealtimeCallStore.setState({
     sessionId: null,
+    projectPath: null,
     state: 'idle',
     microphoneMuted: false,
     paused: false, pauseReason: null, resuming: false,
     activity: 'listening',
-    inputLevel: 0,
   })
 }

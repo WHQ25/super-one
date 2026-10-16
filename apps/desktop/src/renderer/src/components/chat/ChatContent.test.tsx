@@ -765,7 +765,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     // Connecting opens the voice view (its mark lives in the composer); the typed
     // history is one toggle away.
-    expect(screen.getByText('Connecting voice…')).toBeInTheDocument()
+    expect(screen.getByText('Connecting…')).toBeInTheDocument()
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
     act(() => { useCodexRealtimeViewStore.getState().setView('sid-1', 'thread') })
     rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)

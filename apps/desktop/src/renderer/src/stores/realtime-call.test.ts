@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ cue: vi.fn(), refresh: vi.fn(async () => {}), 
 vi.mock('@/lib/audio-cue', () => ({ VOICE_READY_CUE_MIC_GUARD_MS: 10, playVoiceReadyCue: mocks.cue }))
 vi.mock('@/lib/realtime-webrtc', () => ({ waitForIceGathering: vi.fn(async () => {}), startWebRtcDiagnostics: () => vi.fn(), preferTcpIceCandidates: (sdp: string) => ({ sdp }) }))
 vi.mock('./codex-realtime-view', () => ({ refreshCodexRealtimeTimeline: mocks.refresh, useCodexRealtimeViewStore: { getState: () => mocks.view } }))
-import { resetRealtimeCallForTests, startRealtimeCall, stopRealtimeCall, useRealtimeCallStore } from './realtime-call'
+import { pauseRealtimeCall, realtimeVoiceAudioLevels, resetRealtimeCallForTests, startRealtimeCall, stopRealtimeCall, toggleRealtimeMicrophone, useRealtimeCallStore } from './realtime-call'
 
 const tracks = [{ enabled: true, stop: vi.fn() }]
 const stream = { getTracks: () => tracks, getAudioTracks: () => tracks } as unknown as MediaStream
@@ -14,6 +14,7 @@ const peers: Peer[] = []
 class Peer {
   connectionState = 'new'; signalingState = 'stable'; localDescription = { sdp: 'v=0\na=offer' }
   ontrack?: (event: unknown) => void; onconnectionstatechange?: () => void
+  getStats = vi.fn(async () => new Map<string, unknown>())
   close = vi.fn(); addTrack = vi.fn(); createDataChannel = vi.fn()
   createOffer = vi.fn(async () => this.localDescription)
   setLocalDescription = vi.fn(async () => {}); setRemoteDescription = vi.fn(async () => {})
@@ -30,7 +31,7 @@ beforeEach(() => {
   vi.stubGlobal('RTCPeerConnection', Peer)
   Object.assign(window, { agent: { startRealtimeVoice: start, stopRealtimeVoice: stop, readyRealtimeVoice: ready, onAgentEvent: (fn: typeof receive) => { receive = fn; return vi.fn() } } })
 })
-afterEach(() => { resetRealtimeCallForTests(); vi.unstubAllGlobals() })
+afterEach(() => { resetRealtimeCallForTests(); vi.unstubAllGlobals(); vi.useRealTimers() })
 const options = { projectPath: '/p', sessionId: 'sid', messages: { offerFailed: 'offer failed', connectionTimedOut: 'timeout' } }
 
 it('waits for connected media and host ready acknowledgement, then releases capture immediately on hangup', async () => {
@@ -70,4 +71,27 @@ it('ignores a previous peer and generic or stale directed signals after a new at
   expect(peers[1]!.setRemoteDescription).not.toHaveBeenCalled()
   expect(stop).toHaveBeenCalledTimes(1)
   await stopRealtimeCall()
+})
+
+
+it('meters the existing microphone peer without React updates and silences mute, pause and hangup', async () => {
+  vi.useFakeTimers()
+  await startRealtimeCall(options)
+  const peer = peers[0]!
+  peer.getStats.mockResolvedValue(new Map([['mic', { type: 'media-source', kind: 'audio', audioLevel: 0.08 }]]))
+  peer.connectionState = 'connected'; peer.onconnectionstatechange?.()
+  await vi.advanceTimersByTimeAsync(200)
+  expect(realtimeVoiceAudioLevels.snapshot().input).toBe(0.08)
+  toggleRealtimeMicrophone()
+  expect(realtimeVoiceAudioLevels.snapshot().input).toBe(0)
+  await vi.advanceTimersByTimeAsync(200)
+  expect(realtimeVoiceAudioLevels.snapshot().input).toBe(0)
+  realtimeVoiceAudioLevels.publish({ input: 0, output: 0.12 })
+  pauseRealtimeCall()
+  expect(realtimeVoiceAudioLevels.snapshot()).toEqual({ input: 0, output: 0 })
+  await stopRealtimeCall()
+  const reads = peer.getStats.mock.calls.length
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(peer.getStats).toHaveBeenCalledTimes(reads)
+  expect(realtimeVoiceAudioLevels.snapshot()).toEqual({ input: 0, output: 0 })
 })

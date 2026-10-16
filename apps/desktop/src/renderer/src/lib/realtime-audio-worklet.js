@@ -28,8 +28,10 @@ if (typeof registerProcessor === 'function') {
       this.failed = false
       this.queue = new VoiceSampleQueue(sampleRate * 300)
       this.consumed = 0
+      this.energy = 0
+      this.meterFrames = 0
       this.port.onmessage = ({ data }) => {
-        if (data.type === 'pause') this.paused = data.paused
+        if (data.type === 'pause') { this.paused = data.paused; this.energy = 0; this.meterFrames = 0 }
         else if (data.type === 'samples' && !this.failed) {
           try { this.queue.push(data.samples) } catch (error) { this.fail(error) }
         }
@@ -49,8 +51,11 @@ if (typeof registerProcessor === 'function') {
         }
         if (!this.paused) {
           this.consumed += this.queue.read(output)
-          if (this.consumed >= sampleRate / 10) {
-            this.port.postMessage({ type: 'consumed', frames: this.consumed }); this.consumed = 0
+          for (const value of output) this.energy += value * value
+          this.meterFrames += output.length
+          if (this.meterFrames >= sampleRate / 10) {
+            this.port.postMessage({ type: 'consumed', frames: this.consumed, level: Math.sqrt(this.energy / this.meterFrames) })
+            this.consumed = 0; this.energy = 0; this.meterFrames = 0
           }
         }
       } catch (error) {

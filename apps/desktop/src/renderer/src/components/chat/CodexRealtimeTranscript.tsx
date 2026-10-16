@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import type { AgentStatus, ChatMessage } from '@superone/shared/agent-types'
-import { suppressRealtimeStartupEcho } from '@superone/shared/realtime-transcript'
+import { segmentKey, suppressRealtimeStartupEcho } from '@superone/shared/realtime-transcript'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
   restoreLocalCodexRealtimeTimeline,
@@ -14,6 +14,7 @@ import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
 import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatMessage as ChatMessageView } from './ChatMessage'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { RealtimeDelegationRow } from './RealtimeDelegationRow'
 
 interface CodexRealtimeTranscriptProps {
@@ -68,6 +69,7 @@ export function CodexRealtimeTranscript({
   const realtime = useCodexRealtimeViewStore(
     (state) => state.sessions[sessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW,
   )
+  const stopping = useRealtimeCallStore(state => state.sessionId === sessionId && state.state === 'stopping')
   const jumpTo = useCodexRealtimeViewStore((state) => state.jumpTo)
   const clearJump = useCodexRealtimeViewStore((state) => state.clearJump)
   // The provider reconcile is ChatContent's, gated on the thread id; this view only
@@ -77,16 +79,20 @@ export function CodexRealtimeTranscript({
   }, [sessionId])
 
   const transcript = useMemo(
-    () => suppressRealtimeStartupEcho(threadMessages, selectRealtimeTranscript(realtime)),
+    () => suppressRealtimeStartupEcho(threadMessages, selectRealtimeTranscript(realtime, true)),
     [realtime, threadMessages],
   )
   const turns = useMemo(() => buildRealtimeConversationTurns(transcript), [transcript])
   // Realtime splits one spoken reply across several items; a turn's whole assistant run
   // becomes a single markdown block.
+  const liveItems = useMemo(() => {
+    const committed = new Set(realtime.segments.map(segmentKey))
+    return new Set(realtime.liveItems.filter(item => !item.done && !committed.has(item.itemId)).map(item => item.itemId))
+  }, [realtime.segments, realtime.liveItems])
   const spoken = useMemo(() => new Map(turns.map((turn) => [turn.id, {
-    user: turn.user ? realtimeSegmentsToMessage([turn.user]) : null,
-    assistant: turn.assistant.length > 0 ? realtimeSegmentsToMessage(turn.assistant) : null,
-  }])), [turns])
+    user: turn.user ? realtimeSegmentsToMessage([turn.user], liveItems) : null,
+    assistant: turn.assistant.length > 0 ? realtimeSegmentsToMessage(turn.assistant, liveItems) : null,
+  }])), [turns, liveItems])
   const activities = useMemo(() => mapRealtimeTurnActivities({
     turns,
     messages: threadMessages,
@@ -116,8 +122,6 @@ export function CodexRealtimeTranscript({
   }, [activities, clearJump, pendingJump, scrollViewportRef, sessionId, stopAutoScroll])
 
   const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
-  // The composer's voice mark carries the connecting state; the transcript only
-  // needs a line that does not promise speech before the channel is up.
   const emptyKey = realtime.starting
     ? 'chat.realtimeVoice.connecting'
     : realtime.realtimeSessionId !== null
@@ -163,8 +167,8 @@ export function CodexRealtimeTranscript({
             )
           })}
 
-          {layout.length === 0 && (
-            <p className="py-16 text-center text-sm text-muted-foreground">{t(emptyKey)}</p>
+          {layout.length === 0 && !stopping && (
+            <p role="status" className="py-16 text-center text-sm text-muted-foreground">{t(emptyKey)}</p>
           )}
         </SelectionContextMenuZone>
       </ScrollArea>

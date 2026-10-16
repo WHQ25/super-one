@@ -245,3 +245,29 @@ describe('desktop startup echo display', () => {
     expect(screen.getAllByText('Check the voice settings')).toHaveLength(1)
   })
 })
+
+
+it('renders live speech in the transcript and replaces it with one completed utterance', async () => {
+  stubTimeline({ segments: [], threadMessages: [], activeRealtimeSessionId: 'rt', hasTimeline: true })
+  render(<CodexRealtimeTranscript sessionId="live-speech" scrollViewportRef={createRef<HTMLDivElement>()}
+    liquidGlass={false} threadMessages={[]} sessionStatus="idle" needsDecision={false} />)
+  await act(async () => {})
+  act(() => {
+    const store = useCodexRealtimeViewStore.getState()
+    store.startTranscriptItem('live-speech', { itemId: 'speaker', realtimeSessionId: 'rt', role: 'user', text: '' })
+    store.appendTranscriptItemDelta('live-speech', 'speaker', 'Check this change')
+  })
+  expect(screen.getAllByText('Check this change')).toHaveLength(1)
+  // Canonical history can overtake the final live-caption event.
+  act(() => useCodexRealtimeViewStore.getState().setTimeline('live-speech', {
+    segments: [{ id: 'canonical', sourceItemId: 'speaker', realtimeSessionId: 'rt', role: 'user', text: 'Check this change, please.' }],
+    threadMessages: [], activeRealtimeSessionId: 'rt', hasTimeline: true,
+  }))
+  expect(screen.queryByText('Check this change')).toBeNull()
+  expect(screen.getAllByText('Check this change, please.')).toHaveLength(1)
+  act(() => useCodexRealtimeViewStore.getState().completeTranscriptItem('live-speech', {
+    itemId: 'speaker', realtimeSessionId: 'rt', role: 'user', text: 'Check this change, please.',
+  }))
+  expect(screen.queryByText('Check this change')).toBeNull()
+  expect(screen.getAllByText('Check this change, please.')).toHaveLength(1)
+})

@@ -1,59 +1,26 @@
 import { memo, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
 import { useRealtimeCallStore, type RealtimeCallState } from '@/stores/realtime-call'
 import { RealtimeCallIndicator } from './RealtimeCallIndicator'
 import { RealtimeCallControls } from './RealtimeCallControls'
 
-/**
- * Composer stack for the voice view while a call runs.
- *
- * Voice has no text input: what the user says is the input. Session decisions
- * replace this composer through the slot registry. Otherwise this view contains
- * the live call indicator and — directly under the voice mark — the call's own
- * controls. The ordinary composer (editor, harness pickers, queue) belongs to
- * the backing thread and returns with `ChatComposerShell` once the call ends.
- */
-export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microphoneShortcutEnabled = true }: { microphoneShortcutEnabled?: boolean }) {
-  const { t } = useTranslation()
-  const liveState = useRealtimeCallStore((store) => store.state)
-  const paused = useRealtimeCallStore((store) => store.paused)
-  const pauseReason = useRealtimeCallStore((store) => store.pauseReason)
-  // After a hang-up the store is idle before this composer has slid out. Keep
-  // rendering the last engaged state so the mark leaves the screen intact.
+/** Phone control order, with a bounded, centered bar for wide desktop panes. */
+export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microphoneShortcutEnabled = true, onPlayback, onStop }: {
+  microphoneShortcutEnabled?: boolean; onPlayback?: () => void; onStop?: () => void
+}) {
+  const liveState = useRealtimeCallStore(store => store.state)
+  // ComposerSwitch retains the outgoing surface until its exit finishes.
   const lastEngagedRef = useRef<RealtimeCallState>(liveState === 'idle' ? 'stopping' : liveState)
   if (liveState !== 'idle') lastEngagedRef.current = liveState
   const state = liveState === 'idle' ? lastEngagedRef.current : liveState
-  const starting = state === 'starting'
-  const stopping = state === 'stopping' || liveState === 'idle'
-
-  return (
-    <>
-      {/* Grows to the text composer's resting height (see ComposerSwitch `align`):
-          the mark sits where the editor's top edge was, the controls at its foot. */}
-      <div
-        data-testid="realtime-call-composer"
-        data-call-state={state}
-        className="flex flex-1 flex-col items-center justify-between gap-1.5 px-3 pb-3"
-      >
+  return <div className="flex flex-1 items-end justify-center px-3 pb-2 pt-1">
+    <div data-testid="realtime-call-composer" data-call-state={state}
+      className="flex min-h-11 w-full max-w-xl items-center gap-1 rounded-2xl border border-border bg-background px-2 py-1 @lg:gap-3 @lg:px-3">
+      <RealtimeCallControls layout="composer" disabled={liveState !== 'active'}
+        hangUpDisabled={liveState === 'stopping' || liveState === 'idle'}
+        onPlayback={onPlayback} onStop={onStop}
+        microphoneShortcutEnabled={microphoneShortcutEnabled}>
         <RealtimeCallIndicator frozenState={state} />
-        {paused && !starting && !stopping ? <span role="status" className="text-xs text-muted-foreground">{t(pauseReason === 'interrupted' ? 'chat.realtimeVoice.interrupted' : 'chat.realtimeVoice.paused')}</span> : null}
-        {/* The foot is one fixed-height line whatever it says. Adding a "hanging up"
-            line under the controls grew the block by a line at the very moment the
-            slot's height was about to be pinned for the exit — the mark nudged up,
-            then the settle brought it back down. */}
-        <div className="flex h-6 items-center justify-center gap-1.5" aria-live="polite">
-          {starting ? (
-            // Negotiation has nothing to mute yet; the timeout in the store is the only way out.
-            <span className="text-xs text-muted-foreground">{t('chat.realtimeVoice.connecting')}</span>
-          ) : stopping ? (
-            <span className="text-xs text-muted-foreground">{t('chat.realtimeVoice.stopping')}</span>
-          ) : (
-            <div data-testid="realtime-call-controls" className="flex items-center gap-1.5">
-              <RealtimeCallControls layout="centered" microphoneShortcutEnabled={microphoneShortcutEnabled} />
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  )
+      </RealtimeCallControls>
+    </div>
+  </div>
 })

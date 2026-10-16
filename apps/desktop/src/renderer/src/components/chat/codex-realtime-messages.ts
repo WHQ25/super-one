@@ -17,11 +17,14 @@ export { mergeCodexThreadMessages, type CodexThreadMergeOptions } from '@superon
 /** Realtime-only transcript in stable provider/local order, including live deltas. */
 export function selectRealtimeTranscript(
   realtime: CodexRealtimeSessionViewState,
+  includeLive = false,
 ): RealtimeTimelineSegment[] {
   const byId = new Map<string, RealtimeTimelineSegment>()
   for (const segment of realtime.segments) byId.set(segmentKey(segment), segment)
   for (const item of realtime.liveItems) {
-    if (!item.done || item.text.length === 0) continue
+    if ((!includeLive && !item.done) || item.text.length === 0) continue
+    // Provider completion can arrive before the renderer's last caption event.
+    if (!item.done && byId.has(item.itemId)) continue
     const segment: RealtimeTimelineSegment = {
       id: `live-${item.itemId}`,
       sourceItemId: item.itemId,

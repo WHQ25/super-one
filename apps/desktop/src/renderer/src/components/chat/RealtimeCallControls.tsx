@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Mic, MicOff, Power, Pause, Play } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
@@ -14,22 +14,14 @@ import {
 interface RealtimeCallControlsProps {
   disabled?: boolean
   microphoneShortcutEnabled?: boolean
-  /**
-   * `toolbar` sits in the composer strip beside the session's other actions;
-   * `centered` is the voice composer's own row under the voice mark, hang-up in
-   * the middle with microphone and pause/play either side.
-   */
-  layout?: 'toolbar' | 'centered'
+  layout?: 'toolbar' | 'composer'
+  children?: ReactNode
+  hangUpDisabled?: boolean
   onPlayback?: () => void
+  onStop?: () => void
 }
 
-/**
- * The running call's whole control set — microphone, pause/play, hang up.
- *
- * Shared by the composer toolbar (backing-thread view) and the voice composer, so
- * both surfaces expose the same three actions with the same affordances.
- */
-export function RealtimeCallControls({ disabled = false, layout = 'toolbar', microphoneShortcutEnabled = false, onPlayback = () => { void toggleRealtimePlayback() } }: RealtimeCallControlsProps) {
+export function RealtimeCallControls({ disabled = false, layout = 'toolbar', children, hangUpDisabled = disabled, microphoneShortcutEnabled = false, onPlayback = () => { void toggleRealtimePlayback() }, onStop = () => { void stopRealtimeCall() } }: RealtimeCallControlsProps) {
   const { t } = useTranslation()
   const microphoneMuted = useRealtimeCallStore((store) => store.microphoneMuted)
   const paused = useRealtimeCallStore((store) => store.paused)
@@ -51,9 +43,8 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [microphoneShortcutEnabled, disabled])
 
-  const centered = layout === 'centered'
-  // The centered row sits under an 84px mark; the buttons read as its footnote.
-  const compact = centered ? 'size-5 rounded-full [&_svg:not([class*=size-])]:size-3' : undefined
+  const composer = layout === 'composer'
+  const buttonClass = composer ? 'size-8 rounded-full text-foreground [&_svg:not([class*=size-])]:size-4' : undefined
 
   // A muted channel is a state the user should notice at a glance, so the icon
   // takes the error status color (not destructive: nothing is being deleted).
@@ -74,7 +65,7 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
           {microphoneLabel}<CommandShortcut className="tracking-normal">M</CommandShortcut>
         </span>
       ) : microphoneLabel}
-      className={cn(compact, microphoneMuted && 'text-error hover:text-error')}
+      className={cn(buttonClass, microphoneMuted && 'text-error hover:text-error')}
       onClick={toggleRealtimeMicrophone}
     >
       {microphoneMuted ? <MicOff /> : <Mic />}
@@ -89,7 +80,7 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
       aria-pressed={paused}
       aria-label={t(paused ? 'chat.realtimeVoice.resume' : 'chat.realtimeVoice.pause')}
       tooltip={t(paused ? 'chat.realtimeVoice.resume' : 'chat.realtimeVoice.pause')}
-      className={compact}
+      className={buttonClass}
       onClick={onPlayback}
     >
       {paused ? <Play /> : <Pause />}
@@ -100,17 +91,17 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
       key="hang-up"
       size="sm"
       variant="ghost"
-      disabled={disabled}
+      disabled={hangUpDisabled}
       tooltip={t('chat.realtimeVoice.stop')}
       className={cn(
         'rounded-full bg-error text-white hover:bg-error/90 hover:text-white',
-        centered && 'size-6 [&_svg:not([class*=size-])]:size-3.5',
+        composer && 'mx-1 size-7 [&_svg:not([class*=size-])]:size-3.5',
       )}
-      onClick={() => { void stopRealtimeCall() }}
+      onClick={onStop}
     >
       <Power />
     </IconButton>
   )
 
-  return centered ? <>{microphone}{hangUp}{playback}</> : <>{microphone}{playback}{hangUp}</>
+  return <>{microphone}{children}{playback}{hangUp}</>
 }

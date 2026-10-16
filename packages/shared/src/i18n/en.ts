@@ -1613,6 +1613,9 @@ export type Messages = {
       timeline: string
       waiting: string
       connecting: string
+      starting: string
+      microphoneMuted: string
+      returnToVoice: string
       showConversation: string
       showThread: string
       showTimeline: string
@@ -6124,8 +6127,11 @@ export const en: Messages = {
       taskRunning: 'A task is running. Start voice when it finishes.',
       listening: 'Realtime Voice',
       timeline: 'Voice Timeline',
-      waiting: 'Listening for speech…',
-      connecting: 'Connecting voice…',
+      waiting: 'Listening…',
+      connecting: 'Connecting…',
+      starting: 'Starting voice session…',
+      microphoneMuted: 'Microphone muted',
+      returnToVoice: 'Return to Voice Conversation',
       showConversation: 'Show conversation',
       showThread: 'Show Codex thread',
       showTimeline: 'Show voice timeline',
@@ -6133,7 +6139,7 @@ export const en: Messages = {
       timelineLoadFailed: 'Could not load the voice timeline.',
       offerFailed: 'Could not create the WebRTC offer.',
       connectionTimedOut: 'Realtime voice connection timed out.',
-      stopping: 'Ending voice conversation…',
+      stopping: 'Hanging up',
       speaking: 'speaking',
       silence: 'Silent for {{duration}}',
       callStartedAt: 'Call started at {{time}}',

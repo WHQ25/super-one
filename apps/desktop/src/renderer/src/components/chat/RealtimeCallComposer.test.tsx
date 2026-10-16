@@ -1,52 +1,36 @@
 /** @vitest-environment jsdom */
-
-import { act, cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, expect, it } from 'vitest'
 import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { RealtimeCallComposer } from './RealtimeCallComposer'
 
-vi.mock('./RealtimeCallIndicator', () => ({ RealtimeCallIndicator: () => <div data-testid="realtime-call-indicator" /> }))
-vi.mock('./RealtimeCallControls', () => ({
-  RealtimeCallControls: ({ disabled }: { disabled?: boolean }) => <div data-testid="call-controls" data-disabled={String(!!disabled)} />,
-}))
+afterEach(() => { cleanup(); resetRealtimeCallForTests() })
 
-afterEach(() => {
-  cleanup()
-  resetRealtimeCallForTests()
+it('keeps cancellation available during negotiation, disabling mute and playback', () => {
+  useRealtimeCallStore.setState({ sessionId: 'sid', state: 'starting' })
+  render(<RealtimeCallComposer />)
+  expect(screen.getByText('Starting voice session…')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Pause Voice' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeEnabled()
 })
 
-describe('RealtimeCallComposer', () => {
-  it('shows the mark with a connecting line, and no controls, while the offer is out', () => {
-    useRealtimeCallStore.setState({ sessionId: 'sid', state: 'starting' })
-    render(<RealtimeCallComposer />)
-    expect(screen.queryByTestId('decision-prompts')).toBeNull()
-    const composer = screen.getByTestId('realtime-call-composer')
-    expect(composer).toHaveAttribute('data-call-state', 'starting')
-    expect(composer.contains(screen.getByTestId('realtime-call-indicator'))).toBe(true)
-    expect(screen.getByText('Connecting voice…')).toBeInTheDocument()
-    expect(screen.queryByTestId('call-controls')).toBeNull()
-  })
+it('retains the bar and disables every action while hanging up and leaving the slot', () => {
+  useRealtimeCallStore.setState({ sessionId: 'sid', state: 'active' })
+  render(<RealtimeCallComposer />)
+  expect(screen.getByTestId('voice-waveform')).toBeInTheDocument()
+  act(() => useRealtimeCallStore.setState({ state: 'stopping' }))
+  expect(screen.getByText('Hanging up')).toBeInTheDocument()
+  for (const button of within(screen.getByTestId('realtime-call-composer')).getAllByRole('button')) expect(button).toBeDisabled()
+  act(() => resetRealtimeCallForTests())
+  expect(screen.getByTestId('realtime-call-composer')).toHaveAttribute('data-call-state', 'stopping')
+  expect(screen.getByText('Hanging up')).toBeInTheDocument()
+})
 
-  it('shows the mark with its controls, then the hanging-up line in their place', () => {
-    useRealtimeCallStore.setState({ sessionId: 'sid', state: 'active' })
-    render(<RealtimeCallComposer />)
-    const composer = screen.getByTestId('realtime-call-composer')
-    expect(composer.contains(screen.getByTestId('realtime-call-indicator'))).toBe(true)
-    expect(screen.getByTestId('call-controls')).toHaveAttribute('data-disabled', 'false')
-
-    // Hanging up swaps the controls for the status line in the same fixed-height foot.
-    act(() => useRealtimeCallStore.setState({ state: 'stopping' }))
-    expect(screen.getByText('Ending voice conversation…')).toBeInTheDocument()
-    expect(screen.queryByTestId('call-controls')).toBeNull()
-  })
-
-  it('keeps the last engaged state on screen after the store goes idle, so the exit animation has something to move', () => {
-    useRealtimeCallStore.setState({ sessionId: 'sid', state: 'active' })
-    render(<RealtimeCallComposer />)
-    act(() => resetRealtimeCallForTests())
-    const composer = screen.getByTestId('realtime-call-composer')
-    expect(composer).toHaveAttribute('data-call-state', 'active')
-    expect(composer.contains(screen.getByTestId('realtime-call-indicator'))).toBe(true)
-    expect(screen.getByText('Ending voice conversation…')).toBeInTheDocument()
-  })
+it('shows a resume hint after audio interruption and prevents duplicate resume requests', () => {
+  useRealtimeCallStore.setState({ sessionId: 'sid', state: 'active', paused: true, pauseReason: 'interrupted', resuming: true })
+  render(<RealtimeCallComposer />)
+  expect(screen.getByRole('status')).toHaveTextContent('Audio interrupted. Tap Play to continue.')
+  expect(screen.getByRole('button', { name: 'Resume Voice' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeEnabled()
 })

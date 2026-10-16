@@ -41,3 +41,26 @@ it('resamples continuously across received frame boundaries without restarting t
   expect(result.length).toBe(expected.length)
   result.forEach((sample, index) => expect(sample).toBeCloseTo(expected[index]!))
 })
+
+
+it('meters the audio actually played, including buffered replies and the silence after they drain', async () => {
+  type Processor = { port: { onmessage?: (event: { data: { type: string; samples?: Float32Array; paused?: boolean } }) => void; postMessage: ReturnType<typeof vi.fn> }; process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean }
+  let ProcessorClass!: new () => Processor
+  vi.stubGlobal('sampleRate', 480)
+  vi.stubGlobal('AudioWorkletProcessor', class { port = { onmessage: undefined, postMessage: vi.fn() } })
+  vi.stubGlobal('registerProcessor', (_name: string, constructor: typeof ProcessorClass) => { ProcessorClass = constructor })
+  try {
+    vi.resetModules(); await import('./realtime-audio-worklet.js')
+    const processor = new ProcessorClass()
+    processor.port.onmessage?.({ data: { type: 'pause', paused: true } })
+    processor.port.onmessage?.({ data: { type: 'samples', samples: new Float32Array(48).fill(0.1) } })
+    const tick = () => processor.process([], [[new Float32Array(48)]])
+    tick()
+    expect(processor.port.postMessage).not.toHaveBeenCalled()
+    processor.port.onmessage?.({ data: { type: 'pause', paused: false } })
+    tick()
+    expect(processor.port.postMessage).toHaveBeenLastCalledWith({ type: 'consumed', frames: 48, level: expect.closeTo(0.1) })
+    tick()
+    expect(processor.port.postMessage).toHaveBeenLastCalledWith({ type: 'consumed', frames: 0, level: 0 })
+  } finally { vi.unstubAllGlobals(); vi.resetModules() }
+})

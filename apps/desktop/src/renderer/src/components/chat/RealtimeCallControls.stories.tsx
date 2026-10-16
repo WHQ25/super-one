@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { RealtimeCallControls } from './RealtimeCallControls'
 
-function Preview({ layout = 'centered', disabled = false }: {
-  layout?: 'centered' | 'toolbar'; disabled?: boolean
+function Preview({ layout = 'composer', disabled = false }: {
+  layout?: 'composer' | 'toolbar'; disabled?: boolean
 }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -31,7 +31,7 @@ export default meta
 type Story = StoryObj<typeof RealtimeCallControls>
 
 /** Offline state only: no native media or agent start/stop RPC is acquired. */
-export const Centered: Story = { render: () => <Preview /> }
+export const Composer: Story = { render: () => <Preview /> }
 export const Toolbar: Story = { render: () => <Preview layout="toolbar" /> }
 export const Disabled: Story = { render: () => <Preview disabled /> }
 export const DarkChinese: Story = {

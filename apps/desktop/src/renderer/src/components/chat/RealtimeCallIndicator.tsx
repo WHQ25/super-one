@@ -20,7 +20,7 @@ export function RealtimeCallIndicator({ frozenState }: { frozenState?: RealtimeC
     role={active ? 'img' : 'status'} aria-label={label}>
     {active ? <>
       <VoiceWaveform levels={realtimeVoiceAudioLevels} paused={paused} />
-      {paused && <span role="status" className="-mt-2 truncate text-center text-[10px] text-muted-foreground" title={label}>{label}</span>}
+      {paused && <span role="status" className="-mt-2 truncate text-center text-2xs text-muted-foreground" title={label}>{label}</span>}
     </> : <span className="truncate text-center text-xs text-muted-foreground" title={label}>{label}</span>}
   </div>
 }

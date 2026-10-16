@@ -8,7 +8,15 @@ export function historyEdgeKey(message: ChatMessage | undefined, index: number, 
     edge === 'older' ? message.metadata?.window?.omittedBefore : message.metadata?.window?.omittedAfter])
 }
 
-/** Visible history edges page automatically, including a first paint shorter than the viewport. */
+/** How far past the viewport, in screens, an edge starts paging so the reader rarely reaches it. */
+const PREFETCH_SCREENS = 1
+
+function withinReach(element: HTMLElement | null, margin: number): boolean {
+  const bounds = element?.getBoundingClientRect()
+  return !!bounds && bounds.bottom > -margin && bounds.top < window.innerHeight + margin
+}
+
+/** History edges near the viewport page automatically, including a first paint shorter than the viewport. */
 export function useHistoryEdges(options: {
   epoch: number
   older: string | null
@@ -32,13 +40,16 @@ export function useHistoryEdges(options: {
       if (next.busy) return
       const wait = next.notBefore() - performance.now()
       if (wait > 0) { timer = setTimeout(check, wait); return }
-      for (const [edge, element, load] of [
+      const edges = [
         ['older', top.current, next.loadOlder],
         ['newer', bottom.current, next.loadNewer],
-      ] as const) {
-        const bounds = element?.getBoundingClientRect()
-        const visible = bounds && bounds.bottom > 0 && bounds.top < window.innerHeight
-        if (!visible) { delete attempted.current[edge]; continue }
+      ] as const
+      // With both ends in prefetch reach, each page would trim the other end
+      // out of the mounted window and back in again; only a visible end pages.
+      const prefetch = window.innerHeight * PREFETCH_SCREENS
+      const margin = edges.every(([, element]) => withinReach(element, prefetch)) ? 0 : prefetch
+      for (const [edge, element, load] of edges) {
+        if (!withinReach(element, margin)) { delete attempted.current[edge]; continue }
         const key = next[edge]
         if (!key || attempted.current[edge] === key) continue
         // Retry on another edge visit or a gesture, not every failed/no-op render.
@@ -49,12 +60,20 @@ export function useHistoryEdges(options: {
     }
     // Let scroll anchoring and the mounted-window cooldown settle first.
     const schedule = () => { clearTimeout(timer); timer = setTimeout(check, 80) }
-    const observer = new IntersectionObserver(schedule)
-    if (top.current) observer.observe(top.current)
-    if (bottom.current) observer.observe(bottom.current)
+    // One observer per margin `check` can use: the prefetch reach and the viewport.
+    const observers = [{ rootMargin: `${PREFETCH_SCREENS * 100}% 0px` }, {}]
+      .map(init => new IntersectionObserver(schedule, init))
+    for (const observer of observers) {
+      if (top.current) observer.observe(top.current)
+      if (bottom.current) observer.observe(bottom.current)
+    }
     window.addEventListener('resize', schedule)
     schedule()
-    return () => { clearTimeout(timer); observer.disconnect(); window.removeEventListener('resize', schedule) }
+    return () => {
+      clearTimeout(timer)
+      for (const observer of observers) observer.disconnect()
+      window.removeEventListener('resize', schedule)
+    }
   }, [options.epoch, options.older, options.newer, options.busy])
 
   return { top, bottom }

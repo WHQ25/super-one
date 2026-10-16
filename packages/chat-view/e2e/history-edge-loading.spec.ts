@@ -106,6 +106,15 @@ test('stops automatic paging when the visible content fills a screen with older 
   expect(await page.evaluate(() => (window as any).calls.length)).toBe(count)
 })
 
+test('pages older history a screen before the reader reaches the top edge', async ({ page }) => {
+  await open(page, { longPrefix: true })
+  await expect(page.locator('[data-turn-id="reply"]')).toContainText('Older explanation.')
+  const count = await page.evaluate(() => (window as any).calls.length)
+  await page.evaluate(() => window.scrollTo({ top: window.innerHeight / 2 }))
+  await expect(page.getByTestId('top-sentinel')).not.toBeInViewport()
+  await expect.poll(() => page.evaluate(() => (window as any).calls.length)).toBe(count + 1)
+})
+
 test('a narrow dark viewport shows the localized Loading indicator without historical notices', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 780 })
   await open(page, { hold: true })

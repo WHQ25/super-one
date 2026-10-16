@@ -50,7 +50,7 @@ export function GitChips(props: {
   const chip = (label: string, onPress: () => void, lead: ReactNode, value: ReactNode, onLayout?: (e: LayoutChangeEvent) => void) => (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onLayout={onLayout}
       accessibilityState={{ disabled: props.locked }} disabled={props.locked} onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center',
+      style={({ pressed }) => ({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', justifyContent: 'center',
         columnGap: 5, rowGap: 2, minHeight: 36, flexShrink: 1, minWidth: 0, paddingHorizontal: 6, paddingVertical: 4,
         borderRadius: radius.sm, backgroundColor: pressed ? colors.muted : 'transparent' })}>
       {lead}

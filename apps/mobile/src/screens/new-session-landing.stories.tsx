@@ -72,6 +72,11 @@ export const PoweredByCodex = {
   args: { provider: 'codex', activeHarnessKey: 'codex' },
 }
 
+export const ShortBranch = {
+  name: 'Short branch · press Local or main to inspect centered feedback',
+  args: { branch: 'main' },
+}
+
 export const LongNames = {
   args: {
     projectName: 'super-one-mobile-remote-control-workspace',

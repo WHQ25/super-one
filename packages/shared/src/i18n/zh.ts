@@ -2710,7 +2710,6 @@ export const zh: Messages = {
         suggestedTask: '建议任务',
         launch: '启动',
         launched: '已启动',
-        openSession: '打开会话',
         dismissed: '已忽略',
         desktopOnly: '请在电脑上的 SuperOne 中启动。',
         unavailable: '此会话无法在这里启动任务。',

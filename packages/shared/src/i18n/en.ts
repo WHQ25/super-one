@@ -2600,7 +2600,6 @@ export type Messages = {
         suggestedTask: string
         launch: string
         launched: string
-        openSession: string
         dismissed: string
         desktopOnly: string
         unavailable: string
@@ -7136,7 +7135,6 @@ export const en: Messages = {
         suggestedTask: 'Suggested Task',
         launch: 'Launch',
         launched: 'Launched',
-        openSession: 'Open Session',
         dismissed: 'Dismissed',
         desktopOnly: 'Launch it from SuperOne on your computer.',
         unavailable: 'This session cannot launch tasks from here.',

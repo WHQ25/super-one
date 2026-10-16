@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUpRight, ClipboardCheck, Loader2 } from 'lucide-react'
+import { ClipboardCheck, Loader2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
+import { localSessionLink } from '@superone/shared/session-link'
 import type { SuggestedTaskState } from '@superone/shared/suggested-task'
+import { SessionChip } from './SessionChip'
 import {
   CompactLabeledToolRow,
   ToolName,
@@ -35,7 +37,6 @@ export interface SuggestedTaskCardProps {
   launchControls?: ReactNode
   /** Renders the brief; plain text when absent. */
   renderMarkdown?: (content: string) => ReactNode
-  onOpenSession?: (sessionId: string) => void | Promise<void>
 }
 
 function str(value: unknown): string {
@@ -60,7 +61,6 @@ export function SuggestedTaskCard({
   unavailableReason,
   launchControls,
   renderMarkdown,
-  onOpenSession,
 }: SuggestedTaskCardProps) {
   const { t } = useTranslation()
   const [launching, setLaunching] = useState(false)
@@ -103,11 +103,16 @@ export function SuggestedTaskCard({
     }
   }
 
+  // A launched card's title is the chip to its session, outside the prompt
+  // toggle: a link cannot sit inside a button.
+  const launchedSessionId = state?.status === 'launched' ? state.sessionId : undefined
   const summary = (
     <>
-      <span className={cn('mt-1 block min-w-0 break-words text-sm font-medium', state?.status === 'dismissed' && 'text-muted-foreground line-through')}>
-        {title}
-      </span>
+      {launchedSessionId ? null : (
+        <span className={cn('mt-1 block min-w-0 break-words text-sm font-medium', state?.status === 'dismissed' && 'text-muted-foreground line-through')}>
+          {title}
+        </span>
+      )}
       {tldr ? (
         <span className={cn('mt-0.5 block break-words text-xs text-muted-foreground', prompt && 'transition-colors group-hover/summary:text-foreground')}>
           {tldr}
@@ -127,7 +132,10 @@ export function SuggestedTaskCard({
           <ToolName>{t('chat.toolBlock.suggestedTask.suggestedTask')}</ToolName>
           {state ? <StateBadge state={state} /> : null}
         </div>
-        {prompt ? (
+        {launchedSessionId ? (
+          <SessionChip href={localSessionLink(launchedSessionId)} label={title} size="title" className="mt-1" />
+        ) : null}
+        {prompt && (tldr || !launchedSessionId) ? (
           // The summary is the toggle: the full brief opens beneath it.
           <button
             type="button"
@@ -155,7 +163,6 @@ export function SuggestedTaskCard({
         unavailableReason={unavailableReason}
         launchControls={launchControls}
         onLaunch={launch}
-        onOpenSession={onOpenSession}
       />
     </div>
   )
@@ -179,7 +186,6 @@ function Footer({
   unavailableReason,
   launchControls,
   onLaunch,
-  onOpenSession,
 }: {
   state?: SuggestedTaskState
   launching: boolean
@@ -188,21 +194,9 @@ function Footer({
   unavailableReason?: string
   launchControls?: ReactNode
   onLaunch: () => void
-  onOpenSession?: (sessionId: string) => void | Promise<void>
 }) {
   const { t } = useTranslation()
-  if (state?.status === 'launched') {
-    if (!onOpenSession) return null
-    return (
-      <div className="px-3 pb-2">
-        <Button variant="link" size="xs" className="h-auto px-0 has-[>svg]:px-0" onClick={() => void onOpenSession(state.sessionId)}>
-          {t('chat.toolBlock.suggestedTask.openSession')}
-          <ArrowUpRight />
-        </Button>
-      </div>
-    )
-  }
-  if (state?.status === 'dismissed') return null
+  if (state) return null
   if (!actions) {
     return (
       <p className="px-3 pb-2 text-xs text-muted-foreground">

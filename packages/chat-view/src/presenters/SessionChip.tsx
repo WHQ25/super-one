@@ -16,7 +16,14 @@ export const SessionLinkContext = createContext<{ sourceEnvironmentId?: string |
 const noSubscribe = () => () => {}
 const noVersion = () => 0
 
-export function SessionChip({ href, label, className }: { href: string; label: string; className?: string }) {
+const CHIP_SIZES = {
+  inline: { chip: 'gap-1 rounded px-1 text-[0.9em] align-baseline translate-y-[1px]', icon: 'size-3', px: 12, label: 'max-w-[24em]' },
+  /** A chip that stands as a heading of its own, e.g. a launched task's title. */
+  title: { chip: 'gap-1.5 rounded-md px-1.5 py-0.5 text-sm font-medium', icon: 'size-4', px: 16, label: '' },
+} as const
+
+export function SessionChip({ href, label, size = 'inline', className }: { href: string; label: string; size?: keyof typeof CHIP_SIZES; className?: string }) {
+  const sizing = CHIP_SIZES[size]
   const { sourceEnvironmentId, ports } = useContext(SessionLinkContext)
   const version = useSyncExternalStore(ports?.cache.subscribe ?? noSubscribe, ports?.cache.getSnapshot ?? noVersion, noVersion)
   const parsed = parseSessionLink(href)
@@ -50,7 +57,7 @@ export function SessionChip({ href, label, className }: { href: string; label: s
     <a ref={element} href={targetKey ?? href} title={title} aria-label={label} aria-busy={opening || undefined}
       aria-disabled={!target || !ports || opening || undefined}
       data-selection-fill="" data-selection-atomic="" data-copy-text={sessionLinkMarkdown(label, target ?? parsed)}
-      className={cn('inline-flex max-w-full cursor-pointer items-center gap-1 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-colors', className)}
+      className={cn('inline-flex max-w-full cursor-pointer items-center bg-muted text-foreground whitespace-nowrap hover:bg-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-colors', sizing.chip, className)}
       onClick={async event => {
         event.preventDefault(); event.stopPropagation()
         // Keyboard activation is independent of an existing text selection.
@@ -62,10 +69,10 @@ export function SessionChip({ href, label, className }: { href: string; label: s
       }}>
       {/* Layout containment drops the harness marks' nested-span baselines, so the chip
           sits on the icon's bottom edge like a file chip does. */}
-      <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center contain-layout">
-        {Icon ? <Icon status="default" size={12} renderLevel="compact" /> : <MessageSquare className="size-3 text-muted-foreground" />}
+      <span aria-hidden="true" className={cn('flex shrink-0 items-center justify-center contain-layout', sizing.icon)}>
+        {Icon ? <Icon status="default" size={sizing.px} renderLevel="compact" /> : <MessageSquare className={cn(sizing.icon, 'text-muted-foreground')} />}
       </span>
-      <span className="min-w-0 max-w-[24em] truncate">{label}</span>
+      <span className={cn('min-w-0 truncate', sizing.label)}>{label}</span>
     </a>
   )
 }

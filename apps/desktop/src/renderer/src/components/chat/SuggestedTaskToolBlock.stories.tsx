@@ -4,6 +4,8 @@ import { expect, userEvent, within } from 'storybook/test'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import type { SuggestedTaskLaunchChoice, SuggestedTaskState } from '@superone/shared/suggested-task'
 import { SuggestedTaskCard } from '@superone/chat-view/presenters/SuggestedTaskCard'
+import { SessionLinkContext, type SessionLinkPorts } from '@superone/chat-view/presenters/SessionChip'
+import { createSessionLinkCache } from '@superone/chat-view/presenters/session-link-cache'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { SuggestedTaskLaunchControls, type LaunchOptionsState } from './SuggestedTaskToolBlock'
 import { renderToolMarkdown } from './tool-block-presenters/tool-markdown'
@@ -71,8 +73,25 @@ const LONG_PARAMS = {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** Launched sessions by id: `session-codex` ran on Codex, any other on Claude. */
+const SESSION_LINKS = {
+  sourceEnvironmentId: 'source-host',
+  ports: {
+    cache: createSessionLinkCache(async (refs) => refs.map((ref) => ({
+      status: 'ok' as const,
+      metadata: { ref, harness: ref.sessionId === 'session-codex' ? 'codex' as const : 'claude' as const, acpAgentId: null },
+    }))),
+    open: async () => {},
+    onError: () => {},
+  } satisfies SessionLinkPorts,
+}
+
 function Shell({ children, width = 560 }: { children: ReactNode; width?: number }) {
-  return <div className="@container space-y-3" style={{ maxWidth: width }}>{children}</div>
+  return (
+    <SessionLinkContext.Provider value={SESSION_LINKS}>
+      <div className="@container space-y-3" style={{ maxWidth: width }}>{children}</div>
+    </SessionLinkContext.Provider>
+  )
 }
 
 /** Stands in for the host: a successful action patches the card's state as main would. */
@@ -91,7 +110,6 @@ function InteractiveCard({
     <SuggestedTaskCard
       params={params}
       state={state}
-      onOpenSession={() => {}}
       renderMarkdown={renderToolMarkdown}
       launchControls={<SuggestedTaskLaunchControls state={launchOptions} choice={choice} onChange={setChoice} />}
       actions={{
@@ -137,7 +155,7 @@ export const Pending: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Launch' }))
-    await expect(await canvas.findByRole('button', { name: /Open Session/ })).toBeVisible()
+    await expect(await canvas.findByRole('link', { name: PARAMS.title })).toBeVisible()
   },
 }
 
@@ -204,11 +222,18 @@ export const LaunchFails: Story = {
   },
 }
 
-/** A launched card, and one a transcript stored as dismissed before cards lost Dismiss. */
+/**
+ * Launched cards title their session as a chip with its agent's mark (Claude, Codex,
+ * a long title on a narrow card), and one a transcript stored as dismissed before cards lost Dismiss.
+ */
 export const Settled: Story = {
   render: () => (
     <Shell>
-      <SuggestedTaskCard params={PARAMS} state={{ status: 'launched', sessionId: 'session-2' }} onOpenSession={() => {}} />
+      <SuggestedTaskCard params={PARAMS} state={{ status: 'launched', sessionId: 'session-2' }} />
+      <SuggestedTaskCard params={PARAMS} state={{ status: 'launched', sessionId: 'session-codex' }} />
+      <div style={{ maxWidth: 300 }}>
+        <SuggestedTaskCard params={LONG_PARAMS} state={{ status: 'launched', sessionId: 'session-codex' }} />
+      </div>
       <SuggestedTaskCard params={PARAMS} state={{ status: 'dismissed' }} />
     </Shell>
   ),

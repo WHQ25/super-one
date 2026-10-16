@@ -303,7 +303,6 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
   const streamingInputPreview = useActiveSession((state) => (
     props.toolUseId ? state._streamingToolInputPreviews[props.toolUseId] : undefined
   ))
-  const switchSession = useChatStore((state) => state.switchSession)
   const toolInterceptState = useChatStore((state) => (
     props.toolUseId
       ? Object.values(state.toolRenderers).find((renderer) => (
@@ -323,7 +322,6 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
     streamingInputPreview,
     mcpIconSrc,
     stallLevel,
-    onOpenSession: switchSession,
     onWidgetInputComplete: ({ title, inputLength }) => {
       window.app.trace?.('widget.ui', 'input_complete_early', { title, inputLen: inputLength })
     },
@@ -353,7 +351,7 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
       showInFolder: (directory, filename) => window.app.showInFolder(directory, filename),
       t,
     }),
-  }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, switchSession, t, toolInterceptState, onWidgetRequestInput, widgetComposerPorts])
+  }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, t, toolInterceptState, onWidgetRequestInput, widgetComposerPorts])
 
   const renderRow = () => <ToolBlockPresenter
       {...props}

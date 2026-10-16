@@ -194,7 +194,6 @@ export interface ToolFamilyRenderResult {
 }
 
 export interface ToolBlockPresenterPorts extends GenericToolRowPorts {
-  onOpenSession: (sessionId: string) => void | Promise<void>
   onWidgetInputComplete?: (data: { title?: string; inputLength: number }) => void
   onWidgetRequestInput?: (spec: unknown) => Promise<void>
   widgetComposerPorts?: ComposerViewPorts
@@ -480,7 +479,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       )
     }
     if (mcpInfo.mcpToolName === SUGGEST_TASK_TOOL_NAME) {
-      return (
+      return ports.renderSessionLinkScope(
         <SuggestedTaskToolBlock
           params={params}
           toolSummary={toolSummary}
@@ -490,8 +489,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           isError={isError}
           isDenied={isDenied}
           allowExpand={allowExpand}
-          onOpenSession={ports.onOpenSession}
-        />
+        />,
       )
     }
     if (COLLAB_TOOLS.has(mcpInfo.mcpToolName)) {

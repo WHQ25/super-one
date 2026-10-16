@@ -25,6 +25,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Update the bundled and managed Codex runtime to 0.163.0 and expose its expanded
+  Realtime v3 voice catalog.
 - Use compact realtime voice controls and an audio-driven waveform, and keep live
   captions in the transcript on desktop.
 - Let layout tools split in other sessions and close tabs beyond those opened by

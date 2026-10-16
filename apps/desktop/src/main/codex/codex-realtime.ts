@@ -93,10 +93,11 @@ function readVoiceList(value: unknown): string[] {
   return [...new Set(value.filter((voice): voice is string => typeof voice === 'string' && voice.length > 0))]
 }
 
-/** Flatten Codex's protocol-versioned response to the v1 voice group used by v3. */
+/** Prefer the dedicated v3 catalog, with compatibility for older runtimes. */
 export function mapCodexRealtimeVoiceCatalog(response: Record<string, unknown>): CodexRealtimeVoiceCatalog {
   const voicesRecord = asRecord(response.voices)
-  const voices = readVoiceList(voicesRecord?.v1)
+  const v3Voices = readVoiceList(voicesRecord?.v3)
+  const voices = v3Voices.length > 0 ? v3Voices : readVoiceList(voicesRecord?.v1)
   const defaultVoice = readString(voicesRecord?.defaultV1)
   if (voices.length === 0 || !defaultVoice || !voices.includes(defaultVoice)) {
     throw new Error('Codex returned an invalid realtime voice catalog.')

@@ -94,15 +94,43 @@ items still map to Agent cards.
 
 ## Models and thread forks
 
+### Cold resume keeps the host's current explicit permission policy
+
+- **Behavior:** 0.163.0 restores provider-owned historical permissions when
+  loading a cold thread, but explicit resume sandbox/approval/network settings
+  still take precedence. SuperOne continues sending the current host policy.
+  Its permission preset is a live session setting, not a persisted grant;
+  application restart initializes it from host defaults.
+- **Observed:** CDP cold restart retained the provider thread and history. A
+  current read-only selection replaced the previous workspace-write policy;
+  the resumed rollout recorded `approval_policy: on-request` and
+  `sandbox_policy.type: read-only`.
+- **Guard:** `codex-backend.test.ts`, `app-server-connection.test.ts`, and
+  `session-settings.contract.test.ts` (permission preset lifetime).
+
+### Interrupting a turn does not guarantee terminating its native shell
+
+- **Behavior:** `turn/interrupt` cancels the turn and active Code Mode cells.
+  Native unified-exec processes have separate background-terminal ownership
+  and termination APIs; turn completion is not proof of OS-process exit.
+- **Observed:** 0.163.0 CDP interrupted an active `sleep 30` turn in about three
+  seconds, cleared the busy state and preserved the next queued message.
+  Later timeline lookup still showed the native command's successful output.
+  The task-abort path inspected in 0.162.1 is equivalent; no old-binary live
+  reproduction was performed.
+- **Depends on it:** Host cancellation must fence late events and must not
+  equate an interrupted assistant turn with proof that all shell work stopped.
+  Explicit terminal cleanup remains a separate product decision (backlog #25).
+
 ### Prediction protocol declarations do not imply a working suggestion engine
 
-- **Behavior:** 0.162.1 declares experimental `thread/prediction/request` and
+- **Behavior:** 0.163.0 declares experimental `thread/prediction/request` and
   `thread/prediction/updated { threadId, sourceTurnId, result }`, but the server
   returns JSON-RPC `-32601` with `thread/prediction/request is not implemented yet`.
   The release source contains no prediction notification producer. A completed
   result allows nullable `text`; a failed result contains no suggestion.
-- **Observed:** Exact `rust-v0.162.1` source and an isolated npm-binary RPC check
-  on 2026-10-11. Its stable generated notification schema includes the event
+- **Observed:** Exact `rust-v0.163.0` source and an isolated npm-binary RPC check
+  on 2026-10-17. Its stable generated notification schema includes the event
   despite the experimental source annotation and unavailable implementation.
 - **Depends on it:** `packages/codex/src/prompt-prediction.ts` is shared by the
   desktop notification dispatcher and node client observer, both alive between
@@ -184,6 +212,22 @@ items still map to Agent cards.
   their findings.
 
 ## Realtime voice
+
+### V3 owns its catalog but still uses the legacy default field
+
+- **Behavior:** 0.163.0 validates v3 voices against the dedicated `voices.v3`
+  catalog (25 voices). `voices.v1` remains the nine legacy voices and
+  `defaultV1` is still the default for v3; there is no `defaultV3` field.
+  Prefer a nonempty v3 list and fall back to v1 for older runtimes. Validate
+  the default against the chosen list, and reject an unusable catalog.
+- **Observed:** Exact `rust-v0.163.0` source and pinned npm binary; SuperOne
+  already sends `version: v3` and needs no realtime model override.
+- **Depends on it:** `codex-realtime.ts#mapCodexRealtimeVoiceCatalog` and the
+  shared string-based voice preference used by desktop and phone.
+- **Guard:** `codex-realtime.test.ts` covers dedicated v3, legacy/empty-v3
+  fallback, malformed entries, duplicates and missing/mismatched defaults.
+  `CodexRealtimeVoicePreference.stories.tsx` covers 25 choices and selection,
+  loading/error/disabled states, and the narrow Chinese dark layout.
 
 ### A realtime session is a voice connection on the existing thread
 

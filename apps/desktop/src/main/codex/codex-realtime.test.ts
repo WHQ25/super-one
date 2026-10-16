@@ -62,15 +62,43 @@ describe('Codex realtime protocol mapping', () => {
     expect(buildCodexRealtimeStartParams('t1', { sdp: 'offer' })).not.toHaveProperty('voice')
   })
 
-  it('flattens the v1 catalog used by realtime v3', () => {
+  it('prefers the dedicated v3 voice catalog', () => {
     expect(mapCodexRealtimeVoiceCatalog({
       voices: {
         v1: ['juniper', 'cove'],
         v2: ['marin'],
+        v3: ['cove', 'aube', 'miko'],
+        defaultV1: 'cove',
+        defaultV2: 'marin',
+      },
+    })).toEqual({ voices: ['cove', 'aube', 'miko'], defaultVoice: 'cove' })
+  })
+
+  it.each([undefined, [], null, 'invalid', [null, '', 7]].map((v3) => [v3]))('falls back to the legacy v1 catalog when v3 is %j', (v3) => {
+    expect(mapCodexRealtimeVoiceCatalog({
+      voices: {
+        v1: ['juniper', 'cove'],
+        v2: ['marin'],
+        v3,
         defaultV1: 'cove',
         defaultV2: 'marin',
       },
     })).toEqual({ voices: ['juniper', 'cove'], defaultVoice: 'cove' })
+  })
+
+  it('accepts a v3 catalog without legacy voices and removes invalid or duplicate entries', () => {
+    expect(mapCodexRealtimeVoiceCatalog({
+      voices: { v3: ['cove', 'aube', 'aube', null, '', 1], defaultV1: 'cove' },
+    })).toEqual({ voices: ['cove', 'aube'], defaultVoice: 'cove' })
+  })
+
+  it.each([
+    {},
+    { voices: { v1: [], v3: [], defaultV1: 'cove' } },
+    { voices: { v3: ['aube'], defaultV1: 'cove' } },
+    { voices: { v3: ['cove'] } },
+  ])('rejects an unusable voice catalog: %j', (response) => {
+    expect(() => mapCodexRealtimeVoiceCatalog(response)).toThrow('invalid realtime voice catalog')
   })
 
   it('maps SDP and transcript notifications to harness-neutral events', () => {

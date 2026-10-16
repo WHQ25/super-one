@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.162.1` · Ledger version: `0.162.1` · Last updated: 2026-10-11
+Pin: `@openai/codex` `0.163.0` · Ledger version: `0.163.0` · Last updated: 2026-10-17
 
 ## Upstream
 
@@ -27,7 +27,7 @@ Prediction notification reception shares `packages/codex/src/prompt-prediction.t
 across desktop and remote node connections. Valid results use the existing shared
 `prompt_suggestion` event and composer UI: desktop ghost text / Tab-to-fill and
 mobile tappable rows. The receiver remains active after turn completion and
-filters stale or child-thread results. The pinned 0.162.1 server has no prediction
+filters stale or child-thread results. The pinned 0.163.0 server has no prediction
 producer; no prediction request or extra model call is sent. See the
 [prediction contract](contracts.md#prediction-protocol-declarations-do-not-imply-a-working-suggestion-engine).
 
@@ -51,6 +51,7 @@ producer; no prediction request or extra model call is sent. See the
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.163.0 | 2026-10-17 | executed | [0.163.0](upgrades/0.163.0.md) | — |
 | 0.162.1 | 2026-10-11 | executed | [0.162.1](upgrades/0.162.1.md) | — |
 | 0.160.0 | 2026-10-05 | executed | [0.160.0](upgrades/0.160.0.md) | — |
 | 0.159.0 | 2026-09-30 | executed | [0.159.0](upgrades/0.159.0.md) | — |

@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.162.1` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.163.0` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.162.1.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.163.0.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`
@@ -167,18 +167,20 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/backgroundTerminals/terminate` | unused | No client call or dedicated handler. | — |
 | `thread/decrement_elicitation` | unused | No client call or dedicated handler. | — |
 | `thread/increment_elicitation` | unused | No client call or dedicated handler. | — |
+| `thread/items/read` | unused | Experimental bounded item lookup; SuperOne owns transcript pagination. | — |
 | `thread/memoryMode/set` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/request` | unused | 0.162.1 rejects the placeholder method as not implemented. | — |
+| `thread/prediction/request` | unused | 0.163.0 rejects the placeholder method as not implemented. | — |
 | `thread/queue/add` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/delete` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/reorder` | unused | No client call or dedicated handler. | — |
 | `thread/queue/start` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/queue/update` | unused | No client call or dedicated handler. | — |
+| `thread/readState/update` | unused | Experimental provider read receipts; SuperOne owns completion/seen state. | — |
 | `thread/realtime/appendAudio` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/appendSpeech` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/appendText` | unused | No client call or dedicated handler. | — |
-| `thread/realtime/listVoices` | partial | Desktop official-account voice catalog. | `apps/desktop/src/main/codex/codex-realtime.ts` |
+| `thread/realtime/listVoices` | partial | Desktop/phone official-account voice catalog prefers v3, falls back to v1, and validates defaultV1. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/start` | partial | Desktop and paired-phone official-account WebRTC; backendReasoningStatus and custom-provider audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/stop` | partial | Host-owned desktop/paired-phone voice lifecycle; stop preserves delegated turns. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/search` | unused | No client call or dedicated handler. | — |
@@ -273,9 +275,10 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/goal/cleared` | unused | No client call or dedicated handler. | — |
 | `thread/goal/updated` | unused | No client call or dedicated handler. | — |
 | `thread/name/updated` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; 0.162.1 has no producer. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
+| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; 0.163.0 has no producer. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
 | `thread/project/updated` | unused | No client call or dedicated handler. | — |
 | `thread/queue/changed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
+| `thread/readState/changed` | unused | Generated in the stable bundle but source marks the feature experimental; host unread state remains authoritative. | — |
 | `thread/realtime/closed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/error` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/item/completed` | partial | Desktop transcriptSegment projection only. | `apps/desktop/src/main/codex/codex-realtime.ts` |

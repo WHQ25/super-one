@@ -123,12 +123,32 @@ export async function captureBrowserScreenshot(
     // display:none tab reports an all-zero getBoundingClientRect.
     let rect: Electron.Rectangle | undefined
     if (selector) {
-      const box = (await budget.stage('selector', browserExecJs(
+      const target = (await budget.stage('selector', browserExecJs(
         id,
-        `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) }; })()`,
-      ))) as Electron.Rectangle | null
-      if (!box || box.width <= 0 || box.height <= 0) throw new Error('Screenshot selector did not resolve to a visible element')
-      rect = box
+        `(() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return {
+            box: { x: b.x, y: b.y, width: b.width, height: b.height },
+            viewport: { width: innerWidth, height: innerHeight },
+          };
+        })()`,
+      ))) as { box: Electron.Rectangle; viewport: { width: number; height: number } } | null
+      if (!target || target.box.width <= 0 || target.box.height <= 0) throw new Error('Screenshot selector did not resolve to a visible element')
+      const { box, viewport } = target
+      if (viewport.width <= 0 || viewport.height <= 0) throw new Error('Screenshot viewport has no visible area; retry after the tab has finished opening')
+      // A DOM box can have positive dimensions entirely outside the guest's
+      // surface. Electron rejects that crop with UnknownVizError. Keep capture's
+      // visible-viewport contract and round the intersected edges outwards.
+      const x = Math.max(0, Math.floor(box.x))
+      const y = Math.max(0, Math.floor(box.y))
+      const right = Math.min(viewport.width, Math.ceil(box.x + box.width))
+      const bottom = Math.min(viewport.height, Math.ceil(box.y + box.height))
+      if (right <= x || bottom <= y) {
+        throw new Error('Screenshot selector is outside the visible viewport; scroll it into view with browser_scroll and retry')
+      }
+      rect = { x, y, width: right - x, height: bottom - y }
     }
     let image = await budget.stage('capture', browserCapture(id, rect))
     if (!image || image.isEmpty()) {

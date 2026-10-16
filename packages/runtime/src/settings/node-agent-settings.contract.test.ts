@@ -5,12 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { NodeAgentSettings, NodeAgentSettingsPatch } from '@superone/shared/environment'
 import { DEFAULT_NODE_AGENT_SETTINGS, loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from './node-agent-settings'
 
+// Response-only desktop projections are not persisted node settings.
 const samples = {
   claude: { defaultModel: 'claude-sonnet-4-6', defaultEffort: 'high', permissionMode: 'acceptEdits',
     sandboxMode: 'auto', disabledSkills: ['contract-skill'], askUserQuestionPreviewFormat: 'html' },
   codex: { defaultModel: 'gpt-6.1-sol', defaultEffort: 'ultra', permissionPreset: 'full-access' },
   experimentalClaudeOpenAiChatEnabled: true, projectsDir: '/tmp/contract-projects',
-} satisfies Required<NodeAgentSettings>
+} satisfies Required<Pick<NodeAgentSettings, keyof NodeAgentSettingsPatch>>
 const turnConsumers = {
   defaultModel: 'model', defaultEffort: 'effort', permissionMode: 'permissionMode',
   sandboxMode: 'sandboxMode', disabledSkills: 'disabledSkills', permissionPreset: 'permissionPreset',

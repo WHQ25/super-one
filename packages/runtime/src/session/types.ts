@@ -196,7 +196,7 @@ export type PlanDecisionResult = {
 export interface ActiveHarnessRuntime {
   sessionId: string
   lastActivityAt: number
-  /** Includes an in-flight turn, queued turn, or pending interaction. */
+  /** Includes an in-flight turn, queued turn, pending interaction, background task or scheduled wakeup. */
   busy: boolean
 }
 

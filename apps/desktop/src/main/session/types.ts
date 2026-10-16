@@ -395,6 +395,8 @@ export interface SessionBackend {
   /** Claude only: switch Ultracode on the live query; later starts read BackendStartOptions.ultracode. */
   setUltracode?(enabled: boolean): Promise<void>
   hasActiveBackgroundTasks?(): boolean
+  /** Timers inside the runtime (Claude CronCreate / ScheduleWakeup / `/loop`) that a release would drop. */
+  hasScheduledWakeups?(): boolean
   getCodexGoal?(threadId: string | null): Promise<CodexGoal | null>
   setCodexGoal?(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal?(threadId: string | null): Promise<boolean>

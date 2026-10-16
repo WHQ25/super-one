@@ -1,4 +1,4 @@
-import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage, type SessionCronSummary } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, ModelUsageInfo, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
@@ -18,6 +18,7 @@ import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-ap
 import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
 import { worktreeCwdChange } from '@superone/claude/worktree-cwd'
 import { artifactResultTitle } from '@superone/claude/artifact-result'
+import { sessionCronsStopHook } from '@superone/claude/session-crons'
 import { ModSurface, withModDevFoldersEnv, type ModSurfaceQuery } from '@superone/claude/mod-surface'
 import type { MessageBridge } from './message-bridge'
 import { withSubagentResumeSignal } from './subagent-resume-signal'
@@ -73,6 +74,8 @@ export interface SessionQueryOptions {
   settingsEnv?: Record<string, string>
   /** Attaches MCP App state to tool rows of tools that declare a `ui://` resource. */
   toolApps?: ClaudeToolApps
+  /** Receives the session's pending crons at each turn end; see `sessionCronsStopHook`. */
+  onSessionCrons?: (crons: SessionCronSummary[]) => void
   taskBudget?: number
   warmupManager?: WarmupManager
   enabledSkills?: string[]
@@ -180,7 +183,10 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       append: [CLAUDE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
       snapshot: false,
     },
-    hooks: { PreToolUse: [{ hooks: [denySubagentSessionRename] }] },
+    hooks: {
+      PreToolUse: [{ hooks: [denySubagentSessionRename] }],
+      ...(opts.onSessionCrons ? { Stop: [sessionCronsStopHook(opts.onSessionCrons)] } : {}),
+    },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId, opts.projectPath) },
     ...(opts.enabledSkills ? { skills: opts.enabledSkills } : {}),
     ...(opts.askUserQuestionPreviewFormat

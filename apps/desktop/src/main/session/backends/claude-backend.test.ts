@@ -1095,6 +1095,35 @@ describe('ClaudeBackend', () => {
       expect(backend.hasActiveRuntime()).toBe(false)
     })
 
+    it('does not release while the CLI holds session crons, and forgets them with the runtime', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      const report = (opts as { onSessionCrons: (crons: unknown[]) => void }).onSessionCrons
+      report([{ id: 'c1', schedule: '*/30 * * * *', recurring: true, prompt: 'ping' }])
+      hoisted.captured.iterationDone?.resolve()
+
+      await backend.releaseRuntime('idle')
+      expect(backend.hasActiveRuntime()).toBe(true)
+      expect(backend.hasScheduledWakeups()).toBe(true)
+
+      report([])
+      await backend.releaseRuntime('idle')
+      expect(backend.hasActiveRuntime()).toBe(false)
+    })
+
+    it('a non-idle release drops the crons along with the CLI process', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      ;(opts as { onSessionCrons: (crons: unknown[]) => void }).onSessionCrons([{ id: 'c1', schedule: '0 9 * * *', recurring: true, prompt: 'daily' }])
+      hoisted.captured.iterationDone?.resolve()
+
+      await backend.releaseRuntime('close')
+      expect(backend.hasActiveRuntime()).toBe(false)
+      expect(backend.hasScheduledWakeups()).toBe(false)
+    })
+
     it('releaseRuntime(rebuild) emits a stopped task_notification for each live background task', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

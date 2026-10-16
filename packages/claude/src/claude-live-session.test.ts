@@ -52,6 +52,29 @@ function successTurn(sessionId: string, text: string): Array<Record<string, unkn
 }
 
 describe('ClaudeLiveSession', () => {
+  it('reports scheduled wakeups from the Stop hook until a turn end clears them', async () => {
+    const cron = { id: 'c1', schedule: '*/30 * * * *', recurring: true, prompt: 'ping' }
+    const cronsPerTurn = [[cron], []]
+    const queryFn: ClaudeQueryFn = ({ prompt, options }) => (async function* () {
+      let i = 0
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        // The CLI runs Stop hooks before it writes the turn's result.
+        const stop = options?.hooks?.Stop?.[0]?.hooks[0]
+        await stop?.({ hook_event_name: 'Stop', session_crons: cronsPerTurn[i++] } as never, undefined, { signal: new AbortController().signal })
+        yield* successTurn('s', 'ok') as SDKMessage[]
+      }
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
+    expect(live.hasScheduledWakeups).toBe(false)
+
+    await live.sendTurn({ content: 'schedule', messageId: 'msg-1' })
+    expect(live.hasScheduledWakeups).toBe(true)
+
+    await live.sendTurn({ content: 'cancel', messageId: 'msg-2' })
+    expect(live.hasScheduledWakeups).toBe(false)
+    await live.dispose()
+  })
+
   it('does not finish a resumed user turn on an earlier synthetic result', async () => {
     const events: AgentEvent[] = []
     const queryFn = bridgeAwareQuery((user) => [

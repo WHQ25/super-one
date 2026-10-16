@@ -1163,6 +1163,14 @@ describe('Session state machine', () => {
       expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(true)
     })
 
+    it('keeps a runtime with scheduled wakeups out of idle release', () => {
+      backend.activeRuntime = true
+      backend.hasScheduledWakeupsResult = true
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(false)
+      backend.hasScheduledWakeupsResult = false
+      expect(session.isRuntimeIdle(Date.now() + 60_000, 0)).toBe(true)
+    })
+
     it('ref-counts across multiple simultaneous viewers (e.g. mosaic tile + mini window)', () => {
       backend.activeRuntime = true
       session.setForeground(true)

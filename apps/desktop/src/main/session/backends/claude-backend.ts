@@ -180,6 +180,8 @@ export class ClaudeBackend implements SessionBackend {
   private runtimeRebuild: Promise<void> | null = null
   private _spawnedAdditionalDirs: string[] = []
   private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
+  /** Crons the live CLI process still holds, as of the last turn end. */
+  private pendingSessionCrons = 0
   private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
@@ -265,6 +267,7 @@ export class ClaudeBackend implements SessionBackend {
       systemPromptAppend: opts.systemPromptAppend,
       unattended: opts.unattended,
       toolApps: this.toolApps,
+      onSessionCrons: (crons) => { this.pendingSessionCrons = crons.length },
     }
   }
 
@@ -640,9 +643,11 @@ export class ClaudeBackend implements SessionBackend {
       || this.pendingInlineNotifications.length > 0
       || this.queuedUserMessages.size > 0
       || this.hasActiveBackgroundTasks()
+      || this.hasScheduledWakeups()
     )) return
     // A replaced runtime carries no in-flight turn: never let the latch outlive it.
     this.beginTurn()
+    this.pendingSessionCrons = 0
     const liveTasks = this.activeBackgroundTasks
     this.activeBackgroundTasks = null
     if (reason !== 'close' && liveTasks && liveTasks.size > 0) {
@@ -1107,6 +1112,10 @@ export class ClaudeBackend implements SessionBackend {
     if ((this.activeBackgroundTasks?.size ?? 0) > 0) return true
     const sid = this._lastStartOpts?.sessionId
     return sid ? hasRunningDownloadTasks(sid) : false
+  }
+
+  hasScheduledWakeups(): boolean {
+    return this.pendingSessionCrons > 0
   }
 
   /**

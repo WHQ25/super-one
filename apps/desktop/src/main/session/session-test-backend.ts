@@ -144,6 +144,10 @@ export class FakeBackend implements SessionBackend {
   hasActiveBackgroundTasks(): boolean {
     return this.hasActiveBackgroundTasksResult
   }
+  hasScheduledWakeupsResult = false
+  hasScheduledWakeups(): boolean {
+    return this.hasScheduledWakeupsResult
+  }
   stopTaskCalls: string[] = []
   async stopTask(taskId: string): Promise<void> {
     this.stopTaskCalls.push(taskId)

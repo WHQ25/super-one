@@ -8,7 +8,7 @@
 
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { query as sdkQuery, type Options, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query as sdkQuery, type Options, type Query, type SDKMessage, type SDKUserMessage, type SessionCronSummary } from '@anthropic-ai/claude-agent-sdk'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, ChatMessageSource } from '@superone/shared/agent-types'
 import type { SessionTurnEvent } from '@superone/shared/environment'
@@ -19,6 +19,7 @@ import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from './mcp-apps'
 import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
+import { sessionCronsStopHook } from './session-crons'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import { resolveAskUserQuestion } from './ask-user-question-bridge'
 import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
@@ -147,6 +148,7 @@ function buildLiveOptions(
     emitAgentEvent: (event: AgentEvent) => void
     getMessageId: () => string | undefined
   },
+  onSessionCrons: (crons: SessionCronSummary[]) => void,
 ): Options {
   const abortController = new AbortController()
   if (signal.aborted) abortController.abort()
@@ -260,6 +262,7 @@ function buildLiveOptions(
     canUseTool,
     abortController,
     settingSources: ['user', 'project', 'local'],
+    hooks: { Stop: [sessionCronsStopHook(onSessionCrons)] },
     ...(sandbox ? { sandbox } : {}),
     ...(opts.additionalDirectories && opts.additionalDirectories.length > 0
       ? { additionalDirectories: opts.additionalDirectories }
@@ -328,6 +331,8 @@ export class ClaudeLiveSession {
   private active: ActiveTurn | null = null
   private ambient: AmbientTurn | null = null
   private readonly backgroundTaskIds = new Set<string>()
+  /** Crons this CLI process still holds, as of the last turn end. */
+  private pendingSessionCrons = 0
   private idleSystemMapper: ReturnType<typeof createClaudeAgentEventMapper> | null = null
   private readonly reportedPluginErrors = new Set<string>()
   private readonly terminalNames: { names: string[] | undefined } = { names: undefined }
@@ -379,6 +384,7 @@ export class ClaudeLiveSession {
         emitAgentEvent: (e) => this.active?.input.onAgentEvent?.(e),
         getMessageId: () => this.active?.messageId,
       },
+      (crons) => { this.pendingSessionCrons = crons.length },
     )
     const q = queryFn({ prompt: this.bridge, options })
     this.query = 'mcpServerStatus' in q ? q : null
@@ -411,6 +417,10 @@ export class ClaudeLiveSession {
 
   get hasActiveBackgroundTasks(): boolean {
     return this.backgroundTaskIds.size > 0
+  }
+
+  get hasScheduledWakeups(): boolean {
+    return this.pendingSessionCrons > 0
   }
 
   private trackBackgroundTasks(msg: SDKMessage): void {

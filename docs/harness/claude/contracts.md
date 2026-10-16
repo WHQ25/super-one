@@ -134,6 +134,24 @@ re-check an entry when an upgrade touches its area.
 - **Guard:** `apps/desktop/src/main/agent/claude-query.test.ts` (background task
   cases); the empty-`result` case is unguarded.
 
+### Session crons live in the CLI process and are reported only to Stop
+
+- **Behavior:** CronCreate, ScheduleWakeup and `/loop` timers are in-process;
+  closing the query drops them without any message. The current set is reported
+  only as `session_crons` on the Stop (and SubagentStop) hook input, which runs
+  before the turn's `result`: a CronCreate turn reports the job, a CronDelete
+  turn reports `[]`. A fired cron starts a turn with no host input (see
+  [A mod can start a turn](#a-mod-can-start-a-turn)).
+- **Observed:** 0.3.300 live probe (Stop reported the job after CronCreate and
+  `[]` after CronDelete).
+- **Depends on it:** idle runtime release (`hasScheduledWakeups` in
+  `apps/desktop/src/main/session/backends/claude-backend.ts` and
+  `packages/claude/src/claude-live-session.ts`). A turn that ends without a Stop
+  hook (interrupt) leaves the last report standing, which only delays a release.
+  ScheduleWakeup is stored as a one-shot cron, so it appears in the same report.
+- **Guard:** `apps/desktop/src/main/session/backends/claude-backend.test.ts`,
+  `packages/claude/src/claude-live-session.test.ts`.
+
 ### `priority: 'now'` ends the turn as `aborted_tools`
 
 - **Behavior:** A user message sent with `priority: 'now'` ends the running turn

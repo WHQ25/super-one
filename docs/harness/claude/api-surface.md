@@ -25,7 +25,7 @@ Runtime exports of `sdk.d.ts`: functions, classes and constants. Types are not l
 | Name | Status | Usage | Code |
 |---|---|---|---|
 | `AbortError` | unused | No `instanceof AbortError` checks; interrupts are tracked by our own flags (`getInterrupted`, `signal.aborted`). | — |
-| `EXIT_REASONS` | n/a | SessionEnd hook reason enum; we register only a PreToolUse hook. | — |
+| `EXIT_REASONS` | n/a | SessionEnd hook reason enum; we register only PreToolUse and Stop hooks. | — |
 | `HOOK_EVENTS` | unused | Unused; we duplicate it in `packages/shared/src/agent-types.ts` (`HookEventName`) and `HookEditorDialog.tsx`, and both copies are already missing PreModelSwitch, PostModelSwitch, DirectoryAdded and MessageDisplay. | — |
 | `InMemorySessionStore` | unused | Reference `SessionStore` for transcript mirroring; SuperOne keeps its own SQLite transcript. | — |
 | `ORG_POLICY_LIMIT_PREFIXES` | unused | Unused; org-disabled errors fall through to the generic prose classifier in `packages/shared/src/agent-error.ts`. | — |
@@ -81,7 +81,7 @@ Fields of `Options` passed to `query()` / `startup()`. "(warmup key)" marks fiel
 | `fallbackModel` | unused | Would auto-fall back on overload; we only render the SDK's model-fallback wire messages. | — |
 | `forkSession` | unused | Plumbed through `buildClaudeOptions` (warmup key), but `ClaudeBackend` never sets it; forks use the `forkSession()` function instead. | — |
 | `forwardSubagentText` | used | `true` on desktop and node, so nested subagent text and thinking render in the transcript. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
-| `hooks` | partial | Desktop only: a PreToolUse `denySubagentSessionRename` hook denies main-thread-only SuperOne tools inside subagents; node registers none. | `apps/desktop/src/main/agent/claude-query.ts` |
+| `hooks` | partial | Desktop and node register a Stop `sessionCronsStopHook` (see Hook events). Desktop also registers a PreToolUse `denySubagentSessionRename` hook that denies main-thread-only SuperOne tools inside subagents. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts` |
 | `includeHookEvents` | unused | Would stream hook lifecycle for all events; desktop already maps `hook_started`/`hook_response`, but without this flag it only receives SessionStart and Setup hooks. | — |
 | `includePartialMessages` | used | `true` on desktop and node, for token streaming via `stream_event` (warmup: no). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
 | `loadTimeoutMs` | n/a | Only applies with `sessionStore`. | — |
@@ -238,11 +238,11 @@ Members of the `SDKMessage` union as `type` or `type/subtype`. Desktop maps them
 | `PostToolUseFailure` | unused | Would handle failed tool calls. | — |
 | `PreCompact` | unused | Would add custom instructions or veto before compaction. | — |
 | `PreModelSwitch` | unused | Would gate model switches. Missing from the shared `HookEventName` type. | — |
-| `PreToolUse` | used | The only registered SDK hook callback, desktop only: `denySubagentSessionRename` denies main-thread-only SuperOne tools when `agent_id` is set. The node CLI registers no hooks. | `apps/desktop/src/main/agent/claude-query.ts` |
+| `PreToolUse` | used | Desktop only: `denySubagentSessionRename` denies main-thread-only SuperOne tools when `agent_id` is set. | `apps/desktop/src/main/agent/claude-query.ts` |
 | `SessionEnd` | unused | Would run cleanup at session end. | — |
 | `SessionStart` | unused | No callback is registered. Its `hook_started` / `hook_response` messages (always emitted) are mapped but not keyed on the event name, and the reducer ignores them. | — |
 | `Setup` | unused | No callback is registered. Its hook messages are always emitted but treated the same generic, ignored way. | — |
-| `Stop` | unused | No SDK callback. The CLI's own `/goal` Stop hook reaches SuperOne through the undeclared `active_goal` message. | — |
+| `Stop` | used | Desktop and node: `sessionCronsStopHook` reads `session_crons` so idle release keeps a runtime that still holds CronCreate / ScheduleWakeup / `/loop` timers. `background_tasks` and `last_assistant_message` are not read. The CLI's own `/goal` Stop hook reaches SuperOne through the undeclared `active_goal` message. | `packages/claude/src/session-crons.ts` |
 | `StopFailure` | unused | Would react to turns that end in an error. | — |
 | `SubagentStart` | unused | Would inject context into subagents. SuperOne uses `task_started` instead. | — |
 | `SubagentStop` | unused | Would gate or observe subagent completion. | — |
@@ -273,7 +273,7 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `get_session_cost` | n/a | No Query wrapper; it is the thin-client `/usage` cost text, and SuperOne reads cost from result messages. | — |
 | `get_settings` | unused | No Query wrapper; would return the effective merged settings and each source's settings. | — |
 | `get_usage` | unused | via `usage_EXPERIMENTAL_...` (never called); would return plan rate-limit usage. | — |
-| `hook_callback` | partial | via Options.hooks; desktop only, with a PreToolUse `denySubagentSessionRename` that blocks main-thread-only SuperOne tools inside subagents. Node registers no hooks. | `apps/desktop/src/main/agent/claude-query.ts` |
+| `hook_callback` | partial | via Options.hooks: the Stop `sessionCronsStopHook` (desktop and node) and the desktop PreToolUse `denySubagentSessionRename`. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts` |
 | `initialize` | used | Sent implicitly by `query()`/`startup()` (desktop, warm spare, node live session, probes); the result is read with `initializationResult`. | `apps/desktop/src/main/agent/claude-query.ts`, `apps/desktop/src/main/agent/warmup-manager.ts`, `apps/desktop/src/main/index.ts` |
 | `interrupt` | partial | via `interrupt`; desktop Stop only. Node cancels turns with an AbortSignal and never sends it. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `list_models` | n/a | No Query wrapper; it is the model catalog for remote thin clients. SuperOne uses `supportedModels`, which comes from `initialize`. | — |

@@ -698,7 +698,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
   runner.listActiveRuntimes = () => [...lives.entries()].map(([sessionId, entry]) => ({
     sessionId,
     lastActivityAt: entry.lastActivityAt,
-    busy: entry.busyCount > 0 || entry.live.isBusy || entry.live.hasActiveBackgroundTasks,
+    busy: entry.busyCount > 0 || entry.live.isBusy || entry.live.hasActiveBackgroundTasks || entry.live.hasScheduledWakeups,
   }))
 
   return runner

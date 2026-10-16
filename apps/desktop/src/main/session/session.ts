@@ -461,6 +461,7 @@ export class Session implements SessionContract {
     if (this.voiceInterest.active()) return false
     if (this._pendingQueuedRequests.size > 0) return false
     if (this.backend.hasActiveBackgroundTasks?.()) return false
+    if (this.backend.hasScheduledWakeups?.()) return false
     if (this.backend.getPendingInteractions().length > 0) return false
     return now - this._lastRuntimeActivityAt >= timeoutMs
   }

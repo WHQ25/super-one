@@ -116,7 +116,7 @@ import { previewRelayClient } from './preview-relay-client'
 import { SessionSearchScreen } from '../screens/session-search-screen'
 
 // The tool catalog is its own screen, not a page of this shell — see ToolCatalogPreview.
-const pages = shellPreviewPages.filter((page) => page !== 'Tool catalog')
+const pages = shellPreviewPages.filter((page) => page !== 'Tool catalog' && page !== 'QR scanner')
 
 const PREVIEW_PROJECT_FILES = [
   { name: 'screens', isDirectory: true },

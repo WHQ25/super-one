@@ -1,10 +1,15 @@
 import { expect, it, jest } from '@jest/globals'
-import { fireEvent } from '@testing-library/react-native'
+import { act, fireEvent } from '@testing-library/react-native'
+import type { ComponentProps } from 'react'
+import { AppState } from 'react-native'
 import type { SavedPairing } from '@superone/relay-client'
 import { renderWithTheme } from '../test-render'
 import { PairingsScreen } from './pairings-screen'
 
-jest.mock('expo-camera', () => ({ CameraView: () => null }))
+jest.mock('expo-camera', () => {
+  const { View } = require('react-native')
+  return { CameraView: (props: object) => <View {...props} testID="scanner-camera" /> }
+})
 jest.mock('../ui/device-row', () => ({
   DeviceRow: () => null,
   deviceLabel: (pairing: { hostName?: string }) => pairing.hostName ?? '',
@@ -14,7 +19,7 @@ function pairing(id: string): SavedPairing {
   return { id, hostName: id, relayUrl: 'wss://relay.example', secret: 'a'.repeat(64) }
 }
 
-function screen(pairings: SavedPairing[], onOpenSettings = jest.fn()) {
+function screen(pairings: SavedPairing[], onOpenSettings = jest.fn(), overrides: Partial<ComponentProps<typeof PairingsScreen>> = {}) {
   return <PairingsScreen
     scannerOpen={false}
     paste=""
@@ -38,6 +43,7 @@ function screen(pairings: SavedPairing[], onOpenSettings = jest.fn()) {
     onConnect={jest.fn()}
     onRename={jest.fn()}
     onForget={jest.fn()}
+    {...overrides}
   />
 }
 
@@ -63,4 +69,27 @@ it('opens settings from the device list before any device is connected', async (
   const view = await renderWithTheme(screen([], onOpenSettings))
   await fireEvent.press(view.getByLabelText('Settings'))
   expect(onOpenSettings).toHaveBeenCalledTimes(1)
+})
+
+it('waits for a tap and submits the chosen QR rather than the first detected one', async () => {
+  AppState.currentState = 'active'
+  const onSelect = jest.fn()
+  const view = await renderWithTheme(screen([], jest.fn(), { scannerOpen: true, onBarcodeScanned: onSelect }))
+  const download = { type: 'qr', data: 'https://example.com/mobile.apk', cornerPoints: [], bounds: { origin: { x: 20, y: 50 }, size: { width: 100, height: 100 } } }
+  const pairing = { ...download, data: 'superone://pair?channel=selected', bounds: { origin: { x: 180, y: 240 }, size: { width: 100, height: 100 } } }
+
+  await act(async () => { fireEvent(view.getByTestId('scanner-camera'), 'barcodeScanned', download) })
+  expect(onSelect).not.toHaveBeenCalled()
+
+  await act(async () => { fireEvent(view.getByTestId('qr-scanner'), 'layout', { nativeEvent: { layout: { width: 360, height: 640 } } }) })
+  await act(async () => {
+    fireEvent(view.getByTestId('scanner-camera'), 'barcodeScanned', download)
+    fireEvent(view.getByTestId('scanner-camera'), 'barcodeScanned', pairing)
+  })
+  expect(view.getByLabelText('QR Code 1')).toBeTruthy()
+  const second = view.getByLabelText('QR Code 2')
+  await act(async () => { fireEvent.press(second) })
+  await act(async () => { fireEvent.press(second) })
+  expect(onSelect).toHaveBeenCalledTimes(1)
+  expect(onSelect).toHaveBeenCalledWith(pairing)
 })

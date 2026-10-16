@@ -1,4 +1,4 @@
-import { CameraView, type BarcodeScanningResult } from 'expo-camera'
+import type { BarcodeScanningResult } from 'expo-camera'
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, QrCode, RefreshCw, Settings } from 'lucide-react-native'
 import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native'
@@ -13,6 +13,7 @@ import type { DesktopPairingState } from '../navigation/desktop-pairing-state'
 import { Wordmark } from '../ui/wordmark'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 import { useMobileLocale } from '../i18n/context'
+import { QrScanner } from './qr-scanner'
 
 export function PairingsScreen(props: {
   scannerOpen: boolean
@@ -54,19 +55,7 @@ export function PairingsScreen(props: {
   const [name, setName] = useState('')
   useEffect(() => setName(editing?.name ?? editing?.hostName ?? ''), [editing])
   if (props.scannerOpen) {
-    return (
-      <View style={styles.scannerBox}>
-        <CameraView
-          style={styles.scanner}
-          facing="back"
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={props.onBarcodeScanned}
-        />
-        <Pressable style={styles.scannerCancel} onPress={props.onCancelScanner}>
-          <Text style={styles.secondaryBtnText}>{t('Cancel scan')}</Text>
-        </Pressable>
-      </View>
-    )
+    return <QrScanner onSelect={props.onBarcodeScanned} onCancel={props.onCancelScanner} />
   }
   if (props.code) return <PairingCode code={props.code} onCancel={props.onCancelPairing} />
   if (props.desktopPairing) {

@@ -27,6 +27,21 @@ application-envelope ACKs. The separate terminal
 document embeds xterm.js, prefers the patched WebGL renderer, falls back to canvas,
 and reports input and bounded resize messages to RN.
 
+## QR selection
+
+`screens/qr-scanner.tsx` collects QR detections and submits only after the user taps
+a numbered target, even when only one code is visible. The scanner does not filter
+payloads by business purpose; its caller owns parsing and routing. Targets expire
+after one second without a detection and clear on resize, camera failure or app
+backgrounding. No QR payload appears in labels or logs.
+
+The pinned `expo-camera` Android patch reports every detected code and maps rotated
+image coordinates into the cropped preview. `package.json` explicitly builds
+`expo-camera` from source; its precompiled AAR would bypass the patch. Android needs
+a new native binary for this change. Camera geometry tests run with
+`./gradlew -I ../scripts/qr-scanner-android-tests.gradle :expo-camera:testDebugUnitTest --tests '*BarcodeCoordinatesTest'`
+from `apps/mobile/android`.
+
 ## Relay transport invariants
 
 - `RelayClient` owns exactly one active socket. Connecting through LAN replaces relay,

@@ -1,0 +1,9 @@
+// Run from apps/mobile/android:
+// ./gradlew -I ../scripts/qr-scanner-android-tests.gradle :expo-camera:testDebugUnitTest --tests '*BarcodeCoordinatesTest'
+// Keep app-specific regression tests outside the patched dependency.
+gradle.afterProject { project ->
+  if (project.name == 'expo-camera') {
+    project.android.sourceSets.test.java.srcDir(new File(project.rootDir, '../native-tests/qr-scanner'))
+    project.dependencies.add('testImplementation', 'junit:junit:4.13.2')
+  }
+}

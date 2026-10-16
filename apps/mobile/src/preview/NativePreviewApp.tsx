@@ -19,6 +19,7 @@ import { ToolCatalogPreview } from './ToolCatalogPreview'
 import { InputRequestPreview } from './InputRequestPreview'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { useMobileLocale } from '../i18n/context'
+import { QrScannerPreview } from './QrScannerPreview'
 
 type ThemeChoice = 'system' | MobileColorScheme
 const categories = ['All', 'Permissions', 'Plans', 'Input forms'] as const
@@ -120,6 +121,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
   if (shellPreview === 'Tool catalog') {
     return <ToolCatalogPreview onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   }
+  if (shellPreview === 'QR scanner') return <QrScannerPreview onClose={() => setShellPreview(null)} />
   if (shellPreview) return <ShellPreview key={route?.kind === 'shell' ? route.revision : 'manual'} initialPage={shellPreview}
     initialHarness={harness}
     initialEffort={route?.kind === 'shell' ? route.effort : undefined}
@@ -139,6 +141,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
           <Text style={styles.meta}>{Math.round(width)} × {Math.round(height)} · font scale {fontScale.toFixed(2)}</Text>
           <Button label="Preview app screens" variant="secondary" onPress={() => setShellPreview('New session')} />
           <Button label="Tool catalog" variant="secondary" onPress={() => setShellPreview('Tool catalog')} />
+          <Button label="QR scanner" variant="secondary" onPress={() => setShellPreview('QR scanner')} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {(['system', 'light', 'dark'] as const).map((value) => <Chip key={value} label={value} selected={theme === value} onPress={() => onTheme(value)} />)}
           </ScrollView>

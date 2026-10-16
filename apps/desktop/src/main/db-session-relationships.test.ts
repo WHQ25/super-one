@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { SESSION_CONTINUATION_TABLE_DDL } from '@superone/runtime/collaboration'
 
 const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }))
 vi.mock('./database', () => ({ getDb: getDbMock }))
@@ -10,6 +11,7 @@ let db: Database.Database
 beforeEach(() => {
   db = new Database(':memory:')
   getDbMock.mockReturnValue(db)
+  db.exec(SESSION_CONTINUATION_TABLE_DDL)
   db.exec(`
     CREATE TABLE sessions (
       id TEXT PRIMARY KEY, title TEXT, total_cost_usd REAL, context_tokens INTEGER,

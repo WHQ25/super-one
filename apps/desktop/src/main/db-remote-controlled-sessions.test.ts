@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SESSION_CONTINUATION_TABLE_DDL } from '@superone/runtime/collaboration'
 
 const db = vi.hoisted(() => ({ current: null as Database.Database | null }))
 vi.mock('./database', () => ({ getDb: () => db.current }))
@@ -13,6 +14,7 @@ import { loadSessionState } from './db-sessions'
 
 beforeEach(() => {
   db.current = new Database(':memory:')
+  db.current.exec(SESSION_CONTINUATION_TABLE_DDL)
   db.current.exec(`
     CREATE TABLE projects (id TEXT PRIMARY KEY, path TEXT UNIQUE, name TEXT, added_at TEXT);
     CREATE TABLE sessions (

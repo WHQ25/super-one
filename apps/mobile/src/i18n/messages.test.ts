@@ -20,6 +20,6 @@ describe('mobile translations', () => {
     expect(translateMobileText('zh', 'File actions')).toBe('文件操作')
     expect(translateMobileText('zh', 'Copy')).toBe('复制')
     expect(translateMobileText('zh', 'Search files')).toBe('搜索文件')
-    expect(translateMobileText('zh', 'Continue in New Session')).toBe('在新会话中继续')
+    expect(translateMobileText('zh', 'Hand Off to New Session')).toBe('移交到新会话')
   })
 })

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { Profiler } from 'react'
 import { render, waitFor, fireEvent, cleanup } from '@testing-library/react'
 import { BrowserFavicon } from './BrowserFavicon'
 
@@ -68,5 +69,31 @@ describe('BrowserFavicon renders only cached data URLs', () => {
     await waitFor(() => expect(imgSrc(container)).toBe('data:broken'))
     fireEvent.error(container.querySelector('img')!)
     await waitFor(() => expect(getByTestId('fallback')).toBeInTheDocument())
+  })
+
+  it('keeps the fallback when an image fails before passive effects run', async () => {
+    mockResolveFavicon(async () => 'data:broken')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    let imageFailed = false
+    const { getByTestId } = render(<Profiler id="favicon" onRender={() => {
+      const image = container.querySelector('img')
+      if (image && !imageFailed) {
+        imageFailed = true
+        image.dispatchEvent(new Event('error'))
+      }
+    }}><BrowserFavicon url="https://site.com/page" fallback={FALLBACK} /></Profiler>, { container })
+    await waitFor(() => expect(imageFailed).toBe(true))
+    await waitFor(() => expect(container.querySelector('img')).toBeNull())
+    expect(getByTestId('fallback')).toBeInTheDocument()
+  })
+
+  it('tries a replacement source after the previous image failed', () => {
+    mockResolveFavicon(async () => null)
+    const { container, getByTestId, rerender } = render(<BrowserFavicon src="data:broken" fallback={FALLBACK} />)
+    fireEvent.error(container.querySelector('img')!)
+    expect(getByTestId('fallback')).toBeInTheDocument()
+    rerender(<BrowserFavicon src="data:replacement" fallback={FALLBACK} />)
+    expect(imgSrc(container)).toBe('data:replacement')
   })
 })

@@ -40,9 +40,17 @@ export function BrowserFavicon({
   const dataSrc = src?.startsWith('data:') ? src : null
   const ordered = preferSrc ? [dataSrc, resolved] : [resolved, dataSrc]
   const candidates = ordered.filter((c): c is string => !!c)
-  const [idx, setIdx] = useState(0)
-  useEffect(() => setIdx(0), [resolved, dataSrc])
+  // Reset with the sources at commit time; a passive reset could overwrite an
+  // image error that already advanced to the fallback.
+  return <FaviconImage key={JSON.stringify(candidates)} candidates={candidates} fallback={fallback} className={className} />
+}
 
+function FaviconImage({ candidates, fallback, className }: {
+  candidates: string[]
+  fallback: React.ReactNode
+  className?: string
+}) {
+  const [idx, setIdx] = useState(0)
   const current = candidates[idx]
   if (!current) return <>{fallback}</>
   return <img src={current} alt="" className={cn('rounded-sm', className)} onError={() => setIdx((i) => i + 1)} />

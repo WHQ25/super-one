@@ -18,7 +18,7 @@ export function EdgeLoader({ edge, loading }: {
   const { t } = useTranslation()
   if (!loading) return null
   return <div role="status" data-testid={`edge-loader-${edge}`} data-loading="true"
-    className="mx-auto my-1 flex items-center gap-1 px-3 py-1 text-xs text-muted-foreground">
+    className="my-1 flex items-center justify-center gap-1 px-3 py-1 text-xs text-muted-foreground">
     <Loader2 className="size-3 animate-spin" aria-hidden /> {t('common.loading')}
   </div>
 }

@@ -208,14 +208,17 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ComputerUseIcon.icns"
 rm -rf "$ICONSET"
 
 export TMPDIR="$BUILD_TMP_DIR"
-export SDKROOT="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk}"
+# Keep the SDK and compiler on the selected developer toolchain. The separately
+# installed Command Line Tools SDK can be newer than Xcode's Swift compiler.
+export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 if [[ ! -d "$SDKROOT" ]]; then
-  SDKROOT="$(xcrun --show-sdk-path 2>/dev/null || true)"
+  SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 fi
 
 echo "[build] variant=$VARIANT arch=$TARGET_ARCH bundleId=$BUNDLE_ID"
+echo "[build] swift=$(xcrun --sdk macosx --find swiftc) sdk=$SDKROOT"
 echo "[build] compiling helper → $OUT"
-swiftc -O \
+xcrun --sdk macosx swiftc -O \
   -target "$SWIFT_TARGET" \
   -module-cache-path "$MODULE_CACHE_DIR" \
   ${SDKROOT:+-sdk "$SDKROOT"} \

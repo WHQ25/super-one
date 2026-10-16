@@ -85,6 +85,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Preserve npm Trusted Publishing authorization across desktop and follow-up
   release stages.
+- Resolve the macOS helper compiler and SDK from the selected developer toolchain.
 
 ## [0.74.0] - 2026-10-15
 

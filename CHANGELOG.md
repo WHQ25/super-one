@@ -15,6 +15,81 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Offer a new-session handoff on desktop and phone when a long session's reported
+  prompt cache expires. Preserve the checkout and settings, mention the previous
+  session and transfer active collaboration, including remote children.
+- Enable Artifact tools for eligible Claude subscription sessions, with action
+  labels, titled page links and artifact listings in desktop and phone chat.
+- Customize each harness's dark primary color independently of its light palette;
+  switch appearance and Liquid Glass from the palette popover.
+
+### Changed
+
+- Use compact realtime voice controls and an audio-driven waveform, and keep live
+  captions in the transcript on desktop.
+- Let layout tools split in other sessions and close tabs beyond those opened by
+  the caller.
+- Show launched suggested tasks as titled session chips and name built-in agents
+  after their harnesses.
+
+### Fixed
+
+- Keep tall approval and form frames and their actions visible while the content
+  scrolls, and align Markdown table action buttons with the right edge.
+- Limit selector screenshots to the visible viewport and report when the target
+  needs scrolling into view.
+- Restore remote notification titles and project targets, and use compact Windows
+  toasts that remain actionable in Action Center.
+- Preserve newer appearance changes when the initial theme read returns late.
+- Keep failed favicons on their fallback even when the image error arrives before
+  the renderer finishes its effects.
+
+## [0.75.0-alpha] - 2026-10-16
+
+### Added
+
+- Offer a new-session handoff on desktop and phone when a long session's reported
+  prompt cache expires. Preserve the checkout and settings, mention the previous
+  session and transfer active collaboration, including remote children.
+- Enable Artifact tools for eligible Claude subscription sessions, with action
+  labels, titled page links and artifact listings in desktop and phone chat.
+- Customize each harness's dark primary color independently of its light palette;
+  switch appearance and Liquid Glass from the palette popover.
+
+### Changed
+
+- Use compact realtime voice controls and an audio-driven waveform, and keep live
+  captions in the transcript on desktop.
+- Let layout tools split in other sessions and close tabs beyond those opened by
+  the caller.
+- Show launched suggested tasks as titled session chips and name built-in agents
+  after their harnesses.
+
+### Fixed
+
+- Keep tall approval and form frames and their actions visible while the content
+  scrolls, and align Markdown table action buttons with the right edge.
+- Limit selector screenshots to the visible viewport and report when the target
+  needs scrolling into view.
+- Restore remote notification titles and project targets, and use compact Windows
+  toasts that remain actionable in Action Center.
+- Preserve newer appearance changes when the initial theme read returns late.
+- Keep failed favicons on their fallback even when the image error arrives before
+  the renderer finishes its effects.
+
+### Tests
+
+- Cover session-continuation preferences and collaboration handoff behavior.
+
+### CI
+
+- Preserve npm Trusted Publishing authorization across desktop and follow-up
+  release stages.
+
+## [0.74.0] - 2026-10-15
+
+### Added
+
 - Create reusable agent profiles with instructions, model, effort, permission
   mode and harness-specific settings. Review and edit proposed profiles before
   saving, and use their defaults across desktop and remote collaboration.
@@ -49,77 +124,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Send full-size image originals in local sessions without requiring a sync zone.
 - Keep macOS layout controls in the visible top-left activity group, preserve
   tabs when changing split orientation and prevent unsupported floating groups.
-
-## [0.74.0-alpha.2] - 2026-10-15
-
-### Added
-
-- Resize the sidebar, chat and activity columns through layout tools; move tabs
-  between groups, resize groups and choose docked, floating or icon chat modes.
-- Float or dock the chat from its title menu, including while it is floating.
-- Let agents list, call and open installed mini-apps without an explicit mention,
-  subject to the harness permission flow.
-
-### Changed
-
-- Replace `layout_act` and mini-app `context.layout.act` action `split_tab` with
-  `move_tab`; use `direction: right` or `down` for the previous split behavior.
-- Hide layout tool rows in the transcript and tell agents when tabs they open
-  stay in the background, with the action needed to reveal them.
-- Upgrade Claude Agent SDK to 0.3.300 (Claude Code 2.1.300).
-
-### Fixed
-
-- Send full-size image originals in local sessions without requiring a sync zone.
-- Preserve collaboration request titles when a request is denied.
-- Reset stale provider bindings when switching suggested-task harnesses, and
-  inherit only accounts supported by the selected agent when launching a task.
-- Keep macOS layout controls in the visible top-left activity group, preserve
-  tabs when changing split orientation and prevent unsupported floating groups.
-
-### Tests
-
-- Isolate AgentService account discovery from local credentials and network.
-
-### CI
-
-- Publish CLI, harness, relay and coordinated mobile OTA only after the desktop
-  Release is public and all three desktop update feeds point at that version.
-
-## [0.74.0-alpha] - 2026-10-15
-
-### Added
-
-- Create reusable agent profiles with instructions, model, effort, permission
-  mode and harness-specific settings. Review and edit proposed profiles before
-  saving, and use their defaults across desktop and remote collaboration.
-- Let agents and mini-apps inspect and arrange their session's desktop layout:
-  open files, manage tabs and panels, and show child sessions side by side.
-  Background changes wait for that session without moving the user's focus.
-- Choose the agent and launch settings for a suggested task, and expand its
-  full prompt before starting it.
-
-### Changed
-
-- Give each Claude and Codex subscription account its own card with consistent
-  account actions and usage refresh placement.
-- Keep unstarted suggested-task cards available and remove the dismiss action.
-- Use `layout_snapshot` and `layout_act` in place of the interim `ui_snapshot`
-  and `ui_act` names; remove the `open_diff` action and `commit` field.
-
-### Fixed
-
-- Persist collaboration wake delivery with bounded retries so unavailable
-  parents are not woken indefinitely after a child stops.
-- Deliver session instructions and the collaboration protocol to DeepSeek.
-- Show failed Claude usage refreshes beside the cached reading, and keep the
-  refresh tooltip from opening automatically with the usage popover.
-- Keep Markdown table copy and expand buttons clickable.
-
-### CI
-
-- Read the stable desktop prerequisite for mobile releases through
-  authenticated R2 access and fail closed on read errors.
 
 ## [0.73.0] - 2026-10-14
 

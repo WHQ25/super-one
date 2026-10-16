@@ -20,6 +20,7 @@ export type SessionStatus =
 export interface NodeSessionSettings {
   permissionMode?: string | null
   sandboxMode?: string | null
+  claudeFastMode?: boolean | null
   model?: string | null
   effort?: string | null
   apiProviderId?: string | null
@@ -58,6 +59,7 @@ export interface NodeSessionRecord {
    */
   permissionMode?: string | null
   sandboxMode?: string | null
+  claudeFastMode?: boolean | null
   model?: string | null
   effort?: string | null
   agent?: string | null
@@ -262,6 +264,7 @@ export type TurnRunner = ((input: {
    * what the live harness process already runs with.
    */
   ultracode?: boolean
+  claudeFastMode?: boolean
   /** Genuine Codex provider identities for new delegated turns; never local message IDs. */
   parentTurnId?: string
   rootTurnId?: string

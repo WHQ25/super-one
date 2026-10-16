@@ -27,6 +27,8 @@ import {
 import { launchedSessionPromptAppend, listCollaborationProfiles } from './collaboration-profiles'
 import { requestCollaboration, type CollaborationRequestInput } from './collaboration-request'
 import { startCollaboration, type CollaborationStartInput } from './collaboration-start'
+import { suggestTask, suggestedTaskOptions, launchNodeSuggestedTask } from './suggested-task'
+import type { SuggestedTaskLaunchChoice } from '@superone/shared/suggested-task'
 
 export type { CollaborationDeps } from './collaboration-context'
 
@@ -37,6 +39,7 @@ export type { CollaborationDeps } from './collaboration-context'
 export class CollaborationService {
   private readonly ctx: CollaborationContext
   private readonly unsubscribe: () => void
+  private readonly taskLaunches = new Map<string, Promise<{ sessionId: string }>>()
 
   constructor(private readonly deps: CollaborationDeps) {
     const wakes = new CollaborationWakeQueue(deps.db, {
@@ -88,6 +91,18 @@ export class CollaborationService {
 
   listProfiles(): SessionAgentProfile[] {
     return listCollaborationProfiles(this.deps)
+  }
+
+  suggestTask(sessionId: string, args: unknown) { return suggestTask(this.ctx, sessionId, args) }
+  suggestedTaskLaunchOptions(sessionId: string, taskId: string) { return suggestedTaskOptions(this.ctx, sessionId, taskId) }
+  launchSuggestedTask(sessionId: string, taskId: string, choice: SuggestedTaskLaunchChoice | undefined, assertControl: () => void, controllerClientSessionId: string) {
+    assertControl()
+    const key = `${sessionId}:${taskId}`
+    const active = this.taskLaunches.get(key)
+    if (active) return active
+    const run = launchNodeSuggestedTask(this.ctx, sessionId, taskId, choice, assertControl, controllerClientSessionId).finally(() => this.taskLaunches.delete(key))
+    this.taskLaunches.set(key, run)
+    return run
   }
 
   request(input: CollaborationRequestInput) {

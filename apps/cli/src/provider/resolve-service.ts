@@ -227,6 +227,7 @@ export interface ModelOptionWire {
   id: string
   name: string
   description: string
+  supportsFastMode?: boolean
   isDefault?: boolean
   supportedEffortLevels?: string[]
   supportedReasoningEfforts?: Array<{ value: string }>

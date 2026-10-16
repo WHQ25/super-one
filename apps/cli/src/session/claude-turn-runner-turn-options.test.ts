@@ -50,8 +50,8 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function runnerWith(queryFn: ClaudeQueryFn) {
-  const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false, mcpMergeMode: 'host-action-only' })
+function runnerWith(queryFn: ClaudeQueryFn, env: NodeJS.ProcessEnv = {}) {
+  const runner = createNodeClaudeTurnRunner({ env, binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false, mcpMergeMode: 'host-action-only' })
   const events: AgentEvent[] = []
   const turn = (text: string, extra: Partial<Parameters<typeof runner>[0]> = {}) => runner({
     session: session(), text, onDelta: () => {}, onAgentEvent: (event) => events.push(event),
@@ -81,8 +81,11 @@ describe('node Claude runner: Ultracode', () => {
     await turn('one')
     await turn('wake', { source: 'task-notification' })
     await turn('same', { ultracode: false })
+    await turn('new effort', { effort: 'low' })
 
     expect(optionsAt(0).settings).not.toHaveProperty('ultracode')
+    expect(optionsAt(0).settings).not.toHaveProperty('fastMode')
+    expect(optionsAt(1).settings).not.toHaveProperty('fastMode')
     expect(applyFlagSettings).not.toHaveBeenCalled()
   })
 })
@@ -142,5 +145,37 @@ describe('node Claude runner: message origin', () => {
     expect(users.map((user) => (user as { origin?: unknown }).origin)).toEqual([
       { kind: 'human' }, { kind: 'human' }, undefined, undefined,
     ])
+  })
+})
+
+
+describe('node Claude runner: SDK Fast Mode', () => {
+  it('keeps the SDK account restriction separate from the requested setting', async () => {
+    const { queryFn, optionsAt } = fakeQuery(() => [{ subtype: 'init', fast_mode_state: 'off', fast_mode_disabled_reason: 'extra_usage_disabled' }])
+    const { turn, events } = runnerWith(queryFn, { CLAUDE_CODE_OAUTH_TOKEN: 'test' })
+    await turn('one', { claudeFastMode: true })
+    expect(optionsAt(0).settings).toMatchObject({ fastMode: true })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'session_init', session: expect.objectContaining({ fastModeState: 'off', fastModeDisabledReason: 'extra_usage_disabled' }) }))
+  })
+  it.each([
+    ['API key', { ANTHROPIC_API_KEY: 'test' }],
+    ['subscription', { CLAUDE_CODE_OAUTH_TOKEN: 'test' }],
+    ['CLI login', {}],
+  ])('passes the %s choice to the SDK, retains it for a wake and changes it live', async (_name, env) => {
+    const { queryFn, applyFlagSettings, optionsAt } = fakeQuery()
+    const { turn } = runnerWith(queryFn, env)
+    await turn('one', { claudeFastMode: true })
+    expect(optionsAt(0).settings).toMatchObject({ fastMode: true })
+    await turn('wake', { source: 'task-notification' })
+    expect(applyFlagSettings).not.toHaveBeenCalled()
+    await turn('off', { claudeFastMode: false })
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    expect(applyFlagSettings).toHaveBeenCalledWith({ fastMode: false })
+  })
+  it('lets the SDK decide account availability rather than overriding the requested flag', async () => {
+    const { queryFn, optionsAt } = fakeQuery()
+    const { turn } = runnerWith(queryFn, { ANTHROPIC_API_KEY: 'test', ANTHROPIC_BASE_URL: 'https://gateway.example' })
+    await turn('one', { claudeFastMode: true })
+    expect(optionsAt(0).settings).toMatchObject({ fastMode: true })
   })
 })

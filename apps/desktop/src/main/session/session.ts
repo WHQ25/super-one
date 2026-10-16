@@ -857,6 +857,7 @@ export class Session implements SessionContract {
       const nextDirs = this.resolveEffectiveDirs()
       const dirsChanged = this.dirsReachBackend() && !sameStringArray(nextDirs, this.additionalDirectories)
       if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
+      if (request.claudeFastMode !== undefined) this.setClaudeFastMode(request.claudeFastMode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
       const delivery = this.createSendDelivery(request, opts?.onInputAccepted)
@@ -1239,7 +1240,7 @@ export class Session implements SessionContract {
     if (patch.openCodeAgentId === null && this.backendStarted) this._needsRebuild = true
   }
 
-  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; claudeFastMode?: boolean; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
     this.lease.assertMutation()
     this.assertNotDisposed()
     this.markSelectionPicked([
@@ -1247,6 +1248,7 @@ export class Session implements SessionContract {
       ...(opts.effort !== undefined ? ['effort' as const] : []),
     ])
     if (opts.ultracode !== undefined) this.setUltracode(opts.ultracode)
+    if (opts.claudeFastMode !== undefined) this.setClaudeFastMode(opts.claudeFastMode)
     const applyWindow = opts.contextWindow != null && Number.isFinite(opts.contextWindow)
     let changed = false
     let modelSwitch: Promise<void> | undefined
@@ -1297,6 +1299,15 @@ export class Session implements SessionContract {
       return this.setModel(this.model, { contextWindow: opts.contextWindow as number })
     }
     return modelSwitch
+  }
+
+  /** Session choice; the SDK separately reports availability and applied Fast state. */
+  private setClaudeFastMode(enabled: boolean): void {
+    if (this._uiSettings.claudeFastMode === enabled) return
+    const patch = { claudeFastMode: enabled }
+    this.mergeUiSettings(patch)
+    this.forwardEvent({ type: 'agent_setting_change', patch })
+    if (this.backendStarted) void this.backend.setClaudeFastMode?.(enabled)?.catch(error => log.warn('[Session] setClaudeFastMode failed sid=%s:', this.id, error))
   }
 
   /**
@@ -1646,6 +1657,7 @@ export class Session implements SessionContract {
       model: hint?.model ?? this.model,
       serviceTier: this._uiSettings.selectedCodexServiceTier,
       ultracode: this._uiSettings.ultracode ?? false,
+      claudeFastMode: this._uiSettings.claudeFastMode,
       additionalDirectories: this.backendDirs(dirs),
       abortController: new AbortController(),
       providerSessionId: this._providerSessionId ?? undefined,
@@ -2214,6 +2226,7 @@ export class Session implements SessionContract {
       model: this.model,
       serviceTier: this._uiSettings.selectedCodexServiceTier,
       ultracode: this._uiSettings.ultracode ?? false,
+      claudeFastMode: this._uiSettings.claudeFastMode,
       additionalDirectories: this.backendDirs(),
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,

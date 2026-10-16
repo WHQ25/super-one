@@ -7,13 +7,13 @@ import { DeferredTool, DeferredDetailStatus, useDeferredToolDetail } from './Def
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
-import { SUGGEST_TASK_TOOL_NAME } from '@superone/shared/suggested-task'
+import { SUGGEST_TASK_TOOL_NAME, suggestedTaskIdFromResult } from '@superone/shared/suggested-task'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
 import { FileText, ImageIcon } from 'lucide-react'
-import { requestNative } from './bridge'
+import { requestNative, requestNativeAsync } from './bridge'
 import {
   PortableTurnContext,
   TurnMessageIdContext,
@@ -291,8 +291,8 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
     )
   }
   if (collabToolName === SUGGEST_TASK_TOOL_NAME) {
-    // Launching runs in the desktop's main process; the phone shows the card and its outcome.
     const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    const taskId = suggestedTaskIdFromResult(props.result)
     return (
       <SuggestedTaskCard
         params={parseRecord(props.input)}
@@ -301,6 +301,7 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
         isStreaming={props.status === 'streaming'}
         isError={props.isError}
         isDenied={isDenied}
+        actions={taskId ? { launch: async () => { await requestNativeAsync('launchSuggestedTask', { taskId }) } } : undefined}
         renderMarkdown={(content) => <PortableText text={content} isStreaming={false} />}
       />
     )

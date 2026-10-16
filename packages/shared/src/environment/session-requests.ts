@@ -43,6 +43,7 @@ export interface SessionSendRequest extends MessageDisplayFields, SessionSendSel
   reviewTarget?: unknown
   /** Claude Ultracode toggle; the host switches its process when it differs. */
   ultracode?: boolean
+  claudeFastMode?: boolean
 }
 
 export interface SessionCreateRequest {
@@ -101,6 +102,8 @@ export interface SessionPlanAnswer {
  * environment call. A host that does not serve one answers `unsupported`.
  */
 export interface SessionCallMethods extends SessionOperationMethods {
+  'session.suggestedTaskLaunchOptions': { input: { taskId: string }; result: import('../suggested-task').SuggestedTaskLaunchOptions }
+  'session.launchSuggestedTask': { input: { taskId: string; choice?: import('../suggested-task').SuggestedTaskLaunchChoice }; result: { sessionId: string } }
   'composer.openInputRequest': { input: { messageId: string; spec: unknown }; result: ComposerOpenResult }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }
   'session.steer': { input: { clientMessageId: string; priority?: 'now' | 'next' }; result: { ok: boolean } }
@@ -116,7 +119,8 @@ export type SessionCallMethod = keyof SessionCallMethods
 export const SESSION_CALL_METHODS: ReadonlySet<SessionCallMethod> = new Set<SessionCallMethod>([
   ...SESSION_OPERATION_METHODS as ReadonlySet<keyof SessionOperationMethods>,
   'composer.openInputRequest',
+  'session.suggestedTaskLaunchOptions', 'session.launchSuggestedTask',
   'session.dequeue', 'session.steer', 'session.recap', 'session.getGoal', 'session.setGoal', 'session.answerAsyncQuestion',
 ])
 /** Calls that only read, so the window takes no control grant for them. */
-export const SESSION_CALL_READS: ReadonlySet<SessionCallMethod> = new Set<SessionCallMethod>(['session.getGoal', ...SESSION_OPERATION_READS as ReadonlySet<keyof SessionOperationMethods>])
+export const SESSION_CALL_READS: ReadonlySet<SessionCallMethod> = new Set<SessionCallMethod>(['session.getGoal', 'session.suggestedTaskLaunchOptions', ...SESSION_OPERATION_READS as ReadonlySet<keyof SessionOperationMethods>])

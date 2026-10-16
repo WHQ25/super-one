@@ -156,6 +156,7 @@ export function snapshotDraftSettings(
     codexModel,
     codexReasoningEffort: codexEffort,
     codexServiceTier: session.selectedCodexServiceTier,
+    claudeFastMode: session.claudeFastMode,
     codexModelUserChosen: session.codexModelUserChosen || !!codexModel,
     codexReasoningEffortUserChosen: session.codexReasoningEffortUserChosen || !!codexEffort,
     codexPermissionPreset: session.selectedCodexPermissionPreset,
@@ -204,6 +205,7 @@ export function sessionFieldsFromSettings(
     patch.selectedCodexReasoningEffort = settings.codexReasoningEffort as CodexReasoningEffort
     patch.codexReasoningEffortUserChosen = true
   }
+  if (settings.claudeFastMode !== undefined) patch.claudeFastMode = settings.claudeFastMode
   if (settings.codexServiceTier !== undefined) {
     patch.selectedCodexServiceTier = settings.codexServiceTier
   }

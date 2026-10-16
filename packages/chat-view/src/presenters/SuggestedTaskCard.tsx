@@ -31,7 +31,7 @@ export interface SuggestedTaskCardProps {
   /** False when nested inside a subagent card: one line only. */
   allowExpand?: boolean
   actions?: SuggestedTaskActions
-  /** Shown instead of the buttons when `actions` is absent; defaults to "launch it on your computer". */
+  /** Shown instead of the buttons when the host cannot launch this card. */
   unavailableReason?: string
   /** The host's launch pickers (agent, model, permission), beside the buttons of a pending card. */
   launchControls?: ReactNode
@@ -123,7 +123,7 @@ export function SuggestedTaskCard({
 
   return (
     <div
-      className={cn('tool-node my-1 min-w-0 overflow-hidden rounded-md border', state ? 'bg-muted/20' : 'bg-card')}
+      className={cn('my-1 w-full min-w-0 overflow-hidden rounded-md border', state ? 'bg-muted/20' : 'bg-card')}
       data-suggested-task-status={state?.status ?? 'pending'}
     >
       <div className="px-3 py-2">
@@ -200,7 +200,7 @@ function Footer({
   if (!actions) {
     return (
       <p className="px-3 pb-2 text-xs text-muted-foreground">
-        {unavailableReason ?? t('chat.toolBlock.suggestedTask.desktopOnly')}
+        {unavailableReason ?? t('chat.toolBlock.suggestedTask.unavailable')}
       </p>
     )
   }

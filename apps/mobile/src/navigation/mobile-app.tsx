@@ -111,6 +111,8 @@ import { WorkspaceSidebar } from './workspace-sidebar'
 import { projectListChanged, sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
 import { WorkspaceListCache } from '../workspace-list-cache'
 import { injectHostMessage as inject, resolveNativeRequest, type NativeActionPorts } from '../native-actions'
+import { useSuggestedTaskLaunch } from './use-suggested-task-launch'
+import { SuggestedTaskLaunchSheet } from '../screens/suggested-task-launch-sheet'
 import { createMediaPorts } from '../media-ports'
 import { cacheDownload, cacheMcpAppDownload, type CachedDownload } from '../mcp-app-downloads'
 import type { ReconnectController } from '../reconnect-controller'
@@ -585,6 +587,7 @@ export function MobileApp() {
     const surfaces = nativeInputs.sync(runtime)
     // The host's Ultracode for this session; the picker and the border follow it.
     harnessSelection.setHostUltracode(runtime.session.ultracode)
+    harnessSelection.setHostClaudeFastMode(runtime.session.claudeFastMode ?? (runtime.session.session?.fastModeState === 'on' || runtime.session.session?.fastModeState === 'cooldown'))
     const pending = surfaces.permission ?? surfaces.input
     const mentionArtworkRevision = dynamicMentionArtworkRevision()
     const includeMentionArtwork = hydrate || mentionArtworkRevision !== mentionArtworkRevisionRef.current
@@ -662,7 +665,12 @@ export function MobileApp() {
       runUiAction(() => kv.set(CHAT_VIEW_STATE_KEY, JSON.stringify(chatViewStatesRef.current)), setStatus, 'failed to save view state')
     }, 250)
   }
+  const suggestedTasks = useSuggestedTaskLaunch(
+    () => ({ client: clientRef.current, owner: runtimeRef.current }),
+    `${runtimeRef.current?.sourceEnvironmentId ?? clientRef.current?.environmentId ?? ''}:${sessionId}`,
+  )
   const nativeActionPorts: NativeActionPorts = {
+    ...suggestedTasks.actions,
     composerOpen: request => {
       const runtime = runtimeRef.current
       if (!runtime) return Promise.reject(new Error('No active session'))
@@ -1983,7 +1991,8 @@ export function MobileApp() {
           ...(selectedModel ? { model: selectedModel } : {}), ...(selectedEffort ? { effort: selectedEffort } : {}),
           ...(selectedProvider === 'codex' ? { serviceTier: harnessSelection.serviceTier, collaborationMode: remoteDrafts.settings?.codexCollaborationMode ?? undefined } : {}),
           ...(selectedProvider === 'opencode' ? { agent: harnessSelection.selectedAgentId } : {}),
-          ...(harnessSelection.ultracodePick !== null ? { ultracode: harnessSelection.ultracodePick } : {}),
+          ...(harnessSelection.claudeFastModePick !== null ? { claudeFastMode: harnessSelection.claudeFastModePick } : {}),
+      ...(harnessSelection.ultracodePick !== null ? { ultracode: harnessSelection.ultracodePick } : {}),
         },
       })
       return runtime
@@ -2078,6 +2087,7 @@ export function MobileApp() {
       ...(Object.keys(harnessSelection.modelParams).length
         ? { modelParams: harnessSelection.modelParams }
         : {}),
+      ...(harnessSelection.claudeFastModePick !== null ? { claudeFastMode: harnessSelection.claudeFastModePick } : {}),
       ...(harnessSelection.ultracodePick !== null ? { ultracode: harnessSelection.ultracodePick } : {}),
       clientMessageId,
       ...(queued ? { priority: 'next' as const } : {}),
@@ -3021,6 +3031,7 @@ export function MobileApp() {
           onReconnect: () => void desktopUpgrade.reconnect(),
           onDismiss: () => void runUiAction(desktopUpgrade.dismiss, setStatus, 'Could not close the workspace') }}
       />
+      {suggestedTasks.sheet ? <SuggestedTaskLaunchSheet {...suggestedTasks.sheet} /> : null}
       {folderPrompt ? <NewFolderSheet
         parent={directoryPath}
         value={folderPrompt.value}

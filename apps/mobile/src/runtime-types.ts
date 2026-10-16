@@ -83,6 +83,7 @@ export type SendMessageOptions = {
   modelParams?: Record<string, string>
   /** Claude Ultracode toggle; omitted keeps the session's. */
   ultracode?: boolean
+  claudeFastMode?: boolean
   clientMessageId?: string
   inputRequest?: import('@superone/shared/input-request').InputRequestSubmission
   priority?: 'now' | 'next' | 'later'

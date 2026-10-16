@@ -42,6 +42,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'session.sideChatClose',
   'session.stopTask',
   'session.startQueued',
+  'session.launchSuggestedTask',
   'session.reset',
   'session.rewind',
   'session.truncateAtCheckpoint',

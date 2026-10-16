@@ -173,6 +173,7 @@ export interface ChatCoreSession {
   selectedEffort?: EffortLevel
   effortUserChosen: boolean
   /** Claude Ultracode toggle; see SessionSettingsPatch.ultracode. */
+  claudeFastMode?: boolean
   ultracode: boolean
   selectedCodexModel: string
   selectedCodexReasoningEffort?: CodexReasoningEffort

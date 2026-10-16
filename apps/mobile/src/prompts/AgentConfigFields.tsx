@@ -1,3 +1,4 @@
+import { supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
@@ -28,13 +29,16 @@ export function AgentConfigFields({ harness, config, profile: suppliedProfile, l
   const profile = suppliedProfile ?? (catalog ? { id: harness, name: harness, harnessId: harness, defaultConfig: {}, models: catalog.models ?? [], efforts: catalog.efforts?.map((option) => option.value) ?? [], apiProviders: [] } : undefined)
   const options = HARNESS_LAUNCH_OPTIONS[harness]
   const model = profile?.models.find((item) => item.id === config.model)
-  const fast = Boolean(findCodexFastServiceTier(model))
+  const modelEnv = profile?.apiProviders.find(provider => provider.id === (config.apiProviderId ?? profile.defaultConfig.apiProviderId))?.modelEnv
+  const claudeFast = harness === 'claude' && supportsClaudeFastMode(model, modelEnv)
+  const fast = harness === 'codex' && Boolean(findCodexFastServiceTier(model))
   const select = (label: string, value: string, choices: string[], change: (value: string) => void) => <SelectField label={label} value={value} options={choices.map((id) => ({ id, label: id }))} onChange={change} />
   return <View style={styles.stack}>
     {error ? <Text style={styles.warningText}>{error}</Text> : null}
     {profile?.apiProviders.length ? <SelectField label={t('AI provider')} value={config.apiProviderId ?? ''} options={[{ id: '', label: t('Default provider') }, ...profile.apiProviders.map((provider) => ({ id: provider.id, label: [provider.name, provider.keyName].filter(Boolean).join(' · ') }))]} onChange={(apiProviderId) => onChange({ apiProviderId: apiProviderId || null, effort: undefined })} /> : null}
     {profile?.models.length ? <SelectField label="Model" value={config.model ?? ''} options={profile.models.map((item) => ({ id: item.id, label: item.name }))} onChange={(value) => onChange({ model: value, fastMode: false })} /> : <EditableField field={{ label: 'Model', type: 'string' }} value={config.model} onChange={(value) => onChange({ model: String(value) || undefined })} />}
     {!config.apiProviderId && profile?.efforts.length ? select('Effort', config.effort ?? '', profile.efforts, (effort) => onChange({ effort })) : !profile && !config.apiProviderId ? <EditableField field={{ label: 'Effort', type: 'string' }} value={config.effort} onChange={(value) => onChange({ effort: String(value) || undefined })} /> : null}
+    {claudeFast ? <EditableField field={{ label: t('Fast mode'), type: 'boolean' }} value={config.claudeFastMode} onChange={value => onChange({ claudeFastMode: value === true })} /> : null}
     {fast ? <EditableField field={{ label: t('Fast mode'), type: 'boolean' }} value={config.fastMode} onChange={(value) => onChange({ fastMode: value === true })} /> : null}
     {options.permissionModes.length > 0 && <SelectField label="Permission mode" value={config.permissionMode ?? options.defaultPermissionMode} options={options.permissionModes.map((id) => ({ id, label: permissionModeLabel(id, harness) }))} onChange={(permissionMode) => onChange({ permissionMode: permissionMode as SessionAgentLaunchConfig['permissionMode'] })} />}
     {options.sandboxModes.length ? select('Sandbox', config.sandboxMode ?? 'off', options.sandboxModes, (sandboxMode) => onChange({ sandboxMode: sandboxMode as SessionAgentLaunchConfig['sandboxMode'] })) : <Text style={styles.meta}>{t('Execution isolation follows the agent’s permission settings.')}</Text>}

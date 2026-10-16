@@ -22,6 +22,8 @@ export type HapticStyle = 'light' | 'medium' | 'heavy'
 const HAPTIC_STYLES: ReadonlySet<string> = new Set<HapticStyle>(['light', 'medium', 'heavy'])
 
 export interface NativeActionPorts {
+  /** Open native configuration; the user's final Launch runs from that surface. */
+  launchSuggestedTask?(taskId: string): Promise<void>
   sessionInboxAction?(inboxId: string, action: 'cancel' | 'steer' | 'queue'): Promise<void>
   reconnectAgent?(): Promise<void>
   composerOpen?(request: ComposerViewRequest & { messageId: string }): Promise<ComposerOpenResult>
@@ -233,7 +235,10 @@ export async function resolveNativeRequest(
   try {
     // Most actions only acknowledge; the few that answer merge their fields in.
     let result: Record<string, unknown> = {}
-    if (message.action === 'subscribeDetail') {
+    if (message.action === 'launchSuggestedTask') {
+      if (!ports.launchSuggestedTask) throw new Error('Suggested tasks are unavailable')
+      await ports.launchSuggestedTask(payloadString(message, 'taskId'))
+    } else if (message.action === 'subscribeDetail') {
       if (!ports.subscribeDetail) throw new Error('Details unavailable')
       result = await ports.subscribeDetail(payloadString(message, 'detailRef'), payloadString(message, 'subscriptionId'))
     } else if (message.action === 'unsubscribeDetail') {

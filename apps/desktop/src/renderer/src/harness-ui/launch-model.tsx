@@ -30,6 +30,7 @@ export interface LaunchModelPatch {
   effort?: string
   apiProviderId?: string | null
   fastMode?: boolean
+  claudeFastMode?: boolean
 }
 
 export interface LaunchModelProps {
@@ -45,6 +46,7 @@ export interface LaunchModelProps {
   /** The row carries a Fast tier choice; harnesses with a Fast tier render its toggle. */
   offerFastMode?: boolean
   fastMode?: boolean
+  claudeFastMode?: boolean
   /** The row cannot pick an API key (it runs on the user's default one): no provider list. */
   hideApiProvider?: boolean
   /** Extra Options rows the caller owns, e.g. an agent profile's harness settings. */
@@ -62,7 +64,7 @@ const EMPTY_BINDINGS: never[] = []
 export function useProfileCatalog(profile: SessionAgentProfile | undefined): ModelOption[] {
   const models = profile?.models
   return useMemo(
-    () => models?.map((model) => ({ id: model.id, name: model.name, description: model.description ?? '' })) ?? EMPTY_MODELS,
+    () => models?.map((model) => ({ ...model, description: model.description ?? '' })) ?? EMPTY_MODELS,
     [models],
   )
 }

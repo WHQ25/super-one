@@ -7,10 +7,14 @@
  * happened to the card afterwards is a host fact patched onto the call's own
  * row — a `tool_use` block, or a Codex `mcp_tool_call` item — so it persists
  * with the transcript and reaches every surface that renders the row.
+ * Configuration and launch always go to that row's source session environment.
+ * Clients choose only run settings; the source host resolves the stored brief,
+ * working directory and new worktree. An unavailable source never falls back locally.
  */
 import type { ChatMessage, SessionAgentLaunchSettings, SessionAgentProfile } from './agent-types'
 import { readableContent } from './codex-content'
 import { parseMcpToolName } from './tool-ui'
+export { parseSuggestedTaskChoice, suggestedTaskSettings, suggestedTaskRunSettings, suggestedTaskInitialChoice, suggestedTaskBranchName } from './suggested-task-launch'
 
 export const SUGGEST_TASK_TOOL_NAME = 'session_suggest_task' as const
 

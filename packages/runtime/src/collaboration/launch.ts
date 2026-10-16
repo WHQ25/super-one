@@ -137,6 +137,7 @@ export function patchEditableLaunchConfig<T extends SessionAgentLaunchConfig>(ba
     ...(typeof patch.model === 'string' && patch.model.trim() ? { model: patch.model.trim() } : {}),
     ...(typeof patch.effort === 'string' && patch.effort.trim() ? { effort: patch.effort.trim() } : {}),
     ...(typeof patch.fastMode === 'boolean' ? { fastMode: patch.fastMode } : {}),
+    ...(typeof patch.claudeFastMode === 'boolean' ? { claudeFastMode: patch.claudeFastMode } : {}),
     ...(patch.apiProviderId === null || typeof patch.apiProviderId === 'string'
       ? { apiProviderId: patch.apiProviderId }
       : {}),

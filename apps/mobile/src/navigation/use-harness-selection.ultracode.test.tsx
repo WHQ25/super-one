@@ -72,3 +72,25 @@ test('opening another session drops this phone\'s pick for that session\'s own',
 
   expect(result.current.ultracodePick).toBeNull()
 })
+
+
+test('offers Claude Fast Mode for SDK-supported API and subscription models, clears on switches, and restores host state', async () => {
+  const info: RemoteSystemInfo = { ...claude, models: claude.models!.map(model => ({ ...model, supportsFastMode: model.id === 'opus' })),
+    providers: [{ id: 'official', name: 'Anthropic' }, { id: 'gateway', name: 'Gateway', modelEnv: { opus: { id: 'gateway-opus' } } }, { id: 'claude-account:cli', name: 'Subscription' }], selectedProviderId: 'official' }
+  const { result } = await mount(info)
+  const fast = () => result.current.optionParams.find(param => param.id === 'claudeFastMode')
+  expect(fast()?.selected).toBe('false')
+  await act(async () => { result.current.setHostClaudeFastMode(true) })
+  expect(fast()?.selected).toBe('true')
+  expect(result.current.claudeFastModePick).toBeNull()
+  await act(async () => { result.current.setOptionParam('claudeFastMode', 'false') })
+  expect(result.current.claudeFastModePick).toBe(false)
+  await act(async () => { result.current.selectProvider('claude-account:cli') })
+  expect(fast()).toBeDefined()
+  await act(async () => { result.current.setOptionParam('claudeFastMode', 'true') })
+  expect(fast()?.selected).toBe('true')
+  await act(async () => { result.current.selectProvider('gateway') })
+  expect(fast()).toBeUndefined()
+  await act(async () => { result.current.selectProvider('official'); result.current.selectModel('haiku') })
+  expect(fast()).toBeUndefined()
+})

@@ -32,6 +32,16 @@ function ports(): NativeActionPorts {
 }
 
 describe('native chat actions', () => {
+  it('opens task configuration for the native session and returns errors to the card', async () => {
+    const target = { ...ports(), launchSuggestedTask: vi.fn(async () => {}) }
+    const request = { type: 'requestNative' as const, requestId: 'task', action: 'launchSuggestedTask', payload: { taskId: 'task-1', sessionId: 'forged', prompt: 'forged' } }
+    await expect(resolveNativeRequest(request, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.launchSuggestedTask).toHaveBeenCalledExactlyOnceWith('task-1')
+    await expect(resolveNativeRequest({ ...request, payload: { taskId: '' } }, target)).resolves.toHaveProperty('error')
+    expect(target.launchSuggestedTask).toHaveBeenCalledOnce()
+    target.launchSuggestedTask.mockRejectedValueOnce(new Error('Task already launched'))
+    await expect(resolveNativeRequest(request, target)).resolves.toMatchObject({ error: 'Task already launched' })
+  })
   it('validates native pending-input actions and reconnects through shell-owned ports', async () => {
     const target = { ...ports(), sessionInboxAction: vi.fn(async () => {}), reconnectAgent: vi.fn(async () => {}) }
     const request = { type: 'requestNative' as const, requestId: 'inbox', action: 'sessionInboxAction', payload: { inboxId: 'pending', action: 'steer', sessionId: 'forged' } }

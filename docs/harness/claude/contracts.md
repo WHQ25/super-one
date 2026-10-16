@@ -572,3 +572,11 @@ module that runs inside the CLI process. Upstream docs:
   credential for a live profile request; real two-account browser login and
   model inference still require live acceptance. No CLI version upgrade is part
   of this change.
+
+
+## Fast Mode
+
+- The SDK model catalog owns model support (`ModelInfo.supportsFastMode`), which controls the selector switch for both API and subscription logins. Do not infer availability from an API key or account type: subscription accounts with usage credits can use Fast Mode too. Explicit provider model mappings do not inherit the SDK catalog's capabilities for a different model.
+- Desktop and node send the session choice as `settings.fastMode` at query creation and `Query.applyFlagSettings({fastMode})` for a live switch. The warmup key includes the flag. A host wake that omits the field preserves the existing choice.
+- Account availability, organization policy and rate limits remain SDK-owned. Disabled reasons such as `extra_usage_disabled`, `not_first_party` or `model_not_allowed` describe current availability, not model capability. `preference`, `pending` and `sdk_opt_in_required` must not prevent a user from opting in. `fast_mode_state` and `fast_mode_disabled_reason` are retained in init/result metadata, so requesting Fast never fabricates an applied `on` state.
+- Verification: selector, launch settings and node runner tests use recorded catalog shapes and a fake SDK. No billed live inference is required by these checks.

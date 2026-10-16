@@ -88,6 +88,7 @@ export interface PatchSessionSettingsInput extends Partial<MutatingControlContex
   agentPreset?: string | null
   additionalDirectories?: string[] | null
   ultracode?: boolean | null
+  claudeFastMode?: boolean | null
   contextWindow?: number | null
   serviceTier?: string | null
   permissionPreset?: string | null

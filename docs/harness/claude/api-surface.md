@@ -113,7 +113,7 @@ Fields of `Options` passed to `query()` / `startup()`. "(warmup key)" marks fiel
 | `sessionStore` | unused | Would mirror transcripts to an external store, for example to sync a node to desktop. | — |
 | `sessionStoreFlush` | n/a | Only applies with `sessionStore`. | — |
 | `settingSources` | used | `['user','project','local']` on desktop and node sessions; probes use the SDK default. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
-| `settings` | used | Desktop and node pass `{env: providerSettingsEnv, bashEditDiffEnabled: true}`, so provider keys beat the settings-file env and Bash edits get file diffs. It is not in the warmup key (derived from `env`). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
+| `settings` | used | Desktop and node pass `{env: providerSettingsEnv, bashEditDiffEnabled: true}`, so provider keys beat the settings-file env and Bash edits get file diffs. The session Fast Mode choice rides as `settings.fastMode` for API and subscription logins, with account availability enforced by the SDK; the model selector requires the SDK `supportsFastMode` flag. The Fast flag is included in the warmup key. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
 | `skills` | used | Enabled-skill allowlist, sent only when the user disabled some skills (desktop reads app prefs; node uses `resolveEnabledSkills`). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `spawnClaudeCodeProcess` | partial | Desktop only (sessions plus the `fetchModels` probe): `makeClaudeSpawn` sets the argv0 process title and `windowsHide`, and pipes stderr to the log. | `apps/desktop/src/main/agent/claude-query.ts`, `apps/desktop/src/main/agent/claude-spawn.ts`, `apps/desktop/src/main/agent/claude-models.ts` |
 | `stderr` | unused | Unused; desktop captures stderr inside its custom spawn, and node captures none. | — |
@@ -135,7 +135,7 @@ Methods of the `Query` returned by `query()`.
 | Name | Status | Usage | Code |
 |---|---|---|---|
 | `accountInfo` | used | Reads the account's email, org, subscription and API provider during the desktop CONNECT_CLAUDE metadata probe. | `apps/desktop/src/main/index.ts` |
-| `applyFlagSettings` | used | Changes a live desktop session's sandbox settings and `permissions.additionalDirectories` without restarting it. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `applyFlagSettings` | used | Changes live sandbox settings, `permissions.additionalDirectories`, Ultracode and `fastMode` without restarting. Node sessions use the same flag overlay for Fast Mode. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `backgroundTasks` | unused | Would move foreground Bash or subagent tasks to the background (Ctrl+B). | — |
 | `close` | used | Shuts down the desktop session query when it is released or rebuilt, and ends the desktop and node model probes. The node `ClaudeLiveSession` does not call it; it stops via `abortController`. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/desktop/src/main/agent/claude-models.ts`, `packages/claude/src/fetch-models.ts` |
 | `getContextUsage` | used | Feeds the desktop context-usage meter (`ContextUsage.tsx`) with a per-category token breakdown, using the default `full` detail. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
@@ -260,7 +260,7 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 
 | Name | Status | Usage | Code |
 |---|---|---|---|
-| `apply_flag_settings` | used | via `applyFlagSettings`; live sandbox and additional-directories updates in desktop sessions. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `apply_flag_settings` | used | via `applyFlagSettings`; live sandbox, additional-directories, Ultracode and Fast Mode updates. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `background_tasks` | unused | via `backgroundTasks` (never called); would background foreground tasks. | — |
 | `can_use_tool` | used | via Options.canUseTool; the permission, AskUserQuestion and plan-approval bridge in desktop and node. The legacy print client handles the raw subtype too. | `apps/desktop/src/main/agent/claude-permissions.ts`, `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-print-client.ts` |
 | `cancel_async_message` | used | via `cancelAsyncMessage`, which is not in the public `Query` type and is reached through a cast; desktop interrupt cancels each `still_queued` uuid and rebuilds the runtime if the method is missing. | `apps/desktop/src/main/session/backends/claude-backend.ts` |

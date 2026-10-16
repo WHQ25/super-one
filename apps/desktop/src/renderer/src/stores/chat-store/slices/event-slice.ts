@@ -59,6 +59,7 @@ function sessionPatchFromUiSettings(
   if (ui.selectedEffort !== undefined) {
     patch.selectedEffort = (ui.selectedEffort ?? undefined) as EffortLevel | undefined
   }
+  if (ui.claudeFastMode !== undefined) patch.claudeFastMode = ui.claudeFastMode
   if (ui.ultracode !== undefined) patch.ultracode = ui.ultracode
   if (ui.selectedCodexModel !== undefined && ui.selectedCodexModel !== null) {
     patch.selectedCodexModel = ui.selectedCodexModel

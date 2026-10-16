@@ -1,13 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { expect, userEvent, within } from 'storybook/test'
-import type { SessionAgentProfile } from '@superone/shared/agent-types'
+import type { ChatMessage, SessionAgentProfile } from '@superone/shared/agent-types'
+import { PortableMessage } from '@superone/chat-view/PortableMessage'
+import { installHostBridge } from '@superone/chat-view/bridge'
 import type { SuggestedTaskLaunchChoice, SuggestedTaskState } from '@superone/shared/suggested-task'
 import { SuggestedTaskCard } from '@superone/chat-view/presenters/SuggestedTaskCard'
 import { SessionLinkContext, type SessionLinkPorts } from '@superone/chat-view/presenters/SessionChip'
 import { createSessionLinkCache } from '@superone/chat-view/presenters/session-link-cache'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
-import { SuggestedTaskLaunchControls, type LaunchOptionsState } from './SuggestedTaskToolBlock'
+import { SuggestedTaskLaunchControls, SuggestedTaskToolBlock, type LaunchOptionsState } from './SuggestedTaskToolBlock'
+import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { renderToolMarkdown } from './tool-block-presenters/tool-markdown'
 import { ToolBlock } from './ToolBlock'
 
@@ -89,7 +92,7 @@ const SESSION_LINKS = {
 function Shell({ children, width = 560 }: { children: ReactNode; width?: number }) {
   return (
     <SessionLinkContext.Provider value={SESSION_LINKS}>
-      <div className="@container space-y-3" style={{ maxWidth: width }}>{children}</div>
+      <div className="@container space-y-3" style={{ width, maxWidth: '100%' }}>{children}</div>
     </SessionLinkContext.Provider>
   )
 }
@@ -241,7 +244,7 @@ export const Settled: Story = {
 
 export const SettledDark: Story = { ...Settled, globals: { theme: 'dark' } }
 
-/** Phone (no actions) and a desktop session this window does not control. */
+/** A card without a launch handle and a session this window does not control. */
 export const Unavailable: Story = {
   render: () => (
     <Shell>
@@ -282,6 +285,88 @@ export const Rows: Story = {
 }
 
 export const RowsDark: Story = { ...Rows, globals: { theme: 'dark' } }
+
+/** Wide desktop container: cards keep their border and align with the transcript. */
+export const FullWidth: Story = {
+  render: () => <Shell><InteractiveCard /><SuggestedTaskCard params={PARAMS} state={{ status: 'launched', sessionId: 'session-2' }} /></Shell>,
+  play: async ({ canvasElement }) => {
+    for (const card of canvasElement.querySelectorAll<HTMLElement>('[data-suggested-task-status]')) {
+      const style = getComputedStyle(card)
+      await expect(style.marginLeft).toBe('0px')
+      await expect(style.borderLeftWidth).toBe(style.borderRightWidth)
+      await expect(parseFloat(style.borderRadius)).toBeGreaterThan(0)
+      await expect(card.getBoundingClientRect().width).toBe(card.parentElement!.getBoundingClientRect().width)
+    }
+  },
+}
+
+export const FullWidthDark: Story = { ...FullWidth, globals: { theme: 'dark' } }
+
+function MobileCard() {
+  const [launched, setLaunched] = useState(false)
+  useEffect(() => {
+    const off = installHostBridge(() => {})
+    const respond = (event: MessageEvent) => {
+      const request = event.data
+      if (request?.type !== 'requestNative' || request.action !== 'launchSuggestedTask') return
+      setLaunched(true)
+      window.postMessage({ type: 'nativeActionResult', requestId: request.requestId, result: { ok: true, sessionId: 'session-2' } }, '*')
+    }
+    window.addEventListener('message', respond)
+    return () => { off(); window.removeEventListener('message', respond) }
+  }, [])
+  const message = {
+    id: 'suggestion', role: 'assistant', status: 'complete', createdAt: '', content: [
+      { type: 'tool_use', toolUseId: 'suggest', toolName: 'mcp__superone__session_suggest_task', input: JSON.stringify({ title: PARAMS.title, tldr: PARAMS.tldr }), status: 'complete',
+        ...(launched ? { suggestedTask: { status: 'launched', sessionId: 'session-2' } } : {}) },
+      { type: 'tool_result', toolUseId: 'suggest', summary: JSON.stringify({ taskId: TASK_ID }) },
+    ],
+  } as ChatMessage
+  return <Shell width={375}><PortableMessage message={message} scheme="light" pendingPermission={null} isLastAssistant sessionStreaming={false} /></Shell>
+}
+
+export const MobileLaunch: Story = {
+  render: () => <MobileCard />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Launch' }))
+    await expect(await canvas.findByText('Launched')).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: 'Launch' })).toBeNull()
+  },
+}
+
+export const MobilePendingChinese: Story = { render: () => <MobileCard />, globals: { locale: 'zh', theme: 'dark' } }
+
+function RemoteCard({ connectionId }: { connectionId: string }) {
+  const [state, setState] = useState<SuggestedTaskState>()
+  useMemo(() => {
+    mockIpc('environment', 'callSession', async (connection, sessionId, method) => {
+      if (connection !== connectionId || sessionId !== 'remote-source') throw new Error('Wrong source environment')
+      if (method === 'session.suggestedTaskLaunchOptions') return READY.status === 'ready' ? READY.options : null
+      if (method === 'session.launchSuggestedTask') {
+        setState({ status: 'launched', sessionId: 'session-codex' })
+        return { sessionId: 'session-codex' }
+      }
+      throw new Error('Unexpected session call')
+    })
+  }, [connectionId])
+  return <Shell><SessionScopeProvider value={{ projectPath: `remote:${connectionId}:/repo`, sessionId: 'remote-source' }}>
+    <SuggestedTaskToolBlock params={PARAMS} result={JSON.stringify({ taskId: TASK_ID })} state={state} />
+  </SessionScopeProvider></Shell>
+}
+
+export const RemoteNode: Story = {
+  render: () => <RemoteCard connectionId="source-node" />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('button', { name: 'Agent' })).toBeVisible()
+    await expect(await canvas.findByText(/Opus/)).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Launch' }))
+    await expect(await canvas.findByText('Launched')).toBeVisible()
+  },
+}
+export const RemoteDesktop: Story = { ...RemoteNode, render: () => <RemoteCard connectionId="source-desktop" /> }
+export const RemoteDesktopDark: Story = { ...RemoteDesktop, globals: { theme: 'dark' } }
 
 /** Routed through the production ToolBlock and the desktop adapter (its buttons call `window.agent`, unmocked here). */
 export const InTranscript: Story = {

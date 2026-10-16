@@ -287,7 +287,7 @@ export function createPhoneMethods(host: PhoneMethodHost): { dispatch: RpcExtens
     const handler = Object.hasOwn(handlers, method) ? handlers[method] : undefined
     if (!handler) return null
     const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
-    const denied = requireScopes(ctx.client, phoneMethodScopes(method, (Object.hasOwn(sessionHandlers, method) && method !== 'session.getGoal' && method !== 'composer.await') || (Object.hasOwn(voiceHandlers, method) && method !== 'session.voiceStatus'), p))
+    const denied = requireScopes(ctx.client, phoneMethodScopes(method, (Object.hasOwn(sessionHandlers, method) && method !== 'session.getGoal' && method !== 'session.suggestedTaskLaunchOptions' && method !== 'composer.await') || (Object.hasOwn(voiceHandlers, method) && method !== 'session.voiceStatus'), p))
     if (denied) return denied
     try {
       return { result: await handler(p, ctx) }

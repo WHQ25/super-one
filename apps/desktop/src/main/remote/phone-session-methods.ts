@@ -6,9 +6,13 @@ import { runFencedSessionControl } from '../session/control-context'
 import { enqueueSessionQueueOp, queuedSteerCommand } from '../session/session-queue'
 import type { Session } from '../session/types'
 import { phoneMethodText as text, invalidPhoneArgument as invalid } from './phone-method-input'
+import type { SuggestedTaskLaunchChoice, SuggestedTaskLaunchOptions } from '@superone/shared/suggested-task'
+import { parseSuggestedTaskChoice } from '@superone/shared/suggested-task'
 
 export interface PhoneSessionMethodHost {
   getSession(sessionId: string): Session | null | undefined
+  suggestedTaskLaunchOptions?(sessionId: string, taskId: string): Promise<SuggestedTaskLaunchOptions>
+  launchSuggestedTask?(sessionId: string, taskId: string, choice: SuggestedTaskLaunchChoice | undefined, assertControl: () => void): Promise<{ sessionId: string }>
   openMiniAppForm?(request: import('../miniapp/miniapp-input-requests').MiniAppInputRequest): import('../session/input-requests').OpenedInputRequest
 }
 
@@ -17,19 +21,30 @@ const GOAL_STATUSES: ReadonlySet<string> = new Set(['active', 'paused', 'blocked
 
 /** Session operations already exposed by the desktop, beyond the shared node family. */
 export function createPhoneSessionMethods(host: PhoneSessionMethodHost): Record<string, Handler> {
-  const fenced = (handler: (session: Session, p: Record<string, unknown>, ctx: RpcContext) => unknown | Promise<unknown>): Handler => (p, ctx) => {
+  const fenced = (handler: (session: Session, p: Record<string, unknown>, ctx: RpcContext, assertControl: () => void) => unknown | Promise<unknown>): Handler => (p, ctx) => {
     const sessionId = text(p, 'sessionId')
     if (!ctx.sessions?.get(sessionId)) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     const proof = { leaseId: text(p, 'leaseId'), generation: text(p, 'generation') }
-    ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId }, ...proof, holderClientId: ctx.client.clientSessionId })
+    const assertControl = () => ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId }, ...proof, holderClientId: ctx.client.clientSessionId })
+    assertControl()
     const session = host.getSession(sessionId)
     if (!session) throw Object.assign(new Error('Session is not running'), { code: 'failed_precondition' })
     return runFencedSessionControl(sessionId, ctx.client.clientSessionId, proof, () => {
       session.lease.assertMutation()
-      return handler(session, p, ctx)
+      return handler(session, p, ctx, assertControl)
     })
   }
   return {
+    ...(host.suggestedTaskLaunchOptions ? {
+      'session.suggestedTaskLaunchOptions': (p: Record<string, unknown>, ctx: RpcContext) => {
+        const sessionId = text(p, 'sessionId')
+        if (!ctx.sessions?.get(sessionId)) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+        return host.suggestedTaskLaunchOptions!(sessionId, text(p, 'taskId'))
+      },
+    } : {}),
+    ...(host.launchSuggestedTask ? {
+      'session.launchSuggestedTask': fenced((session, p, _ctx, assertControl) => host.launchSuggestedTask!(session.id, text(p, 'taskId'), parseSuggestedTaskChoice(p.choice), assertControl)),
+    } : {}),
     'session.recap': fenced(async (session, p) => {
       const auto = p.auto === true
       if (!session.requestSessionRecap || (auto && !claimAutoRecapDispatch(session.id))) return { ok: false }

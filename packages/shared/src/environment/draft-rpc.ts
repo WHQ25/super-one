@@ -51,6 +51,7 @@ export interface DraftSessionSettings {
   effort?: string | null
   modelUserChosen?: boolean
   effortUserChosen?: boolean
+  claudeFastMode?: boolean
   codexModel?: string | null
   codexReasoningEffort?: string | null
   codexServiceTier?: string | null

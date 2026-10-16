@@ -82,6 +82,7 @@ export class WarmupManager {
       cwd: opts.cwd ?? '',
       model: opts.model ?? '',
       effort: opts.effort ?? '',
+      claudeFastMode: typeof opts.settings === 'object' && opts.settings.fastMode,
       ultracode: typeof opts.settings === 'object' && opts.settings.ultracode === true,
       permissionMode: opts.permissionMode ?? 'default',
       bypass: opts.allowDangerouslySkipPermissions ?? false,

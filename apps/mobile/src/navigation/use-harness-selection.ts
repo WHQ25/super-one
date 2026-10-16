@@ -1,3 +1,4 @@
+import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   HarnessId,
@@ -66,6 +67,8 @@ export function useHarnessSelection() {
   // Claude Ultracode is session state on the host. `hostUltracode` is what the
   // open session reports; `ultracodePick` is this phone's switch, `null` until
   // flipped, so a send never turns off what the desktop turned on.
+  const [hostClaudeFastMode, setHostClaudeFastMode] = useState(false)
+  const [claudeFastModePick, setClaudeFastModePick] = useState<boolean | null>(null)
   const [hostUltracode, setHostUltracode] = useState(false)
   const [ultracodePick, setUltracodePick] = useState<boolean | null>(null)
   const [permissionMode, setPermissionModeState] = useState('default')
@@ -151,7 +154,7 @@ export function useHarnessSelection() {
     }
 
     // Opening a session: its own Ultracode, as the host reports it, holds.
-    if (current) setUltracodePick(null)
+    if (current) { setUltracodePick(null); setClaudeFastModePick(null) }
     setSystemInfo(info)
     setCatalogReady(true)
     // The catalog is the only thing that carries the host's brand hue, so this is
@@ -207,6 +210,8 @@ export function useHarnessSelection() {
     setSelectedProviderId(null)
     setServiceTier(null)
     setModelParams({})
+    setHostClaudeFastMode(false)
+    setClaudeFastModePick(null)
     setHostUltracode(false)
     setUltracodePick(null)
     setSelectedAcpAgentId(provider === 'acp' ? acpAgentId : null)
@@ -237,6 +242,7 @@ export function useHarnessSelection() {
     setSelectedModeId(settings.selectedAcpModeId ?? null)
     setSelectedProviderId(settings.apiProviderId ?? null)
     setServiceTier(settings.codexServiceTier ?? null)
+    setClaudeFastModePick(settings.claudeFastMode ?? null)
   }
 
   /** Every user-facing pick is a claim: it must survive the next catalog refresh. */
@@ -267,6 +273,9 @@ export function useHarnessSelection() {
     () => selectedProviderModelEnv({ providers: systemInfo.providers, activeProvider: systemInfo.activeProvider }, selectedProviderId),
     [systemInfo.providers, systemInfo.activeProvider, selectedProviderId],
   )
+  const canClaudeFast = selectedProvider === 'claude' && supportsClaudeFastMode(currentModel, modelEnv)
+  const claudeFastMode = canClaudeFast && (claudeFastModePick ?? hostClaudeFastMode)
+  useEffect(() => { if (currentModel && !canClaudeFast && (claudeFastModePick ?? hostClaudeFastMode)) setClaudeFastModePick(false) }, [currentModel, canClaudeFast, claudeFastModePick, hostClaudeFastMode])
   const canUltracode = ultracodeAvailable(selectedProvider, currentModel, modelEnv)
   const ultracode = canUltracode && (ultracodePick ?? hostUltracode)
   // A model or credential that cannot run it turns it off, as on desktop. No
@@ -276,14 +285,16 @@ export function useHarnessSelection() {
   }, [currentModel, canUltracode, ultracodePick, hostUltracode])
   const optionParams = useMemo(
     () => [
+      ...(canClaudeFast ? [claudeFastModeOption(claudeFastMode)] : []),
       ...optionParamsForModel(selectedProvider, currentModel, { serviceTier, params: modelParams }),
       ...(canUltracode ? [ultracodeOptionParam(ultracode)] : []),
     ],
-    [selectedProvider, currentModel, serviceTier, modelParams, canUltracode, ultracode],
+    [selectedProvider, currentModel, serviceTier, modelParams, canUltracode, ultracode, canClaudeFast, claudeFastMode],
   )
 
   /** Codex's Fast row is a service tier; every other param is a catalog value. */
   const setOptionParam = (id: string, value: string) => {
+    if (id === 'claudeFastMode') { setClaudeFastModePick(value === 'true'); return }
     if (id === 'ultracode') {
       setUltracodePick(value === 'true')
       return
@@ -356,6 +367,9 @@ export function useHarnessSelection() {
     /** Whether the next turn runs as Ultracode, for the composer border. */
     ultracode,
     /** What a send says about Ultracode: the phone's pick, or nothing to keep the host's. */
+    claudeFastMode,
+    claudeFastModePick,
+    setHostClaudeFastMode,
     ultracodePick,
     /** The open session's Ultracode, as its host reports it. */
     setHostUltracode,

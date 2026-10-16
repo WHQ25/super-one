@@ -762,6 +762,8 @@ export interface ScheduledSendRemoteTurn {
   collaborationMode?: string
   /** Claude Ultracode toggle (`SessionSettingsPatch.ultracode`). */
   ultracode?: boolean
+  /** Claude Fast Mode; session scoped. */
+  claudeFastMode?: boolean
 }
 
 /**
@@ -1071,6 +1073,7 @@ export interface SessionAgentProfile {
     id: string
     name: string
     description?: string
+    supportsFastMode?: boolean
     /** Codex service tiers advertised for this model (for example Fast/priority). */
     serviceTiers?: Array<{ id: string; name: string; description: string }>
   }>
@@ -1124,6 +1127,8 @@ export interface SessionAgentLaunchConfig {
   effort?: string
   /** Codex only: run the child session on the model's advertised Fast service tier. */
   fastMode?: boolean
+  /** Claude Fast Mode. */
+  claudeFastMode?: boolean
   /** Host-resolved tier persisted with approved collaboration grants. Not agent-editable. */
   codexServiceTier?: string | null
   apiProviderId?: string | null
@@ -1154,7 +1159,7 @@ export interface SessionAgentLaunchConfig {
 /** How a launch runs: the part of its config the user may retune before it starts. */
 export type SessionAgentLaunchSettings = Pick<
   SessionAgentLaunchConfig,
-  'model' | 'effort' | 'fastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
+  'model' | 'effort' | 'fastMode' | 'claudeFastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
 >
 
 /**
@@ -2450,6 +2455,8 @@ export interface SessionSettingsPatch {
   selectedEffort?: EffortLevel | null
   /** Ultracode: every substantive turn runs as a dynamic multi-agent workflow. Session-only, like Claude Code's `/effort` toggle. */
   ultracode?: boolean
+  /** Claude Fast Mode; session scoped. */
+  claudeFastMode?: boolean
   // Codex
   selectedCodexModel?: string | null
   selectedCodexReasoningEffort?: CodexReasoningEffort | null
@@ -2495,6 +2502,8 @@ export interface SendMessageRequest {
   taskBudget?: number
   /** Claude: the session's Ultracode toggle, carried so a draft's first send starts with it. */
   ultracode?: boolean
+  /** Claude Fast Mode; session scoped. */
+  claudeFastMode?: boolean
   codex?: CodexSendExtras
   /** Body of the user message as it should appear in the bubble (overrides content blocks built from `content`). */
   userMessageContent?: ContentBlock[]

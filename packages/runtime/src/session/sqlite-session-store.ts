@@ -6,6 +6,7 @@ import type { SqliteDatabase } from '../sqlite'
 function parseSettingsJson(raw: string | null | undefined): {
   permissionMode: string | null
   sandboxMode: string | null
+  claudeFastMode: boolean | null
   model: string | null
   effort: string | null
   agent: string | null
@@ -15,6 +16,7 @@ function parseSettingsJson(raw: string | null | undefined): {
   const empty = {
     permissionMode: null as string | null,
     sandboxMode: null as string | null,
+    claudeFastMode: null as boolean | null,
     model: null as string | null,
     effort: null as string | null,
     agent: null as string | null,
@@ -33,6 +35,7 @@ function parseSettingsJson(raw: string | null | undefined): {
     return {
       permissionMode: str('permissionMode'),
       sandboxMode: str('sandboxMode'),
+      claudeFastMode: typeof obj.claudeFastMode === 'boolean' ? obj.claudeFastMode : null,
       model: str('model'),
       effort: str('effort'),
       agent: str('agent'),
@@ -53,6 +56,7 @@ function serializeSettingsJson(session: NodeSessionRecord): string {
   return JSON.stringify({
     permissionMode: session.permissionMode ?? null,
     sandboxMode: session.sandboxMode ?? null,
+    claudeFastMode: session.claudeFastMode ?? null,
     model: session.model ?? null,
     effort: session.effort ?? null,
     ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
@@ -130,6 +134,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           cwd: r.cwd ?? null,
           permissionMode: settings.permissionMode,
           sandboxMode: settings.sandboxMode,
+          claudeFastMode: settings.claudeFastMode,
           model: settings.model,
           effort: settings.effort,
           ...(r.harness_id === 'opencode' ? { agent: settings.agent } : {}),

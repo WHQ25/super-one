@@ -325,6 +325,7 @@ function LaunchPanel({
                 effort={config.effort ?? catalogProfile?.defaultConfig.effort}
                 offerFastMode
                 fastMode={config.fastMode}
+                claudeFastMode={config.claudeFastMode}
                 onChange={onChange}
               />
             )}

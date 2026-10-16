@@ -148,6 +148,15 @@ export async function activateWorktree(
   })
 }
 
+/** Roll back only a fresh, unused checkout; no agent turn has been admitted yet. */
+export async function rollbackUnusedWorktree(git: WorktreeGit, sourceDir: string, worktreePath: string, input: ActivateWorktreeInput): Promise<void> {
+  const mainDir = await resolveMainWorktreeDir(git, sourceDir)
+  await withRepoLock(mainDir, async () => {
+    await git.write(sourceDir, ['worktree', 'remove', '--force', worktreePath])
+    if (input.mode === 'branch' && input.branchName) await git.write(sourceDir, ['branch', '-D', sanitizeGitRef(input.branchName)])
+  })
+}
+
 /**
  * Snapshot the worktree's working tree (tracked and untracked) as a tree
  * object. Only a temporary index is written, so it runs as a timed read: a

@@ -521,6 +521,7 @@ export class SessionRuntime {
     /** Durable turn defaults applied when send omits a field. */
     permissionMode?: string | null
     sandboxMode?: string | null
+    claudeFastMode?: boolean | null
     model?: string | null
     effort?: string | null
     agent?: string | null
@@ -559,6 +560,7 @@ export class SessionRuntime {
       cwd: input.cwd && input.cwd.trim() ? input.cwd.trim() : null,
       permissionMode: input.permissionMode ?? null,
       sandboxMode: input.sandboxMode ?? null,
+      claudeFastMode: input.claudeFastMode ?? null,
       model: input.model ?? null,
       effort: input.effort ?? null,
       ...(input.harnessId === 'opencode' ? { agent: input.agent ?? null } : {}),
@@ -727,12 +729,14 @@ export class SessionRuntime {
     if (session.harnessId === 'opencode') apply('agent')
     apply('apiProviderId')
 
+    if (patch.claudeFastMode !== undefined && session.harnessId === 'claude') session.claudeFastMode = patch.claudeFastMode
     session.updatedAt = Date.now()
     this.persist(session)
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.settingsChanged,
       payload: {
+        ...(session.claudeFastMode != null ? { claudeFastMode: session.claudeFastMode } : {}),
         permissionMode: session.permissionMode ?? null,
         sandboxMode: session.sandboxMode ?? null,
         model: session.model ?? null,
@@ -1034,6 +1038,7 @@ export class SessionRuntime {
     permissionMode?: string | null
     /** Sandbox policy for this turn (falls back to session.sandboxMode). */
     sandboxMode?: string | null
+    claudeFastMode?: boolean | null
     /** Extra readable directories. */
     additionalDirectories?: string[]
     /** Caller scopes before the dispatcher adds project folders; desktop Session joins its own project set. */
@@ -1126,6 +1131,7 @@ export class SessionRuntime {
       collaborationMode: input.collaborationMode,
       reviewTarget: input.reviewTarget,
       ultracode: input.ultracode,
+      claudeFastMode: input.claudeFastMode ?? session.claudeFastMode ?? undefined,
     }
 
     // Always accept the user message into the durable transcript (queue or run).
@@ -1173,6 +1179,7 @@ export class SessionRuntime {
     effort?: string | null
     permissionMode?: string | null
     sandboxMode?: string | null
+    claudeFastMode?: boolean | null
     apiProviderId?: string | null
     /** A peer's task or a host wake; absent for the user's own text. */
     source?: ChatMessageSource
@@ -1209,6 +1216,7 @@ export class SessionRuntime {
       sandboxMode: pick(input.sandboxMode, session.sandboxMode),
       apiProviderId: session.harnessId === 'codex' ? input.apiProviderId ?? session.apiProviderId : pick(input.apiProviderId, session.apiProviderId),
       source: input.source,
+      claudeFastMode: input.claudeFastMode ?? session.claudeFastMode ?? undefined,
       ...(input.collaboration ? { collaboration: input.collaboration } : {}),
     }
 
@@ -1577,6 +1585,7 @@ export class SessionRuntime {
         reviewTarget: opts.reviewTarget,
         source: opts.source,
         ultracode: opts.ultracode,
+        claudeFastMode: opts.claudeFastMode ?? session.claudeFastMode ?? undefined,
         signal: abort.signal,
         onInputAccepted: markStarted,
         onProviderResume: (resume) => { session.providerResume = resume; this.persist(session) },

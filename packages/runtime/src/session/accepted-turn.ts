@@ -33,6 +33,7 @@ export interface TurnOpts extends MessageDisplayFields {
   source?: ChatMessageSource
   /** Claude Ultracode from this turn on; omitted keeps the live process's. */
   ultracode?: boolean
+  claudeFastMode?: boolean
   /** The transcript user row this turn runs; absent for a model-only host wake. */
   userBlockId?: string
 }

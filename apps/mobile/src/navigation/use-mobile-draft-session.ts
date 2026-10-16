@@ -39,6 +39,7 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
       codexModel: s.selectedProvider === 'codex' ? s.selectedModel : null,
       codexReasoningEffort: s.selectedProvider === 'codex' ? s.selectedEffort : null,
       codexServiceTier: s.serviceTier,
+      claudeFastMode: s.claudeFastMode,
       codexPermissionPreset: s.selectedProvider === 'codex' ? s.permissionMode : null,
       permissionMode: s.permissionMode, acpAgentId: s.selectedAcpAgentId,
       openCodeAgentId: s.selectedAgentId, selectedAcpModeId: s.selectedModeId, apiProviderId: s.selectedProviderId,

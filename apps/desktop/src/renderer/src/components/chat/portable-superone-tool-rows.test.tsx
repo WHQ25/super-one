@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import * as bridge from '@superone/chat-view/bridge'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { SUPERONE_TOOL_DESCRIPTORS } from '@superone/chat-view/presenters/superone-tool-display'
 import { applyContentDelta } from '@superone/shared/content-delta'
@@ -134,13 +135,24 @@ describe('SuperOne compact tool rows on the phone', () => {
     const SUGGESTION = { title: 'Fix the flaky login test', tldr: 'Times out on CI.', prompt: 'SECRET BRIEF' }
     const PENDING = JSON.stringify({ taskId: '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b', status: 'pending' })
 
-    it('shows the card without the brief, and leaves launching to the computer', () => {
+    it('launches the projected card through native without sending its brief or a session id', async () => {
+      const launch = vi.spyOn(bridge, 'requestNativeAsync').mockResolvedValue({ ok: true, sessionId: 'new-session' })
       expect(sanitizeRemoteToolInput('mcp__superone__session_suggest_task', JSON.stringify(SUGGESTION))).not.toContain('SECRET BRIEF')
-      const { container, queryByRole } = projectedRow('session_suggest_task', SUGGESTION, PENDING)
+      const { container, getByRole } = projectedRow('session_suggest_task', SUGGESTION, PENDING)
       expect(container.textContent).toContain('Fix the flaky login test')
       expect(container.textContent).toContain('Times out on CI.')
-      expect(container.textContent).toContain('Launch it from SuperOne on your computer.')
-      expect(queryByRole('button', { name: 'Launch' })).toBeNull()
+      fireEvent.click(getByRole('button', { name: 'Launch' }))
+      await waitFor(() => expect(launch).toHaveBeenCalledWith('launchSuggestedTask', { taskId: JSON.parse(PENDING).taskId }))
+      await waitFor(() => expect(getByRole('button', { name: 'Launch' }).hasAttribute('disabled')).toBe(false))
+      launch.mockRestore()
+    })
+
+    it('shows a native launch failure on the card for retry', async () => {
+      const launch = vi.spyOn(bridge, 'requestNativeAsync').mockRejectedValue(new Error('Host is offline'))
+      const { getByRole } = projectedRow('session_suggest_task', SUGGESTION, PENDING)
+      fireEvent.click(getByRole('button', { name: 'Launch' }))
+      await waitFor(() => expect(getByRole('alert').textContent).toBe('Host is offline'))
+      launch.mockRestore()
     })
 
     it('shows the outcome the host patched onto the row', () => {

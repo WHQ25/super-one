@@ -80,6 +80,7 @@ export interface ClaudeLiveSessionOptions {
   effort?: string
   /** Ultracode at open (SDK `settings.ultracode`); `setUltracode` switches a running process. */
   ultracode?: boolean
+  claudeFastMode?: boolean
   permissionMode?: string
   /**
    * Effective uid of the harness process for the root permission guard.
@@ -296,6 +297,7 @@ function buildLiveOptions(
       ...(settingsEnv ? { env: settingsEnv } : {}),
       bashEditDiffEnabled: true,
       ...(opts.ultracode ? { ultracode: true } : {}),
+      ...(opts.claudeFastMode !== undefined ? { fastMode: opts.claudeFastMode } : {}),
     },
   }
 
@@ -497,6 +499,10 @@ export class ClaudeLiveSession {
       }
       this.startTurn({ tag, msg, input, resolve, reject })
     })
+  }
+
+  async setClaudeFastMode(enabled: boolean): Promise<void> {
+    await this.query?.applyFlagSettings({ fastMode: enabled })
   }
 
   /**

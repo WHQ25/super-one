@@ -13,7 +13,9 @@ import {
   type SuggestedTaskCardProps,
 } from '@superone/chat-view/presenters/SuggestedTaskCard'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
-import { isRemoteSession, useChatStore } from '@/stores/chat'
+import { useChatStore } from '@/stores/chat'
+import { callSession } from '@/lib/session-client'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { LaunchAgentPicker, LaunchBarDivider, LaunchSettingsBar } from './launch-settings-bar'
 import { renderToolMarkdown } from './tool-block-presenters/tool-markdown'
@@ -26,28 +28,30 @@ export type LaunchOptionsState =
   | { status: 'error'; message: string }
 
 /** The launch pickers of a pending card, loaded from main; null while there is nothing to launch. */
-function useLaunchOptions(target: { sessionId: string; taskId: string } | null): LaunchOptionsState | null {
-  const [state, setState] = useState<LaunchOptionsState | null>(null)
+function useLaunchOptions(target: { projectPath: string; sessionId: string; taskId: string } | null): LaunchOptionsState | null {
+  const [state, setState] = useState<{ key: string; value: LaunchOptionsState } | null>(null)
   const sessionId = target?.sessionId
   const taskId = target?.taskId
+  const projectPath = target?.projectPath
+  const key = JSON.stringify([projectPath, sessionId, taskId])
   useEffect(() => {
-    if (!sessionId || !taskId) {
+    if (!projectPath || !sessionId || !taskId) {
       setState(null)
       return
     }
     let cancelled = false
-    setState({ status: 'loading' })
-    window.agent.suggestedTaskLaunchOptions(sessionId, taskId).then(
-      (reply) => {
-        if (!cancelled) setState(reply.ok ? { status: 'ready', options: reply } : { status: 'error', message: reply.error })
+    setState({ key, value: { status: 'loading' } })
+    callSession(projectPath, sessionId, 'session.suggestedTaskLaunchOptions', { taskId }).then(
+      (options) => {
+        if (!cancelled) setState({ key, value: { status: 'ready', options } })
       },
       (error: unknown) => {
-        if (!cancelled) setState({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+        if (!cancelled) setState({ key, value: { status: 'error', message: error instanceof Error ? error.message : String(error) } })
       },
     )
     return () => { cancelled = true }
-  }, [sessionId, taskId])
-  return state
+  }, [projectPath, sessionId, taskId])
+  return target ? state?.key === key ? state.value : { status: 'loading' } : null
 }
 
 /**
@@ -59,25 +63,29 @@ export function SuggestedTaskLaunchControls({
   state,
   choice,
   onChange,
+  catalog = 'local',
 }: {
   state: LaunchOptionsState
   /** The user's pick; the options' initial one until they change it. */
   choice?: SuggestedTaskLaunchChoice
   onChange: (choice: SuggestedTaskLaunchChoice) => void
+  catalog?: 'local' | 'profile'
 }) {
   if (state.status === 'loading') return <Loader2 className="ml-1 size-3 animate-spin text-muted-foreground" />
   if (state.status === 'error') return <p className="truncate px-1 text-xs text-error" title={state.message}>{state.message}</p>
-  return <LaunchControls options={state.options} choice={choice ?? state.options.initial} onChange={onChange} />
+  return <LaunchControls options={state.options} choice={choice ?? state.options.initial} onChange={onChange} catalog={catalog} />
 }
 
 function LaunchControls({
   options,
   choice,
   onChange,
+  catalog,
 }: {
   options: SuggestedTaskLaunchOptions
   choice: SuggestedTaskLaunchChoice
   onChange: (choice: SuggestedTaskLaunchChoice) => void
+  catalog: 'local' | 'profile'
 }) {
   const profile = options.profiles.find((item) => item.id === choice.agentId)
   const harnessId = profile?.harnessId ?? 'claude'
@@ -97,19 +105,20 @@ function LaunchControls({
       <LaunchBarDivider />
       <LaunchModelControl
         profile={profile}
-        catalog="local"
+        catalog={catalog}
         apiProviderId={config.apiProviderId}
         model={config.model}
         effort={config.effort}
         offerFastMode
         fastMode={config.fastMode}
+        claudeFastMode={config.claudeFastMode}
         onChange={patch}
       />
     </LaunchSettingsBar>
   )
 }
 
-/** Desktop host adapter: launching runs in main, for this pane's local session only. */
+/** The card's source project selects its execution environment for reads and launch. */
 export function SuggestedTaskToolBlock({ result, ...props }: Props) {
   const { t } = useTranslation()
   const scope = useSessionScope()
@@ -117,33 +126,35 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
   const sessionId = useChatStore((state) => (
     scope?.sessionId ?? (projectPath ? state.projectSessions[projectPath]?._activeSessionId ?? null : null)
   ))
-  const local = useChatStore((state) => Boolean(projectPath && sessionId && !isRemoteSession(state, projectPath, sessionId)))
   const taskId = suggestedTaskIdFromResult(result)
   const pending = !props.state && !props.isStreaming && !props.isError && !props.isDenied && props.allowExpand !== false
   const target = useMemo(
-    () => (pending && local && sessionId && taskId ? { sessionId, taskId } : null),
-    [pending, local, sessionId, taskId],
+    () => (pending && projectPath && sessionId && taskId ? { projectPath, sessionId, taskId } : null),
+    [pending, projectPath, sessionId, taskId],
   )
   const launchOptions = useLaunchOptions(target)
-  const [picked, setPicked] = useState<SuggestedTaskLaunchChoice>()
+  const sourceKey = JSON.stringify([projectPath, sessionId, taskId])
+  const [selection, setSelection] = useState<{ source: string; choice: SuggestedTaskLaunchChoice }>()
+  const picked = selection?.source === sourceKey ? selection.choice : undefined
+  const setPicked = (choice: SuggestedTaskLaunchChoice) => setSelection({ source: sourceKey, choice })
   const choice = picked ?? (launchOptions?.status === 'ready' ? launchOptions.options.initial : undefined)
 
   const actions = useMemo<SuggestedTaskActions | undefined>(() => {
-    if (!local || !sessionId || !taskId) return undefined
+    if (!projectPath || !sessionId || !taskId) return undefined
     return {
       launch: async () => {
-        const reply = await window.agent.launchSuggestedTask(sessionId, taskId, choice)
-        return reply.ok ? undefined : reply.error
+        await callSession(projectPath, sessionId, 'session.launchSuggestedTask', { taskId, choice })
       },
     }
-  }, [local, sessionId, taskId, choice])
+  }, [projectPath, sessionId, taskId, choice])
 
   return (
     <SuggestedTaskCard
       {...props}
       actions={actions}
       unavailableReason={t('chat.toolBlock.suggestedTask.unavailable')}
-      launchControls={launchOptions ? <SuggestedTaskLaunchControls state={launchOptions} choice={picked} onChange={setPicked} /> : undefined}
+      launchControls={launchOptions ? <SuggestedTaskLaunchControls state={launchOptions} choice={picked} onChange={setPicked}
+        catalog={projectPath && connectionIdForProjectKey(projectPath) !== 'local' ? 'profile' : 'local'} /> : undefined}
       renderMarkdown={renderToolMarkdown}
     />
   )

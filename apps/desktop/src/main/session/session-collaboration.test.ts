@@ -14,6 +14,7 @@ const TEST_CWD = process.cwd()
 const state = vi.hoisted(() => ({
   db: null as Database.Database | null,
   activateWorktree: vi.fn(),
+  rollbackWorktree: vi.fn(async () => {}),
   /** path → main checkout; default: identity (cwd is not a worktree). */
   mainWorktreeByPath: new Map<string, string>(),
   resolveMainWorktreeDir: vi.fn(async (folderPath: string) => {
@@ -115,6 +116,7 @@ vi.mock('../harness/service', () => ({
 }))
 vi.mock('../git/worktree-ops', () => ({
   activateWorktree: state.activateWorktree,
+  rollbackUnusedDesktopWorktree: state.rollbackWorktree,
   resolveMainWorktreeDir: (folderPath: string) => state.resolveMainWorktreeDir(folderPath),
 }))
 function ensureProjectId(projectPath: string): string {
@@ -309,6 +311,7 @@ beforeEach(() => {
   createSchema(state.db)
   insertSessionRow('parent', TEST_CWD, 'Parent', { providerId: 'claude-base' })
   state.activateWorktree.mockReset()
+  state.rollbackWorktree.mockClear()
   state.mainWorktreeByPath.clear()
   state.resolveMainWorktreeDir.mockClear()
   state.probeHarness.mockClear()
@@ -1794,6 +1797,19 @@ describe('child session project attribution', () => {
 
     expect(state.projects).toHaveLength(1)
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+  })
+
+  it('rolls back an unused worktree if control expires during activation', async () => {
+    const worktreePath = join(tmpdir(), 'collab-fenced-worktree')
+    let stale = false
+    state.activateWorktree.mockImplementation(async () => { stale = true; return { ok: true, path: worktreePath, recordedBranch: 'fenced' } })
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+    const worktree = { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'fenced' }
+    const [launch] = await approveLaunches(parent, host, 1, { cwd: TEST_CWD, worktree })
+    await expect(startSessionAgent('parent', { launchId: launch.launchId, task: 'Task' }, host, () => { if (stale) throw new Error('lease stale') })).rejects.toThrow('lease stale')
+    expect(state.rollbackWorktree).toHaveBeenCalledWith(TEST_CWD, worktreePath, worktree)
+    expect(createSession).not.toHaveBeenCalled()
   })
 
   it('does not register the worktree path when a launch cuts a worktree', async () => {

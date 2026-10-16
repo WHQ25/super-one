@@ -140,6 +140,10 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     resolveHarnessId: (sessionId) => sessionsRef?.get(sessionId)?.harnessId,
     hasExternalParent: (sessionId) => !!sessionsRef?.get(sessionId)?.externalParent,
     collab: {
+      suggestTask: (sessionId, args) => {
+        if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
+        return collaborationRef.suggestTask(sessionId, args)
+      },
       listAgents: () => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
         return collaborationRef.listProfiles()

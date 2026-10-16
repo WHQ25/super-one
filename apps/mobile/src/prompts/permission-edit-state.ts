@@ -34,6 +34,6 @@ export function permissionEditsValid(request: PermissionRequest): boolean {
 }
 
 /** Only run tuning is editable: preserve host-owned identity, mode, task and workspace. */
-export function patchLaunch(launch: SessionAgentLaunchProposal, patch: Partial<Pick<SessionAgentLaunchProposal['config'], 'model' | 'effort' | 'apiProviderId' | 'fastMode' | 'permissionMode' | 'sandboxMode'>>) {
+export function patchLaunch(launch: SessionAgentLaunchProposal, patch: Partial<Pick<SessionAgentLaunchProposal['config'], 'model' | 'effort' | 'apiProviderId' | 'fastMode' | 'claudeFastMode' | 'permissionMode' | 'sandboxMode'>>) {
   return { ...launch, config: { ...launch.config, ...patch } }
 }

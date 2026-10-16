@@ -5,14 +5,12 @@
  * call needs no confirmation. The card's later state lives on the call's row
  * (see `@superone/shared/suggested-task`), never in this result.
  */
-import { randomUUID } from 'crypto'
-import { existsSync, statSync } from 'fs'
-import { isAbsolute } from 'path'
+import { suggestedTaskToolResult } from '@superone/runtime/collaboration/suggested-task'
 import { SUGGEST_TASK_TOOL_NAME } from '@superone/shared/suggested-task'
 import { denyMainThreadOnlyIfSubagent } from './main-thread-session-guard'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
-export const SUGGESTED_TASK_TITLE_MAX = 60
+export { SUGGESTED_TASK_TITLE_MAX } from '@superone/runtime/collaboration/suggested-task'
 
 export interface SessionSuggestTaskArgs {
   title: string
@@ -29,23 +27,9 @@ function toolResult(value: unknown, isError = false) {
   }
 }
 
-function text(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 export async function sessionSuggestTaskHandler(args: SessionSuggestTaskArgs, deps: BuiltInSuperoneToolDeps) {
   const denied = await denyMainThreadOnlyIfSubagent(deps.sessionId, SUGGEST_TASK_TOOL_NAME)
   if (denied) return toolResult(denied, true)
-  const title = text(args.title)
-  if (!title || !text(args.tldr) || !text(args.prompt)) {
-    return toolResult('[Error] title, tldr and prompt are all required.', true)
-  }
-  if (title.length > SUGGESTED_TASK_TITLE_MAX) {
-    return toolResult(`[Error] title must be at most ${SUGGESTED_TASK_TITLE_MAX} characters.`, true)
-  }
-  const cwd = text(args.cwd)
-  if (cwd && (!isAbsolute(cwd) || !existsSync(cwd) || !statSync(cwd).isDirectory())) {
-    return toolResult(`[Error] cwd must be an existing absolute directory: ${cwd}. Omit it for the current project.`, true)
-  }
-  return toolResult({ taskId: randomUUID(), status: 'pending' })
+  try { return toolResult(suggestedTaskToolResult(args)) }
+  catch (error) { return toolResult(`[Error] ${error instanceof Error ? error.message : String(error)}`, true) }
 }

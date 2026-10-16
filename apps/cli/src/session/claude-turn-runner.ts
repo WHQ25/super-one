@@ -195,6 +195,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     additionalDirsKey: string
     /** Ultracode the process runs with; a turn that names another switches it live. */
     ultracode: boolean
+    claudeFastMode?: boolean
     /** Model the process runs; a turn that names another switches it live. */
     model: string | undefined
     /** Effort the process was opened with; a turn that names another reopens it. */
@@ -327,6 +328,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     disabledSkills?: string[]
     apiProviderId?: string | null
     ultracode?: boolean
+    claudeFastMode?: boolean
   }): LiveEntry => {
     const sessionKey = p.session.sessionId
     const hostActionMcp = opts.createHostActionClaudeMcp?.(sessionKey) ?? null
@@ -383,6 +385,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       model: trimmedOrUndefined(p.model),
       effort: trimmedOrUndefined(p.effort),
       ultracode: p.ultracode,
+      claudeFastMode: p.claudeFastMode,
       permissionMode: p.permissionMode,
       uid: p.uid,
       sandboxMode: p.sandboxMode && p.sandboxMode.trim() ? p.sandboxMode.trim() : undefined,
@@ -402,6 +405,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
       additionalDirsKey: additionalDirsKeyOf(p.additionalDirectories?.filter(Boolean)),
       ultracode: p.ultracode ?? false,
+      claudeFastMode: p.claudeFastMode,
       model: trimmedOrUndefined(p.model),
       effort: trimmedOrUndefined(p.effort),
       permissionMode: p.permissionMode,
@@ -476,6 +480,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     // A turn without a say (a host wake) keeps the Ultracode the process had,
     // across a restart too.
     const ultracode = input.ultracode ?? entry?.ultracode
+    const claudeFastMode = input.claudeFastMode ?? input.session.claudeFastMode ?? entry?.claudeFastMode
     const model = trimmedOrUndefined(input.model)
     const effort = trimmedOrUndefined(input.effort)
     // Restart live session if cwd changed (worktree switch), the MCP allowlist
@@ -507,7 +512,13 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       disabledSkills: input.disabledSkills,
       apiProviderId: input.apiProviderId,
       ultracode,
+      claudeFastMode,
     })
+    if (claudeFastMode !== undefined && claudeFastMode !== entry.claudeFastMode) {
+      await entry.live.setClaudeFastMode(claudeFastMode)
+      entry.claudeFastMode = claudeFastMode
+      input.onAgentEvent?.({ type: 'agent_setting_change', patch: { claudeFastMode } })
+    }
     if (ultracode !== undefined && ultracode !== entry.ultracode) {
       await entry.live.setUltracode(ultracode)
       entry.ultracode = ultracode

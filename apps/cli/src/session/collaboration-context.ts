@@ -37,7 +37,7 @@ export interface CollaborationContext {
 }
 
 /** Node launches may pin an existing checkout that the desktop never sends. */
-export type NodeLaunchConfig = SessionAgentLaunchConfig & { worktreePath?: string }
+export type NodeLaunchConfig = SessionAgentLaunchConfig & { worktreePath?: string; projectId?: string }
 
 /**
  * Accept a bare harness id (`claude`) as well as a provider row id

@@ -159,6 +159,7 @@ export class SessionReadModel {
       ...createDefaultChatCoreSession(),
       sessionProvider: providerId as HarnessId,
       preferredProvider: providerId as HarnessId,
+      claudeFastMode: record?.claudeFastMode ?? undefined,
       messages: record ? sessionMessageBlocksToChatMessages(buildSessionMessageCatalog(record, events), providerId) : [],
       status: record?.status === 'streaming' ? 'streaming' : 'idle',
       ...pending,

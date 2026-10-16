@@ -25,6 +25,7 @@ export function reducePermission(session: ChatCoreSession, event: PermissionEven
         selectedModel: eventPatch.selectedModel ?? event.selectedModel,
         selectedEffort: eventPatch.selectedEffort ?? event.selectedEffort,
         ultracode: eventPatch.ultracode,
+        claudeFastMode: eventPatch.claudeFastMode,
         selectedCodexModel: eventPatch.selectedCodexModel,
         selectedCodexReasoningEffort: eventPatch.selectedCodexReasoningEffort,
         selectedCodexServiceTier: eventPatch.selectedCodexServiceTier,
@@ -62,6 +63,7 @@ export function reducePermission(session: ChatCoreSession, event: PermissionEven
       if (merged.selectedCodexServiceTier !== undefined) {
         patch.selectedCodexServiceTier = merged.selectedCodexServiceTier
       }
+      if (merged.claudeFastMode !== undefined) patch.claudeFastMode = merged.claudeFastMode
       if (merged.ultracode !== undefined) {
         patch.ultracode = merged.ultracode
       }

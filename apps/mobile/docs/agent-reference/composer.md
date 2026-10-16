@@ -4,6 +4,17 @@ Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confi
 
 The native shell also owns project Git/worktree status, remote file browsing,
 provider/model selection, slash/mention overlays, and the IME-safe composer.
+Suggested Task cards open a native launch sheet before creating a session. It
+always launches inside the source session's execution environment: the paired
+desktop, another desktop, or a headless node. Routed calls keep that captured
+owner while the user chooses settings; client payloads cannot retarget the task.
+The sheet
+reads the same host profiles and initial settings as the desktop card through
+`session.suggestedTaskLaunchOptions`; Agent, model, provider, effort, permission
+and sandbox edits stay local until the user taps Launch. Switching agents uses
+the target defaults, and switching back restores the source settings. The final
+leased `session.launchSuggestedTask` sends only the card id and run settings to
+the captured source session; the host owns its prompt, directory and worktree.
 When the host reports a removed session worktree, `ChatScreen` replaces the
 composer, todos, and pending input surfaces with a read-only notice and dismisses
 the keyboard. The native editor stays mounted with its draft so switching to a

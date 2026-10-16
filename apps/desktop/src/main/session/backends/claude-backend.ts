@@ -250,6 +250,7 @@ export class ClaudeBackend implements SessionBackend {
       model: opts.model ?? config.model,
       effort: opts.effort,
       ultracode: opts.ultracode,
+      claudeFastMode: opts.claudeFastMode,
       permissionMode: opts.permissionMode,
       sandboxInfo: opts.sandboxInfo,
       canUseTool,
@@ -813,11 +814,18 @@ export class ClaudeBackend implements SessionBackend {
     await this.query.applyFlagSettings({ sandbox })
   }
 
+  async setClaudeFastMode(enabled: boolean): Promise<void> {
+    if (this._lastStartOpts) this._lastStartOpts.claudeFastMode = enabled
+    if (!this.query) return
+    await this.query.applyFlagSettings({ fastMode: enabled })
+  }
+
   /**
    * `ultracode` alone, never with `effortLevel`: an effort change sent without
    * the ultracode key turns Ultracode off. Effort changes rebuild the query from
    * `_lastStartOpts`, which carries the toggle.
    */
+
   async setUltracode(enabled: boolean): Promise<void> {
     if (this._lastStartOpts) this._lastStartOpts.ultracode = enabled
     if (!this.query) return

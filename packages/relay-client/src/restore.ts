@@ -33,6 +33,7 @@ export type SessionSnapshot = {
   permissionMode?: string
   /** Claude Ultracode, session state the next turn runs with. */
   ultracode?: boolean
+  claudeFastMode?: boolean
   /** Runtime fact — the sandbox this session's process is actually confined by. */
   sandboxInfo?: SandboxInfo
   /**
@@ -160,7 +161,7 @@ export function snapshotFromLoad(loaded: SessionLoadResult, environmentId: strin
     ...loaded.restore,
     sourceEnvironmentId: loaded.restore?.sourceEnvironmentId ?? environmentId,
     inProgressMessages: loaded.activeTurn ?? [],
-    status: state.status, permissionMode: state.permissionMode, ultracode: state.ultracode,
+    status: state.status, permissionMode: state.permissionMode, ultracode: state.ultracode, claudeFastMode: state.claudeFastMode,
     contextTokens: state.contextTokens, totalCostUsd: state.totalCostUsd,
     realtimeSegments: state.realtimeSegments, activeRealtimeSessionId: state.realtimeSessionId,
     goal: state.sessionGoal,

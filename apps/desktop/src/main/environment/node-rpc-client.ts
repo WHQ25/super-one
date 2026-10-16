@@ -104,6 +104,7 @@ function rpcTimeoutMs(method: string): number | undefined {
     method === 'git.switchBranch' ||
     method === 'git.createBranch' ||
     method === 'session.fork' ||
+    method === 'session.launchSuggestedTask' ||
     method === 'project.clone' ||
     method === 'workspace.writeFile' ||
     method === 'workspace.readFile'

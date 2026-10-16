@@ -2,7 +2,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, act } from '@testing-library/react'
-import type { ModelOption } from '@superone/shared/agent-types'
+import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
+
+const fastProvider = vi.hoisted(() => ({ modelEnv: null as ProviderModelEnv | null }))
+vi.mock('@/lib/provider-resolve', async importOriginal => ({ ...(await importOriginal<typeof import('@/lib/provider-resolve')>()), resolveEffective: () => fastProvider.modelEnv ? { modelMapping: fastProvider.modelEnv } : null }))
 
 vi.mock('@/stores/settings', () => {
   const state = { platforms: [], credentials: [], bindings: [], providerScope: 'global', fetchProviderData: vi.fn().mockResolvedValue(undefined) }
@@ -36,7 +39,7 @@ import { ClaudeModelSelector } from './ClaudeModelSelector'
 import { useChatStore } from '@/stores/chat'
 
 const PROJECT = '/ultracode-project'
-const OPUS: ModelOption = { id: 'opus', name: 'Opus', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] }
+const OPUS: ModelOption = { id: 'opus', name: 'Opus', description: '', supportsFastMode: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] }
 const HAIKU: ModelOption = { id: 'haiku', name: 'Haiku', description: '', supportedEffortLevels: ['low', 'medium', 'high'] }
 /** `window.environment.patchSessionSettings`: a host-owned session's settings change. */
 const patchSessionSettings = vi.fn()
@@ -62,6 +65,7 @@ function hostOwned(projectPath: string) {
 
 beforeEach(() => {
   selectorProps = {}
+  fastProvider.modelEnv = null
   patchSessionSettings.mockReset().mockResolvedValue({})
   Object.assign(window.environment, { patchSessionSettings })
   useChatStore.setState({
@@ -85,7 +89,7 @@ describe('ClaudeModelSelector Ultracode toggle', () => {
   it('offers Ultracode on a model with xhigh effort and sends the switch to the session', () => {
     hostOwned(PROJECT)
     render(<ClaudeModelSelector />)
-    expect(selectorProps.optionParams).toEqual([expect.objectContaining({ id: 'ultracode', selected: 'false' })])
+    expect(selectorProps.optionParams).toContainEqual(expect.objectContaining({ id: 'ultracode', selected: 'false' }))
 
     act(() => selectorProps.onOptionParamChange?.('ultracode', 'true'))
 
@@ -137,5 +141,31 @@ describe('ClaudeModelSelector Ultracode toggle', () => {
 
     const state = useChatStore.getState().projectSessions[remote]!
     expect(patchSessionSettings).toHaveBeenCalledWith('conn-1', state._activeSessionId, { ultracode: true })
+  })
+})
+
+
+describe('ClaudeModelSelector SDK Fast Mode', () => {
+  it('offers the switch on SDK-supported models, applies it, and clears it on a model switch', () => {
+    hostOwned(PROJECT)
+    render(<ClaudeModelSelector />)
+    expect(selectorProps.optionParams).toContainEqual(expect.objectContaining({ id: 'claudeFastMode', selected: 'false' }))
+    act(() => selectorProps.onOptionParamChange?.('claudeFastMode', 'true'))
+    expect(session().claudeFastMode).toBe(true)
+    expect(patchSessionSettings).toHaveBeenLastCalledWith('local', useChatStore.getState().projectSessions[PROJECT]!._activeSessionId, { claudeFastMode: true })
+    act(() => useChatStore.getState().setSelectedModel('haiku'))
+    expect(session().claudeFastMode).toBe(false)
+    expect(selectorProps.optionParams?.some(param => param.id === 'claudeFastMode')).toBe(false)
+  })
+  it('offers Fast Mode for subscription login without an API credential', () => {
+    render(<ClaudeModelSelector />)
+    expect(selectorProps.optionParams).toContainEqual(expect.objectContaining({ id: 'claudeFastMode' }))
+    act(() => selectorProps.onOptionParamChange?.('claudeFastMode', 'true'))
+    expect(session().claudeFastMode).toBe(true)
+  })
+  it('does not inherit SDK capabilities for a mapped third-party model', () => {
+    fastProvider.modelEnv = { opus: { id: 'gateway-model' } }
+    render(<ClaudeModelSelector />)
+    expect(selectorProps.optionParams?.some(param => param.id === 'claudeFastMode')).toBe(false)
   })
 })

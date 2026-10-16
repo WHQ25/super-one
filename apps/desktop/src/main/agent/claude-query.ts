@@ -46,6 +46,7 @@ export interface SessionQueryOptions {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   /** Standing dynamic-workflow orchestration (SDK `settings.ultracode`); ignored by the CLI where unavailable. */
   ultracode?: boolean
+  claudeFastMode?: boolean
   permissionMode: PermissionMode
   sandboxInfo?: SandboxInfo
   canUseTool?: CanUseTool
@@ -165,6 +166,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       ...(opts.settingsEnv ? { env: opts.settingsEnv } : {}),
       bashEditDiffEnabled: true,
       ...(opts.ultracode ? { ultracode: true } : {}),
+      ...(opts.claudeFastMode !== undefined ? { fastMode: opts.claudeFastMode } : {}),
     },
     spawnClaudeCodeProcess: makeClaudeSpawn({
       onStderr: (data) => {

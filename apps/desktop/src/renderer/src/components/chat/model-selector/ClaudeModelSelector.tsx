@@ -1,3 +1,4 @@
+import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Workflow, Zap } from 'lucide-react'
@@ -22,13 +23,14 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
 
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const selectedEffort = useActiveSession((s) => s.selectedEffort)
+  const claudeFastMode = useActiveSession(s => s.claudeFastMode)
   const ultracode = useActiveSession((s) => s.ultracode)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const availableModels = useChatStore(selectClaudeModels)
   const activeProject = useChatStore((s) => s.activeProject)
-  const { setSelectedModel, setSelectedEffort, setUltracode } = useScopedSessionActions()
+  const { setSelectedModel, setSelectedEffort, setUltracode, setClaudeFastMode } = useScopedSessionActions()
   const refreshClaudeResources = useChatStore((s) => s.refreshClaudeResources)
   const claudeResourcesLoading = useChatStore((s) => s.claudeResourcesLoading)
   const claudeModelsLoading = useActiveSession((s) => s.claudeModelsLoading)
@@ -139,6 +141,10 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     // refuses it there. Wait for the catalog: no model yet is not "unsupported".
     if (ultracode && currentModel && !ultracodeAvailable) setUltracode(false)
   }, [ultracode, currentModel, ultracodeAvailable, setUltracode])
+  const fastAvailable = supportsClaudeFastMode(currentModel, activeModelEnv)
+  useEffect(() => {
+    if (claudeFastMode && currentModel && !fastAvailable) setClaudeFastMode(false)
+  }, [claudeFastMode, currentModel, fastAvailable, setClaudeFastMode])
   const optionParams = useMemo<SelectorCatalogParam[]>(() => ultracodeAvailable
     ? [{
         id: 'ultracode',
@@ -149,6 +155,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
         description: t('tooltips.ultracodeHint'),
       }]
     : [], [ultracodeAvailable, ultracode, t])
+  const modelOptions = [...optionParams, ...(fastAvailable ? [claudeFastModeOption(claudeFastMode ?? (fastModeState === 'on' || fastModeState === 'cooldown'))] : [])]
 
   const eggName = (currentModelName ?? 'Model').toUpperCase()
   const triggerLabel = selectedEffort === 'max'
@@ -175,8 +182,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
         effortOptions={effortOptions}
         selectedEffort={selectedEffort ?? null}
         onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
-        optionParams={optionParams}
-        onOptionParamChange={(id, value) => { if (id === 'ultracode') setUltracode(value === 'true') }}
+        optionParams={modelOptions}
+        onOptionParamChange={(id, value) => { if (id === 'ultracode') setUltracode(value === 'true'); if (id === 'claudeFastMode') setClaudeFastMode(value === 'true') }}
         onRefreshModels={() => void refreshClaudeResources(true)}
         modelsLoading={modelsLoading}
         triggerLabel={triggerLabel}

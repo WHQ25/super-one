@@ -43,6 +43,7 @@ const CONTRACTS = {
   permissionPreset: { owner: 'session', lifetime: 'live', harness: 'codex', value: 'full-access', ui: 'selectedCodexPermissionPreset', read: s => s.getUiSettings().selectedCodexPermissionPreset },
   collaborationMode: { owner: 'session', lifetime: 'live', harness: 'codex', value: 'plan', ui: 'selectedCodexCollaborationMode', read: s => s.getUiSettings().selectedCodexCollaborationMode },
   agent: { owner: 'session', lifetime: 'live', harness: 'opencode', value: 'plan', ui: 'openCodeAgentId', read: s => s.getUiSettings().openCodeAgentId },
+  claudeFastMode: { owner: 'session', lifetime: 'live', harness: 'claude', value: true, ui: 'claudeFastMode', read: s => s.getUiSettings().claudeFastMode ?? false },
   ultracode: { owner: 'session', lifetime: 'live', harness: 'claude', value: true, ui: 'ultracode', read: s => s.getUiSettings().ultracode ?? false },
   mode: { owner: 'session', lifetime: 'live', harness: 'acp', value: 'plan', ui: 'selectedAcpModeId', read: s => s.getUiSettings().selectedAcpModeId },
   agentPreset: { owner: 'session', lifetime: 'live', harness: 'dsh', value: 'review', read: s => s.getAgentPreset() },
@@ -57,7 +58,7 @@ const SEND_OWNERS = {
 } satisfies Record<keyof SessionSendSelections, 'session' | 'turn' | 'provider' | 'harness-profile'>
 
 const UI_SOURCES = {
-  selectedModel: 'model', selectedEffort: 'effort', ultracode: 'ultracode',
+  selectedModel: 'model', selectedEffort: 'effort', ultracode: 'ultracode', claudeFastMode: 'claudeFastMode',
   selectedCodexModel: 'model', selectedCodexReasoningEffort: 'effort', selectedCodexServiceTier: 'serviceTier',
   selectedCodexPermissionPreset: 'permissionPreset', selectedCodexCollaborationMode: 'collaborationMode',
   openCodeAgentId: 'agent', selectedAcpModeId: 'mode', permissionMode: 'permissionMode',

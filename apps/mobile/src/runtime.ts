@@ -201,6 +201,7 @@ export class ChatRuntime {
         session.permissionMode = restored.snapshot.permissionMode as SessionState['permissionMode']
       }
       session.ultracode = restored.snapshot.ultracode ?? false
+      session.claudeFastMode = restored.snapshot.claudeFastMode
       // The harness reports the goal only when it changes; restore is the one
       // place a phone that missed that event learns it.
       session.sessionGoal = restored.snapshot.goal ?? null
@@ -622,6 +623,7 @@ export class ChatRuntime {
       ...(extra.modelParams && Object.keys(extra.modelParams).length
         ? { modelParams: extra.modelParams }
         : {}),
+      ...(extra.claudeFastMode !== undefined ? { claudeFastMode: extra.claudeFastMode } : {}),
       ...(extra.ultracode !== undefined ? { ultracode: extra.ultracode } : {}),
       clientMessageId,
       ...(extra.inputRequest ? { inputRequest: extra.inputRequest } : {}),
@@ -658,8 +660,8 @@ export class ChatRuntime {
   private async deliver(cmd: SendMessageCommand): Promise<void> {
     const generation = this.restoreGeneration
     try {
-      const { environmentId, sessionId, ultracode, ...payload } = cmd
-      const result = await this.client.controlledRpc({ environmentId, sessionId }, 'session.send', { ...payload, ...(ultracode !== undefined ? { options: { ultracode } } : {}) })
+      const { environmentId, sessionId, ultracode, claudeFastMode, ...payload } = cmd
+      const result = await this.client.controlledRpc({ environmentId, sessionId }, 'session.send', { ...payload, ...((ultracode !== undefined || claudeFastMode !== undefined) ? { options: { ultracode, claudeFastMode } } : {}) })
       if (generation === this.restoreGeneration && cmd.clientMessageId) {
         this.inputRequestSends.complete(cmd.clientMessageId)
         // The host already has this id (a stale Resend): nothing new will answer it.

@@ -46,6 +46,7 @@ export function sessionRestoreFacts(input: {
     status: session?.isStreaming() ? 'streaming' as const : 'idle' as const,
     permissionMode: session?.getCurrentPermissionMode(),
     ultracode: session?.getUiSettings().ultracode ?? false,
+    claudeFastMode: session?.getUiSettings().claudeFastMode,
     contextTokens: snapshot?.contextTokens ?? row?.contextTokens ?? 0,
     totalCostUsd: snapshot?.totalCostUsd ?? row?.totalCostUsd ?? 0,
     sessionGoal: session?.getSessionGoal() ?? null,

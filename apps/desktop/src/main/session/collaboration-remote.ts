@@ -329,6 +329,7 @@ export async function startRemoteChild(input: {
       ...(input.config.effort ? { effort: input.config.effort } : {}),
       ...(input.config.apiProviderId ? { apiProviderId: input.config.apiProviderId } : {}),
       ...(input.config.permissionMode ? { permissionMode: input.config.permissionMode } : {}),
+      ...(input.config.claudeFastMode !== undefined ? { claudeFastMode: input.config.claudeFastMode } : {}),
       ...(input.config.sandboxMode ? { sandboxMode: input.config.sandboxMode } : {}),
     },
   })

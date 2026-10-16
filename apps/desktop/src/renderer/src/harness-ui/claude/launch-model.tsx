@@ -1,3 +1,4 @@
+import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
 import { useMemo } from 'react'
 import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
 import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
@@ -35,7 +36,7 @@ export function claudeModelsForProvider(
 }
 
 export function ClaudeLaunchModel({
-  profile, catalog, apiProviderId, model, effort, hideApiProvider, optionParams, onOptionParamChange, onChange,
+  profile, catalog, apiProviderId, model, effort, claudeFastMode, offerFastMode, hideApiProvider, optionParams, onOptionParamChange, onChange,
 }: LaunchModelProps) {
   const profileOnly = catalog === 'profile'
   const live = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.claude?.models ?? EMPTY_MODELS))
@@ -70,6 +71,8 @@ export function ClaudeLaunchModel({
     [modelEnv, selected, profile],
   )
 
+  const fastAvailable = offerFastMode === true && supportsClaudeFastMode(selected, modelEnv)
+  const params = [...(optionParams ?? []), ...(fastAvailable ? [claudeFastModeOption(claudeFastMode === true)] : [])]
   return (
     <GroupedModelEffortSelector
       models={models}
@@ -77,15 +80,15 @@ export function ClaudeLaunchModel({
       selectedModelLabel={label}
       onSelectModel={(id) => {
         const next = effortForLevels(base.find((entry) => entry.id === id)?.supportedEffortLevels, effort)
-        onChange({ model: id, ...(next ? { effort: next } : {}) })
+        onChange({ model: id, ...(!supportsClaudeFastMode(base.find(entry => entry.id === id), modelEnv) ? { claudeFastMode: false } : {}), ...(next ? { effort: next } : {}) })
       }}
       effortOptions={effortOptions}
       selectedEffort={effort ?? null}
       selectedEffortLabel={effortLabel(effortOptions, effort)}
       onSelectEffort={(value) => onChange({ effort: value })}
       {...selector}
-      optionParams={optionParams}
-      onOptionParamChange={onOptionParamChange}
+      optionParams={params}
+      onOptionParamChange={(id, value) => id === 'claudeFastMode' ? onChange({ claudeFastMode: value === 'true' }) : onOptionParamChange?.(id, value)}
       // Match ClaudeModelSelector's easter-egg trigger label for max.
       triggerLabel={!modelEnv && effort === 'max'
         ? <FireText>{`${(label ?? 'Model').toUpperCase()} · MAX`}</FireText>

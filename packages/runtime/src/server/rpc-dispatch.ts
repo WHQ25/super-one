@@ -2077,6 +2077,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
           : undefined
     // Claude Ultracode is the client's session toggle, sent with every turn
     // like model and effort; the node keeps no durable copy.
+    const claudeFastMode = typeof options.claudeFastMode === 'boolean' ? options.claudeFastMode : undefined
     const ultracode = typeof options.ultracode === 'boolean' ? options.ultracode : undefined
 
     // Precedence: client turn options → durable session settings (patchSettings)
@@ -2167,6 +2168,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
             : undefined,
       reviewTarget,
       ultracode,
+      claudeFastMode,
     })
     return { result }
   } catch (err) {

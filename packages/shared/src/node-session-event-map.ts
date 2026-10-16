@@ -268,6 +268,11 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
     }
 
     switch (eventType) {
+      case SESSION_DURABLE_EVENT.settingsChanged: {
+        const claudeFastMode = asBool(payload.claudeFastMode)
+        if (claudeFastMode !== undefined) push({ type: 'agent_setting_change', patch: { claudeFastMode } })
+        break
+      }
       case SESSION_DURABLE_EVENT.userMessage: {
         if (payload.queued === true) break
         if (ctx.skipUserMessage && payload.echoUserMessage !== true) break

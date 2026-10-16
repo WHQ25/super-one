@@ -17,12 +17,12 @@ vi.mock('./collaboration-mailbox', () => ({ collaborationStore: () => ({ grantFo
 vi.mock('./agent-profiles', () => ({
   listSessionAgentProfiles: () => [
     {
-      id: 'claude-base',
+      id: 'claude-base', harnessId: 'claude', models: [], efforts: [],
       defaultConfig: { sandboxMode: 'off', model: 'default-model', apiProviderId: 'claude-account:cli' },
       apiProviders: [{ id: 'claude-account:cli' }, { id: 'shared-key' }],
     },
     {
-      id: 'codex-base',
+      id: 'codex-base', harnessId: 'codex', models: [], efforts: [],
       defaultConfig: { sandboxMode: 'workspace-write', model: 'gpt-default', permissionMode: 'default', apiProviderId: 'codex-account:cli' },
       apiProviders: [{ id: 'codex-account:cli' }, { id: 'shared-key' }],
     },
@@ -96,6 +96,14 @@ beforeEach(() => {
 })
 
 describe('launchSuggestedTask', () => {
+  it('rechecks phone control after asynchronous worktree discovery before approving the task', async () => {
+    let allowed = true
+    const assertControl = () => { if (!allowed) throw new Error('lease_stale') }
+    mocks.resolveMainWorktreeDir.mockImplementationOnce(async () => { allowed = false; return '/repo' })
+    await expect(launchSuggestedTask(fakeHost(fakeSession()).host, 'parent', TASK_ID, undefined, assertControl)).rejects.toThrow('lease_stale')
+    expect(mocks.createGrants).not.toHaveBeenCalled()
+    expect(mocks.startSessionAgent).not.toHaveBeenCalled()
+  })
   it('approves a handoff in a fresh branch worktree and starts it with the brief', async () => {
     const parent = fakeSession()
     const { host, child } = fakeHost(parent)
@@ -116,7 +124,7 @@ describe('launchSuggestedTask', () => {
         worktree: { enabled: true, baseBranch: 'HEAD', mode: 'branch', branchName: 'task/fix-the-flaky-login-test-0b9f3c1e' },
       }),
     })])
-    expect(mocks.startSessionAgent).toHaveBeenCalledWith('parent', { launchId: `suggested-task-${TASK_ID}`, task: INPUT.prompt }, host)
+    expect(mocks.startSessionAgent).toHaveBeenCalledWith('parent', { launchId: `suggested-task-${TASK_ID}`, task: INPUT.prompt }, host, expect.any(Function))
     expect(child.setTitle).toHaveBeenCalledWith(INPUT.title, 'agent')
     expect(parent.emitHostEvent).toHaveBeenCalledWith({
       type: 'suggested_task_updated',

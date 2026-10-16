@@ -1,3 +1,4 @@
+import { rollbackUnusedWorktree, worktreeGit } from '@superone/runtime/git/worktree-ops'
 import { existsSync, statSync } from 'node:fs'
 import { resolve as pathResolve } from 'node:path'
 import {
@@ -37,6 +38,7 @@ export interface CollaborationStartInput {
   formAnswers?: Record<string, unknown>
   /** Optional controller identity to bind on the child session. */
   controllerClientSessionId?: string | null
+  assertControl?: () => void
 }
 
 export interface CollaborationStartResult {
@@ -99,6 +101,7 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
       effort: config.effort,
       permissionMode: config.permissionMode,
       sandboxMode: config.sandboxMode,
+      claudeFastMode: config.claudeFastMode,
       apiProviderId: config.apiProviderId,
       // The parent agent's words, not the user's: never stamped human-typed.
       source: 'collaboration',
@@ -165,6 +168,7 @@ export async function startCollaboration(
   ctx: CollaborationContext,
   input: CollaborationStartInput,
 ): Promise<CollaborationStartResult> {
+  input.assertControl?.()
   let grant = prepareLaunchStart(ctx.store, input.callerSessionId, input)
 
   // formAnswers may patch editable launch config (desktop confirm UI parity).
@@ -207,17 +211,21 @@ export async function startCollaboration(
   if (!parent) throw new CollaborationError('Parent session is not available', 'not_found')
 
   const config = parseGrantConfig<NodeLaunchConfig>(grant.config_json)
-  let cwd = resolveCwd(ctx, config, parent.projectId, parent.cwd)
+  const projectId = config.projectId ?? parent.projectId
+  let cwd = resolveCwd(ctx, config, projectId, parent.cwd)
+  const sourceCwd = cwd
+  const rollbackWorktree = () => config.worktree?.enabled && !config.worktreePath ? rollbackUnusedWorktree(worktreeGit(), sourceCwd, cwd, { ...config.worktree, mode: config.worktree.mode ?? 'branch' }).catch(() => {}) : Promise.resolve()
   if (config.worktreePath && typeof config.worktreePath === 'string' && config.worktreePath.trim()) {
     cwd = pathResolve(config.worktreePath.trim())
   } else if (config.worktree?.enabled) {
-    cwd = (await ctx.deps.workspaceGit.activateWorktree(parent.projectId, {
+    cwd = (await ctx.deps.workspaceGit.activateWorktree(projectId, {
       baseBranch: config.worktree.baseBranch || 'HEAD',
       mode: config.worktree.mode ?? 'branch',
       branchName: config.worktree.branchName,
       carryLocalChanges: config.worktree.carryLocalChanges,
     })).path
   }
+  try { input.assertControl?.() } catch (error) { await rollbackWorktree(); throw error }
 
   const profile = resolveProfile(new Map(ctx.listProfiles().map((p) => [p.id, p])), grant.agent_id)
   const harnessId = (profile?.harnessId
@@ -230,7 +238,7 @@ export async function startCollaboration(
   let child
   try {
     child = ctx.deps.sessions.create({
-      projectId: parent.projectId,
+      projectId,
       harnessId,
       providerId: grant.agent_id,
       title,
@@ -239,6 +247,7 @@ export async function startCollaboration(
       effort: config.effort ?? null,
       permissionMode: config.permissionMode ?? null,
       sandboxMode: config.sandboxMode ?? null,
+      claudeFastMode: config.claudeFastMode ?? null,
       apiProviderId: config.apiProviderId ?? null,
       // The one profile option this node's runtime takes (see NODE_APPLIABLE_OPTIONS).
       agent: config.options?.agent ?? null,
@@ -254,6 +263,7 @@ export async function startCollaboration(
         /* best-effort */
       }
     }
+    await rollbackWorktree()
     throw err
   }
 
@@ -281,6 +291,7 @@ export async function startCollaboration(
       fastMode: config.fastMode,
       permissionMode: config.permissionMode,
       sandboxMode: config.sandboxMode,
+      claudeFastMode: config.claudeFastMode,
       cwd,
       apiProviderId: config.apiProviderId ?? null,
       name: displayName,

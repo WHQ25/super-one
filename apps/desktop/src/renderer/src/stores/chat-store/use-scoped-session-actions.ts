@@ -39,6 +39,7 @@ export function useScopedSessionActions() {
     setSelectedModel: s.setSelectedModel,
     setSelectedEffort: s.setSelectedEffort,
     setUltracode: s.setUltracode,
+    setClaudeFastMode: s.setClaudeFastMode,
     setCursorModelParams: s.setCursorModelParams,
     setCursorModelParam: s.setCursorModelParam,
     setSelectedAcpMode: s.setSelectedAcpMode,
@@ -69,6 +70,7 @@ export function useScopedSessionActions() {
     return {
       setSelectedModel: (model: string) => actions.setSelectedModel(model, target),
       setSelectedEffort: (effort?: EffortLevel) => actions.setSelectedEffort(effort, target),
+      setClaudeFastMode: (enabled: boolean) => actions.setClaudeFastMode(enabled, target),
       setUltracode: (enabled: boolean) => actions.setUltracode(enabled, target),
       setCursorModelParams: (params: Record<string, string>) => actions.setCursorModelParams(params, target),
       setCursorModelParam: (id: string, value: string) => actions.setCursorModelParam(id, value, target),

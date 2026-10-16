@@ -42,6 +42,7 @@ export interface ClaudeSlice {
   setSelectedModel: (model: string, target?: SessionWriteTarget) => void
   setSelectedEffort: (effort?: EffortLevel, target?: SessionWriteTarget) => void
   /** Claude Ultracode for this session: every substantive turn runs as a multi-agent workflow. */
+  setClaudeFastMode: (enabled: boolean, target?: SessionWriteTarget) => void
   setUltracode: (enabled: boolean, target?: SessionWriteTarget) => void
   setCursorModelParams: (params: Record<string, string>, target?: SessionWriteTarget) => void
   setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
@@ -397,6 +398,13 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (!parseRemoteProjectKey(activeProject) && getScopedPerSession(get(), target).draftText.length > 0) {
       triggerPrewarm(get(), activeProject)
     }
+  },
+
+  setClaudeFastMode: (enabled, target) => {
+    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
+    if (!projectPath) return
+    set(s => commitPerSession(s, target, () => ({ claudeFastMode: enabled })))
+    pushSettings(projectPath, sessionId, session, { claudeFastMode: enabled })
   },
 
   setUltracode: (enabled, target) => {

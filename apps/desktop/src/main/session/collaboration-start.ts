@@ -26,7 +26,7 @@ import {
   type CollaborationGrantRow as GrantRow,
 } from '@superone/runtime/collaboration'
 import type { NodeSessionSettings } from '@superone/runtime/session'
-import { activateWorktree } from '../git/worktree-ops'
+import { activateWorktree, rollbackUnusedDesktopWorktree } from '../git/worktree-ops'
 import { getDb } from '../database'
 import { createSession as createSessionRecord, hideSession } from '../db-sessions'
 import log from '../logger'
@@ -165,7 +165,9 @@ export async function startSessionAgent(
   callerSessionId: string,
   args: SessionStartArgs,
   host: SessionManager,
+  assertControl: () => void = () => {},
 ) {
+  assertControl()
   let grant: GrantRow
   try {
     grant = prepareLaunchStart(store(), callerSessionId, args)
@@ -297,8 +299,11 @@ export async function startSessionAgent(
   // Attribute before worktree activation so the child files under the source
   // project / main checkout, not under ~/.worktrees/<new-wt>.
   let projectPath = await ensureChildProject(cwd, parent.projectPath)
+  assertControl()
   // Defense in depth: never file a collab child under a managed worktree leaf.
   if (isManagedWorktreePath(projectPath)) projectPath = parent.projectPath
+  const sourceCwd = cwd
+  const rollbackWorktree = () => worktreeEnabled ? rollbackUnusedDesktopWorktree(sourceCwd, cwd, config.worktree!).catch(error => log.warn('[collaboration] worktree rollback failed:', error)) : Promise.resolve()
   let gitBranch: string | null = null
   if (worktreeEnabled) {
     const worktree = await activateWorktree(cwd, {
@@ -310,6 +315,7 @@ export async function startSessionAgent(
     cwd = worktree.path
     gitBranch = worktree.recordedBranch
   }
+  try { assertControl() } catch (error) { await rollbackWorktree(); throw error }
 
   const childSessionId = randomUUID()
   const agentId = grant.agent_id
@@ -368,8 +374,9 @@ export async function startSessionAgent(
     }
     child.setTitle(title, 'agent')
     // The profile's harness options, through the path a composer pick takes; before the first turn starts the runtime.
-    const optionSettings = launchOptionSettings(config.options)
+    const optionSettings = { ...launchOptionSettings(config.options), ...(config.claudeFastMode !== undefined ? { claudeFastMode: config.claudeFastMode } : {}) }
     if (Object.keys(optionSettings).length) await applyDesktopSessionSettings(child, optionSettings)
+    assertControl()
     // Persist provider + ACP agent immediately so sidebar brand icons work before first save.
     //
     // api_provider_id / selected_model / selected_effort belong here for the same
@@ -398,6 +405,7 @@ export async function startSessionAgent(
   } catch (error) {
     await host.disposeSession(childSessionId).catch(() => {})
     getDb().prepare('DELETE FROM sessions WHERE id = ?').run(childSessionId)
+    await rollbackWorktree()
     throw error
   }
 

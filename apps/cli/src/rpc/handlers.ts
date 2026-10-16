@@ -1,4 +1,5 @@
 import { dirname as configDirname } from 'node:path'
+import { SUGGESTED_TASK_RPC_METHODS, dispatchSuggestedTaskRpc } from './suggested-task-handlers'
 import {
   dispatchRpc as dispatchNodeRpc,
   type HostCapabilityFlags,
@@ -85,6 +86,7 @@ const CLI_CAPABILITY_FLAGS: HostCapabilityFlags = {
 
 /** Every method only the CLI node serves (`dispatchCliRpc`). */
 const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
+  ...SUGGESTED_TASK_RPC_METHODS,
   ...SESSION_ARCHIVE_RPC_METHODS,
   ...RESOURCE_RPC_METHODS,
   ...AUTOMATION_RPC_METHODS,
@@ -124,6 +126,8 @@ function cliResourceHost(ctx: RpcContext): ResourceHost {
 
 /** Method families only the CLI node serves; null hands the method to the shared families. */
 async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
+  const suggestedTask = await dispatchSuggestedTaskRpc(method, payload, ctx)
+  if (suggestedTask) return suggestedTask
   const archive = dispatchSessionArchiveRpc(method, payload, ctx)
   if (archive) return archive
   const resource = await dispatchResourceRpc(method, payload, { client: ctx.client, projects: ctx.projects, ...cliResourceHost(ctx) })

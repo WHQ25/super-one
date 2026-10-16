@@ -111,6 +111,7 @@ import { bindSessionListNotifications } from './session-list-notifications'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
+import { createPhoneSessionHost } from './remote/phone-session-host'
 import { installComposerDraftMirror } from './composer-draft-mirror'
 import { NotificationService } from './notifications/notification-service'
 import { createNotificationSessionResolver } from './notifications/notification-session'
@@ -1112,7 +1113,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
       providers: createDesktopProvidersPort(await import('./providers/credential-store'), agentService),
       phoneMethods: createPhoneMethods({
         agent: agentService,
-        sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },
+        sessions: createPhoneSessionHost(sessionManager, openMiniAppForm),
         voice: { manager: sessionManager, preferredVoice: () => readAppSettings().agentPreference.codex.realtimeVoice },
         desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input),
       }),

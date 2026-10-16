@@ -16,7 +16,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
-import { listHarnessApiProviders, listHarnessModels } from '../provider/resolve-service'
+import { listHarnessApiProviders, listHarnessModels, resolveHarnessService } from '../provider/resolve-service'
 import { CollaborationError, collaborationSystemPrompt, type CollaborationGrantRow } from '@superone/runtime/collaboration'
 import type { CollaborationDeps } from './collaboration-context'
 
@@ -106,6 +106,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       id: m.id,
       name: m.name || m.id,
       ...(m.description ? { description: m.description } : {}),
+      ...(m.supportsFastMode ? { supportsFastMode: true } : {}),
       ...(m.serviceTiers?.length ? { serviceTiers: m.serviceTiers } : {}),
     }))
     const cfg =
@@ -119,6 +120,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
         ? cfg.agentId.trim()
         : null
     const profile = readAgentProfile(profileConfig)
+    const apiProviderId = resolveHarnessService(providers, harnessId, null, providerOptions(deps))?.credentialId
     profiles.push({
       id: profileId,
       name: profile ? name : harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
@@ -126,7 +128,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       ...(acpAgentId ? { acpAgentId } : {}),
       brandKey: resolveHarnessBrandKey(harnessId, acpAgentId),
       description: profile?.identity.description ?? description,
-      defaultConfig: launchConfigFromDefaults(defaults),
+      defaultConfig: { ...launchConfigFromDefaults(defaults), ...(apiProviderId ? { apiProviderId } : {}) },
       models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
       efforts: [...efforts],
       apiProviders: listHarnessApiProviders(providers, harnessId, providerOptions(deps)),

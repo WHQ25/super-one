@@ -1,3 +1,4 @@
+import { rollbackUnusedWorktree } from '@superone/runtime/git/worktree-ops'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { gitRun } from '../git-run'
@@ -122,4 +123,9 @@ export async function handoffToLocal(worktreePath: string): Promise<WorktreeHand
 
 export function assignBranch(worktreePath: string, rawName: string): Promise<WorktreeAssignResult> {
   return assignBranchAt(git, worktreePath, rawName)
+}
+
+/** No turn has been admitted to this freshly created checkout. */
+export function rollbackUnusedDesktopWorktree(sourceDir: string, path: string, input: ActivateWorktreeRequest): Promise<void> {
+  return rollbackUnusedWorktree(git, sourceDir, path, { ...input, mode: input.mode ?? 'branch' })
 }

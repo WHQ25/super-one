@@ -46,6 +46,7 @@ export type HostActionRequestFn = (input: {
 
 /** Node-local collab handlers (SessionRuntime CollaborationService). */
 export interface NodeCollabToolHandlers {
+  suggestTask?: (sessionId: string, args: unknown) => unknown | Promise<unknown>
   listAgents: (sessionId: string) => Promise<SessionAgentProfile[]> | SessionAgentProfile[]
   request: (
     sessionId: string,
@@ -197,6 +198,7 @@ function forwardExternalChildCollab(
       replayPolicy: 'unsafe',
     })))
   return {
+    ...(local.suggestTask ? { suggestTask: (id: string, args: unknown) => hasExternalParent(id) ? refuse() : local.suggestTask!(id, args) } : {}),
     listAgents: local.listAgents,
     request: (id, args, signal) => (hasExternalParent(id) ? refuse() : local.request(id, args, signal)),
     start: (id, args) => (hasExternalParent(id) ? refuse() : local.start(id, args)),
@@ -231,6 +233,13 @@ export function registerNodeCollabTools(
   superoneSessionId: string,
   collab: NodeCollabToolHandlers,
 ): void {
+  if (collab.suggestTask) {
+    const descriptor = collabDescriptor('session_suggest_task')
+    server.registerTool('session_suggest_task', { description: descriptor.description, inputSchema: jsonSchemaToZodShape(descriptor.inputSchema) }, async args => {
+      try { return toolResultJson(await collab.suggestTask!(superoneSessionId, args)) }
+      catch (error) { return collabErrorResult(error) }
+    })
+  }
   const listDesc = collabDescriptor('session_collab_list_agents')
   server.registerTool(
     'session_collab_list_agents',

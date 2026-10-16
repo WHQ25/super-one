@@ -350,6 +350,7 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
         ? formatCodexModelName(model.name, model.id)
         : (model.name || model.id),
       ...(model.description ? { description: model.description } : {}),
+      ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
       ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
     }))
     const name = profileDisplayName(provider, acpAgentId)

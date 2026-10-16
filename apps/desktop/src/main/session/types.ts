@@ -175,6 +175,7 @@ export interface BackendStartOptions {
   serviceTier?: string | null
   /** Claude Ultracode (SDK `settings.ultracode`). */
   ultracode?: boolean
+  claudeFastMode?: boolean
   additionalDirectories?: string[]
   abortController: AbortController
   providerSessionId?: string
@@ -394,6 +395,7 @@ export interface SessionBackend {
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   /** Claude only: switch Ultracode on the live query; later starts read BackendStartOptions.ultracode. */
   setUltracode?(enabled: boolean): Promise<void>
+  setClaudeFastMode?(enabled: boolean): Promise<void>
   hasActiveBackgroundTasks?(): boolean
   /** Timers inside the runtime (Claude CronCreate / ScheduleWakeup / `/loop`) that a release would drop. */
   hasScheduledWakeups?(): boolean

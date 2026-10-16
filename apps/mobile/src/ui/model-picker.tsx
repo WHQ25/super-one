@@ -76,7 +76,7 @@ export function ModelPicker(props: ModelPickerProps) {
   const providers = props.providers ?? []
   const agentLabel = agents.find((agent) => agent.id === props.agent)?.name
   const summary = optionParamSummary(optionParams)
-  const fastEnabled = optionParams.some((param) => param.id === 'fast' && param.selected === 'true')
+  const fastEnabled = optionParams.some((param) => (param.id === 'fast' || param.id === 'claudeFastMode') && param.selected === 'true')
   // Ultracode's mark sits beside the label even when an egg replaces it, as on desktop.
   const ultracodeOn = optionParams.some((param) => param.id === 'ultracode' && param.selected === 'true')
   const [ur, ug, ub] = ULTRACODE_COLORS[scheme === 'dark' ? 'dark' : 'light'][0]

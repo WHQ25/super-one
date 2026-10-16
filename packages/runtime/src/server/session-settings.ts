@@ -21,6 +21,10 @@ export function parseSessionSettings(source: Record<string, unknown>): NodeSessi
     }
     patch.additionalDirectories = dirs === null ? null : [...dirs as string[]]
   }
+  if (Object.hasOwn(source, 'claudeFastMode')) {
+    if (source.claudeFastMode !== null && typeof source.claudeFastMode !== 'boolean') throw invalid('claudeFastMode must be a boolean or null')
+    patch.claudeFastMode = source.claudeFastMode as boolean | null
+  }
   if (Object.hasOwn(source, 'ultracode')) {
     if (source.ultracode !== null && typeof source.ultracode !== 'boolean') throw invalid('ultracode must be a boolean or null')
     patch.ultracode = source.ultracode as boolean | null

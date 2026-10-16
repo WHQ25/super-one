@@ -12,9 +12,10 @@ export async function applyDesktopSessionSettings(session: Session, patch: NodeS
   if (patch.sandboxMode != null) await session.setSandboxMode(patch.sandboxMode as SandboxMode)
   session.lease.assertMutation()
   if (patch.apiProviderId !== undefined) session.setApiProviderId(patch.apiProviderId ?? null)
-  if (patch.model !== undefined || patch.effort !== undefined || patch.mode !== undefined || patch.ultracode !== undefined || patch.contextWindow !== undefined) {
+  if (patch.model !== undefined || patch.effort !== undefined || patch.mode !== undefined || patch.ultracode !== undefined || patch.claudeFastMode !== undefined || patch.contextWindow !== undefined) {
     await session.setSelectedSettings({
       model: patch.model, effort: patch.effort as SendMessageRequest['effort'] | null | undefined, mode: patch.mode,
+      ...(patch.claudeFastMode !== undefined ? { claudeFastMode: patch.claudeFastMode ?? false } : {}),
       ...(patch.ultracode !== undefined ? { ultracode: patch.ultracode ?? false } : {}),
       ...(patch.contextWindow !== undefined ? { contextWindow: patch.contextWindow } : {}),
     })
@@ -72,6 +73,7 @@ export function desktopSendRequest(input: Parameters<SessionHostPort['send']>[0]
     ...(input.userMessageContent ? { userMessageContent: input.userMessageContent } : {}),
     ...(input.contexts ? { contexts: input.contexts } : {}),
     ...(input.userSelections ? { userSelections: input.userSelections } : {}),
+    ...(input.claudeFastMode !== undefined ? { claudeFastMode: input.claudeFastMode ?? false } : {}),
     ...(input.ultracode !== undefined ? { ultracode: input.ultracode } : {}),
     ...(input.priority ? { priority: input.priority } : {}),
     ...(input.agent ? { agent: input.agent } : {}),

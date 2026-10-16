@@ -2366,3 +2366,19 @@ describe('iterateMessages: tools the SDK abandons mid-turn', () => {
     expect(results[0].delta.summary).toBe('ok')
   })
 })
+
+
+describe('buildClaudeOptions SDK Fast Mode', () => {
+  it.each([
+    ['API key', { ANTHROPIC_API_KEY: 'test' }],
+    ['subscription', { CLAUDE_CODE_OAUTH_TOKEN: 'test' }],
+    ['CLI login', {}],
+  ])('forwards the session choice for %s and lets the SDK enforce availability', (_name, env) => {
+    const options = buildClaudeOptions({ superoneSessionId: 's1', projectPath: '/repo', cwd: '/repo', permissionMode: 'default', claudeFastMode: true, env })
+    expect(options.settings).toMatchObject({ fastMode: true })
+  })
+  it('leaves CLI preferences untouched without an explicit session choice', () => {
+    const options = buildClaudeOptions({ superoneSessionId: 's1', projectPath: '/repo', cwd: '/repo', permissionMode: 'default' })
+    expect(options.settings).not.toHaveProperty('fastMode')
+  })
+})

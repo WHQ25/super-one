@@ -25,12 +25,13 @@ export const claudeStrategy: HarnessStrategy = {
     return {
       portable: {
         ultracode: session.ultracode,
+        claudeFastMode: session.claudeFastMode,
         ...(enabledSkills?.length ? { enabledSkills } : {}),
         ...(disabledSkills ? { disabledSkills } : {}),
       },
     }
   },
-  draftSettings: (session) => ({ ultracode: session.ultracode }),
+  draftSettings: (session) => ({ ultracode: session.ultracode, claudeFastMode: session.claudeFastMode }),
   resetFields: (state, projectPath) => {
     const defaultModel = resolveDefaultClaudeModel(projectClaudeModels(state, projectPath))
     return {

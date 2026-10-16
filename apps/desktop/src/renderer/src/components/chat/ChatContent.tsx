@@ -644,7 +644,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             transitionKey={composerKey}
             align={{ kind: 'voice', to: 'text' }}
             onOverhangChange={publishComposerOverhang}
-            maxHeight={(needsDecision || !!appInput || !!openedComposer) && decisionAvailable ? COMPOSER_CONTENT_MAX_HEIGHT : undefined}
+            maxHeight={composerKind === 'text' || composerKind === 'voice' ? undefined : COMPOSER_CONTENT_MAX_HEIGHT}
             render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
               showTodoPopup: true,
               autoFocusOnMount: composerFocus.autoFocusOnMount,

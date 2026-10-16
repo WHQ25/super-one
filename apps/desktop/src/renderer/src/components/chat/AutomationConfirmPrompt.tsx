@@ -555,9 +555,9 @@ export function AutomationConfirmPrompt({
   const showAgentStrip = !!editableSource
 
   return (
-    <div className="mx-3 mb-1">
-      <div className="rounded-lg border border-border bg-card p-3">
-        <div className="mb-2 flex items-center gap-1.5 text-xs">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card p-3">
+        <div className="mb-2 flex shrink-0 items-center gap-1.5 text-xs">
           <Icon className={cn('size-3.5 shrink-0', iconClass)} />
           <span className="font-medium text-foreground">{title}</span>
           {editableSource ? (
@@ -570,6 +570,7 @@ export function AutomationConfirmPrompt({
           ) : null}
         </div>
 
+        <div className="-mx-3 min-h-0 overflow-y-auto px-3">
         {items.length === 0 ? (
           <div className="mb-3 rounded border border-border/50 bg-muted/20 px-2 py-1.5 text-xs text-muted-foreground">
             {t('chat.permission.automationEmpty')}
@@ -620,7 +621,9 @@ export function AutomationConfirmPrompt({
             />
           </div>
         ) : null}
+        </div>
 
+        <div className="shrink-0">
         <ApproveRejectBar
           approveRef={approveRef}
           rejectRef={rejectRef}
@@ -636,6 +639,7 @@ export function AutomationConfirmPrompt({
             onFocusChange: setFeedbackFocused,
           }}
         />
+        </div>
       </div>
     </div>
   )

@@ -469,7 +469,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   return (
     <div
       className={cn(
-        '@container mx-3 mb-1 flex flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
+        '@container mx-3 mb-1 flex min-h-0 flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
         // Cap the whole confirm card so an expanded summary never leaves the viewport.
         'max-h-[min(80vh,calc(100dvh-5rem))]',
       )}
@@ -533,7 +533,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         )}
       </div>
 
-      <div className="flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-y-auto">
         <LaunchPanel
           key={activeLaunch.launchId}
           launch={resolved[activeIndex]}

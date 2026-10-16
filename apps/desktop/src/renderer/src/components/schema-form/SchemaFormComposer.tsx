@@ -233,9 +233,9 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
   }
 
   return (
-    <div ref={rootRef} tabIndex={-1} inert={disabled || !active} aria-busy={disabled || picking > 0} className="flex flex-col gap-3 outline-none focus-visible:shadow-none">
+    <div ref={rootRef} tabIndex={-1} inert={disabled || !active} aria-busy={disabled || picking > 0} className="flex min-h-0 flex-col gap-3 outline-none focus-visible:shadow-none">
       {steps.length > 1 && (
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <div className="flex flex-1 gap-1" aria-hidden>
             {steps.map((_, index) => (
               <span key={index} className={cn('h-0.5 flex-1 rounded-full', index <= stepIndex ? 'bg-primary' : 'bg-border')} />
@@ -246,11 +246,11 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
           </span>
         </div>
       )}
-      {/* The transcript above stays visible however long a step is. */}
-      <div key={stepIndex} data-step className="-mx-1 max-h-[min(28rem,50vh)] overflow-y-auto px-1 py-0.5">
+      {/* A height-capped slot scrolls only the step; progress and actions stay in view. */}
+      <div key={stepIndex} data-step className="-mx-1 min-h-0 overflow-y-auto px-1 py-0.5">
         <SchemaFormFields fields={step} values={values} errors={shownErrors} onChange={choose} onSubmit={() => { if (active) next() }} resources={resourceActions} typed={pickField ? typed : undefined} />
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {stepIndex > 0 && (
           <Button variant="ghost" size="sm" onClick={() => setStepIndex(stepIndex - 1)} className="h-7 cursor-pointer gap-0.5 px-1.5 text-xs text-muted-foreground">
             <ChevronLeft className="size-3.5" aria-hidden />{t('chat.schemaForm.back')}

@@ -123,7 +123,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
 
   if (isCollapsed) {
     return (
-      <div className="mx-3 mb-1">
+      <div className="mx-3 mb-1 shrink-0">
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
@@ -141,12 +141,12 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   }
 
   return (
-    <div className="mx-3 mb-1">
-      <div className="rounded-lg border border-border bg-card p-3">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card p-3">
         <button
           type="button"
           onClick={() => setIsCollapsed(true)}
-          className="group mb-2 flex w-full cursor-pointer items-center justify-between gap-2 text-left"
+          className="group mb-2 flex w-full shrink-0 cursor-pointer items-center justify-between gap-2 text-left"
         >
           <div className="flex items-center gap-1.5">
             <SlidersHorizontal className="size-3.5 shrink-0 text-muted-foreground" />
@@ -155,6 +155,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
           <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
         </button>
 
+        <div className="-mx-3 min-h-0 overflow-y-auto px-3">
         {resource && (
           <div className={`mb-3 rounded border px-2.5 py-2 ${isDelete ? 'border-destructive/40 bg-destructive/10' : 'border-border/60 bg-muted/20'}`}>
             <p className={`truncate text-xs font-medium ${isDelete ? 'text-destructive' : 'text-foreground'}`}>{resource.title}</p>
@@ -261,7 +262,9 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
             })}
           </div>
         )}
+        </div>
 
+        <div className="shrink-0">
         <PermissionActionsLayout feedbackValue={feedback} feedback={
           <PermissionFeedbackInput
             ref={feedbackRef}
@@ -299,6 +302,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
             </Kbd>
           </Button>
         </PermissionActionsLayout>
+        </div>
       </div>
     </div>
   )

@@ -419,13 +419,15 @@ export function AgentProfileConfirmPrompt({
     : t(operation === 'update' ? `${P}.updateTitle` : `${P}.createTitle`)
 
   return (
-    <div className="mx-3 mb-1">
-      <div className="rounded-lg border border-border bg-card p-3">
-        <div className="mb-2 flex min-w-0 items-center gap-1.5 text-xs">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card p-3">
+        <div className="mb-2 flex min-w-0 shrink-0 items-center gap-1.5 text-xs">
           <Icon className={cn('size-3.5 shrink-0', operation === 'delete' ? 'text-destructive' : 'text-foreground')} />
           <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
         </div>
 
+        {/* -mt-1 pt-1 keeps the editor's negative top margin inside this scroll box. */}
+        <div className="-mx-3 -mt-1 min-h-0 overflow-y-auto px-3 pt-1">
         {operation === 'delete' ? (
           <div className="mb-3 space-y-1.5">
             <div className="max-h-48 space-y-0.5 overflow-y-auto rounded border border-border/50 bg-muted/20 p-1.5">
@@ -458,7 +460,9 @@ export function AgentProfileConfirmPrompt({
             />
           </div>
         ) : null}
+        </div>
 
+        <div className="shrink-0">
         <ApproveRejectBar
           approveRef={approveRef}
           rejectRef={rejectRef}
@@ -475,6 +479,7 @@ export function AgentProfileConfirmPrompt({
             onFocusChange: setFeedbackFocused,
           }}
         />
+        </div>
       </div>
     </div>
   )

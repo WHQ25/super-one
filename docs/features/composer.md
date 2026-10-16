@@ -168,8 +168,10 @@ Only the first item is interactive. Answering an item advances the
 queue without displaying a position or remaining-count indicator.
 
 Permissions continue to use `PermissionPrompt`, including MCP elicitation
-forms. Questions continue to use the shared question form. Tall permission and
-question content is capped and scrolls inside the slot. Plan approval replaces
+forms. Questions continue to use the shared question form. Decision, app-input
+and app-consent composers share one height cap; past it, only the content
+between a card's header and its actions scrolls, so the frame and primary
+actions stay in view. Plan approval replaces
 the chat body with its existing review surface and approval controls once
 permissions and questions have cleared.
 

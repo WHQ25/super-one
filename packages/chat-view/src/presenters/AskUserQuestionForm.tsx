@@ -459,10 +459,12 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
   return (
     // Focusable with a keyboard: leaving a text field (Escape, Tab, ctrl+digit) lands here
     // instead of on <body>, where the host's `inScope` would stop taking the form's keys.
-    <div ref={rootRef} tabIndex={keys ? -1 : undefined} className="@container rounded-lg border border-primary/40 bg-card p-3 outline-none" data-ask-user-question={request.requestId}>
-      <fieldset disabled={settled} className="min-w-0">
+    <div ref={rootRef} tabIndex={keys ? -1 : undefined} className="@container flex min-h-0 flex-col rounded-lg border border-primary/40 bg-card p-3 outline-none" data-ask-user-question={request.requestId}>
+      {/* A height-capped slot scrolls only the question; the tabs and actions stay in view.
+          A fieldset can't pass that height to its rows, so it only disables them. */}
+      <fieldset disabled={settled} className="contents">
       {!singleQuestion && (
-        <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border/50 pb-2">
+        <div className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 pb-2">
           {questions.map((q, i) => (
             <button
               key={questionKey(q)}
@@ -476,6 +478,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           ))}
         </div>
       )}
+      <div className="-mx-3 min-h-0 overflow-y-auto px-3">
       {!keys ? (
         <TouchQuestionPanel
           q={activeQuestion}
@@ -521,8 +524,9 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           onSubmit={() => { if (allAnswered && keyboard?.inScope()) submit() }}
         />
       )}
+      </div>
       {/* Touch: the two actions share the row, as the phone's prompt sheets drew them. */}
-      <div className={cn('mt-3 flex items-center', keys ? 'gap-3' : 'gap-2')}>
+      <div className={cn('mt-3 flex shrink-0 items-center', keys ? 'gap-3' : 'gap-2')}>
         <Button
           size="sm"
           disabled={!allAnswered || settled}
@@ -549,7 +553,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
         )}
       </div>
       </fieldset>
-      {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" className="mt-2 shrink-0 text-xs text-destructive">{error}</p>}
     </div>
   )
 }

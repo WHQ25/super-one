@@ -27,11 +27,13 @@ export function CodexAsyncQuestionPrompt({ question }: { question: PendingCodexA
     await answerAsyncQuestion({ projectPath, sessionId }, question, answers)
   }
   return (
-    <fieldset disabled={remoteLocked} className="mx-3 mb-1 min-w-0" inert={remoteLocked}>
+    <fieldset disabled={remoteLocked} className="contents" inert={remoteLocked}>
+      <div className="mx-3 mb-1 flex min-h-0 min-w-0 flex-col">
       <AskUserQuestionForm key={`${projectPath}:${sessionId}:${item.id}`} request={request} keyboard={keyboard}
         renderPreview={props => <QuestionPreviewContent {...props} />}
         onSubmit={answers => respond(request.questions.map(q => answers[q.id!] ?? ''))}
         onDismiss={() => respond(request.questions.map(() => CODEX_ASYNC_QUESTION_DISMISSED))} />
+      </div>
     </fieldset>
   )
 }

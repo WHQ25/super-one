@@ -206,9 +206,9 @@ export function SessionCleanupConfirmPrompt({
   }, [chatRootRef, feedback, feedbackFocused, onConfirm, onReject])
 
   return (
-    <div className="mx-3 mb-1">
-      <div className="rounded-lg border border-border bg-card p-3">
-        <div className="mb-2 flex items-center gap-1.5 text-xs">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card p-3">
+        <div className="mb-2 flex shrink-0 items-center gap-1.5 text-xs">
           <Trash2 className="size-3.5 shrink-0 text-destructive" />
           <span className="font-medium text-foreground">
             {t('chat.permission.sessionCleanupTitle', { count })}
@@ -216,7 +216,7 @@ export function SessionCleanupConfirmPrompt({
         </div>
         <div
           className={cn(
-            'mb-3 max-h-48 space-y-0.5 overflow-y-auto rounded border border-border/50 bg-muted/20 p-1.5',
+            'mb-3 max-h-48 min-h-0 space-y-0.5 overflow-y-auto rounded border border-border/50 bg-muted/20 p-1.5',
           )}
         >
           {sessions.length === 0 ? (
@@ -238,6 +238,7 @@ export function SessionCleanupConfirmPrompt({
             ))
           )}
         </div>
+        <div className="shrink-0">
         <ApproveRejectBar
           approveRef={approveRef}
           rejectRef={rejectRef}
@@ -254,6 +255,7 @@ export function SessionCleanupConfirmPrompt({
             onFocusChange: setFeedbackFocused,
           }}
         />
+        </div>
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import type { AskUserQuestionRequest, ChatMessage as ChatMessageType, Permission
 import { isCodexAsyncAnswer, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { ChatMessage } from './ChatMessage'
+import { ComposerSwitch } from './ComposerSwitch'
 import { DecisionComposer } from './DecisionComposer'
 
 function SeedDecisionQueue({
@@ -78,6 +79,25 @@ const QUESTION: AskUserQuestionRequest = {
   }],
 }
 
+const PREVIEW_OPTION = (label: string, rows: number) => ({
+  label,
+  description: `${label} layout for the handoff banner.`,
+  preview: Array.from({ length: rows }, (_, i) => `- ${label} row ${i + 1}: banner copy, primary action and dismiss control`).join('\n'),
+})
+
+const TALL_QUESTION: AskUserQuestionRequest = {
+  requestId: 'question-tall',
+  questions: [
+    {
+      question: 'Which banner layout should the phone use? The desktop keeps its own setting for "don\'t show again".',
+      header: 'Layout',
+      multiSelect: false,
+      options: [PREVIEW_OPTION('Single row', 24), PREVIEW_OPTION('Two rows', 18), PREVIEW_OPTION('Inline text', 12)],
+    },
+    { ...QUESTION.questions[0], header: 'Checks' },
+  ],
+}
+
 const MIXED_PERMISSION: PermissionRequest = {
   requestId: 'permission-1',
   toolName: 'Bash',
@@ -135,12 +155,15 @@ function QueueStory({
   width,
   messages = EMPTY_MESSAGES,
   retry = false,
+  cap,
 }: {
   permissions?: PermissionRequest[]
   question?: AskUserQuestionRequest | null
   width?: number
   messages?: ChatMessageType[]
   retry?: boolean
+  /** Renders inside the production slot capped at this height, as a short window would. */
+  cap?: number
 }) {
   const restoreMocks = useMemo(() => {
     if (messages.length === 0) return undefined
@@ -161,7 +184,9 @@ function QueueStory({
     <StoryShell width={width}>
       <AsyncAnswerHistory />
       <SeedDecisionQueue permissions={permissions} question={question} messages={messages} />
-      <DecisionComposer />
+      {cap === undefined
+        ? <DecisionComposer />
+        : <ComposerSwitch kind="decision" maxHeight={cap} render={() => <DecisionComposer />} />}
     </StoryShell>
   )
 }
@@ -182,3 +207,7 @@ export const LongCommand: Story = { args: { permissions: [LONG_COMMAND], questio
 export const AsyncQuestionQueue: Story = { args: { permissions: [], question: null, messages: ASYNC_QUESTIONS } }
 export const AsyncQuestionNarrow: Story = { args: { permissions: [], question: null, messages: ASYNC_QUESTIONS, width: 320 } }
 export const AsyncQuestionRetry: Story = { args: { permissions: [], question: null, messages: ASYNC_QUESTIONS, retry: true } }
+export const CappedQuestion: Story = { args: { permissions: [], question: TALL_QUESTION, cap: 320 } }
+export const CappedQuestionNarrow: Story = { args: { permissions: [], question: TALL_QUESTION, cap: 320, width: 320 } }
+export const CappedPermission: Story = { args: { permissions: [LONG_COMMAND], question: null, cap: 120 } }
+export const CappedElicitation: Story = { args: { permissions: [ELICITATION], question: null, cap: 140 } }

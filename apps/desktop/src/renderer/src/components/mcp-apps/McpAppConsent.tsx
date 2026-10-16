@@ -37,7 +37,7 @@ export function McpAppConsentPrompt({ pending, framed = true, stale = false }: M
     tabIndex={-1}
     inert={stale}
     data-mcp-app-consent=""
-    className={cn('outline-none', framed && 'mx-3 mb-1')}
+    className={cn('flex min-h-0 flex-col outline-none', framed && 'mx-3 mb-1')}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
       event.preventDefault()
@@ -45,8 +45,8 @@ export function McpAppConsentPrompt({ pending, framed = true, stale = false }: M
       finish(null)
     }}
   >
-    <div className={cn('overflow-hidden', framed && 'rounded-xl border border-border bg-card shadow-sm')}>
-      <div className="flex items-start gap-3 border-b border-border/60 px-3.5 py-3">
+    <div className={cn('flex min-h-0 flex-col overflow-hidden', framed && 'rounded-xl border border-border bg-card shadow-sm')}>
+      <div className="flex shrink-0 items-start gap-3 border-b border-border/60 px-3.5 py-3">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-[22%] bg-muted ring-1 ring-border">
           <Icon className="size-4 text-muted-foreground" />
         </div>
@@ -57,14 +57,16 @@ export function McpAppConsentPrompt({ pending, framed = true, stale = false }: M
           <div className="mt-0.5 text-xs text-muted-foreground">{message?.target === 'new' ? t('mcpApp.newConversation') : prompt.server}</div>
         </div>
       </div>
-      <div className="space-y-2 px-3.5 py-3">
-        {detail && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted/40 px-2.5 py-2 text-xs">{detail}</pre>}
-        {message && <ContextAttachments items={message.items ?? []} />}
-        {!!message?.nonTextBlocks && <p className="text-xs text-muted-foreground">{t('mcpApp.nonText', { count: message.nonTextBlocks })}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <PermissionActionButton tone="approve" onClick={() => finish({})}>{t('mcpApp.allow')}</PermissionActionButton>
-          <PermissionActionButton tone="reject" kbd="esc" onClick={() => finish(null)}>{t('mcpApp.deny')}</PermissionActionButton>
+      {(detail || message) && (
+        <div className="min-h-0 space-y-2 overflow-y-auto px-3.5 pt-3">
+          {detail && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted/40 px-2.5 py-2 text-xs">{detail}</pre>}
+          {message && <ContextAttachments items={message.items ?? []} />}
+          {!!message?.nonTextBlocks && <p className="text-xs text-muted-foreground">{t('mcpApp.nonText', { count: message.nonTextBlocks })}</p>}
         </div>
+      )}
+      <div className={cn('flex shrink-0 flex-wrap items-center gap-2 px-3.5 pb-3', detail || message ? 'pt-2' : 'pt-3')}>
+        <PermissionActionButton tone="approve" onClick={() => finish({})}>{t('mcpApp.allow')}</PermissionActionButton>
+        <PermissionActionButton tone="reject" kbd="esc" onClick={() => finish(null)}>{t('mcpApp.deny')}</PermissionActionButton>
       </div>
     </div>
   </div>

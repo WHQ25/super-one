@@ -20,7 +20,7 @@ import {
   type ComposerHandle, type ComposerLifetime, type ComposerValue, type OpenComposerOptions,
 } from './composer-stack'
 
-export const COMPOSER_CONTENT_MAX_HEIGHT = 'min(45vh, 440px)'
+export const COMPOSER_CONTENT_MAX_HEIGHT = 'min(70vh, 720px)'
 
 export interface OpenedComposerProps {
   instanceId: string
@@ -72,7 +72,7 @@ function OpenedComposer({ entry, Component }: { entry: ComposerHandle; Component
   const appConsent = useHasMcpAppConsent(entry.target.sessionId)
   const active = top?.key === entry.key && available && !needsDecision && !appConsent
   return (
-    <div inert={!active} data-opened-composer={entry.id} className="min-h-0 overflow-y-auto" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
+    <div inert={!active} data-opened-composer={entry.id} className="flex min-h-0 flex-col overflow-y-auto" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
       <Component
         instanceId={entry.key}
         lifetime={entry.lifetime}

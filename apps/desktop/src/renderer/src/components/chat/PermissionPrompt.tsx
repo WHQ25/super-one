@@ -589,12 +589,12 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         : <McpAppIcon src={mcpIconSrc} className={`${className} text-muted-foreground`} fallback={<ToolIcon icon="mcp" className={`${className} text-muted-foreground`} />} />
 
     return (
-      <div className="mx-3 mb-1">
+      <div className="mx-3 mb-1 flex min-h-0 flex-col">
         {isCollapsed && (
           <button
             type="button"
             onClick={() => setIsCollapsed(false)}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
+            className="flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
           >
             {icon('size-3.5 shrink-0')}
             <span className="min-w-0 flex-1 truncate text-xs text-foreground">
@@ -604,11 +604,11 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
           </button>
         )}
         {/* Stays mounted while collapsed so a half-filled form keeps its answers. */}
-        <div className={cn('rounded-lg border border-border bg-card p-3', isCollapsed && 'hidden')}>
+        <div className={cn('min-h-0 flex-col rounded-lg border border-border bg-card p-3', isCollapsed ? 'hidden' : 'flex')}>
             <button
               type="button"
               onClick={() => setIsCollapsed(true)}
-              className="group mb-2 flex w-full cursor-pointer items-start justify-between gap-2 text-left"
+              className="group mb-2 flex w-full shrink-0 cursor-pointer items-start justify-between gap-2 text-left"
             >
               <div className="flex items-start gap-1.5">
                 {icon('mt-0.5 size-3.5 shrink-0')}
@@ -628,7 +628,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
               <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
             </button>
             {isUrlElicit ? (
-              <div className="grid grid-cols-2 gap-2 @xl:grid-cols-3">
+              <div className="grid shrink-0 grid-cols-2 gap-2 @xl:grid-cols-3">
                 <PermissionActionButton tone="approve" onClick={openElicitationUrl}>
                   <span className="inline-flex items-center gap-1">
                     <ExternalLink className="size-3" />
@@ -658,7 +658,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
               />
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+                <div className="grid shrink-0 grid-cols-2 gap-2 @xl:grid-cols-4">
                   <PermissionActionButton tone="approve" onClick={handleAllow}>
                     {t('chat.permission.allow')}
                   </PermissionActionButton>
@@ -723,12 +723,12 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
       : permissionDetailSummary(pendingPermission, display.summary)
 
   return (
-    <div className="mx-3 mb-1">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
       {isCollapsed ? (
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
-          className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
+          className="flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
         >
           {isSandboxNetwork ? (
             <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
@@ -759,60 +759,57 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
           </TooltipProvider>
         </button>
       ) : (
-        <div>
-            <div className="rounded-lg border border-border bg-card p-3">
+        <div className="flex min-h-0 flex-col">
+            <div className="flex min-h-0 flex-col rounded-lg border border-border bg-card p-3">
               {isSandboxNetwork ? (
-                <>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button type="button" onClick={() => setIsCollapsed(true)} className="group mb-2 flex w-full cursor-pointer items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
-                            <span className="font-medium text-amber-500">{t('chat.permission.allowSandboxNetwork')}</span>
-                          </div>
-                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  {typeof input.host === 'string' && input.host && (
-                    <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
-                  )}
-                </>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" onClick={() => setIsCollapsed(true)} className="group mb-2 flex w-full shrink-0 cursor-pointer items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldAlert className="size-3.5 shrink-0 text-amber-500" />
+                          <span className="font-medium text-amber-500">{t('chat.permission.allowSandboxNetwork')}</span>
+                        </div>
+                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               ) : (
-                <>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button type="button" onClick={() => setIsCollapsed(true)} className="group mb-2 flex w-full cursor-pointer items-center justify-between gap-2 text-xs">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            {miniAppInfo ? (
-                              <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0" />
-                            ) : toolGlyph}
-                            {miniAppInfo ? (
-                              <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
-                            ) : (
-                              <span className={scopedPresentation ? 'min-w-0 break-all font-medium text-foreground' : 'font-medium text-foreground'}>{toolLabel}</span>
-                            )}
-                            {isBash && typeof input.description === 'string' && input.description && (
-                              <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
-                            )}
-                          </div>
-                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  {isBash && !!input.dangerouslyDisableSandbox && (
-                    <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
-                      <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                      <span className="text-xs font-medium text-amber-500">{t('chat.permission.sandboxOverride')}</span>
-                    </div>
-                  )}
-                </>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" onClick={() => setIsCollapsed(true)} className="group mb-2 flex w-full shrink-0 cursor-pointer items-center justify-between gap-2 text-xs">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          {miniAppInfo ? (
+                            <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0" />
+                          ) : toolGlyph}
+                          {miniAppInfo ? (
+                            <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
+                          ) : (
+                            <span className={scopedPresentation ? 'min-w-0 break-all font-medium text-foreground' : 'font-medium text-foreground'}>{toolLabel}</span>
+                          )}
+                          {isBash && typeof input.description === 'string' && input.description && (
+                            <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
+                          )}
+                        </div>
+                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top"><Trans i18nKey="tooltips.collapsePermission" components={{ kbd: <Kbd variant="inline" /> }} /></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              <div className="-mx-3 min-h-0 overflow-y-auto px-3">
+              {isSandboxNetwork && typeof input.host === 'string' && input.host && (
+                <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
+              )}
+              {isBash && !!input.dangerouslyDisableSandbox && (
+                <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
+                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                  <span className="text-xs font-medium text-amber-500">{t('chat.permission.sandboxOverride')}</span>
+                </div>
               )}
               <PermissionDetails request={pendingPermission} summary={scopedPresentation ? undefined : display.summary} remembering={rememberPreview} />
               {!pendingPermission.permissionDetails && !isSandboxNetwork && display.summary && (
@@ -868,7 +865,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                   )}
                 </div>
               )}
-              <div className="flex flex-col gap-2">
+              </div>
+              <div className="flex shrink-0 flex-col gap-2">
                 {isCodexDecisionPrompt ? (
                   <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
                     <PermissionActionButton

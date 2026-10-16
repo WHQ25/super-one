@@ -115,7 +115,7 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
 
   if (isCollapsed) {
     return (
-      <div className="mx-3 mb-1">
+      <div className="mx-3 mb-1 shrink-0">
         <button
           type="button"
           onClick={handleExpand}
@@ -134,12 +134,12 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
   }
 
   return (
-    <div className="mx-3 mb-1">
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <button
           type="button"
           onClick={handleCollapse}
-          className="group flex w-full cursor-pointer items-start gap-3.5 border-b border-border/60 px-3.5 py-3 text-left transition-colors hover:bg-muted/30"
+          className="group flex w-full shrink-0 cursor-pointer items-start gap-3.5 border-b border-border/60 px-3.5 py-3 text-left transition-colors hover:bg-muted/30"
         >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-[22%] bg-sky-500/12 ring-1 ring-sky-500/20">
             <Globe className="size-5 text-sky-600 dark:text-sky-400" />
@@ -168,7 +168,7 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
           <ChevronDown className="mt-1 size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
         </button>
 
-        <div className="space-y-3 px-3.5 py-3">
+        <div className="min-h-0 space-y-3 overflow-y-auto px-3.5 pt-3">
           {isRetrust ? (
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
               <AlertTriangle className="mt-px size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -216,39 +216,39 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
           <p className="text-xs leading-relaxed text-muted-foreground">
             {t('chat.webmcpTrust.description')}
           </p>
+        </div>
 
-          <div className="grid grid-cols-1 gap-2 @xl:grid-cols-3">
-            <PermissionActionButton
-              ref={(el) => {
-                btnRefs.current[0] = el
-              }}
-              tone="approve"
-              kbd="⏎"
-              onClick={() => onTrust('session')}
-            >
-              {t('chat.webmcpTrust.trustSession')}
-            </PermissionActionButton>
-            <PermissionActionButton
-              ref={(el) => {
-                btnRefs.current[1] = el
-              }}
-              tone="primary"
-              kbd="⇧⏎"
-              onClick={() => onTrust('always')}
-            >
-              {t('chat.webmcpTrust.trustAlways')}
-            </PermissionActionButton>
-            <PermissionActionButton
-              ref={(el) => {
-                btnRefs.current[2] = el
-              }}
-              tone="reject"
-              kbd="esc"
-              onClick={onDeny}
-            >
-              {t('chat.webmcpTrust.deny')}
-            </PermissionActionButton>
-          </div>
+        <div className="grid shrink-0 grid-cols-1 gap-2 px-3.5 py-3 @xl:grid-cols-3">
+          <PermissionActionButton
+            ref={(el) => {
+              btnRefs.current[0] = el
+            }}
+            tone="approve"
+            kbd="⏎"
+            onClick={() => onTrust('session')}
+          >
+            {t('chat.webmcpTrust.trustSession')}
+          </PermissionActionButton>
+          <PermissionActionButton
+            ref={(el) => {
+              btnRefs.current[1] = el
+            }}
+            tone="primary"
+            kbd="⇧⏎"
+            onClick={() => onTrust('always')}
+          >
+            {t('chat.webmcpTrust.trustAlways')}
+          </PermissionActionButton>
+          <PermissionActionButton
+            ref={(el) => {
+              btnRefs.current[2] = el
+            }}
+            tone="reject"
+            kbd="esc"
+            onClick={onDeny}
+          >
+            {t('chat.webmcpTrust.deny')}
+          </PermissionActionButton>
         </div>
       </div>
     </div>

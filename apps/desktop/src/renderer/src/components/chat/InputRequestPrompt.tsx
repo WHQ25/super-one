@@ -43,8 +43,8 @@ export function InputRequestForm({ meta, form, onSubmit, onCancel, error: hostEr
     }
   }
   return (
-    <section className="@container flex min-w-0 flex-col gap-3 px-3 pt-3 pb-1" aria-label={meta.title}>
-      <div className="min-w-0">
+    <section className="@container flex min-h-0 min-w-0 flex-col gap-3 px-3 pt-3 pb-1" aria-label={meta.title}>
+      <div className="min-w-0 shrink-0">
         <p className="mb-1 break-words text-[0.6875rem] text-muted-foreground">{meta.origin.kind === 'miniapp'
           ? meta.origin.appName ?? meta.origin.appId
           : t(meta.origin.kind === 'agent' ? 'chat.inputRequest.originAgent' : 'chat.inputRequest.originWidget')}</p>
@@ -60,7 +60,7 @@ export function InputRequestForm({ meta, form, onSubmit, onCancel, error: hostEr
         onSubmit={values => { void run(() => onSubmit(values)) }}
         onCancel={() => { void run(onCancel) }}
       />
-      {(error || hostError) && <p role="alert" className="break-words text-xs text-destructive">{error || hostError}</p>}
+      {(error || hostError) && <p role="alert" className="shrink-0 break-words text-xs text-destructive">{error || hostError}</p>}
     </section>
   )
 }

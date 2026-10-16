@@ -137,7 +137,7 @@ export function ComputerUseGrantPrompt({
 
   if (isCollapsed) {
     return (
-      <div className="mx-3 mb-1">
+      <div className="mx-3 mb-1 shrink-0">
         <button
           type="button"
           onClick={handleExpand}
@@ -161,13 +161,13 @@ export function ComputerUseGrantPrompt({
   }
 
   return (
-    <div className="mx-3 mb-1">
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         {/* Identity header */}
         <button
           type="button"
           onClick={handleCollapse}
-          className="group flex w-full cursor-pointer items-start gap-3.5 border-b border-border/60 px-3.5 py-3 text-left transition-colors hover:bg-muted/30"
+          className="group flex w-full shrink-0 cursor-pointer items-start gap-3.5 border-b border-border/60 px-3.5 py-3 text-left transition-colors hover:bg-muted/30"
         >
           <GrantAppIcon
             iconDataUri={iconDataUri}
@@ -197,43 +197,43 @@ export function ComputerUseGrantPrompt({
         </button>
 
         {/* Body */}
-        <div className="space-y-3 px-3.5 py-3">
+        <div className="min-h-0 overflow-y-auto px-3.5 pt-3">
           <p className="text-xs leading-relaxed text-muted-foreground">
             {t('chat.computerUseGrant.description')}
           </p>
+        </div>
 
-          <div className="grid grid-cols-1 gap-2 @xl:grid-cols-3">
-            <PermissionActionButton
-              ref={(el) => {
-                btnRefs.current[0] = el
-              }}
-              tone="approve"
-              kbd="⏎"
-              onClick={onSessionAllow}
-            >
-              {t('chat.computerUseGrant.allowSession')}
-            </PermissionActionButton>
-            <PermissionActionButton
-              ref={(el) => {
-                btnRefs.current[1] = el
-              }}
-              tone="primary"
-              kbd="⇧⏎"
-              onClick={onAlwaysAllow}
-            >
-              {t('chat.computerUseGrant.alwaysAllow')}
-            </PermissionActionButton>
-            <PermissionActionButton
-              ref={(el) => {
-                btnRefs.current[2] = el
-              }}
-              tone="reject"
-              kbd="esc"
-              onClick={onDeny}
-            >
-              {t('chat.computerUseGrant.deny')}
-            </PermissionActionButton>
-          </div>
+        <div className="grid shrink-0 grid-cols-1 gap-2 px-3.5 py-3 @xl:grid-cols-3">
+          <PermissionActionButton
+            ref={(el) => {
+              btnRefs.current[0] = el
+            }}
+            tone="approve"
+            kbd="⏎"
+            onClick={onSessionAllow}
+          >
+            {t('chat.computerUseGrant.allowSession')}
+          </PermissionActionButton>
+          <PermissionActionButton
+            ref={(el) => {
+              btnRefs.current[1] = el
+            }}
+            tone="primary"
+            kbd="⇧⏎"
+            onClick={onAlwaysAllow}
+          >
+            {t('chat.computerUseGrant.alwaysAllow')}
+          </PermissionActionButton>
+          <PermissionActionButton
+            ref={(el) => {
+              btnRefs.current[2] = el
+            }}
+            tone="reject"
+            kbd="esc"
+            onClick={onDeny}
+          >
+            {t('chat.computerUseGrant.deny')}
+          </PermissionActionButton>
         </div>
       </div>
     </div>

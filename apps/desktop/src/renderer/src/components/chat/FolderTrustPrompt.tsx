@@ -20,11 +20,12 @@ export function FolderTrustPrompt({
     : []
 
   return (
-    <div className="mx-3 mb-1 rounded-lg border border-border bg-background p-3 text-xs">
-      <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
+    <div className="mx-3 mb-1 flex min-h-0 flex-col rounded-lg border border-border bg-background p-3 text-xs">
+      <div className="mb-2 flex shrink-0 items-center gap-2 font-medium text-foreground">
         <FolderLock className="size-3.5 shrink-0" />
         {t('chat.acpPermissionModes.folderTrustTitle')}
       </div>
+      <div className="-mx-3 min-h-0 overflow-y-auto px-3">
       <p className="mb-2 text-muted-foreground">{t('chat.acpPermissionModes.folderTrustBody')}</p>
       {workspace ? (
         <p className="truncate font-mono" title={workspace}>
@@ -41,7 +42,8 @@ export function FolderTrustPrompt({
           ? `${t('chat.acpPermissionModes.folderTrustKinds')}: ${kinds.join(', ')}`
           : t('chat.acpPermissionModes.folderTrustEmptyKinds')}
       </p>
-      <div className="mt-3 flex justify-end gap-2">
+      </div>
+      <div className="mt-3 flex shrink-0 justify-end gap-2">
         <PermissionActionButton tone="reject" onClick={onReject}>
           {t('chat.acpPermissionModes.folderTrustReject')}
         </PermissionActionButton>

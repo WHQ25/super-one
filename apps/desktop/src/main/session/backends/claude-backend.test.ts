@@ -1112,6 +1112,25 @@ describe('ClaudeBackend', () => {
       expect(backend.hasActiveRuntime()).toBe(false)
     })
 
+    it('emits session_schedules only when the reported set changes, and [] when the process goes', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      const report = (opts as { onSessionCrons: (crons: unknown[]) => void }).onSessionCrons
+      const cron = { id: 'c1', schedule: '*/30 * * * *', recurring: true, prompt: 'ping' }
+      const scheduleEvents = () => events.filter((e) => e.type === 'session_schedules')
+
+      report([cron])
+      report([cron])
+      expect(scheduleEvents()).toEqual([expect.objectContaining({ schedules: [cron] })])
+
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'rebuild') => Promise<void> }).releaseRuntime('rebuild')
+      expect(scheduleEvents().at(-1)).toEqual(expect.objectContaining({ schedules: [] }))
+    })
+
     it('a non-idle release drops the crons along with the CLI process', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

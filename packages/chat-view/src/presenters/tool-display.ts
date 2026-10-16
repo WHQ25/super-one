@@ -20,6 +20,7 @@ import {
 import { topFindingSummary } from './report-findings-display'
 import { artifactToolSummary } from './artifact-link'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
+import { scheduleToolSummary } from './schedule-tool-display'
 
 const TOOL_VERBS: Record<string, string> = {
   // Same copy as BashTerminalPresenter (`chat.toolBlock.running`). The portable
@@ -58,6 +59,13 @@ const TOOL_VERBS: Record<string, string> = {
   ImageGen: 'Generating image',
   ImageEdit: 'Editing image',
   Monitor: 'Monitoring',
+  CronCreate: 'Scheduling',
+  CronDelete: 'Cancelling schedule',
+  CronList: 'Listing schedules',
+  ScheduleWakeup: 'Scheduling wakeup',
+  SchedulerCreate: 'Scheduling',
+  SchedulerDelete: 'Cancelling schedule',
+  SchedulerList: 'Listing schedules',
   UpdateGoal: 'Updating goal',
   LS: 'Listing',
   SearchTools: 'Searching tools',
@@ -86,7 +94,7 @@ export function superoneToolGlyph(mcpToolName: string): ToolIcon | null {
   return WIDGET_TOOLS.has(mcpToolName) ? 'widget' : null
 }
 
-export type ToolIcon = 'terminal' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply' | 'layout'
+export type ToolIcon = 'terminal' | 'clock' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply' | 'layout'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -238,6 +246,9 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   // dialog of its own.
   const deviceSummary = deviceToolSummary(toolName, input)
   if (deviceSummary !== null) return { icon: 'smartphone', summary: deviceSummary }
+
+  const scheduleSummary = scheduleToolSummary(toolName, input)
+  if (scheduleSummary !== null) return { icon: 'clock', summary: scheduleSummary }
 
   // MCP tools: `mcp__{server}__{tool}` (Claude/Codex) or `{server}__{tool}` (Grok).
   const mcpTool = parseMcpToolName(toolName)

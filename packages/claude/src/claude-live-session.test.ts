@@ -52,7 +52,7 @@ function successTurn(sessionId: string, text: string): Array<Record<string, unkn
 }
 
 describe('ClaudeLiveSession', () => {
-  it('reports scheduled wakeups from the Stop hook until a turn end clears them', async () => {
+  it('reports scheduled wakeups from the Stop hook and emits each change into the turn', async () => {
     const cron = { id: 'c1', schedule: '*/30 * * * *', recurring: true, prompt: 'ping' }
     const cronsPerTurn = [[cron], []]
     const queryFn: ClaudeQueryFn = ({ prompt, options }) => (async function* () {
@@ -66,12 +66,18 @@ describe('ClaudeLiveSession', () => {
     })() as ReturnType<ClaudeQueryFn>
     const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
     expect(live.hasScheduledWakeups).toBe(false)
+    const events: AgentEvent[] = []
+    const onAgentEvent = (event: AgentEvent) => { if (event.type === 'session_schedules') events.push(event) }
 
-    await live.sendTurn({ content: 'schedule', messageId: 'msg-1' })
+    await live.sendTurn({ content: 'schedule', messageId: 'msg-1', onAgentEvent })
     expect(live.hasScheduledWakeups).toBe(true)
 
-    await live.sendTurn({ content: 'cancel', messageId: 'msg-2' })
+    await live.sendTurn({ content: 'cancel', messageId: 'msg-2', onAgentEvent })
     expect(live.hasScheduledWakeups).toBe(false)
+    expect(events).toEqual([
+      { type: 'session_schedules', schedules: [cron] },
+      { type: 'session_schedules', schedules: [] },
+    ])
     await live.dispose()
   })
 

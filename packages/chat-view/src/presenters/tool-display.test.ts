@@ -52,3 +52,25 @@ describe('coordination tool rows', () => {
     expect(getToolDisplay('ExitWorktree', { action: 'keep' })).toEqual({ icon: 'git-branch', summary: 'keep' })
   })
 })
+
+describe('session timer tool rows', () => {
+  it('summarizes Claude cron and wakeup calls from their input', () => {
+    expect(getToolDisplay('CronCreate', { cron: '*/30 * * * *', prompt: 'check CI', recurring: true })).toEqual({ icon: 'clock', summary: '*/30 * * * * · check CI' })
+    expect(getToolDisplay('CronCreate', { cron: '0 9 17 10 *', prompt: 'remind me', recurring: false }).summary).toBe('0 9 17 10 * · once · remind me')
+    expect(getToolDisplay('ScheduleWakeup', { delaySeconds: 1200, reason: 'watching CI', prompt: '<<autonomous-loop-dynamic>>' }).summary).toBe('in 20m 0s · watching CI')
+    expect(getToolDisplay('ScheduleWakeup', { stop: true }).summary).toBe('stop loop')
+    expect(getToolDisplay('CronDelete', { id: '8e709dd2' })).toEqual({ icon: 'clock', summary: '8e709dd2' })
+    expect(getToolDisplay('CronList', {})).toEqual({ icon: 'clock', summary: '' })
+  })
+
+  it('summarizes Grok scheduler calls with the same row shape', () => {
+    expect(getToolDisplay('SchedulerCreate', { interval: '10m', prompt: 'poll deploy' }).summary).toBe('every 10m · poll deploy')
+    expect(getToolDisplay('SchedulerCreate', { task_id: 'job-1', interval: '1h' }).summary).toBe('job-1 · every 1h')
+    expect(getToolDisplay('SchedulerDelete', { id: 'job-1' }).summary).toBe('job-1')
+  })
+
+  it('shows a progress verb while the call streams', () => {
+    expect(getToolVerb('CronCreate')).toBe('Scheduling')
+    expect(getToolVerb('ScheduleWakeup')).toBe('Scheduling wakeup')
+  })
+})

@@ -2555,6 +2555,12 @@ export const zh: Messages = {
       expandTask: '展开',
       collapseTask: '收起',
     },
+    schedules: {
+      title: '定时唤醒',
+      recurring: '循环',
+      once: '一次',
+      autonomousLoop: '自主循环',
+    },
     askUser: {
       yourAnswer: '你的回答',
       answered: '已回答',

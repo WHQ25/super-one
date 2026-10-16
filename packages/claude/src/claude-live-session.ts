@@ -19,7 +19,7 @@ import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from './mcp-apps'
 import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
-import { sessionCronsStopHook } from './session-crons'
+import { SessionScheduleTracker, sessionCronsStopHook } from './session-crons'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import { resolveAskUserQuestion } from './ask-user-question-bridge'
 import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
@@ -332,7 +332,11 @@ export class ClaudeLiveSession {
   private ambient: AmbientTurn | null = null
   private readonly backgroundTaskIds = new Set<string>()
   /** Crons this CLI process still holds, as of the last turn end. */
-  private pendingSessionCrons = 0
+  private readonly sessionSchedules = new SessionScheduleTracker((event) => {
+    // The Stop hook runs inside the turn it ends: a sent turn or a timer-started one.
+    const sink = this.active?.input.onAgentEvent ?? this.opts.onAmbientEvent
+    sink?.(event)
+  })
   private idleSystemMapper: ReturnType<typeof createClaudeAgentEventMapper> | null = null
   private readonly reportedPluginErrors = new Set<string>()
   private readonly terminalNames: { names: string[] | undefined } = { names: undefined }
@@ -384,7 +388,7 @@ export class ClaudeLiveSession {
         emitAgentEvent: (e) => this.active?.input.onAgentEvent?.(e),
         getMessageId: () => this.active?.messageId,
       },
-      (crons) => { this.pendingSessionCrons = crons.length },
+      (crons) => this.sessionSchedules.report(crons),
     )
     const q = queryFn({ prompt: this.bridge, options })
     this.query = 'mcpServerStatus' in q ? q : null
@@ -420,7 +424,7 @@ export class ClaudeLiveSession {
   }
 
   get hasScheduledWakeups(): boolean {
-    return this.pendingSessionCrons > 0
+    return this.sessionSchedules.hasPending
   }
 
   private trackBackgroundTasks(msg: SDKMessage): void {
@@ -526,6 +530,7 @@ export class ClaudeLiveSession {
     }
     this.ambient = null
     this.backgroundTaskIds.clear()
+    this.sessionSchedules.clear(true)
     this.bridge.close()
     this.processAbort.abort()
     await this.iterationDone.catch(() => undefined)

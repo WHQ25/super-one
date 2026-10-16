@@ -359,6 +359,7 @@ export class Session implements SessionContract {
    * saw the event, so the last one is replayed.
    */
   private _cachedSessionGoal: Extract<AgentEvent, { type: 'session_goal' }> | null = null
+  private _cachedSessionSchedules: AgentEvent | null = null
   private _cachedTodos: AgentEvent | null = null
   /**
    * Backend is compacting right now. Replayed as `status_indicator` so a
@@ -1974,6 +1975,7 @@ export class Session implements SessionContract {
     if (this._cachedAcpCommands) out.push(this._cachedAcpCommands)
     if (this._cachedSessionAgents) out.push(this._cachedSessionAgents)
     if (this._cachedSessionGoal) out.push(this._cachedSessionGoal)
+    if (this._cachedSessionSchedules) out.push(this._cachedSessionSchedules)
     if (this._cachedTodos) out.push(this._cachedTodos)
     if (this._compacting) {
       out.push({ type: 'status_indicator', indicator: 'compacting', sessionId: this.id, projectPath: this.projectPath })
@@ -2417,6 +2419,8 @@ export class Session implements SessionContract {
       this._cachedSessionAgents = tagged
     } else if (tagged.type === 'session_goal') {
       this._cachedSessionGoal = tagged
+    } else if (tagged.type === 'session_schedules') {
+      this._cachedSessionSchedules = tagged
     } else if (tagged.type === 'todos_updated') {
       this._cachedTodos = tagged
     } else if (tagged.type === 'permission_mode_change') {

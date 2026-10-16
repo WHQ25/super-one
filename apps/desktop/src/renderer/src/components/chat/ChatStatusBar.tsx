@@ -1,6 +1,7 @@
 import { callSession } from '@/lib/session-client'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { StatusBarMailbox } from './chat-status-bar/StatusBarMailbox'
+import { StatusBarSchedules } from './chat-status-bar/StatusBarSchedules'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -241,6 +242,7 @@ export function ChatStatusBar() {
   const activitySignature = useActiveSession((s) => computeBackgroundActivitySignature(s.messages))
   const sessionStatus = useActiveSession((s) => s.status)
   const taskProgress = useActiveSession((s) => s.taskProgress)
+  const sessionSchedules = useActiveSession((s) => s.sessionSchedules)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
   const hiddenPipTarget = useHiddenPipTarget(activeSessionId)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
@@ -734,6 +736,7 @@ export function ChatStatusBar() {
         )}
 
         <StatusBarMailbox sessionId={activeSessionId} />
+        <StatusBarSchedules schedules={sessionSchedules} />
 
         {hiddenPipTarget && (
           <>

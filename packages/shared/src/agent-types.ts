@@ -2300,6 +2300,8 @@ export type AgentEventBase =
    * `goal: null` means there is no longer a goal (cleared, or condition met).
    */
   | { type: 'session_goal'; goal: SessionGoal | null }
+  /** Every timer the runtime will wake this session for; `[]` when none remain. */
+  | { type: 'session_schedules'; schedules: SessionSchedule[] }
   | { type: 'realtime_call_signal'; signal: import('./realtime-voice').VoiceSignal }
   | { type: 'realtime_started'; realtimeSessionId?: string; version: string }
   | { type: 'realtime_sdp'; sdp: string }
@@ -5507,6 +5509,16 @@ export interface HarnessSessionDefaults {
  * settings broadcast — the slider snaps back instead of failing loudly.
  */
 export interface BrandOnlyAgentPreference extends HarnessSessionDefaults, HarnessBrandPreference {}
+
+/** One timer that will wake a session: a cron job, a scheduled wakeup, a `/loop` tick. */
+export interface SessionSchedule {
+  id: string
+  /** Cron expression or harness interval text, as the harness reports it. */
+  schedule: string
+  recurring: boolean
+  /** The prompt the session runs when it fires (harness may clip it). */
+  prompt: string
+}
 
 /**
  * `native`: each harness's own timer tools (Claude CronCreate / ScheduleWakeup / `/loop`).

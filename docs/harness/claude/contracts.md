@@ -144,11 +144,14 @@ re-check an entry when an upgrade touches its area.
   [A mod can start a turn](#a-mod-can-start-a-turn)).
 - **Observed:** 0.3.300 live probe (Stop reported the job after CronCreate and
   `[]` after CronDelete).
-- **Depends on it:** idle runtime release (`hasScheduledWakeups` in
-  `apps/desktop/src/main/session/backends/claude-backend.ts` and
-  `packages/claude/src/claude-live-session.ts`). A turn that ends without a Stop
-  hook (interrupt) leaves the last report standing, which only delays a release.
-  ScheduleWakeup is stored as a one-shot cron, so it appears in the same report.
+- **Depends on it:** `SessionScheduleTracker` (`packages/claude/src/session-crons.ts`),
+  which holds idle runtime release (`hasScheduledWakeups` in desktop
+  `claude-backend.ts` and `claude-live-session.ts`) and emits the
+  `session_schedules` event behind the status bar's Scheduled Wakeups chip. A
+  turn that ends without a Stop hook (interrupt) leaves the last report
+  standing, which only delays a release. ScheduleWakeup is stored as a one-shot
+  cron, so it appears in the same report. A fired timer's turn arrives as
+  `command_lifecycle` then assistant frames, with no user message (0.3.300 probe).
 - **Guard:** `apps/desktop/src/main/session/backends/claude-backend.test.ts`,
   `packages/claude/src/claude-live-session.test.ts`.
 

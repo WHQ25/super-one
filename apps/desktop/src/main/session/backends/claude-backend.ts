@@ -41,6 +41,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
+import { SessionScheduleTracker } from '@superone/claude/session-crons'
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { trace } from '../../agent/event-trace'
@@ -181,7 +182,7 @@ export class ClaudeBackend implements SessionBackend {
   private _spawnedAdditionalDirs: string[] = []
   private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
   /** Crons the live CLI process still holds, as of the last turn end. */
-  private pendingSessionCrons = 0
+  private readonly sessionSchedules = new SessionScheduleTracker((event) => this.emit(event))
   private _proxyBaseUrl: string | null = null
   private _activeRuntimeKey: string | null = null
 
@@ -267,7 +268,7 @@ export class ClaudeBackend implements SessionBackend {
       systemPromptAppend: opts.systemPromptAppend,
       unattended: opts.unattended,
       toolApps: this.toolApps,
-      onSessionCrons: (crons) => { this.pendingSessionCrons = crons.length },
+      onSessionCrons: (crons) => this.sessionSchedules.report(crons),
       schedulingProvider: readAppSettings().schedulingProvider,
     }
   }
@@ -648,7 +649,7 @@ export class ClaudeBackend implements SessionBackend {
     )) return
     // A replaced runtime carries no in-flight turn: never let the latch outlive it.
     this.beginTurn()
-    this.pendingSessionCrons = 0
+    this.sessionSchedules.clear(reason === 'close')
     const liveTasks = this.activeBackgroundTasks
     this.activeBackgroundTasks = null
     if (reason !== 'close' && liveTasks && liveTasks.size > 0) {
@@ -1116,7 +1117,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   hasScheduledWakeups(): boolean {
-    return this.pendingSessionCrons > 0
+    return this.sessionSchedules.hasPending
   }
 
   /**

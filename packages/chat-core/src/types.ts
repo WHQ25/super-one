@@ -20,6 +20,7 @@ import type {
   PlanApprovalRequest,
   RealtimeTimelineSegment,
   SessionGoal,
+  SessionSchedule,
   SessionInfo,
   SlashCommandInfo,
   SubagentRetryInfo,
@@ -201,6 +202,8 @@ export interface ChatCoreSession {
   acpSlashCommandsStatus: 'idle' | 'loading' | 'ready' | 'error'
   /** Harness-neutral goal for this session; null when there is none. */
   sessionGoal: SessionGoal | null
+  /** Timers the runtime will wake this session for. */
+  sessionSchedules: SessionSchedule[]
   /**
    * Codex realtime ("voice") utterances, which are not chat messages — the desktop
    * keeps them in their own `session_realtime_timelines` row. Held here so a remote

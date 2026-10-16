@@ -2474,6 +2474,12 @@ export type Messages = {
       expandTask: string
       collapseTask: string
     }
+    schedules: {
+      title: string
+      recurring: string
+      once: string
+      autonomousLoop: string
+    }
     askUser: {
       yourAnswer: string
       answered: string
@@ -6991,6 +6997,12 @@ export const en: Messages = {
       mailboxReady: 'Inbox has messages',
       expandTask: 'Expand',
       collapseTask: 'Collapse',
+    },
+    schedules: {
+      title: 'Scheduled Wakeups',
+      recurring: 'Recurring',
+      once: 'Once',
+      autonomousLoop: 'Autonomous loop',
     },
     askUser: {
       yourAnswer: 'Your Answer',

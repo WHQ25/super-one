@@ -298,6 +298,9 @@ function reduceEvent(
     case 'session_goal':
       return { sessionGoal: event.goal }
 
+    case 'session_schedules':
+      return { sessionSchedules: event.schedules }
+
     case 'realtime_started':
     case 'realtime_transcript_item':
     case 'realtime_closed':

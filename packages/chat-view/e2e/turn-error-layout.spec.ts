@@ -13,18 +13,28 @@ for (const provider of ['codex', 'claude'] as const) {
     { width: 390, scheme: 'light', fontScale: 1 },
     { width: 320, scheme: 'dark', fontScale: 1.6 },
   ]) {
-    test(`${provider} error details fill a ${width}px ${scheme} phone at ${fontScale}x with usage visible`, async ({ page }, testInfo) => {
+    test(`${provider} error popover fits a ${width}px ${scheme} phone at ${fontScale}x with usage visible`, async ({ page }, testInfo) => {
       await page.context().setOffline(true)
       await page.setViewportSize({ width, height: 844 })
       await page.addInitScript(() => {
-        Object.assign(globalThis, { ReactNativeWebView: { postMessage() {} } })
+        const copiedErrors: string[] = []
+        Object.assign(globalThis, {
+          copiedErrors,
+          ReactNativeWebView: { postMessage(serialized: string) {
+            const request = JSON.parse(serialized)
+            if (request.type === 'requestNative' && request.action === 'copyText') copiedErrors.push(request.payload.text)
+          } },
+        })
       })
       await page.goto(documentUrl)
       await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
       const message: ChatMessage = {
         id: 'failed-turn', role: 'assistant', status: 'error', providerId: provider,
         createdAt: '2026-09-14T00:00:00.000Z',
-        content: [{ type: 'text', text: 'I checked the implementation before the request failed.' }],
+        content: [
+          { type: 'text', text: 'I checked the implementation before the request failed.' },
+          { type: 'notice', id: 'error-notice', level: 'error', text: raw },
+        ],
         metadata: {
           durationMs: 45_000,
           consumedTokens: { input: 18_400, output: 2_600 },
@@ -42,23 +52,35 @@ for (const provider of ['codex', 'claude'] as const) {
       }
       await page.evaluate(({ message: value, scheme, fontScale }) => {
         const target = globalThis as typeof globalThis & { __applyHost: (message: unknown) => void }
+        target.__applyHost({ type: 'channelToken', token: 'turn-error-test' })
         target.__applyHost({ type: 'setTheme', scheme, fontScale })
         target.__applyHost({ type: 'hydrate', sessionStatus: 'idle', messages: [value] })
       }, { message, scheme, fontScale })
 
       const turn = page.locator('article[data-turn-id="failed-turn"]')
       const button = turn.getByRole('button', { name: provider === 'codex' ? 'Request Failed' : 'Usage Limit Reached' })
-      const rawText = turn.getByText(raw, { exact: true })
+      const rawText = page.getByText(raw, { exact: true })
       await expect(rawText).toHaveCount(0)
+      expect(await button.evaluate(element => getComputedStyle(element).color))
+        .toBe(await turn.getByText('18.4k', { exact: true }).evaluate(element => getComputedStyle(element).color))
+      await page.screenshot({ path: testInfo.outputPath('collapsed-error.png') })
+      const turnBounds = await turn.boundingBox()
       await button.click()
+      const popover = page.getByRole('dialog')
+      await expect(popover).toBeVisible()
+      if (provider === 'claude') {
+        await expect(rawText).toHaveCount(0)
+        await popover.getByRole('button', { name: 'Error Details' }).click()
+      }
       await expect(rawText).toBeVisible()
+      await expect(turn.getByText(raw, { exact: true })).toHaveCount(0)
       await expect(turn).toContainText('18.4k')
       await expect(turn).toContainText('2.6k')
+      expect((await turn.boundingBox())!.height).toBeCloseTo(turnBounds!.height, 0)
       const panel = rawText.locator('..')
-      const bodyBounds = await turn.locator('.assistant-reply').boundingBox()
-      const panelBounds = await panel.boundingBox()
-      expect(panelBounds!.x).toBeCloseTo(bodyBounds!.x, 0)
-      expect(panelBounds!.width).toBeCloseTo(bodyBounds!.width, 0)
+      const popoverBounds = await popover.boundingBox()
+      expect(popoverBounds!.x).toBeGreaterThanOrEqual(0)
+      expect(popoverBounds!.x + popoverBounds!.width).toBeLessThanOrEqual(width)
       const label = panel.getByText('terminal_reason', { exact: true })
       const labelLayout = await label.evaluate((element) => {
         const range = document.createRange()
@@ -74,8 +96,15 @@ for (const provider of ['codex', 'claude'] as const) {
       expect(await panel.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
       await page.screenshot({ path: testInfo.outputPath('expanded-error.png') })
-      await button.click()
+      await popover.getByRole('button', { name: 'Copy', exact: true }).click()
+      const copied = await page.evaluate(() => (globalThis as typeof globalThis & { copiedErrors: string[] }).copiedErrors)
+      expect(copied).toHaveLength(1)
+      expect(copied[0]).toContain(raw)
+      expect(copied[0]).toContain(message.metadata!.errorInfo!.requestId)
+      expect(copied[0]).toContain('terminal_reason')
+      await page.keyboard.press('Escape')
       await expect(rawText).toHaveCount(0)
+      await expect(button).toBeFocused()
     })
   }
 }

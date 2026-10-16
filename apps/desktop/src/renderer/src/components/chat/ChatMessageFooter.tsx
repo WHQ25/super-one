@@ -253,8 +253,8 @@ export function DurationFooter({
       {showTerminalReason && (
         <>
           {(showDuration || hasTokens) && <span>·</span>}
-          <AlertTriangle className="size-3 text-warning" />
-          <span className="text-warning">{formatTerminalReason(terminalReason!)}</span>
+          <AlertTriangle className="size-3" />
+          <span>{formatTerminalReason(terminalReason!)}</span>
         </>
       )}
       {showMcpFailure && (() => {

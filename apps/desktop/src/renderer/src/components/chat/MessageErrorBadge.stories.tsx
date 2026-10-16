@@ -148,6 +148,13 @@ export const SingleFailure: Story = {
   ),
 }
 
+export const Expanded: Story = {
+  ...SingleFailure,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('button', { expanded: false }))
+  },
+}
+
 /** Retry ladder — the one detail the old footer could never show. */
 export const WithRetryLadder: Story = {
   args: { info: SAMPLES[4]!.info },

@@ -124,6 +124,7 @@
     "./presenters/turn-footer-model": "./src/presenters/turn-footer-model.ts",
     "./presenters/message-time": "./src/presenters/message-time.ts",
     "./presenters/MessageTime": "./src/presenters/MessageTime.tsx",
+    "./presenters/MessageErrorBadge": "./src/presenters/MessageErrorBadge.tsx",
     "./presenters/turn-process-stats": "./src/presenters/turn-process-stats.ts",
     "./presenters/workflow-utils": "./src/presenters/workflow-utils.ts",
     "./terminal-html": "./src/terminal-html.ts",

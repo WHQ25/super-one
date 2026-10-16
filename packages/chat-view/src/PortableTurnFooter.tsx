@@ -1,13 +1,10 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Clock, Copy, Loader2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, Clock, Copy, Loader2 } from 'lucide-react'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { formatTokens } from '@superone/shared/format-tokens'
 import { cn } from '@superone/ui/lib/utils'
-import {
-  buildAgentErrorDetails,
-  resolveAgentErrorKind,
-} from './presenters/agent-error-presentation'
+import { MessageErrorBadge } from './presenters/MessageErrorBadge'
 import {
   formatTerminalReason,
   turnFooterModel,
@@ -16,49 +13,9 @@ import {
 } from './presenters/turn-footer-model'
 import { requestNative } from './bridge'
 
-/**
- * Keep the trigger in the metadata row, but let expanded details take a full
- * flex line so usage and copy never subtract from the explanation's width.
- * The kind → title/hint mapping is shared with desktop.
- */
-function PortableErrorBadge({ info }: { info: NonNullable<ChatMessage['metadata']>['errorInfo'] }) {
-  const { t } = useTranslation()
-  const kind = resolveAgentErrorKind(info!)
-  const rows = useMemo(() => buildAgentErrorDetails(info!), [info])
-  const [open, setOpen] = useState(false)
-  const detailsId = useId()
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={detailsId}
-        onClick={() => setOpen((value) => !value)}
-        className="flex min-w-0 items-center gap-1 text-left text-warning"
-      >
-        <AlertTriangle className="size-3 shrink-0" />
-        <span>{t(`chat.error.title.${kind}`)}</span>
-        {open ? <ChevronUp className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
-      </button>
-      {open && (
-        <div id={detailsId} className="min-w-0 basis-full rounded-md bg-muted/60 p-2 text-xs leading-relaxed text-muted-foreground">
-          <p className="text-foreground">{t(`chat.error.hint.${kind}`)}</p>
-          {rows.length > 0 && (
-            <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 font-mono">
-              {rows.map((row) => (
-                <Fragment key={row.label}>
-                  <dt className="opacity-60">{row.label}</dt>
-                  <dd className="min-w-0 break-all">{row.value}</dd>
-                </Fragment>
-              ))}
-            </dl>
-          )}
-          <p className="mt-2 border-t pt-2 font-mono break-all whitespace-pre-wrap">{info!.raw}</p>
-        </div>
-      )}
-    </>
-  )
+function copyErrorText(text: string): boolean {
+  requestNative('copyText', { text })
+  return true
 }
 
 /**
@@ -186,13 +143,13 @@ export function PortableTurnFooter({
       {footer.showError && (
         <>
           {(footer.showDuration || footer.hasTokens) && separator}
-          <PortableErrorBadge info={footer.errorInfo} />
+          <MessageErrorBadge info={footer.errorInfo!} onCopy={copyErrorText} />
         </>
       )}
       {footer.showTerminalReason && (
         <>
           {(footer.showDuration || footer.hasTokens) && separator}
-          <Meta className="text-warning">
+          <Meta>
             <AlertTriangle className="size-3" />
             <span>{formatTerminalReason(footer.terminalReason!)}</span>
           </Meta>

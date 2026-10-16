@@ -93,7 +93,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/attachmentOwner/list` | unused | Reverse provider attachment lookup; SuperOne owns its attachment identities. | — |
 | `thread/compact/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/delete` | unused | No client call or dedicated handler. | — |
-| `thread/fork` | used | Calls the app-server RPC. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
+| `thread/fork` | partial | Native session forks are integrated. Experimental prediction-mode generation is live-verified but not yet a product caller; see prompt-prediction.md. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/goal/clear` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
 | `thread/goal/get` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
 | `thread/goal/set` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |

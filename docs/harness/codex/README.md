@@ -27,8 +27,11 @@ Prediction notification reception shares `packages/codex/src/prompt-prediction.t
 across desktop and remote node connections. Valid results use the existing shared
 `prompt_suggestion` event and composer UI: desktop ghost text / Tab-to-fill and
 mobile tappable rows. The receiver remains active after turn completion and
-filters stale or child-thread results. The pinned 0.163.0 server has no prediction
-producer; no prediction request or extra model call is sent. See the
+filters stale or child-thread results. The dedicated 0.163.0 prediction RPC is
+unimplemented, but the official app generates suggestions with an experimental
+ephemeral fork plus ordinary `turn/start`; that path is live-verified on the
+pinned binary. SuperOne has not integrated the generator and sends no extra
+prediction call yet. See [prompt-prediction.md](prompt-prediction.md) and the
 [prediction contract](contracts.md#prediction-protocol-declarations-do-not-imply-a-working-suggestion-engine).
 
 ## Pin locations
@@ -43,6 +46,7 @@ producer; no prediction request or extra model call is sent. See the
 ## Documents
 
 - [multi-account.md](multi-account.md) — ChatGPT accounts bound per conversation
+- [prompt-prediction.md](prompt-prediction.md) — official app flow and live fork-generation proof
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)
 - [upgrades/](upgrades/) — `0.147/` and `0.154/` are multi-part plans written in Chinese
   before this folder existed.

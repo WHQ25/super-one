@@ -127,11 +127,17 @@ items still map to Agent cards.
 - **Behavior:** 0.163.0 declares experimental `thread/prediction/request` and
   `thread/prediction/updated { threadId, sourceTurnId, result }`, but the server
   returns JSON-RPC `-32601` with `thread/prediction/request is not implemented yet`.
-  The release source contains no prediction notification producer. A completed
-  result allows nullable `text`; a failed result contains no suggestion.
+  The release source contains no prediction notification producer. These facts
+  apply to the dedicated RPC/event, not to client-driven generation. The
+  official app uses experimental ephemeral `thread/fork` plus ordinary
+  `turn/start`, which works on 0.163.0. See [prompt-prediction.md](prompt-prediction.md).
+  A dedicated-event completed result allows nullable `text`; a failed result
+  contains no suggestion.
 - **Observed:** Exact `rust-v0.163.0` source and an isolated npm-binary RPC check
   on 2026-10-17. Its stable generated notification schema includes the event
   despite the experimental source annotation and unavailable implementation.
+  A subsequent inspection of installed official app 26.1007.71326 and a live
+  0.163.0 inference probe verified the separate fork-based generator.
 - **Depends on it:** `packages/codex/src/prompt-prediction.ts` is shared by the
   desktop notification dispatcher and node client observer, both alive between
   turns. It accepts only the current root thread's latest observed successful
@@ -146,8 +152,9 @@ items still map to Agent cards.
 - **Guard:** `prompt-prediction.test.ts`, desktop dispatcher-to-chat-core tests,
   node fake-process tests (including an aborted settled request), shared reducer
   and existing composer tests. Upgrade smoke confirms the unavailable request.
-  No request or fallback model call is added. Real upstream prediction generation
-  and notification delivery cannot be exercised on this release.
+  No product generator or extra inference call has been added. Fork-based
+  suggestion generation was exercised separately; native prediction-event
+  production remains unavailable in this release.
 
 ### Model discovery depends on the app-server client version
 

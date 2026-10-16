@@ -268,6 +268,7 @@ export class ClaudeBackend implements SessionBackend {
       unattended: opts.unattended,
       toolApps: this.toolApps,
       onSessionCrons: (crons) => { this.pendingSessionCrons = crons.length },
+      schedulingProvider: readAppSettings().schedulingProvider,
     }
   }
 

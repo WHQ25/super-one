@@ -49,6 +49,10 @@ describe('WarmupManager.keyOf', () => {
     expect(k0).not.toBe(WarmupManager.keyOf(baseOpts({ effort: 'high' as Options['effort'] })))
   })
 
+  it('differs when tools are withheld, so a switched scheduling provider never reuses a stale warm query', () => {
+    expect(WarmupManager.keyOf(baseOpts())).not.toBe(WarmupManager.keyOf(baseOpts({ disallowedTools: ['CronCreate'] })))
+  })
+
   it('differs when Ultracode is on, so a plain warm query never serves an Ultracode turn', () => {
     expect(WarmupManager.keyOf(baseOpts())).not.toBe(WarmupManager.keyOf(baseOpts({ settings: { ultracode: true } })))
   })

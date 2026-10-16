@@ -101,6 +101,12 @@ describe('buildClaudeOptions permissionMode', () => {
     expect(options.allowDangerouslySkipPermissions).toBe(true)
   })
 
+  it('withholds Claude timer tools only when SuperOne owns scheduling', () => {
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', schedulingProvider: 'native' }).disallowedTools).toBeUndefined()
+    expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', schedulingProvider: 'superone' }).disallowedTools)
+      .toEqual(['CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup'])
+  })
+
   it('always enables allowDangerouslySkipPermissions so bypass can be toggled in place via setPermissionMode', () => {
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'bypassPermissions' }).allowDangerouslySkipPermissions).toBe(true)
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'default' }).allowDangerouslySkipPermissions).toBe(true)

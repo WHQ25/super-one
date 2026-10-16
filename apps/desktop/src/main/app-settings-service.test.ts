@@ -118,6 +118,7 @@ describe('app-settings-service', () => {
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
     jevFastLoopEnabled: false,
+    schedulingProvider: 'native',
     browserDownloadDir: null,
     agentPreference: {
       claude: defaultClaude,
@@ -166,6 +167,13 @@ describe('app-settings-service', () => {
         enabled: true,
         allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-flash' }],
       })
+    })
+
+    it('reads schedulingProvider, treating anything but superone as native', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ schedulingProvider: 'superone' }))
+      expect(readAppSettings().schedulingProvider).toBe('superone')
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ schedulingProvider: 'cron' }))
+      expect(readAppSettings().schedulingProvider).toBe('native')
     })
 
     it('reads a malformed dsh subagent model preference as off', () => {
@@ -263,6 +271,7 @@ describe('app-settings-service', () => {
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
         jevFastLoopEnabled: false,
+        schedulingProvider: 'native',
         browserDownloadDir: null,
         agentPreference: {
           claude: {
@@ -428,6 +437,7 @@ describe('app-settings-service', () => {
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
         jevFastLoopEnabled: false,
+        schedulingProvider: 'native',
         browserDownloadDir: null,
         agentPreference: {
           claude: defaultClaude,

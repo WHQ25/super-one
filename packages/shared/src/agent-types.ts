@@ -5508,6 +5508,12 @@ export interface HarnessSessionDefaults {
  */
 export interface BrandOnlyAgentPreference extends HarnessSessionDefaults, HarnessBrandPreference {}
 
+/**
+ * `native`: each harness's own timer tools (Claude CronCreate / ScheduleWakeup / `/loop`).
+ * `superone`: SuperOne's cross-harness scheduler; native timer tools are withheld.
+ */
+export type SchedulingProvider = 'native' | 'superone'
+
 export interface AppSettings {
   analyticsEnabled: boolean
   /** Global sleep policy. The highest level requires explicit user consent. */
@@ -5594,6 +5600,8 @@ export interface AppSettings {
    * never in this settings object). Default off.
    */
   jevFastLoopEnabled: boolean
+  /** Who owns session timers (cron, wakeups, `/loop`); see `SchedulingProvider`. Default `native`. */
+  schedulingProvider: SchedulingProvider
   /**
    * Where built-in browser downloads land — both agent-driven `browser_download`
    * and files the user or page starts. Null → the OS Downloads folder.
@@ -5818,6 +5826,7 @@ export interface AppSettingsPatch {
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean
   jevFastLoopEnabled?: boolean
+  schedulingProvider?: SchedulingProvider
   /** Empty string or null resets to the OS Downloads folder. */
   browserDownloadDir?: string | null
   computerUseEnabled?: boolean

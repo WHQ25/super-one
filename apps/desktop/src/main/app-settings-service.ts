@@ -20,6 +20,7 @@ import type {
   ThemeMode,
   WebmcpTrustedOrigin,
   DshSubagentModelSelection,
+  SchedulingProvider,
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { DEFAULT_SESSION_CONTINUATION_HINT, readSessionContinuationHint } from '@superone/shared/session-continuation'
@@ -60,6 +61,10 @@ function readBrowserDownloadDir(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const dir = value.trim()
   return dir && isAbsolute(dir) ? dir : null
+}
+
+function readSchedulingProvider(value: unknown): SchedulingProvider {
+  return value === 'superone' ? 'superone' : 'native'
 }
 
 function readPowerMode(data: Record<string, unknown>): PowerMode {
@@ -130,6 +135,7 @@ const defaults: AppSettings = {
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
   jevFastLoopEnabled: false,
+  schedulingProvider: 'native',
   browserDownloadDir: null,
   computerUseEnabled: false,
   computerUsePictureInPicture: true,
@@ -667,6 +673,7 @@ export function readAppSettings(): AppSettings {
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
       jevFastLoopEnabled: typeof data.jevFastLoopEnabled === 'boolean' ? data.jevFastLoopEnabled : defaults.jevFastLoopEnabled,
+      schedulingProvider: readSchedulingProvider(data.schedulingProvider),
       browserDownloadDir: readBrowserDownloadDir(data.browserDownloadDir),
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
@@ -752,6 +759,7 @@ export function readAppSettings(): AppSettings {
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
       jevFastLoopEnabled: defaults.jevFastLoopEnabled,
+      schedulingProvider: defaults.schedulingProvider,
       browserDownloadDir: defaults.browserDownloadDir,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUsePictureInPicture: defaults.computerUsePictureInPicture,
@@ -890,6 +898,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
     jevFastLoopEnabled: patch.jevFastLoopEnabled === undefined ? current.jevFastLoopEnabled : patch.jevFastLoopEnabled,
+    schedulingProvider: patch.schedulingProvider === undefined ? current.schedulingProvider : readSchedulingProvider(patch.schedulingProvider),
     browserDownloadDir: patch.browserDownloadDir === undefined
       ? current.browserDownloadDir
       : readBrowserDownloadDir(patch.browserDownloadDir),

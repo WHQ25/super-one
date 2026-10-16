@@ -95,6 +95,7 @@ export class WarmupManager {
       forkSession: opts.forkSession ?? false,
       sessionId: opts.sessionId ?? '',
       previewFormat: opts.toolConfig?.askUserQuestion?.previewFormat ?? '',
+      disallowedTools: [...(opts.disallowedTools ?? [])].sort(),
     })
   }
 

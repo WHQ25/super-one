@@ -42,6 +42,7 @@ const samples: Record<string, unknown> = {
   secondaryHarness: { provider: 'opencode', acpAgentId: null }, suggestionMenuHarness: { provider: 'codex', acpAgentId: null },
   dshSubagentModelSelection: { enabled: true, allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-flash' }] },
   sessionContinuationHint: { enabled: false, minContextTokens: 500_000 },
+  schedulingProvider: 'superone',
 }
 
 export function readSetting(settings: unknown, path: string): unknown {

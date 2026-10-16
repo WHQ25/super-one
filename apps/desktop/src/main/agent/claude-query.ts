@@ -1,7 +1,7 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage, type SessionCronSummary } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
-import type { AgentEvent, ModelUsageInfo, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, ModelUsageInfo, PermissionMode, QuestionPreviewFormat, SandboxInfo, SchedulingProvider, SendMessageRequest } from '@superone/shared/agent-types'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands, sdkSlashCommands } from '@superone/shared/slash-commands'
@@ -18,7 +18,7 @@ import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-ap
 import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
 import { worktreeCwdChange } from '@superone/claude/worktree-cwd'
 import { artifactResultTitle } from '@superone/claude/artifact-result'
-import { sessionCronsStopHook } from '@superone/claude/session-crons'
+import { CLAUDE_SCHEDULING_TOOLS, sessionCronsStopHook } from '@superone/claude/session-crons'
 import { ModSurface, withModDevFoldersEnv, type ModSurfaceQuery } from '@superone/claude/mod-surface'
 import type { MessageBridge } from './message-bridge'
 import { withSubagentResumeSignal } from './subagent-resume-signal'
@@ -76,6 +76,7 @@ export interface SessionQueryOptions {
   toolApps?: ClaudeToolApps
   /** Receives the session's pending crons at each turn end; see `sessionCronsStopHook`. */
   onSessionCrons?: (crons: SessionCronSummary[]) => void
+  schedulingProvider?: SchedulingProvider
   taskBudget?: number
   warmupManager?: WarmupManager
   enabledSkills?: string[]
@@ -129,6 +130,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     // STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES). The canUseTool short-circuit
     // in claude-permissions stays as the backstop for remote node and computer_*.
     allowedTools: [...STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES],
+    ...(opts.schedulingProvider === 'superone' ? { disallowedTools: [...CLAUDE_SCHEDULING_TOOLS] } : {}),
     allowDangerouslySkipPermissions: true,
     canUseTool: opts.canUseTool,
     ...(opts.unattended ? { permissionPrompts: 'none' as const } : {}),

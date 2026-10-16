@@ -5,7 +5,7 @@ import type { SessionAgentsEvent } from './harness/session-catalog'
 import type { UsageForecast } from './subscription-usage'
 import type { AskUserQuestionRequest, QuestionAnnotations, QuestionPreviewFormat } from './user-question-types'
 export type { AskUserQuestionRequest, QuestionAnnotation, QuestionAnnotations, QuestionPreviewFormat, UserQuestion, UserQuestionOption } from './user-question-types'
-import type { TokenOverrides } from './harness-brand'
+import type { HarnessBrandPreference, TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
@@ -5506,10 +5506,7 @@ export interface HarnessSessionDefaults {
  * slot means the write is dropped by the sanitizer and then stomped by the
  * settings broadcast — the slider snaps back instead of failing loudly.
  */
-export interface BrandOnlyAgentPreference extends HarnessSessionDefaults {
-  brandHue: number | null
-  tokenOverrides: TokenOverrides
-}
+export interface BrandOnlyAgentPreference extends HarnessSessionDefaults, HarnessBrandPreference {}
 
 export interface AppSettings {
   analyticsEnabled: boolean
@@ -5680,15 +5677,13 @@ export interface AppSettings {
       defaultEffort: EffortLevel | ''
       defaultPermissionMode: PermissionMode | ''
       defaultSandboxMode: SandboxMode | ''
-      brandHue: number | null
-      tokenOverrides: TokenOverrides
       disabledSkills: string[]
       askUserQuestionPreviewFormat: QuestionPreviewFormat
       /** Draw Claude Code mods' interface (panes, band, redrawn rows). Their hooks run either way. */
       drawModInterfaces: boolean
       /** Mod folders loaded from disk with hot reload (`CLAUDE_CODE_PLUGIN_DIRS`), for developing a mod. */
       modDevFolders: string[]
-    }
+    } & HarnessBrandPreference
     codex: {
       defaultModel: string
       defaultReasoningEffort: CodexReasoningEffort | ''
@@ -5697,9 +5692,7 @@ export interface AppSettings {
       defaultFastMode: boolean
       /** Empty string follows the Codex app-server default voice. */
       realtimeVoice: string
-      brandHue: number | null
-      tokenOverrides: TokenOverrides
-    }
+    } & HarnessBrandPreference
     acp: BrandOnlyAgentPreference & {
       enabled: boolean
       selectedAgentId: string | null

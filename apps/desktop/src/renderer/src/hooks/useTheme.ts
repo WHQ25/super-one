@@ -11,12 +11,14 @@ export function useTheme() {
 
   useEffect(() => {
     let cancelled = false
+    let receivedChange = false
     void window.app.getTheme().then((state) => {
-      if (cancelled) return
+      if (cancelled || receivedChange) return
       setModeState(state.mode)
       setDark(state.dark)
     }).catch(() => {})
     const cleanup = window.app.onThemeChange((state) => {
+      receivedChange = true
       setModeState(state.mode)
       setDark(state.dark)
     })

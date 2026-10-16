@@ -36,7 +36,8 @@ describe('app-settings-service', () => {
     defaultPermissionMode: '',
     defaultSandboxMode: '',
     brandHue: null,
-    tokenOverrides: {},
+    darkBrandHue: null,
+    tokenOverrides: {}, darkTokenOverrides: {},
     disabledSkills: [],
     askUserQuestionPreviewFormat: 'markdown',
     drawModInterfaces: true,
@@ -49,17 +50,19 @@ describe('app-settings-service', () => {
     defaultFastMode: false,
     realtimeVoice: '',
     brandHue: null,
-    tokenOverrides: {},
+    darkBrandHue: null,
+    tokenOverrides: {}, darkTokenOverrides: {},
   }
   const defaultAcp = {
     enabled: false,
     brandHue: null,
-    tokenOverrides: {},
+    darkBrandHue: null,
+    tokenOverrides: {}, darkTokenOverrides: {},
     selectedAgentId: null,
     defaultPermissionMode: '',
   }
   /** Harnesses whose only preferences are brand theming and session defaults. */
-  const defaultBrandOnly = { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '' }
+  const defaultBrandOnly = { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' }
   /** Cursor adds a sandbox toggle of its own. */
   const defaultCursor = { ...defaultBrandOnly, defaultSandboxMode: '' }
   const defaultSettings = {
@@ -268,7 +271,8 @@ describe('app-settings-service', () => {
             defaultPermissionMode: 'acceptEdits',
             defaultSandboxMode: 'off',
             brandHue: null,
-            tokenOverrides: {},
+            darkBrandHue: null,
+            tokenOverrides: {}, darkTokenOverrides: {},
             disabledSkills: [],
             askUserQuestionPreviewFormat: 'markdown',
             drawModInterfaces: true,
@@ -281,7 +285,8 @@ describe('app-settings-service', () => {
             defaultFastMode: true,
             realtimeVoice: '',
             brandHue: null,
-            tokenOverrides: {},
+            darkBrandHue: null,
+            tokenOverrides: {}, darkTokenOverrides: {},
           },
           acp: defaultAcp,
           cursor: defaultCursor,
@@ -433,7 +438,8 @@ describe('app-settings-service', () => {
             defaultFastMode: false,
             realtimeVoice: '',
             brandHue: null,
-            tokenOverrides: {},
+            darkBrandHue: null,
+            tokenOverrides: {}, darkTokenOverrides: {},
           },
           acp: defaultAcp,
           cursor: defaultCursor,

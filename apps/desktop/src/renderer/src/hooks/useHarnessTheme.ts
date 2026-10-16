@@ -7,6 +7,8 @@ import {
   HARNESS_DEFAULT_BRAND_HUE,
   LCH_CHANNELS,
   inkForFill,
+  lchToCss,
+  resolveDarkPrimary,
   resolveTokenLCH,
   type DesignToken,
   type LCH,
@@ -19,7 +21,7 @@ function readDarkClass(): boolean {
   return document.documentElement.classList.contains('dark')
 }
 
-function useDarkClass(): boolean {
+export function useDarkClass(): boolean {
   const [dark, setDark] = useState<boolean>(readDarkClass)
   useEffect(() => {
     const observer = new MutationObserver(() => setDark(readDarkClass()))
@@ -58,11 +60,12 @@ const EMPTY_SNAPSHOT: AppliedSnapshot = { props: new Map() }
  */
 function lightPaletteProps(harness: HarnessId, hue: number | null, overrides: TokenOverrides): Map<string, string> {
   const props = new Map<string, string>()
-  if (hue !== null) props.set('--brand-hue', String(hue))
+  const effectiveHue = hue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
+  props.set('--brand-hue', String(effectiveHue))
 
   const resolved = {} as Record<DesignToken, LCH>
   for (const token of DESIGN_TOKENS) {
-    const lch = resolveTokenLCH(harness, token, overrides[token], hue)
+    const lch = resolveTokenLCH(harness, token, overrides[token], effectiveHue)
     resolved[token] = lch
     for (const ch of LCH_CHANNELS) props.set(`${token}-${ch}`, String(lch[ch]))
   }
@@ -81,9 +84,7 @@ function syncBrandProps(
   dark: boolean,
   prev: AppliedSnapshot,
 ): AppliedSnapshot {
-  // Dark mode is hue-agnostic and fully authored in `.dark`, so every inline
-  // property has to go — an inline value would outrank the class rule.
-  const next = dark ? new Map<string, string>() : lightPaletteProps(harness, hue, overrides)
+  const next = dark ? darkPaletteProps(hue, overrides) : lightPaletteProps(harness, hue, overrides)
 
   for (const name of prev.props.keys()) {
     if (!next.has(name)) el.style.removeProperty(name)
@@ -94,23 +95,28 @@ function syncBrandProps(
   return { props: next }
 }
 
+function darkPaletteProps(hue: number | null, overrides: TokenOverrides): Map<string, string> {
+  const fill = lchToCss(resolveDarkPrimary(hue, overrides['--primary']))
+  // Preserve the original foregrounds and neutral dark/glass tokens in CSS.
+  return new Map(DERIVED_INK.map(([token]) => [token, fill]))
+}
+
 export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
-  const brandHue = useAppStore((s) => s.brandHues[harness])
-  const overrides = useAppStore((s) => s.tokenOverrides[harness])
+  const brandHue = useAppStore((s) => (dark ? s.darkBrandHues : s.brandHues)[harness])
+  const overrides = useAppStore((s) => (dark ? s.darkTokenOverrides : s.tokenOverrides)[harness])
 
   const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const userHue = brandHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
     el.dataset.harness = harness
     el.classList.toggle('brand-scope', !dark)
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      appliedRef.current = syncBrandProps(el, harness, userHue, overrides, dark, appliedRef.current)
+      appliedRef.current = syncBrandProps(el, harness, brandHue, overrides, dark, appliedRef.current)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
@@ -121,8 +127,8 @@ export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
 export function useHarnessTheme(): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
-  const brandHue = useAppStore((s) => s.brandHues[harness])
-  const overrides = useAppStore((s) => s.tokenOverrides[harness])
+  const brandHue = useAppStore((s) => (dark ? s.darkBrandHues : s.brandHues)[harness])
+  const overrides = useAppStore((s) => (dark ? s.darkTokenOverrides : s.tokenOverrides)[harness])
   const terminalLightPalette = useAppStore((s) => s.terminalLightPalette)
   const terminalDarkPalette = useAppStore((s) => s.terminalDarkPalette)
   const terminalFontSize = useAppStore((s) => s.terminalFontSize)
@@ -133,7 +139,6 @@ export function useHarnessTheme(): void {
   const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
 
   useEffect(() => {
-    const userHue = brandHue ?? HARNESS_DEFAULT_BRAND_HUE[harness]
     const root = document.documentElement
     root.dataset.harness = harness
     root.classList.toggle('liquid-glass', shouldApplyLiquidGlassClass(liquidGlass, window.app))
@@ -152,7 +157,7 @@ export function useHarnessTheme(): void {
 
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      appliedRef.current = syncBrandProps(root, harness, userHue, overrides, dark, appliedRef.current)
+      appliedRef.current = syncBrandProps(root, harness, brandHue, overrides, dark, appliedRef.current)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)

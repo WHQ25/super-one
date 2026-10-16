@@ -58,8 +58,8 @@ function sample(path: string, initial: unknown): unknown {
   if (typeof initial === 'number') return initial + 1
   if (path.startsWith('agentPreference.')) {
     const [, harness, key] = path.split('.')
-    if (key === 'brandHue') return 130
-    if (key === 'tokenOverrides') return { '--primary': { l: 0.55, c: 0.12, h: 130 } }
+    if (key === 'brandHue' || key === 'darkBrandHue') return 130
+    if (key === 'tokenOverrides' || key === 'darkTokenOverrides') return { '--primary': { l: 0.55, c: 0.12, h: 130 } }
     if (key === 'defaultModel') return harness === 'claude' ? 'claude-sonnet-4-6' : 'gpt-6.1-sol'
     if (key === 'defaultEffort' || key === 'defaultReasoningEffort') return 'high'
     if (key === 'defaultPermissionPreset') return 'full-access'

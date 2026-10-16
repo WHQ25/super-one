@@ -23,7 +23,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { DEFAULT_SESSION_CONTINUATION_HINT, readSessionContinuationHint } from '@superone/shared/session-continuation'
-import { sanitizeOverrides } from '@superone/shared/harness-brand'
+import { readHarnessBrandPreference } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { explicitClaudeModelId } from '@superone/claude'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
@@ -155,7 +155,8 @@ const defaults: AppSettings = {
       defaultPermissionMode: '',
       defaultSandboxMode: '',
       brandHue: null,
-      tokenOverrides: {},
+      darkBrandHue: null,
+      tokenOverrides: {}, darkTokenOverrides: {},
       disabledSkills: [],
       askUserQuestionPreviewFormat: 'markdown',
       drawModInterfaces: true,
@@ -168,18 +169,20 @@ const defaults: AppSettings = {
       defaultFastMode: false,
       realtimeVoice: '',
       brandHue: null,
-      tokenOverrides: {},
+      darkBrandHue: null,
+      tokenOverrides: {}, darkTokenOverrides: {},
     },
     acp: {
       enabled: false,
       brandHue: null,
-      tokenOverrides: {},
+      darkBrandHue: null,
+      tokenOverrides: {}, darkTokenOverrides: {},
       selectedAgentId: null,
       defaultPermissionMode: '',
     },
-    cursor: { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '', defaultSandboxMode: '' },
-    dsh: { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '' },
-    opencode: { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '' },
+    cursor: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '', defaultSandboxMode: '' },
+    dsh: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' },
+    opencode: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' },
   },
 }
 
@@ -266,13 +269,6 @@ export function moveHarnessOrderKey(order: string[], key: string, index: number)
 function preferenceFromOrderKey(key: string | undefined): SuggestionHarnessPreference | null {
   if (!key) return null
   return parseSuggestionHarnessKey(key)
-}
-
-function readBrandHue(value: unknown): number | null {
-  if (value === null || value === undefined) return null
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null
-  const wrapped = ((value % 360) + 360) % 360
-  return Math.round(wrapped)
 }
 
 function isLocale(value: unknown): value is Locale {
@@ -508,8 +504,7 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
     defaultSandboxMode: claudePreference?.defaultSandboxMode === '' || isSandboxMode(claudePreference?.defaultSandboxMode)
       ? (claudePreference.defaultSandboxMode as SandboxMode | '')
       : defaults.agentPreference.claude.defaultSandboxMode,
-    brandHue: readBrandHue(claudePreference?.brandHue),
-    tokenOverrides: sanitizeOverrides(claudePreference?.tokenOverrides),
+    ...readHarnessBrandPreference(claudePreference),
     disabledSkills: Array.isArray(claudePreference?.disabledSkills)
       ? claudePreference.disabledSkills.filter((x): x is string => typeof x === 'string')
       : defaults.agentPreference.claude.disabledSkills,
@@ -559,8 +554,7 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
       : defaults.agentPreference.codex.defaultFastMode,
     realtimeVoice: readCodexRealtimeVoice(codexPreference?.realtimeVoice)
       ?? defaults.agentPreference.codex.realtimeVoice,
-    brandHue: readBrandHue(codexPreference?.brandHue),
-    tokenOverrides: sanitizeOverrides(codexPreference?.tokenOverrides),
+    ...readHarnessBrandPreference(codexPreference),
   }
 }
 
@@ -576,8 +570,7 @@ function readAcpPreference(data: Record<string, unknown>): AcpPref {
     enabled: typeof acpPreference?.enabled === 'boolean'
       ? acpPreference.enabled
       : defaults.agentPreference.acp.enabled,
-    brandHue: readBrandHue(acpPreference?.brandHue),
-    tokenOverrides: sanitizeOverrides(acpPreference?.tokenOverrides),
+    ...readHarnessBrandPreference(acpPreference),
     selectedAgentId: typeof acpPreference?.selectedAgentId === 'string'
       ? acpPreference.selectedAgentId
       : defaults.agentPreference.acp.selectedAgentId,
@@ -589,8 +582,7 @@ function readAcpPreference(data: Record<string, unknown>): AcpPref {
 function readBrandOnlyPreference(data: Record<string, unknown>, key: 'dsh' | 'opencode'): BrandOnlyPref {
   const pref = readAgentPreferenceSlot(data, key)
   return {
-    brandHue: readBrandHue(pref?.brandHue),
-    tokenOverrides: sanitizeOverrides(pref?.tokenOverrides),
+    ...readHarnessBrandPreference(pref),
     defaultPermissionMode: readHarnessPermissionMode(pref, key),
   }
 }
@@ -601,8 +593,7 @@ function readCursorPreference(data: Record<string, unknown>): AppSettings['agent
   const sandboxMode = pref?.defaultSandboxMode
   const offered: readonly string[] = HARNESS_LAUNCH_OPTIONS.cursor.sandboxModes
   return {
-    brandHue: readBrandHue(pref?.brandHue),
-    tokenOverrides: sanitizeOverrides(pref?.tokenOverrides),
+    ...readHarnessBrandPreference(pref),
     defaultPermissionMode: readHarnessPermissionMode(pref, 'cursor'),
     defaultSandboxMode: typeof sandboxMode === 'string' && offered.includes(sandboxMode)
       ? sandboxMode as SandboxMode

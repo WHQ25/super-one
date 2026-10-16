@@ -16,8 +16,8 @@ function agentPreferenceWith(
       defaultPermissionMode: modes[harnessId] ?? '',
       defaultSandboxMode: '',
       defaultPermissionPreset: '',
-      brandHue: null,
-      tokenOverrides: {},
+      brandHue: null, darkBrandHue: null,
+      tokenOverrides: {}, darkTokenOverrides: {},
     }]),
   ) as unknown as AppSettings['agentPreference']
 }

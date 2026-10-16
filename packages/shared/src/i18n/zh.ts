@@ -1132,6 +1132,18 @@ export const zh: Messages = {
     appearance: {
       title: '外观',
       interface: '界面',
+      palette: {
+        customize: '自定义 {{harness}} 颜色',
+        hue: '{{harness}} 主色色相',
+        advanced: '高级',
+        reset: '重置',
+        resetAll: '全部重置',
+        lightPalette: '亮色配色',
+        darkPalette: '暗色配色',
+        overriddenHues: '{{count}} 个 token 已单独设置色相，不会跟随此滑杆。',
+        customized: '已自定义 {{count}} 项',
+        noCustomizations: '暂无自定义',
+      },
       theme: {
         label: '主题',
         system: '跟随系统',

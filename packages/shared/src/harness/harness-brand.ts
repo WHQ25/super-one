@@ -20,6 +20,8 @@ export const BRAND_HUE_LIGHTNESS = 0.68
 export const BRAND_HUE_CHROMA = 0.24
 
 export type LCH = { l: number; c: number; h: number; a: number }
+/** Original dark primary, shared by every harness until the user changes its hue. */
+export const DEFAULT_DARK_PRIMARY: Readonly<LCH> = { l: 0.55, c: 0.17, h: 255, a: 1 }
 export type LCHPartial = Partial<LCH>
 export type LCHChannel = 'l' | 'c' | 'h' | 'a'
 export const LCH_CHANNELS: readonly LCHChannel[] = ['l', 'c', 'h', 'a'] as const
@@ -52,6 +54,7 @@ export const DESIGN_TOKENS = [
 ] as const
 
 export type DesignToken = typeof DESIGN_TOKENS[number]
+export const DARK_DESIGN_TOKENS: readonly DesignToken[] = ['--primary']
 
 export type TokenGroup = 'surface' | 'foreground' | 'accent'
 
@@ -83,6 +86,30 @@ export const TOKEN_GROUP: Record<DesignToken, TokenGroup> = {
 }
 
 export type TokenOverrides = Partial<Record<DesignToken, LCHPartial>>
+
+export interface HarnessBrandPreference {
+  brandHue: number | null
+  darkBrandHue: number | null
+  tokenOverrides: TokenOverrides
+  darkTokenOverrides: TokenOverrides
+}
+
+/** Old profiles have no dark hue; each appearance keeps its own preference. */
+export function readHarnessBrandPreference(raw: Record<string, unknown> | undefined): HarnessBrandPreference {
+  const readHue = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? clampBrandHue(value) : null
+  return {
+    brandHue: readHue(raw?.brandHue),
+    darkBrandHue: readHue(raw?.darkBrandHue),
+    tokenOverrides: sanitizeOverrides(raw?.tokenOverrides),
+    darkTokenOverrides: sanitizeOverrides(raw?.darkTokenOverrides, DARK_DESIGN_TOKENS),
+  }
+}
+
+/** Only primary can be edited in dark mode; neutral surfaces stay authored in CSS. */
+export function resolveDarkPrimary(hue: number | null, override?: LCHPartial): LCH {
+  return resolveLCH(DEFAULT_DARK_PRIMARY, override, hue)
+}
 
 /**
  * Largest chroma that stays inside sRGB for a given OKLCh lightness + hue.
@@ -291,8 +318,11 @@ export function resolveTokenLCH(
   override: LCHPartial | undefined,
   brandHue: number | null,
 ): LCH {
-  const def = HARNESS_DEFAULT_TOKENS[harness][token]
-  const fallbackHue = brandHue ?? def.h
+  return resolveLCH(HARNESS_DEFAULT_TOKENS[harness][token], override, brandHue)
+}
+
+function resolveLCH(def: Readonly<LCH>, override: LCHPartial | undefined, hue: number | null): LCH {
+  const fallbackHue = hue ?? def.h
   return {
     l: clampL(override?.l ?? def.l),
     c: clampC(override?.c ?? def.c),
@@ -307,10 +337,10 @@ export function lchToCss(lch: LCH): string {
     : `oklch(${lch.l} ${lch.c} ${lch.h})`
 }
 
-export function sanitizeOverrides(raw: unknown): TokenOverrides {
+export function sanitizeOverrides(raw: unknown, tokens: readonly DesignToken[] = DESIGN_TOKENS): TokenOverrides {
   if (!raw || typeof raw !== 'object') return {}
   const result: TokenOverrides = {}
-  for (const token of DESIGN_TOKENS) {
+  for (const token of tokens) {
     const entry = (raw as Record<string, unknown>)[token]
     if (!entry || typeof entry !== 'object') continue
     const e = entry as Record<string, unknown>

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Palette, RotateCcw, Settings2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -15,7 +16,7 @@ import {
   SelectValue,
 } from '@superone/ui/components/ui/select'
 import { useAppStore } from '@/stores/app'
-import { useActiveHarness } from '@/hooks/useHarnessTheme'
+import { useActiveHarness, useDarkClass } from '@/hooks/useHarnessTheme'
 import type { HarnessId } from '@superone/shared/session-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import {
@@ -23,17 +24,22 @@ import {
   clampBrandHue,
   countOverriddenHues,
   DESIGN_TOKENS,
+  DARK_DESIGN_TOKENS,
+  DEFAULT_DARK_PRIMARY,
   HARNESS_DEFAULT_BRAND_HUE,
   HARNESS_DEFAULT_TOKENS,
   listOverriddenHueTokens,
   resolveTokenLCH,
+  resolveDarkPrimary,
   TOKEN_GROUP,
   type DesignToken,
   type LCH,
   type LCHPartial,
   type TokenGroup,
+  type TokenOverrides,
 } from '@superone/shared/harness-brand'
 import { LCHEditor } from './LCHEditor'
+import { BrandAppearanceControls } from './BrandAppearanceControls'
 
 const GROUP_LABEL: Record<TokenGroup, string> = {
   surface: 'Surface',
@@ -53,27 +59,15 @@ const HUE_GRADIENT = (() => {
   return `linear-gradient(to right, ${stops.join(', ')})`
 })()
 
-function readDarkClass(): boolean {
-  return document.documentElement.classList.contains('dark')
-}
-
-function useIsLightMode(): boolean {
-  const [light, setLight] = useState<boolean>(() => !readDarkClass())
-  useEffect(() => {
-    const observer = new MutationObserver(() => setLight(!readDarkClass()))
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
-  return light
-}
-
 type Mode = 'basic' | 'advanced'
 
-export function BrandColorPopover(): React.JSX.Element | null {
-  const isLight = useIsLightMode()
+export function BrandColorPopover(): React.JSX.Element {
+  const { t } = useTranslation()
+  const dark = useDarkClass()
+  const scheme = dark ? 'dark' : 'light'
   const harness = useActiveHarness()
-  const userHue = useAppStore((s) => s.brandHues[harness])
-  const overrides = useAppStore((s) => s.tokenOverrides[harness])
+  const userHue = useAppStore((s) => (dark ? s.darkBrandHues : s.brandHues)[harness])
+  const overrides = useAppStore((s) => (dark ? s.darkTokenOverrides : s.tokenOverrides)[harness])
   const setBrandHue = useAppStore((s) => s.setBrandHue)
   const setTokenOverride = useAppStore((s) => s.setTokenOverride)
   const resetTokenOverride = useAppStore((s) => s.resetTokenOverride)
@@ -81,19 +75,19 @@ export function BrandColorPopover(): React.JSX.Element | null {
 
   const [mode, setMode] = useState<Mode>('basic')
   const [selectedToken, setSelectedToken] = useState<DesignToken>('--background')
+  const activeToken = dark ? '--primary' : selectedToken
 
-  if (!isLight) return null
-
-  const defaultHue = HARNESS_DEFAULT_BRAND_HUE[harness]
+  const defaultHue = dark ? DEFAULT_DARK_PRIMARY.h : HARNESS_DEFAULT_BRAND_HUE[harness]
   const effective = userHue ?? defaultHue
   const isCustom = userHue !== null && userHue !== defaultHue
   const label = HARNESS_CAPABILITIES[harness].displayName
   const overriddenHueCount = countOverriddenHues(overrides)
   const overriddenHueTokens = listOverriddenHueTokens(overrides)
+  const title = t('settings.appearance.palette.customize', { harness: label })
 
   const handleHueChange = (raw: number) => {
     const safe = clampBrandHue(raw)
-    setBrandHue(harness, safe === defaultHue ? null : safe)
+    void setBrandHue(harness, safe === defaultHue ? null : safe, scheme)
   }
 
   return (
@@ -102,39 +96,44 @@ export function BrandColorPopover(): React.JSX.Element | null {
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
-              <IconButton size="sm" aria-label={`Customize ${label} color`}>
+              <IconButton size="sm" aria-label={title}>
                 <Palette />
               </IconButton>
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <span>Customize {label} color</span>
+            <span>{title}</span>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <PopoverContent side="top" align="start" className="w-80 p-3">
         {mode === 'basic' ? (
-          <BasicMode
-            label={label}
-            effective={effective}
-            isCustom={isCustom}
-            overriddenHueCount={overriddenHueCount}
-            overriddenHueTokens={overriddenHueTokens}
-            onHueChange={handleHueChange}
-            onReset={() => setBrandHue(harness, null)}
-            onAdvanced={() => setMode('advanced')}
-          />
+          <>
+            <BrandAppearanceControls />
+            <BasicMode
+              label={label}
+              effective={effective}
+              isCustom={isCustom}
+              dark={dark}
+              overriddenHueCount={overriddenHueCount}
+              overriddenHueTokens={overriddenHueTokens}
+              onHueChange={handleHueChange}
+              onReset={() => void setBrandHue(harness, null, scheme)}
+              onAdvanced={() => setMode('advanced')}
+            />
+          </>
         ) : (
           <AdvancedMode
             harness={harness}
+            dark={dark}
             label={label}
             userHue={userHue}
             overrides={overrides}
-            selectedToken={selectedToken}
+            selectedToken={activeToken}
             onSelectToken={setSelectedToken}
-            onTokenChange={(partial) => void setTokenOverride(harness, selectedToken, partial)}
-            onResetToken={(token) => void resetTokenOverride(harness, token)}
-            onResetAll={() => void resetAllTokenOverrides(harness)}
+            onTokenChange={(partial) => void setTokenOverride(harness, activeToken, partial, scheme)}
+            onResetToken={(token) => void resetTokenOverride(harness, token, scheme)}
+            onResetAll={() => void resetAllTokenOverrides(harness, scheme)}
             onBack={() => setMode('basic')}
           />
         )}
@@ -147,27 +146,30 @@ interface BasicModeProps {
   label: string
   effective: number
   isCustom: boolean
+  dark: boolean
   overriddenHueCount: number
   overriddenHueTokens: DesignToken[]
   onHueChange: (h: number) => void
   onReset: () => void
-  onAdvanced: () => void
+  onAdvanced?: () => void
 }
 
 function BasicMode({
   label,
   effective,
   isCustom,
+  dark,
   overriddenHueCount,
   overriddenHueTokens,
   onHueChange,
   onReset,
   onAdvanced,
 }: BasicModeProps) {
+  const { t } = useTranslation()
   return (
     <>
       <p className="mb-3 text-xs font-medium">
-        Customize {label} color
+        {t('settings.appearance.palette.customize', { harness: label })}
       </p>
 
       <div className="flex items-center gap-2">
@@ -197,7 +199,7 @@ function BasicMode({
                        [&::-webkit-slider-thumb]:ring-2
                        [&::-webkit-slider-thumb]:ring-foreground/30
                        [&::-webkit-slider-thumb]:active:cursor-grabbing"
-            aria-label={`${label} brand hue`}
+            aria-label={t('settings.appearance.palette.hue', { harness: label })}
           />
         </div>
         <span className="w-10 text-right font-mono text-xs tabular-nums text-muted-foreground">
@@ -210,35 +212,38 @@ function BasicMode({
           className="mt-2 text-[11px] text-amber-600 dark:text-amber-400"
           title={overriddenHueTokens.join(', ')}
         >
-          ⓘ {overriddenHueCount} token{overriddenHueCount === 1 ? '' : 's'} have custom hue (won't follow this slider)
+          {t('settings.appearance.palette.overriddenHues', { count: overriddenHueCount })}
         </p>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onAdvanced}
-          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          <Settings2 className="size-3" />
-          Advanced
-        </Button>
-        <div className="flex items-center gap-3">
-          <p className="text-[11px] text-muted-foreground">
-            Light mode only
-          </p>
-          {isCustom && (
+      <div className="mt-3 border-t border-border pt-3">
+        <div className="flex h-7 items-center gap-2">
+          {onAdvanced && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={onReset}
+              onClick={onAdvanced}
               className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
             >
-              <RotateCcw className="size-3" />
-              Reset
+              <Settings2 className="size-3" />
+              {t('settings.appearance.palette.advanced')}
             </Button>
           )}
+          <p className={cn('min-w-0 flex-1 truncate text-[11px] text-muted-foreground', onAdvanced && 'text-right')}>
+            {t(`settings.appearance.palette.${dark ? 'darkPalette' : 'lightPalette'}`)}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onReset}
+            disabled={!isCustom}
+            aria-hidden={!isCustom}
+            tabIndex={isCustom ? 0 : -1}
+            className={cn('h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground', !isCustom && 'invisible')}
+          >
+            <RotateCcw className="size-3" />
+            {t('settings.appearance.palette.reset')}
+          </Button>
         </div>
       </div>
     </>
@@ -247,9 +252,10 @@ function BasicMode({
 
 interface AdvancedModeProps {
   harness: HarnessId
+  dark: boolean
   label: string
   userHue: number | null
-  overrides: Record<string, unknown>
+  overrides: TokenOverrides
   selectedToken: DesignToken
   onSelectToken: (token: DesignToken) => void
   onTokenChange: (partial: LCHPartial) => void
@@ -260,6 +266,7 @@ interface AdvancedModeProps {
 
 function AdvancedMode({
   harness,
+  dark,
   label,
   userHue,
   overrides,
@@ -270,12 +277,13 @@ function AdvancedMode({
   onResetAll,
   onBack,
 }: AdvancedModeProps) {
-  const currentLCH: LCH = useMemo(
-    () => resolveTokenLCH(harness, selectedToken, overrides[selectedToken] as LCH | undefined, userHue),
-    [harness, selectedToken, overrides, userHue],
-  )
+  const { t } = useTranslation()
+  const currentLCH: LCH = dark
+    ? resolveDarkPrimary(userHue, overrides['--primary'])
+    : resolveTokenLCH(harness, selectedToken, overrides[selectedToken], userHue)
 
-  const defaultLCH = HARNESS_DEFAULT_TOKENS[harness][selectedToken]
+  const defaultLCH = dark ? DEFAULT_DARK_PRIMARY : HARNESS_DEFAULT_TOKENS[harness][selectedToken]
+  const tokens = dark ? DARK_DESIGN_TOKENS : DESIGN_TOKENS
   const isOverridden = selectedToken in overrides
   const overrideCount = Object.keys(overrides).length
 
@@ -289,9 +297,9 @@ function AdvancedMode({
           className="h-7 -ml-2 px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3" />
-          Back
+          {t('common.back')}
         </Button>
-        <span className="text-[11px] text-muted-foreground">{label} · advanced</span>
+        <span className="text-[11px] text-muted-foreground">{label} · {t('settings.appearance.palette.advanced')}</span>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -303,10 +311,10 @@ function AdvancedMode({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(Object.keys(TOKEN_BY_GROUP) as TokenGroup[]).map((group) => (
+            {(Object.keys(TOKEN_BY_GROUP) as TokenGroup[]).filter(group => TOKEN_BY_GROUP[group].some(token => tokens.includes(token))).map((group) => (
               <SelectGroup key={group}>
                 <SelectLabel>{GROUP_LABEL[group]}</SelectLabel>
-                {TOKEN_BY_GROUP[group].map((token) => (
+                {TOKEN_BY_GROUP[group].filter(token => tokens.includes(token)).map((token) => (
                   <SelectItem key={token} value={token} className="font-mono text-xs">
                     {token}{token in overrides ? ' ●' : ''}
                   </SelectItem>
@@ -335,13 +343,15 @@ function AdvancedMode({
           )}
         >
           <RotateCcw className="size-3" />
-          Reset
+          {t('settings.appearance.palette.reset')}
         </Button>
       </div>
 
       <div className="flex h-7 items-center justify-between border-t border-border pt-2">
         <p className="text-[11px] text-muted-foreground">
-          {overrideCount > 0 ? `${overrideCount} customized` : 'No customizations'}
+          {overrideCount > 0
+            ? t('settings.appearance.palette.customized', { count: overrideCount })
+            : t('settings.appearance.palette.noCustomizations')}
         </p>
         <Button
           variant="ghost"
@@ -355,7 +365,7 @@ function AdvancedMode({
           )}
         >
           <RotateCcw className="size-3" />
-          Reset all
+          {t('settings.appearance.palette.resetAll')}
         </Button>
       </div>
     </div>

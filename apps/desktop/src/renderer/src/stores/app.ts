@@ -6,16 +6,7 @@ import {
   readSessionContinuationHint,
   type SessionContinuationHintSettings,
 } from '@superone/shared/session-continuation'
-import {
-  clampA,
-  clampBrandHue,
-  clampC,
-  clampHue,
-  clampL,
-  type DesignToken,
-  type LCHPartial,
-  type TokenOverrides,
-} from '@superone/shared/harness-brand'
+import { createHarnessThemeSlice, readHarnessThemeSettings, type HarnessThemeState } from './harness-theme'
 import { resolveProvider } from './chat-store/helpers/provider-routing'
 import type { HarnessCatalogStatus } from '@/lib/harness-visibility'
 import { useFileTreeStore } from './file-tree'
@@ -117,7 +108,7 @@ function normalizeRemoteDeviceConfig(config: RemoteDeviceConfig): RemoteDeviceCo
   }
 }
 
-interface AppState {
+interface AppState extends HarnessThemeState {
   view: AppView
   currentFolder: string | null
   currentProjectId: string | null
@@ -225,10 +216,7 @@ interface AppState {
   loadRemoteConfig: () => Promise<void>
   setRemoteConfig: (config: RemoteDeviceConfig) => void
 
-  // Brand hue (per-harness, light mode only)
-  brandHues: Record<HarnessId, number | null>
   loadBrandHues: () => Promise<void>
-  setBrandHue: (harness: HarnessId, hue: number | null) => Promise<void>
 
   experimentalAgentsEnabled: boolean
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
@@ -277,12 +265,6 @@ interface AppState {
   setAutoExpandFileDiffs: (enabled: boolean) => Promise<void>
   setDetailChatMode: (enabled: boolean) => Promise<void>
   setSessionContinuationHint: (patch: Partial<SessionContinuationHintSettings>) => Promise<void>
-
-  // Per-token LCH overrides (per-harness, light mode only)
-  tokenOverrides: Record<HarnessId, TokenOverrides>
-  setTokenOverride: (harness: HarnessId, token: DesignToken, partial: LCHPartial) => Promise<void>
-  resetTokenOverride: (harness: HarnessId, token: DesignToken) => Promise<void>
-  resetAllTokenOverrides: (harness: HarnessId) => Promise<void>
 
   // Worktree management
   setPendingWorktree: (projectPath: string, baseBranch: string) => void
@@ -1158,8 +1140,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     window.app.saveRemoteConfig(config)
   },
 
-  brandHues: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
-  tokenOverrides: { claude: {}, codex: {}, acp: {}, opencode: {}, cursor: {}, dsh: {} },
+  ...createHarnessThemeSlice(set, get),
   harnessCatalog: null,
   refreshHarnessCatalog: async () => {
     try {
@@ -1222,22 +1203,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const settings = await window.app.getAppSettings()
       set({
-        brandHues: {
-          claude: settings.agentPreference.claude.brandHue,
-          codex: settings.agentPreference.codex.brandHue,
-          acp: settings.agentPreference.acp?.brandHue ?? null,
-          cursor: settings.agentPreference.cursor?.brandHue ?? null,
-          dsh: settings.agentPreference.dsh?.brandHue ?? null,
-          opencode: settings.agentPreference.opencode?.brandHue ?? null,
-        },
-        tokenOverrides: {
-          claude: settings.agentPreference.claude.tokenOverrides ?? {},
-          codex: settings.agentPreference.codex.tokenOverrides ?? {},
-          acp: settings.agentPreference.acp?.tokenOverrides ?? {},
-          cursor: settings.agentPreference.cursor?.tokenOverrides ?? {},
-          dsh: settings.agentPreference.dsh?.tokenOverrides ?? {},
-          opencode: settings.agentPreference.opencode?.tokenOverrides ?? {},
-        },
+        ...readHarnessThemeSettings(settings),
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
         experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
@@ -1377,63 +1343,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       .saveAppSettings({ terminalFontSize: size })
       .catch((err) => console.error('[terminal-font] persist failed:', err))
   },
-
-  setBrandHue: async (harness, hue) => {
-    const normalized = hue === null ? null : clampBrandHue(hue)
-    set({ brandHues: { ...get().brandHues, [harness]: normalized } })
-    schedulePersist(harness, get)
-  },
-
-  setTokenOverride: async (harness, token, partial) => {
-    const current = get().tokenOverrides[harness]
-    const prev = current[token] ?? {}
-    const merged: LCHPartial = { ...prev }
-    if (partial.l !== undefined) merged.l = clampL(partial.l)
-    if (partial.c !== undefined) merged.c = clampC(partial.c)
-    if (partial.h !== undefined) merged.h = clampHue(partial.h)
-    if (partial.a !== undefined) merged.a = clampA(partial.a)
-    const nextHarness: TokenOverrides = { ...current, [token]: merged }
-    const nextAll: Record<HarnessId, TokenOverrides> = { ...get().tokenOverrides, [harness]: nextHarness }
-    set({ tokenOverrides: nextAll })
-    schedulePersist(harness, get)
-  },
-
-  resetTokenOverride: async (harness, token) => {
-    const current = get().tokenOverrides[harness]
-    if (!(token in current)) return
-    const nextHarness: TokenOverrides = { ...current }
-    delete nextHarness[token]
-    const nextAll: Record<HarnessId, TokenOverrides> = { ...get().tokenOverrides, [harness]: nextHarness }
-    set({ tokenOverrides: nextAll })
-    schedulePersist(harness, get)
-  },
-
-  resetAllTokenOverrides: async (harness) => {
-    const nextAll: Record<HarnessId, TokenOverrides> = { ...get().tokenOverrides, [harness]: {} }
-    set({ tokenOverrides: nextAll })
-    schedulePersist(harness, get)
-  },
 }))
-
-const PERSIST_DELAY_MS = 150
-const persistTimers: Partial<Record<HarnessId, ReturnType<typeof setTimeout>>> = {}
-
-function schedulePersist(harness: HarnessId, getState: () => AppState): void {
-  const existing = persistTimers[harness]
-  if (existing) clearTimeout(existing)
-  persistTimers[harness] = setTimeout(() => {
-    delete persistTimers[harness]
-    const state = getState()
-    void window.app.saveAppSettings({
-      agentPreference: {
-        [harness]: {
-          brandHue: state.brandHues[harness],
-          tokenOverrides: state.tokenOverrides[harness],
-        },
-      },
-    }).catch((err) => console.error('[brand-theme] persist failed:', err))
-  }, PERSIST_DELAY_MS)
-}
 
 /** Whether a real project (not tmp) is open */
 export function useHasRealProject(): boolean {
@@ -1464,26 +1374,8 @@ if (typeof window !== 'undefined') {
   // broadcasts the latest AppSettings after every save; each window mirrors
   // the brand-related slices into its local store so useHarnessTheme reacts.
   window.app?.onAppSettingsChange?.((settings: AppSettings) => {
-    const claude = settings.agentPreference.claude
-    const codex = settings.agentPreference.codex
-    const acp = settings.agentPreference.acp
     useAppStore.setState({
-      brandHues: {
-        claude: claude.brandHue,
-        codex: codex.brandHue,
-        acp: acp?.brandHue ?? null,
-        cursor: settings.agentPreference.cursor?.brandHue ?? null,
-        dsh: settings.agentPreference.dsh?.brandHue ?? null,
-        opencode: settings.agentPreference.opencode?.brandHue ?? null,
-      },
-      tokenOverrides: {
-        claude: claude.tokenOverrides ?? {},
-        codex: codex.tokenOverrides ?? {},
-        acp: acp?.tokenOverrides ?? {},
-        cursor: settings.agentPreference.cursor?.tokenOverrides ?? {},
-        dsh: settings.agentPreference.dsh?.tokenOverrides ?? {},
-        opencode: settings.agentPreference.opencode?.tokenOverrides ?? {},
-      },
+      ...readHarnessThemeSettings(settings),
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
       experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,

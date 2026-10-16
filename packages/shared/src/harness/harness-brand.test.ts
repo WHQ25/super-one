@@ -15,10 +15,28 @@ import {
   listOverriddenHueTokens,
   lchToCss,
   maxChromaInSRGB,
+  resolveDarkPrimary,
   oklchToLinearSRGB,
   resolveTokenLCH,
   sanitizeOverrides,
 } from './harness-brand'
+
+describe('dark primary colors', () => {
+  it('applies advanced LCH and opacity overrides over the independent dark hue', () => {
+    expect(resolveDarkPrimary(180, { l: 0.7, c: 0.12, h: 130, a: 0.8 })).toEqual({ l: 0.7, c: 0.12, h: 130, a: 0.8 })
+    expect(resolveDarkPrimary(180, { l: 2, c: -1, h: 490, a: 2 })).toEqual({ l: 1, c: 0, h: 130, a: 1 })
+  })
+
+  it('preserves the original blue default', () => {
+    expect(resolveDarkPrimary(null)).toEqual({ l: 0.55, c: 0.17, h: 255, a: 1 })
+  })
+
+  it('changes only hue across the full slider range', () => {
+    for (let hue = 0; hue < 360; hue++) {
+      expect(resolveDarkPrimary(hue)).toEqual({ l: 0.55, c: 0.17, h: hue, a: 1 })
+    }
+  })
+})
 
 describe('clampBrandHue', () => {
   it('wraps negative hues to 0-360', () => {

@@ -54,6 +54,8 @@ describe('global settings subscribers', () => {
       if (harness === 'codex' && key === 'defaultReasoningEffort') expect.soft(prefs.defaultPrefsCache.codexSelection?.reasoningEffort).toBe(value)
       if (harness === 'codex' && key === 'defaultFastMode') expect.soft(prefs.defaultPrefsCache.codexSelection?.fastMode).toBe(value)
       if (key === 'brandHue') expect.soft(app.useAppStore.getState().brandHues[harness as keyof AppSettings['agentPreference']]).toBe(value)
+      if (key === 'darkBrandHue') expect.soft(app.useAppStore.getState().darkBrandHues[harness as keyof AppSettings['agentPreference']]).toBe(value)
+      if (key === 'darkTokenOverrides') expect.soft(app.useAppStore.getState().darkTokenOverrides[harness as keyof AppSettings['agentPreference']]).toEqual(value)
       if (key === 'tokenOverrides') expect.soft(app.useAppStore.getState().tokenOverrides[harness as keyof AppSettings['agentPreference']]).toEqual(value)
     })
 

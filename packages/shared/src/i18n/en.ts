@@ -1061,6 +1061,18 @@ export type Messages = {
     appearance: {
       title: string
       interface: string
+      palette: {
+        customize: string
+        hue: string
+        advanced: string
+        reset: string
+        resetAll: string
+        lightPalette: string
+        darkPalette: string
+        overriddenHues: string
+        customized: string
+        noCustomizations: string
+      }
       theme: {
         label: string
         system: string
@@ -5555,6 +5567,18 @@ export const en: Messages = {
     appearance: {
       title: 'Appearance',
       interface: 'Interface',
+      palette: {
+        customize: 'Customize {{harness}} Color',
+        hue: '{{harness}} brand hue',
+        advanced: 'Advanced',
+        reset: 'Reset',
+        resetAll: 'Reset All',
+        lightPalette: 'Light palette',
+        darkPalette: 'Dark Palette',
+        overriddenHues: 'Custom hue overrides ({{count}}) will not follow this slider.',
+        customized: '{{count}} customized',
+        noCustomizations: 'No customizations',
+      },
       theme: {
         label: 'Theme',
         system: 'System',

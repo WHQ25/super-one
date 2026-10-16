@@ -99,6 +99,7 @@ function ThemeOptionCard({
   return (
     <button
       type="button"
+      aria-pressed={selected}
       onClick={onSelect}
       className={cn(
         'flex flex-1 flex-col items-center gap-2 rounded-lg border-2 p-1.5 transition-colors',

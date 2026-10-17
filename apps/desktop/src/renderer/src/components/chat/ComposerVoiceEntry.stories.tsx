@@ -4,7 +4,7 @@ import { expect, userEvent, within } from 'storybook/test'
 import { Square } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useRealtimeCallStore, type RealtimeCallState } from '@/stores/realtime-call'
-import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
+import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { ScheduledSendButton } from './ScheduledSendButton'
 
 const PROJECT = '/storybook/voice-entry'
@@ -18,7 +18,7 @@ function Preview({ disabled = false, state = 'idle', otherSession = false, width
   useLayoutEffect(() => {
     const previous = useRealtimeCallStore.getState()
     useRealtimeCallStore.setState({ sessionId: state === 'idle' ? null : otherSession ? 'other-session' : SID,
-      state, microphoneMuted: false, paused: false, resuming: false })
+      state, projectPath: PROJECT, microphoneMuted: false, paused: false, resuming: false })
     setReady(true)
     return () => { useRealtimeCallStore.setState(previous) }
   }, [state, otherSession])
@@ -30,7 +30,7 @@ function Preview({ disabled = false, state = 'idle', otherSession = false, width
         onSendNow={() => {}} onArm={() => {}} onDisarm={() => {}} onDismiss={() => {}} onSetSendAt={() => {}} />
       {/* Keep this preview offline: toolbar availability is interactive, media is not acquired. */}
       <span className="contents" data-testid="voice-entry" onClickCapture={(event) => event.stopPropagation()}>
-        {ready && <CodexRealtimeVoiceButton projectPath={PROJECT} sessionId={SID} disabled={taskRunning} />}
+        {ready && <ComposerVoiceEntry harness="codex" projectPath={PROJECT} sessionId={SID} disabled={taskRunning} />}
       </span>
     </div>
     <button onClick={() => setTaskRunning((running) => !running)}>
@@ -39,9 +39,9 @@ function Preview({ disabled = false, state = 'idle', otherSession = false, width
   </div>
 }
 
-const meta = { title: 'Chat/Codex voice entry', component: CodexRealtimeVoiceButton,
-  parameters: { layout: 'centered' }, args: { projectPath: PROJECT, sessionId: SID },
-} satisfies Meta<typeof CodexRealtimeVoiceButton>
+const meta = { title: 'Chat/Composer voice entry', component: ComposerVoiceEntry,
+  parameters: { layout: 'centered' }, args: { harness: 'codex', projectPath: PROJECT, sessionId: SID },
+} satisfies Meta<typeof ComposerVoiceEntry>
 export default meta
 type Story = StoryObj<typeof meta>
 

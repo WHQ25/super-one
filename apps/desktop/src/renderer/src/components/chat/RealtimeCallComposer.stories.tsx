@@ -5,7 +5,7 @@ import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { realtimeVoiceAudioLevels, resetRealtimeCallForTests, useRealtimeCallStore, type RealtimeCallActivity, type RealtimeCallState } from '@/stores/realtime-call'
-import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
+import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { RealtimeCallComposer } from './RealtimeCallComposer'
 
@@ -70,7 +70,7 @@ function Preview({ state, activity = 'listening', captions = false, muted = fals
         {captions && <CodexRealtimeTranscript sessionId={sessionId} scrollViewportRef={viewportRef} liquidGlass={false} threadMessages={[]} sessionStatus="idle" needsDecision={false} />}
         <RealtimeCallComposer onPlayback={() => useRealtimeCallStore.setState(current => ({ paused: !current.paused, pauseReason: current.paused ? null : 'manual' }))}
           onStop={() => useRealtimeCallStore.setState({ state: 'stopping' })} />
-        {otherSession && <CodexRealtimeVoiceButton projectPath={projectPath} sessionId="new-session" />}
+        {otherSession && <ComposerVoiceEntry harness="codex" projectPath={projectPath} sessionId="new-session" />}
       </TooltipProvider>}
     </div>
   )
@@ -99,7 +99,7 @@ function AudioToSilencePreview() {
 export const AudioToSilence: Story = { render: () => <AudioToSilencePreview /> }
 export const Paused: Story = { render: () => <Preview state="active" paused /> }
 export const AudioInterrupted: Story = { globals: { theme: 'dark', locale: 'zh' }, render: () => <Preview state="active" paused interrupted width={320} /> }
-export const TaskRunning: Story = { render: () => <CodexRealtimeVoiceButton projectPath={projectPath} sessionId={sessionId} disabled /> }
+export const TaskRunning: Story = { render: () => <ComposerVoiceEntry harness="codex" projectPath={projectPath} sessionId={sessionId} disabled /> }
 /** Muted channels turn their icon red so the state is visible at a glance. */
 export const Muted: Story = { render: () => <Preview state="active" muted /> }
 export const SpeakingWithCaptions: Story = { render: () => <Preview state="active" activity="user-speaking" captions /> }

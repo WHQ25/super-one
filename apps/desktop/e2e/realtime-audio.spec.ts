@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { build } from 'vite'
 import type { BufferedVoicePlayback } from '../src/renderer/src/lib/realtime-audio'
 
-test('plays remote WebRTC speech from call start and retains it while output is suspended', async () => {
+test('keeps remote WebRTC output continuous through UI blocking and retains suspended speech', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'superone-voice-audio-'))
   let app: ElectronApplication | undefined
   try {
@@ -25,6 +25,29 @@ test('plays remote WebRTC speech from call start and retains it while output is 
         },
       },
     })
+    await writeFile(join(temporary, 'continuity-meter.js'), `
+      class ContinuityMeter extends AudioWorkletProcessor {
+        constructor() {
+          super(); this.remaining=0;
+          this.port.onmessage=({data})=>{
+            if(data.type==='record') {
+              this.remaining=Math.round(sampleRate*data.ms/1000);
+              this.silent=0; this.run=0; this.longest=0;
+            }
+          }
+        }
+        process(inputs) {
+          const input=inputs[0]?.[0];if(!this.remaining)return true;
+          const count=Math.min(this.remaining,input?.length??128);let energy=0;
+          for(let i=0;i<count;i++)energy+=(input?.[i]??0)**2;
+          if(Math.sqrt(energy/count)<0.01){this.silent+=count;this.run+=count;this.longest=Math.max(this.longest,this.run)}else this.run=0;
+          this.remaining-=count;
+          if(!this.remaining)this.port.postMessage({silentMs:this.silent/sampleRate*1000,longestSilentMs:this.longest/sampleRate*1000});
+          return true;
+        }
+      }
+      registerProcessor('continuity-meter',ContinuityMeter);
+    `)
     await writeFile(join(temporary, 'index.html'), '<script src="./voice.js"></script>')
     await writeFile(join(temporary, 'main.cjs'), `
       const { app, BrowserWindow } = require('electron')
@@ -85,6 +108,22 @@ test('plays remote WebRTC speech from call start and retains it while output is 
           await wait(100)
           initialPeak = peak()
         }
+        await output.context.audioWorklet.addModule('./continuity-meter.js')
+        const meter = new AudioWorkletNode(output.context, 'continuity-meter')
+        output.node.connect(meter).connect(output.context.destination)
+        const continuity: Array<{ blockedMs: number; silentMs: number; longestSilentMs: number }> = []
+        for (const blockedMs of [100, 500, 1500]) {
+          await wait(300)
+          const measured = new Promise<{ silentMs: number; longestSilentMs: number }>(resolve => {
+            meter.port.onmessage = ({ data }) => resolve(data)
+          })
+          meter.port.postMessage({ type: 'record', ms: blockedMs })
+          // The meter runs in the audio thread: a UI timer cannot observe the gap.
+          const until = performance.now() + blockedMs
+          while (performance.now() < until) { /* emulate synchronous layout/render work */ }
+          continuity.push({ blockedMs, ...await measured })
+        }
+        meter.disconnect()
         const report = await receiver.getStats()
         const inbound = [...report.values()].find(stats => stats.type === 'inbound-rtp') as RTCInboundRtpStreamStats | undefined
         playback.pause()
@@ -102,7 +141,7 @@ test('plays remote WebRTC speech from call start and retains it while output is 
           resumedPeak = peak()
         }
         analyser.disconnect()
-        return { initialPeak, resumedPeak, bufferedDuringPause, packets: inbound?.packetsReceived ?? 0, errors }
+        return { initialPeak, resumedPeak, bufferedDuringPause, continuity, packets: inbound?.packetsReceived ?? 0, errors }
       } finally {
         playback?.close()
         sender.close()
@@ -110,7 +149,11 @@ test('plays remote WebRTC speech from call start and retains it while output is 
         await source.close()
       }
     })
+    console.log(JSON.stringify(result))
     expect(result.errors).toEqual([])
+    for (const sample of result.continuity) {
+      expect(sample.longestSilentMs, `output must stay audible during ${sample.blockedMs}ms UI blocking`).toBeLessThan(50)
+    }
     expect(result.packets).toBeGreaterThan(0)
     expect(result.initialPeak, 'received RTP packets must produce audible PCM from call start').toBeGreaterThan(0.05)
     expect(result.bufferedDuringPause).toBeGreaterThan(10_000)

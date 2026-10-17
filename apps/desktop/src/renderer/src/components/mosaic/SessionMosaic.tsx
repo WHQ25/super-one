@@ -13,6 +13,7 @@ import { useMosaicStore } from './mosaic-store'
 import { MosaicDivider } from './MosaicDivider'
 import { MosaicDropZone } from './MosaicDropZone'
 import { measureMin, topLeftLeafId, type MosaicLeaf, type MosaicNode, type MosaicPath } from './mosaic-tree'
+import { VisibleSessionSplitContext } from './visible-session-split'
 import { registerMosaicDom } from './mosaic-dom'
 
 const isMac = window.app.platform === 'darwin'
@@ -112,8 +113,10 @@ export function SessionMosaic({ foreground = true }: SessionMosaicProps) {
     foreground,
   }
   return (
-    <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <MosaicNodeView node={root} path={[]} ctx={ctx} />
-    </div>
+    <VisibleSessionSplitContext.Provider value={foreground ? root : null}>
+      <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <MosaicNodeView node={root} path={[]} ctx={ctx} />
+      </div>
+    </VisibleSessionSplitContext.Provider>
   )
 }

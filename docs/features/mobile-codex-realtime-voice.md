@@ -120,8 +120,13 @@ tasks alive. Hangup still releases everything, including deferred native cleanup
 
 Paused decoded PCM stays in a bounded FIFO; the playback cursor advances only
 when samples are consumed. Android also retains unheard hardware-buffer samples.
-Desktop receives PCM independently through `MediaStreamTrackProcessor` and uses an
-AudioWorklet only for playback, so audio-device suspension does not stop reception.
+Desktop transfers the native `MediaStreamTrackProcessor.readable` to a dedicated
+Worker before acquiring its reader. The Worker receives and resamples PCM, and
+sends it directly to an AudioWorklet over a dedicated MessagePort. Playback
+acknowledgements return over that same port, so neither audio supply nor buffer
+accounting depends on UI rendering. The UI receives only low-frequency output
+levels and a diagnostic buffer count. Audio-device suspension does not stop
+reception; the muted WebRTC media sink stays running until hangup.
 Android hooks the WebRTC 124 audio device I/O, and
 iOS uses a custom `RTCAudioDevice`. Resume plays the unread tail and later samples
 in order. Newly arriving live silence is skipped while draining the backlog.

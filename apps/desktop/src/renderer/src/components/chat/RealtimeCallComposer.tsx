@@ -14,7 +14,7 @@ export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microph
   const state = liveState === 'idle' ? lastEngagedRef.current : liveState
   return <div className="flex flex-1 items-end justify-center px-3 pb-2 pt-1">
     <div data-testid="realtime-call-composer" data-call-state={state}
-      className="flex min-h-11 w-full max-w-xl items-center gap-1 rounded-2xl border border-border bg-background px-2 py-1 @lg:gap-3 @lg:px-3">
+      className="flex min-h-11 w-full max-w-lg items-center gap-1 rounded-2xl border border-border bg-background px-2 py-1 @lg:gap-3 @lg:px-3">
       <RealtimeCallControls layout="composer" disabled={liveState !== 'active'}
         hangUpDisabled={liveState === 'stopping' || liveState === 'idle'}
         onPlayback={onPlayback} onStop={onStop}

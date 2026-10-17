@@ -1,19 +1,18 @@
 import workletUrl from './realtime-audio-worklet.js?worker&url'
-import { VoiceResampler } from './voice-resampler'
+import type { VoiceAudioFrame } from './realtime-audio-receiver'
 
-type AudioFrame = { numberOfFrames: number; sampleRate: number; copyTo(output: Float32Array, options: { planeIndex: number; format: 'f32-planar' }): void; close(): void }
-type AudioTrackProcessor = { readable: ReadableStream<AudioFrame> }
-const MAX_BUFFER_SECONDS = 300
+type AudioTrackProcessor = { readable: ReadableStream<VoiceAudioFrame> }
 
-/** Decoded remote audio keeps arriving while local playback is paused. */
+/** Global call playback: the UI owns lifetime, the worker owns PCM reception. */
 export class BufferedVoicePlayback {
-  private reader?: ReadableStreamDefaultReader<AudioFrame>
-  private pending: Float32Array[] = []
+  private worker?: Worker
+  private pendingPort?: MessagePort
   private bufferedFrames = 0
-  private resampler?: VoiceResampler
   private node?: AudioWorkletNode
   private closed = false
+  private failedOnce = false
   private paused = false
+  private pauseVersion = 0
   private readonly receiverAudio = new Audio()
   private readonly context = new AudioContext({ latencyHint: 'interactive', sampleRate: 48_000 })
   constructor(private readonly interrupted: () => void, private readonly failed: (error: Error) => void, private readonly onLevel: (rms: number) => void = () => {}) {
@@ -23,72 +22,97 @@ export class BufferedVoicePlayback {
     }
   }
   async connect(stream: MediaStream): Promise<void> {
-    // Reception must not depend on AudioContext's render clock: OS audio
-    // interruptions suspend that clock while WebRTC keeps delivering speech.
+    if (this.closed) return
     const Processor = (window as unknown as { MediaStreamTrackProcessor?: new (options: { track: MediaStreamTrack }) => AudioTrackProcessor }).MediaStreamTrackProcessor
     const track = stream.getAudioTracks()[0]
     if (!Processor || !track) throw new Error('Update the desktop app to enable buffered voice playback.')
-    this.reader = new Processor({ track }).readable.getReader()
-    void this.receive().catch(error => { if (!this.closed) this.failed(error instanceof Error ? error : new Error(String(error))) })
-    // Chromium only pulls/decodes remote WebRTC audio while a media sink plays.
-    // TrackProcessor alone receives no PCM. Keep this sink muted and running
-    // through output suspension; the worklet owns audible playback and pause.
-    this.receiverAudio.muted = true
-    this.receiverAudio.srcObject = stream
-    await this.receiverAudio.play()
-    if (this.closed) return
-    await this.context.audioWorklet.addModule(workletUrl)
-    if (this.closed) return
-    const node = new AudioWorkletNode(this.context, 'superone-voice-playback', { numberOfInputs: 0, outputChannelCount: [1] })
-    node.port.onmessage = ({ data }) => {
-      if (data.type === 'error') this.failed(new Error(data.message))
-      else if (data.type === 'consumed') {
-        this.bufferedFrames = Math.max(0, this.bufferedFrames - data.frames)
-        this.onLevel(this.paused ? 0 : data.level ?? 0)
-      }
-    }
-    node.port.postMessage({ type: 'pause', paused: this.paused })
-    this.node = node
-    for (const samples of this.pending) this.send(samples)
-    this.pending = []
-    node.connect(this.context.destination)
-    await this.context.resume()
-  }
-  private send(samples: Float32Array): void { this.node!.port.postMessage({ type: 'samples', samples }, [samples.buffer as ArrayBuffer]) }
-  private async receive(): Promise<void> {
-    while (!this.closed && this.reader) {
-      const { value: frame, done } = await this.reader.read()
-      if (done) return
-      try {
+    const readable = new Processor({ track }).readable
+    const channel = new MessageChannel()
+    this.pendingPort = channel.port1
+    try {
+      const worker = new Worker(new URL('./realtime-audio-worker.ts', import.meta.url), { type: 'module' })
+      this.worker = worker
+      worker.onmessage = ({ data }) => {
         if (this.closed) return
-        const input = new Float32Array(frame.numberOfFrames)
-        frame.copyTo(input, { planeIndex: 0, format: 'f32-planar' })
-        this.resampler ??= new VoiceResampler(frame.sampleRate, this.context.sampleRate)
-        const samples = this.resampler.convert(input)
-        // Preserve all paused samples. Ignore newly arriving silence while the
-        // unread reply drains, so playback eventually returns to the live edge.
-        if (!this.paused && this.bufferedFrames > input.length * 2 && !samples.some(value => Math.abs(value) > 0.00001)) continue
-        this.bufferedFrames += samples.length
-        if (this.bufferedFrames > this.context.sampleRate * MAX_BUFFER_SECONDS) throw new Error('Voice pause buffer is full. End this call and start a new one.')
-        if (this.node) this.send(samples); else this.pending.push(samples)
-      } finally { frame.close() }
+        if (data.type === 'error') this.fail(new Error(data.message))
+        else if (data.type === 'progress') {
+          this.bufferedFrames = data.bufferedFrames
+          this.onLevel(this.paused ? 0 : data.level)
+        }
+      }
+      worker.onerror = event => { event.preventDefault(); this.fail(new Error(event.message || 'Voice audio receiver failed.')) }
+      worker.onmessageerror = () => this.fail(new Error('Voice audio receiver could not read audio.'))
+      // Transfer the untouched native readable, not a reader/proxy created on UI.
+      // PCM and consumed ACKs use this dedicated worker <-> worklet channel.
+      worker.postMessage({ type: 'start', readable, port: channel.port2, sampleRate: this.context.sampleRate, paused: this.paused }, [readable, channel.port2])
+      // Chromium only decodes remote WebRTC while a media sink plays. This sink
+      // stays muted/running through output suspension; the worklet is audible.
+      this.receiverAudio.muted = true
+      this.receiverAudio.srcObject = stream
+      await this.receiverAudio.play()
+      if (this.closed) return
+      await this.context.audioWorklet.addModule(workletUrl)
+      if (this.closed) return
+      const node = new AudioWorkletNode(this.context, 'superone-voice-playback', { numberOfInputs: 0, outputChannelCount: [1] })
+      this.node = node
+      node.port.onmessage = ({ data }) => { if (data.type === 'error') this.fail(new Error(data.message)) }
+      node.onprocessorerror = () => this.fail(new Error('Voice audio playback failed.'))
+      node.port.postMessage({ type: 'attach', port: channel.port1 }, [channel.port1])
+      this.pendingPort = undefined
+      node.connect(this.context.destination)
+      await this.context.resume()
+    } finally {
+      // Transferred endpoints are detached here; an early close releases the
+      // untransferred endpoint and the queued audio it might still own.
+      channel.port1.close()
+      channel.port2.close()
+      this.pendingPort = undefined
+      if (!readable.locked) void readable.cancel().catch(() => {})
     }
   }
-  pause(): void { this.paused = true; this.onLevel(0); this.node?.port.postMessage({ type: 'pause', paused: true }) }
+  private fail(error: Error): void {
+    if (this.closed || this.failedOnce) return
+    this.failedOnce = true
+    this.failed(error)
+  }
+  pause(): void {
+    if (this.closed) return
+    this.pauseVersion++
+    this.paused = true
+    this.onLevel(0)
+    this.worker?.postMessage({ type: 'pause', paused: true })
+  }
   async resume(): Promise<void> {
+    if (this.closed) return
+    const version = this.pauseVersion
     await this.context.resume()
-    if (this.closed || this.context.state !== 'running') throw new Error('Audio playback is unavailable. Try again shortly.')
-    this.paused = false; this.node?.port.postMessage({ type: 'pause', paused: false })
+    if (this.closed) return
+    if (this.context.state !== 'running') throw new Error('Audio playback is unavailable. Try again shortly.')
+    if (version !== this.pauseVersion) return
+    this.paused = false
+    this.worker?.postMessage({ type: 'pause', paused: false })
   }
   close(): void {
+    if (this.closed) return
     this.closed = true
     this.onLevel(0)
     this.context.onstatechange = null
     this.receiverAudio.pause()
     this.receiverAudio.srcObject = null
-    void this.reader?.cancel().catch(() => {})
-    this.reader = undefined; this.pending = []; this.bufferedFrames = 0
-    if (this.node) { this.node.port.onmessage = null; this.node.disconnect() }
+    this.bufferedFrames = 0
+    this.pendingPort?.close()
+    this.pendingPort = undefined
+    const worker = this.worker
+    if (worker) {
+      this.worker = undefined
+      const terminate = () => { clearTimeout(timeout); worker.terminate() }
+      const timeout = setTimeout(terminate, 1000)
+      worker.onerror = null
+      worker.onmessageerror = null
+      worker.onmessage = ({ data }) => { if (data.type === 'closed') terminate() }
+      worker.postMessage({ type: 'close' })
+    }
+    if (this.node) { this.node.port.onmessage = null; this.node.onprocessorerror = null; this.node.port.close(); this.node.disconnect() }
     void this.context.close()
   }
 }

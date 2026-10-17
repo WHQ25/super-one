@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend, providerSelection } = vi.hoisted(() => {
   const mentionPopup = {
@@ -33,8 +33,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     cwd: '/project' as string,
     homedir: '/home/user' as string,
     slashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
-    preferredProvider: 'claude' as 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor',
-    sessionProvider: null as 'claude' | 'codex' | 'acp' | 'opencode' | 'cursor' | null,
+    preferredProvider: 'claude' as HarnessId,
+    sessionProvider: null as HarnessId | null,
     acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
     acpSlashCommandsStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     acpAgentId: null as string | null,
@@ -70,6 +70,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
       activeSessionState.draftJson = json
     }),
     sendMessage: vi.fn(async () => undefined),
+    switchToSession: vi.fn(async () => undefined),
     editQueuedMessage: vi.fn(),
     interrupt: vi.fn(),
     toggleOpen: vi.fn(),
@@ -430,6 +431,9 @@ vi.mock('@/components/ui/HighlightedText', () => ({
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { runClaudeInterceptedCommand } from '@/stores/chat'
 import { ChatInput } from './ChatInput'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 
 it('keeps a remote draft observable without echoing mobile edits into the store', async () => {
   activeSessionState.draftRemoteDeviceId = 'phone'
@@ -704,8 +708,9 @@ describe('ChatInput', () => {
     editorState.text = '/goal'
 
     const { rerender } = render(<ChatInput />)
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
     const send = document.querySelector('button .lucide-arrow-up')!.closest('button')!
+    // Query dispatch precedes the state update that enables sending.
+    await waitFor(() => expect(send).toBeEnabled())
     fireEvent.click(send)
     expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
 
@@ -726,12 +731,9 @@ describe('ChatInput', () => {
     editorState.text = '/goal pause'
 
     render(<ChatInput />)
-    // The composer will not send until it knows whether this session has a
-    // queued send; in the app that is one IPC round trip.
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-
-    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
-    fireEvent.click(send!)
+    const send = document.querySelector('button .lucide-arrow-up')!.closest('button')!
+    await waitFor(() => expect(send).toBeEnabled())
+    fireEvent.click(send)
 
     expect(sentText()).toBe('/goal pause')
     expect(screen.queryByTestId('goal-indicator')).toBeNull()
@@ -1853,4 +1855,35 @@ describe('ChatInput paste', () => {
 
     expect(editorState.insertContentCalls).toEqual([])
   })
+})
+
+afterEach(() => act(() => resetRealtimeCallForTests()))
+
+describe('global voice entry in the shared composer', () => {
+  it.each(Object.keys(HARNESS_CAPABILITIES) as HarnessId[])('returns to the same global call from %s while streaming', (harness) => {
+    activeSessionState.sessionProvider = harness
+    activeSessionState.status = 'streaming'
+    useRealtimeCallStore.setState({ state: 'active', projectPath: '/voice-project', sessionId: 'voice-session' })
+    render(<ChatInput />)
+    expect(screen.getByRole('button', { name: 'Return to Voice Conversation' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Start Voice Conversation' })).toBeNull()
+    expect(useRealtimeCallStore.getState()).toMatchObject({ state: 'active', projectPath: '/voice-project', sessionId: 'voice-session' })
+  })
+
+  it.each(Object.keys(HARNESS_CAPABILITIES) as HarnessId[])('keeps idle voice start availability scoped to %s capabilities', (harness) => {
+    activeSessionState.sessionProvider = harness
+    render(<ChatInput />)
+    expect(screen.queryByRole('button', { name: 'Start Voice Conversation' }) !== null)
+      .toBe(!!HARNESS_CAPABILITIES[harness].supportsRealtimeVoice)
+  })
+})
+
+it('returns to the voice view in its own scoped composer across projects without navigating', () => {
+  sessionScope.value = { projectPath: '/voice-project', sessionId: 'voice-session' }
+  useRealtimeCallStore.setState({ state: 'active', projectPath: '/voice-project', sessionId: 'voice-session' })
+  useCodexRealtimeViewStore.getState().setView('voice-session', 'thread')
+  render(<ChatInput />)
+  fireEvent.click(screen.getByRole('button', { name: 'Return to Voice Conversation' }))
+  expect(chatActions.switchToSession).not.toHaveBeenCalled()
+  expect(useCodexRealtimeViewStore.getState().sessions['voice-session']?.view).toBe('realtime')
 })

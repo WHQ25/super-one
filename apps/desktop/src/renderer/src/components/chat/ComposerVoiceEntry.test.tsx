@@ -7,7 +7,7 @@ import type { VoiceStatus } from '@superone/shared/realtime-voice'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { pauseRealtimeCall, resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { VOICE_READY_CUE_MIC_GUARD_MS } from '@/lib/audio-cue'
-import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
+import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { RealtimeCallControls } from './RealtimeCallControls'
 import { RealtimeCallComposer } from './RealtimeCallComposer'
 import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
@@ -64,7 +64,7 @@ function VoiceSurfaces({ sessionId = 'session-1' }: { sessionId?: string }) {
   return (
     <>
       {engaged && <RealtimeCallComposer microphoneShortcutEnabled={false} />}
-      <CodexRealtimeVoiceButton projectPath="/repo" sessionId={sessionId} additionalDirs={['/extra']} />
+      <ComposerVoiceEntry harness="codex" projectPath="/repo" sessionId={sessionId} additionalDirs={['/extra']} />
     </>
   )
 }
@@ -160,7 +160,7 @@ describe('realtime voice surfaces', () => {
 
   it('keeps a return entry reachable from other sessions while a call runs', () => {
     useRealtimeCallStore.setState({ sessionId: 'session-1', state: 'starting' })
-    render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-2" />)
+    render(<ComposerVoiceEntry harness="codex" projectPath="/repo" sessionId="session-2" />)
     expect(screen.getByRole('button', { name: 'Return to Voice Conversation' })).toBeEnabled()
     for (const state of ['active', 'stopping', 'idle'] as const) {
       act(() => useRealtimeCallStore.setState({ state }))
@@ -169,17 +169,17 @@ describe('realtime voice surfaces', () => {
   })
 
   it('hides the unavailable voice entry and restores it when the task finishes', () => {
-    const { container, rerender } = render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" disabled />)
+    const { container, rerender } = render(<ComposerVoiceEntry harness="codex" projectPath="/repo" sessionId="session-1" disabled />)
     expect(container).toBeEmptyDOMElement()
-    rerender(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
+    rerender(<ComposerVoiceEntry harness="codex" projectPath="/repo" sessionId="session-1" />)
     expect(screen.getByRole('button', { name: 'Start Voice Conversation' })).toBeEnabled()
   })
 
   it('returns to the call from the text composer, even while a task is running', () => {
     useRealtimeCallStore.setState({ sessionId: 'session-1', state: 'starting' })
-    const { rerender } = render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
+    const { rerender } = render(<ComposerVoiceEntry harness="codex" projectPath="/repo" sessionId="session-1" />)
     expect(screen.getByRole('button', { name: 'Return to Voice Conversation' })).toBeEnabled()
-    rerender(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" disabled />)
+    rerender(<ComposerVoiceEntry harness="codex" projectPath="/repo" sessionId="session-1" disabled />)
     act(() => useRealtimeCallStore.setState({ state: 'active' }))
     useCodexRealtimeViewStore.getState().setView('session-1', 'thread')
     fireEvent.click(screen.getByRole('button', { name: 'Return to Voice Conversation' }))

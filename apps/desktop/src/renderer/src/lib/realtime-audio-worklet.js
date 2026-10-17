@@ -31,10 +31,17 @@ if (typeof registerProcessor === 'function') {
       this.energy = 0
       this.meterFrames = 0
       this.port.onmessage = ({ data }) => {
-        if (data.type === 'pause') { this.paused = data.paused; this.energy = 0; this.meterFrames = 0 }
-        else if (data.type === 'samples' && !this.failed) {
-          try { this.queue.push(data.samples) } catch (error) { this.fail(error) }
-        }
+        if (data.type === 'attach') {
+          this.audioPort = data.port
+          this.audioPort.onmessage = ({ data }) => this.receive(data)
+          this.audioPort.start()
+        } else this.receive(data)
+      }
+    }
+    receive(data) {
+      if (data.type === 'pause') { this.paused = data.paused; this.energy = 0; this.meterFrames = 0 }
+      else if (data.type === 'samples' && !this.failed) {
+        try { this.queue.push(data.samples) } catch (error) { this.fail(error) }
       }
     }
     fail(error) { this.failed = true; this.port.postMessage({ type: 'error', message: error.message }) }
@@ -54,7 +61,8 @@ if (typeof registerProcessor === 'function') {
           for (const value of output) this.energy += value * value
           this.meterFrames += output.length
           if (this.meterFrames >= sampleRate / 10) {
-            this.port.postMessage({ type: 'consumed', frames: this.consumed, level: Math.sqrt(this.energy / this.meterFrames) })
+            const receiver = this.audioPort ?? this.port
+            receiver.postMessage({ type: 'consumed', frames: this.consumed, level: Math.sqrt(this.energy / this.meterFrames) })
             this.consumed = 0; this.energy = 0; this.meterFrames = 0
           }
         }

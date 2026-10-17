@@ -64,3 +64,39 @@ it('meters the audio actually played, including buffered replies and the silence
     expect(processor.port.postMessage).toHaveBeenLastCalledWith({ type: 'consumed', frames: 0, level: 0 })
   } finally { vi.unstubAllGlobals(); vi.resetModules() }
 })
+
+it('sends playback ACKs directly to the receiver port while keeping fatal errors on the UI control port', async () => {
+  const { MessageChannel } = await import('node:worker_threads')
+  type Processor = {
+    port: { onmessage?: (event: { data: unknown }) => void; postMessage: ReturnType<typeof vi.fn> }
+    queue: { length: number }; paused: boolean
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean
+  }
+  let ProcessorClass!: new () => Processor
+  vi.stubGlobal('sampleRate', 10)
+  vi.stubGlobal('AudioWorkletProcessor', class { port = { onmessage: undefined, postMessage: vi.fn() } })
+  vi.stubGlobal('registerProcessor', (_name: string, constructor: typeof ProcessorClass) => { ProcessorClass = constructor })
+  const { port1, port2 } = new MessageChannel()
+  const consumed: unknown[] = []
+  port2.on('message', data => consumed.push(data))
+  try {
+    vi.resetModules(); await import('./realtime-audio-worklet.js')
+    const processor = new ProcessorClass()
+    processor.port.onmessage?.({ data: { type: 'attach', port: port1 } })
+    port2.postMessage({ type: 'pause', paused: true })
+    port2.postMessage({ type: 'samples', samples: new Float32Array([0.25, 0.5]) })
+    await vi.waitFor(() => expect(processor.queue.length).toBe(2))
+    const pausedOutput = new Float32Array(2)
+    processor.process([], [[pausedOutput]])
+    expect([...pausedOutput]).toEqual([0, 0]); expect(consumed).toEqual([])
+    port2.postMessage({ type: 'pause', paused: false })
+    await vi.waitFor(() => expect(processor.paused).toBe(false))
+    const output = new Float32Array(2); processor.process([], [[output]])
+    expect([...output]).toEqual([0.25, 0.5])
+    await vi.waitFor(() => expect(consumed).toEqual([{ type: 'consumed', frames: 2, level: expect.closeTo(Math.sqrt(0.15625)) }]))
+    expect(processor.port.postMessage).not.toHaveBeenCalled()
+    port2.postMessage({ type: 'samples', samples: new Float32Array(3001) })
+    await vi.waitFor(() => expect(processor.port.postMessage).toHaveBeenCalledWith({ type: 'error', message: expect.stringMatching(/buffer is full/) }))
+    expect(processor.process([], [[new Float32Array(2)]])).toBe(false)
+  } finally { port1.close(); port2.close(); vi.unstubAllGlobals(); vi.resetModules() }
+})

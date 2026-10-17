@@ -97,7 +97,7 @@ import { pastePartsFromHtml, type PastePart } from '@/lib/clipboard'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
-import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
+import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { GoalIndicator } from './GoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -2214,9 +2214,10 @@ export function ChatInput({
               onDismiss={clearScheduled}
               onSetSendAt={setSendAt}
             />}
-            {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
-              <CodexRealtimeVoiceButton
-                projectPath={activeProject}
+            {sessionProject && displayedSessionId && (
+              <ComposerVoiceEntry
+                harness={activeProviderForResources}
+                projectPath={sessionProject}
                 sessionId={displayedSessionId}
                 additionalDirs={additionalDirs}
                 disabled={isStreaming && !realtimeVoiceEngaged}

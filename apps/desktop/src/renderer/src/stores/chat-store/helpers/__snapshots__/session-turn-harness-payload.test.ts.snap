@@ -82,6 +82,7 @@ exports[`createSession settings per harness > claude · local · chosen 1`] = `
     },
     "settings": {
       "apiProviderId": "acct-1",
+      "claudeFastMode": true,
       "effort": "high",
       "model": "picked-model",
       "permissionMode": "acceptEdits",
@@ -102,6 +103,7 @@ exports[`createSession settings per harness > claude · local · defaults 1`] = 
       "sessionId": "sid-1",
     },
     "settings": {
+      "claudeFastMode": undefined,
       "permissionMode": "default",
       "sandboxMode": "auto",
       "ultracode": false,
@@ -739,6 +741,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · chosen · f
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -764,6 +767,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · chosen · n
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -787,6 +791,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · chosen · q
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -811,6 +816,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · chosen · q
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -841,6 +847,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · chosen · r
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -864,6 +871,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · chosen · r
 exports[`sessionTurnRequest payload per harness > claude · local · defaults · first 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -884,6 +892,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · defaults ·
 exports[`sessionTurnRequest payload per harness > claude · local · defaults · next 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -902,6 +911,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · defaults ·
 exports[`sessionTurnRequest payload per harness > claude · local · defaults · queued 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -921,6 +931,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · defaults ·
 exports[`sessionTurnRequest payload per harness > claude · local · defaults · queued form 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -946,6 +957,7 @@ exports[`sessionTurnRequest payload per harness > claude · local · defaults ·
 exports[`sessionTurnRequest payload per harness > claude · local · defaults · review 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -970,6 +982,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · chosen · fi
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -995,6 +1008,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · chosen · ne
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1018,6 +1032,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · chosen · qu
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1041,6 +1056,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · chosen · qu
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1064,6 +1080,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · chosen · re
     "/extra",
   ],
   "apiProviderId": "acct-1",
+  "claudeFastMode": true,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1087,6 +1104,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · chosen · re
 exports[`sessionTurnRequest payload per harness > claude · node · defaults · first 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1107,6 +1125,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · defaults · 
 exports[`sessionTurnRequest payload per harness > claude · node · defaults · next 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1125,6 +1144,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · defaults · 
 exports[`sessionTurnRequest payload per harness > claude · node · defaults · queued 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1143,6 +1163,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · defaults · 
 exports[`sessionTurnRequest payload per harness > claude · node · defaults · queued form 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",
@@ -1161,6 +1182,7 @@ exports[`sessionTurnRequest payload per harness > claude · node · defaults · 
 exports[`sessionTurnRequest payload per harness > claude · node · defaults · review 1`] = `
 {
   "additionalDirectories": [],
+  "claudeFastMode": undefined,
   "clientMessageId": "u1",
   "disabledSkills": [
     "skill-b",

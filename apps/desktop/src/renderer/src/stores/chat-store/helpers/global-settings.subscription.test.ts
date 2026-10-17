@@ -11,7 +11,7 @@ let app: typeof import('../../../stores/app')
 const defaults = readAppSettings()
 const cases = appSettingCases(defaults)
 const mirroredKeys: readonly (keyof AppSettings)[] = [
-  'experimentalAgentsEnabled', 'enabledExperimentalAgents', 'experimentalClaudeOpenAiChatEnabled',
+  'experimentalAgentsEnabled', 'enabledExperimentalAgents', 'experimentalAgentProfilesEnabled', 'experimentalClaudeOpenAiChatEnabled',
   'experimentalRemoteNodesEnabled', 'terminalLightPalette', 'terminalDarkPalette', 'terminalFontSize',
   'terminalFontFamily', 'mermaidLightTheme', 'mermaidDarkTheme', 'uiFontFamily', 'liquidGlass',
   'autoExpandFileDiffs', 'detailChatMode', 'sessionContinuationHint',

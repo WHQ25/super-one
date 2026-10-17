@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import { createServer as createTcpServer, connect, type Server, type Socket } from 'node:net'
 import { WebSocketServer } from 'ws'
+import { vi } from 'vitest'
 import type { AgentEvent, ChatMessage, RecentFolder, SendMessageRequest, SessionAgentProfile } from '@superone/shared/agent-types'
 import { HarnessManager } from '@superone/runtime/harness'
 import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
@@ -18,6 +19,9 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { DesktopSessionEdits, NodeHostSessionManager } from './desktop-session-host'
 import { DesktopNodeHost, type DesktopNodeHostListen } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
+
+// Fixture hosts use the catalog below, never the packaged desktop's provider DB.
+vi.mock('../session/session-provider-repo', () => ({ getSessionProvider: () => null }))
 
 /** Fakes of B's session manager and store for node host integration tests. */
 

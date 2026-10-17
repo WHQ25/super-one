@@ -65,6 +65,7 @@ const CHOSEN: SessionPatch = {
   additionalDirs: ['/extra'],
   sandboxInfo: { enabled: true, autoAllowBash: false },
   ultracode: true,
+  claudeFastMode: true,
   selectedCodexModel: 'gpt-picked',
   selectedCodexReasoningEffort: 'xhigh',
   codexModelUserChosen: true,

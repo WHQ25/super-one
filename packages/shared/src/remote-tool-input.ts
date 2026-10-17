@@ -308,7 +308,7 @@ const SUPERONE_TOOL_SUMMARY_FIELDS: Record<string, readonly string[]> = {
   // The card, never the brief: the phone cannot launch it.
   session_suggest_task: ['title', 'tldr'],
   // The layout row's verb and subject; the row reads file names out of `tab`.
-  layout_act: ['action', 'path', 'line', 'side', 'tab', 'width', 'height', 'mode', 'position'],
+  layout_act: ['action', 'path', 'line', 'side', 'tab', 'width', 'height', 'mode', 'position', 'sessionIds', 'closeAll', 'dividers'],
   miniapp_dev_register: ['name', 'directory', 'appDir'],
   miniapp_dev_update_types: ['appDir'],
   miniapp_dev_setup: ['name', 'directory', 'description'],
@@ -339,6 +339,11 @@ function sanitizeSuperoneRowInput(toolName: string, input: string): string {
   const source = parsed as Record<string, unknown>
   const safe = bare === 'session_tag' ? sanitizeSessionTagInput(source) : {}
   if (fields) copyDefined(source, safe, fields)
+  if (bare === 'layout_act') {
+    // The compact row needs counts only, not environment/session/divider identities.
+    if (Array.isArray(source.sessionIds)) safe.sessionIds = source.sessionIds.map(() => '')
+    if (Array.isArray(source.dividers)) safe.dividers = source.dividers.map(() => ({}))
+  }
   return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
 }
 

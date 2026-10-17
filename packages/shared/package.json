@@ -11,6 +11,9 @@
     "./miniapp-host-api": {
       "types": "./src/miniapp-host-api.d.ts"
     },
+    "./layout-session-api": {
+      "types": "./src/layout-session-api.d.ts"
+    },
     "./composer-api": {
       "types": "./src/composer-api.d.ts"
     },

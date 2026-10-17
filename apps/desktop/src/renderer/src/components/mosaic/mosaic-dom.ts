@@ -1,4 +1,19 @@
-import type { Rect } from './mosaic-tree'
+import type { MosaicNode, Rect } from './mosaic-tree'
+
+let rendered: { root: MosaicNode; container: HTMLElement; foreground: boolean } | null = null
+
+/** Associate measured DOM with exactly the tree React committed, never a stale hidden tree. */
+export function registerMosaicDom(root: MosaicNode, container: HTMLElement, foreground: boolean): () => void {
+  const entry = { root, container, foreground }
+  rendered = entry
+  return () => { if (rendered === entry) rendered = null }
+}
+
+export function visibleMosaicDom(root: MosaicNode): HTMLElement | null {
+  if (rendered?.root !== root || !rendered.foreground || !rendered.container.isConnected) return null
+  const r = rendered.container.getBoundingClientRect()
+  return r.width > 0 && r.height > 0 ? rendered.container : null
+}
 
 /** Actual on-screen rect of a tile, relative to `container`'s top-left. Null if not mounted yet. */
 export function leafRectRel(container: HTMLElement, id: string): Rect | null {

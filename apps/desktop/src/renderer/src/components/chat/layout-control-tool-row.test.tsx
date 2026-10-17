@@ -28,7 +28,7 @@ describe('layout control rows', () => {
     expect(screen.getByText('Sidebar Collapsed')).toBeTruthy()
     expect(screen.getByText('skipped while you were elsewhere')).toBeTruthy()
     rerender(<LayoutControlToolRow mcpToolName="layout_act" params={{ action: 'show_panel' }} result={JSON.stringify({ status: 'unsupported', reason: 'remote_node' })} isStreaming={false} />)
-    expect(screen.getByText('not available on a remote node')).toBeTruthy()
+    expect(screen.getByText('unavailable')).toBeTruthy()
   })
 
   it('shows the width a resize applied, not the one it asked for', () => {
@@ -44,6 +44,22 @@ describe('layout control rows', () => {
     render(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'chat_mode', mode: 'icon' })} result={JSON.stringify({ status: 'applied', visible: true })} isStreaming={false} />)
     expect(screen.getByText('Chat View Changed')).toBeTruthy()
     expect(screen.getByText('icon')).toBeTruthy()
+  })
+
+  it('names batch sessions, closeAll and divider counts without requiring opaque mobile identities', () => {
+    const params = projected({ action: 'split_session', sessionIds: ['voice', { environmentId: 'node', sessionId: 'worker' }] })
+    expect(params.sessionIds).toEqual(['', ''])
+    const { rerender } = render(<LayoutControlToolRow mcpToolName="layout_act" params={params} isStreaming={false} />)
+    expect(screen.getByText('2 sessions')).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'close_split', closeAll: true })} isStreaming={false} />)
+    expect(screen.getByText('all splits')).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'resize_splits', dividers: [{ id: 'opaque', ratio: 0.5 }, { id: 'another', ratio: 0.6 }] })} isStreaming={false} />)
+    expect(screen.getByText('Splits Resized')).toBeTruthy()
+    expect(screen.getByText('2 dividers')).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={{ action: 'maximize_split' }} isStreaming />)
+    expect(screen.getByText(/Maximizing split/)).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={{ action: 'restore_splits' }} isStreaming={false} isDenied />)
+    expect(screen.getByText('Restore Splits')).toBeTruthy()
   })
 
   it('names where the floating chat moved', () => {

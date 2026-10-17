@@ -80,8 +80,39 @@ await context.layout.act({ action: 'open_file', path: 'src/app.ts', line: 42 })
 - `'skipped'`: a window-wide change (sidebar, panel side, widths, chat mode, split view) is refused
   while the holder is not in front, so the user is never moved.
 - Browser and terminal tabs are opened by agents with their own tools; the app
-  can focus, split, maximize or close any tab, and close any split pane but the
-  holder's own.
+  can focus, split, maximize or close any tab. Closing split tiles only removes
+  their presentation; it never deletes sessions or stops their tasks.
+- `split_session` accepts `sessionIds` as the complete final session list; it
+  automatically balances columns/rows within current minimum tile dimensions.
+  The current session stays only if listed. Strings use the holder environment;
+  `{ environmentId, sessionId }` entries qualify other hosts. The legacy
+  `sessionId` + `direction` form still adds a single peer. Do not combine forms.
+  With `sessionIds`, optional `layout` specifies nested splits instead of automatic
+  placement: a leaf is a 0-based list index (each exactly once), and a branch is
+  `{ direction: 'row' | 'column', first, second, ratio? }`. `row` is left/right;
+  `column` is top/bottom. Ratio is the first share excluding the divider, default
+  `0.5` (range `0.05–0.95`). The complete tree must fit minimum tile dimensions;
+  otherwise nothing changes. It preserves focus if listed, or focuses the first
+  listed session. Example: `{ sessionIds: ['A', 'B', 'C'], layout: { direction:
+  'row', first: 0, second: { direction: 'column', first: 1, second: 2 } } }`.
+- `close_split` accepts `sessionIds`, legacy `sessionId`, or `closeAll: true`.
+  `closeAll` retains the focused session alone and clears restore state; it
+  excludes explicit IDs. Closing every tile also retains the focused session.
+  Saved tiles can be closed while maximized.
+- `maximize_split` temporarily shows the holder tile alone while preserving
+  the mosaic; it requires a current or saved mosaic. `restore_splits` restores
+  saved proportions if current space permits. With no saved layout restore is
+  a no-op. Mini-apps cannot pass `target` or call `focus_session`.
+- `resize_splits` takes `dividers: [{ id, ratio }]` from the snapshot. All changes
+  must fit minimum tile dimensions in the final proposed tree, or none apply.
+  It preserves structure; use `split_session` with `sessionIds` + `layout` to
+  change the split structure or tile order.
+- Snapshots and session-layout results include `layout`: current area, capacity,
+  tile identities/boxes, focused session, normal/maximized state and divider
+  IDs/ratios. Area coordinates use viewport CSS pixels; tile/divider coordinates
+  are area-relative. IDs survive focus/resizing while the subtree topology
+  remains unchanged; refresh them after topology changes. Hidden saved layouts
+  expose identities/proportions without visible geometry.
 
 ## Session input forms
 

@@ -2,6 +2,7 @@ import { MINIAPP_DEV_SERVER_FILE, type MiniAppManifest } from '@superone/shared/
 import authorDts from '@superone/shared/miniapp-author-api.d.ts?raw'
 import composerDts from '@superone/shared/composer-api.d.ts?raw'
 import hostDts from '@superone/shared/miniapp-host-api.d.ts?raw'
+import layoutDts from '@superone/shared/layout-session-api.d.ts?raw'
 
 export interface GeneratedFile {
   path: string
@@ -287,7 +288,8 @@ export {}
 }
 
 export function generateHostDts(): string {
-  return withComposerApi(hostDts)
+  const body = hostDts.replace(/^import type \{[^}]*\} from '\.\/layout-session-api';?\n/gm, '')
+  return `${layoutDts}\n${withComposerApi(body)}`
 }
 
 export function slugify(name: string): string {

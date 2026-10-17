@@ -35,7 +35,7 @@ export function CodingWorkspace({ mosaicMode, compact = false }: CodingWorkspace
 
   return (
     <>
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode === 'mosaic' && 'hidden')}>
+      <div data-layout-single className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode === 'mosaic' && 'hidden')}>
         <CodingLayout foreground={effectiveMode !== 'mosaic'} scope={singleScope} compact={compact} />
       </div>
       <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode !== 'mosaic' && 'hidden')}>

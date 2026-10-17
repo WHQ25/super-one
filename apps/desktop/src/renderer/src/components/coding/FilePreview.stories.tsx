@@ -10,7 +10,7 @@ const ROOT = '/storybook'
 mockIpc('app', 'getMediaServerPort', async () => 0)
 mockIpc('environment', 'mcpAppFileHandlers', async () => ({ ok: true, value: { handlers: [] } }))
 
-function Preview({ filePath, width = 720, height = 480 }: { filePath: string; width?: number; height?: number }) {
+function Preview({ filePath, fileRoot, width = 720, height = 480 }: { filePath: string; fileRoot?: string; width?: number; height?: number }) {
   useAppStore.setState({ currentFolder: ROOT })
   mockIpc('app', 'getGitDiffFile', async () => ({ path: filePath, diff: '' }))
   mockIpc('app', 'readProjectFile', async () => {
@@ -23,7 +23,7 @@ function Preview({ filePath, width = 720, height = 480 }: { filePath: string; wi
   })
   return (
     <div className="border border-border bg-background" style={{ width, maxWidth: '100%', height }}>
-      <FilePreview filePath={filePath} />
+      <FilePreview filePath={filePath} fileRoot={fileRoot} />
     </div>
   )
 }
@@ -41,3 +41,5 @@ export const Video: Story = { args: { filePath: 'onboarding.mp4' } }
 export const Audio: Story = { args: { filePath: 'song-with-cover.mp3' } }
 export const VideoShortPane: Story = { args: { filePath: 'onboarding.mp4' }, render: (args) => <Preview {...args} height={240} /> }
 export const AudioNarrow: Story = { args: { filePath: 'song-with-cover.mp3' }, render: (args) => <Preview {...args} width={320} /> }
+
+export const RemoteSessionFile: Story = { args: { filePath: 'onboarding.mp4', fileRoot: 'remote:node:/worktree' } }

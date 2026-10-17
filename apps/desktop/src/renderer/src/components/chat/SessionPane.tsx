@@ -4,6 +4,7 @@ import { ChatContent } from '@/components/chat/ChatContent'
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { usePaneHarnessTheme } from '@/hooks/useHarnessTheme'
 import { cn } from '@superone/ui/lib/utils'
+import { SessionPaneForeground } from '@/stores/chat-store/session-scope'
 
 interface SessionPaneProps {
   scope?: SessionScope
@@ -46,10 +47,13 @@ export function SessionPane({ scope, className, foreground = true }: SessionPane
     () => (scope ? { projectPath: scope.projectPath, sessionId: scope.sessionId } : null),
     [scope?.projectPath, scope?.sessionId],
   )
-  if (!value) return <SessionPaneBody className={className} foreground={foreground} />
   return (
-    <SessionScopeProvider value={value}>
-      <ScopedSessionPaneBody className={className} foreground={foreground} scope={value} />
-    </SessionScopeProvider>
+    <SessionPaneForeground.Provider value={foreground}>
+      {value ? (
+        <SessionScopeProvider value={value}>
+          <ScopedSessionPaneBody className={className} foreground={foreground} scope={value} />
+        </SessionScopeProvider>
+      ) : <SessionPaneBody className={className} foreground={foreground} />}
+    </SessionPaneForeground.Provider>
   )
 }

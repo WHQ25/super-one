@@ -1,15 +1,15 @@
 /**
  * SuperOne MCP tools layout_snapshot / layout_act: thin adapters over the renderer's
  * layout control API (docs/features/layout-control.md). Every action is reversible
- * and scoped to the calling session, so none needs a confirmation.
+ * with an explicit UI target separate from the caller. None needs a confirmation.
  */
 import { encode as toonEncode } from '@toon-format/toon'
-import { openedTabNote, type LayoutActRequest, type OpenedTabNote, type OpenedTabPresentation } from '@superone/shared/layout-control'
+import { openedTabNote, type LayoutActRequest, type LayoutTarget, type OpenedTabNote, type OpenedTabPresentation } from '@superone/shared/layout-control'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { currentHostActionConnection } from './artifact-registry'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
-export type LayoutSnapshotArgs = Record<string, never>
+export type LayoutSnapshotArgs = { target?: LayoutTarget }
 export type LayoutActArgs = LayoutActRequest
 
 function toolResult(value: unknown, isError = false) {
@@ -19,17 +19,13 @@ function toolResult(value: unknown, isError = false) {
   }
 }
 
-/**
- * A remote node's agent has no SuperOne window of its own to arrange. Answered
- * as a result, not an error, so the agent stops instead of retrying.
- */
-function unsupportedOnRemoteNode() {
-  if (currentHostActionConnection() === null) return null
-  return toolResult({
-    status: 'unsupported',
-    reason: 'remote_node',
-    message: 'Layout control is only available to sessions running on this desktop.',
-  })
+/** Preserve the authenticated Host Action source when resolving caller/localhost. */
+async function sourceEnvironmentId(): Promise<string> {
+  const { getEnvironmentHost } = await import('../environment/environment-host')
+  const connection = currentHostActionConnection() ?? 'local'
+  const source = (await getEnvironmentHost().listEnvironments({ includeDescriptors: false })).find(item => item.connectionId === connection)
+  if (!source) throw new Error('The invoking session environment is unavailable.')
+  return source.environmentId
 }
 
 /** The folder relative file paths resolve against: the session's working directory. */
@@ -61,11 +57,9 @@ function errorText(err: unknown): string {
   return `[Error] ${err instanceof Error ? err.message : String(err)}`
 }
 
-export async function layoutSnapshotHandler(_args: LayoutSnapshotArgs, deps: BuiltInSuperoneToolDeps) {
-  const unsupported = unsupportedOnRemoteNode()
-  if (unsupported) return unsupported
+export async function layoutSnapshotHandler(args: LayoutSnapshotArgs, deps: BuiltInSuperoneToolDeps) {
   try {
-    const snapshot = await browserAutomationCall(deps.sessionId, 'layoutSnapshot', { root: sessionRoot(deps) })
+    const snapshot = await browserAutomationCall(deps.sessionId, 'layoutSnapshot', { environmentId: await sourceEnvironmentId(), root: sessionRoot(deps), target: args.target }, deps.signal)
     return toolResult(toonEncode(snapshot))
   } catch (err) {
     return toolResult(errorText(err), true)
@@ -73,10 +67,8 @@ export async function layoutSnapshotHandler(_args: LayoutSnapshotArgs, deps: Bui
 }
 
 export async function layoutActHandler(args: LayoutActArgs, deps: BuiltInSuperoneToolDeps) {
-  const unsupported = unsupportedOnRemoteNode()
-  if (unsupported) return unsupported
   try {
-    return toolResult(await browserAutomationCall(deps.sessionId, 'layoutAct', { root: sessionRoot(deps), request: args }))
+    return toolResult(await browserAutomationCall(deps.sessionId, 'layoutAct', { environmentId: await sourceEnvironmentId(), root: sessionRoot(deps), request: args }, deps.signal))
   } catch (err) {
     return toolResult(errorText(err), true)
   }

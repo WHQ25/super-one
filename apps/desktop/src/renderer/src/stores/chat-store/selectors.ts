@@ -73,6 +73,13 @@ export function getActiveSessionView(scope: SessionScope | null): ActiveSessionV
   return mergedView(`${projectPath} ${sessionId}`, project, session)
 }
 
+/** Scoped initialization must never treat an evicted/background pane as the active draft. */
+export function isSelectedSessionScope(store: Pick<ChatStore, 'activeProject' | 'projectSessions'>, scope: SessionScope | null): boolean {
+  if (!scope) return true
+  const project = store.projectSessions[scope.projectPath]
+  return store.activeProject === scope.projectPath && project?._activeSessionId === scope.sessionId && !!project._sessions[scope.sessionId]
+}
+
 export function useIsRemoteLocked(): boolean {
   const scope = useSessionScope()
   return useChatStore((store) => {

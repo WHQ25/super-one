@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, expect, expectTypeOf, it, vi, beforeEach } from 'vitest'
-import type { LayoutActRequest, LayoutActResult, LayoutSnapshot } from '@superone/shared/layout-control'
+import type { LayoutActAction, LayoutActRequest, LayoutActResult, LayoutSnapshot } from '@superone/shared/layout-control'
 import type { SuperOneMiniAppLayoutRequest, SuperOneMiniAppLayoutResult, SuperOneMiniAppLayoutSnapshot } from '@superone/shared/miniapp-host-api'
 
 const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, layoutSnapshot, layoutAct } =
@@ -18,6 +18,7 @@ const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExte
 
 vi.mock('sonner', () => ({ toast: toastFns }))
 vi.mock('@/lib/layout-control', () => ({ layoutSnapshot, layoutAct }))
+vi.mock('@/lib/layout-mosaic', () => ({ sessionLayoutSnapshot: vi.fn(async () => undefined) }))
 vi.mock('@/lib/external-link', () => ({ requestOpenExternalLink: openExternal }))
 vi.mock('@/lib/miniapp-clipboard', () => ({
   requestClipboardRead: clipboardRead,
@@ -122,9 +123,15 @@ describe('MiniApp Host actions in the renderer', () => {
     expect(layoutSnapshot).not.toHaveBeenCalled()
   })
 
+  it('does not grant cross-session navigation to mini-apps through the shared implementation', async () => {
+    await expect(runMiniAppHostAction('demo', '/proj', 'layout.act', { action: 'focus_session', target: { environmentId: 'desktop', sessionId: 'other' } })).rejects.toThrow('holder session')
+    expect(layoutAct).not.toHaveBeenCalled()
+  })
+
   it('keeps the author-facing layout types in step with the shared contract', () => {
     expectTypeOf<LayoutSnapshot>().toEqualTypeOf<SuperOneMiniAppLayoutSnapshot>()
-    expectTypeOf<LayoutActRequest>().toEqualTypeOf<SuperOneMiniAppLayoutRequest>()
+    expectTypeOf<Omit<LayoutActRequest, 'target' | 'action' | 'sessionEnvironmentId'> & { action: Exclude<LayoutActAction, 'focus_session'> }>().toMatchTypeOf<SuperOneMiniAppLayoutRequest>()
+    expectTypeOf<SuperOneMiniAppLayoutRequest>().toMatchTypeOf<Omit<LayoutActRequest, 'target' | 'action' | 'sessionEnvironmentId'> & { action: Exclude<LayoutActAction, 'focus_session'> }>()
     expectTypeOf<LayoutActResult>().toEqualTypeOf<SuperOneMiniAppLayoutResult>()
   })
 })

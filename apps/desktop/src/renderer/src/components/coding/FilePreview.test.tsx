@@ -40,6 +40,14 @@ function tabLabels(): string[] {
 }
 
 describe('FilePreview tab derivation', () => {
+  it('keeps a remote target file bound to its own root while the foreground project changes', async () => {
+    stubFile({ language: 'typescript', content: 'remote', diff: '' })
+    const read = vi.spyOn(window.app, 'readProjectFile')
+    render(<FilePreview filePath="report.ts" fileRoot="remote:node:/worktree" />)
+    await waitFor(() => expect(read).toHaveBeenCalledWith('remote:node:/worktree', 'report.ts'))
+    useAppStore.setState({ currentFolder: '/other-project' })
+    expect(read.mock.calls.every(([root]) => root === 'remote:node:/worktree')).toBe(true)
+  })
   beforeEach(() => {
     useAppStore.setState({ currentFolder: '/proj' })
   })

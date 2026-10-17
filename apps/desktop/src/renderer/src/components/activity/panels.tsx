@@ -12,8 +12,8 @@ import { SideChatPanel } from '@/components/chat/SideChatPanel'
 import { ActivityTerminalPanel } from './ActivityTerminalPanel'
 import { McpAppPanel } from '@/components/mcp-apps/McpAppPanel'
 
-function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
-  return <FilePreview filePath={props.params.filePath} />
+function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string; fileRoot?: string }>) {
+  return <FilePreview filePath={props.params.filePath} fileRoot={props.params.fileRoot} />
 }
 
 function MiniAppPanel(props: IDockviewPanelProps<{ instanceKey: string; appId: string }>) {

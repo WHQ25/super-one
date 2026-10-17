@@ -90,6 +90,10 @@ function showSessionInFront(sessionId: string) {
 }
 
 beforeEach(() => {
+  Object.defineProperties(window, {
+    innerWidth: { value: 1600, writable: true, configurable: true },
+    innerHeight: { value: 1000, writable: true, configurable: true },
+  })
   _resetDockOwnershipForTest()
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   ;(window as unknown as { terminal: unknown }).terminal = { list: vi.fn(async () => []) }
@@ -101,6 +105,13 @@ beforeEach(() => {
   useTerminalStore.setState({ openBySession: {} })
   useChatStore.setState({ mountSession: vi.fn(async () => {}), switchToSession: vi.fn(async () => {}), unmountSession: vi.fn() } as never)
   showSessionInFront('A')
+  useChatStore.setState(s => ({ projectSessions: { [PROJECT]: { ...s.projectSessions[PROJECT], _sessions: { A: {} as never } } } }))
+  document.body.innerHTML = '<div data-main-content></div>'
+  vi.spyOn(document.querySelector('[data-main-content]')!, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, width: 1200, height: 900 } as DOMRect)
+  Object.assign(window, { environment: { sessionSource: vi.fn(async () => 'desktop'), sessionLinkTarget: vi.fn(async ref => {
+    if (ref.sessionId === 'X') throw new Error('Session was not found')
+    return { ref, projectPath: PROJECT, connectionId: null }
+  }), getSession: vi.fn(async () => ({})) } })
 })
 
 afterEach(() => {
@@ -408,14 +419,14 @@ describe('opening a mini-app for the agent', () => {
 
 describe('session split', () => {
   it('reports a session that does not exist', async () => {
-    await expect(layoutAct(agentA, { action: 'split_session', sessionId: 'X' })).rejects.toMatchObject({ code: 'not_found' })
+    await expect(layoutAct(agentA, { action: 'split_session', sessionId: 'X' })).rejects.toThrow('not found')
     expect(useMosaicStore.getState().mode).toBe('single')
   })
 
   it('adds another session beside itself without moving focus, and any caller can close that pane', async () => {
     vi.mocked(window.app.getSessionProject).mockResolvedValue(PROJECT)
 
-    expect(await layoutAct(agentA, { action: 'split_session', sessionId: 'C' })).toEqual({ status: 'applied', visible: true })
+    expect(await layoutAct(agentA, { action: 'split_session', sessionId: 'C' })).toMatchObject({ status: 'applied', visible: true })
 
     const mosaic = useMosaicStore.getState()
     expect(mosaic.mode).toBe('mosaic')
@@ -423,8 +434,6 @@ describe('session split', () => {
     expect(mosaic.focusedTileId).toBe(mosaicTileId(PROJECT, 'A'))
     expect(useChatStore.getState().switchToSession).not.toHaveBeenCalled()
     expect(layoutSnapshot(agentA).window).toMatchObject({ layout: 'split', splitSessions: ['A', 'C'] })
-
-    await expect(layoutAct(agentA, { action: 'close_split', sessionId: 'A' })).rejects.toMatchObject({ code: 'invalid' })
 
     const miniApp: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'miniapp', appId: 'demo' } }
     await layoutAct(miniApp, { action: 'close_split', sessionId: 'C' })

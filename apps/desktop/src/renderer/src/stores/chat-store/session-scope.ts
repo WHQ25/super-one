@@ -6,6 +6,8 @@ export interface SessionScope {
 }
 
 const SessionScopeContext = createContext<SessionScope | null>(null)
+export const SessionPaneForeground = createContext(true)
+export function useSessionPaneForeground(): boolean { return useContext(SessionPaneForeground) }
 
 export const SessionScopeProvider = SessionScopeContext.Provider
 

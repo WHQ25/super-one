@@ -5,6 +5,7 @@ import log from '../logger'
 import { currentHostActionConnection } from '../mcp/artifact-registry'
 import { rememberTabDriver } from './browser-tab-drivers'
 import { holdHostPainting, withHostPainting } from './host-paint-lease'
+import { remoteSessionKey } from '@superone/shared/remote-resource-key'
 
 export type BrowserAutomationOp =
   | 'snapshot'
@@ -42,6 +43,7 @@ export type BrowserAutomationOp =
   | 'tabPresentation'
 
 interface PendingCall {
+  cleanup?: () => void
   resolve: (result: unknown) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
@@ -73,6 +75,7 @@ function failCallsOnRendererLoss(contents: WebContents): void {
     for (const [callId, pending] of pendingCalls) {
       if (pending.contents !== contents) continue
       clearTimeout(pending.timer)
+      pending.cleanup?.()
       pendingCalls.delete(callId)
       pending.reject(new Error(
         `${callLabel(pending.op)} '${pending.op}' was interrupted: ${reason}. It may have partly run; check the page before retrying.`,
@@ -128,12 +131,12 @@ async function startRecording(win: BrowserWindow, call: () => Promise<unknown>):
   }
 }
 
-export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp, input: unknown): Promise<unknown> {
+export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp, input: unknown, signal?: AbortSignal): Promise<unknown> {
   const win = getMainWindow?.()
   if (!win || win.isDestroyed()) {
     return Promise.reject(new Error('No renderer window available for browser automation'))
   }
-  const call = () => dispatchBrowserAutomation(win, sessionId, op, input)
+  const call = () => dispatchBrowserAutomation(win, sessionId, op, input, signal)
   // Ops that read the guest's pixels, which only exist while the app window composites.
   switch (op) {
     case 'screenshot':
@@ -152,11 +155,14 @@ function dispatchBrowserAutomation(
   sessionId: string,
   op: BrowserAutomationOp,
   input: unknown,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   failCallsOnRendererLoss(win.webContents)
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error(`${callLabel(op)} '${op}' was cancelled`))
     const callId = randomUUID()
     const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', cancel)
       pendingCalls.delete(callId)
       // Stop the renderer too: a call nobody waits for must not keep holding
       // capture state on the tab and poison the next call.
@@ -170,8 +176,18 @@ function dispatchBrowserAutomation(
       }
       reject(new Error(`${callLabel(op)} '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms; the renderer-side work was cancelled`))
     }, BROWSER_CALL_TIMEOUT_MS)
-    pendingCalls.set(callId, { resolve, reject, timer, op, contents: win.webContents })
-    win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input })
+    const cancel = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', cancel)
+      pendingCalls.delete(callId)
+      if (!win.isDestroyed()) win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId: randomUUID(), sessionId, op: 'cancel', input: { callId } })
+      reject(new Error(`${callLabel(op)} '${op}' was cancelled`))
+    }
+    pendingCalls.set(callId, { resolve, reject, timer, op, contents: win.webContents, cleanup: () => signal?.removeEventListener('abort', cancel) })
+    signal?.addEventListener('abort', cancel, { once: true })
+    const connectionId = currentHostActionConnection()
+    const routedInput = connectionId ? { ...(input as object), __layoutOwnerKey: remoteSessionKey(connectionId, sessionId) } : input
+    win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input: routedInput })
   })
 }
 
@@ -281,6 +297,7 @@ export function resolveBrowserAutomation(callId: string, result: unknown): void 
     return
   }
   clearTimeout(pending.timer)
+  pending.cleanup?.()
   pendingCalls.delete(callId)
   pending.resolve(result)
 }
@@ -292,6 +309,7 @@ export function rejectBrowserAutomation(callId: string, error: string): void {
     return
   }
   clearTimeout(pending.timer)
+  pending.cleanup?.()
   pendingCalls.delete(callId)
   pending.reject(new Error(error))
 }

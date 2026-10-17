@@ -19,6 +19,7 @@ import { deliverUserSend, dropSendReplay, replayFailedSend } from '../helpers/se
 import { createSendWriteScope } from '../helpers/send-write-scope'
 import { resendSessionMessage } from '../helpers/session-turn'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { callSession } from '@/lib/session-client'
 import { failedMessageResend, withoutSendFailure } from '@superone/chat-core'
 import { isDuplicateSend } from '@superone/shared/send-failure'
@@ -235,7 +236,7 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
         [projectPath]: { ...proj, _sessions: rest },
       },
     })
-    useActivityViewStateStore.getState().clearForSession(sessionId)
+    useActivityViewStateStore.getState().clearForSession(projectSessionKey(projectPath, sessionId))
     disposeModUiClient(sessionId)
   },
 })

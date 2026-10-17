@@ -4,6 +4,7 @@
  * Types only — `@superone/shared/miniapp-host-api` has no runtime `default`
  * export, so always `import type`. A value import fails at runtime.
  */
+import type { SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
 import type { SuperOneComposerOpenOptions, SuperOneComposerOutcome, SuperOneComposerSpec } from './composer-api'
 
 export type * from './composer-api'
@@ -124,7 +125,7 @@ export type SuperOneMiniAppLayoutAction =
   | 'show_panel' | 'hide_panel' | 'maximize_panel' | 'restore_panel' | 'panel_side'
   | 'show_sidebar' | 'hide_sidebar' | 'resize_sidebar' | 'resize_panel' | 'chat_mode'
   | 'show_terminal' | 'hide_terminal'
-  | 'split_session' | 'close_split'
+  | 'split_session' | 'close_split' | 'maximize_split' | 'restore_splits' | 'resize_splits'
 
 export interface SuperOneMiniAppLayoutRequest {
   action: SuperOneMiniAppLayoutAction
@@ -142,8 +143,13 @@ export interface SuperOneMiniAppLayoutRequest {
   index?: number
   /** panel_side. */
   side?: 'left' | 'right'
-  /** split_session / close_split: any session other than the holder session. */
+  /** split_session: another session to add; close_split: a tile to remove. */
   sessionId?: string
+  sessionIds?: (string | { environmentId: string; sessionId: string })[]
+  /** split_session with sessionIds: nested splits using each 0-based list index once; omit for automatic arrangement. */
+  layout?: SessionSplitLayout
+  closeAll?: boolean
+  dividers?: { id: string; ratio: number }[]
   /** resize_sidebar / resize_panel / resize_group: target width in px; sidebar and panel clamp to `snapshot().sizes`. */
   width?: number
   /** resize_group: target height in px. */
@@ -158,11 +164,13 @@ export type SuperOneMiniAppLayoutChatPosition =
   | 'top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left'
 
 export interface SuperOneMiniAppLayoutResult {
+  layout?: SessionLayoutSnapshot
   status: 'applied' | 'queued' | 'skipped'
   /** Whether the user can see the result now. */
   visible: boolean
   tab?: string
-  reason?: 'not_visible'
+  reason?: 'not_visible' | 'superseded'
+  targetSession?: { environmentId: string; sessionId: string }
   /** resize_sidebar / resize_panel / resize_group: the size applied after clamping. */
   width?: number
   height?: number
@@ -178,6 +186,10 @@ export interface SuperOneMiniAppLayoutTab {
 }
 
 export interface SuperOneMiniAppLayoutSnapshot {
+  layout?: SessionLayoutSnapshot
+  targetSession?: { environmentId: string; sessionId: string }
+  focusedSession?: { environmentId: string; sessionId: string } | null
+  visibleSessions?: Array<{ environmentId: string; sessionId: string }>
   /** The holder session's chat is on screen and the window is visible. */
   visible: boolean
   window: { visible: boolean; sidebar: 'expanded' | 'collapsed'; layout: 'single' | 'split'; splitSessions?: string[] }

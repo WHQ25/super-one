@@ -1,4 +1,4 @@
-import type { LayoutActAction, LayoutChatMode, LayoutChatPosition } from '../layout-control'
+import { layoutControlEn, type LayoutControlMessages } from './layout-control'
 import { interactionMemoryEn } from './interaction-memory'
 import { mediaComposerEn } from './media-composer'
 /**
@@ -2607,14 +2607,7 @@ export type Messages = {
       miniAppPacked: string
       generatingWidget: string
       generateWidget: string
-      layoutControl: {
-        snapshot: { streaming: string; done: string; action: string }
-        actions: Record<LayoutActAction, { streaming: string; done: string; action: string }>
-        side: { left: string; right: string }
-        chatMode: Record<LayoutChatMode, string>
-        chatPosition: Record<LayoutChatPosition, string>
-        outcome: { queued: string; skipped: string; unsupported: string }
-      }
+      layoutControl: LayoutControlMessages
       suggestedTask: {
         suggestingTask: string
         suggestTask: string
@@ -7134,43 +7127,7 @@ export const en: Messages = {
       miniAppPacked: 'Mini-app Packed',
       generatingWidget: 'Generating widget…',
       generateWidget: 'Widget Generated',
-      layoutControl: {
-        snapshot: { streaming: 'Reading layout…', done: 'Layout Read', action: 'Read Layout' },
-        actions: {
-          open_file: { streaming: 'Opening file…', done: 'File Opened', action: 'Open File' },
-          focus_tab: { streaming: 'Focusing tab…', done: 'Tab Focused', action: 'Focus Tab' },
-          close_tab: { streaming: 'Closing tab…', done: 'Tab Closed', action: 'Close Tab' },
-          move_tab: { streaming: 'Moving tab…', done: 'Tab Moved', action: 'Move Tab' },
-          resize_group: { streaming: 'Resizing group…', done: 'Group Resized', action: 'Resize Group' },
-          show_panel: { streaming: 'Showing panel…', done: 'Panel Shown', action: 'Show Panel' },
-          hide_panel: { streaming: 'Hiding panel…', done: 'Panel Hidden', action: 'Hide Panel' },
-          maximize_panel: { streaming: 'Maximizing panel…', done: 'Panel Maximized', action: 'Maximize Panel' },
-          restore_panel: { streaming: 'Restoring panel…', done: 'Panel Restored', action: 'Restore Panel' },
-          panel_side: { streaming: 'Moving panel…', done: 'Panel Moved', action: 'Move Panel' },
-          show_sidebar: { streaming: 'Expanding sidebar…', done: 'Sidebar Expanded', action: 'Expand Sidebar' },
-          hide_sidebar: { streaming: 'Collapsing sidebar…', done: 'Sidebar Collapsed', action: 'Collapse Sidebar' },
-          resize_sidebar: { streaming: 'Resizing sidebar…', done: 'Sidebar Resized', action: 'Resize Sidebar' },
-          resize_panel: { streaming: 'Resizing panel…', done: 'Panel Resized', action: 'Resize Panel' },
-          chat_mode: { streaming: 'Changing chat view…', done: 'Chat View Changed', action: 'Change Chat View' },
-          show_terminal: { streaming: 'Showing terminal…', done: 'Terminal Shown', action: 'Show Terminal' },
-          hide_terminal: { streaming: 'Hiding terminal…', done: 'Terminal Hidden', action: 'Hide Terminal' },
-          split_session: { streaming: 'Splitting in session…', done: 'Session Split In', action: 'Split In Session' },
-          close_split: { streaming: 'Closing split…', done: 'Split Closed', action: 'Close Split' },
-        },
-        side: { left: 'left', right: 'right' },
-        chatMode: { docked: 'docked', floating: 'floating', icon: 'icon' },
-        chatPosition: {
-          'top-left': 'top left',
-          top: 'top',
-          'top-right': 'top right',
-          right: 'right',
-          'bottom-right': 'bottom right',
-          bottom: 'bottom',
-          'bottom-left': 'bottom left',
-          left: 'left',
-        },
-        outcome: { queued: 'when you open this session', skipped: 'skipped while you were elsewhere', unsupported: 'not available on a remote node' },
-      },
+      layoutControl: layoutControlEn,
       suggestedTask: {
         suggestingTask: 'Suggesting task…',
         suggestTask: 'Suggest Task',

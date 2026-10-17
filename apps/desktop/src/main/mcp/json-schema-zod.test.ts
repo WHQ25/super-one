@@ -1,7 +1,35 @@
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 
 describe('jsonSchemaToZodShape', () => {
+  it('validates recursive local references and serializes them for the MCP tool list', () => {
+    const schema = z.object(jsonSchemaToZodShape({
+      properties: { layout: { $ref: '#/$defs/split' } },
+      $defs: { split: { anyOf: [
+        { type: 'integer', minimum: 0 },
+        { type: 'object', properties: { first: { $ref: '#/$defs/split' }, second: { $ref: '#/$defs/split' } }, required: ['first', 'second'], additionalProperties: false },
+      ] } },
+    }))
+    expect(schema.parse({ layout: { first: 0, second: { first: 1, second: 2 } } })).toEqual({ layout: { first: 0, second: { first: 1, second: 2 } } })
+    expect(schema.safeParse({ layout: { first: 0, second: { first: -1, second: 2 } } }).success).toBe(false)
+    expect(schema.safeParse({ layout: { first: 0 } }).success).toBe(false)
+    const json = JSON.stringify(z.toJSONSchema(schema))
+    expect(json).toContain('$ref')
+    expect(json).toContain('minimum')
+  })
+
+  it('keeps layout target unions strict on the Claude registration path', () => {
+    const { target } = jsonSchemaToZodShape({ properties: { target: { anyOf: [
+      { type: 'string', enum: ['caller', 'foreground'] },
+      { type: 'object', properties: { environmentId: { type: 'string', minLength: 1 }, sessionId: { type: 'string', minLength: 1 } }, required: ['environmentId', 'sessionId'], additionalProperties: false },
+    ] } } })
+    expect(target.safeParse('foreground').success).toBe(true)
+    expect(target.safeParse({ environmentId: 'node', sessionId: 'B' }).success).toBe(true)
+    expect(target.safeParse('other').success).toBe(false)
+    expect(target.safeParse({ sessionId: 'B' }).success).toBe(false)
+    expect(target.safeParse({ environmentId: 'node', sessionId: 'B', extra: true }).success).toBe(false)
+  })
   it('maps primitive types', () => {
     const shape = jsonSchemaToZodShape({
       type: 'object',

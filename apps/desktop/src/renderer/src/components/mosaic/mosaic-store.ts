@@ -41,6 +41,11 @@ interface MosaicState {
   draggingSession: boolean
   draggedSession: { projectPath: string; sessionId: string } | null
   dropHint: DropPlan | null
+  /** Commit a validated complete tree once; hidden saved tiles own no mount protection. */
+  applyLayout: (root: MosaicNode, focusedTileId: string, maximized?: boolean, options?: {
+    canApply?: () => boolean
+    prepare?: () => MosaicNode
+  }) => Promise<boolean>
   /** `focus: false` keeps focus on the tile that had it — an agent adding a pane must not move the user. */
   addTile: (projectPath: string, sessionId: string, target?: DropTarget, options?: { focus?: boolean }) => void
   removeTile: (id: string) => void
@@ -50,7 +55,7 @@ interface MosaicState {
   setDropHint: (hint: DropPlan | null) => void
   exitToSingle: () => void
   restoreLayout: () => void
-  focusOrReplaceFocused: (projectPath: string, sessionId: string) => boolean
+  focusOrReplaceFocused: (projectPath: string, sessionId: string, options?: { navigate?: boolean }) => boolean
   replaceTileSession: (projectPath: string, previousSessionId: string, sessionId: string) => boolean
 }
 
@@ -78,6 +83,47 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
   draggingSession: false,
   draggedSession: null,
   dropHint: null,
+
+  applyLayout: async (root, focusedTileId, maximized = false, options) => {
+    const previous = get()
+    const focused = findLeaf(root, focusedTileId) ?? collectLeaves(root)[0]!
+    const chat = useChatStore.getState()
+    const source = currentActiveSeed()
+    const switchNeeded = source?.projectPath !== focused.projectPath || source.sessionId !== focused.sessionId
+    const stillCurrent = () => {
+      const fresh = get()
+      return fresh.root === previous.root && fresh.mode === previous.mode && fresh.focusedTileId === previous.focusedTileId
+        && fresh.lastLayout === previous.lastLayout && options?.canApply?.() !== false
+    }
+    try {
+      if (switchNeeded) await chat.switchToSession(focused.projectPath, focused.sessionId)
+      if (!stillCurrent()) return false
+      const active = currentActiveSeed()
+      if (active?.projectPath !== focused.projectPath || active.sessionId !== focused.sessionId) return false
+      // Navigation can await host I/O. Reflow/validate using the dimensions at
+      // the actual commit, before publishing or mounting any part of the tree.
+      root = options?.prepare?.() ?? root
+    } catch (error) {
+      const active = currentActiveSeed()
+      if (switchNeeded && source && stillCurrent() && active?.projectPath === focused.projectPath && active.sessionId === focused.sessionId) {
+        await chat.switchToSession(source.projectPath, source.sessionId)
+      }
+      throw error
+    }
+    const leaves = collectLeaves(root)
+    const mosaic = leaves.length > 1
+    const visible = mosaic && !maximized
+    if (visible) for (const leaf of leaves) {
+      if (!chat.mountedSessions?.[leaf.projectPath]?.includes(leaf.sessionId)) void chat.mountSession(leaf.projectPath, leaf.sessionId)
+    }
+    set({ mode: visible ? 'mosaic' : 'single', root: visible ? root : null,
+      focusedTileId: visible ? focused.id : null,
+      lastLayout: mosaic && maximized ? { root, focusedTileId: focused.id } : null })
+    for (const leaf of collectLeaves(previous.root)) {
+      if (!visible || !findLeaf(root, leaf.id)) chat.unmountSession(leaf.projectPath, leaf.sessionId)
+    }
+    return true
+  },
 
   addTile: (projectPath, sessionId, target, options) => {
     const focus = options?.focus !== false
@@ -198,13 +244,14 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     if (target) void chat.switchToSession(target.projectPath, target.sessionId)
   },
 
-  focusOrReplaceFocused: (projectPath, sessionId) => {
+  focusOrReplaceFocused: (projectPath, sessionId, options) => {
     const st = get()
     if (st.mode !== 'mosaic' || !st.root) return false
     const targetId = mosaicTileId(projectPath, sessionId)
     // Target already lives in the mosaic — just move focus there.
     if (findLeaf(st.root, targetId)) {
-      get().setFocus(targetId)
+      if (options?.navigate === false) set({ focusedTileId: targetId })
+      else get().setFocus(targetId)
       return true
     }
     // Otherwise swap the focused tile's session for the target, keeping the
@@ -213,10 +260,10 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
     if (!focusId) return false
     const chat = useChatStore.getState()
     const previous = findLeaf(st.root, focusId)
-    void chat.mountSession(projectPath, sessionId)
+    if (options?.navigate !== false) void chat.mountSession(projectPath, sessionId)
     set({ root: replaceLeaf(st.root, focusId, makeLeaf(targetId, projectPath, sessionId)), focusedTileId: targetId })
     if (previous) chat.unmountSession(previous.projectPath, previous.sessionId)
-    void chat.switchToSession(projectPath, sessionId)
+    if (options?.navigate !== false) void chat.switchToSession(projectPath, sessionId)
     return true
   },
 

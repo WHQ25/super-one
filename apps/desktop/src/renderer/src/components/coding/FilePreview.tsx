@@ -65,8 +65,9 @@ function getFileExt(fileName: string): string {
 
 type TabKey = 'changes' | 'editor' | 'preview' | 'file'
 
-function useOwnFileData(filePath: string | undefined, refreshKey: number) {
-  const fileRoot = useEffectiveProjectRoot()
+function useOwnFileData(filePath: string | undefined, refreshKey: number, root?: string) {
+  const projectRoot = useEffectiveProjectRoot()
+  const fileRoot = root ?? projectRoot
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [content, setContent] = useState<GitFileContent | null>(null)
   const [tab, setTab] = useState<TabKey>('file')
@@ -111,17 +112,19 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
 
 interface FilePreviewProps {
   filePath: string
+  fileRoot?: string
 }
 
-export function FilePreview({ filePath }: FilePreviewProps) {
+export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
   const { t } = useTranslation()
-  const fileRoot = useEffectiveProjectRoot()
+  const projectRoot = useEffectiveProjectRoot()
+  const fileRoot = root ?? projectRoot
   const [isDirty, setIsDirty] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [retrying, setRetrying] = useState(false)
   const [modelViewState, setModelViewState] = useState<ModelPreviewViewState | null>(null)
   const liveContentRef = useRef<string | null>(null)
-  const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey)
+  const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey, root)
   const selectedFile = filePath
   // A failed read yields empty content — without this the preview would render
   // a blank editor, indistinguishable from an empty file.

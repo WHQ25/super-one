@@ -1,3 +1,7 @@
+import type { SessionRef } from './environment/refs'
+import type { SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
+export type { LayoutBox, LayoutDivider, LayoutSessionTile, SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
+
 /**
  * Desktop layout control shared by the `layout_snapshot` / `layout_act` agent tools and
  * the mini-app Node Host's `context.layout`. One renderer implementation answers
@@ -5,6 +9,10 @@
  */
 
 export const LAYOUT_ACT_ACTIONS = [
+  'focus_session',
+  'maximize_split',
+  'restore_splits',
+  'resize_splits',
   'open_file',
   'focus_tab',
   'close_tab',
@@ -51,6 +59,8 @@ export type LayoutChatPosition = (typeof LAYOUT_CHAT_POSITIONS)[number]
 
 export interface LayoutActRequest {
   action: LayoutActAction
+  /** Omit for the caller; foreground or an environment-qualified session for cross-session UI. */
+  target?: LayoutTarget
   /** open_file: the file. */
   path?: string
   /** open_file: 1-based line to reveal. */
@@ -65,8 +75,18 @@ export interface LayoutActRequest {
   index?: number
   /** panel_side. */
   side?: 'left' | 'right'
-  /** split_session / close_split: any session other than the caller's own. */
+  /** split_session: another session to add; close_split: a tile to remove. */
   sessionId?: string
+  /** split_session / close_split peer environment; defaults to the target environment. */
+  sessionEnvironmentId?: string
+  /** split_session: complete final list; close_split: tiles to remove. Strings use sessionEnvironmentId or the target environment. */
+  sessionIds?: (string | SessionRef)[]
+  /** split_session with sessionIds: explicit nested splits using each list index exactly once. Omit for automatic arrangement. */
+  layout?: SessionSplitLayout
+  /** close_split: retain foreground, discard the mosaic and its restore state. */
+  closeAll?: boolean
+  /** resize_splits: all divider changes are validated against the final tree. */
+  dividers?: { id: string; ratio: number }[]
   /** resize_sidebar / resize_panel / resize_group: target width in px, clamped to the snapshot's `sizes` range. */
   width?: number
   /** resize_group: target height in px. */
@@ -90,11 +110,15 @@ export interface LayoutActResult {
   /** The tab the action opened or targeted. */
   tab?: string
   /** Why a `skipped` action did nothing. */
-  reason?: 'not_visible'
+  reason?: 'not_visible' | 'superseded'
+  targetSession?: SessionRef
   /** resize_sidebar / resize_panel / resize_group: the size applied after clamping. */
   width?: number
   height?: number
+  /** Resulting session arrangement, also returned by layout_snapshot. */
+  layout?: SessionLayoutSnapshot
 }
+
 
 export type LayoutTabKind =
   | 'file'
@@ -132,6 +156,10 @@ export interface LayoutGroup {
 }
 
 export interface LayoutSnapshot {
+  layout?: SessionLayoutSnapshot
+  targetSession?: SessionRef
+  focusedSession?: SessionRef | null
+  visibleSessions?: SessionRef[]
   /** The caller's chat is on screen (foreground or a split pane) and the window is visible. */
   visible: boolean
   window: {
@@ -186,9 +214,22 @@ export interface LayoutSizes {
 /** Who is asking. The opener is recorded on the tabs the caller opens (`openedBy`). */
 export interface LayoutControlCaller {
   sessionId: string
+  /** Authenticated source environment; localhost targets resolve here, never on the viewing host. */
+  environmentId?: string
   opener: { kind: 'agent' } | { kind: 'miniapp'; appId: string; instanceKey?: string }
   /** The caller's working folder: relative file paths resolve against it. */
   root?: string
+}
+
+export type LayoutTarget = 'caller' | 'foreground' | SessionRef
+
+/** Resolved UI destination, separate from the actor's identity. */
+export interface LayoutControlSession {
+  key: string
+  sessionId: string
+  projectPath: string
+  root: string
+  peerProjectPath?: string
 }
 
 export type LayoutControlErrorCode = 'invalid' | 'not_found' | 'unavailable'

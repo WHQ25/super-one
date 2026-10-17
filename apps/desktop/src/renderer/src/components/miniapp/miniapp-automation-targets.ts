@@ -1,3 +1,4 @@
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { toolUiPreviewKey, toolUiPreviewSlotKey, useToolUiPreviewStore, type ToolUiPreview } from '@/stores/miniapp-tool-preview'
@@ -126,7 +127,8 @@ export function requireProjectDir(sessionId: string): string {
  */
 export function isSessionDockOnScreen(sessionId: string): boolean {
   const current = dockSessionId()
-  return current === null || current === sessionId
+  const project = sessionProjectDir(sessionId)
+  return current === null || current === (project ? projectSessionKey(project, sessionId) : sessionId)
 }
 
 export function parseMiniAppTargetId(targetId: string): { appId: string; kind: MiniAppTargetKind } {

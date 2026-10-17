@@ -221,6 +221,12 @@ describe('shared composer types in generated declarations', () => {
 })
 
 describe('generateHostDts', () => {
+  it('keeps session layout declarations standalone for generated mini-app projects', () => {
+    const dts = generateHostDts()
+    expect(dts).not.toMatch(/^import type .*from '\.\/layout-/m)
+    expect(dts.match(/interface SessionLayoutSnapshot\b/g)).toHaveLength(1)
+  })
+
   it('covers MiniApp Host tools, state, and storage paths', () => {
     const dts = generateHostDts()
     expect(dts).toContain('handle(')

@@ -17,6 +17,10 @@ beforeEach(() => {
   m.state.projectSessions = { '/source': { _activeSessionId: 'source' } }
   m.target.mockResolvedValue({ ref, projectPath: '/target', connectionId: null })
   m.load.mockResolvedValue({})
+  m.switch.mockImplementation(async (projectPath: string, sessionId: string) => {
+    m.state.activeProject = projectPath
+    m.state.projectSessions[projectPath] = { _activeSessionId: sessionId }
+  })
   Object.assign(window, { environment: { sessionLinkTarget: m.target, getSession: m.load } })
 })
 describe('desktop session link navigation', () => {
@@ -53,7 +57,8 @@ describe('desktop session link navigation', () => {
     await openSessionLink(ref)
     expect(m.load).toHaveBeenCalledWith('local', 'target')
     expect(m.switch).toHaveBeenCalledWith('/target', 'target')
-    expect(m.focus).toHaveBeenCalledWith('/target', 'target')
+    expect(m.focus).toHaveBeenCalledWith('/target', 'target', { navigate: false })
+    m.state.activeProject = '/source'
     m.target.mockResolvedValue({ ref: { environmentId: 'desktop', sessionId: 'source' }, projectPath: '/source', connectionId: null })
     m.load.mockClear(); m.switch.mockClear()
     await openSessionLink({ environmentId: 'desktop', sessionId: 'source' })

@@ -30,6 +30,10 @@ const SAMPLE_PARAMS: Record<string, Record<string, unknown>> = {
   resize_sidebar: { width: 400 },
   resize_panel: { width: 720 },
   chat_mode: { mode: 'floating', position: 'top-right' },
+  maximize_split: { target: { environmentId: 'desktop', sessionId: 'artifact' } },
+  split_session: { sessionIds: ['voice', 'artifact', 'worker'] },
+  close_split: { closeAll: true },
+  resize_splits: { dividers: [{ id: 'divider-1', ratio: 0.6 }, { id: 'divider-2', ratio: 0.5 }] },
 }
 
 const meta = {
@@ -49,6 +53,70 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const OpenFile: Story = { name: 'open_file · applied' }
+
+export const FocusSession: Story = {
+  name: 'focus_session · remote target',
+  args: { params: projected({ action: 'focus_session', target: { environmentId: 'node', sessionId: 'worker' } }) },
+}
+
+export const NavigationSuperseded: Story = {
+  ...FocusSession,
+  name: 'focus_session · user navigated away',
+  args: { ...FocusSession.args, result: JSON.stringify({ status: 'skipped', visible: false, reason: 'superseded' }) },
+}
+
+export const BatchSessions: Story = {
+  name: 'split_session · complete batch',
+  args: { params: projected({ action: 'split_session', sessionIds: ['voice', 'artifact', { environmentId: 'node', sessionId: 'worker' }] }) },
+}
+
+export const ExplicitSessionLayout: Story = {
+  name: 'split_session · explicit nested layout',
+  args: { params: projected({
+    action: 'split_session', sessionIds: ['voice', 'artifact', 'worker', 'review', 'tests'],
+    layout: { direction: 'row', ratio: 1 / 3, first: 0, second: { direction: 'row',
+      first: { direction: 'column', first: 1, second: 2 }, second: { direction: 'column', first: 3, second: 4 } } },
+  }) },
+}
+
+export const ExplicitLayoutChineseDark: Story = {
+  ...ExplicitSessionLayout,
+  name: 'explicit layout · narrow Chinese dark',
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div className="w-[280px]"><Story /></div>],
+}
+
+export const CloseAll: Story = {
+  name: 'close_split · closeAll',
+  args: { params: projected({ action: 'close_split', closeAll: true }) },
+}
+
+export const MaximizeSplit: Story = {
+  name: 'maximize_split · saved splits',
+  args: { params: projected({ action: 'maximize_split', target: { environmentId: 'desktop', sessionId: 'artifact' } }) },
+}
+
+export const RestoreSplits: Story = {
+  name: 'restore_splits · restored',
+  args: { params: projected({ action: 'restore_splits' }) },
+}
+
+export const ResizeSplits: Story = {
+  name: 'resize_splits · atomic batch',
+  args: { params: projected({ action: 'resize_splits', ...SAMPLE_PARAMS.resize_splits }) },
+}
+
+export const RestoreInsufficientSpace: Story = {
+  name: 'restore_splits · insufficient space',
+  args: { params: projected({ action: 'restore_splits' }), result: 'The proposed proportions cannot fit minimum tile sizes in the current space. Enlarge the window, hide the sidebar, close tiles, or adjust the divider ratios together.', isError: true },
+}
+
+export const BatchNarrowChineseDark: Story = {
+  ...BatchSessions,
+  name: 'batch · narrow Chinese dark',
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div className="w-[280px]"><Story /></div>],
+}
 
 export const OpenFileStreaming: Story = {
   name: 'open_file · in flight',

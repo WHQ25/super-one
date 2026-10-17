@@ -8,6 +8,8 @@ import { isNodeLocalSuperoneTool } from '@superone/shared/environment/host-actio
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import { LAYOUT_ACT_ACTIONS } from '@superone/shared/layout-control'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
+import { z } from 'zod'
+import { jsonSchemaToZodShape } from './json-schema-zod'
 
 const { mockCall, mockConnection } = vi.hoisted(() => ({
   mockCall: vi.fn(),
@@ -15,6 +17,7 @@ const { mockCall, mockConnection } = vi.hoisted(() => ({
 }))
 vi.mock('../browser/browser-automation-bridge', () => ({ browserAutomationCall: mockCall }))
 vi.mock('./artifact-registry', () => ({ currentHostActionConnection: mockConnection }))
+vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: async () => [{ connectionId: 'local', environmentId: 'desktop' }, { connectionId: 'node-1', environmentId: 'node' }] }) }))
 
 const { layoutActHandler, layoutSnapshotHandler, openedTabNoteFor } = await import('./layout-control-tools')
 const { BUILT_IN_SUPERONE_TOOL_DEFS } = await import('./superone-mcp-builtin-defs')
@@ -50,7 +53,7 @@ describe('layout_snapshot', () => {
 
     const result = await layoutSnapshotHandler({}, deps())
 
-    expect(mockCall).toHaveBeenCalledWith('s1', 'layoutSnapshot', { root: '/work/app-wt' })
+    expect(mockCall).toHaveBeenCalledWith('s1', 'layoutSnapshot', { environmentId: 'desktop', root: '/work/app-wt', target: undefined }, undefined)
     expect(result.isError).toBeUndefined()
     expect(toonDecode(text(result))).toEqual(snapshot)
   })
@@ -62,7 +65,7 @@ describe('layout_act', () => {
 
     const result = await layoutActHandler({ action: 'open_file', path: 'src/a.ts', line: 3 }, deps())
 
-    expect(mockCall).toHaveBeenCalledWith('s1', 'layoutAct', { root: '/work/app-wt', request: { action: 'open_file', path: 'src/a.ts', line: 3 } })
+    expect(mockCall).toHaveBeenCalledWith('s1', 'layoutAct', { environmentId: 'desktop', root: '/work/app-wt', request: { action: 'open_file', path: 'src/a.ts', line: 3 } }, undefined)
     expect(JSON.parse(text(result))).toEqual({ status: 'queued', visible: false, tab: 'file:src/a.ts' })
   })
 
@@ -75,18 +78,41 @@ describe('layout_act', () => {
     expect(text(result)).toBe('[Error] Tab browser-1 was not opened by you; only tabs you opened can be closed.')
   })
 
-  it('answers remote-node sessions with an explicit unsupported result and never touches the window', async () => {
+  it('keeps the node caller identity when arranging any accessible desktop layout', async () => {
     mockConnection.mockReturnValue('node-1')
-
-    for (const result of [await layoutActHandler({ action: 'show_panel' }, deps()), await layoutSnapshotHandler({}, deps())]) {
-      expect(result.isError).toBeUndefined()
-      expect(JSON.parse(text(result))).toMatchObject({ status: 'unsupported', reason: 'remote_node' })
-    }
-    expect(mockCall).not.toHaveBeenCalled()
+    mockCall.mockResolvedValue({ status: 'queued', visible: false })
+    const target = { environmentId: 'desktop', sessionId: 'other' }
+    await layoutActHandler({ action: 'show_panel', target }, deps())
+    expect(mockCall).toHaveBeenCalledWith('s1', 'layoutAct', { environmentId: 'node', root: '/work/app-wt', request: { action: 'show_panel', target } }, undefined)
   })
 })
 
 describe('layout tool contract', () => {
+  it('keeps qualified batches and divider changes valid through the Claude Zod schema and desktop/node JSON schemas', () => {
+    const desktop = BUILT_IN_SUPERONE_TOOL_DEFS.find(def => def.name === 'layout_act')!
+    const schema = z.object(jsonSchemaToZodShape(desktop.inputSchema))
+    const calls = [
+      { action: 'split_session', sessionIds: ['local', { environmentId: 'node', sessionId: 'remote' }] },
+      { action: 'split_session', sessionIds: ['local', { environmentId: 'node', sessionId: 'remote' }, 'third'], layout: { direction: 'row', ratio: 0.4, first: 0, second: { direction: 'column', first: 1, second: 2 } } },
+      { action: 'close_split', sessionIds: ['local'] },
+      { action: 'close_split', closeAll: true },
+      { action: 'maximize_split', target: { environmentId: 'node', sessionId: 'remote' } },
+      { action: 'restore_splits' },
+      { action: 'resize_splits', dividers: [{ id: 'divider-1', ratio: 0.6 }, { id: 'divider-2', ratio: 0.5 }] },
+    ]
+    for (const call of calls) expect(schema.parse(call)).toEqual(call)
+    for (const call of [
+      { action: 'split_session', sessionIds: [] },
+      { action: 'split_session', sessionIds: [{ sessionId: 'missing-host' }] },
+      { action: 'split_session', sessionIds: ['A', 'B'], layout: { direction: 'row', first: 0, second: 1, ratio: 0.99 } },
+      { action: 'split_session', sessionIds: ['A', 'B'], layout: { direction: 'row', first: 0, second: { direction: 'diagonal', first: 1, second: 2 } } },
+      { action: 'split_session', sessionIds: ['A', 'B'], layout: { direction: 'row', first: 0 } },
+      { action: 'resize_splits', dividers: [{ id: 'divider-1', ratio: Infinity }] },
+      { action: 'resize_splits', dividers: [{ id: 'divider-1', ratio: 0.99 }] },
+    ]) expect(schema.safeParse(call).success).toBe(false)
+    expect(HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find(def => def.name === 'layout_act')!.inputSchema).toEqual(desktop.inputSchema)
+  })
+
   it('is admitted by every harness without a confirm, callable by subagents, and advertised to remote nodes', () => {
     for (const name of ['layout_snapshot', 'layout_act']) {
       expect(isStaticHostOwnedSuperoneBareName(name), name).toBe(true)
@@ -103,13 +129,17 @@ describe('layout tool contract', () => {
     const act = BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === 'layout_act')!
     const properties = act.inputSchema.properties as Record<string, { enum?: string[] }>
     expect(properties.action.enum).toEqual([...LAYOUT_ACT_ACTIONS])
+    expect(properties.action.enum).toContain('maximize_split')
+    expect(properties.action.enum).toContain('restore_splits')
+    expect(properties.action.enum).not.toContain('maximize_session')
+    expect(properties.action.enum).not.toContain('restore_mosaic')
     expect(properties.action.enum).not.toContain('open_diff')
     expect(properties).not.toHaveProperty('commit')
     expect(act.inputSchema.required).toEqual(['action'])
     expect(act.inputSchema.additionalProperties).toBe(false)
     expect(act.description).toMatch(/browser_tabs/)
     expect(act.description).toMatch(/terminal_tabs/)
-    expect(act.description).toMatch(/layout_snapshot|`visible`/)
+    expect(act.description).toMatch(/visible/)
     expect(BUILT_IN_SUPERONE_TOOL_DEFS.find((def) => def.name === 'layout_snapshot')!.description).toMatch(/layout_act/)
   })
 })

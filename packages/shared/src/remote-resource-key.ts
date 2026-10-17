@@ -14,6 +14,16 @@ export function parseRemoteProjectKey(key: string): { connectionId: string; path
   }
 }
 
+/** Renderer-only layout ownership; local ids retain their existing keys. */
+export function remoteSessionKey(connectionId: string, sessionId: string): string {
+  return `remote-session:${connectionId}:${sessionId}`
+}
+
+export function projectSessionKey(projectPath: string | null | undefined, sessionId: string): string {
+  const remote = projectPath ? parseRemoteProjectKey(projectPath) : null
+  return remote ? remoteSessionKey(remote.connectionId, sessionId) : sessionId
+}
+
 export function displayHostPath(keyOrPath: string): string {
   return parseRemoteProjectKey(keyOrPath)?.path ?? keyOrPath
 }

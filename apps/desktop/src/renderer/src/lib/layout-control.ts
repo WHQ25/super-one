@@ -9,6 +9,7 @@ import {
   type LayoutChatMode,
   type LayoutChatPosition,
   type LayoutControlCaller,
+  type LayoutControlSession,
   type LayoutDirection,
   type LayoutGroup,
   type LayoutSizes,
@@ -38,8 +39,8 @@ import {
   type DockOpener,
   type QueuedDockChange,
 } from '@/components/activity/dock-ownership'
-import { mosaicTileId, useMosaicStore } from '@/components/mosaic/mosaic-store'
-import { collectLeaves, measureMin, type DropEdge } from '@/components/mosaic/mosaic-tree'
+import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { collectLeaves, measureMin } from '@/components/mosaic/mosaic-tree'
 import { miniAppPanelTargetId } from '@superone/shared/miniapp-automation-target'
 import { projectIdForDir } from '@/components/miniapp/use-miniapp-project-scope'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
@@ -58,15 +59,16 @@ import { selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini
 import { normalizeFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
 import { setActivityPanelShown, setChatFloating, toggleActivitySide, toggleSidebar } from '@/lib/layout-actions'
 import { LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
+import { MOSAIC_ACTIONS } from './layout-mosaic'
+import { parseRemoteProjectKey, projectSessionKey } from '@superone/shared/remote-resource-key'
 
 /**
  * The single implementation behind `layout_snapshot` / `layout_act` and a mini-app's
  * `context.layout`. Contract and rules: docs/features/layout-control.md.
  *
- * Every call is scoped to the caller's session. Its own layout (activity panel,
- * tabs, bottom terminal) is changed even when the user is looking elsewhere —
- * a parked layout takes the change when it is next shown. Window-wide state
- * (sidebar, panel side, split view) changes only while the caller is on screen.
+ * The async agent adapter resolves a target separately from the actor. Mini-apps
+ * retain their holder scope. Parked target layouts queue dock changes;
+ * window-wide state changes only while the target is on screen.
  */
 
 const COMPONENT_KINDS: Record<string, LayoutTabKind> = {
@@ -103,9 +105,12 @@ interface Placement {
 function placement(sessionId: string): Placement {
   const mosaic = useMosaicStore.getState()
   const split = mosaic.mode === 'mosaic' && mosaic.root !== null
-  const splitSessions = split && mosaic.root ? collectLeaves(mosaic.root).map((leaf) => leaf.sessionId) : []
+  const leaves = split && mosaic.root ? collectLeaves(mosaic.root) : []
+  const splitSessions = leaves.map(leaf => leaf.sessionId)
   const mainView = useAppStore.getState().view === 'main'
-  const foreground = split ? splitSessions.includes(sessionId) : selectActiveChatSessionId(useChatStore.getState()) === sessionId
+  const chat = useChatStore.getState()
+  const active = selectActiveChatSessionId(chat)
+  const foreground = split ? leaves.some(leaf => projectSessionKey(leaf.projectPath, leaf.sessionId) === sessionId) : !!active && projectSessionKey(chat.activeProject, active) === sessionId
   return {
     split,
     splitSessions,
@@ -321,16 +326,17 @@ function sessionTabs(sessionId: string): TabRow[] {
 }
 
 /** The session's working folder: its worktree when it has one. */
-function sessionRoot(caller: LayoutControlCaller): string | null {
+function sessionRoot(caller: LayoutControlCaller, target?: LayoutControlSession): string | null {
+  if (target) return target.root
   if (caller.root) return caller.root
   const chat = useChatStore.getState()
-  const target = findSessionTarget(chat, caller.sessionId)
-  if (!target) return null
-  return chat.projectSessions[target.projectPath]?._sessions[target.sessionId]?._worktreePath ?? target.projectPath
+  const own = findSessionTarget(chat, caller.sessionId)
+  if (!own) return null
+  return chat.projectSessions[own.projectPath]?._sessions[own.sessionId]?._worktreePath ?? own.projectPath
 }
 
-export function layoutSnapshot(caller: LayoutControlCaller): LayoutSnapshot {
-  const sid = caller.sessionId
+export function layoutSnapshot(caller: LayoutControlCaller, target?: LayoutControlSession): LayoutSnapshot {
+  const sid = target?.key ?? caller.sessionId
   const p = placement(sid)
   const ap = useActivityPanelStore.getState()
   const parked = useActivityViewStateStore.getState().perSession[sid]
@@ -404,8 +410,7 @@ function skipped(): LayoutActResult {
 }
 
 /** Open a tab and record who opened it — unless it is already there, in which case it stays the user's. */
-function openTab(caller: LayoutControlCaller, tab: string, preview: { kind: LayoutTabKind; title: string }, run: () => void): LayoutActResult {
-  const sid = caller.sessionId
+function openTab(caller: LayoutControlCaller, tab: string, preview: { kind: LayoutTabKind; title: string }, run: () => void, sid = caller.sessionId): LayoutActResult {
   if (!sessionTabs(sid).some((t) => t.panelId === tab)) recordDockOpener(sid, tab, openerKey(caller))
   return dockChange(sid, { kind: 'open', tab, preview, run })
 }
@@ -419,6 +424,7 @@ export async function openMiniApp(
   caller: LayoutControlCaller,
   appId: string,
   projectDir: string,
+  target?: LayoutControlSession,
 ): Promise<LayoutActResult & { tab: string; name: string; presentation: OpenedTabPresentation }> {
   const entry = (await window.miniapp.list(projectDir)).find((app) => app.id === appId)
   if (!entry) throw new LayoutControlError('not_found', `No mini-app ${appId} is installed for this project. Call miniapp_list for installed apps.`)
@@ -426,26 +432,32 @@ export async function openMiniApp(
   let launched: Promise<void> | undefined
   const result = openTab(caller, tab, { kind: 'miniapp', title: entry.manifest.name }, () => {
     launched = useMiniAppStore.getState().openAppInPanel(entry, projectDir, { reveal: false, sessionId: caller.sessionId })
-  })
+  }, target?.key)
   // A launch that fails now is the agent's error, not an "applied" tab that never appears.
   await launched
   useAgentViewfinderStore.getState().activate(caller.sessionId, 'miniapp', miniAppPanelTargetId(appId))
-  return { ...result, tab, name: entry.manifest.name, presentation: openedTabPresentation(caller.sessionId, true) }
+  return { ...result, tab, name: entry.manifest.name, presentation: openedTabPresentation(target?.key ?? caller.sessionId, true) }
 }
 
-export async function layoutAct(caller: LayoutControlCaller, request: LayoutActRequest): Promise<LayoutActResult> {
-  const sid = caller.sessionId
+export async function layoutAct(caller: LayoutControlCaller, request: LayoutActRequest, target?: LayoutControlSession): Promise<LayoutActResult> {
+  if (MOSAIC_ACTIONS.has(request.action)) {
+    const { layoutActForTarget } = await import('./layout-session')
+    return layoutActForTarget(caller, request)
+  }
+  const sid = target?.key ?? caller.sessionId
   switch (request.action) {
     case 'open_file': {
       if (!request.path) invalid('path is required for open_file.')
       if (request.line !== undefined && (!Number.isInteger(request.line) || request.line < 1)) invalid('line must be a positive integer.')
-      const root = sessionRoot(caller)
-      const openPath = root ? toProjectRelativePath(request.path, root) : request.path
+      const root = sessionRoot(caller, target)
+      // Remote project roots carry the client route; host paths do not.
+      const hostRoot = root ? parseRemoteProjectKey(root)?.path ?? root : null
+      const openPath = hostRoot ? toProjectRelativePath(request.path, hostRoot) : request.path
       const tab = `file:${normalizeFileLinkTarget(openPath)}`
       return openTab(caller, tab, { kind: 'file', title: openPath.split('/').pop() ?? openPath }, () => {
         if (root) void useSourceControlStore.getState().selectFile(root, openPath, request.line)
-        openNewFileTab(openPath)
-      })
+        openNewFileTab(openPath, root ? { fileRoot: root } : undefined)
+      }, sid)
     }
     case 'focus_tab': {
       const tab = requireTab(sid, request.tab)
@@ -551,47 +563,7 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
     }
     case 'chat_mode':
       return setChatMode(sid, request)
-    case 'split_session':
-      return splitSession(caller, request)
-    case 'close_split': {
-      const child = request.sessionId
-      if (!child) invalid('sessionId is required for close_split.')
-      if (child === sid) invalid('sessionId must be another session, not your own.')
-      const p = placement(sid)
-      if (!p.chatOnScreen) return skipped()
-      const root = useMosaicStore.getState().root
-      const leaf = root ? collectLeaves(root).find((candidate) => candidate.sessionId === child) : undefined
-      if (!leaf) throw new LayoutControlError('not_found', `Session ${child} is not in the split view.`)
-      useMosaicStore.getState().removeTile(leaf.id)
-      return { status: 'applied', visible: p.windowVisible }
-    }
     default:
       return invalid(`Unknown action: ${String((request as { action?: unknown }).action)}`)
   }
-}
-
-const SESSION_EDGES: Record<Exclude<LayoutDirection, 'into'>, DropEdge> = { right: 'right', down: 'bottom', left: 'left', up: 'top' }
-
-async function splitSession(caller: LayoutControlCaller, request: LayoutActRequest): Promise<LayoutActResult> {
-  const sid = caller.sessionId
-  const child = request.sessionId
-  if (!child) invalid('sessionId is required for split_session.')
-  const direction = request.direction ?? 'right'
-  if (direction === 'into' || !(direction in SESSION_EDGES)) invalid('direction must be right, down, left or up for split_session.')
-  if (child === sid) invalid('sessionId must be another session, not your own.')
-  if (!placement(sid).chatOnScreen) return skipped()
-  const projectPath = findSessionTarget(useChatStore.getState(), child)?.projectPath ?? await window.app.getSessionProject(child)
-  if (!projectPath) throw new LayoutControlError('not_found', `Session ${child} was not found. Use session_list or session_search for ids.`)
-  // The await gave the user time to move on; re-check before touching the window.
-  const p = placement(sid)
-  if (!p.chatOnScreen) return skipped()
-  const mosaic = useMosaicStore.getState()
-  if (p.splitSessions.includes(child)) return { status: 'applied', visible: p.windowVisible }
-  const chat = useChatStore.getState()
-  const callerTile = p.split && mosaic.root
-    ? collectLeaves(mosaic.root).find((leaf) => leaf.sessionId === sid)?.id
-    : chat.activeProject ? mosaicTileId(chat.activeProject, sid) : undefined
-  if (!callerTile) throw new LayoutControlError('unavailable', 'Could not find this session on screen.')
-  mosaic.addTile(projectPath, child, { tileId: callerTile, edge: SESSION_EDGES[direction] }, { focus: false })
-  return { status: 'applied', visible: p.windowVisible }
 }

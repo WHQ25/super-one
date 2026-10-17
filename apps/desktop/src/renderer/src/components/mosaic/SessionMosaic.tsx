@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from 'react'
+import { useLayoutEffect, useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Maximize, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -13,6 +13,7 @@ import { useMosaicStore } from './mosaic-store'
 import { MosaicDivider } from './MosaicDivider'
 import { MosaicDropZone } from './MosaicDropZone'
 import { measureMin, topLeftLeafId, type MosaicLeaf, type MosaicNode, type MosaicPath } from './mosaic-tree'
+import { registerMosaicDom } from './mosaic-dom'
 
 const isMac = window.app.platform === 'darwin'
 
@@ -99,6 +100,9 @@ export function SessionMosaic({ foreground = true }: SessionMosaicProps) {
   const root = useMosaicStore((s) => s.root ?? s.lastLayout?.root ?? null)
   const showSidebar = useAppStore((s) => s.showSidebar)
   const isFullscreen = useFullscreen()
+  useLayoutEffect(() => {
+    if (root && containerRef.current) return registerMosaicDom(root, containerRef.current, foreground)
+  }, [root, foreground])
   if (!root) return null
   const ctx: RenderCtx = {
     topLeftId: topLeftLeafId(root),

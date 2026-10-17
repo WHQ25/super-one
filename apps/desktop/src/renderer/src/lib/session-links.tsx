@@ -8,29 +8,10 @@ import { createSessionLinkCache } from '@superone/chat-view/presenters/session-l
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
-import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { navigateToSession } from './session-navigation'
 
-let navigationGeneration = 0
 export async function openSessionLink(ref: SessionRef): Promise<void> {
-  const generation = ++navigationGeneration
-  const source = useChatStore.getState()
-  const sourceProject = source.activeProject
-  const sourceSession = sourceProject ? source.projectSessions[sourceProject]?._activeSessionId : null
-  const target = await window.environment.sessionLinkTarget(ref)
-  if (generation !== navigationGeneration) return
-  if (target.ref.environmentId !== ref.environmentId || target.ref.sessionId !== ref.sessionId) throw new Error('Session target mismatch')
-  if (target.projectPath === sourceProject && ref.sessionId === sourceSession) return
-  if (!await window.environment.getSession(target.connectionId ?? 'local', ref.sessionId)) throw new Error('Session could not be restored')
-  if (generation !== navigationGeneration || useChatStore.getState().activeProject !== sourceProject) return
-  if (sourceProject && useChatStore.getState().projectSessions[sourceProject]?._activeSessionId !== sourceSession) return
-  try {
-    if (useMosaicStore.getState().mode === 'mosaic') await useChatStore.getState().mountSession(target.projectPath, ref.sessionId)
-    await useChatStore.getState().switchToSession(target.projectPath, ref.sessionId)
-    useMosaicStore.getState().focusOrReplaceFocused(target.projectPath, ref.sessionId)
-  } catch (error) {
-    if (generation === navigationGeneration && useChatStore.getState().activeProject === target.projectPath && sourceProject && sourceSession) await useChatStore.getState().switchToSession(sourceProject, sourceSession)
-    throw error
-  }
+  await navigateToSession(ref)
 }
 
 export const desktopSessionLinkPorts: SessionLinkPorts = {

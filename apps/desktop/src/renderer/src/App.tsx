@@ -66,6 +66,7 @@ import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
 import { LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
 import { setActivityPanelShown, toggleSidebar } from '@/lib/layout-actions'
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
 
 export { LAYOUT }
 
@@ -172,23 +173,24 @@ function App(): React.JSX.Element {
     }
   }, [view])
 
-  const activeSessionId = useChatStore((s) => {
-    const proj = s.activeProject
-    return proj ? s.projectSessions[proj]?._activeSessionId ?? null : null
+  const activeLayoutKey = useChatStore((s) => {
+    const project = s.activeProject
+    const sid = project ? s.projectSessions[project]?._activeSessionId : null
+    return sid ? projectSessionKey(project, sid) : null
   })
   const prevSessionIdRef = useRef<string | null>(null)
   useEffect(() => {
     const prev = prevSessionIdRef.current
-    if (prev === activeSessionId) return
-    prevSessionIdRef.current = activeSessionId
+    if (prev === activeLayoutKey) return
+    prevSessionIdRef.current = activeLayoutKey
     // Mosaic force-hides the global panel; parking that hidden state would
     // corrupt each tile's remembered panel/dock. Freeze per-session view state
     // while mosaic owns the layout — entry parks the seed, exit restores the tile.
     if (useMosaicStore.getState().mode === 'mosaic') return
     const view = useActivityViewStateStore.getState()
     if (prev) view.park(prev)
-    if (activeSessionId) view.restore(activeSessionId)
-  }, [activeSessionId])
+    if (activeLayoutKey) view.restore(activeLayoutKey)
+  }, [activeLayoutKey])
 
   useEffect(() => {
     const off = window.app.onUpdateEvent((event) => {
@@ -284,8 +286,8 @@ function App(): React.JSX.Element {
     if (was !== 'mosaic' && mosaicMode === 'mosaic') {
       // Capture the entering session's real panel/dock before we hide it, so
       // maximizing back to it restores correctly (mechanism-1 freezes after this).
-      if (activeSessionId) useActivityViewStateStore.getState().park(activeSessionId)
-      panelSnapshotRef.current = { sessionId: activeSessionId, terminalOpen }
+      if (activeLayoutKey) useActivityViewStateStore.getState().park(activeLayoutKey)
+      panelSnapshotRef.current = { sessionId: activeLayoutKey, terminalOpen }
       setTerminalOpen(false)
       useActivityPanelStore.getState().setShowPanel(false)
       beginMosaicRecording()
@@ -295,7 +297,7 @@ function App(): React.JSX.Element {
       // The maximized tile governs the activity panel: restore its own per-session
       // state. (If the active session is still resolving, mechanism-1 re-applies it
       // once it settles — this only covers exiting onto the already-active tile.)
-      if (activeSessionId) useActivityViewStateStore.getState().restore(activeSessionId)
+      if (activeLayoutKey) useActivityViewStateStore.getState().restore(activeLayoutKey)
       // Browsers/mini-apps opened while mosaic hid the dock were clobbered by the
       // restore above; replay them so they survive the return to single and show.
       replayMosaicOpenedPanels()
@@ -303,7 +305,7 @@ function App(): React.JSX.Element {
       // on entry (a no-op in view unless that session is the maximized one).
       if (snap?.sessionId) useTerminalStore.getState().setOpen(snap.sessionId, snap.terminalOpen)
     }
-  }, [mosaicMode, showActivityPanel, activeSessionId, terminalOpen, setTerminalOpen])
+  }, [mosaicMode, showActivityPanel, activeLayoutKey, terminalOpen, setTerminalOpen])
 
   const prevActivityShownRef = useRef(showActivityPanel)
   useEffect(() => {

@@ -10,6 +10,8 @@ import { disposeActivityTermInstance } from './activity-terminal'
 import { closeMcpAppTabs } from './mcp-app-tabs'
 import { recordDockOpener } from './dock-ownership'
 import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
+import { parseRemoteTerminalKey, remoteSessionKey } from '@superone/shared/remote-resource-key'
+import { useTerminalStore } from '@/stores/terminal'
 
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
@@ -262,7 +264,7 @@ function activateInMaximizedGroup(panel: IDockviewPanel, inactive = false) {
   if (!inactive) panel.api.setActive()
 }
 
-function addFilePanel(filePath: string, position?: AddPanelPositionOptions) {
+function addFilePanel(filePath: string, position?: AddPanelPositionOptions, fileRoot?: string) {
   if (!dockApi) return
   const normalizedPath = normalizeFileLinkTarget(filePath)
   const fileName = normalizedPath.split('/').pop() ?? normalizedPath
@@ -271,7 +273,7 @@ function addFilePanel(filePath: string, position?: AddPanelPositionOptions) {
     component: 'file-preview',
     tabComponent: 'file-preview-tab',
     title: fileName,
-    params: { filePath: normalizedPath },
+    params: { filePath: normalizedPath, ...(fileRoot ? { fileRoot } : {}) },
     ...(position ? { position } : {}),
   })
 }
@@ -298,7 +300,7 @@ export function openFileTab(filePath: string) {
   })
 }
 
-export function openNewFileTab(filePath: string, options?: { direction?: 'within' | 'right' | 'below' | 'above' | 'left'; referencePanel?: string }) {
+export function openNewFileTab(filePath: string, options?: { direction?: 'within' | 'right' | 'below' | 'above' | 'left'; referencePanel?: string; fileRoot?: string }) {
   ensureVisible()
   execOrDefer(() => {
     if (!dockApi) return
@@ -306,6 +308,7 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
     const panelId = `file:${normalizedPath}`
     const existing = dockApi.panels.find((p) => p.id === panelId)
     if (existing) {
+      if (options?.fileRoot) existing.api.updateParameters?.({ fileRoot: options.fileRoot })
       activateInMaximizedGroup(existing)
       return
     }
@@ -314,7 +317,7 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
       : options?.direction && options.direction !== 'within'
         ? { direction: options.direction }
         : undefined
-    addFilePanel(normalizedPath, positionInMaximizedGroup(position))
+    addFilePanel(normalizedPath, positionInMaximizedGroup(position), options?.fileRoot)
   })
 }
 
@@ -682,8 +685,13 @@ function addTerminalPanel(item: { terminalId: string; title?: string }) {
  * command the agent runs no longer yanks the layout while the user reads chat.
  * User actions (the launcher, the tool row's reveal) keep the default.
  */
+function terminalLayoutOwner(item: { terminalId: string; agentSessionId?: string }): string | undefined {
+  const remote = parseRemoteTerminalKey(item.terminalId)
+  return remote && item.agentSessionId ? remoteSessionKey(remote.connectionId, item.agentSessionId) : item.agentSessionId
+}
+
 export function revealTerminalTabInActivity(item: { terminalId: string; title?: string; agentSessionId?: string }, opts?: { reveal?: boolean }) {
-  const owner = item.agentSessionId
+  const owner = terminalLayoutOwner(item)
   if (owner != null) recordDockOpener(owner, terminalPanelId(item.terminalId), 'agent')
   if (owner != null && owner !== (currentSessionIdGetter?.() ?? null)) return
   if (opts?.reveal !== false) ensureVisible()
@@ -708,6 +716,8 @@ export function materializeOwnedTerminalTabs(sessionId: string) {
   if (!dockApi) return
   void window.terminal.list().then((items) => {
     if (!dockApi || (currentSessionIdGetter?.() ?? null) !== sessionId) return
+    const remoteItems = Object.values(useTerminalStore.getState().byProject).flatMap(project => project.tabs).filter(item => parseRemoteTerminalKey(item.terminalId))
+    items = [...new Map([...items, ...remoteItems].map(item => [item.terminalId, item])).values()]
     const live = new Set(items.map((item) => item.terminalId))
     for (const panel of [...dockApi.panels]) {
       if (!panel.id.startsWith('terminal-')) continue
@@ -715,7 +725,7 @@ export function materializeOwnedTerminalTabs(sessionId: string) {
       if (terminalId && !live.has(terminalId)) dropActivityTerminalTab(terminalId)
     }
     for (const item of items) {
-      if (item.agentSessionId !== sessionId || item.status !== 'running') continue
+      if (terminalLayoutOwner(item) !== sessionId || item.status !== 'running') continue
       recordDockOpener(sessionId, terminalPanelId(item.terminalId), 'agent')
       if (dockApi.panels.some((p) => p.id === terminalPanelId(item.terminalId))) continue
       addTerminalPanel(item)

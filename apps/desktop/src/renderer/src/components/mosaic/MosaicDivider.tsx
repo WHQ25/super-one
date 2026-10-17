@@ -40,7 +40,7 @@ export function MosaicDivider({ direction, path, firstMin, secondMin }: MosaicDi
 
   return (
     <>
-      <div ref={ref} className={cn('group relative z-10 shrink-0', horizontal ? 'w-px' : 'h-px')}>
+      <div ref={ref} data-mosaic-path={path.join('/')} className={cn('group relative z-10 shrink-0', horizontal ? 'w-px' : 'h-px')}>
         {/* Always-on hairline that draws the card division */}
         <div className="absolute inset-0 bg-border" />
         {/* Hover/active emphasis — simple line highlight shared with the other in-card handles */}

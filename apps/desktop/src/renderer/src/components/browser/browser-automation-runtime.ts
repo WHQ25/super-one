@@ -649,24 +649,28 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     const { appId, projectDir } = (rawInput ?? {}) as { appId?: string; projectDir?: string }
     if (!appId || !projectDir) throw new Error('miniapp_open needs an installed app.')
     const { openMiniApp } = await import('@/lib/layout-control')
-    return openMiniApp({ sessionId, opener: { kind: 'agent' } }, appId, projectDir)
+    const owner = (rawInput as { __layoutOwnerKey?: string } | null)?.__layoutOwnerKey
+    return openMiniApp({ sessionId, opener: { kind: 'agent' } }, appId, projectDir, owner ? { key: owner, sessionId, projectPath: projectDir, root: projectDir } : undefined)
   }
   if (op === 'tabPresentation') {
     const { openedTabPresentation } = await import('@/lib/layout-control')
-    return openedTabPresentation(sessionId, (rawInput as { pip?: unknown } | null)?.pip === true)
+    const owner = (rawInput as { __layoutOwnerKey?: string } | null)?.__layoutOwnerKey ?? sessionId
+    return openedTabPresentation(owner, (rawInput as { pip?: unknown } | null)?.pip === true)
   }
   if (op === 'layoutSnapshot' || op === 'layoutAct') {
-    const { root, request } = (rawInput ?? {}) as { root?: string; request?: LayoutActRequest }
-    const { layoutAct, layoutSnapshot } = await import('@/lib/layout-control')
-    const caller = { sessionId, opener: { kind: 'agent' as const }, ...(root ? { root } : {}) }
-    if (op === 'layoutSnapshot') return layoutSnapshot(caller)
+    const { root, environmentId, request, target } = (rawInput ?? {}) as { root?: string; environmentId?: string; request?: LayoutActRequest; target?: LayoutActRequest['target'] }
+    const { layoutActForTarget, layoutSnapshotForTarget } = await import('@/lib/layout-session')
+    const caller = { sessionId, environmentId, opener: { kind: 'agent' as const }, ...(root ? { root } : {}) }
+    if (op === 'layoutSnapshot') return layoutSnapshotForTarget(caller, target)
     if (!request) throw new Error('layout_act needs an action.')
-    return layoutAct(caller, request)
+    return layoutActForTarget(caller, request, signal)
   }
   if (op === 'miniappReload') {
     const appId = String((rawInput as { appId?: unknown } | null)?.appId ?? '')
     return reloadMiniAppTargets(appId, sessionId, signal)
   }
+  // Browser ownership belongs to an execution environment as well as a session.
+  if (!isMiniAppTargetId(input.tab)) sessionId = (rawInput as { __layoutOwnerKey?: string } | null)?.__layoutOwnerKey ?? sessionId
   if (op === 'open') {
     const url = input.url ?? 'about:blank'
     assertNotMiniAppTarget(input.tab)
@@ -918,7 +922,9 @@ export function useBrowserAutomationHost(): void {
         // Every automation op (including focusView no-op / guest el.focus side
         // effects) runs under host focus isolation so background browser work
         // cannot steal the user's composer caret.
-        const result = await withBrowserFocusIsolation(() => runBrowserOp(sessionId, op, input, controller.signal))
+        const explicitNavigation = op === 'layoutAct' && (input as { request?: LayoutActRequest } | null)?.request?.action === 'focus_session'
+        const run = () => runBrowserOp(sessionId, op, input, controller.signal)
+        const result = await (explicitNavigation ? run() : withBrowserFocusIsolation(run))
         window.browserHost!.sendAutomationResult(callId, true, result)
       } catch (err) {
         window.browserHost!.sendAutomationResult(callId, false, undefined, err instanceof Error ? err.message : String(err))

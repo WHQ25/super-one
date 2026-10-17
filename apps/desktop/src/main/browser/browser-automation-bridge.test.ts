@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'events'
 
 vi.mock('../logger', () => ({ default: { warn: vi.fn() } }))
-vi.mock('../mcp/artifact-registry', () => ({ currentHostActionConnection: () => null }))
+const { mockConnection } = vi.hoisted(() => ({ mockConnection: vi.fn<() => string | null>(() => null) }))
+vi.mock('../mcp/artifact-registry', () => ({ currentHostActionConnection: mockConnection }))
 vi.mock('./browser-tab-drivers', () => ({ rememberTabDriver: vi.fn() }))
 
 import type { BrowserWindow } from 'electron'
@@ -32,7 +33,25 @@ function fakeWindow() {
 }
 
 describe('browserAutomationCall', () => {
+  it('qualifies remote browser ownership without changing the authenticated actor id', async () => {
+    mockConnection.mockReturnValue('node-route')
+    const { sent } = fakeWindow()
+    const call = browserAutomationCall('same-id', 'open', { url: 'about:blank' })
+    expect(sent[0]).toMatchObject({ sessionId: 'same-id', input: { __layoutOwnerKey: 'remote-session:node-route:same-id' } })
+    resolveBrowserAutomation(sent[0].callId, {})
+    await call
+  })
+  it('cancels an explicit layout navigation when its turn is interrupted', async () => {
+    const { sent } = fakeWindow()
+    const controller = new AbortController()
+    const call = browserAutomationCall('session-a', 'layoutAct', { request: { action: 'focus_session' } }, controller.signal)
+    controller.abort()
+    resolveBrowserAutomation(sent[0]!.callId, { status: 'applied' })
+    await expect(call).rejects.toThrow(/cancelled/)
+    expect(sent[1]).toMatchObject({ op: 'cancel', input: { callId: sent[0]!.callId } })
+  })
   afterEach(() => {
+    mockConnection.mockReturnValue(null)
     vi.useRealTimers()
   })
 

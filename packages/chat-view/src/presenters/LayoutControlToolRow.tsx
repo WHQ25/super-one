@@ -38,7 +38,7 @@ function tabSubject(tab: string): string {
   return ''
 }
 
-function parseActResult(result: string | null | undefined): { status?: unknown; width?: unknown; height?: unknown } | null {
+function parseActResult(result: string | null | undefined): { status?: unknown; reason?: unknown; width?: unknown; height?: unknown } | null {
   if (!result) return null
   try {
     return JSON.parse(result) as { status?: unknown; width?: unknown; height?: unknown }
@@ -49,8 +49,10 @@ function parseActResult(result: string | null | undefined): { status?: unknown; 
 }
 
 /** The outcome worth telling the user beside the subject; a plain `applied` needs no words. */
-export function layoutControlOutcome(result: string | null | undefined): 'queued' | 'skipped' | 'unsupported' | null {
-  const status = parseActResult(result)?.status
+export function layoutControlOutcome(result: string | null | undefined): 'queued' | 'skipped' | 'unsupported' | 'superseded' | null {
+  const parsed = parseActResult(result)
+  const status = parsed?.status
+  if (status === 'skipped' && parsed?.reason === 'superseded') return 'superseded'
   return status === 'queued' || status === 'skipped' || status === 'unsupported' ? status : null
 }
 
@@ -72,7 +74,13 @@ export function LayoutControlToolRow({ mcpToolName, params, result, isStreaming,
   const keys = action ? `chat.toolBlock.layoutControl.actions.${action}` : 'chat.toolBlock.layoutControl.snapshot'
 
   let subject = ''
-  if (action === 'open_file') {
+  if (action === 'close_split' && params.closeAll === true) {
+    subject = t('chat.toolBlock.layoutControl.allSplits')
+  } else if ((action === 'split_session' || action === 'close_split') && Array.isArray(params.sessionIds)) {
+    subject = t('chat.toolBlock.layoutControl.sessionCount', { count: params.sessionIds.length })
+  } else if (action === 'resize_splits' && Array.isArray(params.dividers)) {
+    subject = t('chat.toolBlock.layoutControl.dividerCount', { count: params.dividers.length })
+  } else if (action === 'open_file') {
     const path = str(params.path)
     subject = path ? `${basename(path)}${typeof params.line === 'number' ? `:${params.line}` : ''}` : ''
   } else if (action === 'panel_side') {

@@ -33,6 +33,8 @@ import { withDraftCarry } from '@/lib/draft-surface-select'
 import { displayHostPath, remoteProjectKey } from '@/lib/remote-project-key'
 import { useHostProjects } from '@/hooks/use-host-projects'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { useSessionPaneForeground } from '@/stores/chat-store/session-scope'
+import { isSelectedSessionScope } from '@/stores/chat-store/selectors'
 import type {
   AcpAgentDescriptor,
   HarnessSessionRank,
@@ -106,6 +108,12 @@ export function ProviderSelector({
   // Pickers offer what the project's machine runs; harness bootstrap below stays on this desktop's.
   const harnessCatalog = useProjectHarnessCatalog(localHarnessCatalog)
   const sessionScope = useSessionScope()
+  const foreground = useSessionPaneForeground()
+  const selectedAndLoaded = useChatStore((s) => isSelectedSessionScope(s, sessionScope)
+    && (!sessionScope || !!s.projectSessions[sessionScope.projectPath]?._sessions[sessionScope.sessionId]?._historyHydrated))
+  // Hidden panes survive maximization and may outlive their evicted session.
+  // Their default selector view is not an empty foreground draft to initialize.
+  const canAutoSelect = foreground && selectedAndLoaded
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [ranks, setRanks] = useState<HarnessSessionRank[]>(EMPTY_RANKS)
   const [suggestionHarness, setSuggestionHarness] = useState<SuggestionHarnessPreference | null | undefined>(
@@ -210,16 +218,18 @@ export function ProviderSelector({
   }, [])
 
   const selectProvider = useCallback(async (provider: ChatProvider, userChosen = false) => {
-    if (sessionScope) {
+    if (!userChosen && !canAutoSelect) return
+    if (userChosen && sessionScope) {
       await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
     }
+    if (!isSelectedSessionScope(useChatStore.getState(), sessionScope)) return
     setPreferredProvider(provider, { userChosen })
     if (!sessionScope) return
     const nextSessionId = useChatStore.getState().projectSessions[sessionScope.projectPath]?._activeSessionId
     if (nextSessionId && nextSessionId !== sessionScope.sessionId) {
       useMosaicStore.getState().replaceTileSession(sessionScope.projectPath, sessionScope.sessionId, nextSessionId)
     }
-  }, [sessionScope, setPreferredProvider])
+  }, [sessionScope, setPreferredProvider, canAutoSelect])
 
   const prefsEqual = useCallback((
     a: SuggestionHarnessPreference | null | undefined,
@@ -268,6 +278,7 @@ export function ProviderSelector({
     manual: boolean,
     source: 'fixed' | 'menu' = 'fixed',
   ) => {
+    if (!manual && !canAutoSelect) return
     if (manual) {
       const pref: SuggestionHarnessPreference = {
         provider: option.provider,
@@ -281,9 +292,10 @@ export function ProviderSelector({
     }
     setAgentMenuOpen(false)
     if (option.provider === 'acp') {
-      if (sessionScope) {
+      if (manual && sessionScope) {
         await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
       }
+      if (!isSelectedSessionScope(useChatStore.getState(), sessionScope)) return
       if (option.acpAgentId) setAcpAgentId(option.acpAgentId)
       if (preferredProvider !== 'acp') await selectProvider('acp', manual)
       return
@@ -296,6 +308,7 @@ export function ProviderSelector({
     selectProvider,
     sessionScope,
     setAcpAgentId,
+    canAutoSelect,
   ])
 
   const isAgentAllowed = useCallback(
@@ -313,6 +326,7 @@ export function ProviderSelector({
   )
 
   useEffect(() => {
+    if (!canAutoSelect) return
     if (isAgentAllowed(preferredProvider, acpAgentId)) return
     setAgentMenuOpen(false)
     // Prefer first enabled SDK harness, then any remaining ordered option.
@@ -339,6 +353,7 @@ export function ProviderSelector({
     setAcpAgentId,
     harnessCatalog,
     visibleAcpAgents,
+    canAutoSelect,
   ])
 
   const selectedAcpAgent = useMemo(() => {
@@ -350,10 +365,10 @@ export function ProviderSelector({
   }, [agents, acpAgentId])
 
   useEffect(() => {
-    if (preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
+    if (canAutoSelect && preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
       setAcpAgentId(selectedAcpAgent.id)
     }
-  }, [preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId])
+  }, [preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId, canAutoSelect])
 
   const orderedHarnesses = useMemo(
     () => orderSuggestionHarnesses({
@@ -408,7 +423,7 @@ export function ProviderSelector({
   const lastAutoAppliedKeyRef = useRef<string | null>(null)
   useEffect(() => {
     const decision = resolveAutoApplyHarness({
-      disableAutoApply,
+      disableAutoApply: disableAutoApply || !canAutoSelect,
       harnessUserChosen,
       hostSessionOwned,
       fixedHarness,
@@ -424,6 +439,7 @@ export function ProviderSelector({
     if (decision.apply) void selectHarnessOption(decision.apply, false, 'fixed')
   }, [
     disableAutoApply,
+    canAutoSelect,
     harnessUserChosen,
     hostSessionOwned,
     suggestionHarness,
@@ -659,6 +675,9 @@ function ActiveProviderHint() {
  * mid-typing flips mode in place instead of remounting under the cursor.
  */
 export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
+  const foreground = useSessionPaneForeground()
+  const scope = useSessionScope()
+  const selected = useChatStore(s => isSelectedSessionScope(s, scope))
   const { t } = useTranslation()
   const locked = useIsRemoteLocked()
   const selectProject = useAppStore((s) => s.selectProject)
@@ -703,7 +722,7 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
       autoOpenAttemptRef.current = null
       return
     }
-    if (draft || isSwitchingHostProject || loading || error) return
+    if (!foreground || !selected || draft || isSwitchingHostProject || loading || error) return
     const first = projects.find((folder) => !folder.missing)
     if (!first) return
     const attemptKey = `${connectionId}::${first.path}`
@@ -722,6 +741,8 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
     projects,
     connectionId,
     selectProject,
+    foreground,
+    selected,
   ])
 
   const openExisting = useCallback(

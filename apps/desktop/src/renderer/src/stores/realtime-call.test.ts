@@ -95,3 +95,34 @@ it('meters the existing microphone peer without React updates and silences mute,
   expect(peer.getStats).toHaveBeenCalledTimes(reads)
   expect(realtimeVoiceAudioLevels.snapshot()).toEqual({ input: 0, output: 0 })
 })
+
+it('prepares the selected worktree before requesting microphone access or starting voice', async () => {
+  let prepared!: (id: string) => void
+  const prepareSession = vi.fn(() => new Promise<string>(resolve => { prepared = resolve }))
+  const pending = startRealtimeCall({ ...options, prepareSession })
+  await Promise.resolve()
+  expect(prepareSession).toHaveBeenCalledTimes(1)
+  expect(microphone).not.toHaveBeenCalled()
+  expect(start).not.toHaveBeenCalled()
+  prepared('prepared-session')
+  await pending
+  expect(start).toHaveBeenCalledWith('/p', 'prepared-session', expect.any(Object))
+  expect(useRealtimeCallStore.getState().sessionId).toBe('prepared-session')
+})
+
+it('does not start voice when worktree preparation fails or is cancelled', async () => {
+  await startRealtimeCall({ ...options, prepareSession: async () => null })
+  expect(microphone).not.toHaveBeenCalled()
+  expect(start).not.toHaveBeenCalled()
+  expect(useRealtimeCallStore.getState().state).toBe('idle')
+})
+
+it('does not start voice after hanging up during worktree preparation', async () => {
+  let prepared!: (id: string) => void
+  const pending = startRealtimeCall({ ...options, prepareSession: () => new Promise<string>(resolve => { prepared = resolve }) })
+  await stopRealtimeCall()
+  prepared('sid')
+  await pending
+  expect(microphone).not.toHaveBeenCalled()
+  expect(start).not.toHaveBeenCalled()
+})

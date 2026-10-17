@@ -2,10 +2,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const worktreeState = vi.hoisted(() => ({ pendingBaseBranch: null as string | null, pendingMode: 'branch', pendingBranchName: 'voice', pendingCarryLocalChanges: false }))
+
 vi.mock('@/stores/app', () => ({
   useAppStore: {
     getState: () => ({
-      getWorktreeState: () => ({ pendingBaseBranch: null }),
+      getWorktreeState: () => worktreeState,
       setActiveWorktree: vi.fn(),
       sandboxCapability: null,
     }),
@@ -44,6 +46,7 @@ vi.stubGlobal('window', {
 
 const { useChatStore } = await import('../index')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
+const { prepareComposerSession } = await import('@/lib/prepare-composer-session')
 const { ensureHostSession, sessionTurnRequest, queuesBehindTurn } = await import('./session-turn')
 const { createSendWriteScope } = await import('./send-write-scope')
 
@@ -79,6 +82,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   useChatStore.setState({ projectSessions: {}, activeProject: null, remoteSessions: {}, disabledSkills: [] })
+  worktreeState.pendingBaseBranch = null
   getSession.mockReset().mockResolvedValue(null)
   // This desktop's host keeps the draft's id; a node names its own.
   createSession.mockReset().mockImplementation(async (_connectionId: string, input: { selections?: { sessionId?: string } }) =>
@@ -345,4 +349,48 @@ describe('sessionTurnRequest', () => {
       model: 'opus', effort: 'max', apiProviderId: 'acct', ultracode: false, additionalDirectories: ['/a', '/b'],
     })
   })
+})
+
+describe('composer preparation for voice and scheduling', () => {
+  it('creates the backing voice session in the selected existing worktree without sending the draft', async () => {
+    seed(LOCAL, 'voice', { preferredProvider: 'codex', _worktreePath: '/proj/.wt/voice', draftText: 'keep my draft' })
+    await expect(prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })).resolves.toBe('voice')
+    expect(createSession).toHaveBeenCalledWith('local', expect.objectContaining({ cwd: '/proj/.wt/voice', harnessId: 'codex' }))
+    expect(activateSession).toHaveBeenCalledWith(LOCAL, 'voice', '/proj/.wt/voice')
+    expect(project(LOCAL)._sessions.voice.draftText).toBe('keep my draft')
+  })
+
+  it('creates a pending worktree before creating the backing voice session', async () => {
+    seed(LOCAL, 'voice', { preferredProvider: 'codex' })
+    worktreeState.pendingBaseBranch = 'main'
+    const activateWorktree = vi.fn(async () => ({ ok: true, path: '/proj/.wt/new-voice' }))
+    Object.assign(window.app, { activateWorktree })
+    await prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })
+    expect(activateWorktree).toHaveBeenCalledWith(LOCAL, expect.objectContaining({ baseBranch: 'main', mode: 'branch', branchName: 'voice' }))
+    expect(createSession).toHaveBeenCalledWith('local', expect.objectContaining({ cwd: '/proj/.wt/new-voice' }))
+  })
+
+  it('does not fall back to the project root after worktree activation fails', async () => {
+    seed(LOCAL, 'voice', { preferredProvider: 'codex' })
+    worktreeState.pendingBaseBranch = 'main'
+    Object.assign(window.app, { activateWorktree: vi.fn(async () => ({ ok: false, error: 'Checkout failed' })) })
+    await expect(prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })).resolves.toBeNull()
+    expect(createSession).not.toHaveBeenCalled()
+  })
+})
+
+it('aborts composer preparation if the prewarmed session cannot adopt the selected directory', async () => {
+  seed(LOCAL, 'voice', { preferredProvider: 'codex', _worktreePath: '/proj/.wt/voice' })
+  getSession.mockResolvedValue({ harnessId: 'codex' })
+  activateSession.mockRejectedValue(new Error('Cannot switch worktree'))
+  await expect(prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })).rejects.toThrow('Cannot switch worktree')
+  expect(createSession).not.toHaveBeenCalled()
+})
+
+it('applies the selected directory to a prewarmed Codex session before voice starts', async () => {
+  seed(LOCAL, 'voice', { preferredProvider: 'codex', _worktreePath: '/proj/.wt/voice' })
+  getSession.mockResolvedValue({ harnessId: 'codex' })
+  await expect(prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })).resolves.toBe('voice')
+  expect(createSession).not.toHaveBeenCalled()
+  expect(activateSession).toHaveBeenCalledWith(LOCAL, 'voice', '/proj/.wt/voice')
 })

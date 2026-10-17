@@ -7,10 +7,13 @@ import type { VoiceStatus } from '@superone/shared/realtime-voice'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { pauseRealtimeCall, resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { VOICE_READY_CUE_MIC_GUARD_MS } from '@/lib/audio-cue'
+import { prepareComposerSession } from '@/lib/prepare-composer-session'
 import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { RealtimeCallControls } from './RealtimeCallControls'
 import { RealtimeCallComposer } from './RealtimeCallComposer'
 import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
+
+vi.mock('@/lib/prepare-composer-session', () => ({ prepareComposerSession: vi.fn(async (_project: string, target: { sessionId: string }) => target.sessionId) }))
 
 const { playVoiceReadyCue } = vi.hoisted(() => ({ playVoiceReadyCue: vi.fn() }))
 const playback = vi.hoisted(() => ({ connect: vi.fn(async () => {}), pause: vi.fn(), resume: vi.fn(async () => {}), close: vi.fn() }))
@@ -245,6 +248,8 @@ describe('realtime voice surfaces', () => {
       sdp: 'local-offer',
       additionalDirs: ['/extra'],
     }))
+
+    expect(prepareComposerSession).toHaveBeenCalledWith('/repo', { projectPath: '/repo', sessionId: 'session-1' })
 
     emit?.({
       type: 'realtime_started',

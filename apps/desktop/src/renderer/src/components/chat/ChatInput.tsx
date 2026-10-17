@@ -104,7 +104,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
-import { prepareScheduledSession } from '@/lib/session-scheduled-send'
+import { prepareComposerSession } from '@/lib/prepare-composer-session'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { callSession } from '@/lib/session-client'
 import { useResolvedProviderId } from './model-selector/useSelectorProviders'
@@ -1042,7 +1042,7 @@ export function ChatInput({
     const handleArmScheduled = useCallback((sendAt: number) => {
       const draft = scheduledDraft()
       if (!sessionProject || !scheduleServed) return
-      void prepareScheduledSession(sessionProject, sessionScope ?? undefined)
+      void prepareComposerSession(sessionProject, sessionScope ?? undefined)
         .then((sid) => { if (sid) scheduleSend(draft, sendAt, sid) })
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }, [scheduledDraft, scheduleSend, sessionProject, scheduleServed, sessionScope])

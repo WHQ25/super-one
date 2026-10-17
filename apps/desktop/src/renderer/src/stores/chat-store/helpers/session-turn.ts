@@ -172,6 +172,7 @@ export async function ensureHostSession(
   get: () => ChatStore,
   projectPath: string,
   writeScope: SendWriteScope,
+  options: { requireActivation?: boolean } = {},
 ): Promise<string> {
   const candidate = writeScope.sessionId()
   const session = getScopedPerSession(get(), candidate ? { projectPath, sessionId: candidate } : writeScope.target)
@@ -214,7 +215,9 @@ export async function ensureHostSession(
   writeScope.target = { projectPath, sessionId: sid }
   writeScope.patch(() => ({ hostSessionOwned: true, sessionProvider: harness, preferredProvider: harness, _historyHydrated: true, continuesFrom: null }))
   // Keep window presence in sync; commands always retain their explicit session id.
-  await window.agent.activateSession(projectPath, sid, _getSessionCwd(projectPath, getScopedPerSession(get(), writeScope.target))).catch(() => undefined)
+  await window.agent.activateSession(projectPath, sid, _getSessionCwd(projectPath, getScopedPerSession(get(), writeScope.target))).catch((error: unknown) => {
+    if (options.requireActivation) throw error
+  })
   return sid
 }
 

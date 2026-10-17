@@ -47,6 +47,21 @@ describe('ChatRuntime', () => {
     expect(runtime.realtimeVoice).toEqual({ protocol: 1, supported: true })
     runtime.dispose()
   })
+  it('creates an empty voice session in an existing worktree without sending a text turn', async () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.create('/repo', { sessionId: 'voice-existing', ...sessionCreationOptions({
+      provider: 'codex', acpAgentId: null, permissionMode: 'auto',
+      model: '', effort: '', apiProviderId: null, modeId: null,
+      worktree: { kind: 'existing', path: '/repo/.wt/voice', branch: 'voice' },
+      directories: [], sandboxMode: null,
+    }) })
+    expect(client.dispatch).toHaveBeenCalledWith(expect.objectContaining({ method: 'session.create',
+      sessionId: 'voice-existing', cwd: '/repo/.wt/voice', gitBranch: 'voice',
+    }))
+    expect(client.sent.some(command => (command as { method: string }).method === 'session.send')).toBe(false)
+    runtime.dispose()
+  })
   it('adopts the host permission mode of a session it creates', async () => {
     const client = fakeClient()
     const answer = client.dispatch.getMockImplementation()!

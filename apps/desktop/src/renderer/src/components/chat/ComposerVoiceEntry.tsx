@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/chat'
 import { useMosaicStore } from '../mosaic/mosaic-store'
 import { VisibleSessionSplitContext } from '../mosaic/visible-session-split'
 import { collectLeaves } from '../mosaic/mosaic-tree'
+import { prepareComposerSession } from '@/lib/prepare-composer-session'
 import { VoiceWaveform } from './VoiceWaveform'
 
 export interface ComposerVoiceEntryProps {
@@ -65,6 +66,7 @@ export function ComposerVoiceEntry({
         void startRealtimeCall({
           projectPath,
           sessionId,
+          prepareSession: () => prepareComposerSession(projectPath, { projectPath, sessionId }),
           ...(additionalDirs !== undefined ? { additionalDirs } : {}),
           messages: {
             offerFailed: t('chat.realtimeVoice.offerFailed'),

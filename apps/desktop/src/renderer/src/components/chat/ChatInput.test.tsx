@@ -157,7 +157,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend, providerSelection }
 })
 
-vi.mock('@/lib/session-scheduled-send', () => ({ prepareScheduledSession: vi.fn(async () => 'session-1') }))
+vi.mock('@/lib/prepare-composer-session', () => ({ prepareComposerSession: vi.fn(async () => 'session-1') }))
 
 vi.mock('@tiptap/react', () => {
   const stripHtml = (value: string) => value.replace(/<[^>]+>/g, '')

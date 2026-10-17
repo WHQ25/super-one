@@ -115,3 +115,19 @@ it('hides voice when the authenticated host does not serve every native voice me
   await act(async () => { result.current.start() })
   expect(mockOpen).not.toHaveBeenCalled()
 })
+
+it('waits for the worktree-backed landing session before opening media or starting voice', async () => {
+  const f = fixture()
+  let created!: (value: typeof target) => void
+  f.create.mockImplementationOnce(() => new Promise(resolve => { created = resolve }))
+  const { result } = await renderHook(() => useMobileVoice(f.input))
+  await waitFor(() => expect(result.current.supported).toBe(true))
+  await act(async () => { result.current.start() })
+  expect(f.create).toHaveBeenCalledTimes(1)
+  expect(mockOpen).not.toHaveBeenCalled()
+  expect(f.controlledRpc).not.toHaveBeenCalled()
+  await act(async () => { created(target) })
+  expect(mockOpen).toHaveBeenCalledTimes(1)
+  expect(f.controlledRpc).toHaveBeenCalledWith(expect.objectContaining({ sessionId: target.sessionId }), 'session.voiceStart', expect.any(Object))
+  await act(async () => { result.current.service.stop() })
+})

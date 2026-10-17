@@ -242,6 +242,8 @@ export interface StartRealtimeCallOptions {
   projectPath: string
   sessionId: string
   additionalDirs?: string[]
+  /** Apply composer selections and create the backing session before opening the microphone. */
+  prepareSession?: () => Promise<string | null>
   messages: RealtimeCallMessages
 }
 
@@ -249,6 +251,7 @@ export async function startRealtimeCall({
   projectPath,
   sessionId,
   additionalDirs,
+  prepareSession,
   messages,
 }: StartRealtimeCallOptions): Promise<void> {
   if (useRealtimeCallStore.getState().state !== 'idle') return
@@ -292,6 +295,23 @@ export async function startRealtimeCall({
   }
 
   try {
+    if (prepareSession) {
+      const preparedSessionId = await prepareSession()
+      if (media !== callMedia) return
+      if (!preparedSessionId) {
+        await stopRealtimeCall()
+        return
+      }
+      if (preparedSessionId !== sessionId) {
+        view().setRealtimeStarting(sessionId, false)
+        sessionId = preparedSessionId
+        callMedia.sessionId = sessionId
+        useRealtimeCallStore.setState({ sessionId })
+        view().setRealtimeStarting(sessionId, true)
+        view().setView(sessionId, 'realtime')
+        void refreshTimeline(projectPath, sessionId)
+      }
+    }
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     })

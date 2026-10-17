@@ -75,6 +75,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
         }}
         effortOptions={effortOptions}
         selectedEffort={shownCodexReasoningEffort}
+        effortLabelClassName={shownCodexReasoningEffort === 'ultra' ? 'codex-ultra-text' : undefined}
         onSelectEffort={(value) => setSelectedCodexReasoningEffort(value as CodexReasoningEffort)}
         optionParams={optionParams}
         onOptionParamChange={(id, value) => {

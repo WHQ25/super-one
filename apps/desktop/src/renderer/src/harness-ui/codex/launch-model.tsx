@@ -155,6 +155,7 @@ export function CodexLaunchModel({
         effortOptions={effortOptions}
         selectedEffort={effort ?? null}
         selectedEffortLabel={effortLabel(effortOptions, effort, formatReasoningEffortLabel)}
+        effortLabelClassName={effort === 'ultra' ? 'codex-ultra-text' : undefined}
         onSelectEffort={(value) => onChange({ effort: value })}
         {...selector}
         optionParams={optionParams}

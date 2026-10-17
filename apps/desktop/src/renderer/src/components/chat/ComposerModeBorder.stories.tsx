@@ -1,18 +1,37 @@
+import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ComposerMode } from '@superone/shared/composer-mode'
 import { ComposerModeBorder } from './ComposerModeBorder'
+import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
 
 /** The composer box as ChatInput draws it with a mode border: its own stacking context, border hidden, the ring in its place. */
 function Composer({ mode, draft, width = 640 }: { mode: ComposerMode; draft: string; width?: number }) {
+  const [effort, setEffort] = useState('ultra')
+  const isCodex = mode === 'codex-ultra'
+  const showBorder = !isCodex || effort === 'ultra'
   return (
-    <div className="relative z-10 rounded-xl border border-transparent px-3 py-2" style={{ width, maxWidth: '100%' }}>
-      <ComposerModeBorder mode={mode} />
+    <div className={`relative z-10 rounded-xl border ${showBorder ? 'border-transparent' : 'border-border'} px-3 py-2`} style={{ width, maxWidth: '100%' }}>
+      {showBorder && <ComposerModeBorder mode={mode} />}
       <div className="min-h-9 whitespace-pre-wrap text-sm leading-6 text-foreground">
         {draft || <span className="text-muted-foreground">Ask anything…</span>}
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
         <span className="rounded-md px-1.5 py-1">+</span>
-        <span className="rounded-md px-1.5 py-1">Opus 5.5 · Extra High</span>
+        {isCodex ? (
+          <GroupedModelEffortSelector
+            models={[{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }]}
+            selectedModelId="gpt-6.1-sol"
+            onSelectModel={() => {}}
+            effortOptions={[
+              { value: 'high', label: 'High' },
+              { value: 'xhigh', label: 'Extra High' },
+              { value: 'ultra', label: 'Ultra' },
+            ]}
+            selectedEffort={effort}
+            effortLabelClassName={effort === 'ultra' ? 'codex-ultra-text' : undefined}
+            onSelectEffort={setEffort}
+          />
+        ) : <span className="rounded-md px-1.5 py-1">Opus 5.5 · Extra High</span>}
       </div>
     </div>
   )
@@ -35,6 +54,8 @@ export const Ultrathink: Story = { args: { mode: 'ultrathink', draft: 'Find the 
 
 /** A Codex session with Ultra effort selected: the same mode in Codex's Ultra colours. No keyword is involved. */
 export const CodexUltra: Story = { args: { mode: 'codex-ultra', draft: '' } }
+
+export const CodexUltraNarrow: Story = { args: { mode: 'codex-ultra', draft: '', width: 320 } }
 
 /** A taller draft: the ring and its sparkles follow the box. */
 export const LongDraft: Story = {

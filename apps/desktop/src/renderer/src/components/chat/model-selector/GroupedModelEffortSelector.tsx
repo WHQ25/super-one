@@ -85,6 +85,8 @@ interface GroupedModelEffortSelectorProps {
   effortOptions: SelectorEffortOption[]
   selectedEffort: string | null
   selectedEffortLabel?: string | null
+  /** Optional styling for the selected effort in both the trigger and slider. */
+  effortLabelClassName?: string
   onSelectEffort: (value: string) => void
   /** Optional session mode shown as an icon in the trigger and a submenu in the catalog. */
   modes?: SelectorModeOption[]
@@ -278,9 +280,10 @@ export function EffortSlider({
   effortOptions,
   selectedEffort,
   selectedEffortLabel,
+  effortLabelClassName,
   onSelectEffort,
   label = 'Effort',
-}: Pick<GroupedModelEffortSelectorProps, 'effortOptions' | 'selectedEffort' | 'selectedEffortLabel' | 'onSelectEffort'> & { label?: string }) {
+}: Pick<GroupedModelEffortSelectorProps, 'effortOptions' | 'selectedEffort' | 'selectedEffortLabel' | 'effortLabelClassName' | 'onSelectEffort'> & { label?: string }) {
   const selectedIndex = Math.max(0, effortOptions.findIndex((option) => option.value === selectedEffort))
   const selectedOption = effortOptions[selectedIndex]
   const selectedLabel = selectedEffortLabel ?? selectedOption?.label ?? label
@@ -296,7 +299,7 @@ export function EffortSlider({
     <div className="px-2 pb-2 pt-1.5">
       <div className="mb-2 flex items-center justify-between text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium text-primary">{selectedLabel}</span>
+        <span className={cn('font-medium text-primary', effortLabelClassName)}>{selectedLabel}</span>
       </div>
       <div className="relative flex h-6 items-center">
         <div className="absolute inset-0 overflow-hidden rounded-full bg-muted" aria-hidden="true">
@@ -423,6 +426,7 @@ export function GroupedModelEffortSelector({
   effortOptions,
   selectedEffort,
   selectedEffortLabel,
+  effortLabelClassName,
   onSelectEffort,
   modes = [],
   modeLabel = 'Mode',
@@ -548,7 +552,7 @@ export function GroupedModelEffortSelector({
               {canSelectEffort && (
                 <>
                   <span className="shrink-0 text-muted-foreground/70">·</span>
-                  <span className="min-w-0 shrink-[64] truncate">{effortLabel}</span>
+                  <span className={cn('min-w-0 shrink-[64] truncate', effortLabelClassName)}>{effortLabel}</span>
                 </>
               )}
               {optionSummary.slice(0, 2).map((label) => (
@@ -785,6 +789,7 @@ export function GroupedModelEffortSelector({
                 effortOptions={effortOptions}
                 selectedEffort={selectedEffort}
                 selectedEffortLabel={selectedEffortLabel}
+                effortLabelClassName={effortLabelClassName}
                 onSelectEffort={onSelectEffort}
               />
             </motion.div>

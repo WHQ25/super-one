@@ -112,6 +112,16 @@
 
 .dark .composer-mode-border[data-mode='codex-ultra'] { --cmb-sparkle: 255 255 255; }
 
+.codex-ultra-text {
+  color: rgb(124 58 237);
+  text-shadow: 0 0 6px rgb(139 92 246 / 0.4), 0 0 12px rgb(139 92 246 / 0.2);
+}
+
+.dark .codex-ultra-text {
+  color: rgb(167 139 250);
+  text-shadow: 0 0 6px rgb(167 139 250 / 0.55), 0 0 12px rgb(139 92 246 / 0.35);
+}
+
 .composer-mode-border[data-mode='ultrathink'] {
   --cmb-colors: rgb(var(--ultrathink-0)), rgb(var(--ultrathink-1)), rgb(var(--ultrathink-2)), rgb(var(--ultrathink-3)),
     rgb(var(--ultrathink-4)), rgb(var(--ultrathink-5)), rgb(var(--ultrathink-6)), rgb(var(--ultrathink-0));

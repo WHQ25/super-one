@@ -5,14 +5,14 @@ import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { EMPTY_CODEX_REALTIME_SESSION_VIEW, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { ChatContent } from './ChatContent'
-import { codexAsyncAnswerRestoreFixture, codexThreadRestoreFixture } from './codex-thread-restore-fixture'
+import { codexAsyncAnswerRestoreFixture, codexHostWakeRestoreFixture, codexThreadRestoreFixture } from './codex-thread-restore-fixture'
 
 const projectPath = '__codex_thread_restore__'
 const sessionId = 'codex-thread-restore'
 
 mockIpc('app', 'getMediaServerPort', async () => 6006)
 
-function RestoredThread({ width = 760, scenario = 'compaction' }: { width?: number; scenario?: 'compaction' | 'async-answer' }) {
+function RestoredThread({ width = 760, scenario = 'compaction' }: { width?: number; scenario?: 'compaction' | 'async-answer' | 'host-wakes' }) {
   const [ready, setReady] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -24,7 +24,11 @@ function RestoredThread({ width = 760, scenario = 'compaction' }: { width?: numb
       callSession: async () => null,
       onScheduledSendChanged: () => () => {},
     } as typeof window.environment
-    const { messages, timeline } = scenario === 'async-answer' ? codexAsyncAnswerRestoreFixture() : codexThreadRestoreFixture()
+    const { messages, timeline } = {
+      compaction: codexThreadRestoreFixture,
+      'async-answer': codexAsyncAnswerRestoreFixture,
+      'host-wakes': codexHostWakeRestoreFixture,
+    }[scenario]()
     mockIpc('agent', 'loadRealtimeTimeline', async () => timeline)
     mockIpc('agent', 'getRealtimeTimeline', async () => timeline)
     mockIpc('agent', 'prewarm', async () => undefined)
@@ -90,4 +94,9 @@ export const NarrowDarkChinese: Story = {
 export const AsyncAnswer: Story = { args: { scenario: 'async-answer' } }
 export const AsyncAnswerNarrowDarkChinese: Story = {
   args: { scenario: 'async-answer', width: 320 }, globals: { theme: 'dark', locale: 'zh' },
+}
+/** System wakes disappear; the identical prompt pasted by a human remains visible once. */
+export const HostWakes: Story = { args: { scenario: 'host-wakes' } }
+export const HostWakesNarrowDarkChinese: Story = {
+  args: { scenario: 'host-wakes', width: 320 }, globals: { theme: 'dark', locale: 'zh' },
 }

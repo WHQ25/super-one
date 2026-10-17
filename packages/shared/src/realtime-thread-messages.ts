@@ -1,5 +1,6 @@
 import type { ChatMessage } from './agent-types'
 import { codexAsyncAnswerId, codexAsyncQuestionItems, isCodexAsyncAnswer } from './codex-async-question'
+import { isModelOnlyHostWake, restoreHostWakeSource } from './host-wake'
 import { isRealtimeDelegationMessage, isRealtimeVoiceMessage } from './realtime-transcript'
 
 function threadTurnId(message: ChatMessage): string | undefined {
@@ -32,11 +33,12 @@ export function mergeCodexThreadMessages(
   options: CodexThreadMergeOptions = {},
 ): ChatMessage[] {
   const drop = (message: ChatMessage): boolean => (
-    isRealtimeVoiceMessage(message)
+    (message.role === 'user' && isModelOnlyHostWake(message.metadata ?? {}))
+    || isRealtimeVoiceMessage(message)
     || (!options.keepDelegationPrompts && isRealtimeDelegationMessage(message))
   )
-  const local = messages.filter((message) => !drop(message))
-  const canonical = realtime.threadMessages.filter((message) => !drop(message))
+  const local = messages.map(restoreHostWakeSource).filter((message) => !drop(message))
+  const canonical = realtime.threadMessages.map(restoreHostWakeSource).filter((message) => !drop(message))
   // A steer may leave several local segments for one turn. Align the provider's
   // whole-turn row with the last segment; earlier segments stay on the spine.
   const localIndexes = new Map(local.map((message, index) => [threadMessageKey(message), index]))

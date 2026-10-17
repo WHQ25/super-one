@@ -65,3 +65,23 @@ export function codexAsyncAnswerRestoreFixture(): { messages: ChatMessage[]; tim
     },
   }
 }
+
+/** Legacy provider caches contain host wakes without source metadata. */
+export function codexHostWakeRestoreFixture(): { messages: ChatMessage[]; timeline: RealtimeTimelineResult } {
+  const request = row('request', 'user', 'Review the implementation. 审核实现。')
+  const prompt = 'A collaboration mailbox message is ready. Call session_collab_retrieve.'
+  const pasted = row('pasted-notification', 'user', prompt)
+  const reply = row('reply', 'assistant', 'The review is complete. 审核已完成。')
+  return {
+    messages: [request, pasted, reply],
+    timeline: {
+      segments: [], activeRealtimeSessionId: null, hasTimeline: true,
+      threadMessages: [request,
+        ...['collab-message:message', 'collab-link:grant', 'collab-stop:child:stop'].map((id, index) => ({
+          ...row(id, 'user', prompt),
+          metadata: { codexTimeline: { provenance: 'codex' as const, turnId: 'turn', position: index + 1 } },
+        })),
+        pasted, reply],
+    },
+  }
+}

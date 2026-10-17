@@ -8,6 +8,41 @@ import {
 } from './codex-realtime'
 
 describe('Codex realtime protocol mapping', () => {
+  it.each(['collab-message:message-1', 'collab-link:grant-1', 'collab-stop:child-1:stop-1'])(
+    'restores host notification provenance from the echoed client id: %s', (clientId) => {
+      const timeline = mapCodexRealtimeTimeline({ data: [
+        { type: 'turnStarted', position: 1, turnId: 'turn-1' },
+        { type: 'item', position: 2, turnId: 'turn-1', item: {
+          type: 'userMessage', id: 'provider-item', clientId,
+          content: [{ type: 'text', text: 'A collaboration mailbox message is ready.' }],
+        } },
+        { type: 'item', position: 3, turnId: 'turn-1', item: {
+          type: 'agentMessage', id: 'reply', text: 'Received the message.', phase: null, delivery: null,
+        } },
+        { type: 'turnCompleted', position: 4, turnId: 'turn-1', status: 'completed' },
+      ] }, 'thread-1')
+
+      expect(timeline.threadMessages[0]).toMatchObject({
+        id: clientId, role: 'user', metadata: {
+          source: 'task-notification',
+          codexTimeline: { provenance: 'codex', turnId: 'turn-1' },
+        },
+      })
+      expect(timeline.threadMessages[1]).toMatchObject({ role: 'assistant', status: 'complete' })
+    },
+  )
+
+  it('keeps human-authored notification text as ordinary input', () => {
+    const timeline = mapCodexRealtimeTimeline({ data: [
+      { type: 'item', position: 1, turnId: 'turn-1', item: {
+        type: 'userMessage', id: 'human-input',
+        content: [{ type: 'text', text: 'A collaboration mailbox message is ready.' }],
+      } },
+    ] }, 'thread-1')
+
+    expect(timeline.threadMessages[0].metadata?.source).toBeUndefined()
+  })
+
   it('positions a running delegation at its handoff even when its turn opened before speech', () => {
     const timeline = mapCodexRealtimeTimeline({ data: [
       { type: 'turnStarted', position: 2, turnId: 'turn-1' },

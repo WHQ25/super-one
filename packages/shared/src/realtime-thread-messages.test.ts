@@ -24,6 +24,45 @@ function answer(itemId = 'question'): ChatMessage {
   return { ...row(codexAsyncAnswerId(itemId), 'user'), content: [{ type: 'text', text: 'Yes', codexAsyncQuestions: questions }] }
 }
 
+describe('host wakes in the Codex backing thread', () => {
+  const prompt = 'A collaboration mailbox message is ready. Call session_collab_retrieve.'
+
+  it.each([false, true])('hides unmarked cached wakes with delegation prompts kept=%s', (keepDelegationPrompts) => {
+    const request = row('request', 'user', 'Review the implementation')
+    const wakes = ['collab-message:message-1', 'collab-link:grant-1', 'collab-stop:child:stop-1']
+      .map(id => row(id, 'user', prompt, 'turn'))
+    const reply = source()
+    const result = mergeCodexThreadMessages([request, reply], {
+      threadMessages: [request, ...wakes, source('provider-turn')],
+    }, { keepDelegationPrompts })
+
+    expect(result.map(message => message.id)).toEqual(['request', 'provider-turn'])
+    expect(result[1].content).toEqual(reply.content)
+  })
+
+  it('hides explicitly marked host wakes in both local and provider history', () => {
+    const wake = { ...row('notification', 'user', prompt), metadata: { source: 'task-notification' as const } }
+    expect(mergeCodexThreadMessages([wake, source()], { threadMessages: [wake, source('provider-turn')] })
+      .map(message => message.id)).toEqual(['provider-turn'])
+  })
+
+  it('keeps identical human input, initial collaboration tasks and user-authored scheduled prompts', () => {
+    const human = row('human-input', 'user', prompt)
+    const task = { ...row('collaboration-task-grant', 'user', 'Review the implementation'),
+      metadata: { source: 'collaboration' as const } }
+    const scheduled = { ...row('scheduled', 'user', 'Review the implementation'),
+      metadata: { source: 'task-notification' as const, userAuthored: true } }
+    const messages = [human, task, scheduled]
+    expect(mergeCodexThreadMessages(messages, { threadMessages: messages })).toMatchObject(messages)
+  })
+
+  it('preserves explicit human provenance and assistant replies regardless of their ids', () => {
+    const human = { ...row('collab-message:explicit-user', 'user', prompt), metadata: { source: 'user' as const } }
+    const assistant = row('collab-message:assistant', 'assistant', 'Received the message.')
+    expect(mergeCodexThreadMessages([], { threadMessages: [human, assistant] })).toEqual([human, assistant])
+  })
+})
+
 describe('async answers in the Codex backing thread', () => {
   it('merges the provider echo before a turn with the quoted answer saved after that turn', () => {
     const request = row('request', 'user', 'Update the layout')

@@ -11,6 +11,7 @@ import type {
   RealtimeVoiceStartRequest,
 } from '@superone/shared/agent-types'
 import { isRealtimeDelegationText } from '@superone/shared/realtime-timeline'
+import { restoreHostWakeSource } from '@superone/shared/host-wake'
 import {
   CODEX_REALTIME_END_INSTRUCTIONS,
   CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS,
@@ -326,7 +327,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
         turn.delegated = true
         turn.delegationPosition = position
       }
-      turn.users.push({
+      turn.users.push(restoreHostWakeSource({
         id,
         role: 'user',
         status: 'complete',
@@ -340,7 +341,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
             turnId,
           },
         },
-      })
+      }))
       continue
     }
 

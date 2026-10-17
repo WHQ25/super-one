@@ -1,4 +1,4 @@
-import type { ChatMessageSource } from './agent-types'
+import type { ChatMessage, ChatMessageSource } from './agent-types'
 
 /**
  * A host wake (`source: 'task-notification'`) resumes the model with a prompt
@@ -11,4 +11,15 @@ import type { ChatMessageSource } from './agent-types'
  */
 export function isModelOnlyHostWake(input: { source?: ChatMessageSource; userAuthored?: boolean }): boolean {
   return input.source === 'task-notification' && !input.userAuthored
+}
+
+/**
+ * Codex echoes collaboration-host's durable wake IDs without their source.
+ * Restore it for provider history and older timeline caches. Prompt text is
+ * never an identity: a human may paste the same notification into the composer.
+ */
+export function restoreHostWakeSource(message: ChatMessage): ChatMessage {
+  if (message.role !== 'user' || message.metadata?.source !== undefined
+    || !/^collab-(?:message|link|stop):.+/.test(message.id)) return message
+  return { ...message, metadata: { ...message.metadata, source: 'task-notification' } }
 }

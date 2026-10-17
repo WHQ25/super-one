@@ -220,6 +220,36 @@ items still map to Agent cards.
 
 ## Realtime voice
 
+### Voice samples come from ChatGPT HTTP, independently of the selectable catalog
+
+- **Behavior:** `GET /backend-api/settings/voices` with `voice_mode=wingman` and
+  `spoken_language` returns primary language/accent labels in `accent` and
+  prerecorded `preview_url` values. These are public
+  HTTPS samples on `persistent.oaistatic.com`. The HTTP catalog can differ from
+  App Server's supported voices; never use it to expand the selectable catalog.
+  The official client maps account IDs `fathom`, `glimmer`, and `orbit` to realtime
+  IDs `arbor`, `sol`, and `spruce`. Unknown aliases must not be guessed.
+- **Observed:** Installed Codex App 26.1013.40934 and live Codex OAuth requests on
+  2026-10-18. Chromium `net.fetch` succeeded where plain Bun fetch returned a
+  Cloudflare challenge. The catalog returned 24 samples; Cove downloaded without
+  authorization and completed HTML audio playback. This is an internal client
+  endpoint, so failure must leave voice selection usable.
+- **Depends on it:** Desktop preloads metadata for the default Codex account
+  alongside the selectable catalog when preferences mount. The picker becomes
+  available after metadata settles, so its first visible list is already grouped.
+  Closing and reopening retain the metadata without a second request or
+  regrouping. Credentials remain in main and are never refreshed by this reader.
+  Results are discarded if the default account or
+  credentials change. Closing, selecting a voice, disabling or unmounting the
+  picker stops playback; late results cannot revive a previous player.
+  Group supported voices by their upstream `accent`, translating known labels
+  and retaining unknown labels. Unlabelled voices go under Other; a failed
+  metadata request preserves the flat selectable list. Accent describes the
+  primary voice style, not an exhaustive supported-language list.
+- **Guard:** `codex-voice-previews.test.ts`, `codex-voice-ipc.test.ts` and
+  `CodexRealtimeVoicePreference.test.tsx`; colocated stories cover loading,
+  missing samples, retry, playback failure and narrow Chinese dark layouts.
+
 ### V3 owns its catalog but still uses the legacy default field
 
 - **Behavior:** 0.163.0 validates v3 voices against the dedicated `voices.v3`

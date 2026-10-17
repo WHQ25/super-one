@@ -1,3 +1,4 @@
+import type { CodexVoicePreviews } from '@superone/shared/codex-voice-previews'
 import type { AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
@@ -208,6 +209,7 @@ interface AppAPI {
   codexLogoutAccount(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountStatus>
   codexGetRateLimits(projectPath: string, apiProviderId?: string | null, force?: boolean, preferCached?: boolean): Promise<CodexRateLimits | null>
   codexListRealtimeVoices(projectPath?: string | null): Promise<CodexRealtimeVoiceCatalog>
+  codexListRealtimeVoicePreviews(language: string): Promise<CodexVoicePreviews>
   codexGetAccountUsage(projectPath: string, apiProviderId?: string | null, threadId?: string | null, force?: boolean, preferCached?: boolean): Promise<CodexAccountUsage | null>
   codexGetServerDiagnostics(projectPath: string, apiProviderId?: string | null): Promise<CodexServerDiagnostics | null>
   codexGetConfigRequirements(projectPath: string, apiProviderId?: string | null): Promise<CodexConfigRequirements | null>

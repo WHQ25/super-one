@@ -1,3 +1,4 @@
+import type { CodexVoicePreviews } from '@superone/shared/codex-voice-previews'
 import { AGENT_PROFILE_CHANNELS, type AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import { CodexAccountIpcChannels } from '@superone/shared/codex-accounts'
 import { collaborationMailbox } from './collaboration-mailbox'
@@ -1091,6 +1092,8 @@ const appAPI = {
 
   codexListRealtimeVoices: (projectPath?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_REALTIME_VOICES, projectPath) as Promise<CodexRealtimeVoiceCatalog>,
+  codexListRealtimeVoicePreviews: (language: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_REALTIME_VOICE_PREVIEWS, language) as Promise<CodexVoicePreviews>,
 
   codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null, threadId?: string | null, force = false, preferCached = false) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId, threadId, force, preferCached),

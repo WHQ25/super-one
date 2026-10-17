@@ -4280,6 +4280,7 @@ export const AgentIpcChannels = {
   CODEX_GET_CONFIG_REQUIREMENTS: 'codex:get-config-requirements',
   CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',
   CODEX_LIST_REALTIME_VOICES: 'codex:list-realtime-voices',
+  CODEX_LIST_REALTIME_VOICE_PREVIEWS: 'codex:list-realtime-voice-previews',
   CODEX_MCP_OAUTH_LOGIN: 'codex:mcp-oauth-login',
   CODEX_EXTERNAL_AGENT_DETECT: 'codex:external-agent-detect',
   CODEX_EXTERNAL_AGENT_IMPORT: 'codex:external-agent-import',

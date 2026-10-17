@@ -51,7 +51,8 @@ export function codexKeychainAccount(home: string): string {
   return `cli|${createHash('sha256').update(canonical).digest('hex').slice(0, 16)}`
 }
 
-function readLogin(home: string): CodexLogin | null {
+/** Read Codex-owned OAuth credentials without refreshing or changing them. Host-only. */
+export function readCodexLogin(home: string = codexHome()): CodexLogin | null {
   const file = join(home, 'auth.json')
   if (existsSync(file)) {
     const login = loginFrom(readFileSync(file, 'utf8'))
@@ -113,7 +114,7 @@ const throttle = new UsageThrottle<ClaudeRateLimits>(MIN_FETCH_INTERVAL_MS, 5 * 
 /** ChatGPT-plan windows for the Codex login in `home`; `{ value: null }` when Codex is signed out or on an API key. */
 export async function readCodexRateLimits(opts: { home?: string; force?: boolean } = {}): Promise<UsageReading<ClaudeRateLimits>> {
   const home = opts.home ?? codexHome()
-  const login = readLogin(home)
+  const login = readCodexLogin(home)
   if (!login) return { value: null }
   const fingerprint = createHash('sha256').update(login.accessToken).digest('hex')
   return throttle.read(home, fingerprint, opts.force === true, async () => {

@@ -1483,10 +1483,28 @@ export type Messages = {
         label: string
         description: string
         menuTitle: string
-        menuDescription: string
         loading: string
         loadFailed: string
         updated: string
+        preview: string
+        stopPreview: string
+        previewLoading: string
+        previewLoadFailed: string
+        previewRetry: string
+        previewUnavailable: string
+        previewFailed: string
+        groups: {
+          americanEnglish: string
+          britishEnglish: string
+          brazilianPortuguese: string
+          french: string
+          german: string
+          hindi: string
+          japanese: string
+          korean: string
+          mexicanSpanish: string
+          other: string
+        }
       }
       sandbox: {
         label: string
@@ -6056,10 +6074,28 @@ export const en: Messages = {
         label: 'Realtime Voice',
         description: 'Used for new Realtime conversations.',
         menuTitle: 'Choose a voice',
-        menuDescription: 'Choose the voice used for new Realtime conversations.',
         loading: 'Loading voices…',
         loadFailed: 'Voices unavailable',
         updated: 'Realtime voice set to {{voice}}',
+        preview: 'Preview {{voice}}',
+        stopPreview: 'Stop {{voice}} Preview',
+        previewLoading: 'Loading previews…',
+        previewLoadFailed: 'Voice previews could not be loaded.',
+        previewRetry: 'Retry',
+        previewUnavailable: 'No preview available for this voice',
+        previewFailed: 'Preview could not play. Try again.',
+        groups: {
+          americanEnglish: 'American English',
+          britishEnglish: 'British English',
+          brazilianPortuguese: 'Brazilian Portuguese',
+          french: 'French',
+          german: 'German',
+          hindi: 'Hindi',
+          japanese: 'Japanese',
+          korean: 'Korean',
+          mexicanSpanish: 'Mexican Spanish',
+          other: 'Other',
+        },
       },
       sandbox: {
         label: 'Sandbox',

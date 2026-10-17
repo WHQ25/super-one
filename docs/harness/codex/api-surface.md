@@ -12,6 +12,15 @@ means the method is called or its event is consumed; `partial` names runtime or
 payload limits. Generic routing or safe rejection alone does not count as a
 feature integration. Unlisted new optional fields are tolerated and unused.
 
+Desktop voice previews additionally use ChatGPT's internal HTTP
+`GET /backend-api/settings/voices` (`voice_mode=wingman`), outside the App Server
+RPC inventory. `apps/desktop/src/main/codex/codex-voice-previews.ts` reads the
+default Codex account's existing OAuth login through Chromium `net.fetch` and
+returns only public accent labels and validated sample URLs. Official account
+aliases (`fathom`/`glimmer`/`orbit`) map to `arbor`/`sol`/`spruce`. Selectable
+voices still come from
+`thread/realtime/listVoices`; preview playback creates no realtime session.
+
 ## Stable client requests
 
 | Name | Status | Usage | Code |

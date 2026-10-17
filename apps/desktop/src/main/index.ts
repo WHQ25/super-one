@@ -8,6 +8,7 @@ import { codexAccountStore } from './codex/codex-account-store'
 import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
 import { registerCodexUsageIpc } from './codex/codex-usage-ipc'
+import { registerCodexVoiceIpc } from './codex/codex-voice-ipc'
 import { superoneHome } from './superone-home'
 import { registerCollaborationMailboxIpc } from './session/collaboration-mailbox-ipc'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
@@ -2595,14 +2596,8 @@ function registerIpcHandlers(): void {
 
   registerCodexAccountIpc(codexService)
   registerCodexUsageIpc(codexService)
+  registerCodexVoiceIpc(codexService)
   registerGrokAuthIpc()
-
-  ipcMain.handle(AgentIpcChannels.CODEX_LIST_REALTIME_VOICES, async (_event, projectPath?: string | null) => {
-    const localProjectPath = projectPath && !parseRemoteProjectKey(projectPath)
-      ? projectPath
-      : app.getPath('userData')
-    return codexService.listRealtimeVoices(localProjectPath)
-  })
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_SERVER_DIAGNOSTICS, async (_event, projectPath: string, apiProviderId?: string | null) => {
     if (parseRemoteProjectKey(projectPath)) {

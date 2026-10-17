@@ -15,6 +15,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Preview Codex realtime voices in desktop preferences, grouped by their primary
+  language and accent.
 - Offer a new-session handoff on desktop and phone when a long session's reported
   prompt cache expires. Preserve the checkout and settings, mention the previous
   session and transfer active collaboration, including remote children.

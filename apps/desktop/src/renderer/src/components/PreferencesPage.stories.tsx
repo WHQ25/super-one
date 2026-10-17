@@ -69,6 +69,7 @@ function Frame({ scenario, children }: { scenario: Scenario; children: ReactNode
     mockIpc('app', 'listBindings', async () => [])
     mockIpc('app', 'codexListModels', async () => (scenario.noModels ? [] : CODEX_MODELS))
     mockIpc('app', 'codexListRealtimeVoices', async () => ({ voices: ['cove', 'juniper', 'ember'], defaultVoice: 'cove' }))
+    mockIpc('app', 'codexListRealtimeVoicePreviews', async () => ({}))
     mockIpc('app', 'codexDetectExternalAgentConfig', async () => [])
     mockIpc('app', 'connectDeepseek', async () => ({ models: [] }))
 

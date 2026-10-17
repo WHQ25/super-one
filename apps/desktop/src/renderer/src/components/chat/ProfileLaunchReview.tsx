@@ -7,8 +7,9 @@ import { profileLaunchSandboxMode } from '@superone/shared/agent-profile-launch'
 export function ProfileLaunchReview({ config, harnessId, acpAgentId }: { config: SessionAgentLaunchConfig; harnessId?: HarnessId; acpAgentId?: string }) {
   const { t } = useTranslation()
   const permission = harnessId ? HARNESS_CONTROLS[harnessId].launchPermission?.(config.permissionMode ?? 'default', () => {})?.labelKey : undefined
+  const agentField = harnessId ? HARNESS_CONTROLS[harnessId].launchAgentField : undefined
   const fields = {
-    ...(harnessId === 'acp' ? { acpAgentId: acpAgentId ?? t('chat.permission.agentProfile.unresolvedAgent') } : {}),
+    ...(agentField ? { [agentField]: acpAgentId ?? t('chat.permission.agentProfile.unresolvedAgent') } : {}),
     model: config.model,
     effort: config.effort,
     permissionMode: config.codexPermissionPreset === 'read-only' ? t('resources.automation.readOnly') : permission ? t(permission) : config.permissionMode ?? 'default',

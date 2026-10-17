@@ -72,7 +72,7 @@
     "reason": "Codex realtime timeline and durable queue; Grok-only queued start"
   },
   "components/chat/ChatInput.tsx": {
-    "count": 11,
+    "count": 10,
     "reason": "owning features: Codex thread, realtime voice, plan reject hint, dirs-next-turn and review; Claude agent mentions; ACP agent name and lazy slash load"
   },
   "components/chat/ChatSuggestions.tsx": {

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import type { AgentProfileManagementAPI, AgentProfileManagementDetail, ManagedAgentProfile } from '@superone/shared/agent-profile-management'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { useAppStore } from '@/stores/app'
+import { catalogIdForSessionProvider } from '@/lib/harness-visibility'
 import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
 import { SettingsPage, SettingsSection } from './settings/SettingsSection'
 import { ProfileLaunchReview } from './chat/ProfileLaunchReview'
@@ -63,7 +64,7 @@ export function AgentProfilesPage({ api = window.app.agentProfiles }: { api?: Ag
     return () => { active = false }
   }, [api, selected, revision])
   const configure = (profile: ManagedAgentProfile) => {
-    const key = profile.harnessId === 'acp' ? (profile.acpAgentId === 'grok-build' ? 'acp-grok' : `acp:${profile.acpAgentId ?? 'grok-build'}`) : profile.harnessId
+    const key = catalogIdForSessionProvider(profile.harnessId, profile.acpAgentId) ?? `acp:${profile.acpAgentId}`
     useAppStore.getState().openHarnessSettings(key)
     useAppStore.getState().setHarnessConfigSection('preferences')
   }

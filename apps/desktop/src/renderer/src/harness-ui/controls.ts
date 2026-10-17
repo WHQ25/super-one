@@ -28,6 +28,8 @@ export interface HarnessControls {
    * `PermissionMode` a launch config carries. Absent: the harness has no modes.
    */
   launchPermission?: (value: PermissionMode, select: (mode: PermissionMode) => void) => LaunchPermissionView
+  /** Agent identity that must be included when reviewing a launch. */
+  launchAgentField?: 'acpAgentId'
 }
 
 export interface LaunchPermissionView {

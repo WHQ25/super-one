@@ -22,6 +22,7 @@ function AcpPermissionControl({ compact }: { compact: boolean }) {
 }
 
 export const acpControls: HarnessControls = {
+  launchAgentField: 'acpAgentId',
   ModelControl: AcpModelSelector,
   LaunchModelControl: AcpLaunchModel,
   // Default / Grok Build → official Grok mark; other ACP agents keep the generic ACP glyph.

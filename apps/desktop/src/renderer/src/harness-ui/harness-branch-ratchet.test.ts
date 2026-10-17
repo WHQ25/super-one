@@ -40,7 +40,7 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) return entry.name === '__snapshots__' ? [] : sourceFiles(path)
-    return /\.tsx?$/.test(entry.name) && !/\.(test|stories)\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts') ? [path] : []
+    return /\.tsx?$/.test(entry.name) && !/\.(test|test-fixtures|stories)\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts') ? [path] : []
   })
 }
 

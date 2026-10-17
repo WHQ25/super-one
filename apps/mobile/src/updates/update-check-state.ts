@@ -20,15 +20,14 @@ export const UPDATE_REENTRY_GUARD_MS = 30 * 1000
 export function shouldCheckNow(input: {
   lastCheckedAtMs: number | null
   nowMs: number
-  /** A user tapping "Check for updates" ignores the interval, not the guard. */
+  /** A user tapping "Check for updates" bypasses automatic-check throttles. */
   force?: boolean
 }): boolean {
   const { lastCheckedAtMs, nowMs, force } = input
-  if (lastCheckedAtMs === null) return true
+  if (force || lastCheckedAtMs === null) return true
   const elapsed = nowMs - lastCheckedAtMs
   // A clock that jumped backwards leaves a negative elapsed; treat the stored
   // stamp as unusable rather than never checking again.
   if (elapsed < 0) return true
-  if (force) return elapsed >= UPDATE_REENTRY_GUARD_MS
   return elapsed >= UPDATE_CHECK_INTERVAL_MS
 }

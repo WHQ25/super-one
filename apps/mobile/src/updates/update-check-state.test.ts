@@ -19,14 +19,12 @@ describe('shouldCheckNow', () => {
     ).toBe(true)
   })
 
-  it('lets an explicit check skip the interval but not the re-entry guard', () => {
-    // Tapping "Check for updates" should feel immediate...
+  it('lets an explicit check skip both automatic-check throttles', () => {
     expect(
       shouldCheckNow({ lastCheckedAtMs: NOW - UPDATE_REENTRY_GUARD_MS, nowMs: NOW, force: true }),
     ).toBe(true)
-    // ...but coming straight back from the system installer must not re-arm
-    // the whole prompt-and-download cycle.
-    expect(shouldCheckNow({ lastCheckedAtMs: NOW - 1000, nowMs: NOW, force: true })).toBe(false)
+    expect(shouldCheckNow({ lastCheckedAtMs: NOW - 1000, nowMs: NOW, force: true })).toBe(true)
+    expect(shouldCheckNow({ lastCheckedAtMs: NOW, nowMs: NOW, force: true })).toBe(true)
   })
 
   it('recovers from a clock that moved backwards', () => {

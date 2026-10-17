@@ -99,7 +99,8 @@ export function useUpdateCheck(
       try {
         const manifest = await ports.fetchManifest()
         await saveLastUpdateCheckAt(store, now)
-        const dismissedBuildCode = await loadDismissedUpdateBuild(store)
+        // "Later" silences automatic prompts, not an explicit request to check again.
+        const dismissedBuildCode = force ? null : await loadDismissedUpdateBuild(store)
         const verdict = evaluateMobileUpdate({
           manifest,
           currentBuildCode: environment.currentBuild.buildCode,

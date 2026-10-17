@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { vi } from 'vitest'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { encodePlainMessage, WireDecoder } from '@superone/shared/environment/wire'
@@ -12,6 +13,12 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
 import { openPhoneConnection } from './phone-endpoint'
+
+vi.mock('../session/session-provider-repo', async () =>
+  (await import('../../test/fixtures/session-provider-repo')).fixtureSessionProviderRepository())
+vi.mock('../database', () => ({
+  getDb: () => { throw new Error('Phone fixture must not access the desktop database') },
+}))
 
 /**
  * A desktop domain over one Git project with one session this desktop's user

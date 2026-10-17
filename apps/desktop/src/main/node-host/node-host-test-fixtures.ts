@@ -21,7 +21,8 @@ import { DesktopNodeHost, type DesktopNodeHostListen } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 
 // Fixture hosts use the catalog below, never the packaged desktop's provider DB.
-vi.mock('../session/session-provider-repo', () => ({ getSessionProvider: () => null }))
+vi.mock('../session/session-provider-repo', async () =>
+  (await import('../../test/fixtures/session-provider-repo')).fixtureSessionProviderRepository())
 
 /** Fakes of B's session manager and store for node host integration tests. */
 

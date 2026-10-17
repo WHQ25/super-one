@@ -55,7 +55,7 @@ import type { Corner } from '@/stores/chat-store/types'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useSourceControlStore } from '@/stores/source-control'
 import { useTerminalStore } from '@/stores/terminal'
-import { selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini-mode'
+import { enterMiniWindow, exitMiniWindow, selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini-mode'
 import { normalizeFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
 import { setActivityPanelShown, setChatFloating, toggleActivitySide, toggleSidebar } from '@/lib/layout-actions'
 import { LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
@@ -140,9 +140,10 @@ function layoutSizes(): LayoutSizes {
   const ap = useActivityPanelStore.getState()
   const windowWidth = window.innerWidth
   const chatMin = chatMinWidth()
-  const sidebarReserved = showSidebar ? sidebarWidth : 0
-  const fills = ap.showPanel && selectPanelFillsWindow(ap)
-  const panelReserved = ap.showPanel && !fills ? ap.panelWidth : 0
+  const folded = selectPanelsFolded(useWindowMiniModeStore.getState())
+  const sidebarReserved = showSidebar && !folded ? sidebarWidth : 0
+  const fills = !folded && ap.showPanel && selectPanelFillsWindow(ap)
+  const panelReserved = !folded && ap.showPanel && !fills ? ap.panelWidth : 0
   return {
     window: windowWidth,
     sidebar: {
@@ -156,7 +157,7 @@ function layoutSizes(): LayoutSizes {
       max: Math.max(LAYOUT.MIN_AP, maxPanelWidth(windowWidth, sidebarReserved, chatMin)),
     },
     chat: {
-      width: fills ? 0 : Math.max(0, windowWidth - sidebarReserved - panelReserved - LAYOUT.CARD_GUTTER),
+      width: fills ? 0 : Math.max(0, windowWidth - sidebarReserved - panelReserved - (folded ? 0 : LAYOUT.CARD_GUTTER)),
       min: chatMin,
     },
   }
@@ -164,6 +165,7 @@ function layoutSizes(): LayoutSizes {
 
 /** A panel filling the window turns the chat into a floating window, collapsed to an icon when closed. */
 function chatMode(sessionId: string): LayoutChatMode {
+  if (useWindowMiniModeStore.getState().phase !== 'app') return 'docked'
   if (!placement(sessionId).dockLive || !selectPanelFillsWindow(useActivityPanelStore.getState())) return 'docked'
   return useChatStore.getState().isOpen ? 'floating' : 'icon'
 }
@@ -201,6 +203,33 @@ function setChatMode(sessionId: string, request: LayoutActRequest): LayoutActRes
   }
   // A position alone, while docked, waits for the next float.
   return { status: 'applied', visible: p.windowVisible && (mode !== undefined || chatMode(sessionId) !== 'docked') }
+}
+
+async function setWindowMode(sessionId: string, request: LayoutActRequest, target?: LayoutControlSession): Promise<LayoutActResult> {
+  const { mode } = request
+  if (mode !== 'mini' && mode !== 'full') invalid('window_mode needs mode "mini" or "full".')
+  const p = placement(sessionId)
+  if (!p.chatOnScreen || !p.windowVisible) return skipped()
+  const { phase } = useWindowMiniModeStore.getState()
+  if (phase === 'folding' || phase === 'unfolding') {
+    throw new LayoutControlError('unavailable', 'The window is already changing mode. Check layout_snapshot before retrying.')
+  }
+  if ((mode === 'mini' && phase === 'mini') || (mode === 'full' && phase === 'app')) return { status: 'applied', visible: true }
+  if (mode === 'mini') {
+    if (p.split) throw new LayoutControlError('unavailable', 'Mini mode shows one session. Use close_split to close the split view first.')
+    const session = target ?? findSessionTarget(useChatStore.getState(), sessionId)
+    if (!session) throw new LayoutControlError('not_found', 'The visible session is unavailable. Check layout_snapshot before retrying.')
+    const native = await window.app.getWindowLayoutState()
+    if (native.transitioning) throw new LayoutControlError('unavailable', 'The window is already changing layout. Check layout_snapshot before retrying.')
+    if (native.fullscreen) await window.app.setWindowFullscreen(false)
+    const current = placement(sessionId)
+    if (!current.chatOnScreen || !current.windowVisible) return skipped()
+    if (useWindowMiniModeStore.getState().phase !== 'app') throw new LayoutControlError('unavailable', 'The window mode changed during preparation. Check layout_snapshot before retrying.')
+    await enterMiniWindow({ projectPath: session.projectPath, sessionId: session.sessionId })
+  } else {
+    await exitMiniWindow()
+  }
+  return { status: 'applied', visible: placement(sessionId).chatOnScreen && document.visibilityState === 'visible' }
 }
 
 function clampWidth(width: number, range: { min: number; max: number }): number {
@@ -346,7 +375,9 @@ export function layoutSnapshot(caller: LayoutControlCaller, target?: LayoutContr
     visible: p.chatOnScreen && p.windowVisible,
     window: {
       visible: p.windowVisible,
-      sidebar: useAppStore.getState().showSidebar ? 'expanded' : 'collapsed',
+      mode: useWindowMiniModeStore.getState().mode ? 'mini' : 'full',
+      transitioning: ['folding', 'unfolding'].includes(useWindowMiniModeStore.getState().phase),
+      sidebar: useAppStore.getState().showSidebar && !selectPanelsFolded(useWindowMiniModeStore.getState()) ? 'expanded' : 'collapsed',
       layout: p.split ? 'split' : 'single',
       ...(p.split ? { splitSessions: p.splitSessions } : {}),
     },
@@ -563,6 +594,35 @@ export async function layoutAct(caller: LayoutControlCaller, request: LayoutActR
     }
     case 'chat_mode':
       return setChatMode(sid, request)
+    case 'window_mode':
+      return setWindowMode(sid, request, target)
+    case 'resize_window':
+    case 'enter_fullscreen':
+    case 'exit_fullscreen': {
+      if (request.action === 'resize_window' && (request.width === undefined && request.height === undefined)) invalid('resize_window needs width, height, or both.')
+      if (request.action === 'resize_window') {
+        for (const value of [request.width, request.height]) if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) invalid('Window dimensions must be positive integers in device-independent pixels.')
+      }
+      const p = placement(sid)
+      if (!p.chatOnScreen || !p.windowVisible) return skipped()
+      const phase = useWindowMiniModeStore.getState().phase
+      if (phase === 'folding' || phase === 'unfolding') throw new LayoutControlError('unavailable', 'The window is already changing mode. Check layout_snapshot before retrying.')
+      if (request.action === 'enter_fullscreen' && phase !== 'app') throw new LayoutControlError('unavailable', 'Use window_mode with mode "full" before enter_fullscreen.')
+      const native = request.action === 'resize_window'
+        ? await window.app.resizeWindow({ width: request.width, height: request.height })
+        : await window.app.setWindowFullscreen(request.action === 'enter_fullscreen')
+      // Native completion precedes React's resize-driven layout and minimum-size updates.
+      await new Promise<void>(resolve => {
+        let frame = 0
+        const finish = () => { clearTimeout(timer); cancelAnimationFrame(frame); resolve() }
+        // Backgrounding a window pauses rAF; native completion must still return.
+        const timer = setTimeout(finish, 100)
+        frame = requestAnimationFrame(() => { frame = requestAnimationFrame(finish) })
+      })
+      return { status: 'applied', visible: placement(sid).chatOnScreen && document.visibilityState === 'visible',
+        ...(request.action === 'resize_window' ? { width: native.bounds.width, height: native.bounds.height } : {}),
+        state: { window: { ...layoutSnapshot(caller, target).window, native } } }
+    }
     default:
       return invalid(`Unknown action: ${String((request as { action?: unknown }).action)}`)
   }

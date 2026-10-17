@@ -8,6 +8,8 @@ import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { collectLeaves } from '@/components/mosaic/mosaic-tree'
 import { layoutSnapshotForTarget, layoutActForTarget } from './layout-session'
 import { queuedDockChanges, _resetDockOwnershipForTest } from '@/components/activity/dock-ownership'
+import { useWindowMiniModeStore } from '@/stores/window-mini-mode'
+import { nativeWindowLayoutFixture } from '../../../test/fixtures/native-window-layout'
 
 const caller = { sessionId: 'A', opener: { kind: 'agent' as const }, root: '/source' }
 const ref = { environmentId: 'node', sessionId: 'B' }
@@ -25,14 +27,42 @@ beforeEach(() => {
   useAppStore.setState({ view: 'main', currentFolder: '/source', experimentalRemoteNodesEnabled: true })
   useChatStore.setState({ activeProject: '/source', projectSessions: { '/source': { _activeSessionId: 'A', _sessions: {} } } as never })
   useMosaicStore.setState({ mode: 'single', root: null, focusedTileId: null, lastLayout: null })
+  useWindowMiniModeStore.setState({ mode: null, phase: 'app', panelsFolded: false })
   resolve.mockResolvedValue(target)
   load.mockResolvedValue({ cwd: '/project-worktree' })
   Object.assign(window, { environment: { sessionLinkTarget: resolve, getSession: load, sessionSource: vi.fn(async () => 'desktop') } })
+  Object.assign(window.app, { getWindowLayoutState: vi.fn(async () => nativeWindowLayoutFixture()) })
 })
 
 afterEach(() => setDockApi(null))
 
 describe('cross-session layout targets', () => {
+  it('returns the saved panel state for a queued action without unrelated split geometry', async () => {
+    const result = await layoutActForTarget(caller, { action: 'show_panel', target: ref })
+    expect(result).toMatchObject({ status: 'queued', state: { panel: { open: true, onScreen: false } } })
+    expect(result).not.toHaveProperty('layout')
+    expect(result.state).not.toHaveProperty('groups')
+  })
+
+  it('converts the visible remote target using its renderer project route rather than its worktree path', async () => {
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    useChatStore.setState({ activeProject: target.projectPath, projectSessions: { [target.projectPath]: { _activeSessionId: 'B', _sessions: {} } } as never })
+    const convert = vi.fn(async () => {})
+    Object.assign(window.app, { convertWindowToMini: convert })
+    const result = await layoutActForTarget(caller, { action: 'window_mode', mode: 'mini', target: ref })
+    expect(result).toMatchObject({ status: 'applied', visible: true, targetSession: ref })
+    expect(convert).toHaveBeenCalledWith(target.projectPath, 'B', undefined, expect.any(Array))
+    expect((await layoutSnapshotForTarget(caller, ref)).window).toMatchObject({ mode: 'mini', transitioning: false })
+  })
+
+  it('skips a window conversion when its explicit target is in the background', async () => {
+    const convert = vi.fn(async () => {})
+    Object.assign(window.app, { convertWindowToMini: convert })
+    expect(await layoutActForTarget(caller, { action: 'window_mode', mode: 'mini', target: ref })).toMatchObject({ status: 'skipped', reason: 'not_visible', targetSession: ref })
+    expect(convert).not.toHaveBeenCalled()
+    expect(useChatStore.getState().activeProject).toBe('/source')
+  })
+
   it('does not leave Settings after a user navigates there while the session switch completes', async () => {
     useChatStore.setState({ switchToSession: vi.fn(async (projectPath, sessionId) => {
       useChatStore.setState({ activeProject: projectPath, projectSessions: { [projectPath]: { _activeSessionId: sessionId, _sessions: {} } } as never })
@@ -63,7 +93,7 @@ describe('cross-session layout targets', () => {
     expect(useChatStore.getState().activeProject).toBe('/source')
   })
   it('waits for the remote dock restore and leaves the actor running in the background', async () => {
-    setDockApi({ hasMaximizedGroup: () => false } as never)
+    setDockApi({ groups: [], panels: [], hasMaximizedGroup: () => false, toJSON: () => ({ grid: { root: { type: 'branch', data: [] } } }) } as never)
     const switchToSession = vi.fn(async (projectPath: string, sessionId: string) => {
       useChatStore.setState({ activeProject: projectPath, projectSessions: { [projectPath]: { _activeSessionId: sessionId, _sessions: {} } } as never })
     })

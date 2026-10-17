@@ -1,4 +1,5 @@
 import type { SlashCommandInfo } from './slash-command-types'
+import { WINDOW_LAYOUT_IPC_CHANNELS } from './window-layout'
 import type { SessionAgentsEvent } from './harness/session-catalog'
 // Unified message format used across IPC. Zero SDK imports.
 
@@ -4469,9 +4470,7 @@ export const AgentIpcChannels = {
   BROWSER_OPEN_TAB: 'app:browser-open-tab',
   CLOSE_TAB_SHORTCUT: 'app:close-tab-shortcut',
   CLOSE_WINDOW: 'app:close-window',
-  GET_FULLSCREEN: 'app:get-fullscreen',
-  FULLSCREEN_CHANGED: 'app:fullscreen-changed',
-  SET_MIN_WINDOW_SIZE: 'app:set-min-window-size',
+  ...WINDOW_LAYOUT_IPC_CHANNELS,
   OPEN_SESSION_WINDOW: 'app:open-session-window',
   /** Turn the *sender's own* window into a mini session window (and back). */
   CONVERT_WINDOW_TO_MINI: 'app:convert-window-to-mini',

@@ -1,10 +1,11 @@
-import type { LayoutActAction, LayoutChatMode, LayoutChatPosition } from '../layout-control'
+import type { LayoutActAction, LayoutChatMode, LayoutChatPosition, LayoutWindowMode } from '../layout-control'
 
 export interface LayoutControlMessages {
   snapshot: { streaming: string; done: string; action: string }
   actions: Record<LayoutActAction, { streaming: string; done: string; action: string }>
   side: { left: string; right: string }
   chatMode: Record<LayoutChatMode, string>
+  windowMode: Record<LayoutWindowMode, string>
   chatPosition: Record<LayoutChatPosition, string>
   outcome: { queued: string; skipped: string; unsupported: string; superseded: string }
   sessionCount: string
@@ -34,6 +35,10 @@ export const layoutControlEn: LayoutControlMessages = {
     resize_sidebar: { streaming: 'Resizing sidebar…', done: 'Sidebar Resized', action: 'Resize Sidebar' },
     resize_panel: { streaming: 'Resizing panel…', done: 'Panel Resized', action: 'Resize Panel' },
     chat_mode: { streaming: 'Changing chat view…', done: 'Chat View Changed', action: 'Change Chat View' },
+    window_mode: { streaming: 'Changing window mode…', done: 'Window Mode Changed', action: 'Change Window Mode' },
+    resize_window: { streaming: 'Resizing window…', done: 'Window Resized', action: 'Resize Window' },
+    enter_fullscreen: { streaming: 'Entering fullscreen…', done: 'Fullscreen Entered', action: 'Enter Fullscreen' },
+    exit_fullscreen: { streaming: 'Exiting fullscreen…', done: 'Fullscreen Exited', action: 'Exit Fullscreen' },
     show_terminal: { streaming: 'Showing terminal…', done: 'Terminal Shown', action: 'Show Terminal' },
     hide_terminal: { streaming: 'Hiding terminal…', done: 'Terminal Hidden', action: 'Hide Terminal' },
     split_session: { streaming: 'Splitting in session…', done: 'Session Split In', action: 'Split In Session' },
@@ -44,6 +49,7 @@ export const layoutControlEn: LayoutControlMessages = {
   dividerCount: '{{count}} dividers',
   allSplits: 'all splits',
   chatMode: { docked: 'docked', floating: 'floating', icon: 'icon' },
+  windowMode: { mini: 'Mini Window', full: 'Full Window' },
   chatPosition: {
     'top-left': 'top left',
     top: 'top',
@@ -79,6 +85,10 @@ export const layoutControlZh: LayoutControlMessages = {
     resize_sidebar: { streaming: '正在调整侧边栏宽度…', done: '侧边栏宽度已调整', action: '调整侧边栏宽度' },
     resize_panel: { streaming: '正在调整面板宽度…', done: '面板宽度已调整', action: '调整面板宽度' },
     chat_mode: { streaming: '正在切换聊天形式…', done: '聊天形式已切换', action: '切换聊天形式' },
+    window_mode: { streaming: '正在切换窗口模式…', done: '窗口模式已切换', action: '切换窗口模式' },
+    resize_window: { streaming: '正在调整窗口大小…', done: '窗口大小已调整', action: '调整窗口大小' },
+    enter_fullscreen: { streaming: '正在进入全屏…', done: '已进入全屏', action: '进入全屏' },
+    exit_fullscreen: { streaming: '正在退出全屏…', done: '已退出全屏', action: '退出全屏' },
     show_terminal: { streaming: '正在显示终端…', done: '终端已显示', action: '显示终端' },
     hide_terminal: { streaming: '正在隐藏终端…', done: '终端已隐藏', action: '隐藏终端' },
     split_session: { streaming: '正在分屏显示会话…', done: '会话已分屏显示', action: '分屏显示会话' },
@@ -89,6 +99,7 @@ export const layoutControlZh: LayoutControlMessages = {
   dividerCount: '{{count}} 个分隔条',
   allSplits: '全部分屏',
   chatMode: { docked: '停靠', floating: '悬浮', icon: '图标' },
+  windowMode: { mini: '小窗', full: '完整窗口' },
   chatPosition: {
     'top-left': '左上',
     top: '顶部',

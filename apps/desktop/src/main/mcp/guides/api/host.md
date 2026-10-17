@@ -77,6 +77,17 @@ await context.layout.act({ action: 'open_file', path: 'src/app.ts', line: 42 })
   shows the chat over it as a floating window or an icon; `'docked'` puts it back
   beside the panel. `position` (`'top-left'` … `'left'`, 8 snap anchors) moves the
   floating chat, alone or with a mode.
+- `window_mode` with `mode: 'mini' | 'full'` converts the visible native window
+  in place or restores the complete app. Close splits first. It waits for the
+  animation; `snapshot().window.mode` and `.transitioning` report its state.
+- `resize_window` takes `width` and/or `height` in native DIP, clamps to the layout
+  minimum and display work area, and returns actual dimensions. Exit fullscreen
+  first; a maximized window is restored before resizing. `enter_fullscreen` and
+  `exit_fullscreen` wait for OS completion; restore mini mode to full before entering.
+- Each action returns relevant post-action `state`: applied settings, related and
+  active tabs, fresh groups and sizing ranges. Reuse it for follow-up actions.
+  Native operations include `state.window.native` (bounds, constraints, fullscreen).
+  Session/viewport actions also return `layout`; queued state omits visible geometry.
 - `'skipped'`: a window-wide change (sidebar, panel side, widths, chat mode, split view) is refused
   while the holder is not in front, so the user is never moved.
 - Browser and terminal tabs are opened by agents with their own tools; the app

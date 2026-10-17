@@ -10,6 +10,7 @@ import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { layoutAct, layoutSnapshot } from './layout-control'
+import { withLayoutActionState } from './layout-action-results'
 
 /** layout_act tab moves and group geometry against a real dockview, 1000×600. */
 
@@ -46,6 +47,19 @@ const tabsByGroup = () => {
 }
 
 describe('layout_act move_tab and resize_group', () => {
+  it('uses a move result to resize the new group without another snapshot', async () => {
+    const move = { action: 'move_tab' as const, tab: 'file:b.ts', direction: 'down' as const }
+    let moved!: Awaited<ReturnType<typeof withLayoutActionState>>
+    await act(async () => { moved = await withLayoutActionState(agent, move, await layoutAct(agent, move)) })
+    const tab = moved.state!.tabs!.find(tab => tab.tab === 'file:b.ts')!
+    expect(tab.group).toBe(1)
+    expect(moved.state!.groups).toHaveLength(2)
+    const resize = { action: 'resize_group' as const, group: tab.group, height: 200 }
+    let resized!: Awaited<ReturnType<typeof withLayoutActionState>>
+    await act(async () => { resized = await withLayoutActionState(agent, resize, await layoutAct(agent, resize)) })
+    expect(resized.state!.groups!.find(group => group.group === tab.group)?.height).toBe(200)
+    expect(resized).not.toHaveProperty('layout')
+  })
   it('reports each group with its box, so the agent can tell top/bottom from side by side', async () => {
     await act(async () => { await layoutAct(agent, { action: 'move_tab', tab: 'file:c.ts', direction: 'down' }) })
 

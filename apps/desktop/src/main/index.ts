@@ -1,3 +1,4 @@
+import { registerWindowLayoutIpc } from './window-layout-ipc'
 import { registerSessionLinkIpc } from './environment/session-link-ipc'
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMediaComposerIpc } from './media-gen/composer-ipc'
@@ -4505,7 +4506,7 @@ function registerIpcHandlers(): void {
       })
   })
 
-  ipcMain.handle(AgentIpcChannels.GET_FULLSCREEN, () => getMainWindow().isFullScreen())
+  registerWindowLayoutIpc({ isMiniWindow: isSessionWindow })
 
   ipcMain.handle(AgentIpcChannels.OPEN_SESSION_WINDOW, (_e, projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) => {
     if (!projectPath || !sessionId) return
@@ -4561,23 +4562,6 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, mode: ThemeMode): void => {
     setThemeMode(mode)
-  })
-
-  ipcMain.handle(AgentIpcChannels.SET_MIN_WINDOW_SIZE, (_e, width: number, height: number) => {
-    const win = getMainWindow()
-    const w = Math.max(1, Math.round(width))
-    const h = Math.max(1, Math.round(height))
-    win.setMinimumSize(w, h)
-    if (win.isFullScreen() || win.isMaximized()) return
-    const [curW, curH] = win.getSize()
-    if (curW >= w && curH >= h) return
-    const newW = Math.max(curW, w)
-    const newH = Math.max(curH, h)
-    const work = screen.getDisplayMatching(win.getBounds()).workArea
-    let [x, y] = win.getPosition()
-    if (x + newW > work.x + work.width) x = Math.max(work.x, work.x + work.width - newW)
-    if (y + newH > work.y + work.height) y = Math.max(work.y, work.y + work.height - newH)
-    win.setBounds({ x, y, width: newW, height: newH }, true)
   })
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {

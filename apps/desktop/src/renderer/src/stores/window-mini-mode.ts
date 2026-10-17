@@ -189,6 +189,41 @@ const get = useWindowMiniModeStore.getState
 const foldDeadlineMs = (steps: WindowFoldStep[]): number =>
   steps.reduce((sum, step) => sum + step.durationMs, 0) + 800
 
+interface WindowTransition {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: unknown) => void
+}
+
+let transition: WindowTransition | null = null
+
+function startTransition(): WindowTransition {
+  let resolve!: () => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail })
+  // Menu callbacks may ignore completion; tools can still await the original promise.
+  void promise.catch(() => {})
+  return transition = { promise, resolve, reject }
+}
+
+/** Keep the UI's safety deadline while reporting native failures to callers that await it. */
+function runTransition(invoke: () => Promise<void>, steps: WindowFoldStep[], finish: () => void): void {
+  const pending = transition
+  let settled = false
+  const complete = (error?: unknown): void => {
+    if (settled) return
+    settled = true
+    clearSchedule()
+    stopPanelTracking()
+    finish()
+    if (transition === pending) transition = null
+    if (error === undefined) pending?.resolve()
+    else pending?.reject(error)
+  }
+  void Promise.resolve().then(invoke).then(() => complete(), complete)
+  schedule([[foldDeadlineMs(steps), () => complete(new Error('Window mode transition timed out. Check layout_snapshot before retrying.'))]])
+}
+
 /**
  * Fold the app shell down onto one session — chat column, both panels and the window
  * height, all in one move.
@@ -198,32 +233,31 @@ const foldDeadlineMs = (steps: WindowFoldStep[]): number =>
  * fold runs their width belongs to {@link syncPanelsToWindow}, and React — which does
  * not re-render in that window — leaves those writes alone.
  */
-export function enterMiniWindow(mode: WindowMiniMode): void {
-  if (get().phase !== 'app') return
+export function enterMiniWindow(mode: WindowMiniMode): Promise<void> {
+  if (get().phase !== 'app') return transition?.promise ?? Promise.resolve()
   const layout = measureShellLayout()
   const steps = buildFoldSteps(layout)
   expandedLayout = layout
+  const pending = startTransition()
   set({ mode, phase: 'folding', panelsFolded: false })
-  const done = window.app.convertWindowToMini(mode.projectPath, mode.sessionId, mode.title, steps)
   startPanelTracking(trackerFor(layout, steps))
-  const finish = (): void => {
-    clearSchedule()
-    stopPanelTracking()
+  runTransition(() => window.app.convertWindowToMini(mode.projectPath, mode.sessionId, mode.title, steps), steps, () => {
     if (get().phase === 'folding') set({ phase: 'mini', panelsFolded: true })
-  }
+  })
   // The invoke resolves when main's window animation has actually landed — the tree
   // swap (an expensive commit) must not start while the window is still moving.
-  void Promise.resolve(done).then(finish, finish)
-  schedule([[foldDeadlineMs(steps), finish]])
+  return pending.promise
 }
 
 /**
  * Ask for the full window back. The existing App and SessionPane stay mounted; the
  * panels remain folded until {@link beginUnfold} starts the reverse window motion.
  */
-export function exitMiniWindow(): void {
-  if (get().phase !== 'mini') return
+export function exitMiniWindow(): Promise<void> {
+  if (get().phase !== 'mini') return transition?.promise ?? Promise.resolve()
+  const pending = startTransition()
   set({ mode: null, phase: 'unfolding', panelsFolded: true })
+  return pending.promise
 }
 
 let unfolding = false
@@ -237,19 +271,14 @@ let unfolding = false
 export function beginUnfold(): void {
   if (get().phase !== 'unfolding' || unfolding) return
   unfolding = true
-  const done = window.app.restoreWindowFromMini()
   // Mirror image of the fold: `panelsFolded` stays true (React keeps rendering them
   // shut) while the tracker opens them in step with the growing window.
   const steps = expandedLayout ? buildFoldSteps(expandedLayout) : []
   if (expandedLayout) startPanelTracking(trackerFor(expandedLayout, steps))
-  const finish = (): void => {
-    clearSchedule()
-    stopPanelTracking()
+  runTransition(() => window.app.restoreWindowFromMini(), steps, () => {
     unfolding = false
     if (get().phase === 'unfolding') set({ phase: 'app', panelsFolded: false })
-  }
-  void Promise.resolve(done).then(finish, finish)
-  schedule([[foldDeadlineMs(steps), finish]])
+  })
 }
 
 /**

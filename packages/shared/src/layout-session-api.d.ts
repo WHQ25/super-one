@@ -12,6 +12,15 @@ export type SessionSplitLayout = number | {
 }
 
 export interface LayoutBox { x: number; y: number; width: number; height: number }
+/** Native bounds and display work area use device-independent pixels, including window chrome. */
+export interface NativeWindowLayoutState {
+  bounds: LayoutBox
+  minSize: { width: number; height: number }
+  workArea: LayoutBox
+  fullscreen: boolean
+  maximized: boolean
+  transitioning: boolean
+}
 export interface LayoutSessionTile { id: string; session: LayoutSessionIdentity }
 export interface LayoutDivider {
   /** Stable through resizing/focus; changes when tree topology changes. */

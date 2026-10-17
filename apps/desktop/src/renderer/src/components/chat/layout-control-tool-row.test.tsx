@@ -46,6 +46,24 @@ describe('layout control rows', () => {
     expect(screen.getByText('icon')).toBeTruthy()
   })
 
+  it('names native window modes through the mobile projection', () => {
+    const { rerender } = render(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'window_mode', mode: 'mini' })} result={JSON.stringify({ status: 'applied', visible: true })} isStreaming={false} />)
+    expect(screen.getByText('Window Mode Changed')).toBeTruthy()
+    expect(screen.getByText('Mini Window')).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'window_mode', mode: 'full' })} isStreaming />)
+    expect(screen.getByText('Full Window')).toBeTruthy()
+  })
+
+  it('shows applied window dimensions and explicit fullscreen operations', () => {
+    const { rerender } = render(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'resize_window', width: 9999, height: 900 })} result={JSON.stringify({ status: 'applied', visible: true, width: 1440, height: 900 })} isStreaming={false} />)
+    expect(screen.getByText('Window Resized')).toBeTruthy()
+    expect(screen.getByText('1440 × 900px')).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'enter_fullscreen' })} isStreaming />)
+    expect(screen.getByText(/Entering fullscreen/)).toBeTruthy()
+    rerender(<LayoutControlToolRow mcpToolName="layout_act" params={projected({ action: 'exit_fullscreen' })} result={JSON.stringify({ status: 'applied', visible: true })} isStreaming={false} />)
+    expect(screen.getByText('Fullscreen Exited')).toBeTruthy()
+  })
+
   it('names batch sessions, closeAll and divider counts without requiring opaque mobile identities', () => {
     const params = projected({ action: 'split_session', sessionIds: ['voice', { environmentId: 'node', sessionId: 'worker' }] })
     expect(params.sessionIds).toEqual(['', ''])

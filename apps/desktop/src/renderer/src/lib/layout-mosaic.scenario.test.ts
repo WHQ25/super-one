@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nativeWindowLayoutFixture } from '../../../test/fixtures/native-window-layout'
 import { useAppStore } from '@/stores/app'
 import { useChatStore, createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat'
 import { mosaicTileId, useMosaicStore } from '@/components/mosaic/mosaic-store'
@@ -15,6 +16,7 @@ let area: DOMRect
 
 beforeEach(() => {
   vi.restoreAllMocks()
+  Object.assign(window.app, { getWindowLayoutState: vi.fn(async () => nativeWindowLayoutFixture()) })
   area = { x: 320, y: 5, width: 1200, height: 900 } as DOMRect
   Object.assign(window, { innerWidth: 2400, innerHeight: 1400 })
   document.body.innerHTML = '<div data-main-content></div>'

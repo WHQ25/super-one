@@ -16,6 +16,8 @@ import { LAYOUT } from './layout-constants'
 import { layoutAct, layoutSnapshot, openedTabPresentation, openMiniApp } from './layout-control'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
+import { beginUnfold, useWindowMiniModeStore } from '@/stores/window-mini-mode'
+import { nativeWindowLayoutFixture } from '../../../test/fixtures/native-window-layout'
 
 const PROJECT = '/work/app'
 const agentA: LayoutControlCaller = { sessionId: 'A', opener: { kind: 'agent' }, root: PROJECT }
@@ -97,7 +99,14 @@ beforeEach(() => {
   _resetDockOwnershipForTest()
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
   ;(window as unknown as { terminal: unknown }).terminal = { list: vi.fn(async () => []) }
-  ;(window as unknown as { app: unknown }).app = { getSessionProject: vi.fn(async () => null) }
+  ;(window as unknown as { app: unknown }).app = {
+    getSessionProject: vi.fn(async () => null),
+    convertWindowToMini: vi.fn(async () => {}),
+    restoreWindowFromMini: vi.fn(async () => {}),
+    getWindowLayoutState: vi.fn(async () => nativeWindowLayoutFixture()),
+    setWindowFullscreen: vi.fn(async () => nativeWindowLayoutFixture()),
+  }
+  useWindowMiniModeStore.setState({ mode: null, phase: 'app', panelsFolded: false })
   useAppStore.setState({ view: 'main', showSidebar: true })
   useActivityPanelStore.setState({ showPanel: false, side: 'left', maximized: false, maximizedGroupId: null, userResized: true })
   useActivityViewStateStore.getState()._resetForTest()
@@ -223,6 +232,121 @@ describe('caller in the background', () => {
   it('reports itself as not visible', () => {
     fakeDock()
     expect(layoutSnapshot(agentA)).toMatchObject({ visible: false, panel: { onScreen: false } })
+  })
+})
+
+describe('native window mode', () => {
+  it('waits for the native fold before reporting mini mode and preserves panel preferences', async () => {
+    let complete!: () => void
+    vi.mocked(window.app.convertWindowToMini).mockImplementation(() => new Promise<void>(resolve => { complete = resolve }))
+    useActivityPanelStore.setState({ showPanel: true, panelWidth: 560 })
+    expect(layoutSnapshot(agentA).window.mode).toBe('full')
+    let applied = false
+    const changing = layoutAct(agentA, { action: 'window_mode', mode: 'mini' }).then(result => { applied = true; return result })
+    await vi.waitFor(() => expect(window.app.convertWindowToMini).toHaveBeenCalled())
+    expect(window.app.convertWindowToMini).toHaveBeenCalledWith(PROJECT, 'A', undefined, expect.any(Array))
+    expect(applied).toBe(false)
+    expect(layoutSnapshot(agentA).window).toMatchObject({ mode: 'mini', transitioning: true })
+    complete()
+    expect(await changing).toEqual({ status: 'applied', visible: true })
+    expect(layoutSnapshot(agentA).window.mode).toBe('mini')
+    expect(layoutSnapshot(agentA)).toMatchObject({ window: { sidebar: 'collapsed' }, chatMode: 'docked', sizes: { chat: { width: window.innerWidth } } })
+    expect(useAppStore.getState().showSidebar).toBe(true)
+    expect(useActivityPanelStore.getState()).toMatchObject({ showPanel: true, panelWidth: 560 })
+  })
+
+  it('waits for the reverse animation before reporting a full window', async () => {
+    await layoutAct(agentA, { action: 'window_mode', mode: 'mini' })
+    let complete!: () => void
+    vi.mocked(window.app.restoreWindowFromMini).mockImplementation(() => new Promise<void>(resolve => { complete = resolve }))
+    let applied = false
+    const changing = layoutAct(agentA, { action: 'window_mode', mode: 'full' }).then(result => { applied = true; return result })
+    // RootApp starts the reverse native animation after committing the full shell.
+    beginUnfold()
+    await vi.waitFor(() => expect(window.app.restoreWindowFromMini).toHaveBeenCalled())
+    expect(applied).toBe(false)
+    expect(layoutSnapshot(agentA).window).toMatchObject({ mode: 'full', transitioning: true })
+    complete()
+    expect(await changing).toEqual({ status: 'applied', visible: true })
+    expect(layoutSnapshot(agentA).window.mode).toBe('full')
+  })
+
+  it('returns native conversion failures instead of claiming success', async () => {
+    vi.mocked(window.app.convertWindowToMini).mockRejectedValue(new Error('Native conversion failed'))
+    await expect(layoutAct(agentA, { action: 'window_mode', mode: 'mini' })).rejects.toThrow('Native conversion failed')
+  })
+
+  it('waits to leave OS fullscreen before measuring and folding into a mini window', async () => {
+    vi.mocked(window.app.getWindowLayoutState).mockResolvedValue(nativeWindowLayoutFixture({ fullscreen: true }))
+    let leave!: () => void
+    vi.mocked(window.app.setWindowFullscreen).mockImplementation(() => new Promise(resolve => { leave = () => resolve(nativeWindowLayoutFixture()) }))
+    const changing = layoutAct(agentA, { action: 'window_mode', mode: 'mini' })
+    await vi.waitFor(() => expect(window.app.setWindowFullscreen).toHaveBeenCalledWith(false))
+    expect(window.app.convertWindowToMini).not.toHaveBeenCalled()
+    leave()
+    await changing
+    expect(window.app.convertWindowToMini).toHaveBeenCalledOnce()
+  })
+
+  it('returns native restore failures instead of claiming success', async () => {
+    await layoutAct(agentA, { action: 'window_mode', mode: 'mini' })
+    vi.mocked(window.app.restoreWindowFromMini).mockRejectedValue(new Error('Native restore failed'))
+    const changing = layoutAct(agentA, { action: 'window_mode', mode: 'full' })
+    const rejected = expect(changing).rejects.toThrow('Native restore failed')
+    beginUnfold()
+    await rejected
+  })
+
+  it('reports a timeout when the native animation never completes', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(window.app.convertWindowToMini).mockImplementation(() => new Promise<void>(() => {}))
+      const changing = layoutAct(agentA, { action: 'window_mode', mode: 'mini' })
+      const rejected = expect(changing).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(2000)
+      await rejected
+      expect(layoutSnapshot(agentA).window.transitioning).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('treats the current mode as a no-op', async () => {
+    expect(await layoutAct(agentA, { action: 'window_mode', mode: 'full' })).toMatchObject({ status: 'applied' })
+    expect(window.app.restoreWindowFromMini).not.toHaveBeenCalled()
+    await layoutAct(agentA, { action: 'window_mode', mode: 'mini' })
+    await layoutAct(agentA, { action: 'window_mode', mode: 'mini' })
+    expect(window.app.convertWindowToMini).toHaveBeenCalledOnce()
+  })
+
+  it('skips hidden sessions and hidden windows without resizing or switching sessions', async () => {
+    showSessionInFront('B')
+    expect(await layoutAct(agentA, { action: 'window_mode', mode: 'mini' })).toEqual({ status: 'skipped', visible: false, reason: 'not_visible' })
+    showSessionInFront('A')
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    expect(await layoutAct(agentA, { action: 'window_mode', mode: 'mini' })).toMatchObject({ status: 'skipped' })
+    expect(window.app.convertWindowToMini).not.toHaveBeenCalled()
+    expect(useChatStore.getState().switchToSession).not.toHaveBeenCalled()
+  })
+
+  it('refuses mini mode in a split view without discarding the split layout', async () => {
+    await layoutAct(agentA, { action: 'split_session', sessionId: 'B' })
+    const root = useMosaicStore.getState().root
+    await expect(layoutAct(agentA, { action: 'window_mode', mode: 'mini' })).rejects.toMatchObject({ code: 'unavailable', message: expect.stringContaining('close_split') })
+    expect(useMosaicStore.getState().root).toBe(root)
+    expect(window.app.convertWindowToMini).not.toHaveBeenCalled()
+  })
+
+  it('refuses overlapping transitions and validates window and chat modes separately', async () => {
+    for (const phase of ['folding', 'unfolding'] as const) {
+      useWindowMiniModeStore.setState({ phase })
+      await expect(layoutAct(agentA, { action: 'window_mode', mode: 'mini' })).rejects.toMatchObject({ code: 'unavailable' })
+    }
+    useWindowMiniModeStore.setState({ phase: 'app' })
+    for (const mode of [undefined, 'floating'] as const) {
+      await expect(layoutAct(agentA, { action: 'window_mode', mode })).rejects.toMatchObject({ code: 'invalid' })
+    }
+    await expect(layoutAct(agentA, { action: 'chat_mode', mode: 'mini' })).rejects.toMatchObject({ code: 'invalid' })
   })
 })
 

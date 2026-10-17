@@ -92,12 +92,17 @@ export async function runMiniAppHostAction(
       const instanceKey = Object.values(useMiniAppStore.getState().openApps)
         .find((a) => a.entry.id === appId && a.projectDir === projectDir)?.instanceKey
       const caller: LayoutControlCaller = { sessionId: target.sessionId, opener: { kind: 'miniapp', appId, ...(instanceKey ? { instanceKey } : {}) } }
-      const { layoutAct, layoutSnapshot } = await import('@/lib/layout-control')
+      const { layoutAct } = await import('@/lib/layout-control')
+      const { readLayoutSnapshot, withLayoutActionState } = await import('@/lib/layout-action-results')
       if (action === 'layout.snapshot') {
         const { sessionLayoutSnapshot } = await import('@/lib/layout-mosaic')
-        return { ...layoutSnapshot(caller), layout: await sessionLayoutSnapshot() }
+        return { ...await readLayoutSnapshot(caller), layout: await sessionLayoutSnapshot() }
       }
-      return layoutAct(caller, args as unknown as LayoutActRequest)
+      const request = args as unknown as LayoutActRequest
+      const result = await layoutAct(caller, request)
+      // Split operations already went through the target-aware adapter.
+      const { MOSAIC_ACTIONS } = await import('@/lib/layout-mosaic')
+      return MOSAIC_ACTIONS.has(request.action) ? result : withLayoutActionState(caller, request, result)
     }
     default:
       throw new Error(`Unknown host action: ${action}`)

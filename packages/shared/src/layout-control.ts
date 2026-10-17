@@ -1,5 +1,5 @@
 import type { SessionRef } from './environment/refs'
-import type { SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
+import type { NativeWindowLayoutState, SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
 export type { LayoutBox, LayoutDivider, LayoutSessionTile, SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
 
 /**
@@ -28,6 +28,10 @@ export const LAYOUT_ACT_ACTIONS = [
   'resize_sidebar',
   'resize_panel',
   'chat_mode',
+  'window_mode',
+  'resize_window',
+  'enter_fullscreen',
+  'exit_fullscreen',
   'show_terminal',
   'hide_terminal',
   'split_session',
@@ -51,6 +55,10 @@ export type LayoutDirection = (typeof LAYOUT_DIRECTIONS)[number]
 export const LAYOUT_CHAT_MODES = ['docked', 'floating', 'icon'] as const
 
 export type LayoutChatMode = (typeof LAYOUT_CHAT_MODES)[number]
+
+/** The native app window, independently of the chat's presentation inside it. */
+export const LAYOUT_WINDOW_MODES = ['mini', 'full'] as const
+export type LayoutWindowMode = (typeof LAYOUT_WINDOW_MODES)[number]
 
 /** Where the floating chat (or its icon) snaps: the corners and edge midpoints of the window. */
 export const LAYOUT_CHAT_POSITIONS = ['top-left', 'top', 'top-right', 'right', 'bottom-right', 'bottom', 'bottom-left', 'left'] as const
@@ -87,12 +95,12 @@ export interface LayoutActRequest {
   closeAll?: boolean
   /** resize_splits: all divider changes are validated against the final tree. */
   dividers?: { id: string; ratio: number }[]
-  /** resize_sidebar / resize_panel / resize_group: target width in px, clamped to the snapshot's `sizes` range. */
+  /** resize_sidebar / resize_panel / resize_group: CSS px. resize_window: native outer width in DIP. */
   width?: number
-  /** resize_group: target height in px. */
+  /** resize_group: CSS px. resize_window: native outer height in DIP. */
   height?: number
-  /** chat_mode. */
-  mode?: LayoutChatMode
+  /** chat_mode: docked/floating/icon. window_mode: mini/full. */
+  mode?: LayoutChatMode | LayoutWindowMode
   /** chat_mode: where the floating chat snaps. Kept while docked for the next float. */
   position?: LayoutChatPosition
 }
@@ -117,7 +125,12 @@ export interface LayoutActResult {
   height?: number
   /** Resulting session arrangement, also returned by layout_snapshot. */
   layout?: SessionLayoutSnapshot
+  /** Relevant post-action state. Reuse tab/group ids, actual sizes and settings for follow-up actions. */
+  state?: LayoutActState
 }
+
+export type LayoutActState = Partial<Pick<LayoutSnapshot,
+  'window' | 'panel' | 'terminal' | 'chatMode' | 'chatPosition' | 'sizes' | 'tabs' | 'groups'>>
 
 
 export type LayoutTabKind =
@@ -164,6 +177,11 @@ export interface LayoutSnapshot {
   visible: boolean
   window: {
     visible: boolean
+    /** Destination mode while transitioning; full means the complete app, not OS fullscreen. */
+    mode: LayoutWindowMode
+    transitioning: boolean
+    /** Authoritative sender-window bounds, constraints and OS presentation. */
+    native?: NativeWindowLayoutState
     sidebar: 'expanded' | 'collapsed'
     layout: 'single' | 'split'
     /** Sessions shown side by side, when layout is split. */

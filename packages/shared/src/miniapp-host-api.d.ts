@@ -4,7 +4,7 @@
  * Types only — `@superone/shared/miniapp-host-api` has no runtime `default`
  * export, so always `import type`. A value import fails at runtime.
  */
-import type { SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
+import type { NativeWindowLayoutState, SessionLayoutSnapshot, SessionSplitLayout } from './layout-session-api'
 import type { SuperOneComposerOpenOptions, SuperOneComposerOutcome, SuperOneComposerSpec } from './composer-api'
 
 export type * from './composer-api'
@@ -123,7 +123,8 @@ export type SuperOneMiniAppLayoutAction =
   | 'open_file'
   | 'focus_tab' | 'close_tab' | 'move_tab' | 'resize_group'
   | 'show_panel' | 'hide_panel' | 'maximize_panel' | 'restore_panel' | 'panel_side'
-  | 'show_sidebar' | 'hide_sidebar' | 'resize_sidebar' | 'resize_panel' | 'chat_mode'
+  | 'show_sidebar' | 'hide_sidebar' | 'resize_sidebar' | 'resize_panel' | 'chat_mode' | 'window_mode'
+  | 'resize_window' | 'enter_fullscreen' | 'exit_fullscreen'
   | 'show_terminal' | 'hide_terminal'
   | 'split_session' | 'close_split' | 'maximize_split' | 'restore_splits' | 'resize_splits'
 
@@ -150,12 +151,12 @@ export interface SuperOneMiniAppLayoutRequest {
   layout?: SessionSplitLayout
   closeAll?: boolean
   dividers?: { id: string; ratio: number }[]
-  /** resize_sidebar / resize_panel / resize_group: target width in px; sidebar and panel clamp to `snapshot().sizes`. */
+  /** resize_sidebar / resize_panel / resize_group: CSS px. resize_window: native outer width in DIP, clamped to layout minimum and work area. */
   width?: number
-  /** resize_group: target height in px. */
+  /** resize_group: CSS px. resize_window: native outer height in DIP. */
   height?: number
-  /** chat_mode: a column beside the panel, a floating window over the panel (which then fills the window), or that window collapsed to an icon. */
-  mode?: 'docked' | 'floating' | 'icon'
+  /** chat_mode: docked/floating/icon. window_mode: mini/full, converting the visible native window in place; close splits first. */
+  mode?: 'docked' | 'floating' | 'icon' | 'mini' | 'full'
   /** chat_mode: where the floating chat snaps; alone it moves the chat without changing mode. */
   position?: SuperOneMiniAppLayoutChatPosition
 }
@@ -165,6 +166,8 @@ export type SuperOneMiniAppLayoutChatPosition =
 
 export interface SuperOneMiniAppLayoutResult {
   layout?: SessionLayoutSnapshot
+  /** Relevant resulting state; reuse ids, applied sizes and settings for the next action. */
+  state?: Partial<Pick<SuperOneMiniAppLayoutSnapshot, 'window' | 'panel' | 'terminal' | 'chatMode' | 'chatPosition' | 'sizes' | 'tabs' | 'groups'>>
   status: 'applied' | 'queued' | 'skipped'
   /** Whether the user can see the result now. */
   visible: boolean
@@ -192,7 +195,7 @@ export interface SuperOneMiniAppLayoutSnapshot {
   visibleSessions?: Array<{ environmentId: string; sessionId: string }>
   /** The holder session's chat is on screen and the window is visible. */
   visible: boolean
-  window: { visible: boolean; sidebar: 'expanded' | 'collapsed'; layout: 'single' | 'split'; splitSessions?: string[] }
+  window: { visible: boolean; mode: 'mini' | 'full'; transitioning: boolean; native?: NativeWindowLayoutState; sidebar: 'expanded' | 'collapsed'; layout: 'single' | 'split'; splitSessions?: string[] }
   panel: { open: boolean; onScreen: boolean; side: 'left' | 'right'; maximized: boolean }
   terminal: { open: boolean }
   chatMode: 'docked' | 'floating' | 'icon'

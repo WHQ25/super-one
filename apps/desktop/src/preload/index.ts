@@ -1,4 +1,5 @@
 import type { CodexVoicePreviews } from '@superone/shared/codex-voice-previews'
+import { windowLayoutAPI } from './window-layout-api'
 import { AGENT_PROFILE_CHANNELS, type AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import { CodexAccountIpcChannels } from '@superone/shared/codex-accounts'
 import { collaborationMailbox } from './collaboration-mailbox'
@@ -2012,21 +2013,9 @@ const appAPI = {
   closeWindow: () => ipcRenderer.send(AgentIpcChannels.CLOSE_WINDOW),
 
   // Window state
-  getFullscreen: () =>
-    ipcRenderer.invoke(AgentIpcChannels.GET_FULLSCREEN) as Promise<boolean>,
-  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => {
-    const handler = (_ipcEvent: Electron.IpcRendererEvent, isFullscreen: boolean): void => {
-      callback(isFullscreen)
-    }
-    ipcRenderer.on(AgentIpcChannels.FULLSCREEN_CHANGED, handler)
-    return () => {
-      ipcRenderer.removeListener(AgentIpcChannels.FULLSCREEN_CHANGED, handler)
-    }
-  },
+  ...windowLayoutAPI,
   setWindowChromeColors: (colors: { backgroundColor: string; symbolColor: string }) =>
     ipcRenderer.send(AgentIpcChannels.SET_WINDOW_CHROME_COLORS, colors),
-  setMinWindowSize: (width: number, height: number) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_MIN_WINDOW_SIZE, width, height) as Promise<void>,
   openSessionWindow: (projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }) =>
     ipcRenderer.invoke(AgentIpcChannels.OPEN_SESSION_WINDOW, projectPath, sessionId, title, position) as Promise<void>,
   convertWindowToMini: (projectPath: string, sessionId: string, title?: string, steps?: WindowFoldStep[]) =>

@@ -1,4 +1,5 @@
 import type { CodexVoicePreviews } from '@superone/shared/codex-voice-previews'
+import type { WindowLayoutAPI } from '@superone/shared/window-layout'
 import type { AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
@@ -55,7 +56,7 @@ interface AgentAPI {
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
-interface AppAPI {
+interface AppAPI extends WindowLayoutAPI {
   agentProfiles: AgentProfileManagementAPI
   collaborationMailbox: CollaborationMailboxAPI
   platform: NodeJS.Platform
@@ -661,9 +662,6 @@ interface AppAPI {
   closeWindow(): void
 
   // Window state
-  getFullscreen(): Promise<boolean>
-  onFullscreenChanged(callback: (isFullscreen: boolean) => void): () => void
-  setMinWindowSize(width: number, height: number): Promise<void>
   /** Windows only — tint the native caption-button overlay to match the title strip. */
   setWindowChromeColors(colors: { backgroundColor: string; symbolColor: string }): void
   openSessionWindow(projectPath: string, sessionId: string, title?: string, position?: { x: number; y: number }): Promise<void>

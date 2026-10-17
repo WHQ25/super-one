@@ -107,7 +107,7 @@ may call them. Targeting a session grants no messaging or execution rights over 
 | Manage tabs | `focus_tab`, `close_tab`, `move_tab` (`group`, `direction` right / down / left / up / into, `index`), by `tab` |
 | Tab groups | `resize_group` (`group`, `width` / `height` px) |
 | Activity panel | `show_panel`, `hide_panel`, `maximize_panel` (optional `tab`), `restore_panel`, `panel_side` |
-| Window | `show_sidebar`, `hide_sidebar` |
+| Window | `show_sidebar`, `hide_sidebar`, `window_mode` (`mode` mini / full), `resize_window` (`width` / `height`), `enter_fullscreen`, `exit_fullscreen` |
 | Widths | `resize_sidebar`, `resize_panel` (`width` px) |
 | Chat | `chat_mode` (`mode` docked / floating / icon, `position` one of 8 snap anchors) |
 | Bottom terminal | `show_terminal`, `hide_terminal` |
@@ -143,6 +143,77 @@ as laid out, and `docked` also leaves a maximized tab. Hiding the panel docks th
 chat. The split view refuses it as `unavailable`. `position` names the floating
 chat's snap anchors (chat store `corner`: corners and edge midpoints); given
 alone it moves the chat without changing the mode.
+
+**Native window mode.** `window_mode` converts the current app window in place to
+`mini` or restores the complete app with `full` (not OS fullscreen). It reuses the
+menu's fold/unfold flow, preserves the mounted chat and panel preferences, and
+waits for the native animation before returning `applied`. Native failures and
+timeouts return errors. The current mode is a no-op; overlapping transitions are
+unavailable. Only an on-screen target in a visible window can change it; hidden
+targets return `skipped` without switching sessions. Close the split view with
+`close_split` before converting to mini. `snapshot.window.mode` reports the
+destination mode, and `snapshot.window.transitioning` reports an ongoing animation.
+This is independent of the chat's `docked` / `floating` / `icon` presentation.
+
+```ts
+layout_act({ action: 'window_mode', mode: 'mini', target: 'foreground' })
+layout_act({ action: 'window_mode', mode: 'full', target: 'foreground' })
+layout_act({ action: 'resize_window', width: 1280, height: 900, target: 'foreground' })
+layout_act({ action: 'enter_fullscreen', target: 'foreground' })
+layout_act({ action: 'exit_fullscreen', target: 'foreground' })
+```
+
+`resize_window` accepts either or both positive integer dimensions. Native outer
+bounds and display work areas use device-independent pixels (DIP), while layout
+columns/groups use viewport CSS pixels. The host clamps to the layout minimum
+and the current display's work area and reports the actual applied `width` and
+`height`. It restores a maximized window before resizing; exit fullscreen first.
+Fullscreen actions set a state, so repeating one is a no-op. Restore a mini window
+with `window_mode: full` before entering fullscreen. Native fullscreen actions
+wait for the matching OS completion event; concurrent changes, timeouts and closed
+windows fail explicitly. IPC uses the requesting renderer's window, including
+state reads and minimum-size enforcement.
+
+`snapshot.window.native` contains `bounds`, `minSize`, `workArea`, `fullscreen`,
+`maximized` and `transitioning`. The small window reports its effective collapsed
+sidebar and docked chat without changing the user's saved panel preferences.
+
+## Action results and follow-up calls
+
+Every normal `layout_act` result includes a `state` projection with the relevant
+post-action values. Reuse these values and ids for the next action; a full
+`layout_snapshot` is needed for missing information or after external UI changes.
+
+| Actions | Returned `state` |
+|---|---|
+| `focus_session` | Target window, panel, terminal, chat, sizes, all tabs and groups |
+| `split_session`, `close_split`, `maximize_split`, `restore_splits`, `resize_splits` | Window and sizes; full split tree/geometry/capacity in `layout` |
+| `open_file`, `focus_tab`, `close_tab`, `move_tab` | Related and active tabs, fresh groups, panel; chat/sizes when affected |
+| `resize_group` | Fresh group indices and geometry |
+| `show_panel`, `hide_panel`, `panel_side`, `resize_panel` | Panel and sizes; chat/groups when affected |
+| `maximize_panel`, `restore_panel` | Panel, chat mode/position, sizes, related/active tabs and groups |
+| `show_sidebar`, `hide_sidebar`, `resize_sidebar` | Effective sidebar visibility and sizing ranges |
+| `chat_mode` | Applied chat mode/position, panel and sizing ranges |
+| `window_mode`, `resize_window`, `enter_fullscreen`, `exit_fullscreen` | Window including native bounds/constraints/fullscreen state, sizing ranges and groups |
+| `show_terminal`, `hide_terminal` | Target terminal open state |
+
+Viewport/sidebar changes also return updated session `layout` geometry and capacity.
+Other actions no longer repeat unrelated session geometry. Tab results include
+the requested/result tab and active tab; navigation returns all target tabs.
+Use the returned `groups` after tab moves/merges because their indices may change.
+Queued results describe saved/queued target state and omit on-screen sizes and
+group geometry. Superseded navigation returns window state only, with the actual
+session arrangement in `layout`; it does not claim the requested target is visible.
+`skipped` reports the current state without implying that the requested change ran.
+Mini-app layout calls use the same result projection.
+
+```ts
+const moved = await context.layout.act({ action: 'move_tab', tab, direction: 'down' })
+const group = moved.state?.tabs?.find(item => item.tab === tab)?.group
+if (group !== undefined && moved.status === 'applied') {
+  await context.layout.act({ action: 'resize_group', group, height: 400 })
+}
+```
 
 ## Complete session layouts
 

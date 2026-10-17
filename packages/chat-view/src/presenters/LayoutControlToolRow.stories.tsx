@@ -30,6 +30,8 @@ const SAMPLE_PARAMS: Record<string, Record<string, unknown>> = {
   resize_sidebar: { width: 400 },
   resize_panel: { width: 720 },
   chat_mode: { mode: 'floating', position: 'top-right' },
+  window_mode: { mode: 'mini' },
+  resize_window: { width: 1280, height: 900 },
   maximize_split: { target: { environmentId: 'desktop', sessionId: 'artifact' } },
   split_session: { sessionIds: ['voice', 'artifact', 'worker'] },
   close_split: { closeAll: true },
@@ -53,6 +55,69 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const OpenFile: Story = { name: 'open_file · applied' }
+
+export const MiniWindow: Story = {
+  name: 'window_mode · mini',
+  args: { params: projected({ action: 'window_mode', mode: 'mini' }) },
+}
+
+export const FullWindow: Story = {
+  name: 'window_mode · full',
+  args: { params: projected({ action: 'window_mode', mode: 'full' }) },
+}
+
+export const ResizeWindow: Story = {
+  name: 'resize_window · actual clamped dimensions',
+  args: { params: projected({ action: 'resize_window', width: 9999, height: 900 }), result: JSON.stringify({ status: 'applied', visible: true, width: 1440, height: 900 }) },
+}
+
+export const EnterFullscreen: Story = {
+  name: 'enter_fullscreen · in flight',
+  args: { params: projected({ action: 'enter_fullscreen' }), isStreaming: true, result: null },
+}
+
+export const ExitFullscreen: Story = {
+  name: 'exit_fullscreen · applied',
+  args: { params: projected({ action: 'exit_fullscreen' }) },
+}
+
+export const ResizeWindowChineseDark: Story = {
+  ...ResizeWindow,
+  name: 'resize_window · narrow Chinese dark',
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div className="w-[280px]"><Story /></div>],
+}
+
+export const WindowModeStreaming: Story = {
+  ...MiniWindow,
+  name: 'window_mode · in flight',
+  args: { ...MiniWindow.args, isStreaming: true, result: null },
+}
+
+export const WindowModeSkipped: Story = {
+  ...MiniWindow,
+  name: 'window_mode · hidden target',
+  args: { ...MiniWindow.args, result: SKIPPED },
+}
+
+export const WindowModeError: Story = {
+  ...MiniWindow,
+  name: 'window_mode · native failure',
+  args: { ...MiniWindow.args, isError: true, result: 'Native conversion failed' },
+}
+
+export const WindowModeDenied: Story = {
+  ...MiniWindow,
+  name: 'window_mode · denied',
+  args: { ...MiniWindow.args, isDenied: true, result: null },
+}
+
+export const WindowModeChineseDark: Story = {
+  ...FullWindow,
+  name: 'window_mode · narrow Chinese dark',
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div className="w-[280px]"><Story /></div>],
+}
 
 export const FocusSession: Story = {
   name: 'focus_session · remote target',

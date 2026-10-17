@@ -44,7 +44,7 @@ describe('layout_snapshot', () => {
   it('asks the renderer for the calling session and encodes the layout as TOON', async () => {
     const snapshot = {
       visible: true,
-      window: { visible: true, sidebar: 'expanded', layout: 'single' },
+      window: { visible: true, mode: 'full', transitioning: false, sidebar: 'expanded', layout: 'single' },
       panel: { open: true, onScreen: true, side: 'left', maximized: false },
       terminal: { open: false },
       tabs: [{ tab: 'file:src/a.ts', kind: 'file', title: 'a.ts', active: true, group: 0, openedBy: 'agent' }],
@@ -98,6 +98,11 @@ describe('layout tool contract', () => {
       { action: 'close_split', closeAll: true },
       { action: 'maximize_split', target: { environmentId: 'node', sessionId: 'remote' } },
       { action: 'restore_splits' },
+      { action: 'window_mode', mode: 'mini' },
+      { action: 'window_mode', mode: 'full', target: 'foreground' },
+      { action: 'resize_window', width: 1280, height: 900 },
+      { action: 'enter_fullscreen' },
+      { action: 'exit_fullscreen' },
       { action: 'resize_splits', dividers: [{ id: 'divider-1', ratio: 0.6 }, { id: 'divider-2', ratio: 0.5 }] },
     ]
     for (const call of calls) expect(schema.parse(call)).toEqual(call)

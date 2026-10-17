@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { LAYOUT_ACT_ACTIONS, LAYOUT_CHAT_MODES, LAYOUT_CHAT_POSITIONS, type LayoutActAction } from '@superone/shared/layout-control'
+import { LAYOUT_ACT_ACTIONS, LAYOUT_CHAT_MODES, LAYOUT_CHAT_POSITIONS, LAYOUT_WINDOW_MODES, type LayoutActAction } from '@superone/shared/layout-control'
 import { ToolIcon } from './ToolIcon'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import {
@@ -86,6 +86,9 @@ export function LayoutControlToolRow({ mcpToolName, params, result, isStreaming,
   } else if (action === 'panel_side') {
     const side = str(params.side)
     subject = side === 'left' || side === 'right' ? t(`chat.toolBlock.layoutControl.side.${side}`) : ''
+  } else if (action === 'window_mode') {
+    const mode = str(params.mode)
+    subject = (LAYOUT_WINDOW_MODES as readonly string[]).includes(mode) ? t(`chat.toolBlock.layoutControl.windowMode.${mode}`) : ''
   } else if (action === 'chat_mode') {
     const mode = str(params.mode)
     const position = str(params.position)
@@ -93,7 +96,7 @@ export function LayoutControlToolRow({ mcpToolName, params, result, isStreaming,
       (LAYOUT_CHAT_MODES as readonly string[]).includes(mode) ? t(`chat.toolBlock.layoutControl.chatMode.${mode}`) : '',
       (LAYOUT_CHAT_POSITIONS as readonly string[]).includes(position) ? t(`chat.toolBlock.layoutControl.chatPosition.${position}`) : '',
     ].filter(Boolean).join(' · ')
-  } else if (action === 'resize_sidebar' || action === 'resize_panel' || action === 'resize_group') {
+  } else if (action === 'resize_sidebar' || action === 'resize_panel' || action === 'resize_group' || action === 'resize_window') {
     // The applied size once known: the request is clamped to what the window allows.
     const applied = parseActResult(result)
     const px = (key: 'width' | 'height') => {
@@ -101,7 +104,7 @@ export function LayoutControlToolRow({ mcpToolName, params, result, isStreaming,
       return typeof value === 'number' ? value : null
     }
     const width = px('width')
-    const height = action === 'resize_group' ? px('height') : null
+    const height = action === 'resize_group' || action === 'resize_window' ? px('height') : null
     subject = width !== null && height !== null ? `${width} × ${height}px` : width !== null ? `${width}px` : height !== null ? `↕ ${height}px` : ''
   } else if (action) {
     subject = tabSubject(str(params.tab))

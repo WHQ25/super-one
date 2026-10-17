@@ -8,7 +8,8 @@ import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { collectLeaves } from '@/components/mosaic/mosaic-tree'
 import { isDockReady } from '@/components/activity/activity-panel-api'
 import { findSessionTarget } from '@/stores/chat-store/helpers/store-helpers'
-import { layoutAct, layoutSnapshot } from './layout-control'
+import { layoutAct } from './layout-control'
+import { readLayoutSnapshot, withLayoutActionState } from './layout-action-results'
 import { assertLayoutEnvironmentEnabled, navigateToSession, watchSessionNavigation } from './session-navigation'
 
 import { MOSAIC_ACTIONS, applyMosaicAction, restorableRoot, sessionLayoutSnapshot, validateMosaicRequest } from './layout-mosaic'
@@ -86,7 +87,7 @@ function waitForDock(projectPath: string, sessionId: string, signal?: AbortSigna
 export async function layoutSnapshotForTarget(caller: LayoutControlCaller, target?: LayoutTarget) {
   const resolved = await resolveTarget(caller, target)
   const layout = await sessionLayoutSnapshot()
-  const snapshot = layoutSnapshot(caller, resolved.context)
+  const snapshot = await readLayoutSnapshot(caller, resolved.context)
   snapshot.window.layout = layout.mode === 'mosaic' ? 'split' : 'single'
   if (layout.mode !== 'mosaic') delete snapshot.window.splitSessions
   return { ...snapshot, targetSession: resolved.ref, focusedSession: layout.focusedSession, visibleSessions: layout.tiles.map(tile => tile.session), layout }
@@ -99,11 +100,12 @@ export async function layoutActForTarget(caller: LayoutControlCaller, request: L
     const navigation = watchSessionNavigation(signal)
     try {
       const ref = await targetRef(caller, request.target)
-      if (navigation.stale()) return { ...superseded(), targetSession: ref, layout: await sessionLayoutSnapshot() }
+      if (navigation.stale()) return withLayoutActionState(caller, request, { ...superseded(), targetSession: ref, layout: await sessionLayoutSnapshot() })
       const result = await navigateToSession(ref, { signal, navigation })
-      if (result.status === 'superseded') return { ...superseded(), targetSession: ref, layout: await sessionLayoutSnapshot() }
-      if (useMosaicStore.getState().mode !== 'mosaic' && !await waitForDock(result.target.projectPath, ref.sessionId, signal)) return { ...superseded(), targetSession: ref, layout: await sessionLayoutSnapshot() }
-      return { status: 'applied', visible: document.visibilityState === 'visible', targetSession: ref, layout: await sessionLayoutSnapshot() }
+      if (result.status === 'superseded') return withLayoutActionState(caller, request, { ...superseded(), targetSession: ref, layout: await sessionLayoutSnapshot() })
+      if (useMosaicStore.getState().mode !== 'mosaic' && !await waitForDock(result.target.projectPath, ref.sessionId, signal)) return withLayoutActionState(caller, request, { ...superseded(), targetSession: ref, layout: await sessionLayoutSnapshot() })
+      return withLayoutActionState(caller, request, { status: 'applied', visible: document.visibilityState === 'visible', targetSession: ref, layout: await sessionLayoutSnapshot() },
+        { key: projectSessionKey(result.target.projectPath, ref.sessionId), projectPath: result.target.projectPath, sessionId: ref.sessionId, root: result.target.projectPath })
     } finally { navigation.dispose() }
   }
   const mosaicAction = MOSAIC_ACTIONS.has(request.action)
@@ -122,14 +124,14 @@ export async function layoutActForTarget(caller: LayoutControlCaller, request: L
         return { ref: peer.ref, projectPath: peer.context.projectPath }
       }))
       if (new Set(peers.map(p => JSON.stringify([p.ref.environmentId, p.ref.sessionId]))).size !== peers.length) throw new LayoutControlError('invalid', 'sessionIds contains duplicate session identities.')
-      if (navigation!.stale()) return { ...superseded(), targetSession: resolved.ref, layout: await sessionLayoutSnapshot() }
+      if (navigation!.stale()) return withLayoutActionState(caller, request, { ...superseded(), targetSession: resolved.ref, layout: await sessionLayoutSnapshot() }, resolved.context)
       for (const peer of [resolved.context, ...peers]) assertLayoutEnvironmentEnabled(peer.projectPath)
       const result = await applyMosaicAction(request, { ref: resolved.ref, projectPath: resolved.context.projectPath }, peers, navigation!)
-      return { ...result, targetSession: resolved.ref, layout: await sessionLayoutSnapshot() }
+      return withLayoutActionState(caller, request, { ...result, targetSession: resolved.ref, layout: await sessionLayoutSnapshot() }, resolved.context)
     }
-    if (signal?.aborted) return { ...superseded(), targetSession: resolved.ref }
+    if (signal?.aborted) return withLayoutActionState(caller, request, { ...superseded(), targetSession: resolved.ref }, resolved.context)
     const result = await layoutAct(caller, request, resolved.context)
-    return { ...result, targetSession: resolved.ref, layout: await sessionLayoutSnapshot() }
+    return withLayoutActionState(caller, request, { ...result, targetSession: resolved.ref }, resolved.context)
   } finally {
     navigation?.dispose()
   }

@@ -2,6 +2,7 @@
 import { describe, expect, expectTypeOf, it, vi, beforeEach } from 'vitest'
 import type { LayoutActAction, LayoutActRequest, LayoutActResult, LayoutSnapshot } from '@superone/shared/layout-control'
 import type { SuperOneMiniAppLayoutRequest, SuperOneMiniAppLayoutResult, SuperOneMiniAppLayoutSnapshot } from '@superone/shared/miniapp-host-api'
+import { nativeWindowLayoutFixture } from '../../../test/fixtures/native-window-layout'
 
 const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExternal, clipboardRead, clipboardWrite, layoutSnapshot, layoutAct } =
   vi.hoisted(() => ({
@@ -18,7 +19,7 @@ const { toastFns, setDraftText, setMiniAppContext, clearMiniAppContext, openExte
 
 vi.mock('sonner', () => ({ toast: toastFns }))
 vi.mock('@/lib/layout-control', () => ({ layoutSnapshot, layoutAct }))
-vi.mock('@/lib/layout-mosaic', () => ({ sessionLayoutSnapshot: vi.fn(async () => undefined) }))
+vi.mock('@/lib/layout-mosaic', () => ({ sessionLayoutSnapshot: vi.fn(async () => undefined), MOSAIC_ACTIONS: new Set() }))
 vi.mock('@/lib/external-link', () => ({ requestOpenExternalLink: openExternal }))
 vi.mock('@/lib/miniapp-clipboard', () => ({
   requestClipboardRead: clipboardRead,
@@ -107,15 +108,24 @@ describe('MiniApp Host actions in the renderer', () => {
   })
 
   it('reads and changes the layout as the holder session, marked as this app', async () => {
-    layoutSnapshot.mockReturnValue({ self: 'miniapp-demo:p1' })
+    layoutSnapshot.mockReturnValue({ self: 'miniapp-demo:p1', window: { visible: true, mode: 'full', transitioning: false }, panel: { open: false, onScreen: false }, groups: [], tabs: [] })
+    Object.assign(window.app, { getWindowLayoutState: vi.fn(async () => nativeWindowLayoutFixture()) })
     layoutAct.mockResolvedValue({ status: 'queued', visible: false })
     const caller = { sessionId: 's1', opener: { kind: 'miniapp', appId: 'demo', instanceKey: 'demo:p1' } }
 
-    expect(await runMiniAppHostAction('demo', '/proj', 'layout.snapshot', {})).toEqual({ self: 'miniapp-demo:p1' })
-    expect(layoutSnapshot).toHaveBeenCalledWith(caller)
+    expect(await runMiniAppHostAction('demo', '/proj', 'layout.snapshot', {})).toMatchObject({ self: 'miniapp-demo:p1', window: { native: { fullscreen: false } } })
+    expect(layoutSnapshot).toHaveBeenCalledWith(caller, undefined)
     expect(await runMiniAppHostAction('demo', '/proj', 'layout.act', { action: 'maximize_panel', tab: 'miniapp-demo:p1' }))
-      .toEqual({ status: 'queued', visible: false })
+      .toMatchObject({ status: 'queued', visible: false, state: { panel: { open: false, onScreen: false } } })
     expect(layoutAct).toHaveBeenCalledWith(caller, { action: 'maximize_panel', tab: 'miniapp-demo:p1' })
+  })
+
+  it('adds follow-up sizing state to native results that already contain window state', async () => {
+    const windowState = { visible: true, mode: 'full', transitioning: false, native: nativeWindowLayoutFixture() }
+    layoutSnapshot.mockReturnValue({ visible: true, window: windowState, sizes: { window: 1200 }, groups: [] })
+    layoutAct.mockResolvedValue({ status: 'applied', visible: true, width: 1200, height: 900, state: { window: windowState } })
+    expect(await runMiniAppHostAction('demo', '/proj', 'layout.act', { action: 'resize_window', width: 1200 }))
+      .toMatchObject({ state: { sizes: { window: 1200 }, window: { native: { bounds: { width: 1200, height: 900 } } } } })
   })
 
   it('refuses layout calls from an app no session holds', async () => {

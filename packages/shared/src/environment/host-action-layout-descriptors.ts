@@ -1,5 +1,5 @@
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
-import { LAYOUT_ACT_ACTIONS, LAYOUT_CHAT_MODES, LAYOUT_CHAT_POSITIONS, LAYOUT_DIRECTIONS } from '../layout-control'
+import { LAYOUT_ACT_ACTIONS, LAYOUT_CHAT_MODES, LAYOUT_CHAT_POSITIONS, LAYOUT_DIRECTIONS, LAYOUT_WINDOW_MODES } from '../layout-control'
 import {
   LAYOUT_SNAPSHOT_DESCRIPTION,
   LAYOUT_ACT_DESCRIPTION,
@@ -91,7 +91,7 @@ export const HOST_ACTION_LAYOUT_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
         },
         width: { type: 'integer', minimum: 1, description: LAYOUT_ACT_WIDTH_DESCRIPTION },
         height: { type: 'integer', minimum: 1, description: LAYOUT_ACT_HEIGHT_DESCRIPTION },
-        mode: { type: 'string', enum: [...LAYOUT_CHAT_MODES], description: LAYOUT_ACT_MODE_DESCRIPTION },
+        mode: { type: 'string', enum: [...LAYOUT_CHAT_MODES, ...LAYOUT_WINDOW_MODES], description: LAYOUT_ACT_MODE_DESCRIPTION },
         position: { type: 'string', enum: [...LAYOUT_CHAT_POSITIONS], description: LAYOUT_ACT_POSITION_DESCRIPTION },
       },
       required: ['action'],

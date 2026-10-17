@@ -53,7 +53,7 @@ const COMPUTER_PREFIX = 'computer_'
 /**
  * Node-local SuperOne tools (personal browser memory, session collaboration, input forms).
  * Never advertised as Host Actions — remote agents call them in-process on the node.
- * session_suggest_task has no node executor yet, so remote sessions are not offered it.
+ * session_suggest_task also runs on the source node; its card launches there through session RPC.
  */
 export const NODE_LOCAL_SUPERONE_TOOL_NAMES = [
   'browser_memory_read',

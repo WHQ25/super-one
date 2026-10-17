@@ -358,8 +358,8 @@ export class IosSimulatorHelperRuntime {
     })
   }
 
-  async attach(udid: string): Promise<IosSimulatorNativeAttachment> {
-    const result = await this.request('attach', { udid }) as Record<string, unknown>
+  async attach(udid: string, screenId?: number): Promise<IosSimulatorNativeAttachment> {
+    const result = await this.request('attach', { udid, screenId }) as Record<string, unknown>
     const attachment: IosSimulatorNativeAttachment = {
       udid,
       pixelWidth: Number(result.pixelWidth) || 0,
@@ -374,6 +374,19 @@ export class IosSimulatorHelperRuntime {
     }
     this.attached = attachment
     return attachment
+  }
+
+  /** `tent` stands the device half open and face down after the sweep, which lights the cover. */
+  async fold(position: number, durationMs: number, screenId: number, tent = false): Promise<IosSimulatorNativeAttachment> {
+    if (!this.attached) throw new Error('Attach before folding.')
+    const result = await this.request('fold', { position, durationMs, screenId, tent }) as Record<string, unknown>
+    // The shown display changed, and with it the framebuffer every ratio is taken of.
+    this.attached = {
+      ...this.attached,
+      pixelWidth: Number(result.pixelWidth) || 0,
+      pixelHeight: Number(result.pixelHeight) || 0,
+    }
+    return this.attached
   }
 
   /**

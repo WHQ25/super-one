@@ -95,6 +95,8 @@ export function stubIosSimulatorEnvironment() {
       deviceBind: vi.fn(async () => IOS_SIMULATOR_READY),
       iosSimulatorChrome: vi.fn(async () => IOS_SIMULATOR_CHROME),
       deviceInput: vi.fn(async () => ({ ok: true })),
+      deviceEnvironment: vi.fn(async () => { throw new Error("no environment in this test") }),
+      onDeviceEnvironmentChanged: vi.fn(() => () => {}),
       deviceCaptureState: vi.fn(async () => null),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),

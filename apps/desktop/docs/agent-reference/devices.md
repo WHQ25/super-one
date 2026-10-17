@@ -48,6 +48,59 @@ only simulator creation and DeviceKit artwork stay under `components/device/ios/
 The stage uses `DEVICE_RIGID_ROTATION` to keep the iOS shell rotation model while
 letting Android follow the dimensions published by scrcpy.
 
+### iOS foldable simulators (iPhone Duo)
+
+The Duo device type declares two integrated displays in its `capabilities.plist`:
+screen 1 is the cover (chrome `phone15`) and screen 3 the inner panel (`phone14`,
+`nativeRotation` 270). It boots closed. Screen power does not follow the fold, so the
+host tracks the hinge angle itself (`IosSimulatorManager`, closed on boot) and streams,
+captures and touches the lit panel by screen id. The angle alone picks the form
+(`iosSimulatorFoldAt`): 0° closed on the cover, up to 60° a tent on the cover, wider
+open on the inner screen. The toolbar's hinge control is one 0-180° slider with those
+stops marked; the emulator's posture ids stay as named stops for `device_configure`.
+- **Tent** (posture 5, 60° by default) is not an angle to the guest, which reads any
+  tent as half open; its angle is the host's, for the 3D body. SpringBoard lights the cover at a partial
+  angle only under its tent policy, which keys on CoreMotion's tabletop pose
+  `PartiallyOpenFaceDown`. The fold tool's `tent` mode sets it through
+  `-[SBSTestAutomationService setDevicePoseOverride:]` (entitlement
+  `com.apple.springboard.testautomation`) after the sweep, since every sweep resets
+  the pose, and that sweep closes the device first. From closed the cover is already
+  primary and the tent switch is `.nonAnimated`; from open it is a cover swap styled
+  `.continuousLive`, which only hinge travel finishes, so it never ends and every later
+  sweep is refused ("a display swap is already in flight") until an app launch drives
+  it out. The guest swaps panels only when a sweep crosses its swap point, so a
+  sweep out of a tent to an open angle would keep the cover lit; the manager closes
+  first. The hinge runs down the cover's left edge, so a tent is also turned
+  `landscape-right` to put it on top, whether or not the foreground app turns.
+- **Orientation follows the form.** Changing between closed, tent and open turns the
+  device to that form's hold (`FOLD_FORM_ORIENTATION`): closed and open upright, the
+  open inner panel then landscape; a tent `landscape-right`. Within one form a hinge
+  move keeps the user's turn.
+
+- **Moving the hinge** is a guest call: SpringBoard's `SBSDisplayToolService`
+  swap with `targetMode = 1` and an absolute position (0 closed, 0.5 = 90°, 1 open).
+  The helper runs it through `Sources/Guest/FoldTool.m`, built for the simulator SDK
+  with the `com.apple.springboard.sbdisplay.service` entitlement in a
+  `__TEXT,__entitlements` section; a code-signature claim is refused at spawn. A zero
+  duration takes an instant path that cannot leave a closed device, hence the sweep.
+- **Touch** goes to `screenID | 0x40000000`, in framebuffer ratios.
+- **Rotation**: the inner framebuffer is portrait under a landscape panel. The stage
+  turns it by `fold.panelRotation` as one more rigid quarter turn.
+- **Artwork**: both chromes ship placeholder nine-slices, so the composite is drawn,
+  sized from its own box. `phone14` draws button art across its anchored edge; the
+  loader turns such art a quarter.
+- **3D** uses Xcode's skinned `V68.usdz` (DeviceKit's `CoreDevicePopDeviceKitExtension`)
+  in place, nothing copied. Its `book_close` clip is scrubbed to the hinge angle, the lit
+  glass is turned to the camera in each pose, and touches raycast the skinned glass by UV
+  (`device-model-body.ts`). Apple maps the inner glass landscape, so the picture turns
+  onto it and the stage does not.
+- **Known gap**: accessibility returns one tree holding both panels' elements; agent
+  observation on an unfolded device is not filtered per panel.
+
+The helper encodes High profile with `constraint_set3_flag` set. VideoToolbox writes
+no VUI, and without that flag Chromium's hardware decoder assumed a full DPB of
+reordering and held pictures back: a still screen stayed black after a stream restart.
+
 Live checks against a real device: `src/main/device/android/live.manual.test.ts`,
 skipped unless `ANDROID_LIVE=1`. adb binds a daemon port, so it needs to run outside
 the sandbox.

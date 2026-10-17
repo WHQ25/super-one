@@ -134,6 +134,11 @@ export function parseSimctlRuntimes(raw: string): IosSimulatorRuntimeOption[] {
     .sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }))
 }
 
+/** The Xcode developer directory `xcode-select` points at, e.g. `/Applications/Xcode.app/Contents/Developer`. */
+export async function selectedDeveloperDirectory(): Promise<string> {
+  return (await execFileText('/usr/bin/xcode-select', ['-p'])).trim()
+}
+
 async function readDeveloperStatus(): Promise<Omit<IosSimulatorStatus, 'helper' | 'previewMode'>> {
   if (process.platform !== 'darwin') {
     return {
@@ -148,7 +153,7 @@ async function readDeveloperStatus(): Promise<Omit<IosSimulatorStatus, 'helper' 
   }
   try {
     const [developerDirectory, version, simctlPath] = await Promise.all([
-      execFileText('/usr/bin/xcode-select', ['-p']),
+      selectedDeveloperDirectory(),
       execFileText('/usr/bin/xcodebuild', ['-version']),
       execFileText('/usr/bin/xcrun', ['--find', 'simctl']),
     ])
@@ -157,7 +162,7 @@ async function readDeveloperStatus(): Promise<Omit<IosSimulatorStatus, 'helper' 
     return {
       supported: isFullXcode,
       platform: process.platform,
-      developerDirectory: developerDirectory.trim(),
+      developerDirectory,
       xcodeVersion: lines[0] ?? null,
       xcodeBuild: lines.find((line) => line.startsWith('Build version '))?.slice('Build version '.length) ?? null,
       simctlPath: simctlPath.trim(),

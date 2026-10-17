@@ -544,7 +544,7 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
   },
   {
     "name": "device_configure",
-    "description": "Read or set a controlled simulator's environment: light/dark appearance, system text size, simulated GPS location, iOS location clear, or an Android fold posture. Requires device_request_control before changing anything. Use kind=get to read current appearance, text size, available text-size values, and the emulator's posture ids; location and current posture cannot be read reliably. Android does not support clear_location. See read_manual({ domain: \"product\", topic: \"devices\" }).",
+    "description": "Read or set a controlled simulator's environment: light/dark appearance, system text size, simulated GPS location, iOS location clear, the fold posture of a foldable Android emulator or iOS Simulator (iPhone Duo), or an iPhone Duo's exact hinge angle. Requires device_request_control before changing anything. Use kind=get to read current appearance, text size, available text-size values, the device's posture ids (empty when it does not fold), and hingeDegrees where any angle is accepted; location cannot be read reliably, and only iOS reports the current posture. Android does not support clear_location or hinge. See read_manual({ domain: \"product\", topic: \"devices\" }).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -560,7 +560,7 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
         },
         "kind": {
           "type": "string",
-          "enum": ["get", "appearance", "text_size", "location", "clear_location", "posture"]
+          "enum": ["get", "appearance", "text_size", "location", "clear_location", "posture", "hinge"]
         },
         "appearance": {
           "description": "Required for kind=appearance.",
@@ -590,6 +590,12 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "hingeDegrees": {
+          "description": "Required for kind=hinge. The angle picks the form: 0 closed, 1-60 tent (cover lit), above 60 open on the inner screen.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 180
         }
       },
       "required": ["description", "kind"],

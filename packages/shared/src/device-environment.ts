@@ -16,6 +16,11 @@ export type DeviceEnvironmentAction =
   | { kind: 'location'; latitude: number; longitude: number }
   | { kind: 'clear_location' }
   | { kind: 'posture'; id: number }
+  /**
+   * An exact hinge angle, only where `hingeDegrees` is reported. The angle picks the
+   * form; see `iosSimulatorFoldAt`.
+   */
+  | { kind: 'hinge'; degrees: number }
   | { kind: 'text_size'; value: string }
 
 export interface DevicePostureOption { id: number; label: string }
@@ -32,12 +37,23 @@ export interface DeviceEnvironmentState {
   locationReadable: false
   canClearLocation: boolean
   postures: DevicePostureOption[]
-  /** The emulator console does not report its current posture with the option list. */
-  posture: null
+  /**
+   * The current posture's id, when it is known. The Android emulator console does not
+   * report it; an iOS foldable simulator reports the posture the host last set.
+   */
+  posture: number | null
+  /**
+   * The hinge angle, where the device takes any angle rather than only its postures:
+   * an iOS foldable simulator. Null everywhere else.
+   */
+  hingeDegrees: number | null
 }
 
 export interface DeviceEnvironmentResult {
-  /** Appearance and text size can be read back; location and posture only confirm command delivery. */
+  /**
+   * Appearance, text size and an iOS foldable's hinge can be read back; location
+   * and an Android posture only confirm command delivery.
+   */
   status: 'verified' | 'applied'
   deviceId: string
   action: DeviceEnvironmentAction

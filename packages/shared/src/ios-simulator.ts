@@ -9,7 +9,7 @@ import {
   stepDeviceOrientation,
 } from './device'
 
-export const IOS_SIMULATOR_PROTOCOL_VERSION = 10 as const
+export const IOS_SIMULATOR_PROTOCOL_VERSION = 11 as const
 /**
  * The neutral device vocabulary, under this platform's old names.
  *
@@ -46,6 +46,82 @@ export function isIosSimulatorTextTypeable(text: string): boolean {
 }
 
 export type IosSimulatorPreviewMode = 'native-framebuffer' | 'native-h264'
+
+/**
+ * A foldable's postures, named and numbered as the Android emulator names its own
+ * (`adb emu posture`), so `device_configure` speaks one vocabulary on both platforms.
+ */
+export const IOS_SIMULATOR_FOLD_POSTURES = [
+  { id: 1, posture: 'closed', label: 'closed', hingeDegrees: 0 },
+  { id: 2, posture: 'half-opened', label: 'half opened', hingeDegrees: 90 },
+  { id: 3, posture: 'opened', label: 'opened', hingeDegrees: 180 },
+  // Half open and stood on its edges, the cover facing out: what lights the cover
+  // with the hinge open. Not an angle; see `IosSimulatorFoldState.tent`.
+  { id: 5, posture: 'tent', label: 'tent', hingeDegrees: 60 },
+] as const
+
+/** The widest opening that still stands as a tent; any wider is the inner screen. */
+export const IOS_SIMULATOR_TENT_MAX_DEGREES = 60
+
+/**
+ * Where an angle puts the hinge; null off 0-180. The angle alone picks the form:
+ * 0 closed on the cover, up to `IOS_SIMULATOR_TENT_MAX_DEGREES` a tent on the cover,
+ * anything wider open on the inner screen.
+ */
+export function iosSimulatorFoldAt(hingeDegrees: number): IosSimulatorFoldPosition | null {
+  if (!Number.isFinite(hingeDegrees) || hingeDegrees < 0 || hingeDegrees > 180) return null
+  return { hingeDegrees, tent: hingeDegrees > 0 && hingeDegrees <= IOS_SIMULATOR_TENT_MAX_DEGREES }
+}
+
+/** A foldable's three forms, by the angle that picks them. */
+export type IosSimulatorFoldForm = 'closed' | 'tent' | 'open'
+
+export function iosSimulatorFoldForm(hingeDegrees: number): IosSimulatorFoldForm {
+  return hingeDegrees <= 0 ? 'closed' : hingeDegrees <= IOS_SIMULATOR_TENT_MAX_DEGREES ? 'tent' : 'open'
+}
+
+export type IosSimulatorFoldPosture = typeof IOS_SIMULATOR_FOLD_POSTURES[number]['posture']
+
+export function iosSimulatorFoldPosture(posture: IosSimulatorFoldPosture) {
+  return IOS_SIMULATOR_FOLD_POSTURES.find((entry) => entry.posture === posture)!
+}
+
+/** The posture a fold reads as: a tent, else by angle, where only the two ends are exact. */
+export function iosSimulatorFoldPostureOf(fold: IosSimulatorFoldPosition) {
+  const { hingeDegrees, tent } = fold
+  return iosSimulatorFoldPosture(tent ? 'tent'
+    : hingeDegrees <= 0 ? 'closed' : hingeDegrees >= 180 ? 'opened' : 'half-opened')
+}
+
+/**
+ * The panel the guest paints: the cover while closed or standing as a tent, else the
+ * inner panel. The guest swaps only when a sweep crosses its swap point, so leaving a
+ * tent for another angle closes first to keep this true; see `IosSimulatorManager`.
+ */
+export function iosSimulatorFoldPanel(fold: IosSimulatorFoldPosition): IosSimulatorFoldState['panel'] {
+  return fold.tent || fold.hingeDegrees <= 0 ? 'cover' : 'inner'
+}
+
+/** Where a foldable's hinge is: its angle, and whether it stands as a tent. */
+export type IosSimulatorFoldPosition = Pick<IosSimulatorFoldState, 'hingeDegrees' | 'tent'>
+
+/** A foldable's hinge, which panel it shows, and how that panel is mounted. */
+export interface IosSimulatorFoldState {
+  /** 0 closed to 180 open. The guest takes any angle; postures are named stops on it. */
+  hingeDegrees: number
+  /**
+   * Standing half open on its edges with the cover lit, landscape with the hinge on
+   * top. A CoreMotion pose rather than an angle, so it is carried beside the angle.
+   */
+  tent: boolean
+  panel: 'cover' | 'inner'
+  /**
+   * Clockwise turn that stands the shown panel's framebuffer upright. The Duo's inner
+   * panel is mounted sideways (`nativeRotation` 270), so its framebuffer is portrait
+   * while the unfolded device is held landscape.
+   */
+  panelRotation: 0 | 90 | 180 | 270
+}
 
 export interface IosSimulatorApiCapabilities {
   coreSimulator: boolean
@@ -119,6 +195,11 @@ export interface IosSimulatorSessionState {
   /** The device's own framebuffer size. Absent until the native helper attaches. */
   pixelWidth?: number
   pixelHeight?: number
+  /**
+   * Present only on a foldable. Host-owned like `orientation`: the guest has no getter
+   * for its hinge, so this is the angle the host last moved it to.
+   */
+  fold?: IosSimulatorFoldState
   message?: string
 }
 
@@ -291,15 +372,30 @@ export interface IosSimulatorChromeSlices {
   left: string
 }
 
+/** A body drawn from Apple's nine-slice edges, which stretch to any device size. */
+export interface IosSimulatorChromeSliceBody {
+  /** Corners are square and `corner` points on a side. */
+  slices: IosSimulatorChromeSlices
+  corner: number
+  composite?: undefined
+}
+
+/**
+ * A body drawn as one PNG data URL covering exactly `width` × `height`. Used when a
+ * chrome ships placeholder slices (the iPhone Duo's) and only its composite is real.
+ */
+export interface IosSimulatorChromeCompositeBody {
+  composite: string
+  slices?: undefined
+  corner?: undefined
+}
+
 /**
  * Apple's own device artwork, read from the local Xcode install. Never bundled:
  * these are Apple's copyrighted assets, and the panel already requires Xcode.
  */
-export interface IosSimulatorChrome {
+export type IosSimulatorChrome = (IosSimulatorChromeSliceBody | IosSimulatorChromeCompositeBody) & {
   identifier: string
-  /** Nine-slice body. Corners are square and `corner` points on a side. */
-  slices: IosSimulatorChromeSlices
-  corner: number
   /** PNG alpha mask carrying the exact screen corner shape. */
   screenMask: string
   /** The device body, in points — screen plus its own frame, per device. */

@@ -1,16 +1,17 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronLeft, Circle, Home, Keyboard, KeyboardOff, Loader2, LockKeyhole, Play, Plug, Power, RotateCcw, RotateCw, Smartphone, Square, Unplug, Volume1, Volume2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, Circle, Home, Keyboard, KeyboardOff, Loader2, LockKeyhole, Play, Plug, Power, RotateCw, Smartphone, Square, Unplug, Volume1, Volume2 } from 'lucide-react'
 import type {
   DeviceDescriptor,
   DeviceOrientation,
   DeviceState,
 } from '@superone/shared/device'
 import type { DeviceSetupOption } from '@superone/shared/device-setup'
-import type {
-  IosSimulatorChrome,
-  IosSimulatorPreviewQuality,
+import {
+  type IosSimulatorChrome,
+  type IosSimulatorFoldState,
+  type IosSimulatorPreviewQuality,
 } from '@superone/shared/ios-simulator'
 import {
   parseDeviceId,
@@ -26,6 +27,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { DeviceBareScreen, deviceScreenAspect } from './DeviceBareScreen'
 import { DeviceCaptureControls } from './DeviceCaptureControls'
 import { DeviceEnvironmentControls } from './DeviceEnvironmentControls'
+import { DeviceHingeControl } from './DeviceHingeControl'
 import { DevicePreviewMenu } from './DevicePreviewMenu'
 import { IosSimulatorDeviceChrome } from './ios/IosSimulatorDeviceChrome'
 import { DeviceMenu } from './DeviceMenu'
@@ -259,12 +261,16 @@ export function DeviceStage({
   // the device currently on screen has not answered, which is not the same as the
   // `null` that means this device has no artwork (every Android one, and the iOS
   // models Xcode ships no bundle for).
-  const [artwork, setArtwork] = useState<{ deviceId: string; chrome: IosSimulatorChrome | null } | null>(null)
+  const [artwork, setArtwork] = useState<{ key: string; chrome: IosSimulatorChrome | null } | null>(null)
   const [quality, setQuality] = useState<IosSimulatorPreviewQuality>(readPreviewQuality)
   const [orientation, setOrientation] = useState<DeviceOrientation>('portrait')
   // The guest keeps a keyboard plugged or unplugged across a remount, and
   // CoreSimulator has a setter but no getter, so the host state IS the reading.
   const [keyboardConnected, setKeyboardConnected] = useState(true)
+  // A foldable's hinge, host-pushed like the two above. Null on every other device.
+  const [fold, setFold] = useState<IosSimulatorFoldState | null>(null)
+  // The angle the hinge slider is being dragged to; the 3D body runs ahead of the guest to it.
+  const [hingePreview, setHingePreview] = useState<number | null>(null)
   const ready = sessionState?.phase === 'ready'
   // The preview is look-only, and the input pipeline has to know it: a hidden keyboard
   // sink that can still take focus, or a touch pointer drawn over a device nobody can
@@ -300,7 +306,10 @@ export function DeviceStage({
    * the canvas simply changes size when `pixelWidth`/`pixelHeight` swap.
    */
   const rigidRotation = capabilities.rigidRotation
-  const layoutRotation = rigidRotation ? rotationDegrees : 0
+  // An unfolded Duo shows a panel mounted sideways: its framebuffer is portrait while
+  // the device is held landscape. Standing it up is one more rigid turn of the same
+  // object, so it joins the orientation rather than becoming a second transform.
+  const layoutRotation = rigidRotation ? (rotationDegrees + (fold?.panelRotation ?? 0)) % 360 : 0
   const hardwareKeys: readonly HardwareKey[] =
     platform === 'android' ? ANDROID_HARDWARE_KEYS : IOS_HARDWARE_KEYS
   // Handed over by `attachDeviceSurface` below rather than created here: the
@@ -333,7 +342,9 @@ export function DeviceStage({
    * made main tear the helper's encoder down and renegotiate it. Comparing the id
    * collapses that window to nothing and saves the extra render a reset effect cost.
    */
-  const chrome = artwork?.deviceId === deviceId ? artwork.chrome : undefined
+  // Each panel of a foldable wears its own artwork, so the panel is part of the key.
+  const artworkKey = `${deviceId}#${fold?.panel ?? ''}`
+  const chrome = artwork?.key === artworkKey ? artwork.chrome : undefined
   // The canvas mounts only once the shell it hangs in is final. Under the fallback
   // body first and Apple's artwork second, it would be replaced — and a replaced
   // canvas costs a stream restart for a purely cosmetic upgrade.
@@ -373,6 +384,7 @@ export function DeviceStage({
     // Only iOS reports one; on Android the switch does not exist and the toolbar key
     // is hidden, so leaving the flag at its default costs nothing.
     if (sessionState.ios) setKeyboardConnected(sessionState.ios.hardwareKeyboardConnected)
+    setFold(sessionState.ios?.fold ?? null)
     // Only when the bound device changes. Tracking `sessionState` itself would fight
     // the user: every list refresh would snap the device back off a fresh rotation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -391,6 +403,7 @@ export function DeviceStage({
     return window.environment.onDeviceState(boundDeviceId, (state) => {
       setOrientation(state.orientation)
       if (state.ios) setKeyboardConnected(state.ios.hardwareKeyboardConnected)
+      setFold(state.ios?.fold ?? null)
     })
   }, [boundDeviceId])
 
@@ -419,13 +432,13 @@ export function DeviceStage({
 
   // `chrome` is `undefined` while the artwork lookup is still out and `null` when
   // the model has none; both mean nothing is covered yet, so the toolbar stays whole.
+  // Only the drawn shell's buttons press: the 3D body's are part of the model, so
+  // with it on screen every key is the toolbar's again.
   const shellInputs = useMemo(
-    () => new Set<HardwareButton>(
-      (chrome?.buttons ?? [])
-        .map((button) => button.input)
-        .filter((input): input is NonNullable<typeof input> => input != null),
-    ),
-    [chrome],
+    () => new Set<HardwareButton>(show3d ? [] : (chrome?.buttons ?? [])
+      .map((button) => button.input)
+      .filter((input): input is NonNullable<typeof input> => input != null)),
+    [chrome, show3d],
   )
 
   /**
@@ -458,8 +471,8 @@ export function DeviceStage({
     // `chrome` and `live` both swap the shell element out from under the ref.
   }, [overlay, layoutRotation, chrome, live, shellRef])
 
-  const rotate = useCallback((direction: 'left' | 'right') => {
-    const next = stepDeviceOrientation(orientation, direction)
+  const rotate = useCallback(() => {
+    const next = stepDeviceOrientation(orientation, 'right')
     setOrientation(next)
     void sendInput({ type: 'rotate', orientation: next })
   }, [orientation, sendInput])
@@ -490,15 +503,16 @@ export function DeviceStage({
     // a platform that ships no artwork. Both draw the bare shell, and answering
     // synchronously is what keeps `live` from waiting on a lookup that cannot happen
     // — an Android panel would otherwise sit at a spinner forever.
-    if (!device || device.platform !== 'ios') { setArtwork({ deviceId, chrome: null }); return }
+    if (!device || device.platform !== 'ios') { setArtwork({ key: artworkKey, chrome: null }); return }
     let cancelled = false
     const udid = parseDeviceId(device.id)?.native ?? device.id
+    // Main answers for the panel the hinge shows now, so a fold re-asks.
     void window.environment.iosSimulatorChrome(udid)
-      .then((next) => { if (!cancelled) setArtwork({ deviceId, chrome: next }) })
+      .then((next) => { if (!cancelled) setArtwork({ key: artworkKey, chrome: next }) })
       // Missing artwork is not an error worth a toast — the CSS shell covers it.
-      .catch(() => { if (!cancelled) setArtwork({ deviceId, chrome: null }) })
+      .catch(() => { if (!cancelled) setArtwork({ key: artworkKey, chrome: null }) })
     return () => { cancelled = true }
-  }, [device, deviceId])
+  }, [device, artworkKey])
 
   // Where the host keyboard actually lands. It has to be a real editable element for
   // macOS to run an input method against it, and it has to be invisible without being
@@ -651,6 +665,8 @@ export function DeviceStage({
               canvas={canvas}
               subscribeFrames={subscribeFrames}
               rotationDegrees={layoutRotation}
+              // The 3D body bends at the same hinge; it places the lit screen itself.
+              fold={fold && hingePreview !== null ? { ...fold, hingeDegrees: hingePreview } : fold}
               interactive={interactive}
               onProjector={setProjector}
               pointerHandlers={canvasHandlers}
@@ -808,22 +824,13 @@ export function DeviceStage({
             Absent entirely on a mirrored iPhone: a real phone turns when its owner
             turns it, so these are not disabled controls, they are controls with
             nothing behind them. */}
-        {capabilities.rotation && <>
-          <IconButton
-            tooltip={t('activity.device.rotateLeft')}
-            disabled={!ready}
-            onClick={() => rotate('left')}
-          >
-            <RotateCcw />
-          </IconButton>
-          <IconButton
-            tooltip={t('activity.device.rotateRight')}
-            disabled={!ready}
-            onClick={() => rotate('right')}
-          >
+        {capabilities.rotation && (
+          <IconButton tooltip={t('activity.device.rotateRight')} disabled={!ready} onClick={rotate}>
             <RotateCw />
           </IconButton>
-        </>}
+        )}
+        {/* Hinge, like rotation, is a guest setting rather than input. */}
+        {fold && <DeviceHingeControl deviceId={deviceId} fold={fold} disabled={busy || !ready} onPreview={setHingePreview} />}
         {/* Capture only needs the device running, not interactive: both platforms
             read the display directly rather than through the input transport. */}
         <DeviceCaptureControls

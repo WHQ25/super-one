@@ -1,4 +1,4 @@
-import { Box3, Group, Matrix4, Mesh, MeshStandardMaterial, Vector3, type Material, type Object3D, type Ray } from 'three'
+import { Box3, Group, Matrix4, Mesh, MeshStandardMaterial, Quaternion, SkinnedMesh, Vector3, type Material, type Object3D, type Ray } from 'three'
 import type { DeviceModelScreenPick } from '@superone/shared/device'
 import type { NormalizedFramePoint } from './device-input'
 
@@ -50,13 +50,18 @@ function screenCandidates(object: Object3D, screenMeshName?: string): Mesh[] {
  * Least-squares fit of world position = origin + u·U + v·V over every vertex.
  *
  * Null when the mesh is not one flat, linearly mapped sheet — the edge glass some
- * models bind to the screen material, and the Duo's folding inner screen.
+ * models bind to the screen material, and the Duo's folding inner screen. With
+ * `planar` off it fits anyway: on a folded sheet `u` and `v` are then the average
+ * directions of the framebuffer's axes and the normal bisects the fold, which is
+ * the direction to look at it from. Vertices are read posed, skinning included, and
+ * the result is in `space` when one is given.
  */
-export function fitScreenFrame(mesh: Mesh): DeviceScreenFrame | null {
+export function fitScreenFrame(mesh: Mesh, planar = true, space?: Matrix4): DeviceScreenFrame | null {
   const position = mesh.geometry.getAttribute('position')
   const uv = mesh.geometry.getAttribute('uv')
   if (!position || !uv || position.count < 3) return null
   mesh.updateWorldMatrix(true, false)
+  const toSpace = space ? new Matrix4().multiplyMatrices(space, mesh.matrixWorld) : mesh.matrixWorld
   // Normal equations for [u v 1] · [U V O]ᵀ = p, solved per axis.
   const ata = new Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
   const sums = { uu: 0, uv: 0, u1: 0, vv: 0, v1: 0, n: 0 }
@@ -64,7 +69,7 @@ export function fitScreenFrame(mesh: Mesh): DeviceScreenFrame | null {
   const points: Array<[number, number, Vector3]> = []
   const point = new Vector3()
   for (let i = 0; i < position.count; i++) {
-    point.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld)
+    mesh.getVertexPosition(i, point).applyMatrix4(toSpace)
     const u = uv.getX(i)
     const v = uv.getY(i)
     points.push([u, v, point.clone()])
@@ -91,6 +96,7 @@ export function fitScreenFrame(mesh: Mesh): DeviceScreenFrame | null {
   const normal = new Vector3().crossVectors(frame.u, frame.v)
   if (normal.lengthSq() === 0) return null
   normal.normalize()
+  if (!planar) return { ...frame, normal }
   const scale = Math.max(frame.u.length(), frame.v.length())
   const predicted = new Vector3()
   for (const [u, v, p] of points) {
@@ -228,6 +234,59 @@ export function prepareDeviceModel(
   // The component's local matrix IS its old world matrix, so root space is the
   // scene's old world space and the fitted frame carries over unchanged.
   return { root, screen: chosen.mesh, frame: chosen.frame }
+}
+
+/**
+ * A foldable body with both of its screens, posed by the caller.
+ *
+ * Nothing is cut away — both halves are one device — and nothing is turned: which
+ * way the body faces depends on the pose and on which screen is lit, so `foldPose`
+ * places `root` for each. Skinned parts leave the bounds they were measured in as the
+ * hinge moves, so none of them is culled against those bounds.
+ */
+export interface PreparedFoldableModel {
+  /** Holds the body; `foldPose` says where it goes. */
+  root: Group
+  cover: Mesh
+  inner: Mesh
+}
+
+export function prepareFoldableModel(object: Object3D): PreparedFoldableModel {
+  object.updateMatrixWorld(true)
+  // Measured in the rest pose, where Apple models both screens flat.
+  const screens = screenCandidates(object)
+    .map((mesh) => ({ mesh, frame: fitScreenFrame(mesh) }))
+    .filter((entry): entry is { mesh: Mesh; frame: DeviceScreenFrame } => entry.frame !== null)
+    .map((entry) => ({ mesh: entry.mesh, area: new Vector3().crossVectors(entry.frame.u, entry.frame.v).length() }))
+    .sort((a, b) => a.area - b.area)
+  if (screens.length !== 2) throw new Error(`A foldable model needs two screens, found ${screens.length}`)
+  object.traverse((part) => { if (part instanceof SkinnedMesh) part.frustumCulled = false })
+  const root = new Group()
+  root.add(object)
+  return { root, cover: screens[0].mesh, inner: screens[1].mesh }
+}
+
+/**
+ * Where `root` goes so the lit screen faces +Z, upright, with both screens centred.
+ *
+ * Read from the posed vertices, so it holds at any hinge angle: a half-open inner
+ * screen is looked at along the bisector of its fold.
+ */
+export function foldPose(prepared: PreparedFoldableModel, lit: Mesh): { quaternion: Quaternion; position: Vector3 } {
+  prepared.root.updateMatrixWorld(true)
+  const toRoot = prepared.root.matrixWorld.clone().invert()
+  const frame = fitScreenFrame(lit, false, toRoot)
+  if (!frame) throw new Error('The lit screen has no usable mapping')
+  const quaternion = new Quaternion().setFromRotationMatrix(screenBasis(frame)).invert()
+  const bounds = new Box3()
+  const point = new Vector3()
+  for (const mesh of [prepared.cover, prepared.inner]) {
+    const toLocal = new Matrix4().multiplyMatrices(toRoot, mesh.matrixWorld)
+    const position = mesh.geometry.getAttribute('position')
+    for (let i = 0; i < position.count; i++) bounds.expandByPoint(mesh.getVertexPosition(i, point).applyMatrix4(toLocal))
+  }
+  const position = bounds.getCenter(new Vector3()).applyQuaternion(quaternion).negate()
+  return { quaternion, position }
 }
 
 /**

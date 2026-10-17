@@ -1,4 +1,11 @@
-import type { IosSimulatorChrome, IosSimulatorChromeButton } from '@superone/shared/ios-simulator'
+import type {
+  IosSimulatorChrome,
+  IosSimulatorChromeButton,
+  IosSimulatorChromeSliceBody,
+} from '@superone/shared/ios-simulator'
+
+/** A chrome whose body is drawn from nine slices rather than one composite. */
+type NineSliceChrome = IosSimulatorChrome & IosSimulatorChromeSliceBody
 
 export interface PointRect {
   x: number
@@ -66,7 +73,7 @@ export function iosSimulatorButtonRect(
 }
 
 export interface NineSlicePiece {
-  key: keyof IosSimulatorChrome['slices']
+  key: keyof IosSimulatorChromeSliceBody['slices']
   rect: PointRect
 }
 
@@ -76,7 +83,7 @@ export interface NineSlicePiece {
  * The corner is clamped so a device smaller than two corners still draws something
  * sane instead of edges with negative width.
  */
-export function iosSimulatorBodySlices(chrome: IosSimulatorChrome): NineSlicePiece[] {
+export function iosSimulatorBodySlices(chrome: NineSliceChrome): NineSlicePiece[] {
   const { padding } = chrome
   const corner = Math.min(chrome.corner, chrome.width / 2, chrome.height / 2)
   const left = padding.left
@@ -102,7 +109,7 @@ export function iosSimulatorBodySlices(chrome: IosSimulatorChrome): NineSlicePie
  * every corner is thicker than its frame — but the canvas is transparent until the
  * first frame lands, so it still wants a body-coloured fill under it.
  */
-export function iosSimulatorBodyCenter(chrome: IosSimulatorChrome): PointRect {
+export function iosSimulatorBodyCenter(chrome: NineSliceChrome): PointRect {
   const corner = Math.min(chrome.corner, chrome.width / 2, chrome.height / 2)
   return {
     x: chrome.padding.left + corner,

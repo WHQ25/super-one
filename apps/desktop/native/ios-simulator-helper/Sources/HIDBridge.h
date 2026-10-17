@@ -22,6 +22,12 @@ BOOL S1HardwareButtonFromName(NSString *name, S1HardwareButton *button);
 @interface S1HIDBridge : NSObject
 
 @property(nonatomic, readonly) NSInteger failedEventCount;
+/**
+ * The Indigo target touches are addressed to. Defaults to the legacy main-screen
+ * target; a device with several integrated screens needs the one being shown, which
+ * SimulatorKit spells `screenID | 0x40000000`.
+ */
+@property(atomic) uint32_t touchTarget;
 /** Which guard rejected the last event — every failure site has its own tag. */
 @property(nonatomic, readonly, copy) NSString *lastFailureReason;
 

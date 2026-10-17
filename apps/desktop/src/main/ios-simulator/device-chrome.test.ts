@@ -4,7 +4,10 @@ import {
   chromeBundleName,
   chromePadding,
   deviceRect,
+  foldLayout,
+  integratedDisplays,
   isSafeChromeAssetName,
+  buttonArtKey,
   parseChromeButtons,
   parseMediaBox,
 } from './device-chrome'
@@ -87,11 +90,15 @@ describe('deviceRect', () => {
 })
 
 describe('parseChromeButtons', () => {
-  const art = new Map([['Vol BTN', {
+  const volume = {
     size: { width: 16, height: 64 },
     image: 'data:image/png;base64,AA==',
     pressedImage: 'data:image/png;base64,BB==',
-  }]])
+  }
+  const art = new Map([
+    [buttonArtKey('Vol BTN', 'vertical'), volume],
+    [buttonArtKey('Vol BTN', 'horizontal'), volume],
+  ])
 
   it('names the axes Apple leaves implicit in its x/y pair', () => {
     const [button] = parseChromeButtons({
@@ -209,6 +216,22 @@ describe('IosSimulatorChromeLoader', () => {
     }
   }
 
+  it('turns button art drawn across its edge so it runs along it', async () => {
+    // The Duo's inner chrome anchors a 64x16 volume button to the left edge.
+    const shared = deps()
+    const readFile = shared.readFile
+    shared.readFile = vi.fn(async (path: string) =>
+      path.includes('Vol BTN') ? Buffer.from('/MediaBox [0 0 64 16]') : readFile(path))
+    const loader = new IosSimulatorChromeLoader('/tmp/scratch', shared)
+
+    const chrome = await loader.load('com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', '/bundle')
+
+    expect(chrome?.buttons[0]).toMatchObject({ anchor: 'left', width: 16, height: 64 })
+    const turned = shared.rasterize.mock.calls.filter(([path]) => path.includes('Vol BTN'))
+    expect(turned.length).toBeGreaterThan(0)
+    expect(turned.every(([, width, , quarterTurn]) => width === 64 * 2 && quarterTurn === true)).toBe(true)
+  })
+
   it('builds the body from the nine-slice edges and sizes it per device', async () => {
     const loader = new IosSimulatorChromeLoader('/tmp/scratch', deps())
 
@@ -219,6 +242,66 @@ describe('IosSimulatorChromeLoader', () => {
     expect(chrome?.corner).toBe(110)
     expect(Object.keys(chrome!.slices).sort()).toEqual(Object.keys(SLICES).sort())
     expect(chrome?.slices.topLeft.startsWith('data:image/png;base64,')).toBe(true)
+  })
+
+  describe('placeholder slices', () => {
+    // The iPhone Duo's phone15 chrome: every slice is a copy of one 118x64 "unused"
+    // placeholder, and only the composite (screen 466x678 + sizing) is real.
+    function duo(compositeBox: string) {
+      return deps({
+        readFile: vi.fn(async (path: string) =>
+          path.endsWith('chrome.json')
+            ? Buffer.from(JSON.stringify({
+              images: {
+                ...SLICES,
+                composite: 'PhoneComposite',
+                sizing: { leftWidth: 26, rightWidth: 22, topHeight: 14, bottomHeight: 14 },
+              },
+            }))
+            : path.includes('PhoneComposite')
+              ? Buffer.from(compositeBox)
+              : Buffer.from('/MediaBox [0 0 118 64]')),
+        readPlist: vi.fn(async () => ({
+          chromeIdentifier: 'com.apple.dt.devicekit.chrome.phone15',
+          framebufferMask: 'MASK-UUID',
+          mainScreenWidth: 1398,
+          mainScreenHeight: 2034,
+          mainScreenScale: 3,
+        })),
+      })
+    }
+
+    it('draws the composite instead of stretching the placeholder', async () => {
+      const shared = duo('/MediaBox [0 0 514 706]')
+      const loader = new IosSimulatorChromeLoader('/tmp/scratch', shared)
+
+      const chrome = await loader.load('type-duo', '/bundle')
+
+      expect(chrome?.slices).toBeUndefined()
+      expect(chrome?.composite?.startsWith('data:image/png;base64,')).toBe(true)
+      expect({ width: chrome?.width, height: chrome?.height }).toEqual({ width: 514, height: 706 })
+      // No placeholder is ever rasterised: only the composite and the mask.
+      const rasterised = shared.rasterize.mock.calls.map(([path]) => path)
+      expect(rasterised.some((path) => path.includes('Phone '))).toBe(false)
+    })
+
+    it('takes its geometry from a composite drawn at another scale', async () => {
+      // phone14's composite frames a 626x890 screen around the inner panel's 669x951:
+      // the same shape, so every fraction the panel draws with still lines up.
+      // A 444x646 screen inside the 26/22/14/14 frame: the cover's 466x678 shape, smaller.
+      const loader = new IosSimulatorChromeLoader('/tmp/scratch', duo('/MediaBox [0 0 492 674]'))
+
+      const chrome = await loader.load('type-duo-scaled', '/bundle')
+
+      expect({ width: chrome?.width, height: chrome?.height }).toEqual({ width: 492, height: 674 })
+      expect(chrome?.screen).toEqual({ x: 26, y: 14, width: 444, height: 646 })
+    })
+
+    it('falls back to the drawn shell when the composite frames another shape', async () => {
+      const loader = new IosSimulatorChromeLoader('/tmp/scratch', duo('/MediaBox [0 0 600 706]'))
+
+      await expect(loader.load('type-duo-mismatch', '/bundle')).resolves.toBeNull()
+    })
   })
 
   it('reads Xcode 27 screen dimensions from the integrated display capabilities', async () => {
@@ -378,5 +461,42 @@ describe('isSafeChromeAssetName', () => {
     for (const name of ['..', '../../etc/passwd', 'a/b', 'a\\b', '.hidden', '']) {
       expect(isSafeChromeAssetName(name)).toBe(false)
     }
+  })
+})
+
+describe('integratedDisplays', () => {
+  const duo = {
+    capabilities: {
+      displays: [
+        { displayType: 'integrated', screenID: 3, nativeRotation: 270, chromeIdentifier: 'chrome.phone14',
+          framebufferMaskIdentifier: 'INNER', width: 2007, height: 2853, scale: 3 },
+        { displayType: 'tvOut', screenID: 2, width: 720, height: 480, scale: 1 },
+        { displayType: 'integrated', screenID: 1, nativeRotation: 0, chromeIdentifier: 'chrome.phone15',
+          framebufferMaskIdentifier: 'COVER', width: 1398, height: 2034, scale: 3 },
+      ],
+    },
+  }
+
+  it('lists integrated screens in points, the one wearing the profile chrome first', () => {
+    const displays = integratedDisplays(duo, { chromeIdentifier: 'chrome.phone15' })
+
+    expect(displays).toEqual([
+      { screenId: 1, chromeIdentifier: 'chrome.phone15', framebufferMask: 'COVER',
+        screen: { width: 466, height: 678 }, nativeRotation: 0 },
+      { screenId: 3, chromeIdentifier: 'chrome.phone14', framebufferMask: 'INNER',
+        screen: { width: 669, height: 951 }, nativeRotation: 270 },
+    ])
+  })
+
+  it('makes a foldable of two screens and stands the sideways panel upright', () => {
+    expect(foldLayout(integratedDisplays(duo, { chromeIdentifier: 'chrome.phone15' }))).toEqual({
+      cover: { screenId: 1, panelRotation: 0 },
+      inner: { screenId: 3, panelRotation: 90 },
+    })
+  })
+
+  it('is no foldable with one screen', () => {
+    const single = { capabilities: { displays: [duo.capabilities.displays[2]!] } }
+    expect(foldLayout(integratedDisplays(single, { chromeIdentifier: 'chrome.phone15' }))).toBeNull()
   })
 })

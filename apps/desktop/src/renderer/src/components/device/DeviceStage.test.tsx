@@ -130,6 +130,8 @@ function stubEnvironment(chrome: () => Promise<IosSimulatorChrome | null>) {
     value: {
       iosSimulatorChrome: vi.fn(chrome),
       deviceInput: vi.fn(async () => ({ ok: true })),
+      deviceEnvironment: vi.fn(async () => { throw new Error("no environment in this test") }),
+      onDeviceEnvironmentChanged: vi.fn(() => () => {}),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),
       onDeviceState: vi.fn((
@@ -259,19 +261,32 @@ describe('iOS Simulator stage rotation', () => {
     await waitFor(() => expect(shell).toHaveStyle({ transform: 'rotate(90deg)' }))
   })
 
-  it('rotates the other way past portrait rather than stopping at it', async () => {
+  it('offers one rotation, which comes round to every orientation', async () => {
     const { deviceInput } = stubEnvironment(async () => CHROME)
     const user = userEvent.setup()
 
     renderStage()
     await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    expect(screen.queryByRole('button', { name: 'Rotate Left' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Rotate Left' }))
+    for (let press = 0; press < 3; press++) await user.click(screen.getByRole('button', { name: 'Rotate Right' }))
 
-    expect(deviceInput).toHaveBeenCalledWith(DEVICE.id, {
+    expect(deviceInput).toHaveBeenLastCalledWith(DEVICE.id, {
       type: 'rotate',
       orientation: 'landscape-left',
     })
+  })
+
+  it('puts a foldable\'s hinge control in the toolbar, and none on a rigid phone', async () => {
+    const { pushSessionState } = stubEnvironment(async () => CHROME)
+    renderStage()
+    await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    expect(screen.queryByRole('button', { name: 'Hinge Angle' })).toBeNull()
+
+    // Main pushes the hinge whenever it moves, whoever moved it.
+    pushSessionState({ ...READY, ios: { ...READY.ios!, fold: { hingeDegrees: 180, tent: false, panel: 'inner', panelRotation: 90 } } })
+
+    expect(await screen.findByRole('button', { name: 'Hinge Angle' })).toBeInTheDocument()
   })
 
   it('keeps the device centred in the box it is rotated inside', async () => {
@@ -588,7 +603,7 @@ describe('iOS Simulator stage before a device is streaming', () => {
 
     renderStage(null, { device: SHUTDOWN })
 
-    for (const name of ['Home', 'Rotate Left', 'Rotate Right', 'Screenshot', 'Record Screen']) {
+    for (const name of ['Home', 'Rotate Right', 'Screenshot', 'Record Screen']) {
       expect(await screen.findByRole('button', { name })).toBeDisabled()
     }
   })
@@ -631,7 +646,7 @@ describe('iOS Simulator stage before a device is streaming', () => {
     renderStage(READY, { variant: 'overlay' })
 
     // Gone with the header.
-    expect(await screen.findByRole('button', { name: 'Rotate Left' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Rotate Right' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Disconnect Preview' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Shut Down Device' })).toBeNull()
     expect(screen.queryByRole('button', { name: /iPhone 17 Pro · iOS 26.5/ })).toBeNull()
@@ -655,7 +670,7 @@ describe('iOS Simulator stage before a device is streaming', () => {
     // is worse than one the user has to open the device to reach.
     expect(screen.queryByRole('button', { name: 'Disconnect Preview' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Shut Down Device' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Rotate Left' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rotate Right' })).toBeNull()
     expect(screen.queryByRole('button', { name: /iPhone 17 Pro · iOS 26.5/ })).toBeNull()
 
     // Look-only: a keyboard sink that could still take focus would swallow the

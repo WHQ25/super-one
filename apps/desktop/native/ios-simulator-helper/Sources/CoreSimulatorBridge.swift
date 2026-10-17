@@ -136,7 +136,15 @@ struct SimulatorDevice {
 
   var state: Int { (object.value(forKey: "state") as? NSNumber)?.intValue ?? -1 }
 
-  func mainDisplayDescriptor() throws -> NSObject {
+  /**
+   The display to show: the screen with `screenId` when one is asked for, otherwise
+   the largest framebuffer.
+
+   Largest is right for a single-screen device and wrong for a foldable, whose two
+   integrated screens are both published and both powered whichever way it is folded
+   -- the guest only paints the one the hinge selects -- so the caller names it.
+   */
+  func displayDescriptor(screenId: Int?) throws -> NSObject {
     guard state == 3 else { throw SimulatorBridgeError.deviceNotBooted(udid) }
     guard let renderable = NSProtocolFromString("SimDisplayIOSurfaceRenderable"),
       let io = object.value(forKey: "io") as? NSObject,
@@ -157,6 +165,10 @@ struct SimulatorDevice {
         descriptor.conforms(to: renderable),
         let surface = descriptor.framebufferSurface()
       else { continue }
+      if let screenId {
+        if descriptor.screenID() == screenId { return descriptor }
+        continue
+      }
       let area = IOSurfaceGetWidth(surface) * IOSurfaceGetHeight(surface)
       if area > bestArea {
         bestArea = area
@@ -164,13 +176,29 @@ struct SimulatorDevice {
       }
     }
     guard let best else {
-      throw SimulatorBridgeError.displayUnavailable("No framebuffer surface is ready.")
+      throw SimulatorBridgeError.displayUnavailable(
+        screenId.map { "Screen \($0) has no framebuffer." } ?? "No framebuffer surface is ready.")
     }
     return best
   }
 }
 
 extension NSObject {
+  /// The guest's id for this screen, read off a `SimScreen` descriptor's properties.
+  func screenID() -> Int? {
+    guard let screen = NSProtocolFromString("SimScreen"), conforms(to: screen) else { return nil }
+    let propertiesSelector = NSSelectorFromString("screenProperties")
+    guard let properties = perform(propertiesSelector)?.takeUnretainedValue() as? NSObject else {
+      return nil
+    }
+    let idSelector = NSSelectorFromString("screenID")
+    guard properties.responds(to: idSelector),
+      let implementation = properties.method(for: idSelector)
+    else { return nil }
+    typealias IdFunction = @convention(c) (AnyObject, Selector) -> UInt32
+    return Int(unsafeBitCast(implementation, to: IdFunction.self)(properties, idSelector))
+  }
+
   func framebufferSurface() -> IOSurfaceRef? {
     let selector = NSSelectorFromString("framebufferSurface")
     guard responds(to: selector), let result = perform(selector) else { return nil }

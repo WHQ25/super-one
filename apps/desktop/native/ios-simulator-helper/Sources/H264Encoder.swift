@@ -61,7 +61,9 @@ final class H264Encoder {
     let properties: [(CFString, CFTypeRef)] = [
       (kVTCompressionPropertyKey_RealTime, kCFBooleanTrue),
       (kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse),
-      (kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Main_AutoLevel),
+      // High, not Main: only a High-family SPS can say "no reordering" without a VUI.
+      // See `withoutReordering`.
+      (kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel),
       (kVTCompressionPropertyKey_ExpectedFrameRate, 30 as CFNumber),
       (kVTCompressionPropertyKey_MaxKeyFrameInterval, 60 as CFNumber),
       (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 1 as CFNumber),
@@ -142,10 +144,13 @@ final class H264Encoder {
           parameterSetCountOut: nil,
           nalUnitHeaderLengthOut: nil)
         guard parameterStatus == noErr, let pointer else { return }
+        var parameterSet = Data(bytes: pointer, count: size)
+        if index == 0 { parameterSet = Self.withoutReordering(parameterSet) }
         prefix.append(contentsOf: [0, 0, 0, 1])
-        prefix.append(pointer, count: size)
+        prefix.append(parameterSet)
         if index == 0 && size >= 4 && takeConfigurationSlot() {
-          let codec = String(format: "avc1.%02X%02X%02X", pointer[1], pointer[2], pointer[3])
+          let codec = String(
+            format: "avc1.%02X%02X%02X", parameterSet[1], parameterSet[2], parameterSet[3])
           writer.write(
             kind: .h264Config,
             timestampUs: presentationTimestampUs(sampleBuffer),
@@ -202,6 +207,25 @@ final class H264Encoder {
       let first = attachments.first
     else { return true }
     return (first[kCMSampleAttachmentKey_NotSync] as? Bool) != true
+  }
+
+  /**
+   The SPS with `constraint_set3_flag` set, which on a High-profile stream with no VUI
+   tells the decoder `max_num_reorder_frames` is 0 (H.264 E.2.1).
+
+   VideoToolbox writes no VUI, so without it a decoder must assume the level's whole
+   DPB may be reordered and holds that many pictures before showing one — Chromium's
+   hardware decoder does, even with `optimizeForLatency`. A guest that stops
+   repainting never pushes them out: the preview stayed black after every stream
+   restart on a still screen, and lagged at the end of every burst. The claim is
+   true: `AllowFrameReordering` is off.
+   */
+  private static func withoutReordering(_ sps: Data) -> Data {
+    let highFamily: Set<UInt8> = [100, 110, 122, 244]
+    guard sps.count >= 4, highFamily.contains(sps[sps.startIndex + 1]) else { return sps }
+    var patched = sps
+    patched[patched.startIndex + 2] |= 0x10
+    return patched
   }
 
   private static func convertToAnnexB(

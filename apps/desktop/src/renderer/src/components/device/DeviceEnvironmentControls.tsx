@@ -13,6 +13,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
+import { CommitSlider } from './CommitSlider'
 
 type ReadEnvironment = (deviceId: string) => Promise<DeviceEnvironmentState>
 type ConfigureEnvironment = (deviceId: string, action: DeviceEnvironmentAction) => Promise<DeviceEnvironmentResult>
@@ -70,11 +71,17 @@ export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, 
     }
   }, [deviceId, read])
 
+  // A reading belongs to its device, not to one opening of the popover: it is kept
+  // while closed and read ahead, so opening shows it at once and re-reads underneath.
   useEffect(() => {
     generation.current += 1
     setState(null)
     setApplied(false)
-    if (!open || disabled) return
+  }, [deviceId])
+
+  const readable = !disabled && supported(provider, deviceId)
+  useEffect(() => {
+    if (!readable) return
     void refresh()
     const unsubscribe = subscribeDevice(deviceId, () => {
       if (applyingRef.current) return
@@ -82,7 +89,15 @@ export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, 
       void refresh()
     })
     return () => { generation.current += 1; unsubscribe() }
-  }, [deviceId, disabled, open, subscribe, refresh])
+  }, [deviceId, readable, subscribe, refresh])
+
+  useEffect(() => {
+    if (!open || !readable) return
+    setApplied(false)
+    void refresh()
+    // Only on opening; the effect above covers the device and its availability.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const apply = async (action: DeviceEnvironmentAction) => {
     const request = ++generation.current
@@ -135,7 +150,6 @@ export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, 
     if (!value || value === state?.textSize || applyingRef.current) return
     void apply({ kind: 'text_size', value })
   }
-
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
       <IconButton tooltip={t(`${prefix}.title`)} disabled={disabled}>
@@ -171,21 +185,10 @@ export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, 
                 ? textSizeLabel(sliderValue) : t(`${prefix}.unknown`)}
             </span>
           </div>
-          <div className="relative flex h-6 items-center">
-            <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 h-1.5 rounded-full bg-muted">
-              <div className="h-full rounded-full bg-primary"
-                style={{ width: `${textSizeOptions.length > 1 ? sliderIndex / (textSizeOptions.length - 1) * 100 : 0}%` }} />
-            </div>
-            <input type="range" min={0} max={Math.max(0, textSizeOptions.length - 1)}
-              step={1} value={sliderIndex} disabled={applying || currentTextSizeIndex < 0}
-              aria-label={t(`${prefix}.textSize`)}
-              aria-valuetext={sliderValue ? textSizeLabel(sliderValue) : undefined}
-              onChange={(event) => setDraftTextSizeIndex(Number(event.currentTarget.value))}
-              onPointerUp={(event) => commitTextSize(Number(event.currentTarget.value))}
-              onKeyUp={(event) => commitTextSize(Number(event.currentTarget.value))}
-              onBlur={(event) => commitTextSize(Number(event.currentTarget.value))}
-              className="relative h-6 w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-card [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:-mt-[5px] [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-card" />
-          </div>
+          <CommitSlider max={Math.max(0, textSizeOptions.length - 1)} value={sliderIndex}
+            disabled={applying || currentTextSizeIndex < 0} label={t(`${prefix}.textSize`)}
+            valueText={sliderValue ? textSizeLabel(sliderValue) : undefined}
+            onDraft={setDraftTextSizeIndex} onCommit={commitTextSize} />
           <div className="flex justify-between text-[11px] text-muted-foreground">
             <span>{textSizeOptions[0] ? textSizeLabel(textSizeOptions[0]) : ''}</span>
             <span>{textSizeOptions.at(-1) ? textSizeLabel(textSizeOptions.at(-1)!) : ''}</span>
@@ -211,15 +214,19 @@ export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, 
           </div>
           <p className="text-xs text-muted-foreground">{t(`${prefix}.locationUnreadable`)}</p>
         </section>
-        {state.postures.length > 0 && <section className="space-y-1.5">
+        {/* A foldable that takes any angle has the hinge control in the toolbar instead. */}
+        {state.hingeDegrees === null && state.postures.length > 0 && <section className="space-y-1.5">
           <div className="text-xs font-medium">{t(`${prefix}.posture`)}</div>
           <div className="flex flex-wrap gap-1">
-            {state.postures.map((posture) => <Button key={posture.id} type="button" size="sm" variant="outline"
+            {state.postures.map((posture) => <Button key={posture.id} type="button" size="sm"
+              variant={posture.id === state.posture ? 'default' : 'outline'}
+              aria-pressed={state.posture === null ? undefined : posture.id === state.posture}
               disabled={applying} onClick={() => void apply({ kind: 'posture', id: posture.id })}>
               {posture.label}
             </Button>)}
           </div>
-          <p className="text-xs text-muted-foreground">{t(`${prefix}.postureUnreadable`)}</p>
+          {state.posture === null
+            && <p className="text-xs text-muted-foreground">{t(`${prefix}.postureUnreadable`)}</p>}
         </section>}
       </>}
       {applied && <p role="status" className="text-xs text-muted-foreground">{t(`${prefix}.applied`)}</p>}

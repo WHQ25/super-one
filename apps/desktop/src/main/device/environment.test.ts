@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { IosSimulatorFoldPosition } from '@superone/shared/ios-simulator'
 import type { SimctlClient } from '../ios-simulator/simctl'
 import type { Adb } from './android/adb'
 import { DeviceEnvironmentService, parsePostureOptions } from './environment'
@@ -22,9 +23,14 @@ function fixture() {
         ? 'KO: Usage: "posture <posture_id>" 1: closed\t2: half-opened\t3: opened\n'
         : 'OK\n'),
   }
+  // Single-screen unless a test says otherwise.
+  const fold = {
+    foldPosition: vi.fn(async (): Promise<IosSimulatorFoldPosition | null> => null),
+    setFoldPosition: vi.fn(async (_udid: string, _target: IosSimulatorFoldPosition) => {}),
+  }
   const environment = new DeviceEnvironmentService(ios as unknown as SimctlClient,
-    () => ({ serial: 'emulator-5554', adb: adb as unknown as Adb }))
-  return { ios, adb, environment }
+    () => ({ serial: 'emulator-5554', adb: adb as unknown as Adb }), () => fold)
+  return { ios, adb, fold, environment }
 }
 
 describe('device environment', () => {
@@ -37,7 +43,7 @@ describe('device environment', () => {
       locationReadable: false,
       canClearLocation: false, postures: [
         { id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' },
-      ], posture: null,
+      ], posture: null, hingeDegrees: null,
     })
   })
 
@@ -101,6 +107,60 @@ describe('device environment', () => {
     const physical = new DeviceEnvironmentService(ios as unknown as SimctlClient,
       () => ({ serial: 'ABC123', adb: adb as unknown as Adb }))
     await expect(physical.read('android:ABC123')).rejects.toThrow('UNSUPPORTED')
+  })
+
+  it('offers a foldable simulator the emulator posture ids, with the current one and its angle', async () => {
+    const { environment, fold } = fixture()
+    const single = await environment.read('ios-sim:sim-1')
+    expect(single.postures).toEqual([])
+    expect(single.hingeDegrees).toBeNull()
+
+    fold.foldPosition.mockResolvedValue({ hingeDegrees: 45, tent: false })
+    const state = await environment.read('ios-sim:sim-1')
+
+    expect(state.postures).toEqual([
+      { id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }, { id: 5, label: 'tent' },
+    ])
+    // Unlike the emulator console, the host moved this hinge and knows where it is;
+    // any angle short of either end reads as half open.
+    expect(state.posture).toBe(2)
+    expect(state.hingeDegrees).toBe(45)
+  })
+
+  it('moves a foldable simulator\'s hinge and refuses ids it does not have', async () => {
+    const { environment, fold } = fixture()
+    fold.foldPosition.mockResolvedValue({ hingeDegrees: 0, tent: false })
+    fold.setFoldPosition.mockImplementation(async (_udid, target) => { fold.foldPosition.mockResolvedValue(target) })
+
+    const result = await environment.configure('ios-sim:sim-1', { kind: 'posture', id: 3 })
+
+    expect(fold.setFoldPosition).toHaveBeenCalledWith('sim-1', { hingeDegrees: 180, tent: false }, { hold: true })
+    // Read back from the host, so it is verified rather than merely delivered.
+    expect(result.status).toBe('verified')
+    await expect(environment.configure('ios-sim:sim-1', { kind: 'posture', id: 4 }))
+      .rejects.toThrow(/UNSUPPORTED: Posture 4/)
+
+    const hinge = await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 120 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 120, tent: false })
+    expect(hinge.status).toBe('verified')
+
+    // A tent is the emulator's posture 5, read back as itself.
+    const tent = await environment.configure('ios-sim:sim-1', { kind: 'posture', id: 5 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 60, tent: true }, { hold: true })
+    expect(tent.state.posture).toBe(5)
+    expect(tent.status).toBe('verified')
+
+    // The angle alone picks the form: 0 closed, up to 60 a tent, wider open.
+    await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 40 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 40, tent: true })
+    await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 61 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 61, tent: false })
+    await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 0 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 0, tent: false })
+    await expect(environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 181 }))
+      .rejects.toThrow(/between 0 and 180/)
+    await expect(environment.configure('android:avd:Pixel_Fold', { kind: 'hinge', degrees: 120 }))
+      .rejects.toThrow(/UNSUPPORTED/)
   })
 
   it('validates dynamic posture ids and treats KO as failure', async () => {

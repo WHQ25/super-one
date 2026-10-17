@@ -33,6 +33,21 @@ xcrun swiftc \
   "$ROOT/Sources/main.swift" \
   -o "$TMP"
 
+# Runs inside the guest, so it is built for the simulator SDK. Optional: without it
+# the helper still previews and drives a foldable, it just cannot move the hinge.
+GUEST="$OUT_DIR/superone-ios-fold"
+if xcrun --sdk iphonesimulator --show-sdk-path >/dev/null 2>&1; then
+  xcrun -sdk iphonesimulator clang \
+    -fobjc-arc -O2 -arch "$(uname -m)" -mios-simulator-version-min=17.0 \
+    -fmodules -fmodules-cache-path="$OUT_DIR/module-cache" \
+    -framework Foundation \
+    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements \
+    -Xlinker "$ROOT/Sources/Guest/FoldTool.entitlements" \
+    "$ROOT/Sources/Guest/FoldTool.m" \
+    -o "$GUEST"
+  codesign --force --sign - "$GUEST" >/dev/null
+fi
+
 chmod +x "$TMP"
 mv -f "$TMP" "$OUT"
 trap - EXIT

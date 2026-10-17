@@ -9,8 +9,9 @@ export interface IosSimulatorRecording {
 }
 
 export interface IosSimulatorCapturePort {
-  screenshot(udid: string, outputPath: string): Promise<void>
-  startRecording(udid: string, outputPath: string): Promise<IosSimulatorRecording>
+  /** `screenId` names the display to capture; simctl otherwise takes screen 1. */
+  screenshot(udid: string, outputPath: string, screenId?: number): Promise<void>
+  startRecording(udid: string, outputPath: string, screenId?: number): Promise<IosSimulatorRecording>
 }
 
 const XCRUN = '/usr/bin/xcrun'
@@ -27,6 +28,14 @@ const RECORDING_START_TIMEOUT_MS = 15_000
 export interface SimctlCaptureDeps {
   spawnProcess: typeof spawn
   ensureDir: (path: string) => Promise<void>
+}
+
+/**
+ * simctl captures screen 1 unless told otherwise, which on an unfolded foldable is the
+ * dark cover. The caller names the panel it is showing.
+ */
+function displayArgs(screenId: number | undefined): string[] {
+  return screenId === undefined ? [] : [`--display=${screenId}`]
 }
 
 function defaultDeps(): SimctlCaptureDeps {
@@ -48,16 +57,16 @@ export class SimctlCapture implements IosSimulatorCapturePort {
     this.deps = { ...defaultDeps(), ...deps }
   }
 
-  async screenshot(udid: string, outputPath: string): Promise<void> {
+  async screenshot(udid: string, outputPath: string, screenId?: number): Promise<void> {
     await this.deps.ensureDir(dirname(outputPath))
-    await this.run(['simctl', 'io', udid, 'screenshot', outputPath])
+    await this.run(['simctl', 'io', udid, 'screenshot', ...displayArgs(screenId), outputPath])
   }
 
-  async startRecording(udid: string, outputPath: string): Promise<IosSimulatorRecording> {
+  async startRecording(udid: string, outputPath: string, screenId?: number): Promise<IosSimulatorRecording> {
     await this.deps.ensureDir(dirname(outputPath))
     // h264 over Apple's hevc default: the file is meant to be shared, and h264 in
     // an .mp4 plays everywhere without a transcode.
-    const args = ['simctl', 'io', udid, 'recordVideo', '--codec=h264', '--force', outputPath]
+    const args = ['simctl', 'io', udid, 'recordVideo', '--codec=h264', ...displayArgs(screenId), '--force', outputPath]
     return new Promise((resolve, reject) => {
       const child = this.deps.spawnProcess(XCRUN, args, { stdio: ['ignore', 'ignore', 'pipe'] })
       let stderr = ''

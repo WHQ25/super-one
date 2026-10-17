@@ -304,7 +304,7 @@ export async function executeDeviceAgentTool(
     const deviceId = resolveHeldDevice(heldDevicesFor(sessionId), device)
     viewfinderClaimSink?.({ sessionId, deviceId })
     if (name === 'device_configure') {
-      const { kind, appearance, textSize, latitude, longitude, postureId } = args
+      const { kind, appearance, textSize, latitude, longitude, postureId, hingeDegrees } = args
       try {
         if (kind === 'get') return reply(await deviceEnvironment.read(deviceId))
         let action: DeviceEnvironmentAction
@@ -318,6 +318,8 @@ export async function executeDeviceAgentTool(
           action = { kind }
         } else if (kind === 'posture' && typeof postureId === 'number') {
           action = { kind, id: postureId }
+        } else if (kind === 'hinge' && typeof hingeDegrees === 'number') {
+          action = { kind, degrees: hingeDegrees }
         } else {
           throw new DeviceAgentError('INVALID_ACTION', `Missing or invalid arguments for device_configure ${String(kind)}.`)
         }

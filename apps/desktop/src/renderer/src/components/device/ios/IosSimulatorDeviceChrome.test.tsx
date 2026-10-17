@@ -37,9 +37,9 @@ const CHROME: IosSimulatorChrome = {
   ],
 }
 
-function renderChrome(onButton = vi.fn()) {
+function renderChrome(onButton = vi.fn(), chrome: IosSimulatorChrome = CHROME) {
   render(
-    <IosSimulatorDeviceChrome chrome={CHROME} onButton={onButton}>
+    <IosSimulatorDeviceChrome chrome={chrome} onButton={onButton}>
       <canvas data-testid="framebuffer" />
     </IosSimulatorDeviceChrome>,
   )
@@ -103,6 +103,20 @@ describe('iOS Simulator device chrome buttons', () => {
 
     fireEvent.pointerUp(target)
     expect(artwork('vol-dn.png')).toBeNull()
+  })
+
+  it('draws a composite body over exactly the device rect, with no slices', () => {
+    // The iPhone Duo's chrome ships placeholder slices, so the loader hands over its
+    // composite instead; stretching any part of it would distort the hinge edge.
+    renderChrome(vi.fn(), { ...CHROME, slices: undefined, corner: undefined, composite: 'body.png' })
+
+    const box = CHROME.width + CHROME.padding.left + CHROME.padding.right
+    const body = artwork('body.png')!
+    expect(body.style.left).toBe(`${(13 / box) * 100}%`)
+    expect(body.style.width).toBe(`${(476 / box) * 100}%`)
+    expect(artwork('l.png')).toBeNull()
+    // Buttons still go down first and tuck under the body.
+    expect(artwork('vol.png')!.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('anchors each button to the edge its offset is measured from', () => {

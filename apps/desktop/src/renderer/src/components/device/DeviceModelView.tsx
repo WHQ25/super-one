@@ -4,7 +4,7 @@ import { Loader2, RotateCcw } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { DeviceFrameProjector } from './device-input'
-import type { DeviceModelSource, MountedDeviceModel } from './device-model-renderer'
+import type { DeviceModelFold, DeviceModelSource, MountedDeviceModel } from './device-model-renderer'
 
 export type { DeviceModelSource }
 
@@ -22,6 +22,8 @@ interface DeviceModelViewProps {
   subscribeFrames: (listener: () => void) => () => void
   /** How far the device is lying over, as in the flat view. */
   rotationDegrees: number
+  /** A foldable's hinge and lit screen; null for every other device. */
+  fold?: DeviceModelFold | null
   /** Whether a pointer on the glass is a touch; otherwise every drag orbits. */
   interactive: boolean
   /** Handed the glass mapping once the model is on screen, and null when it leaves. */
@@ -45,6 +47,7 @@ export function DeviceModelView({
   canvas,
   subscribeFrames,
   rotationDegrees,
+  fold = null,
   interactive,
   onProjector,
   pointerHandlers,
@@ -56,8 +59,8 @@ export function DeviceModelView({
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const sceneRef = useRef<MountedDeviceModel | null>(null)
   // Read by the scene without rebuilding it.
-  const latest = useRef({ rotationDegrees, interactive, onProjector, subscribeFrames })
-  latest.current = { rotationDegrees, interactive, onProjector, subscribeFrames }
+  const latest = useRef({ rotationDegrees, interactive, onProjector, subscribeFrames, fold })
+  latest.current = { rotationDegrees, interactive, onProjector, subscribeFrames, fold }
 
   useEffect(() => {
     const host = hostRef.current
@@ -97,6 +100,15 @@ export function DeviceModelView({
   useEffect(() => {
     if (status === 'ready') sceneRef.current?.turn(rotationDegrees)
   }, [rotationDegrees, status])
+
+  // The mount already posed the body as `latest` had it; this follows later changes.
+  const hinge = fold?.hingeDegrees
+  const panel = fold?.panel
+  const panelRotation = fold?.panelRotation
+  useEffect(() => {
+    if (status !== 'ready' || hinge === undefined || !panel || panelRotation === undefined) return
+    sceneRef.current?.setFold({ hingeDegrees: hinge, panel, panelRotation })
+  }, [hinge, panel, panelRotation, status])
 
   return (
     <div className="relative size-full min-h-0" data-testid="device-model-view">

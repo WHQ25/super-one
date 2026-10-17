@@ -82,6 +82,8 @@ function stubEnvironment(devices: DeviceDescriptor[]) {
       deviceDetach,
       iosSimulatorChrome: vi.fn(async () => null),
       deviceInput: vi.fn(async () => ({ ok: true })),
+      deviceEnvironment: vi.fn(async () => { throw new Error("no environment in this test") }),
+      onDeviceEnvironmentChanged: vi.fn(() => () => {}),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),
       onDeviceState: vi.fn(() => () => {}),

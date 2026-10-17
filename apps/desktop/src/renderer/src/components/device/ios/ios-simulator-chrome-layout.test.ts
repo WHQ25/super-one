@@ -8,7 +8,7 @@ import {
 } from './ios-simulator-chrome-layout'
 
 // Apple's phone11 geometry, which the iPhone 17 Pro uses.
-const CHROME: IosSimulatorChrome = {
+const CHROME = {
   identifier: 'com.apple.dt.devicekit.chrome.phone11',
   slices: {
     topLeft: 'tl', top: 't', topRight: 'tr', right: 'r',
@@ -21,7 +21,7 @@ const CHROME: IosSimulatorChrome = {
   padding: { top: 0, left: 13, bottom: 0, right: 13 },
   screen: { x: 18, y: 18, width: 402, height: 874 },
   buttons: [],
-}
+} satisfies IosSimulatorChrome
 
 function button(overrides: Partial<IosSimulatorChromeButton>): IosSimulatorChromeButton {
   return {

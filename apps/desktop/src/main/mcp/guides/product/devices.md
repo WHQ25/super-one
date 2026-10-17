@@ -14,20 +14,28 @@ device_snapshot        → a stateId + a tree of @eN refs
 device_act             → act against that stateId, then re-observe
 device_wait_for        → block on a condition instead of snapshotting in a loop
 device_query           → re-read the snapshot you already have, with no device round trip
-device_configure       → read/set appearance, system text size, simulated location, or fold posture
+device_configure       → read/set appearance, system text size, simulated location, fold posture, or hinge angle
 device_release         → let go when you are done — the close-tab of this loop
 ```
 
 `device_configure` operates on device settings, so it needs no `stateId` or screen
 postcondition. It still requires `device_request_control` before changing settings.
-Use `kind: "get"` to read appearance, system text size, and the Android
-emulator's available posture ids. Set `kind: "appearance"` with `appearance:
+Use `kind: "get"` to read appearance, system text size, and a foldable's
+available posture ids (empty when the device does not fold), plus `hingeDegrees` on a
+device that takes any angle (null elsewhere). Set `kind: "appearance"` with `appearance:
 "light" | "dark"`, `kind: "text_size"` with a `textSize` string from
 `textSizeOptions` (all 12 iOS categories or the Android runtime's font scales), `kind: "location"` with decimal `latitude` and
 `longitude`, or `kind: "posture"`
-with one of that emulator's `postureId` values. `kind: "clear_location"` works
+with one of that device's `postureId` values. A foldable iOS Simulator (iPhone Duo)
+uses the emulator's ids: 1 closed, 2 half opened (90°), 3 opened, 5 tent (60°). Tent
+stands it open on its edges, turned landscape with the hinge on top, and lights the
+cover screen — the nightstand/StandBy pose. For an exact angle use `kind: "hinge"` with
+`hingeDegrees`; the angle picks the form: 0 closed, 1–60° a tent, above 60° open on the
+inner screen. The guest itself reads every tent as half open; the angle is SuperOne's.
+Inner angles off either end read back as posture 2. Take a new
+snapshot after changing the screen in use. `kind: "clear_location"` works
 only on iOS Simulator. Neither simulator interface reliably reads its current
-GPS fix, and the emulator's posture listing does not report its current posture;
+GPS fix, and the Android emulator does not report its current posture (iOS does);
 the result distinguishes accepted commands from observed settings. Mirrored
 iPhones, watchOS/tvOS/visionOS simulators, and physical Android devices do not
 support these controls.

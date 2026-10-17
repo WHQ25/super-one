@@ -5,7 +5,10 @@ import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import type {
   IosSimulatorChrome,
   IosSimulatorChromeButton,
+  IosSimulatorChromeCompositeBody,
+  IosSimulatorChromeSliceBody,
   IosSimulatorChromeSlices,
+  IosSimulatorFoldState,
 } from '@superone/shared/ios-simulator'
 
 // Apple ships the real device artwork with Xcode: the body lives in a DeviceKit
@@ -42,7 +45,7 @@ interface ChromeJson {
   inputs?: ChromeInput[]
 }
 
-interface DeviceProfile {
+export interface DeviceProfile {
   chromeIdentifier?: unknown
   framebufferMask?: unknown
   mainScreenWidth?: unknown
@@ -50,10 +53,12 @@ interface DeviceProfile {
   mainScreenScale?: unknown
 }
 
-interface DeviceCapabilities {
+export interface DeviceCapabilities {
   capabilities?: {
     displays?: Array<{
       displayType?: unknown
+      screenID?: unknown
+      nativeRotation?: unknown
       chromeIdentifier?: unknown
       framebufferMaskIdentifier?: unknown
       width?: unknown
@@ -115,11 +120,75 @@ function xcodeMajorVersion(version: string | null): number | null {
   return match ? Number(match[1]) : null
 }
 
+/** One integrated screen a device type declares, in points. */
+export interface IntegratedDisplay {
+  screenId: number | null
+  chromeIdentifier: string
+  framebufferMask: string
+  screen: Size
+  /** How the panel is mounted, in degrees, as `capabilities.plist` states it. */
+  nativeRotation: number
+}
+
+/**
+ * The integrated screens in `capabilities.plist`, the primary one first.
+ *
+ * Primary is the screen wearing the profile's own chrome. Most devices declare one;
+ * a foldable declares its cover (primary) and its inner panel.
+ */
+export function integratedDisplays(
+  capabilities: DeviceCapabilities | null,
+  profile: DeviceProfile,
+): IntegratedDisplay[] {
+  const displays = (capabilities?.capabilities?.displays ?? []).flatMap((entry) => {
+    if (entry.displayType !== 'integrated') return []
+    const chromeIdentifier = entry.chromeIdentifier ?? profile.chromeIdentifier
+    const framebufferMask = entry.framebufferMaskIdentifier ?? profile.framebufferMask
+    const { width, height, scale, screenID, nativeRotation } = entry
+    if (typeof chromeIdentifier !== 'string' || typeof framebufferMask !== 'string'
+      || typeof width !== 'number' || !Number.isFinite(width) || width <= 0
+      || typeof height !== 'number' || !Number.isFinite(height) || height <= 0
+      || typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) return []
+    return [{
+      screenId: typeof screenID === 'number' && Number.isSafeInteger(screenID) && screenID > 0 ? screenID : null,
+      chromeIdentifier,
+      framebufferMask,
+      screen: { width: width / scale, height: height / scale },
+      nativeRotation: typeof nativeRotation === 'number' && [0, 90, 180, 270].includes(nativeRotation)
+        ? nativeRotation : 0,
+    }]
+  })
+  const primary = (display: IntegratedDisplay) => Number(display.chromeIdentifier === profile.chromeIdentifier)
+  return displays.sort((a, b) => primary(b) - primary(a))
+}
+
+/** A foldable's two panels, by the screen ids the helper selects them with. */
+export interface IosSimulatorFoldLayout {
+  cover: { screenId: number; panelRotation: IosSimulatorFoldState['panelRotation'] }
+  inner: { screenId: number; panelRotation: IosSimulatorFoldState['panelRotation'] }
+}
+
+/**
+ * Two integrated screens make a foldable: the primary is the cover, the other the inner
+ * panel. `panelRotation` undoes the mount, so a panel mounted at 270 turns 90 clockwise.
+ */
+export function foldLayout(displays: IntegratedDisplay[]): IosSimulatorFoldLayout | null {
+  const [cover, inner] = displays
+  if (!cover?.screenId || !inner?.screenId) return null
+  const upright = (display: IntegratedDisplay) =>
+    ((360 - display.nativeRotation) % 360) as IosSimulatorFoldState['panelRotation']
+  return {
+    cover: { screenId: cover.screenId, panelRotation: upright(cover) },
+    inner: { screenId: inner.screenId, panelRotation: upright(inner) },
+  }
+}
+
 async function deviceDisplay(
   resources: string,
   profile: DeviceProfile,
   xcodeVersion: string | null,
   read: ChromeLoaderDeps['readPlist'],
+  screenId: number | null = null,
 ): Promise<{ chromeIdentifier: string; framebufferMask: string; screen: Size }> {
   const legacyScale = profile.mainScreenScale === undefined ? 1 : profile.mainScreenScale
   const legacy = typeof profile.chromeIdentifier === 'string'
@@ -136,29 +205,21 @@ async function deviceDisplay(
         },
       }
     : null
-  if ((xcodeMajorVersion(xcodeVersion) ?? 0) < 27 && legacy) return legacy
+  if ((xcodeMajorVersion(xcodeVersion) ?? 0) < 27 && legacy && screenId === null) return legacy
 
   // Xcode 27 moved display dimensions from profile.plist into capabilities.plist.
   // Keep the legacy path for older Xcode and for device types with old metadata.
   const capabilities = await read<DeviceCapabilities>(join(resources, 'capabilities.plist'))
     .catch(() => null)
-  const displays = capabilities?.capabilities?.displays
-  const display = displays?.find((entry) => entry.displayType === 'integrated'
-    && entry.chromeIdentifier === profile.chromeIdentifier)
-    ?? displays?.find((entry) => entry.displayType === 'integrated')
-  const width = display?.width
-  const height = display?.height
-  const scale = display?.scale
-  const chromeIdentifier = display?.chromeIdentifier ?? profile.chromeIdentifier
-  const framebufferMask = display?.framebufferMaskIdentifier ?? profile.framebufferMask
-  if (typeof chromeIdentifier === 'string' && typeof framebufferMask === 'string'
-    && typeof width === 'number' && Number.isFinite(width) && width > 0
-    && typeof height === 'number' && Number.isFinite(height) && height > 0
-    && typeof scale === 'number' && Number.isFinite(scale) && scale > 0) {
-    return { chromeIdentifier, framebufferMask, screen: { width: width / scale, height: height / scale } }
-  }
-  if (legacy) return legacy
-  throw new Error(`No usable integrated display metadata for ${resources}`)
+  const displays = integratedDisplays(capabilities, profile)
+  const display = screenId === null
+    ? displays[0]
+    : displays.find((entry) => entry.screenId === screenId)
+  if (display) return display
+  if (legacy && screenId === null) return legacy
+  throw new Error(screenId === null
+    ? `No usable integrated display metadata for ${resources}`
+    : `No usable metadata for screen ${screenId} in ${resources}`)
 }
 
 /**
@@ -216,17 +277,31 @@ function readOffset(
     : { across: Math.abs(offset.x), along: offset.y }
 }
 
+const chromeAnchor = (anchor: unknown): IosSimulatorChromeButton['anchor'] =>
+  anchor === 'right' || anchor === 'top' || anchor === 'bottom' ? anchor : 'left'
+
+/**
+ * Which way an anchor's edge runs. Button art normally lies along its edge, but the
+ * Duo's inner chrome (phone14) is anchored in the portrait framebuffer while its art
+ * is drawn for the opened, landscape device — a 63x16 volume button on the left edge.
+ * Such art is turned a quarter, so every image the renderer gets runs with its edge.
+ */
+type EdgeRun = 'vertical' | 'horizontal'
+const edgeRun = (anchor: IosSimulatorChromeButton['anchor']): EdgeRun =>
+  anchor === 'left' || anchor === 'right' ? 'vertical' : 'horizontal'
+
+/** Button art per image and edge direction, as `parseChromeButtons` looks it up. */
+export const buttonArtKey = (image: string, run: EdgeRun) => `${image}|${run}`
+
 export function parseChromeButtons(
   chrome: ChromeJson,
   images: Map<string, { size: Size; image: string; pressedImage?: string }>,
 ): IosSimulatorChromeButton[] {
   return (chrome.inputs ?? []).flatMap((input) => {
     if (input.type !== 'button' || typeof input.name !== 'string' || typeof input.image !== 'string') return []
-    const art = images.get(input.image)
+    const anchor = chromeAnchor(input.anchor)
+    const art = images.get(buttonArtKey(input.image, edgeRun(anchor)))
     if (!art) return []
-    const anchor = input.anchor === 'right' || input.anchor === 'top' || input.anchor === 'bottom'
-      ? input.anchor
-      : 'left'
     const offset = readOffset(anchor, input.offsets?.normal)
     if (!offset) return []
     const mapped = INPUT_BY_CHROME_NAME[input.name]
@@ -290,8 +365,11 @@ async function readPlist<T>(path: string): Promise<T> {
 }
 
 export interface ChromeLoaderDeps {
-  /** Rasterises a PDF to PNG at the given pixel width, returning the PNG bytes. */
-  rasterize(pdfPath: string, pixelWidth: number, outPath: string): Promise<Buffer>
+  /**
+   * Rasterises a PDF to PNG at the given pixel width, returning the PNG bytes. A
+   * quarter turn rotates the result clockwise, so its width becomes the height.
+   */
+  rasterize(pdfPath: string, pixelWidth: number, outPath: string, quarterTurn?: boolean): Promise<Buffer>
   readPlist<T>(path: string): Promise<T>
   readFile(path: string): Promise<Buffer>
   ensureDir(path: string): Promise<void>
@@ -299,9 +377,16 @@ export interface ChromeLoaderDeps {
   removeFile(path: string): Promise<void>
 }
 
-async function sipsRasterize(pdfPath: string, pixelWidth: number, outPath: string): Promise<Buffer> {
+async function sipsRasterize(
+  pdfPath: string,
+  pixelWidth: number,
+  outPath: string,
+  quarterTurn = false,
+): Promise<Buffer> {
+  // sips applies its actions in order: resample at the PDF's own width, then turn.
   await run('/usr/bin/sips', [
     '-s', 'format', 'png', '--resampleWidth', String(Math.max(1, Math.round(pixelWidth))),
+    ...(quarterTurn ? ['--rotate', '90'] : []),
     pdfPath, '--out', outPath,
   ])
   return readFile(outPath)
@@ -309,10 +394,18 @@ async function sipsRasterize(pdfPath: string, pixelWidth: number, outPath: strin
 
 const dataUrl = (png: Buffer) => `data:image/png;base64,${png.toString('base64')}`
 
+const chromeKey = (deviceTypeIdentifier: string, screenId: number | null) =>
+  screenId === null ? deviceTypeIdentifier : `${deviceTypeIdentifier}#${screenId}`
+
+/** Same shape within 1%: the inner Duo composite is drawn at 626x890 for a 669x951 panel. */
+const sameAspect = (a: Size, b: Size) =>
+  Math.abs(a.width / a.height - b.width / b.height) <= 0.01 * (b.width / b.height)
+
 export class IosSimulatorChromeLoader {
   // Artwork changes only when Xcode does, so the entry never expires on its own;
   // `invalidate` is there for the user who installs a new Xcode mid-session.
   private readonly artwork = new AsyncCoalescer<IosSimulatorChrome | null>(Infinity)
+  private readonly layouts = new AsyncCoalescer<IosSimulatorFoldLayout | null>(Infinity)
   private readonly deps: ChromeLoaderDeps
 
   /** Reports why artwork could not be read; a silent null is impossible to debug. */
@@ -329,47 +422,155 @@ export class IosSimulatorChromeLoader {
     }
   }
 
-  /** Resolves to null whenever the artwork is unavailable; the panel falls back to CSS. */
-  load(deviceTypeIdentifier: string, deviceTypeBundlePath: string, xcodeVersion: string | null = null): Promise<IosSimulatorChrome | null> {
+  /**
+   * Resolves to null whenever the artwork is unavailable; the panel falls back to CSS.
+   * `screenId` picks one panel of a foldable, which wears its own chrome; null means
+   * the device's primary screen.
+   */
+  load(
+    deviceTypeIdentifier: string,
+    deviceTypeBundlePath: string,
+    xcodeVersion: string | null = null,
+    screenId: number | null = null,
+  ): Promise<IosSimulatorChrome | null> {
     // The catch lives inside the compute so an unreadable bundle caches its null the
     // same way a model with no artwork does — one failed `sips` run per Xcode, not
     // one per panel remount.
-    return this.artwork.get(deviceTypeIdentifier, () => this.read(deviceTypeBundlePath, xcodeVersion)
+    return this.artwork.get(chromeKey(deviceTypeIdentifier, screenId), () => this.read(deviceTypeBundlePath, xcodeVersion, screenId)
       .catch((error: unknown) => {
         this.onError?.(deviceTypeIdentifier, error)
         return null
       }))
   }
 
-  /** Drops the memo, for a host that just gained or changed its Xcode install. */
-  invalidate(deviceTypeIdentifier: string): void {
-    this.artwork.invalidate(deviceTypeIdentifier)
+  /** A foldable's panels, or null for a device with one integrated screen. */
+  foldLayout(deviceTypeIdentifier: string, deviceTypeBundlePath: string): Promise<IosSimulatorFoldLayout | null> {
+    return this.layouts.get(deviceTypeIdentifier, async () => {
+      const resources = join(deviceTypeBundlePath, 'Contents', 'Resources')
+      const [profile, capabilities] = await Promise.all([
+        this.deps.readPlist<DeviceProfile>(join(resources, 'profile.plist')),
+        this.deps.readPlist<DeviceCapabilities>(join(resources, 'capabilities.plist')),
+      ])
+      return foldLayout(integratedDisplays(capabilities, profile))
+    }).catch(() => null)
   }
 
-  /** Measures a PDF and rasterises it at its natural size, or returns null if absent. */
-  private async art(
+  /** Drops the memo, for a host that just gained or changed its Xcode install. */
+  invalidate(deviceTypeIdentifier: string): void {
+    this.artwork.invalidate(chromeKey(deviceTypeIdentifier, null))
+    this.layouts.invalidate(deviceTypeIdentifier)
+  }
+
+  /** Reads and measures a PDF, or returns null if absent or unmeasurable. */
+  private async pdf(
     directory: string,
-    name: string,
-    outName: string,
-  ): Promise<{ size: Size; image: string } | null> {
-    if (!isSafeChromeAssetName(name)) return null
+    name: unknown,
+  ): Promise<{ path: string; size: Size } | null> {
+    if (typeof name !== 'string' || !isSafeChromeAssetName(name)) return null
     const path = join(directory, `${name}.pdf`)
     const pdf = await this.deps.readFile(path).catch(() => null)
     const size = pdf && parseMediaBox(pdf)
-    if (!size) return null
+    return size ? { path, size } : null
+  }
+
+  /** Rasterises a measured PDF at its natural size into a data URL. */
+  private async raster(pdf: { path: string; size: Size }, outName: string, quarterTurn = false): Promise<string> {
     const outPath = join(this.scratchDir, `${outName}.png`)
     // The PNG exists only to be read straight back as a data URL. Left on disk it
     // accumulates every slice and every button of every device type ever previewed.
     const png = await this.deps
-      .rasterize(path, size.width * RASTER_SCALE, outPath)
+      .rasterize(pdf.path, pdf.size.width * RASTER_SCALE, outPath, quarterTurn)
       .finally(() => this.deps.removeFile(outPath))
-    return { size, image: dataUrl(png) }
+    return dataUrl(png)
   }
 
-  private async read(bundlePath: string, xcodeVersion: string | null): Promise<IosSimulatorChrome | null> {
+  /** A button image lying along an edge of `run`, turned a quarter if drawn across it. */
+  private async art(
+    directory: string,
+    name: string,
+    outName: string,
+    run: EdgeRun,
+  ): Promise<{ size: Size; image: string } | null> {
+    const pdf = await this.pdf(directory, name)
+    if (!pdf) return null
+    const { width, height } = pdf.size
+    const turn = (run === 'vertical') !== (height >= width)
+    return {
+      size: turn ? { width: height, height: width } : pdf.size,
+      image: await this.raster(pdf, turn ? `${outName}-turned` : outName, turn),
+    }
+  }
+
+  /**
+   * The body artwork for a `screen` framed by `sizing`, and the geometry it is drawn in.
+   *
+   * The iPhone Duo's chromes (phone14, phone15) ship all eight slices as copies of
+   * one 118x64 "unused" placeholder; only their composite is real artwork. Real
+   * slices never share a size — the edges are 1-2pt strips between square-ish
+   * corners in every chrome Xcode 27 ships — so eight equal sizes mean placeholder.
+   * Stretching it drew an orange frame with letters bleeding through.
+   *
+   * The composite is drawn for one screen size, so its own box sets the geometry —
+   * the screen is whatever `sizing` leaves inside it — and it is usable only while
+   * that screen has the panel's shape. Everything the panel draws is a fraction of
+   * this box, so a composite drawn at another scale (phone14's is 626x890 around a
+   * 669x951 panel) lines up with the framebuffer, its mask and its buttons alike.
+   */
+  private async bodyArt(
+    resources: string,
+    bundleName: string,
+    images: Record<string, unknown>,
+    screen: Size,
+    sizing: Parameters<typeof deviceRect>[1],
+  ): Promise<{
+    art: IosSimulatorChromeSliceBody | IosSimulatorChromeCompositeBody
+    body: ReturnType<typeof deviceRect>
+  }> {
+    // Every edge, or none: a body missing one side would draw a hole rather than
+    // degrade, and the CSS shell is a better answer than that.
+    const slices = await Promise.all(SLICE_KEYS.map((key) => this.pdf(resources, images[key])))
+    if (slices.some((slice) => slice === null)) {
+      throw new Error(`chrome.json for ${bundleName} is missing nine-slice artwork`)
+    }
+    const [first, ...rest] = slices as NonNullable<(typeof slices)[number]>[]
+    const placeholder = rest.every((slice) =>
+      slice.size.width === first!.size.width && slice.size.height === first!.size.height)
+    if (!placeholder) {
+      const rasters = await Promise.all(slices.map((slice, index) =>
+        this.raster(slice!, `${bundleName}-${SLICE_KEYS[index]}`)))
+      return {
+        art: {
+          slices: Object.fromEntries(SLICE_KEYS.map((key, index) => [key, rasters[index]])) as unknown as IosSimulatorChromeSlices,
+          // Corners are square by construction, and all four are the same size.
+          corner: first!.size.width,
+        },
+        body: deviceRect(screen, sizing),
+      }
+    }
+
+    const composite = await this.pdf(resources, images.composite)
+    const drawnScreen = composite && {
+      width: composite.size.width - sizing.leftWidth - sizing.rightWidth,
+      height: composite.size.height - sizing.topHeight - sizing.bottomHeight,
+    }
+    if (!composite || !drawnScreen || drawnScreen.width <= 0 || drawnScreen.height <= 0
+      || !sameAspect(drawnScreen, screen)) {
+      throw new Error(`chrome.json for ${bundleName} has placeholder slices and no composite for this device`)
+    }
+    return {
+      art: { composite: await this.raster(composite, `${bundleName}-composite`) },
+      body: deviceRect(drawnScreen, sizing),
+    }
+  }
+
+  private async read(
+    bundlePath: string,
+    xcodeVersion: string | null,
+    screenId: number | null,
+  ): Promise<IosSimulatorChrome | null> {
     const resources = join(bundlePath, 'Contents', 'Resources')
     const profile = await this.deps.readPlist<DeviceProfile>(join(resources, 'profile.plist'))
-    const display = await deviceDisplay(resources, profile, xcodeVersion, this.deps.readPlist)
+    const display = await deviceDisplay(resources, profile, xcodeVersion, this.deps.readPlist, screenId)
 
     const bundleName = chromeBundleName(display.chromeIdentifier)
     if (!bundleName) throw new Error(`Unusable chrome identifier ${display.chromeIdentifier}`)
@@ -391,25 +592,7 @@ export class IosSimulatorChromeLoader {
 
     await this.deps.ensureDir(this.scratchDir)
 
-    // Every edge, or none: a body missing one side would draw a hole rather than
-    // degrade, and the CSS shell is a better answer than that.
-    const sliceArt = await Promise.all(SLICE_KEYS.map(async (key) => {
-      const name = images[key]
-      if (typeof name !== 'string') return null
-      const art = await this.art(chromeResources, name, `${bundleName}-${key}`)
-      return art ? ([key, art] as const) : null
-    }))
-    if (sliceArt.some((entry) => entry === null)) {
-      throw new Error(`chrome.json for ${bundleName} is missing nine-slice artwork`)
-    }
-    const slices = Object.fromEntries(
-      sliceArt.map((entry) => [entry![0], entry![1].image] as const),
-    ) as unknown as IosSimulatorChromeSlices
-    // Corners are square by construction, and all four are the same size.
-    const corner = sliceArt.find((entry) => entry![0] === 'topLeft')![1].size.width
-
-    const screen = display.screen
-    const body = deviceRect(screen, sizing)
+    const { art, body } = await this.bodyArt(chromeResources, bundleName, images, display.screen, sizing)
 
     if (!isSafeChromeAssetName(display.framebufferMask)) {
       throw new Error(`Unusable framebuffer mask ${display.framebufferMask}`)
@@ -417,33 +600,34 @@ export class IosSimulatorChromeLoader {
     const maskPath = join(resources, `${display.framebufferMask}.pdf`)
     const maskOutPath = join(this.scratchDir, `${display.framebufferMask}-mask.png`)
     const maskPng = await this.deps
-      .rasterize(maskPath, screen.width * RASTER_SCALE, maskOutPath)
+      .rasterize(maskPath, body.screen.width * RASTER_SCALE, maskOutPath)
       .finally(() => this.deps.removeFile(maskOutPath))
 
     // Every unique button at once. Serially this was three round trips of two `sips`
     // spawns each behind the slices, roughly doubling the wait before the device
     // body could be drawn.
-    const buttonImages = new Set(
-      (chrome.inputs ?? [])
-        .map((input) => input.image)
-        .filter((image): image is string => typeof image === 'string'),
+    const buttonImages = new Map(
+      (chrome.inputs ?? []).flatMap((input) => {
+        if (typeof input.image !== 'string') return []
+        const run = edgeRun(chromeAnchor(input.anchor))
+        return [[buttonArtKey(input.image, run), { image: input.image, run }] as const]
+      }),
     )
     const buttonArt = new Map<string, { size: Size; image: string; pressedImage?: string }>()
-    await Promise.all([...buttonImages].map(async (image) => {
+    await Promise.all([...buttonImages].map(async ([key, { image, run }]) => {
       const [normal, pressed] = await Promise.all([
-        this.art(chromeResources, image, `${bundleName}-btn-${image}`),
-        this.art(chromeResources, `${image}${PRESSED_SUFFIX}`, `${bundleName}-btn-${image}-dn`),
+        this.art(chromeResources, image, `${bundleName}-btn-${image}`, run),
+        this.art(chromeResources, `${image}${PRESSED_SUFFIX}`, `${bundleName}-btn-${image}-dn`, run),
       ])
       if (!normal) return
-      buttonArt.set(image, { ...normal, ...(pressed ? { pressedImage: pressed.image } : {}) })
+      buttonArt.set(key, { ...normal, ...(pressed ? { pressedImage: pressed.image } : {}) })
     }))
 
     const rawPadding = images.devicePadding as Record<string, unknown> | undefined
     const buttons = parseChromeButtons(chrome, buttonArt)
     return {
       identifier: typeof chrome.identifier === 'string' ? chrome.identifier : display.chromeIdentifier,
-      slices,
-      corner,
+      ...art,
       screenMask: dataUrl(maskPng),
       width: body.width,
       height: body.height,

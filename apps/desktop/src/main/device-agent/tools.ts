@@ -205,19 +205,23 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
     name: 'device_configure',
     description:
       'Read or set a controlled simulator\'s environment: light/dark appearance, system text size, simulated GPS location, '
-      + 'iOS location clear, or an Android fold posture. Requires device_request_control before changing anything. '
-      + 'Use kind=get to read current appearance, text size, available text-size values, and the emulator\'s posture ids; location and current '
-      + 'posture cannot be read reliably. Android does not support clear_location. ' + MANUAL,
+      + 'iOS location clear, the fold posture of a foldable Android emulator or iOS Simulator (iPhone Duo), '
+      + 'or an iPhone Duo\'s exact hinge angle. Requires device_request_control before changing anything. '
+      + 'Use kind=get to read current appearance, text size, available text-size values, the device\'s posture ids (empty when it '
+      + 'does not fold), and hingeDegrees where any angle is accepted; location cannot be read reliably, and only iOS reports '
+      + 'the current posture. Android does not support clear_location or hinge. ' + MANUAL,
     shape: {
       ...descriptionField,
       ...deviceField,
-      kind: z.enum(['get', 'appearance', 'text_size', 'location', 'clear_location', 'posture']),
+      kind: z.enum(['get', 'appearance', 'text_size', 'location', 'clear_location', 'posture', 'hinge']),
       appearance: z.enum(['light', 'dark']).optional().describe('Required for kind=appearance.'),
       textSize: z.string().trim().min(1).max(40).optional()
         .describe('Required for kind=text_size. Use one of textSizeOptions returned by kind=get; iOS category or Android scale string.'),
       latitude: z.number().min(-90).max(90).optional().describe('Required for kind=location. Decimal degrees.'),
       longitude: z.number().min(-180).max(180).optional().describe('Required for kind=location. Decimal degrees.'),
       postureId: z.number().int().min(1).optional().describe('Required for kind=posture; first get this device\'s available ids.'),
+      hingeDegrees: z.number().min(0).max(180).optional()
+        .describe('Required for kind=hinge. The angle picks the form: 0 closed, 1-60 tent (cover lit), above 60 open on the inner screen.'),
     },
   },
   {

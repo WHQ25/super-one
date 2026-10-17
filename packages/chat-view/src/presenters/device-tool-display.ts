@@ -282,7 +282,8 @@ export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>
     case 'release':
       return stringValue(params.device)
     case 'configure':
-      return [params.kind, params.appearance, params.postureId].filter((value) => value != null).join(' · ')
+      return [params.kind, params.appearance, params.postureId, typeof params.hingeDegrees === 'number' ? `${params.hingeDegrees}°` : null]
+        .filter((value) => value != null).join(' · ')
     case 'snapshot':
       return params.mode != null && params.mode !== 'semantic' ? stringValue(params.mode) : ''
     case 'query': {

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ANDROID_PHONE_REFERENCE_MODEL, type DeviceDescriptor, type DeviceState } from '@superone/shared/device'
 
 vi.mock('./device-video', () => ({
@@ -16,6 +16,7 @@ vi.mock('./DeviceModelView', () => ({
 import { resetDeviceSurfaces } from './device-surface'
 import { deviceModelKey } from './device-3d'
 import { DeviceStage } from './DeviceStage'
+import { IOS_SIMULATOR_CHROME } from '../../../../test/fixtures/ios-simulator'
 
 function simulator(model: string): DeviceDescriptor {
   return {
@@ -80,6 +81,8 @@ beforeEach(() => {
     value: {
       iosSimulatorChrome: vi.fn(async () => null),
       deviceInput: vi.fn(async () => ({ ok: true })),
+      deviceEnvironment: vi.fn(async () => { throw new Error("no environment in this test") }),
+      onDeviceEnvironmentChanged: vi.fn(() => () => {}),
       onDeviceFrame: vi.fn(() => () => {}),
       onDeviceRotateGesture: vi.fn(() => () => {}),
       onDeviceState: vi.fn(() => () => {}),
@@ -112,6 +115,29 @@ describe('device view mode switch', () => {
     fireEvent.mouseDown(within(modes).getByRole('tab', { name: '2D' }))
     expect(screen.queryByTestId('device-model-view')).toBeNull()
     expect(localStorage.getItem('superone.device.view3d')).toBe('false')
+  })
+
+  it('gives the toolbar back the keys the drawn shell carried once the 3D body is on screen', async () => {
+    const button = (name: string, input: 'lock' | 'volume-up' | 'volume-down') => ({
+      name, title: name, anchor: 'left' as const, offset: { across: 8, along: 200 },
+      hoverOffset: { across: 3, along: 200 }, width: 16, height: 64, image: `${name}.png`, input,
+    })
+    window.environment.iosSimulatorChrome = vi.fn(async () => ({
+      ...IOS_SIMULATOR_CHROME,
+      buttons: [button('power', 'lock'), button('volume-up', 'volume-up'), button('volume-down', 'volume-down')],
+    }))
+    renderStage(simulator('iPhone 17 Pro'))
+    const modes = await screen.findByRole('tablist', { name: 'View Mode' })
+    // Flat: the body's own buttons press, so the toolbar leaves them out.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Lock' })).toBeNull())
+
+    fireEvent.mouseDown(within(modes).getByRole('tab', { name: '3D' }))
+
+    // The 3D body's buttons are part of the model and do not press.
+    await screen.findByTestId('device-model-view')
+    for (const name of ['Lock', 'Volume Down', 'Volume Up']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    }
   })
 
   it('offers no switch for a device this machine has no 3D body for', async () => {

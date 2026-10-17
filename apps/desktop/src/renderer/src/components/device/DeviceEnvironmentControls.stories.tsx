@@ -8,7 +8,14 @@ const ios: DeviceEnvironmentState = {
   deviceId: 'ios-sim:story', appearance: 'light', locationReadable: false,
   textSize: 'large', textSizeSupported: true,
   textSizeOptions: [...IOS_CONTENT_SIZES],
-  canClearLocation: true, postures: [], posture: null,
+  canClearLocation: true, postures: [], posture: null, hingeDegrees: null,
+}
+const iosFoldable: DeviceEnvironmentState = {
+  ...ios,
+  deviceId: 'ios-sim:duo',
+  postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
+  posture: 2,
+  hingeDegrees: 90,
 }
 const android: DeviceEnvironmentState = {
   deviceId: 'android:avd:Pixel_Fold', appearance: 'dark', locationReadable: false,
@@ -17,6 +24,7 @@ const android: DeviceEnvironmentState = {
   canClearLocation: false,
   postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
   posture: null,
+  hingeDegrees: null,
 }
 
 function Scenario({ initial, fail = false }: { initial: DeviceEnvironmentState; fail?: boolean }) {
@@ -49,6 +57,8 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const IosSimulator: Story = { render: () => <Scenario initial={ios} /> }
+/** A foldable that takes any angle: its hinge is the toolbar's, so none shows here. */
+export const IosFoldable: Story = { render: () => <Scenario initial={iosFoldable} /> }
 export const AndroidFoldable: Story = { render: () => <Scenario initial={android} /> }
 export const CommandError: Story = { render: () => <Scenario initial={ios} fail /> }
 export const Narrow: Story = { render: () => <div className="w-56"><Scenario initial={android} /></div> }

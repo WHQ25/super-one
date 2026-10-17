@@ -7,11 +7,28 @@ import type {
   DevicePostureOption,
 } from '@superone/shared/device-environment'
 import { ANDROID_FONT_SCALES, IOS_CONTENT_SIZES } from '@superone/shared/device-environment'
+import {
+  IOS_SIMULATOR_FOLD_POSTURES,
+  iosSimulatorFoldAt,
+  iosSimulatorFoldPostureOf,
+  type IosSimulatorFoldPosition,
+} from '@superone/shared/ios-simulator'
+import { app } from 'electron'
 import { SimctlClient } from '../ios-simulator/simctl'
+import { getIosSimulatorManager } from '../ios-simulator'
 import { getAndroidDeviceManager } from './android'
 import type { Adb } from './android/adb'
 
 interface AndroidTarget { serial: string; adb: Adb }
+/** A foldable simulator's hinge, which the iOS manager owns. */
+interface IosFold {
+  foldPosition(udid: string): Promise<IosSimulatorFoldPosition | null>
+  setFoldPosition(udid: string, target: IosSimulatorFoldPosition, options?: { hold?: boolean }): Promise<void>
+}
+
+const iosFold = (): IosFold => getIosSimulatorManager(app.getPath('userData'))
+
+const IOS_POSTURE_OPTIONS: DevicePostureOption[] = IOS_SIMULATOR_FOLD_POSTURES.map(({ id, label }) => ({ id, label }))
 type IosCommands = Pick<SimctlClient, 'listDevices' | 'appearance' | 'setAppearance' | 'contentSize' | 'setContentSize' | 'setLocation' | 'clearLocation'>
 
 async function androidTextSizeOptions(adb: Adb, serial: string): Promise<string[]> {
@@ -68,6 +85,7 @@ export class DeviceEnvironmentService {
   constructor(
     private readonly ios: IosCommands = new SimctlClient(),
     private readonly targetForAndroid: (deviceId: string) => AndroidTarget | null = androidTarget,
+    private readonly fold: () => IosFold = iosFold,
   ) {}
 
   onChange(listener: (deviceId: string) => void): () => void {
@@ -98,15 +116,19 @@ export class DeviceEnvironmentService {
     const target = this.target(deviceId)
     if (target.provider === 'ios-sim') {
       await this.requireIosRuntime(target.udid)
-      const [appearance, contentSize] = await Promise.all([
+      const [appearance, contentSize, fold] = await Promise.all([
         this.ios.appearance(target.udid).catch(() => null),
         this.ios.contentSize(target.udid).catch(() => null),
+        this.fold().foldPosition(target.udid).catch(() => null),
       ])
       return { deviceId, appearance,
         textSize: contentSize && contentSize !== 'unknown' && contentSize !== 'unsupported' ? contentSize : null,
         textSizeSupported: contentSize !== 'unsupported',
         textSizeOptions: contentSize === 'unsupported' ? [] : [...IOS_CONTENT_SIZES],
-        locationReadable: false, canClearLocation: true, postures: [], posture: null }
+        locationReadable: false, canClearLocation: true,
+        postures: fold ? IOS_POSTURE_OPTIONS : [],
+        posture: fold ? iosSimulatorFoldPostureOf(fold).id : null,
+        hingeDegrees: fold?.hingeDegrees ?? null }
     }
     const { adb, serial } = target.target
     const [appearance, postures, fontScale, supportedTextSizes] = await Promise.all([
@@ -128,7 +150,7 @@ export class DeviceEnvironmentService {
       textSize,
       textSizeSupported: true,
       textSizeOptions,
-      locationReadable: false, canClearLocation: false, postures, posture: null }
+      locationReadable: false, canClearLocation: false, postures, posture: null, hingeDegrees: null }
   }
 
   async configure(deviceId: string, action: DeviceEnvironmentAction): Promise<DeviceEnvironmentResult> {
@@ -153,11 +175,26 @@ export class DeviceEnvironmentService {
       }
       else if (action.kind === 'location') await this.ios.setLocation(target.udid, action.latitude, action.longitude)
       else if (action.kind === 'clear_location') await this.ios.clearLocation(target.udid)
-      else throw new Error('UNSUPPORTED: Fold posture is available only on supported Android emulators.')
+      else if (action.kind === 'hinge') {
+        const position = iosSimulatorFoldAt(action.degrees)
+        if (!position) throw new Error('The hinge angle must be between 0 and 180 degrees.')
+        await this.fold().setFoldPosition(target.udid, position)
+      }
+      else {
+        const posture = IOS_SIMULATOR_FOLD_POSTURES.find((entry) => entry.id === action.id)
+        if (!posture) {
+          throw new Error(`UNSUPPORTED: Posture ${action.id} is not one of ${IOS_POSTURE_OPTIONS.map((option) => `${option.id} (${option.label})`).join(', ')}.`)
+        }
+        // A posture is a form, held its own way; a bare angle keeps the user's turn.
+        await this.fold().setFoldPosition(target.udid, iosSimulatorFoldAt(posture.hingeDegrees)!, { hold: true })
+      }
     } else {
       const { adb, serial } = target.target
       if (action.kind === 'clear_location') {
         throw new Error('UNSUPPORTED: Android Emulator has no equivalent clear-location command.')
+      }
+      if (action.kind === 'hinge') {
+        throw new Error('UNSUPPORTED: Android Emulator takes only its postures, not a hinge angle.')
       }
       if (action.kind === 'appearance') {
         ensureAndroidShellReply(await adb.shell(serial, ['cmd', 'uimode', 'night', action.value === 'dark' ? 'yes' : 'no']))
@@ -190,6 +227,8 @@ export class DeviceEnvironmentService {
     return {
       status: (action.kind === 'appearance' && state.appearance === action.value)
         || (action.kind === 'text_size' && state.textSize === action.value)
+        || (action.kind === 'posture' && state.posture === action.id)
+        || (action.kind === 'hinge' && state.hingeDegrees === action.degrees)
         ? 'verified' : 'applied',
       deviceId, action, state,
     }

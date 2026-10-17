@@ -45,6 +45,7 @@ function toSessionState(state: IosSimulatorSessionState): DeviceState {
       previewMode: state.previewMode,
       hardwareKeyboardConnected: state.hardwareKeyboardConnected,
       hardwareKeyboardAvailable: state.hardwareKeyboardAvailable,
+      ...(state.fold ? { fold: state.fold } : {}),
     },
   }
 }

@@ -13,6 +13,8 @@
  */
 
 import { isDeviceLandscape, type DeviceOrientation } from './device-agent'
+// Type-only: ios-simulator imports this module's runtime values.
+import type { IosSimulatorFoldState } from './ios-simulator'
 
 export type DevicePlatform = 'ios' | 'android'
 
@@ -423,6 +425,12 @@ export interface LoadedDeviceModel {
   screenMeshName?: string
   /** Corrects a screen whose UV winding points at the back of the phone. */
   flipScreenV?: boolean
+  /**
+   * A foldable body: the stretch of its one baked animation, in seconds, that sweeps
+   * the hinge from fully open (`start`) to closed (`start + duration`). Both screens
+   * stay in the scene, and the picture goes on whichever the device has lit.
+   */
+  fold?: { start: number; duration: number }
 }
 
 /** The concrete device an agent tool resolved, used to select the session PiP. */
@@ -474,6 +482,8 @@ export interface DeviceState {
     previewMode: string
     hardwareKeyboardConnected: boolean
     hardwareKeyboardAvailable: boolean
+    /** Present only on a foldable simulator. See `IosSimulatorFoldState`. */
+    fold?: IosSimulatorFoldState
   }
   /**
    * Why a mirrored iPhone is not usable right now, in macOS's own words.

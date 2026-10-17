@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { DeviceModelScreenPick } from '@superone/shared/device'
-import { syntheticPhoneScene, syntheticProScene, syntheticTabletScene } from './__fixtures__/synthetic-device-model'
+import { Button } from '@superone/ui/components/ui/button'
+import {
+  syntheticFoldableScene,
+  syntheticPhoneScene,
+  syntheticProScene,
+  syntheticTabletScene,
+} from './__fixtures__/synthetic-device-model'
 import type { DeviceFrameProjector, NormalizedFramePoint } from './device-input'
+import type { DeviceModelFold } from './device-model-renderer'
 import { DeviceModelView, type DeviceModelSource } from './DeviceModelView'
 
 type SceneName = 'phone' | 'pro' | 'tablet'
@@ -72,6 +79,7 @@ function Scenario({
   loadModel,
   width = 390,
   height = 844,
+  fold = null,
 }: {
   scene?: SceneName
   pick?: DeviceModelScreenPick
@@ -80,6 +88,7 @@ function Scenario({
   loadModel?: (model: string) => Promise<DeviceModelSource | null>
   width?: number
   height?: number
+  fold?: DeviceModelFold | null
 }) {
   const guest = useGuestPicture(width, height)
   const projector = useRef<DeviceFrameProjector | null>(null)
@@ -95,11 +104,55 @@ function Scenario({
       canvas={guest.canvas}
       subscribeFrames={guest.subscribeFrames}
       rotationDegrees={rotationDegrees}
+      fold={fold}
       interactive={interactive}
       onProjector={(next) => { projector.current = next }}
       pointerHandlers={{ onPointerDown: press }}
       loadModel={load}
     />
+  )
+}
+
+const FOLD_POSTURES: Record<'closed' | 'half opened' | 'opened' | 'tent', DeviceModelFold> = {
+  'closed': { hingeDegrees: 0, panel: 'cover', panelRotation: 0 },
+  'half opened': { hingeDegrees: 90, panel: 'inner', panelRotation: 90 },
+  'opened': { hingeDegrees: 180, panel: 'inner', panelRotation: 90 },
+  // Half open with the cover lit, and the device turned a quarter so the hinge is on top.
+  'tent': { hingeDegrees: 60, panel: 'cover', panelRotation: 0 },
+}
+/** The device turn each posture is held at, beside the turn its panel is mounted at. */
+const FOLD_TURNS: Partial<Record<keyof typeof FOLD_POSTURES, number>> = { tent: 90 }
+
+const loadFoldable = async (): Promise<DeviceModelSource> => ({
+  object: syntheticFoldableScene(),
+  screen: 'largest',
+  fold: { start: 0, duration: 1 },
+})
+
+/** Folds the way the device panel does: the host reports a posture, the body sweeps to it. */
+function FoldableScenario({ initial }: { initial: keyof typeof FOLD_POSTURES }) {
+  const [posture, setPosture] = useState(initial)
+  const fold = FOLD_POSTURES[posture]
+  return (
+    <div className="flex size-full flex-col">
+      <div className="flex gap-2 p-2">
+        {Object.keys(FOLD_POSTURES).map((name) => (
+          <Button
+            key={name}
+            size="sm"
+            variant={name === posture ? 'default' : 'outline'}
+            aria-pressed={name === posture}
+            onClick={() => setPosture(name as keyof typeof FOLD_POSTURES)}
+          >
+            {name}
+          </Button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1">
+        <Scenario loadModel={loadFoldable} fold={fold} rotationDegrees={fold.panelRotation + (FOLD_TURNS[posture] ?? 0)}
+          width={669} height={951} />
+      </div>
+    </div>
   )
 }
 
@@ -126,3 +179,13 @@ export const Failed: Story = { args: { loadModel: async () => { throw new Error(
 export const Narrow: Story = {
   decorators: [(Story) => <div className="h-[420px] w-[200px] border-r bg-background"><Story /></div>],
 }
+/**
+ * A skinned book-style foldable. Each posture sweeps the hinge and turns the lit
+ * glass to the camera; the opened panel's portrait framebuffer lies turned under its
+ * landscape glass, so a touch dot lands under the pointer at every angle.
+ */
+export const Foldable: Story = { render: () => <FoldableScenario initial="opened" /> }
+export const FoldableHalfOpen: Story = { render: () => <FoldableScenario initial="half opened" /> }
+export const FoldableClosed: Story = { render: () => <FoldableScenario initial="closed" /> }
+/** Standing as a tent: the cover lit and faced to the camera, the hinge along the top. */
+export const FoldableTent: Story = { render: () => <FoldableScenario initial="tent" /> }

@@ -10,13 +10,13 @@ const ios: DeviceEnvironmentState = {
   deviceId: 'ios-sim:sim-1', appearance: 'dark', locationReadable: false,
   textSize: 'large', textSizeSupported: true,
   textSizeOptions: [...IOS_CONTENT_SIZES],
-  canClearLocation: true, postures: [], posture: null,
+  canClearLocation: true, postures: [], posture: null, hingeDegrees: null,
 }
 const android: DeviceEnvironmentState = {
   deviceId: 'android:avd:Fold', appearance: 'light', locationReadable: false,
   textSize: '1.3', textSizeSupported: true,
   textSizeOptions: [...ANDROID_FONT_SCALES],
-  canClearLocation: false, postures: [{ id: 2, label: 'half opened' }], posture: null,
+  canClearLocation: false, postures: [{ id: 2, label: 'half opened' }], posture: null, hingeDegrees: null,
 }
 
 function show(state: DeviceEnvironmentState) {
@@ -53,7 +53,7 @@ describe('device environment controls', () => {
     expect(screen.getByRole('textbox', { name: 'Latitude' })).toHaveAttribute('inputmode', 'decimal')
     expect(screen.getByRole('textbox', { name: 'Longitude' })).toHaveAttribute('inputmode', 'decimal')
     await userEvent.click(screen.getByRole('button', { name: 'Refresh Settings' }))
-    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(3))
     fireEvent.change(slider, { target: { value: '11' } })
     fireEvent.keyUp(slider)
     await waitFor(() => expect(configure).toHaveBeenCalledWith('ios-sim:sim-1', {
@@ -79,6 +79,26 @@ describe('device environment controls', () => {
     await userEvent.click(screen.getByRole('button', { name: 'half opened' }))
     await waitFor(() => expect(configure).toHaveBeenCalledWith('android:avd:Fold', { kind: 'posture', id: 2 }))
     expect(screen.getByText('Current posture cannot be read from the emulator console.')).toBeInTheDocument()
+  })
+
+  it('leaves an iOS foldable that takes any angle to the toolbar hinge control', async () => {
+    show({
+      ...ios,
+      postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
+      posture: 2, hingeDegrees: 90,
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Device Environment' }))
+    expect(await screen.findByRole('tab', { name: 'Dark' })).toBeInTheDocument()
+    expect(screen.queryByRole('slider', { name: 'Hinge Angle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'half opened' })).toBeNull()
+  })
+
+  it('reads ahead, so reopening shows the last reading without a loading state', async () => {
+    const { read } = show(ios)
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole('button', { name: 'Device Environment' }))
+    expect(screen.getByRole('tab', { name: 'Dark' })).toBeInTheDocument()
+    expect(screen.queryByText('Checking…')).toBeNull()
   })
 
   it('hides controls on physical and mirrored devices', () => {

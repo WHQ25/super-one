@@ -132,7 +132,10 @@ static uint32_t S1CharacterUsage(unichar character, BOOL *shifted) {
   // process globals -- the build watermark, the second-contact latch -- and are not
   // reentrant, so the deferred motion flush must not overlap a tap, a keystroke or a
   // hardware button arriving on the control thread.
-  if (self) _touchQueue = dispatch_queue_create("app.superone.ios-simulator.touch", DISPATCH_QUEUE_SERIAL);
+  if (self) {
+    _touchQueue = dispatch_queue_create("app.superone.ios-simulator.touch", DISPATCH_QUEUE_SERIAL);
+    self.touchTarget = kTouchTarget;
+  }
   return self;
 }
 
@@ -146,7 +149,7 @@ static uint32_t S1CharacterUsage(unichar character, BOOL *shifted) {
                                    second:(CGPoint *)second
                                 eventType:(int)eventType {
   if (!_mouse) return NULL;
-  S1Message *message = _mouse(first, second, 1, 1, kTouchTarget, eventType, NO);
+  S1Message *message = _mouse(first, second, 1, 1, self.touchTarget, eventType, NO);
   // Every successful build pushes the watermark, whatever its event type, so an
   // ungated down delays the next drag exactly as much as another drag would.
   if (message) atomic_store_explicit(&_lastBuildNanos, S1MonotonicNanos(), memory_order_relaxed);

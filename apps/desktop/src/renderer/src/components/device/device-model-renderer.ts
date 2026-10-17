@@ -1,9 +1,7 @@
 import {
-  Box3,
   CanvasTexture,
   Group,
   LinearFilter,
-  MeshBasicMaterial,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -14,18 +12,21 @@ import {
   WebGLRenderer,
   type Object3D,
 } from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import type { DeviceModelScreenPick } from '@superone/shared/device'
+import type { DeviceModelScreenPick, LoadedDeviceModel } from '@superone/shared/device'
 import { disposeModel, parseModel, updateModelCameraClipPlanes } from '../coding/model-loader'
 import { addModelFillLights, lightModel } from '../coding/model-environment'
 import { rotateFrameDelta, type DeviceFrameProjector } from './device-input'
-import { prepareDeviceModel, projectRayToScreen, transformFrame } from './device-model-scene'
+import { foldableBody, rigidBody, type DeviceModelFold } from './device-model-body'
+import { attachDeviceModelTurntable } from './device-model-turntable'
+
+export type { DeviceModelFold }
 
 export interface DeviceModelSource {
   object: Object3D
   screen: DeviceModelScreenPick
   screenMeshName?: string
   flipScreenV?: boolean
+  fold?: LoadedDeviceModel['fold']
 }
 
 /** What the scene reads on every use rather than rebuilding for. */
@@ -33,11 +34,14 @@ export interface DeviceModelInputs {
   rotationDegrees: number
   interactive: boolean
   subscribeFrames: (listener: () => void) => () => void
+  /** A foldable's pose; null on a rigid body, and on a foldable not yet reported. */
+  fold: DeviceModelFold | null
 }
 
 export interface MountedDeviceModel {
   setPicture: (canvas: HTMLCanvasElement | null) => () => void
   turn: (degrees: number) => void
+  setFold: (fold: DeviceModelFold) => void
   reset: () => void
   projector: DeviceFrameProjector
   teardown: () => void
@@ -50,7 +54,12 @@ export async function loadDesktopDeviceModel(model: string): Promise<DeviceModel
   const { archive } = loaded
   const bytes = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer
   const { object } = await parseModel(`device.${loaded.format}`, bytes)
-  return { object, screen: loaded.screen, screenMeshName: loaded.screenMeshName, flipScreenV: loaded.flipScreenV }
+  return { object, screen: loaded.screen, screenMeshName: loaded.screenMeshName, flipScreenV: loaded.flipScreenV, fold: loaded.fold }
+}
+
+/** Closed, standing as a tent, or open: a foldable's forms, by the panel it lights. */
+function foldForm(fold: DeviceModelFold): 'closed' | 'tent' | 'open' {
+  return fold.panel === 'inner' ? 'open' : fold.hingeDegrees > 0 ? 'tent' : 'closed'
 }
 
 /** The same turn the flat view animates with CSS. */
@@ -76,16 +85,21 @@ export async function mountDeviceModel(
   isCancelled: () => boolean,
 ): Promise<MountedDeviceModel | null> {
   if (isCancelled()) { disposeModel(source.object); return null }
-  const prepared = prepareDeviceModel(source.object, source.screen, source.screenMeshName, source.flipScreenV)
-
-  const screenMaterial = new MeshBasicMaterial({ color: 0x000000, toneMapped: false })
-  prepared.screen.material = screenMaterial
+  // A foldable not yet reported is drawn open, which is how Apple models it at rest.
+  const initialFold = latest.current.fold ?? { hingeDegrees: 180, panel: 'inner', panelRotation: 0 }
+  const body = source.fold
+    ? foldableBody(source.object, source.fold, initialFold)
+    : rigidBody(source.object, source.screen, source.screenMeshName, source.flipScreenV)
+  let form = foldForm(initialFold)
   // Turned about the view axis for orientation, separately from the model's own
   // upright placement.
   const stage = new Group()
-  stage.add(prepared.root)
+  stage.add(body.root)
+  // Turned by the user's drag, around the stage's orientation turn: the camera stays put.
+  const view = new Group()
+  view.add(stage)
   const scene = new Scene()
-  scene.add(stage)
+  scene.add(view)
 
   const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
@@ -99,7 +113,8 @@ export async function mountDeviceModel(
   if (isCancelled()) {
     disposeEnvironment()
     renderer.dispose()
-    disposeModel(prepared.root)
+    body.dispose()
+    disposeModel(body.root)
     return null
   }
   renderer.domElement.className = 'block size-full'
@@ -108,48 +123,43 @@ export async function mountDeviceModel(
   const camera = new PerspectiveCamera(FOV, 1, 0.001, 100)
   const raycaster = new Raycaster()
   const pointer = new Vector2()
-  const glassFrame = () => transformFrame(prepared.frame, prepared.root.matrixWorld)
-  // Exact once, from the vertices; after that only the stage turns, and a turned
-  // box's corners are exact at the quarter turns the camera is fitted at.
-  const localBounds = new Box3().setFromObject(prepared.root, true)
-  const radius = localBounds.getBoundingSphere(new Sphere()).radius
-  const bodyBounds = () => localBounds.clone().applyMatrix4(stage.matrixWorld)
+  // Measured in the stage's own space, so only the turn is applied here; a turned
+  // box's corners are exact at the quarter turns the camera is fitted at. Framing
+  // leaves out the user's own turn, so a drag never moves the camera in or out.
+  const bodyBounds = () => body.bounds().applyMatrix4(stage.matrixWorld)
+  const fittedBounds = () => body.bounds().applyMatrix4(stage.matrix)
+  const bodyRadius = () => body.bounds().getBoundingSphere(new Sphere()).radius
 
   let frameRequest = 0
   let turn: { from: number; to: number; start: number } | null = null
+  let folding = false
   const requestRender = () => { if (!frameRequest) frameRequest = requestAnimationFrame(draw) }
 
   const fitDistance = () => {
-    const size = bodyBounds().getSize(new Vector3())
+    const size = fittedBounds().getSize(new Vector3())
     const vertical = Math.tan((camera.fov * Math.PI) / 360)
     const horizontal = vertical * camera.aspect
     return Math.max(size.y / 2 / vertical, size.x / 2 / horizontal) * FIT_MARGIN + size.z / 2
   }
-  /** Keep the direction the user orbited to; only the framing distance changes. */
+  /** The camera looks straight at the body; only the framing distance changes. */
   const refit = () => {
-    const direction = camera.position.clone().sub(controls.target)
-    if (direction.lengthSq() === 0) direction.set(0, 0, 1)
-    camera.position.copy(controls.target).addScaledVector(direction.normalize(), fitDistance())
-    controls.update()
+    camera.position.set(0, 0, fitDistance() * turntable.zoom())
+    camera.lookAt(0, 0, 0)
     requestRender()
   }
 
-  // Registered before OrbitControls so it decides first whether a press orbits.
   const hitsGlass = (event: PointerEvent) =>
     latest.current.interactive && projector.point(event.clientX, event.clientY, false) !== null
-  const onPointerDown = (event: PointerEvent) => { controls.enabled = !hitsGlass(event) }
   const onPointerHover = (event: PointerEvent) => {
     if (event.buttons !== 0) return
     host.style.cursor = hitsGlass(event) ? '' : 'grab'
   }
-  renderer.domElement.addEventListener('pointerdown', onPointerDown)
   renderer.domElement.addEventListener('pointermove', onPointerHover)
-
-  const controls = new OrbitControls(camera, renderer.domElement)
-  controls.enablePan = false
-  controls.enableDamping = true
-  controls.target.set(0, 0, 0)
-  controls.addEventListener('change', requestRender)
+  // A press on the glass is a touch; anywhere else it turns the body.
+  const turntable = attachDeviceModelTurntable(renderer.domElement, view, {
+    canStart: (event) => !hitsGlass(event),
+    onChange: refit,
+  })
 
   const projector: DeviceFrameProjector = {
     element: host,
@@ -158,12 +168,12 @@ export async function mountDeviceModel(
       if (rect.width <= 0 || rect.height <= 0) return null
       pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, camera)
-      return projectRayToScreen(raycaster.ray, glassFrame(), clamp)
+      return body.point(raycaster, clamp)
     },
     delta: (deltaX, deltaY) => rotateFrameDelta(deltaX, deltaY, latest.current.rotationDegrees),
     size() {
       const rect = renderer.domElement.getBoundingClientRect()
-      const frame = glassFrame()
+      const frame = body.frame()
       const toPixels = (point: Vector3) => {
         const ndc = point.clone().project(camera)
         return new Vector2((ndc.x + 1) * rect.width / 2, (1 - ndc.y) * rect.height / 2)
@@ -186,10 +196,15 @@ export async function mountDeviceModel(
       if (progress < 1) requestRender()
       else { turn = null; refit() }
     }
-    const moving = controls.update()
-    updateModelCameraClipPlanes(camera, bodyBounds(), radius)
+    if (body.step(now)) {
+      folding = true
+      requestRender()
+    } else if (folding) {
+      folding = false
+      refit()
+    }
+    updateModelCameraClipPlanes(camera, bodyBounds(), bodyRadius())
     renderer.render(scene, camera)
-    if (moving) requestRender()
   }
 
   const resize = () => {
@@ -203,15 +218,26 @@ export async function mountDeviceModel(
   const observer = new ResizeObserver(resize)
   observer.observe(host)
 
-  const reset = () => {
-    camera.position.set(0, 0, 1)
-    controls.target.set(0, 0, 0)
-    refit()
-  }
-  stage.rotation.z = -(latest.current.rotationDegrees * Math.PI) / 180
+  const reset = () => turntable.reset()
+  // The glass's own mapping may already show part of the turn; the stage does the rest.
+  const stageTurn = (degrees: number) => -((degrees - body.turnOffset()) * Math.PI) / 180
+  stage.rotation.z = stageTurn(latest.current.rotationDegrees)
   stage.updateMatrixWorld(true)
   reset()
   resize()
+
+  function turnTo(degrees: number) {
+    const target = stageTurn(degrees)
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduced) {
+      stage.rotation.z = target
+      stage.updateMatrixWorld(true)
+      refit()
+      return
+    }
+    turn = { from: stage.rotation.z, to: turnBetween(stage.rotation.z, target), start: performance.now() }
+    requestRender()
+  }
 
   let texture: CanvasTexture | null = null
   return {
@@ -229,9 +255,7 @@ export async function mountDeviceModel(
           texture.generateMipmaps = false
           texture.minFilter = LinearFilter
           texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
-          screenMaterial.map = texture
-          screenMaterial.color.set(0xffffff)
-          screenMaterial.needsUpdate = true
+          body.paint(texture)
         }
         texture.userData = { width: picture.width, height: picture.height }
         texture.needsUpdate = true
@@ -243,33 +267,33 @@ export async function mountDeviceModel(
         unsubscribe()
         texture?.dispose()
         texture = null
-        screenMaterial.map = null
-        screenMaterial.color.set(0x000000)
-        screenMaterial.needsUpdate = true
+        body.paint(null)
         requestRender()
       }
     },
-    turn(degrees) {
-      const target = -(degrees * Math.PI) / 180
+    turn: turnTo,
+    setFold(fold) {
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-      if (reduced) {
-        stage.rotation.z = target
-        stage.updateMatrixWorld(true)
-        refit()
-        return
-      }
-      turn = { from: stage.rotation.z, to: turnBetween(stage.rotation.z, target), start: performance.now() }
-      requestRender()
+      // A new form is a new way of holding the device; start it facing the camera,
+      // as the guest starts it upright. A hinge move within one keeps the user's view.
+      const next = foldForm(fold)
+      if (next !== form) turntable.reset()
+      form = next
+      body.fold(fold, !reduced)
+      // The lit panel's offset may have changed under an unchanged device turn.
+      turnTo(latest.current.rotationDegrees)
+      if (reduced) refit()
+      else requestRender()
     },
     reset,
     projector,
     teardown() {
       cancelAnimationFrame(frameRequest)
       observer.disconnect()
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       renderer.domElement.removeEventListener('pointermove', onPointerHover)
-      controls.dispose()
-      disposeModel(prepared.root)
+      turntable.dispose()
+      body.dispose()
+      disposeModel(body.root)
       disposeEnvironment()
       renderer.dispose()
       renderer.domElement.remove()

@@ -7,6 +7,9 @@ import type {
   IosSimulatorChrome,
   IosSimulatorCreateRequest,
   IosSimulatorDevice,
+  IosSimulatorFoldForm,
+  IosSimulatorFoldPosition,
+  IosSimulatorFoldState,
   IosSimulatorFrame,
   IosSimulatorHelperProbe,
   IosSimulatorInput,
@@ -20,6 +23,9 @@ import type {
 import {
   DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
   IOS_SIMULATOR_INPUT_ERROR,
+  IOS_SIMULATOR_TENT_MAX_DEGREES,
+  iosSimulatorFoldForm,
+  iosSimulatorFoldPanel,
   isIosSimulatorTextTypeable,
   isIosSimulatorLandscape,
   splitIosSimulatorText,
@@ -44,6 +50,7 @@ import { abandonZoneFile, reserveZoneFile, sealZoneFile } from '../environment/z
 import { ensureZoneDir, type ZoneOwner } from '../environment/zone-owner'
 import { currentCallOwner } from '../mcp/artifact-registry'
 import { SimctlClient } from './simctl'
+import type { IosSimulatorFoldLayout } from './device-chrome'
 import log from '../logger'
 
 export interface IosSimulatorPort {
@@ -63,7 +70,14 @@ export interface IosSimulatorNativePort {
   streamInfo: IosSimulatorNativeStreamInfo | null
   /** False once the helper process died, so a cached session has to be rebuilt. */
   alive: boolean
-  attach(udid: string): Promise<IosSimulatorNativeAttachment>
+  /** `screenId` names the screen to show; omitted, the helper shows the largest. */
+  attach(udid: string, screenId?: number): Promise<IosSimulatorNativeAttachment>
+  /**
+   * Sweep a foldable's hinge to `position` (0 closed ... 1 open) and show `screenId`;
+   * `tent` then stands it as a tent. The frame stream keeps its old display; the
+   * caller restarts it.
+   */
+  fold(position: number, durationMs: number, screenId: number, tent?: boolean): Promise<IosSimulatorNativeAttachment>
   startFrames(
     preferredMode: 'native-framebuffer' | 'native-h264',
     quality: IosSimulatorPreviewQuality,
@@ -82,8 +96,36 @@ export interface IosSimulatorNativePort {
 
 /** Loads Apple's own device artwork from the local Xcode install. */
 export interface IosSimulatorChromePort {
-  load(deviceTypeIdentifier: string, bundlePath: string, xcodeVersion: string | null): Promise<IosSimulatorChrome | null>
+  load(
+    deviceTypeIdentifier: string,
+    bundlePath: string,
+    xcodeVersion: string | null,
+    screenId?: number | null,
+  ): Promise<IosSimulatorChrome | null>
+  /** A foldable's two panels; null for a single-screen device. */
+  foldLayout?(deviceTypeIdentifier: string, bundlePath: string): Promise<IosSimulatorFoldLayout | null>
 }
+
+/**
+ * How long a full 0-180 sweep takes; a shorter move takes its share, so a hinge
+ * dragged a few degrees at a time keeps up. SpringBoard needs a real sweep, never
+ * zero; see FoldTool.m.
+ */
+const FOLD_SWEEP_MS = 600
+const FOLD_MIN_SWEEP_MS = 120
+const CLOSED: IosSimulatorFoldPosition = { hingeDegrees: 0, tent: false }
+/**
+ * How a foldable is held in each of its forms, which a change of form starts from.
+ * Closed it is a phone, upright. Opened, its inner panel is landscape at the device's
+ * own upright (`panelRotation` stands it), so it too starts at portrait. A tent stands
+ * on its long edges with the hinge on top; on the Duo the hinge runs down the cover's
+ * left edge, so that is the device turned a quarter clockwise.
+ */
+const FOLD_FORM_ORIENTATION = {
+  closed: 'portrait',
+  tent: 'landscape-right',
+  open: 'portrait',
+} as const satisfies Record<IosSimulatorFoldForm, IosSimulatorOrientation>
 
 interface ManagerOptions {
   simctl?: IosSimulatorPort
@@ -180,6 +222,12 @@ export class IosSimulatorManager {
   // Same reasoning, same lifetime: the guest keeps a keyboard plugged or unplugged
   // until something tells it otherwise, and the helper plugs one in on every attach.
   private readonly hardwareKeyboards = new Map<string, boolean>()
+  // And again for a foldable's hinge, which no CoreSimulator call reports either.
+  private readonly folds = new Map<string, IosSimulatorFoldPosition>()
+  /** udid -> its device type's bundle. A device never changes type, so read once. */
+  private readonly deviceTypeBundles = new Map<string, { identifier: string; bundlePath: string }>()
+  /** udid -> its fold layout, null for a single-screen device. Settled before attach. */
+  private readonly foldLayouts = new Map<string, IosSimulatorFoldLayout | null>()
   private readonly nativeSessions = new Map<string, NativeSession>()
   private readonly nativeFlights = new Map<string, Promise<NativeSession>>()
   private readonly streams = new Map<string, PreviewStream>()
@@ -296,12 +344,144 @@ export class IosSimulatorManager {
    */
   async chrome(udid: string): Promise<IosSimulatorChrome | null> {
     if (!this.chromeLoader) return null
+    const type = await this.deviceTypeBundle(udid)
+    if (!type) return null
+    const layout = await this.foldLayoutOf(udid)
+    const { xcodeVersion } = await this.status()
+    // Each panel of a foldable wears its own chrome, so this follows the hinge.
+    const screenId = layout ? this.foldPanel(udid, layout).screenId : null
+    return this.chromeLoader.load(type.identifier, type.bundlePath, xcodeVersion, screenId)
+  }
+
+  private async deviceTypeBundle(udid: string): Promise<{ identifier: string; bundlePath: string } | null> {
+    const known = this.deviceTypeBundles.get(udid)
+    if (known) return known
     const device = (await this.simctl.listDevices()).find((entry) => entry.udid === udid)
     if (!device?.deviceTypeIdentifier) return null
     const bundlePath = (await this.simctl.listDeviceTypeBundles()).get(device.deviceTypeIdentifier)
     if (!bundlePath) return null
-    const { xcodeVersion } = await this.status()
-    return this.chromeLoader.load(device.deviceTypeIdentifier, bundlePath, xcodeVersion)
+    const type = { identifier: device.deviceTypeIdentifier, bundlePath }
+    this.deviceTypeBundles.set(udid, type)
+    return type
+  }
+
+  /** Read once per device; a failure reads as single-screen rather than blocking attach. */
+  private async foldLayoutOf(udid: string): Promise<IosSimulatorFoldLayout | null> {
+    if (this.foldLayouts.has(udid)) return this.foldLayouts.get(udid)!
+    const type = this.chromeLoader?.foldLayout ? await this.deviceTypeBundle(udid).catch(() => null) : null
+    const layout = type ? await this.chromeLoader!.foldLayout!(type.identifier, type.bundlePath) : null
+    this.foldLayouts.set(udid, layout)
+    return layout
+  }
+
+  /** The screen a capture should read: the lit panel of a foldable, else simctl's default. */
+  private async shownScreenId(udid: string): Promise<number | undefined> {
+    const layout = await this.foldLayoutOf(udid)
+    return layout ? this.foldPanel(udid, layout).screenId : undefined
+  }
+
+  private foldPanel(udid: string, layout: IosSimulatorFoldLayout): IosSimulatorFoldLayout['cover'] {
+    return layout[iosSimulatorFoldPanel(this.folds.get(udid) ?? CLOSED)]
+  }
+
+  private foldState(udid: string, layout: IosSimulatorFoldLayout): IosSimulatorFoldState {
+    const position = this.folds.get(udid) ?? CLOSED
+    return {
+      ...position,
+      panel: iosSimulatorFoldPanel(position),
+      panelRotation: this.foldPanel(udid, layout).panelRotation,
+    }
+  }
+
+  /** Where a foldable's hinge was last moved to; null for a single-screen device. */
+  async foldPosition(udid: string): Promise<IosSimulatorFoldPosition | null> {
+    return await this.foldLayoutOf(udid) ? this.folds.get(udid) ?? CLOSED : null
+  }
+
+  /**
+   * Move a foldable's hinge and show the panel the guest moves to.
+   *
+   * The guest is the only thing that can move the hinge, and it also decides which
+   * panel paints: the cover while closed or standing as a tent, the inner panel once a
+   * sweep leaves the cover. So the helper sweeps first and switches display after, and
+   * the stream is reopened on the panel that is now lit.
+   */
+  async setFoldPosition(
+    udid: string,
+    target: IosSimulatorFoldPosition,
+    /** Hold the device the form's own way even within one form: a named posture is a form, not an angle. */
+    options: { hold?: boolean } = {},
+  ): Promise<void> {
+    if (!Number.isFinite(target.hingeDegrees) || target.hingeDegrees < 0 || target.hingeDegrees > 180) {
+      throw new Error('The hinge angle must be between 0 and 180 degrees.')
+    }
+    if (target.tent !== (iosSimulatorFoldForm(target.hingeDegrees) === 'tent')) {
+      throw new Error(`A tent is any opening above 0 up to ${IOS_SIMULATOR_TENT_MAX_DEGREES} degrees, and only those.`)
+    }
+    const layout = await this.foldLayoutOf(udid)
+    if (!layout) {
+      throw new Error(`UNSUPPORTED: ${this.nameOf(udid) ?? udid} is not a foldable simulator.`)
+    }
+    const native = await this.ensureNativeSession(udid)
+    const panel = this.foldPanel(udid, layout)
+    const form = iosSimulatorFoldForm(target.hingeDegrees)
+    if (options.hold || form !== iosSimulatorFoldForm((this.folds.get(udid) ?? CLOSED).hingeDegrees)) {
+      await this.holdAs(udid, native, FOLD_FORM_ORIENTATION[form])
+    }
+    await this.moveHinge(udid, native, layout, target)
+    // Only a panel swap changes what the stream reads; a move within one panel keeps it.
+    if (this.foldPanel(udid, layout) !== panel) await this.startStream(udid, true)
+    await this.publishSessionState(udid)
+  }
+
+  private async moveHinge(
+    udid: string,
+    native: NativeSession,
+    layout: IosSimulatorFoldLayout,
+    target: IosSimulatorFoldPosition,
+  ): Promise<void> {
+    const known = this.folds.get(udid)
+    const current = known ?? CLOSED
+    // The guest's tent pose has no angle of its own (it reads half open), so a tent
+    // opened wider or narrower is the host's reading alone: the 3D body and the state.
+    if (current.tent && target.tent) { this.folds.set(udid, target); return }
+    // Already there. An unknown hinge is never "there": it is what closing is for.
+    if (known && !known.tent && !target.tent && known.hingeDegrees === target.hingeDegrees) return
+    // The guest swaps panels only when a sweep crosses its swap point, so a tent swept
+    // straight to another open angle would keep its cover lit. Closing first crosses it.
+    if (current.tent && target.hingeDegrees > 0) await this.sweepHinge(udid, native, layout, CLOSED)
+    await this.sweepHinge(udid, native, layout, target)
+  }
+
+  private async sweepHinge(
+    udid: string,
+    native: NativeSession,
+    layout: IosSimulatorFoldLayout,
+    target: IosSimulatorFoldPosition,
+  ): Promise<void> {
+    // A tent is stood up from closed, and the pose it sets puts the hinge at its angle.
+    // From an open device the change to the tent is a panel swap that never finishes;
+    // see `Guest/FoldTool.m`.
+    const degrees = target.tent ? 0 : target.hingeDegrees
+    const share = Math.abs(degrees - (this.folds.get(udid) ?? CLOSED).hingeDegrees) / 180
+    const sweepMs = Math.max(FOLD_MIN_SWEEP_MS, Math.round(FOLD_SWEEP_MS * share))
+    const screenId = layout[iosSimulatorFoldPanel(target)].screenId
+    await native.client.fold(degrees / 180, sweepMs, screenId, target.tent)
+    this.folds.set(udid, target)
+  }
+
+  /**
+   * Turn the device to how a new form is held. Turned before the hinge moves, since a
+   * tent's pose has to come last; and turned whether or not the app on screen turns
+   * with it, since this is how the device is held: a home screen that stays upright
+   * is then drawn on its side, as it would be on a nightstand. Within one form the
+   * hinge leaves alone whatever turn the user gave it.
+   */
+  private async holdAs(udid: string, native: NativeSession, orientation: IosSimulatorOrientation): Promise<void> {
+    if ((this.orientations.get(udid) ?? 'portrait') === orientation) return
+    const result = await native.client.input({ type: 'rotate', orientation })
+    if (!result.ok) throw new Error(result.error ?? 'The simulator did not turn for the new fold.')
+    this.orientations.set(udid, orientation)
   }
 
   async createDevice(request: IosSimulatorCreateRequest): Promise<IosSimulatorDevice> {
@@ -373,6 +553,8 @@ export class IosSimulatorManager {
     if (device.booted) return
     await this.simctl.boot(device.udid)
     this.superOneBooted.add(device.udid)
+    // A foldable boots closed, so its hinge is known without moving it.
+    this.folds.set(device.udid, CLOSED)
     this.syncExternalSimulatorWatch()
   }
 
@@ -395,10 +577,16 @@ export class IosSimulatorManager {
     await this.simctl.shutdown(udid)
     this.superOneBooted.delete(udid)
     this.syncExternalSimulatorWatch()
-    this.orientations.delete(udid)
-    this.hardwareKeyboards.delete(udid)
+    this.forgetGuestState(udid)
     this.unbind(udid)
     return this.announce(this.emptyState(udid))
+  }
+
+  /** A shutdown puts the guest back upright, keyboard plugged in, hinge closed. */
+  private forgetGuestState(udid: string): void {
+    this.orientations.delete(udid)
+    this.hardwareKeyboards.delete(udid)
+    this.folds.delete(udid)
   }
 
   /** Whether this app booted the simulator, so `release` knows to stop it again. */
@@ -415,8 +603,7 @@ export class IosSimulatorManager {
     if (this.superOneBooted.has(udid)) {
       this.superOneBooted.delete(udid)
       this.syncExternalSimulatorWatch()
-      this.orientations.delete(udid)
-      this.hardwareKeyboards.delete(udid)
+      this.forgetGuestState(udid)
       await this.simctl.shutdown(udid)
     }
     this.announce(this.emptyState(udid))
@@ -479,6 +666,7 @@ export class IosSimulatorManager {
     device: IosSimulatorDevice | null,
   ): IosSimulatorSessionState {
     const attachment = this.nativeSessions.get(udid)?.client.attachment
+    const layout = this.foldLayouts.get(udid)
     return {
       udid,
       sessionId: this.owners.get(udid) ?? '',
@@ -494,6 +682,7 @@ export class IosSimulatorManager {
       ...(attachment
         ? { pixelWidth: attachment.pixelWidth, pixelHeight: attachment.pixelHeight }
         : {}),
+      ...(layout ? { fold: this.foldState(udid, layout) } : {}),
       ...(!device?.booted ? { message: 'Boot the selected simulator to start the preview.' } : {}),
       ...(device?.booted && attachment?.inputError ? { message: attachment.inputError } : {}),
     }
@@ -694,6 +883,10 @@ export class IosSimulatorManager {
   ): Promise<boolean> {
     const wantLandscape = isIosSimulatorLandscape(target)
     if (wantLandscape === isIosSimulatorLandscape(previous)) return true
+    // A foldable reports the cover's root frame whichever panel is lit, so an unfolded
+    // one has nothing here that turns. Trusted, like a half turn.
+    const layout = this.foldLayouts.get(udid)
+    if (layout && this.foldPanel(udid, layout) !== layout.cover) return true
 
     const deadline = Date.now() + this.rotationConfirmMs
     for (;;) {
@@ -805,7 +998,7 @@ export class IosSimulatorManager {
     const { deviceName } = await this.requireCaptureTarget(udid)
     const capture = this.captureFor(udid, deviceName, 'screenshot', 'png')
     try {
-      await this.capture.screenshot(udid, capture.path)
+      await this.capture.screenshot(udid, capture.path, await this.shownScreenId(udid))
     } catch (error) {
       this.abandonCapture(udid, capture)
       throw error
@@ -823,7 +1016,7 @@ export class IosSimulatorManager {
     if (this.recordings.has(udid)) throw new Error('This simulator is already recording.')
     const { deviceName } = await this.requireCaptureTarget(udid)
     const capture = this.captureFor(udid, deviceName, 'video', 'mp4')
-    const flight = this.capture.startRecording(udid, capture.path)
+    const flight = this.shownScreenId(udid).then((screenId) => this.capture.startRecording(udid, capture.path, screenId))
     // Registered before the await so a stop arriving mid-start still finds it.
     this.recordings.set(udid, { flight, capture })
     try {
@@ -1026,12 +1219,17 @@ export class IosSimulatorManager {
     }
     const flight = (async () => {
       if (existing) await this.disposeNativeSession(udid)
+      const layout = await this.foldLayoutOf(udid)
       const client = await this.nativeFactory()
       let lastError: unknown
       for (let attempt = 0; attempt < this.attachAttempts; attempt++) {
         try {
-          await client.attach(udid)
+          await client.attach(udid, layout ? this.foldPanel(udid, layout).screenId : undefined)
           const session = { udid, client }
+          // A foldable this app did not boot may have been left open: the hinge has no
+          // getter, and the cover it attached to would then stay black. Closing it is
+          // the one state the host can be sure of afterwards.
+          if (layout && !this.folds.has(udid)) await this.moveHinge(udid, session, layout, CLOSED)
           this.nativeSessions.set(udid, session)
           return session
         } catch (error) {

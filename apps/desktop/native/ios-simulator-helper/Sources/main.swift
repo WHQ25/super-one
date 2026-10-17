@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import IOSurface
 
-private let protocolVersion = 10
+private let protocolVersion = 11
 private let writeLock = NSLock()
 
 private func emit(_ value: Any) {
@@ -60,9 +60,16 @@ private func probe() -> [String: Any] {
       // channel CoreSimulator has to expose, and the two version independently.
       "accessibility": accessibility != nil && S1AccessibilityBridge.supported,
       "videoEncoder": videoToolbox != nil && dlsym(videoToolbox, "VTCompressionSessionCreate") != nil,
+      "fold": FileManager.default.isExecutableFile(atPath: foldToolPath()),
     ],
     "missingSymbols": missing,
   ]
+}
+
+/// The guest-side fold tool `build.sh` puts beside this binary. See `Guest/FoldTool.m`.
+private func foldToolPath() -> String {
+  let executable = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+  return executable.deletingLastPathComponent().appendingPathComponent("superone-ios-fold").path
 }
 
 if CommandLine.arguments.contains("--probe") {
@@ -163,6 +170,8 @@ private final class HelperSession {
   let deviceSet: SimulatorDeviceSet
   private var device: SimulatorDevice?
   private var display: NSObject?
+  /// The screen being shown, when the caller named one. See `displayDescriptor`.
+  private var screenId: Int?
   private var hid: S1HIDBridge?
   private var orientation: S1OrientationBridge?
   private var accessibility: S1AccessibilityBridge?
@@ -173,11 +182,11 @@ private final class HelperSession {
 
   init(deviceSet: SimulatorDeviceSet) { self.deviceSet = deviceSet }
 
-  func attach(udid: String) throws -> [String: Any] {
+  func attach(udid: String, screenId: Int?) throws -> [String: Any] {
     stopStream()
     cancelTouch()
     let device = try deviceSet.device(udid: udid)
-    let display = try device.mainDisplayDescriptor()
+    let display = try device.displayDescriptor(screenId: screenId)
     guard let surface = display.framebufferSurface() else {
       throw RequestError.unavailable("Framebuffer is not ready.")
     }
@@ -190,6 +199,7 @@ private final class HelperSession {
     var keyboardConnected = false
     do {
       try hid.attach(toDevice: device.object)
+      if let screenId { hid.touchTarget = Self.touchTarget(screenId: screenId) }
       inputAvailable = true
       // Pushed rather than read: CoreSimulator has no getter, and a device booted by
       // simctl instead of Simulator.app was never told either way, so the only way
@@ -227,6 +237,7 @@ private final class HelperSession {
     }
     self.device = device
     self.display = display
+    self.screenId = screenId
     self.hid = inputAvailable ? hid : nil
     self.orientation = rotationAvailable ? orientation : nil
     self.accessibility = accessibilityAvailable ? accessibility : nil
@@ -253,7 +264,7 @@ private final class HelperSession {
     guard stream == nil else { throw RequestError.invalid("Frame stream is already running.") }
     guard let device else { throw RequestError.unavailable("Attach before starting the stream.") }
     // A running guest can replace its display without killing this helper.
-    let display = try device.mainDisplayDescriptor()
+    let display = try device.displayDescriptor(screenId: screenId)
     self.display = display
     let stream = try FramebufferStream(
       descriptor: display,
@@ -273,6 +284,64 @@ private final class HelperSession {
 
   func cancelTouch() {
     hid?.cancelTouch()
+  }
+
+  private func runGuestTool(_ tool: String, on udid: String, _ arguments: [String], refusing what: String) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+    process.arguments = ["simctl", "spawn", udid, tool] + arguments
+    var environment = ProcessInfo.processInfo.environment
+    environment["DEVELOPER_DIR"] = selectedDeveloperDirectory()
+    process.environment = environment
+    let errors = Pipe()
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = errors
+    try process.run()
+    let detail = errors.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+      let message = String(data: detail, encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      throw RequestError.unavailable(
+        "The guest refused the \(what) (\(process.terminationStatus)): \(message)")
+    }
+  }
+
+  /// SimulatorKit's target for an integrated screen: the screen id in the high range.
+  private static func touchTarget(screenId: Int) -> UInt32 { UInt32(screenId) | 0x4000_0000 }
+
+  /**
+   Move a foldable's hinge to `position` (0 closed ... 1 open), then show `screenId`.
+
+   The sweep runs in the guest, which is the only place that can move the hinge, and
+   is awaited: the panel the guest paints changes when the sweep crosses its swap
+   point, so switching the display before it lands would show the panel being left.
+   `tent` then stands the device as a tent, which lights the cover; it has to follow
+   the sweep, which resets the pose, and the sweep has to close the device (see
+   `Guest/FoldTool.m`). The frame stream is not touched; the caller restarts it on
+   the new display.
+   */
+  func fold(position: Double, seconds: Double, screenId: Int, tent: Bool) throws -> [String: Any] {
+    guard let device else { throw RequestError.unavailable("Attach before folding.") }
+    let tool = foldToolPath()
+    guard FileManager.default.isExecutableFile(atPath: tool) else {
+      throw RequestError.unavailable("The fold tool was not built; the iOS Simulator SDK is missing.")
+    }
+    cancelTouch()
+    try runGuestTool(tool, on: device.udid, [String(position), String(seconds)], refusing: "fold")
+    if tent { try runGuestTool(tool, on: device.udid, ["tent"], refusing: "tent pose") }
+    let display = try device.displayDescriptor(screenId: screenId)
+    guard let surface = display.framebufferSurface() else {
+      throw RequestError.unavailable("Framebuffer is not ready.")
+    }
+    self.display = display
+    self.screenId = screenId
+    hid?.touchTarget = Self.touchTarget(screenId: screenId)
+    return [
+      "screenId": screenId,
+      "pixelWidth": IOSurfaceGetWidth(surface),
+      "pixelHeight": IOSurfaceGetHeight(surface),
+    ]
   }
 
   /**
@@ -317,7 +386,7 @@ private final class HelperSession {
       guard let udid = params["udid"] as? String, !udid.isEmpty else {
         throw RequestError.invalid("attach.udid is required.")
       }
-      return try attach(udid: udid)
+      return try attach(udid: udid, screenId: try screenIdParam(params))
     case "stream.start":
       guard let socketPath = params["socketPath"] as? String, !socketPath.isEmpty else {
         throw RequestError.invalid("stream.start.socketPath is required.")
@@ -337,6 +406,17 @@ private final class HelperSession {
         maxFrameRate: maxFrameRate,
         scale: scale)
     case "stream.stop": stopStream(); return ["running": false]
+    case "fold":
+      guard let screenId = try screenIdParam(params) else {
+        throw RequestError.invalid("fold.screenId is required.")
+      }
+      let seconds = (params["durationMs"] as? NSNumber)?.doubleValue ?? 600
+      guard seconds > 0, seconds <= 5000 else {
+        throw RequestError.invalid("fold.durationMs must be in (0, 5000].")
+      }
+      return try fold(
+        position: try ratio(params, "position"), seconds: seconds / 1000, screenId: screenId,
+        tent: params["tent"] as? Bool ?? false)
     case "touch.update":
       let hid = try requireHID()
       guard let rawContacts = params["contacts"] as? [[String: Any]],
@@ -539,6 +619,14 @@ private final class HelperSession {
       return ["ok": true]
     default: throw RequestError.invalid("Unknown method \(method).")
     }
+  }
+
+  private func screenIdParam(_ params: [String: Any]) throws -> Int? {
+    guard let value = params["screenId"], !(value is NSNull) else { return nil }
+    guard let number = value as? NSNumber, number.intValue > 0,
+      number.doubleValue.rounded() == number.doubleValue
+    else { throw RequestError.invalid("screenId must be a positive integer.") }
+    return number.intValue
   }
 
   private func ratio(_ params: [String: Any], _ name: String) throws -> Double {

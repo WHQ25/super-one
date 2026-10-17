@@ -66,25 +66,38 @@ export function IosSimulatorDeviceChrome({
         )
       })}
 
-      {/* A body-coloured floor under the part no slice reaches. Only visible before
-          the first frame arrives, but a transparent hole there reads as a bug. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bg-black"
-        style={percent(iosSimulatorBodyCenter(chrome))}
-      />
-
-      {iosSimulatorBodySlices(chrome).map(({ key, rect }) => (
+      {chrome.composite !== undefined ? (
         <img
-          key={key}
-          src={chrome.slices[key]}
+          src={chrome.composite}
           alt=""
           draggable={false}
           aria-hidden
           className="pointer-events-none absolute select-none"
-          style={percent(rect)}
+          style={percent({ x: chrome.padding.left, y: chrome.padding.top, width: chrome.width, height: chrome.height })}
         />
-      ))}
+      ) : (
+        <>
+          {/* A body-coloured floor under the part no slice reaches. Only visible before
+              the first frame arrives, but a transparent hole there reads as a bug. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute bg-black"
+            style={percent(iosSimulatorBodyCenter(chrome))}
+          />
+
+          {iosSimulatorBodySlices(chrome).map(({ key, rect }) => (
+            <img
+              key={key}
+              src={chrome.slices[key]}
+              alt=""
+              draggable={false}
+              aria-hidden
+              className="pointer-events-none absolute select-none"
+              style={percent(rect)}
+            />
+          ))}
+        </>
+      )}
 
       <div
         className="absolute overflow-hidden"

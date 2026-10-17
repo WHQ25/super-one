@@ -136,3 +136,21 @@ it('keyboard: leaves a key something else already took', async () => {
   }
   expect(onSubmit).toHaveBeenCalledWith({ 'Which layout?': 'Compact' }, undefined)
 })
+
+it('touch: numbers the tabs and keeps the whole question outside the scrolling options', async () => {
+  const second = { question: 'Which platforms should be checked before the release goes out?', header: 'Platforms', multiSelect: true, options: [{ label: 'iOS', description: '' }] }
+  const { button } = await mount({ request: { ...request, questions: [request.questions[0]!, second] } })
+  expect(button('Q1')).toBeDefined()
+  expect(container!.textContent).not.toContain('LayoutPlatforms')
+  await act(async () => button('Q2').click())
+  const question = [...container!.querySelectorAll('p')].find((p) => p.textContent === second.question)!
+  expect(question.closest('.overflow-y-auto')).toBeNull()
+  expect(question.previousElementSibling?.textContent).toBe('Platforms')
+})
+
+it('keyboard: tabs keep their headers', async () => {
+  const second = { question: 'Which platforms?', header: 'Platforms', multiSelect: true, options: [{ label: 'iOS', description: '' }] }
+  const { button } = await mount({ request: { ...request, questions: [request.questions[0]!, second] }, keyboard: { inScope: () => true, mac: true } })
+  expect(button('Platforms')).toBeDefined()
+  expect(button('Q2')).toBeUndefined()
+})

@@ -122,6 +122,8 @@ export function ChatScreen(props: {
    * they wait on an answer.
    */
   composerHidden?: boolean
+  /** The chat document's question card stands in for the composer, as desktop's decision composer does. */
+  questionDocked?: boolean
   /** A host input request owns the composer slot while the native editor keeps its draft. */
   inputComposer?: ReactNode
   mentionQuery?: string | null
@@ -181,8 +183,8 @@ export function ChatScreen(props: {
   // send (landing → live transcript) is not a switch: both of these are then
   // false, and the keyboard stays for the next message.
   useEffect(() => {
-    if (showLanding || props.loadingConversation || props.voiceComposer || props.worktreeRemoved) Keyboard.dismiss()
-  }, [showLanding, props.loadingConversation, !!props.voiceComposer, props.worktreeRemoved])
+    if (showLanding || props.loadingConversation || props.voiceComposer || props.worktreeRemoved || props.questionDocked) Keyboard.dismiss()
+  }, [showLanding, props.loadingConversation, !!props.voiceComposer, props.worktreeRemoved, props.questionDocked])
   const coveringRestore = props.loadingConversation || hold || (coverUntilReady && !rendererReady)
   const hideRenderer = coveringRestore || showLanding || !rendererReady
   // Captured on first mount: changing `injectedJavaScriptBeforeContentLoaded`
@@ -256,9 +258,9 @@ export function ChatScreen(props: {
       <View testID="chat-composer-stack" style={props.composerHidden ? { display: 'none' } : undefined}>
         {props.worktreeRemoved ? <WorktreeRemovedBanner /> : <>
           {!props.loadingConversation && !props.voiceComposer ? <TodoPanel todos={props.todos} /> : null}
-          {props.inputComposer ?? props.voiceComposer}
+          {props.questionDocked ? null : props.inputComposer ?? props.voiceComposer}
         </>}
-        <View testID="chat-text-composer" style={props.worktreeRemoved || props.inputComposer || props.voiceComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
+        <View testID="chat-text-composer" style={props.worktreeRemoved || props.inputComposer || props.voiceComposer || props.questionDocked ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
       </View>
     </View>
   )

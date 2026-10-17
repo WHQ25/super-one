@@ -16,6 +16,11 @@ pending AskUserQuestion form, pinned above the composer so a Claude mod can wrap
 them (`ModCommandOutputSite`, `ModQuestionSite`). Their data rides the
 projection (`pendingQuestion`, `slashCommandOutput`); answers go back through
 the `answerQuestion` / `dismissQuestion` / `dismissSlashOutput` native actions.
+A shown question card stands in for the composer, as desktop's decision composer
+does: `mobileInputSurfaces().question` hides the text and voice composers (the
+editor stays mounted with its draft; todos stay), so the dock pins to the screen
+bottom. On touch the tabs read Q1, Q2 and the header and full question sit above
+the options; under the dock's height cap only the options scroll.
 While a dock field holds the keyboard (`documentInputFocus`), iOS turns off
 `MobileKeyboardFrame`'s avoidance: WKWebView already insets its visible area by
 the keyboard, and shrinking the WebView too left it zero points tall. The

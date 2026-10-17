@@ -259,6 +259,16 @@ function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, onO
   )
 }
 
+/** Touch: the question sits outside the scrolling options, so a short slot never cuts it. */
+function TouchQuestionText({ q }: { q: UserQuestion }) {
+  return (
+    <div className="mb-2 shrink-0">
+      {q.header && <p className="text-xs text-muted-foreground">{q.header}</p>}
+      <p className="text-sm font-medium leading-snug text-foreground">{q.question}</p>
+    </div>
+  )
+}
+
 /**
  * Touch: one column, the Other field always last, just above the actions.
  * The pick's description, preview and note come between the options and it;
@@ -282,7 +292,6 @@ function TouchQuestionPanel({ q, previewFormat, selections, otherTexts, notesTex
   const previewContent = selectedPreview(q, selections)
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-foreground">{q.question}</p>
       <OptionButtons q={q} selections={selections} onSelect={onSelect} keys={false} className="flex flex-wrap gap-1.5" />
       <OptionDescription q={q} selections={selections} />
       {previewContent && (
@@ -472,13 +481,16 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
               onClick={() => setActiveTab(i)}
               className={cn('relative shrink-0 cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition', activeTab === i ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground')}
             >
-              {q.header}
+              {/* Touch numbers the tabs; the header moves above the question, which is shown whole. */}
+              {keys ? q.header : `Q${i + 1}`}
               {isAnswered(q, selections, otherTexts) && <span className="ml-1 text-xs text-green-500">&#10003;</span>}
             </button>
           ))}
         </div>
       )}
-      <div className="-mx-3 min-h-0 overflow-y-auto px-3">
+      {!keys && <TouchQuestionText q={activeQuestion} />}
+      {/* Padded past every edge so a focused field's ring is not clipped by the scroller. */}
+      <div className="-mx-3 -my-1 min-h-0 overflow-y-auto px-3 py-1">
       {!keys ? (
         <TouchQuestionPanel
           q={activeQuestion}

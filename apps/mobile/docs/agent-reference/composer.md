@@ -283,7 +283,8 @@ discard either with a bare `void` from a press or submit handler.
 `permission_request.requestKind: 'input_request'` renders native
 `InputRequestComposer` in the composer slot. The editor remains mounted but
 hidden with its separate draft. Existing permissions/plans use sheets; questions
-stay in the transcript. Priority is real permissions, questions, agent forms,
+are the chat document's dock card, which takes the composer slot the same way
+(see [transcript](transcript.md)). Priority is real permissions, questions, agent forms,
 plan, then app/widget forms. Values, step and picked files survive preemption
 and session navigation.
 

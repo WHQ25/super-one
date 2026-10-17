@@ -16,12 +16,15 @@ describe('native input ownership', () => {
   it('lets a restored async question preempt input forms and plan review without its source turn', () => {
     const pendingAsyncQuestions = [{ messageId: 'old-turn', item: { id: 'q', type: 'agent_message' as const, text: '', questions: [{ title: 'Environment?', options: null }] }, request: { requestId: 'codex_async_answer:q', questions: [] } }]
     expect(mobileInputSurfaces({ messages: [], pendingAsyncQuestions, pendingPermissions: [request], pendingQuestion: null, pendingPlanApproval: {} }))
-      .toMatchObject({ input: null, permission: null, showPlan: false })
+      .toMatchObject({ input: null, permission: null, showPlan: false, question: true })
+    const permission = { requestId: 'permission', toolName: 'Bash', input: {}, allowAlwaysAllow: false }
+    // The document holds an async question back while a permission sheet is up, so the composer stays.
+    expect(mobileInputSurfaces({ messages: [], pendingAsyncQuestions, pendingPermissions: [permission], pendingQuestion: null, pendingPlanApproval: null }).question).toBe(false)
   })
   it('keeps forms in the composer and lets permission, question and plan preempt them', () => {
     const base = { pendingPermissions: [request], pendingQuestion: null, pendingPlanApproval: null }
-    expect(mobileInputSurfaces(base)).toMatchObject({ permission: null, input: request, showPlan: false })
-    expect(mobileInputSurfaces({ ...base, pendingQuestion: {} }).input).toBeNull()
+    expect(mobileInputSurfaces(base)).toMatchObject({ permission: null, input: request, showPlan: false, question: false })
+    expect(mobileInputSurfaces({ ...base, pendingQuestion: {} })).toMatchObject({ input: null, question: true })
     expect(mobileInputSurfaces({ ...base, pendingPlanApproval: {} })).toMatchObject({ input: null, showPlan: true })
     const permission = { requestId: 'permission', toolName: 'Bash', input: {}, allowAlwaysAllow: false }
     expect(mobileInputSurfaces({ ...base, pendingPermissions: [request, permission] }).permission).toBe(permission)

@@ -18,12 +18,14 @@ export function useNativeInputRequests(options: {
 }) {
   const drafts = useRef(new InputRequestDrafts())
   const [view, setView] = useState<InputView | null>(null)
-  useEffect(() => { drafts.current.clear(); setView(null) }, [options.pairingId])
+  const [question, setQuestion] = useState(false)
+  useEffect(() => { drafts.current.clear(); setView(null); setQuestion(false) }, [options.pairingId])
   const sync = (runtime: ChatRuntime) => {
     drafts.current.reconcile(runtime.projectPath, runtime.sessionId, [...runtime.session.pendingPermissions, ...runtime.inputRequestSends.pendingRequests()])
     const surfaces = mobileInputSurfaces(runtime.session)
     setView(current => surfaces.input ? current?.request === surfaces.input && current.projectPath === runtime.projectPath && current.sessionId === runtime.sessionId
       ? current : { projectPath: runtime.projectPath, sessionId: runtime.sessionId, request: surfaces.input } : null)
+    setQuestion(surfaces.question)
     return surfaces
   }
   const onDraftChange = useCallback((draft: InputRequestDraft) => {
@@ -55,5 +57,5 @@ export function useNativeInputRequests(options: {
       current()
       return chosen
     }} /> : null
-  return { sync, slot, resetView: () => setView(null) }
+  return { sync, slot, question, resetView: () => { setView(null); setQuestion(false) } }
 }

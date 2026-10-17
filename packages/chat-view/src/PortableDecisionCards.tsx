@@ -17,7 +17,8 @@ export function PortableQuestion({ request, scheme, asyncQuestion }: { request: 
     await requestNativeAsync('codexAsyncQuestionAnswer', { messageId: asyncQuestion!.messageId, itemId: asyncQuestion!.item.id, answers })
   }
   return (
-    <div className="px-3 pt-2">
+    // A flex column down to the form: the dock's height cap shrinks its options, not the question or actions.
+    <div className="flex min-h-0 flex-col px-3 pt-2">
       <ModQuestionSite request={request}>
         <AskUserQuestionForm
           key={requestId}

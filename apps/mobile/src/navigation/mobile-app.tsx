@@ -623,7 +623,7 @@ export function MobileApp() {
       projectPath: runtime.projectPath || null,
       sourceEnvironmentId: runtime.sourceEnvironmentId,
       sessionId: runtime.sessionId || null,
-      // Drawn by the document above the composer; at most one patch is in flight, so
+      // Drawn by the document in place of the composer; at most one patch is in flight, so
       // resending them with every patch costs little and survives the delivery's own hydrates.
       pendingQuestion: runtime.session.pendingQuestion,
       slashCommandOutput: runtime.session.slashCommandOutput,
@@ -2740,6 +2740,7 @@ export function MobileApp() {
           }}
           loadingConversation={sessionLoading || remoteDrafts.opening}
           composerHidden={!!mcpApp.view && !mcpApp.composerOpen && !nativeInputs.slot}
+          questionDocked={nativeInputs.question}
           inputComposer={nativeInputs.slot ?? (continuationHint.visible
             ? <SessionHandoffComposer onApprove={continueInNewSession} onDismiss={continuationHint.dismiss} /> : null)}
           voiceComposer={voiceUi.composer}

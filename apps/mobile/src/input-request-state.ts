@@ -16,14 +16,18 @@ export function mobileInputSurfaces(session: {
   messages?: readonly ChatMessage[]
   pendingAsyncQuestions?: PendingCodexAsyncQuestion[]
 }) {
-  const hasQuestion = !!session.pendingQuestion || codexAsyncQuestionQueue({ ...session, messages: session.messages ?? [] }).length > 0
+  const asyncQuestion = codexAsyncQuestionQueue({ ...session, messages: session.messages ?? [] }).length > 0
+  const hasQuestion = !!session.pendingQuestion || asyncQuestion
   const pending = selectPendingPermission(session.pendingPermissions, {
     question: hasQuestion, plan: !!session.pendingPlanApproval,
   })
+  const permission = isInputRequest(pending) ? null : pending
   return {
-    permission: isInputRequest(pending) ? null : pending,
+    permission,
     input: isInputRequest(pending) ? pending : null,
     showPlan: !pending && !hasQuestion,
+    // The chat document draws this question card in place of the composer; an async one waits behind a permission.
+    question: !!session.pendingQuestion || (asyncQuestion && !permission),
   }
 }
 

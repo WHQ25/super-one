@@ -27,6 +27,7 @@ function screenUi(overrides: {
   todos?: boolean
   landing?: NewSessionLandingProps
   composerHidden?: boolean
+  questionDocked?: boolean
   voiceComposer?: ReactNode
   inputComposer?: ReactNode
   worktreeRemoved?: boolean
@@ -43,6 +44,7 @@ function screenUi(overrides: {
       loadingConversation={overrides.loadingConversation}
       landing={overrides.landing}
       composerHidden={overrides.composerHidden}
+      questionDocked={overrides.questionDocked}
       voiceComposer={overrides.voiceComposer}
       inputComposer={overrides.inputComposer}
       worktreeRemoved={overrides.worktreeRemoved}
@@ -128,6 +130,22 @@ test('a pending native decision temporarily owns the composer slot during voice'
   expect(screen.getByText('Answer question')).toBeTruthy()
   expect(screen.queryByText('Voice controls')).toBeNull()
   expect(screen.queryByLabelText('Message')).toBeNull()
+})
+
+test('a docked question stands in for every composer, keeps todos and the draft editor, and dismisses the keyboard', async () => {
+  const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {})
+  const view = await renderWithTheme(screenUi({ todos: true }))
+  dismiss.mockClear()
+  await view.rerender(screenUi({ todos: true, questionDocked: true }))
+  expect(screen.queryByLabelText('Message')).toBeNull()
+  expect(screen.getByLabelText('Message', { includeHiddenElements: true })).toBeTruthy()
+  expect(screen.getByTestId('todo-panel')).toBeTruthy()
+  expect(dismiss).toHaveBeenCalled()
+  await view.rerender(screenUi({ questionDocked: true, voiceComposer: <Text>Voice controls</Text> }))
+  expect(screen.queryByText('Voice controls')).toBeNull()
+  await view.rerender(screenUi({ todos: true }))
+  expect(screen.getByLabelText('Message')).toBeTruthy()
+  dismiss.mockRestore()
 })
 
 test.each([

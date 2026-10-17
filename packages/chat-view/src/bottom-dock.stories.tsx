@@ -46,6 +46,8 @@ const QUESTIONS: Record<string, AskUserQuestionRequest> = {
     }],
   },
 }
+/** Phone tabs read Q1, Q2; each question is drawn whole above its options. */
+QUESTIONS.multipleLong = { requestId: 'q-multiple-long', questions: [QUESTIONS.long!.questions[0]!, QUESTIONS.multiple!.questions[1]!] }
 
 const OUTPUT = { command: 'context', content: 'Context Usage\n  claude-opus-5-5 · 48k/200k tokens (24%)\n\n  System prompt      3.1k\n  System tools      11.8k\n  MCP tools          6.4k\n  Messages          26.7k\n  Free space       152.0k' }
 
@@ -135,6 +137,7 @@ export const QuestionMarkdownPreview: Story = { args: { question: 'markdown' } }
 /** The option's HTML draws in a frame with no script and no origin: the `<script>` must not run. */
 export const QuestionHtmlPreview: Story = { args: { question: 'html' } }
 export const QuestionLongNarrow: Story = { args: { question: 'long', width: 320 } }
+export const QuestionMultipleLongNarrow: Story = { args: { question: 'multipleLong', width: 320 } }
 export const CommandOutput: Story = { args: { output: true } }
 export const OutputAndQuestion: Story = { args: { output: true, question: 'single' } }
 export const Empty: Story = { args: {} }

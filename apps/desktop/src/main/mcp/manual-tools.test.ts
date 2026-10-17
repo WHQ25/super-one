@@ -1,9 +1,18 @@
-import { describe, expect, it } from 'vitest'
+const feature = vi.hoisted(() => ({ enabled: true }))
+vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({ experimentalAgentProfilesEnabled: feature.enabled }) }))
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WIDGET_GUIDELINE_MODULES } from '../generative-ui/guideline-modules'
 import { MEDIA_GUIDE_TOPICS, MINIAPP_GUIDE_TOPICS, PRODUCT_GUIDE_TOPICS } from './superone-mcp-builtin-defs'
 import { manualReadHandler, readMediaGuideHandler } from './manual-tools'
 
 describe('manualReadHandler', () => {
+  beforeEach(() => { feature.enabled = true })
+  it('explains how to opt in instead of serving disabled Profile instructions', async () => {
+    feature.enabled = false
+    const result = await manualReadHandler({ domain: 'product', topic: 'agent-profiles' })
+    expect(result.content[0].text).toMatch(/experimental.*Settings.*Experimental/)
+    expect(result.content[0].text).not.toContain('agent_profile_apply')
+  })
   it('returns a catalog when domain is omitted', async () => {
     const result = await manualReadHandler({})
     const text = result.content[0].text
@@ -13,6 +22,7 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/media/)
     expect(text).toMatch(/widget/)
     expect(text).toMatch(/config_read/)
+    expect(text).toContain('agent-profiles')
   })
 
   it('returns product debug docs with runtime paths section', async () => {
@@ -27,6 +37,22 @@ describe('manualReadHandler', () => {
   it('returns product overview with repo link', async () => {
     const result = await manualReadHandler({ domain: 'product', topic: 'overview' })
     expect(result.content[0].text).toMatch(/github\.com\/WHQ25\/super-one/)
+    expect(result.content[0].text).toContain('agent-profiles')
+  })
+
+  it('serves Profile consent and the Coordinator pattern through its discoverable manual topic', async () => {
+    const result = await manualReadHandler({ domain: 'product', topic: 'agent-profiles' })
+    expect(result.isError).not.toBe(true)
+    const text = result.content[0].text
+    expect(text).toContain('# Agent Profiles and the Coordinator pattern')
+    expect(text).toContain('ordinary saved **Coordinator** Profile')
+    expect(text).toContain('**Implementer** and optional **Reviewer** Profiles')
+    expect(text).toMatch(/scope, constraints and acceptance criteria/)
+    expect(text).toMatch(/child only when needed/)
+    for (const tool of ['agent_profile_apply', 'agent_profile_delete', 'session_collab_request', 'session_collab_start', 'session_collab_send', 'session_collab_retrieve']) expect(text).toContain(tool)
+    expect(text).toContain('Delete the Profile to revoke it')
+    expect(text).toContain('A one-time `session_collab_request` approval does not grant lasting consent')
+    expect(text).toContain('do not copy their system prompts')
   })
 
   it('returns product contribute docs with issue-first and PR flow', async () => {

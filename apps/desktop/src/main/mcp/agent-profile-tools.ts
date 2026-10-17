@@ -1,3 +1,4 @@
+import { AGENT_PROFILES_DISABLED_MESSAGE, isAgentProfilesEnabled } from '../session/agent-profile-feature'
 /**
  * SuperOne MCP agent profile tools:
  * agent_profile_list / agent_profile_apply / agent_profile_delete
@@ -9,6 +10,7 @@
  */
 
 import { encode as toonEncode } from '@toon-format/toon'
+import { approveAgentProfile, approvalProviderSnapshot, configFingerprint } from '../session/agent-profile-approval'
 import type {
   AgentProfileConfirmChange,
   AgentProfileConfirmEditor,
@@ -23,6 +25,7 @@ import {
   parseAgentProfileSpec,
   providerLaunchRuntime,
   readAgentProfile,
+  profileApprovalConfig,
   type AgentProfileCatalog,
   type AgentProfileRuntime,
   type AgentProfileSpec,
@@ -39,7 +42,7 @@ import {
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import log from '../logger'
-import { isProviderUsable, listSessionAgentProfiles, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
+import { agentProfileLaunchConfig, isProviderUsable, listSessionAgentProfiles, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
 import { profileConfirms, type ConfirmOutcome } from './agent-profile-confirm'
 import {
   agentProfileCatalog,
@@ -208,7 +211,7 @@ async function awaitConfirm(
       toolName: opts.toolName,
       toolUseId: requestId,
       input: opts.input,
-      // A profile is a standing permission boundary: never a permanent opt-out.
+      // Saving a Profile requires explicit review, including its collaboration scope.
       allowAlwaysAllow: false,
       serverName: 'superone',
       requestKind: 'agent_profile_confirm',
@@ -272,6 +275,7 @@ function listRow(row: SessionProvider) {
     name: row.name,
     harness: row.harnessId,
     base: row.isBase,
+    ...(row.isBase ? { followsDefaults: true } : {}),
     description: preview(spec?.identity.description ?? (row.isBase ? builtInDescription(row) : '')),
   }
 }
@@ -310,6 +314,7 @@ function optionsView(harnessId: HarnessId, catalog: AgentProfileCatalog) {
 }
 
 export async function agentProfileListHandler(args: AgentProfileListArgs) {
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
   const id = typeof args.id === 'string' ? args.id.trim() : ''
   if (!id) {
     const profiles = listSessionProviders().map(listRow)
@@ -319,7 +324,8 @@ export async function agentProfileListHandler(args: AgentProfileListArgs) {
   if (!row) return errorResult(`Agent profile not found: ${id}. Call agent_profile_list without id to discover ids.`)
   const spec = readAgentProfile(row.config)
   const catalog = await agentProfileCatalog(row)
-  const launchDefaults = profileResources(row, { acpAgentId: rowAcpAgentId(row) }).defaultConfig
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
+  const launchDefaults = agentProfileLaunchConfig(row)
   const acpAgentId = rowAcpAgentId(row)
   return toolResult({
     status: 'ok',
@@ -329,6 +335,7 @@ export async function agentProfileListHandler(args: AgentProfileListArgs) {
       harnessId: row.harnessId,
       ...(acpAgentId ? { acpAgentId } : {}),
       base: row.isBase,
+      ...(row.isBase ? { followsDefaults: true } : {}),
       available: isProviderUsable(row),
       description: spec?.identity.description ?? (row.isBase ? builtInDescription(row) : ''),
       instructions: spec?.instructions ?? '',
@@ -336,7 +343,7 @@ export async function agentProfileListHandler(args: AgentProfileListArgs) {
     },
     launchDefaults,
     available: optionsView(row.harnessId, catalog),
-    ...(row.isBase ? { note: 'Built-in agent: read-only. Create a profile on this harness to customize it.' } : {}),
+    ...(row.isBase ? { note: 'Default Profile: follows current user settings. Matching local same-project collaboration needs no confirmation. Change its defaults in settings, or create a saved Profile to customize it.' } : {}),
   })
 }
 
@@ -454,14 +461,16 @@ function confirmEditor(harnessId: HarnessId, spec: AgentProfileSpec, catalog: Ag
     ...(agent ? { agent } : {}),
     // Only what option rows read: the full catalog would ride every relay copy of the request.
     catalog: {
-      models: catalog.models.map(({ id, supportedEffortLevels, serviceTiers, contextWindows, parameters }) => ({
+      models: catalog.models.map(({ id, supportedEffortLevels, supportedReasoningEfforts, defaultReasoningEffort, serviceTiers, contextWindows, parameters }) => ({
         id,
-        ...(supportedEffortLevels ? { supportedEffortLevels } : {}),
+        ...((supportedEffortLevels ?? supportedReasoningEfforts?.map((effort) => effort.value)) ? { supportedEffortLevels: supportedEffortLevels ?? supportedReasoningEfforts!.map((effort) => effort.value) } : {}),
+        ...(defaultReasoningEffort ? { defaultReasoningEffort } : {}),
         ...(serviceTiers ? { serviceTiers } : {}),
         ...(contextWindows ? { contextWindows } : {}),
         ...(parameters ? { parameters } : {}),
       })),
       ...(catalog.host ? { host: catalog.host } : {}),
+      ...(catalog.efforts ? { efforts: catalog.efforts } : {}),
     },
   }
 }
@@ -484,6 +493,15 @@ function specFromDraft(harnessId: HarnessId, json: string): { spec: AgentProfile
   )
 }
 
+function approvalPreview(row: SessionProvider) {
+  const config = row.config as Record<string, unknown>
+  const launch = agentProfileLaunchConfig(row)
+  const agents = listSessionAgentProfiles()
+  const agent = agents.find((item) => item.id === row.id) ?? agents.find((item) => item.id === `${row.harnessId}-base`)
+  return { baseConfig: agentProfileLaunchConfig({ ...row, config: { ...config, profile: undefined } }), config: launch, provider: approvalProviderSnapshot(row.harnessId, launch, agent?.apiProviders.find((item) => item.id === launch.apiProviderId), rowAcpAgentId(row)) }
+}
+
+
 async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneToolDeps) {
   const harnessId = args.harnessId as HarnessId
   if (!HARNESS_IDS.includes(harnessId)) {
@@ -502,13 +520,16 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const configFor = (spec: AgentProfileSpec) => ({ ...(acpAgentId ? { agentId: acpAgentId } : {}), profile: spec })
   const draft: SessionProvider = { id: '', harnessId, name, isBase: false, config: configFor(built.spec), createdAt: 0, updatedAt: 0 }
   const catalog = await agentProfileCatalog(draft)
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
   const invalid = agentProfileCatalogError(draft, catalog)
   if (invalid) return errorResult(invalid)
 
+  const approval = approvalPreview(draft)
   const confirmed = await confirmOrRefusal(deps, {
     toolName: 'mcp__superone__agent_profile_apply',
     payload: {
       operation: 'create',
+      collaborationApproval: { baseConfig: approval.baseConfig, config: approval.config },
       profiles: [toView({ harnessId, acpAgentId, spec: built.spec }, catalog)],
       editor: confirmEditor(harnessId, built.spec, catalog),
     },
@@ -517,6 +538,7 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
     abortErrorMessage: 'Agent profile create cancelled',
   })
   if ('refusal' in confirmed) return confirmed.refusal
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
 
   // The user may have edited the proposal on the card; the store re-checks catalog and name on write.
   const edited = confirmed.accepted.draftJson ? specFromDraft(harnessId, confirmed.accepted.draftJson) : { spec: built.spec }
@@ -525,7 +547,11 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const editedByUser = diffSpecs(harnessId, catalog, built.spec, spec).map((change) => change.field)
 
   try {
+    const currentApproval = approvalPreview(draft)
+    if (configFingerprint({ base: currentApproval.baseConfig, provider: currentApproval.provider }) !== configFingerprint({ base: approval.baseConfig, provider: approval.provider })) return errorResult('Launch defaults changed during review. Nothing was saved; review the Profile again.')
     const created = await createAgentProfile({ harnessId, name: spec.identity.name, config: configFor(spec) })
+    const approvedConfig = profileApprovalConfig(harnessId, catalog, approval.baseConfig, spec.runtime)
+    if (configFingerprint(agentProfileLaunchConfig(created)) === configFingerprint(approvedConfig)) approveAgentProfile(created, approvedConfig, approval.provider)
     return toolResult({
       status: 'ok',
       action: 'create',
@@ -565,17 +591,20 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const config = { ...(row.config as Record<string, unknown>), profile: built.spec }
   const next: SessionProvider = { ...row, name, config }
   const catalog = await agentProfileCatalog(next)
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
   const before = existing
     ?? { version: AGENT_PROFILE_VERSION, identity: { name: row.name, description: '' }, ...(runtime ? { runtime } : {}) }
   const changes = diffSpecs(row.harnessId, catalog, before, built.spec)
-  if (changes.length === 0) return errorResult('Nothing to change: every field already has that value.')
+  // An unchanged legacy Profile can be explicitly reviewed to approve future collaboration.
   const invalid = agentProfileCatalogError(next, catalog)
   if (invalid) return errorResult(invalid)
 
+  const approval = approvalPreview(next)
   const confirmed = await confirmOrRefusal(deps, {
     toolName: 'mcp__superone__agent_profile_apply',
     payload: {
       operation: 'update',
+      collaborationApproval: { baseConfig: approval.baseConfig, config: approval.config },
       profiles: [toView({ id: row.id, harnessId: row.harnessId, acpAgentId: rowAcpAgentId(row), spec: built.spec }, catalog)],
       changes,
     },
@@ -584,9 +613,12 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
     abortErrorMessage: 'Agent profile update cancelled',
   })
   if ('refusal' in confirmed) return confirmed.refusal
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
 
   try {
+    if (configFingerprint(approvalPreview(next)) !== configFingerprint(approval)) return errorResult('Launch defaults changed during review. Nothing was saved; review the Profile again.')
     const updated = await updateAgentProfile(row, { name, config })
+    if (configFingerprint(agentProfileLaunchConfig(updated)) === configFingerprint(approval.config)) approveAgentProfile(updated, approval.config, approval.provider)
     return toolResult({ status: 'ok', action: 'update', profile: profileResultView(updated), changed: changes.map((c) => c.field) })
   } catch (err) {
     return writeFailed('update', err)
@@ -594,6 +626,7 @@ async function updateProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
 }
 
 export async function agentProfileApplyHandler(args: AgentProfileApplyArgs, deps: BuiltInSuperoneToolDeps) {
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
   if (args.action === 'create') return createProfile(args, deps)
   if (args.action === 'update') return updateProfile(args, deps)
   return errorResult('action must be "create" or "update". Use agent_profile_delete to remove profiles.')
@@ -606,6 +639,7 @@ export interface AgentProfileDeleteArgs {
 }
 
 export async function agentProfileDeleteHandler(args: AgentProfileDeleteArgs, deps: BuiltInSuperoneToolDeps) {
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
   const ids = [...new Set((Array.isArray(args.ids) ? args.ids : [])
     .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
     .map((id) => id.trim()))]
@@ -650,6 +684,7 @@ export async function agentProfileDeleteHandler(args: AgentProfileDeleteArgs, de
     abortErrorMessage: 'Agent profile delete cancelled',
   })
   if ('refusal' in confirmed) return confirmed.refusal
+  if (!isAgentProfilesEnabled()) return errorResult(AGENT_PROFILES_DISABLED_MESSAGE)
 
   const deleted: Array<{ id: string; name: string }> = []
   const failed: Array<{ id: string; name: string; error: string }> = []

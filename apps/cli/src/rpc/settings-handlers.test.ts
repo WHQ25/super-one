@@ -231,6 +231,16 @@ describe('settings RPC', () => {
     expect(typeof body.supportLevel).toBe('string')
   })
 
+  it('blocks direct saved Profile creation while its host experiment is off', async () => {
+    const create = vi.fn()
+    const ctx = baseCtx({ settingsConfigPath: configPath })
+    ctx.sessionProviders = { get: () => ({ config: { profile: { version: 1, identity: { name: 'Worker', description: 'Build' } } } }) } as never
+    ctx.sessions = { ...ctx.sessions, create } as never
+    const result = await dispatchRpc('session.create', { projectId: 'p1', harnessId: 'claude', providerId: 'saved-profile' }, ctx)
+    expect(result.error).toMatchObject({ code: 'failed_precondition', message: expect.stringContaining('experimental') })
+    expect(create).not.toHaveBeenCalled()
+  })
+
   it('session.create seeds model/effort from session_providers.config when providerId matches', async () => {
     const patchSettings = vi.fn((_id: string, patch: Record<string, unknown>) => ({
       sessionId: 's-new',

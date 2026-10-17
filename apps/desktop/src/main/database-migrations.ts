@@ -1,3 +1,4 @@
+import { ensureAgentProfileApprovalSchema } from './session/agent-profile-approval-schema'
 import { parseProviderModelEnv, type ProviderModelEnv } from '@superone/shared/agent-types'
 import {
   foldOverridesIntoEndpoints,
@@ -41,7 +42,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 15
+export const SCHEMA_VERSION = 16
 
 /**
  * The oldest schema revision that can still read this database.
@@ -695,6 +696,7 @@ function applyMigrations(db: Database.Database): void {
   ensureCollaborationGrantUniqueness(db, { warn: (message) => log.warn(message) })
   db.exec(COLLABORATION_WAKE_TABLE_DDL)
   db.exec(SESSION_CONTINUATION_TABLE_DDL)
+  ensureAgentProfileApprovalSchema(db)
   // Composer scheduled sends, local and remote-node; DDL owned by the module.
   ensureScheduledSendsSchema(db, { warn: (message) => log.warn(message) })
 

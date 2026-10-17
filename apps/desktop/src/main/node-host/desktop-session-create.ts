@@ -1,3 +1,5 @@
+import { assertAgentProfileLaunchEnabled } from '../session/agent-profile-feature'
+import { getSessionProvider } from '../session/session-provider-repo'
 import { randomUUID } from 'node:crypto'
 import type { SessionHostPort } from '@superone/runtime/server'
 import type { PermissionMode, SandboxMode, SendMessageRequest } from '@superone/shared/agent-types'
@@ -41,6 +43,7 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
   // A spawn child's successor runs as that child: its prompt and approved settings.
   const launch = continuesFrom ? continuations!.launch(continuesFrom) : null
   options.assertCreate()
+  if (!continuesFrom && input.providerId) assertAgentProfileLaunchEnabled(getSessionProvider(input.providerId)?.config)
   let cwd = input.cwd ?? projectPath
   // A session's branch names the worktree it lives in. Picking a branch for the
   // main checkout is a checkout below, not a session property: the desktop reads
@@ -69,6 +72,7 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
     }
     options.assertCreate()
     const providerId = input.providerId ?? `${input.harnessId ?? 'claude'}-base`
+    if (!continuesFrom) assertAgentProfileLaunchEnabled(getSessionProvider(providerId)?.config)
     deps.edits.create({ sessionId, projectPath, cwd, title: input.title, providerId })
     persisted = true
     if (controller) deps.edits.setController(sessionId, controller, providerId)
@@ -80,6 +84,7 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
       systemPromptAppend: input.systemPromptAppend ?? launch?.systemPromptAppend ?? undefined,
       permissionMode: launch?.permissionMode ?? settings.permissionMode as PermissionMode | undefined,
       sandboxMode: launch?.sandboxMode ?? settings.sandboxMode as SandboxMode | undefined,
+      codexPermissionPreset: launch?.codexPermissionPreset,
       model: settings.model ?? undefined, effort: settings.effort as SendMessageRequest['effort'] | undefined,
       apiProviderId: input.apiProviderId, acpAgentId: input.acpAgentId ?? null,
       additionalDirectories: settings.additionalDirectories ?? undefined,

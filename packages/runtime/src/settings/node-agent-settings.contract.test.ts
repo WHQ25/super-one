@@ -10,7 +10,7 @@ const samples = {
   claude: { defaultModel: 'claude-sonnet-4-6', defaultEffort: 'high', permissionMode: 'acceptEdits',
     sandboxMode: 'auto', disabledSkills: ['contract-skill'], askUserQuestionPreviewFormat: 'html' },
   codex: { defaultModel: 'gpt-6.1-sol', defaultEffort: 'ultra', permissionPreset: 'full-access' },
-  experimentalClaudeOpenAiChatEnabled: true, projectsDir: '/tmp/contract-projects',
+  experimentalAgentProfilesEnabled: true, experimentalClaudeOpenAiChatEnabled: true, projectsDir: '/tmp/contract-projects',
 } satisfies Required<Pick<NodeAgentSettings, keyof NodeAgentSettingsPatch>>
 const turnConsumers = {
   defaultModel: 'model', defaultEffort: 'effort', permissionMode: 'permissionMode',

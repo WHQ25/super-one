@@ -49,14 +49,17 @@ import {
 import { abandonHeldDeliveries, collectArtifacts, takeArtifacts, takeHeldDeliveries, type ArtifactRef } from './artifact-registry'
 import type { DeliveryHandle } from '../db-session-deliveries'
 import { randomUUID } from 'node:crypto'
+import { isAgentProfilesEnabled } from '../session/agent-profile-feature'
+import { AGENT_PROFILE_TOOL_NAMES } from './superone-mcp-builtin-defs'
 
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
 const WIDGET_SHOW_NAME = 'widget_show'
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const browserAndComputerUseDenied = isCodexBrowserAndComputerUseDenied(sessionId)
+  const agentProfilesEnabled = isAgentProfilesEnabled()
   const tools = [
-    ...BUILT_IN_SUPERONE_TOOL_DEFS,
+    ...BUILT_IN_SUPERONE_TOOL_DEFS.filter((tool) => agentProfilesEnabled || !AGENT_PROFILE_TOOL_NAMES.some((name) => name === tool.name)),
     ...(browserAndComputerUseDenied ? [] : getBrowserToolDescriptors()),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
     // The same descriptors a remote node advertises, so the two cannot drift apart.

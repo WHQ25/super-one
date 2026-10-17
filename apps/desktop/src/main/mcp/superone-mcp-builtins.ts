@@ -1,3 +1,4 @@
+import { registerAgentProfileTools } from './agent-profile-tool-registration'
 import { ENVIRONMENT_GET_INFO_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
 import { superoneHome } from '../superone-home'
 import { INTERACTION_MEMORY_TOOL_DEFS, memoryActor } from '@superone/shared/interaction-memory'
@@ -66,9 +67,6 @@ import {
   AUTOMATION_LIST_DESCRIPTION,
   AUTOMATION_APPLY_DESCRIPTION,
   AUTOMATION_DELETE_DESCRIPTION,
-  AGENT_PROFILE_LIST_DESCRIPTION,
-  AGENT_PROFILE_APPLY_DESCRIPTION,
-  AGENT_PROFILE_DELETE_DESCRIPTION,
   AUTOMATION_SCHEDULE_INPUT_SCHEMA,
   AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
@@ -121,11 +119,6 @@ import {
   type AutomationListArgs,
 } from './automation-tools'
 import type { AgentProfileApplyArgs, AgentProfileDeleteArgs, AgentProfileListArgs } from './agent-profile-tools'
-import {
-  AGENT_PROFILE_APPLY_INPUT_SCHEMA,
-  AGENT_PROFILE_DELETE_INPUT_SCHEMA,
-  AGENT_PROFILE_LIST_INPUT_SCHEMA,
-} from '@superone/shared/environment/host-action-agent-profile-descriptors'
 import type { SessionManager } from '../session/types'
 import { sessionSuggestTaskHandler, type SessionSuggestTaskArgs } from './suggested-task-tools'
 import {
@@ -916,72 +909,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     })) ?? { content: [{ type: 'text' as const, text: 'Automation deletion cancelled.' }], isError: true },
   )
 
-  server.registerTool(
-    'agent_profile_list',
-    {
-      description: AGENT_PROFILE_LIST_DESCRIPTION,
-      inputSchema: {
-        id: z.string().optional().describe(agentProfileField(AGENT_PROFILE_LIST_INPUT_SCHEMA, 'id')),
-      },
-    },
-    async (args) => (await import('./agent-profile-tools')).agentProfileListHandler(args),
-  )
-
-  server.registerTool(
-    'agent_profile_apply',
-    {
-      description: AGENT_PROFILE_APPLY_DESCRIPTION,
-      inputSchema: {
-        action: z.enum(['create', 'update']).describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'action')),
-        id: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'id')),
-        harnessId: z.enum(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh']).optional()
-          .describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'harnessId')),
-        name: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'name')),
-        description: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'description')),
-        instructions: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'instructions')),
-        model: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'model')),
-        effort: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'effort')),
-        permissionMode: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'permissionMode')),
-        options: z.object({
-          ultracode: z.boolean().nullable().optional().describe(agentProfileOptionField('ultracode')),
-          fastMode: z.boolean().nullable().optional().describe(agentProfileOptionField('fastMode')),
-          contextWindow: z.number().int().positive().nullable().optional().describe(agentProfileOptionField('contextWindow')),
-          mode: z.string().nullable().optional().describe(agentProfileOptionField('mode')),
-          agent: z.string().nullable().optional().describe(agentProfileOptionField('agent')),
-          agentPreset: z.string().nullable().optional().describe(agentProfileOptionField('agentPreset')),
-          modelParams: z.record(z.string(), z.string()).nullable().optional().describe(agentProfileOptionField('modelParams')),
-        }).strict().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'options')),
-      },
-    },
-    async (args, extra) => (await import('./agent-profile-tools')).agentProfileApplyHandler(args, {
-      ...deps,
-      signal: extra?.signal ?? deps.signal,
-    }),
-  )
-
-  server.registerTool(
-    'agent_profile_delete',
-    {
-      description: AGENT_PROFILE_DELETE_DESCRIPTION,
-      inputSchema: {
-        ids: z.array(z.string()).min(1).max(20).describe(agentProfileField(AGENT_PROFILE_DELETE_INPUT_SCHEMA, 'ids')),
-      },
-    },
-    async (args, extra) => (await import('./agent-profile-tools')).agentProfileDeleteHandler(args, {
-      ...deps,
-      signal: extra?.signal ?? deps.signal,
-    }),
-  )
+  registerAgentProfileTools(server, deps)
 
   registerMediaTools(server, deps)
-}
-
-/** Field description from the shared JSON schema, so the Zod surface cannot drift from it. */
-function agentProfileField(schema: { properties: Record<string, { description?: string }> }, field: string): string {
-  return schema.properties[field]?.description ?? ''
-}
-
-function agentProfileOptionField(option: string): string {
-  const options = AGENT_PROFILE_APPLY_INPUT_SCHEMA.properties.options as { properties: Record<string, { description?: string }> }
-  return options.properties[option]?.description ?? ''
 }

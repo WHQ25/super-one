@@ -5,6 +5,8 @@ import {
   type AgentProfileConfirmView,
   type ElicitationFormField,
   type PermissionRequest,
+  type SessionAgentLaunchConfig,
+  type HarnessId,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName } from '@superone/shared/acp-brand'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
@@ -13,6 +15,7 @@ import { HARNESS_PROFILE_OPTIONS } from '@superone/shared/agent-profile-options'
 import { schemaFormForResourceHost, type SchemaForm, type SchemaFormField } from '@superone/shared/schema-form'
 import { buildCollaborationFormAnswers } from './collaboration-state'
 import { permissionModeLabel } from './ui/permission-mode-data'
+import { profileLaunchSandboxMode } from '@superone/shared/agent-profile-launch'
 
 export type PermissionSheetItem = {
   title: string
@@ -32,6 +35,19 @@ export type PermissionSheetPresentation = {
   sessionLabel?: string
   items: PermissionSheetItem[]
   destructive?: boolean
+}
+
+function launchConfigurationItems(config: SessionAgentLaunchConfig, harnessId?: HarnessId, acpAgentId?: string): PermissionSheetItem[] {
+  return [
+    ...(harnessId === 'acp' ? [{ title: 'ACP agent', label: true, subtitle: acpAgentId ?? 'Unresolved (launch approval required)' }] : []),
+    ...(config.model ? [{ title: 'Model', label: true, subtitle: config.model }] : []),
+    ...(config.effort ? [{ title: 'Effort', label: true, subtitle: config.effort }] : []),
+    { title: 'Permission', label: true, subtitle: config.codexPermissionPreset === 'read-only' ? 'Read-only' : harnessId ? permissionModeLabel(config.permissionMode ?? 'default', harnessId) : config.permissionMode ?? 'default' },
+    { title: 'Sandbox', label: true, subtitle: profileLaunchSandboxMode(config, harnessId) },
+    { title: 'Provider / account', label: true, subtitle: config.apiProviderId ?? 'Default harness account' },
+    ...((config.fastMode ?? config.claudeFastMode) !== undefined ? [{ title: 'Fast mode', label: true, subtitle: (config.fastMode ?? config.claudeFastMode) ? 'On' : 'Off' }] : []),
+    ...Object.entries(config.options ?? {}).map(([key, value]) => ({ title: AGENT_PROFILE_FIELD_LABELS[key as keyof typeof AGENT_PROFILE_FIELD_LABELS] ?? key, label: true, subtitle: typeof value === 'object' ? JSON.stringify(value) : String(value) })),
+  ]
 }
 
 const AGENT_PROFILE_FIELD_LABELS: Record<AgentProfileConfirmChange['field'], string> = {
@@ -257,11 +273,14 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         title: operation === 'delete' ? 'Delete agents?' : operation === 'create' ? 'Create agent?' : 'Update agent?',
         description: operation === 'delete'
           ? 'Sessions already started on them continue on the built-in agent of their harness.'
-          : 'Review the agent before saving. It is offered for delegation once saved.',
+          : payload?.collaborationApproval ? 'Allow future collaboration with this Profile and the configuration below in the same project, including branch/detached worktrees without copying local changes. Other configurations still ask. Delete the Profile to revoke approval.' : 'Review the agent before saving. It is offered for delegation once saved.',
         approveLabel: operation === 'delete' ? 'Delete' : 'Save agent',
         denyLabel: 'Cancel',
         destructive: operation === 'delete',
-        items: operation === 'update'
+        items: payload?.collaborationApproval ? [
+          ...(payload.profiles ?? []).flatMap(agentProfileItems),
+          ...launchConfigurationItems(payload.collaborationApproval.config, payload.profiles[0]?.harnessId, payload.profiles[0]?.acpAgentId),
+        ] : operation === 'update'
           ? (payload?.changes ?? []).map((change) => ({
             title: AGENT_PROFILE_FIELD_LABELS[change.field],
             label: true,

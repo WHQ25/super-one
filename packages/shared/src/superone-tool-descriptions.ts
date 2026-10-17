@@ -167,7 +167,7 @@ export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Request user approval for collaboration launches. See the mode field for spawn vs handoff vs link. ' +
   'Spawn/handoff: pick an agentId from session_collab_list_agents; require name, role, summary. Link: require sessionId + summary. ' +
   'Read read_manual({ domain: "product", topic: "collaboration" }) before the first launch in a session. ' +
-  'User must approve; returns a launchId per launch. Pass the task to session_collab_start, not here.'
+  'When the Agent Profiles experiment is enabled, exact local same-project Default Profile launches follow current user settings without confirmation and saved Profiles reuse matching consent. Otherwise launches ask. Returns launchIds; pass tasks to session_collab_start.'
 
 export const LAUNCH_SUMMARY_DESCRIPTION =
   'Short 2–3 sentence summary the user approves in the confirm dialog. The full brief goes to session_collab_start.'
@@ -280,15 +280,15 @@ export const AUTOMATION_DELETE_DESCRIPTION =
   'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
 
 export const AGENT_PROFILE_LIST_DESCRIPTION =
-  'List agent profiles: named agents that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
+  'List agent profiles offered by session_collab_list_agents. Built-in <harness>-base Default Profiles follow current user settings; matching local same-project launches need no confirmation. ' +
   'Without id: one row per profile (id, name, harness, base, short description). ' +
   'Pass id for its full description and instructions, runtime, launch defaults, and what that harness accepts: models, their efforts, permission modes, and its own options (each harness has different ones). ' +
-  'Read this before agent_profile_apply or agent_profile_delete.'
+  'Read this before agent_profile_apply or agent_profile_delete. For the Coordinator pattern, read_manual({ domain: "product", topic: "agent-profiles" }).'
 
 export const AGENT_PROFILE_APPLY_DESCRIPTION =
-  'Create or update an agent profile. create needs harnessId, name, description; update needs id plus the fields to change (empty string clears model, effort, permissionMode or instructions; null clears an option). ' +
-  'description is what other agents read to pick a delegate, so say what this agent is for. model, effort, permissionMode and options must be ones the harness accepts: read agent_profile_list with the <harness>-base id first. ' +
-  'Built-in <harness>-base rows are read-only; remove profiles with agent_profile_delete. Always opens a user confirmation dialog, where the user may edit a new profile before approving; applies nothing without approval.'
+  'Create or update a saved Agent Profile. create needs harnessId, name and description; update needs id and optional changed fields. An unchanged update reviews a legacy Profile for collaboration approval. ' +
+  'Read agent_profile_list({ id: "<harness>-base" }) for model, effort, permissionMode and options. Empty strings clear model/effort/permissionMode/instructions; null clears an option. ' +
+  'Always opens a confirmation dialog to review the definition and final defaults. Approval also allows future same-project collaboration with that exact configuration; changes still ask. Built-in rows are read-only. Use agent_profile_delete to revoke approval.'
 
 export const AGENT_PROFILE_DELETE_DESCRIPTION =
   'Permanently delete agent profiles by id (from agent_profile_list). Sessions already started on one fall back to its built-in harness agent. ' +

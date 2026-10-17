@@ -62,6 +62,9 @@ export function AppSettingsPage() {
 
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const setExperimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.setExperimentalClaudeOpenAiChatEnabled)
+  const [savingAgentProfiles, setSavingAgentProfiles] = useState(false)
+  const agentProfilesEnabled = useAppStore((s) => s.experimentalAgentProfilesEnabled)
+  const setAgentProfilesEnabled = useAppStore((s) => s.setExperimentalAgentProfilesEnabled)
   const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const setExperimentalRemoteNodesEnabled = useAppStore((s) => s.setExperimentalRemoteNodesEnabled)
 
@@ -267,6 +270,22 @@ export function AppSettingsPage() {
       </SettingsSection>
 
       <SettingsSection title={t('settings.general.experimental')}>
+        <SettingsRow
+          label={t('settings.general.experimentalAgentProfiles.label')}
+          description={t('settings.general.experimentalAgentProfiles.description')}
+        >
+          <Switch
+            aria-label={t('settings.general.experimentalAgentProfiles.label')}
+            checked={agentProfilesEnabled}
+            onCheckedChange={(enabled) => {
+              setSavingAgentProfiles(true)
+              void setAgentProfilesEnabled(enabled).then(() => {
+                toast.success(t(enabled ? 'settings.general.experimentalAgentProfiles.enabled' : 'settings.general.experimentalAgentProfiles.disabled'))
+              }).catch((error) => toast.error(String(error))).finally(() => setSavingAgentProfiles(false))
+            }}
+            disabled={loading || savingAgentProfiles}
+          />
+        </SettingsRow>
         <SettingsRow
           label={t('settings.general.experimentalClaudeOpenAiChat.label')}
           description={t('settings.general.experimentalClaudeOpenAiChat.description')}

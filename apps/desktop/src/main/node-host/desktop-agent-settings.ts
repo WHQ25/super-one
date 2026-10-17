@@ -8,7 +8,7 @@ import { normalizeNodeAgentSettings } from '@superone/runtime/settings'
  * window's clone dialog defaults for this machine.
  */
 export function desktopAgentSettings(
-  settings: Pick<AppSettings, 'agentPreference' | 'experimentalClaudeOpenAiChatEnabled' | 'defaultClonePaths' | 'sessionContinuationHint'>,
+  settings: Pick<AppSettings, 'agentPreference' | 'experimentalClaudeOpenAiChatEnabled' | 'experimentalAgentProfilesEnabled' | 'defaultClonePaths' | 'sessionContinuationHint'>,
 ): NodeAgentSettings {
   const { claude, codex } = settings.agentPreference
   const agent = normalizeNodeAgentSettings({
@@ -26,6 +26,7 @@ export function desktopAgentSettings(
       permissionPreset: codex.defaultPermissionPreset,
     },
     experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled,
+    experimentalAgentProfilesEnabled: settings.experimentalAgentProfilesEnabled,
     projectsDir: settings.defaultClonePaths.local ?? '',
   })
   // Not an agent default: the phone's continuation hint follows this desktop's.

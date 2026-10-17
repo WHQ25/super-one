@@ -46,6 +46,8 @@ export interface NodeAgentSettings {
   claude: NodeClaudeAgentDefaults
   codex: NodeCodexAgentDefaults
   experimentalClaudeOpenAiChatEnabled: boolean
+  /** Opt-in Agent Profiles and their preapproved collaboration launches. */
+  experimentalAgentProfilesEnabled: boolean
   /**
    * Directory `git.clone` puts a repository in when the caller names none, as
    * when another machine launches an agent here for a repository this machine
@@ -75,6 +77,7 @@ export type NodeAgentSettingsPatch = {
     }
   >
   experimentalClaudeOpenAiChatEnabled?: boolean
+  experimentalAgentProfilesEnabled?: boolean
   projectsDir?: string
 }
 

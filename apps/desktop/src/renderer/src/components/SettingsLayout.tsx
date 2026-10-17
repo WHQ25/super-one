@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { ArrowLeft, BarChart3, Brain, Cpu, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bot, Brain, Cpu, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { ProvidersPage } from './ProvidersPage'
@@ -13,6 +13,8 @@ import { HarnessesSettingsPage } from './HarnessesSettingsPage'
 import { TerminalSettingsPage } from './TerminalSettingsPage'
 import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
 import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
+
+const AgentProfilesPage = lazy(() => import('./AgentProfilesPage').then((m) => ({ default: m.AgentProfilesPage })))
 
 const UsagePage = lazy(() => import('./UsagePage').then((m) => ({ default: m.UsagePage })))
 
@@ -30,6 +32,7 @@ const tabGroups = [
     tabs: [
       { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Brain },
       { id: 'harnesses' as const, labelKey: 'settings.layout.tabs.harnesses', icon: Cpu },
+      { id: 'agent-profiles' as const, labelKey: 'settings.layout.tabs.agentProfiles', icon: Bot },
     ],
   },
   {
@@ -52,6 +55,7 @@ const tabGroups = [
 export function SettingsLayout() {
   const { t } = useTranslation()
   const settingsTab = useAppStore((s) => s.settingsTab)
+  const agentProfilesEnabled = useAppStore((s) => s.experimentalAgentProfilesEnabled)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const computerUseSupported = isComputerUseSupportedPlatform(window.app.platform)
@@ -59,7 +63,8 @@ export function SettingsLayout() {
   const resolvedSettingsTab =
     (settingsTab as string) === 'environments' ? 'remote' : settingsTab
   const activeSettingsTab =
-    !computerUseSupported && resolvedSettingsTab === 'computer-use'
+    (!computerUseSupported && resolvedSettingsTab === 'computer-use')
+      || (!agentProfilesEnabled && resolvedSettingsTab === 'agent-profiles')
       ? 'app-settings'
       : resolvedSettingsTab
 
@@ -79,6 +84,7 @@ export function SettingsLayout() {
             <SettingsNavGroup key={group.labelKey} label={t(group.labelKey)}>
               {group.tabs
                 .filter((tab) => computerUseSupported || tab.id !== 'computer-use')
+                .filter((tab) => agentProfilesEnabled || tab.id !== 'agent-profiles')
                 .map((tab) => (
                   <SettingsNavItem
                     key={tab.id}
@@ -100,6 +106,7 @@ export function SettingsLayout() {
         {activeSettingsTab === 'app-settings' && <AppSettingsPage />}
         {activeSettingsTab === 'appearance' && <AppearancePage />}
         {activeSettingsTab === 'harnesses' && <HarnessesSettingsPage />}
+        {activeSettingsTab === 'agent-profiles' && <Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}><AgentProfilesPage /></Suspense>}
         {activeSettingsTab === 'browser' && <BrowserSettingsPage />}
         {activeSettingsTab === 'computer-use' && <ComputerUseSettingsPage />}
         {activeSettingsTab === 'terminal' && <TerminalSettingsPage />}

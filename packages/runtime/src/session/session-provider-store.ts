@@ -60,7 +60,7 @@ function hasProfile(config: unknown): boolean {
 
 function profileWriteRefused(): Error {
   return Object.assign(
-    new Error('Agent profiles change only through agent_profile_apply / agent_profile_delete, which ask the user first.'),
+    new Error('Agent profiles change only through reviewed Profile settings or agent_profile_apply / agent_profile_delete, which ask the user first.'),
     { code: 'failed_precondition' },
   )
 }
@@ -152,8 +152,8 @@ export interface SessionProviderStore {
 }
 
 /**
- * Agent profile writes, for a host's own confirm flow only — never served
- * over RPC or IPC. `expected` is the row the user saw: a row changed since
+ * Agent profile writes, for a host's own reviewed management flow only — never
+ * served raw over provider RPC or IPC. `expected` is the row the user saw: a row changed since
  * fails with `aborted` instead of being overwritten with an unseen state.
  */
 export interface AgentProfileWriter {

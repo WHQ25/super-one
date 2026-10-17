@@ -50,6 +50,15 @@ function boot() {
 }
 
 describe('sessionProviders RPC', () => {
+  it('hides saved Profiles until the host experiment is enabled without deleting them', () => {
+    const { admin, sessionProviders } = boot()
+    const saved = sessionProviders.profiles.create({ harnessId: 'claude', name: 'Worker', config: { profile: { version: 1, identity: { name: 'Worker', description: 'Build' } } } })
+    const list = (agentProfilesEnabled?: () => boolean) => (dispatchSessionProviderRpc('sessionProviders.list', {}, { ...admin, agentProfilesEnabled })?.result as { providers: Array<{ id: string }> }).providers
+    expect(list().map((row) => row.id)).not.toContain(saved.id)
+    expect(list(() => true).map((row) => row.id)).toContain(saved.id)
+    expect(sessionProviders.get(saved.id)).not.toBeNull()
+  })
+
   it('list returns seeded base profiles', () => {
     const { admin } = boot()
     const res = dispatchSessionProviderRpc('sessionProviders.list', {}, admin)

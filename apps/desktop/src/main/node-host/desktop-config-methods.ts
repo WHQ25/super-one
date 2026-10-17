@@ -1,3 +1,4 @@
+import { isAgentProfilesEnabled } from '../session/agent-profile-feature'
 import type { ProjectsPort, RpcExtensionDispatch } from '@superone/runtime/server'
 import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc, type AutomationRpcContext } from '@superone/runtime/server/rpc-automations'
 import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@superone/runtime/server/rpc-session-providers'
@@ -21,7 +22,7 @@ export function createDesktopConfigMethods(config: DesktopConfig, projects: Proj
   const sessionProviders = redactedSessionProviderStore(config.sessionProviders)
   return {
     dispatch: async (method, payload, ctx) =>
-      dispatchSessionProviderRpc(method, payload, { client: ctx.client, sessionProviders })
+      dispatchSessionProviderRpc(method, payload, { client: ctx.client, sessionProviders, agentProfilesEnabled: isAgentProfilesEnabled })
       ?? await dispatchAutomationRpc(method, payload, { client: ctx.client, projects, ...config.automations }),
     methods: new Set([...SESSION_PROVIDER_RPC_METHODS, ...AUTOMATION_RPC_METHODS]),
   }

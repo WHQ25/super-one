@@ -41,6 +41,10 @@ import { resolveCodexServiceTier, toolResult } from './collaboration-host'
 import type { Session, SessionManager } from './types'
 import { openSessionAgentsConfirm } from './session-collaboration-confirm'
 import { hasExternalParent } from './collaboration-external-parent'
+import { currentApprovalFingerprint, isPreapprovedProfileLaunch } from './agent-profile-approval'
+import { getSessionProvider } from './session-provider-repo'
+import { isDefaultSessionProvider } from '@superone/shared/session-provider-definitions'
+import { profileLaunchConfig } from '@superone/shared/agent-profile-launch'
 
 export { setSessionCollaborationCallbacks } from './collaboration-host'
 export { sendSessionMessage, retrieveSessionMessages, type SessionSendArgs, type SessionRetrieveArgs } from './collaboration-messaging'
@@ -132,6 +136,7 @@ export interface SessionCollaborationRunConfig {
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
   codexServiceTier?: string | null
+  codexPermissionPreset?: SessionAgentLaunchConfig['codexPermissionPreset']
 }
 
 
@@ -168,6 +173,9 @@ function normalizeLaunches(
   assertLaunchCount(args.launches.length)
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   return args.launches.map((launch, index) => {
+    if (['profileApproval', 'handoffSessionId', 'codexServiceTier', 'codexPermissionPreset'].some((key) => launch.config && Object.hasOwn(launch.config, key))) {
+      throw new Error('Launch bookkeeping is host-owned and cannot be supplied in launch config.')
+    }
     const mode = resolveLaunchMode(launch.mode)
     const launchId = launch.launchId?.trim() || randomUUID()
 
@@ -375,13 +383,14 @@ function remoteLaunchProposal(
 
 
 /** Persist human-approved launches; also the approval path of a launched suggested task. */
-export function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[]): ApprovedLaunch[] {
+export function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[], preapproved = new Set<string>()): ApprovedLaunch[] {
   assertLaunchCount(launches.length)
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   const grants = store()
-  return grants.transaction(() => launches.map((launch) => {
+  return grants.transaction(() => launches.map((original) => {
+    let launch = original
     if (resolveLaunchMode(launch.mode) === 'link') {
       const peerSessionId = launch.sessionId?.trim()
       if (peerSessionId && !getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(peerSessionId)) {
@@ -396,9 +405,19 @@ export function createGrants(parentSessionId: string, launches: SessionAgentLaun
       return recordApprovedLaunch(grants, parentSessionId, launch, launch.config).approved
     }
     // Also covers the confirm UI's provider edit, which reaches here as renderer input.
+    const defaults = isDefaultSessionProvider(getSessionProvider(profile.id)!)
+    if (preapproved.has(launch.launchId) && defaults) launch = { ...launch, config: profileLaunchConfig(launch.config, profile.defaultConfig) }
     assertKnownApiProviderId(launch.config, profile)
+    if (preapproved.has(launch.launchId) && !isPreapprovedProfileLaunch(profile, launch, launch.config.cwd ?? '')) {
+      throw new Error('Profile approval or configuration changed. Request this launch again for user review.')
+    }
     const config = {
       ...launch.config,
+      ...(preapproved.has(launch.launchId) ? { profileApproval: {
+        ...(defaults ? { source: 'defaults' } : {}),
+        fingerprint: currentApprovalFingerprint(getSessionProvider(profile.id)!, profile),
+        cwd: launch.config.cwd,
+      } } : {}),
       ...(typeof launch.config.fastMode === 'boolean'
         ? { codexServiceTier: resolveCodexServiceTier(launch.agentId, launch.config, profile) }
         : {}),
@@ -426,9 +445,19 @@ export async function requestSessionAgents(
     ? await planRemoteLaunches(args, parent)
     : undefined
   const launches = normalizeLaunches(args, parent, remotes)
+  const profiles = listSessionAgentProfiles()
+  const preapproved = new Set(launches.filter((launch) => {
+    const profile = profiles.find((item) => item.id === launch.agentId)
+    return profile && isPreapprovedProfileLaunch(profile, launch, defaultLaunchCwd(parent))
+  }).map((launch) => launch.launchId))
+  const needsReview = launches.filter((launch) => !preapproved.has(launch.launchId))
+  if (signal?.aborted) return toolResult({ status: 'cancelled' })
+  if (needsReview.length === 0) return toolResult({
+    status: 'approved', approval: launches.some((launch) => profiles.find((profile) => profile.id === launch.agentId)?.followsDefaults) ? 'profile_defaults' : 'saved_profile', launches: createGrants(callerSessionId, launches, preapproved), next: START_APPROVED_LAUNCHES_HINT,
+  })
   let outcome: Awaited<ReturnType<typeof openSessionAgentsConfirm>>
   try {
-    outcome = await openSessionAgentsConfirm(parent, { launches, profiles: listSessionAgentProfiles() }, signal)
+    outcome = await openSessionAgentsConfirm(parent, { launches: needsReview, profiles }, signal)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (/timed out|cancelled/i.test(message)) return toolResult({ status: 'cancelled', message })
@@ -438,11 +467,13 @@ export async function requestSessionAgents(
   if (outcome.action === 'decline') {
     return toolResult({ status: 'rejected', feedback: outcome.content?.feedback })
   }
-  const confirmed = mergeConfirmedLaunches(launches, outcome.content)
+  if (signal?.aborted) return toolResult({ status: 'cancelled' })
+  const reviewed = mergeConfirmedLaunches(needsReview, outcome.content)
+  const confirmed = [...launches.filter((launch) => preapproved.has(launch.launchId)), ...reviewed]
   await assertRemoteLaunchConfigs(confirmed)
   return toolResult({
     status: 'approved',
-    launches: createGrants(callerSessionId, confirmed),
+    launches: createGrants(callerSessionId, confirmed, preapproved),
     next: START_APPROVED_LAUNCHES_HINT,
   })
 }
@@ -516,5 +547,6 @@ export function getSessionCollaborationRunConfig(
     ...(permissionMode ? { permissionMode } : {}),
     ...(sandboxMode ? { sandboxMode } : {}),
     ...(hasFastMode ? { codexServiceTier } : {}),
+    ...(config.codexPermissionPreset ? { codexPermissionPreset: config.codexPermissionPreset } : {}),
   }
 }

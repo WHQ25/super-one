@@ -1059,6 +1059,8 @@ export interface SessionAgentProfile {
   id: string
   name: string
   harnessId: HarnessId
+  /** Built-in Profile: effective configuration is resolved from current user defaults on every launch. */
+  followsDefaults?: boolean
   /**
    * ACP protocol agent id (e.g. `grok-build`). Only set when harnessId is `acp`.
    * UI brand key is derived as `acp-<short>` (e.g. `acp-grok`).
@@ -1131,6 +1133,8 @@ export interface SessionAgentLaunchConfig {
   claudeFastMode?: boolean
   /** Host-resolved tier persisted with approved collaboration grants. Not agent-editable. */
   codexServiceTier?: string | null
+  /** Host-resolved native Codex default, including read-only which has no shared permission mode. */
+  codexPermissionPreset?: CodexPermissionPreset
   apiProviderId?: string | null
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
@@ -1427,7 +1431,7 @@ export type AgentProfileRuntimeField = 'effort' | 'permissionMode' | AgentProfil
 export interface AgentProfileConfirmView {
   id?: string
   harnessId: HarnessId
-  /** ACP protocol agent the profile is pinned to. */
+  /** Resolved ACP protocol agent shown for review (legacy Profiles may follow the user's selection). */
   acpAgentId?: string
   name: string
   description: string
@@ -1461,6 +1465,8 @@ export interface AgentProfileConfirmPayload {
   changes?: AgentProfileConfirmChange[]
   /** Create only: lets the card edit the proposal before it is saved. */
   editor?: AgentProfileConfirmEditor
+  /** Explicit persistent collaboration consent; absent on older confirmations. */
+  collaborationApproval?: { baseConfig: SessionAgentLaunchConfig; config: SessionAgentLaunchConfig }
 }
 
 /**
@@ -1489,7 +1495,7 @@ export interface AgentProfileConfirmEditor {
    */
   agent?: SessionAgentProfile
   /** What the draft's model, effort and options are checked against. */
-  catalog: AgentProfileOptionCatalog
+  catalog: AgentProfileOptionCatalog & { efforts?: readonly string[] }
 }
 
 /** One row in the permanent-delete confirm dialog (mirrors session_list metadata). */
@@ -5554,6 +5560,8 @@ export interface AppSettings {
   enabledExperimentalAgents: string[]
   /** Allow Claude Code to use OpenAI Chat Completions through the local protocol proxy. */
   experimentalClaudeOpenAiChatEnabled: boolean
+  /** Opt-in Agent Profile management and preapproved collaboration launches. Default off. */
+  experimentalAgentProfilesEnabled: boolean
   /**
    * Opt-in remote execution environments (node / Other Devices + sidebar host
    * switcher). Default off — mobile remote-control of this host stays available.
@@ -5820,6 +5828,7 @@ export interface AppSettingsPatch {
   experimentalAgentsEnabled?: boolean
   enabledExperimentalAgents?: string[]
   experimentalClaudeOpenAiChatEnabled?: boolean
+  experimentalAgentProfilesEnabled?: boolean
   experimentalRemoteNodesEnabled?: boolean
   remoteNodeAccessEnabled?: boolean
   remoteNodeAccessPort?: number | null

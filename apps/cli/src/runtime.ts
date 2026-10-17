@@ -263,6 +263,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     projects,
     workspaceGit,
     sessionProviders,
+    experimentalAgentProfilesEnabled: () =>
+      loadNodeAgentSettings(paths.configJson).experimentalAgentProfilesEnabled,
     experimentalClaudeOpenAiChatEnabled: () =>
       loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,
   })

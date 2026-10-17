@@ -683,6 +683,37 @@ export type Messages = {
     stalled: string
   }
   settings: {
+    agentProfiles: {
+      refreshReview: string
+      title: string
+      subtitle: string
+      create: string
+      edit: string
+      name: string
+      description: string
+      instructions: string
+      instructionsHint: string
+      runtime: string
+      resetRuntime: string
+      effectiveConfig: string
+      saveAndApprove: string
+      defaults: string
+      saved: string
+      noProfiles: string
+      noSaved: string
+      defaultBadge: string
+      approved: string
+      needsReview: string
+      unavailable: string
+      configureDefaults: string
+      defaultHint: string
+      noInstructions: string
+      defaultApproval: string
+      approvedHint: string
+      reviewHint: string
+      deleteTitle: string
+      deleteHint: string
+    }
     layout: {
       tabs: {
         general: string
@@ -696,6 +727,7 @@ export type Messages = {
         mediaGen: string
         providers: string
         harnesses: string
+        agentProfiles: string
         agents: string
         skills: string
         mcp: string
@@ -1318,6 +1350,12 @@ export type Messages = {
       }
       experimental: string
       experimentalAgents: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
+      experimentalAgentProfiles: {
         label: string
         description: string
         enabled: string
@@ -2240,6 +2278,9 @@ export type Messages = {
       automationChangeFromTo: string
       /** agent_profile_apply / agent_profile_delete HITL */
       agentProfile: {
+        approvalNote: string
+        defaultAccount: string
+        unresolvedAgent: string
         createTitle: string
         namePlaceholder: string
         descriptionPlaceholder: string
@@ -2261,6 +2302,9 @@ export type Messages = {
           model: string
           effort: string
           permissionMode: string
+          sandboxMode: string
+          apiProviderId: string
+          acpAgentId: string
           name: string
           ultracode: string
           fastMode: string
@@ -5149,6 +5193,37 @@ export const en: Messages = {
     stalled: 'Stalled with no recent progress',
   },
   settings: {
+    agentProfiles: {
+      refreshReview: 'Refresh Configuration',
+      title: "Agent Profiles",
+      subtitle: "Manage default and saved agents on this device.",
+      create: "New Profile",
+      edit: "Edit Profile",
+      name: "Name",
+      description: "Description",
+      instructions: "Instructions",
+      instructionsHint: "Added to the agent’s system prompt whenever this Profile is used.",
+      runtime: "Runtime Settings",
+      resetRuntime: "Use Defaults",
+      effectiveConfig: "Effective Configuration",
+      saveAndApprove: "Save & Approve Collaboration",
+      defaults: "Default Profiles",
+      saved: "Saved Profiles",
+      noProfiles: "No Profiles available. Enable a harness to get started.",
+      noSaved: "Create a Profile for a recurring role or task.",
+      defaultBadge: "Follows Defaults",
+      approved: "Collaboration Approved",
+      needsReview: "Review Required",
+      unavailable: "Harness Unavailable",
+      configureDefaults: "Configure Defaults",
+      defaultHint: "This Profile always reflects the latest defaults for its harness. Change them in Harness settings.",
+      noInstructions: "No additional instructions.",
+      defaultApproval: "Local collaboration in the same project uses current defaults without another confirmation. Overrides, links and launches on other devices still ask.",
+      approvedHint: "Matching local collaboration uses this reviewed configuration without another confirmation. Changes to inherited defaults require a new review.",
+      reviewHint: "Save and review this Profile’s current configuration to approve matching future collaboration.",
+      deleteTitle: "Delete {{name}}?",
+      deleteHint: "This revokes the Profile’s collaboration approval. Existing sessions are kept and moved to the harness’s default Profile.",
+    },
     layout: {
       tabs: {
         general: 'General',
@@ -5162,6 +5237,7 @@ export const en: Messages = {
         mediaGen: 'Image Gen',
         providers: 'AI Provider',
         harnesses: 'Harnesses',
+        agentProfiles: 'Agent Profiles',
         agents: 'Subagents',
         skills: 'Skills',
         mcp: 'MCP Servers',
@@ -5842,6 +5918,12 @@ export const en: Messages = {
         description: 'Show experimental agents including OpenCode and non-Grok ACP agents. Behavior may change.',
         enabled: 'Experimental agents enabled',
         disabled: 'Experimental agents disabled',
+      },
+      experimentalAgentProfiles: {
+        label: 'Agent Profiles',
+        description: 'Manage reusable agent configurations and use Profile tools. Matching local collaboration launches use the current default or saved Profile without asking again.',
+        enabled: 'Agent Profiles enabled',
+        disabled: 'Agent Profiles disabled',
       },
       experimentalClaudeOpenAiChat: {
         label: 'Claude Chat Completions Bridge',
@@ -6772,6 +6854,9 @@ export const en: Messages = {
       automationEnabledOff: 'off',
       automationChangeFromTo: '{{from}} → {{to}}',
       agentProfile: {
+        approvalNote: 'Allow future collaboration with this Profile and the configuration below, in the same project, including new branch or detached worktrees without copying local changes. Other configurations still ask. Delete the Profile to revoke approval.',
+        defaultAccount: 'Default Harness Account',
+        unresolvedAgent: 'Unresolved (Launch Approval Required)',
         createTitle: 'Create Agent Profile',
         namePlaceholder: 'Name',
         descriptionPlaceholder: 'What this agent is for',
@@ -6793,6 +6878,9 @@ export const en: Messages = {
           model: 'Model',
           effort: 'Effort',
           permissionMode: 'Permission',
+          sandboxMode: 'Sandbox',
+          apiProviderId: 'Provider / Account',
+          acpAgentId: 'ACP Agent',
           ultracode: 'Ultracode',
           fastMode: 'Fast Mode',
           contextWindow: 'Context Window',

@@ -54,7 +54,7 @@ type UpdateStatus =
   | 'migration-downloading'
   | 'migration-downloaded'
   | 'migration-error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'terminal' | 'harnesses'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'terminal' | 'harnesses' | 'agent-profiles'
 
 /** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
 export type HarnessConfigSection =
@@ -219,6 +219,8 @@ interface AppState extends HarnessThemeState {
   loadBrandHues: () => Promise<void>
 
   experimentalAgentsEnabled: boolean
+  experimentalAgentProfilesEnabled: boolean
+  setExperimentalAgentProfilesEnabled: (enabled: boolean) => Promise<void>
   setExperimentalAgentsEnabled: (enabled: boolean) => Promise<void>
   /** Non-Grok ACP agent ids enabled from Settings → Harnesses. */
   enabledExperimentalAgents: string[]
@@ -1184,6 +1186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(patch)
   },
   experimentalAgentsEnabled: false,
+  experimentalAgentProfilesEnabled: false,
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
@@ -1205,6 +1208,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         ...readHarnessThemeSettings(settings),
         experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
+        experimentalAgentProfilesEnabled: settings.experimentalAgentProfilesEnabled === true,
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
         experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
         experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
@@ -1234,6 +1238,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('[experimental-agents] persist enabled failed:', err)
       throw err
     }
+  },
+
+  setExperimentalAgentProfilesEnabled: async (enabled) => {
+    const result = await window.app.saveAppSettings({ experimentalAgentProfilesEnabled: enabled })
+    set({ experimentalAgentProfilesEnabled: result.experimentalAgentProfilesEnabled === true })
   },
 
   setEnabledExperimentalAgents: async (ids) => {
@@ -1379,6 +1388,7 @@ if (typeof window !== 'undefined') {
       experimentalAgentsEnabled: settings.experimentalAgentsEnabled,
       enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
       experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
+      experimentalAgentProfilesEnabled: settings.experimentalAgentProfilesEnabled === true,
       experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,

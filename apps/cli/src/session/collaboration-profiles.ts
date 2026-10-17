@@ -13,7 +13,7 @@ import {
 import type { AgentProfileOptionKey } from '@superone/shared/agent-profile-options'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
+import { isDefaultSessionProvider, sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
 import { listHarnessApiProviders, listHarnessModels, resolveHarnessService } from '../provider/resolve-service'
@@ -41,6 +41,7 @@ function launchResolution(
   harnessId: HarnessId,
   config: unknown,
   launch?: AgentLaunchDefaults,
+  followsDefaults = false,
 ) {
   const harnessModels = listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
   const defaultModel = harnessModels.find((m) => m.isDefault) ?? harnessModels[0]
@@ -56,7 +57,7 @@ function launchResolution(
       model: defaultModel?.id,
       effort: efforts.has('high') ? 'high' : efforts.has('medium') ? 'medium' : [...efforts][0],
     },
-    profile: providerLaunchRuntime(config),
+    profile: followsDefaults ? undefined : providerLaunchRuntime(config),
     launch,
   })
   return { harnessModels, efforts, catalog, defaults }
@@ -74,7 +75,7 @@ export function collaborationLaunchDefaults(
 ): SessionAgentLaunchConfig {
   const explicit: AgentLaunchDefaults = launchDefaultsFromConfig(launch)
   if (!Object.keys(explicit).length) return profile.defaultConfig
-  const { catalog, defaults } = launchResolution(deps, profile.harnessId, deps.sessionProviders?.get(profile.id)?.config, explicit)
+  const { catalog, defaults } = launchResolution(deps, profile.harnessId, deps.sessionProviders?.get(profile.id)?.config, explicit, profile.followsDefaults)
   const harness = { id: profile.harnessId, name: HARNESS_CAPABILITIES[profile.harnessId]?.displayName ?? profile.harnessId }
   const errors = agentLaunchErrors(harness, catalog, defaults.model, explicit)
   if (errors.length) throw new CollaborationError(errors.join(' '), 'invalid_argument')
@@ -94,14 +95,16 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
     description: string,
     /** Optional session_providers.config — multi-profile defaults. */
     profileConfig?: unknown,
+    followsDefaults = false,
   ) => {
     if (seen.has(profileId)) return
+    if (readAgentProfile(profileConfig) && !deps.experimentalAgentProfilesEnabled?.()) return
     // Same gate as session.create: never offer an agent this node cannot
     // launch. Desktop applies the identical enabled+ready rule, so a
     // remote @codex mention means the same thing on both sides.
     if (!harnesses.isSessionHarnessRunnable(harnessId)) return
     seen.add(profileId)
-    const { harnessModels, efforts, defaults } = launchResolution(deps, harnessId, profileConfig)
+    const { harnessModels, efforts, defaults } = launchResolution(deps, harnessId, profileConfig, undefined, followsDefaults)
     const models = harnessModels.map((m) => ({
       id: m.id,
       name: m.name || m.id,
@@ -125,6 +128,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       id: profileId,
       name: profile ? name : harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
       harnessId,
+      ...(followsDefaults && deps.experimentalAgentProfilesEnabled?.() ? { followsDefaults: true } : {}),
       ...(acpAgentId ? { acpAgentId } : {}),
       brandKey: resolveHarnessBrandKey(harnessId, acpAgentId),
       description: profile?.identity.description ?? description,
@@ -146,6 +150,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
           ? `${p.harnessId} harness with the built-in configuration`
           : `Custom ${p.harnessId} profile`,
         p.config,
+        isDefaultSessionProvider(p),
       )
     }
   }
@@ -161,7 +166,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
     }
     for (const id of seedIds) {
       const harnessId = (normalizeSessionHarnessId(id) ?? id) as HarnessId
-      pushProfile(harnessId, harnessId, harnessId, `${harnessId} harness`)
+      pushProfile(harnessId, harnessId, harnessId, `${harnessId} harness`, undefined, true)
     }
   }
 

@@ -109,6 +109,7 @@ const defaults: AppSettings = {
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
+  experimentalAgentProfilesEnabled: false,
   experimentalRemoteNodesEnabled: false,
   remoteNodeAccessEnabled: false,
   remoteNodeAccessPort: null,
@@ -640,6 +641,7 @@ export function readAppSettings(): AppSettings {
       experimentalRemoteNodesEnabled: typeof data.experimentalRemoteNodesEnabled === 'boolean'
         ? data.experimentalRemoteNodesEnabled
         : defaults.experimentalRemoteNodesEnabled,
+      experimentalAgentProfilesEnabled: data.experimentalAgentProfilesEnabled === true,
       remoteNodeAccessEnabled: typeof data.remoteNodeAccessEnabled === 'boolean'
         ? data.remoteNodeAccessEnabled
         : defaults.remoteNodeAccessEnabled,
@@ -733,6 +735,7 @@ export function readAppSettings(): AppSettings {
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       enabledExperimentalAgents: [],
       experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
+      experimentalAgentProfilesEnabled: defaults.experimentalAgentProfilesEnabled,
       experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
       remoteNodeAccessEnabled: defaults.remoteNodeAccessEnabled,
       remoteNodeAccessPort: defaults.remoteNodeAccessPort,
@@ -860,6 +863,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       : current.enabledExperimentalAgents,
     experimentalClaudeOpenAiChatEnabled: patch.experimentalClaudeOpenAiChatEnabled
       ?? current.experimentalClaudeOpenAiChatEnabled,
+    experimentalAgentProfilesEnabled: patch.experimentalAgentProfilesEnabled
+      ?? current.experimentalAgentProfilesEnabled,
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled
       ?? current.experimentalRemoteNodesEnabled,
     remoteNodeAccessEnabled: patch.remoteNodeAccessEnabled ?? current.remoteNodeAccessEnabled,

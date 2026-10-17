@@ -510,6 +510,7 @@ const sessionManager = new SessionManagerImpl({
       permissionMode: collaborationConfig?.permissionMode,
       sandboxMode: collaborationConfig?.sandboxMode,
       codexServiceTier: collaborationConfig?.codexServiceTier ?? loaded.record.codexServiceTier,
+      codexPermissionPreset: collaborationConfig?.codexPermissionPreset,
       systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId)
         ?? getRemoteControlledSession(sessionId)?.controller.systemPromptAppend
         ?? undefined,
@@ -1200,8 +1201,8 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       // helper offline or unsupported platform
     }
   }
-  if (patch?.computerUseEnabled !== undefined || patch?.jevFastLoopEnabled !== undefined) {
-    // Both toggles change which tools are listed (computer_* / the *_run trio),
+  if (patch?.computerUseEnabled !== undefined || patch?.jevFastLoopEnabled !== undefined || patch?.experimentalAgentProfilesEnabled !== undefined) {
+    // These toggles change which tools are listed (computer_*, *_run, agent_profile_*),
     // so the change must reach every harness that injects SuperOne MCP:
     // - Claude / OpenCode: in-process createSuperoneMcpServer (+ registerComputerUseTools)
     // - Codex: HTTP initialize → createSuperoneMcpServer; also snapshots once per thread
@@ -1212,9 +1213,10 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
     const { notifySessionToolsChanged, disposeSuperoneMcpServer } = await import('./mcp/superone-mcp-server')
     const { closeSuperoneMcpHttpSessions } = await import('./mcp/superone-mcp-http-state')
     const { harnessRecoveryForComputerUseToggle } = await import('./computer-use/harness-surface')
+    const profileToolsChanged = patch.experimentalAgentProfilesEnabled !== undefined
     sessionManager.forEachSession((session) => {
       const recovery = harnessRecoveryForComputerUseToggle(session.snapshot.harnessId)
-      if (recovery.closeHttpSessions) {
+      if (profileToolsChanged || recovery.closeHttpSessions) {
         void closeSuperoneMcpHttpSessions(session.id)
       }
       // Drop in-process MCP instances so Claude rebuild picks up a fresh server.
@@ -1223,7 +1225,7 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       } catch {
         // ignore
       }
-      if (recovery.markNeedsRebuild) {
+      if (profileToolsChanged || recovery.markNeedsRebuild) {
         session.markNeedsRebuild()
       }
       if (recovery.notifyToolsChanged) {

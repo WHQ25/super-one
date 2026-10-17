@@ -11,6 +11,7 @@
  * re-exports the public surface so existing importers keep working.
  */
 
+import { isAgentProfilesEnabled } from './agent-profile-feature'
 import type {
   AgentMentionTarget,
   EffortLevel,
@@ -33,7 +34,7 @@ import {
 } from '@superone/shared/agent-profile'
 import type { AgentProfileListChoice, AgentProfileListOptionKey } from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
+import { isDefaultSessionProvider, sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
@@ -43,6 +44,7 @@ import {
 } from '@superone/shared/environment'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { codexPresetForPermissionMode } from '@superone/shared/harness/harness-sandbox'
 import { findPlatform, type Credential } from '@superone/shared/platform-registry'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
@@ -62,14 +64,15 @@ export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProvide
   const fromConfig = typeof (provider.config as { agentId?: unknown })?.agentId === 'string'
     ? (provider.config as { agentId: string }).agentId.trim()
     : ''
-  if (fromConfig) return fromConfig
+  const followsDefaults = isDefaultSessionProvider(provider)
+  if (fromConfig && !followsDefaults) return fromConfig
   const selected = readAppSettings().agentPreference?.acp?.selectedAgentId
   if (typeof selected === 'string' && selected.trim()) return selected.trim()
   const cached = getCachedHarnessResources('acp')
   if (typeof cached?.selectedAgentId === 'string' && cached.selectedAgentId.trim()) {
     return cached.selectedAgentId.trim()
   }
-  return null
+  return fromConfig || null
 }
 
 /**
@@ -111,7 +114,7 @@ export function profileResources(
 } {
   const { acpAgentId, launch } = opts
   const harnessId = provider.harnessId
-  const profile = providerLaunchRuntime(provider.config)
+  const profile = isDefaultSessionProvider(provider) ? undefined : providerLaunchRuntime(provider.config)
   const lists: Partial<Record<AgentProfileListOptionKey, AgentProfileListChoice[]>> = { ...opts.lists }
   if (harnessId === 'opencode') {
     const agents = getCachedHarnessResources('opencode')?.agents
@@ -120,11 +123,15 @@ export function profileResources(
   // No catalog to check against: a written profile was validated already.
   const uncatalogued = () => {
     const catalog: AgentProfileCatalog = { models: [], host: { lists } }
+    const preferences = readAppSettings().agentPreference
+    const base: AgentLaunchDefaults = harnessId === 'claude'
+      ? { model: preferences?.claude?.defaultModel, effort: preferences?.claude?.defaultEffort || undefined }
+      : harnessId === 'codex' ? { model: preferences?.codex?.defaultModel, effort: preferences?.codex?.defaultReasoningEffort || undefined } : {}
     return {
       models: [],
       efforts: [],
       catalog,
-      defaultConfig: launchConfigFromDefaults(resolveAgentLaunchDefaults({ harnessId, catalog, base: {}, profile, launch })),
+      defaultConfig: launchConfigFromDefaults(resolveAgentLaunchDefaults({ harnessId, catalog, base, profile, launch })),
     }
   }
   let models: ModelOption[]
@@ -298,7 +305,17 @@ function launchDefaultConfig(harnessId: HarnessId, resources: SessionAgentLaunch
     permissionMode: resources.permissionMode ?? permissionMode,
     ...(sandboxMode ? { sandboxMode } : {}),
     ...(apiProviderId ? { apiProviderId } : {}),
+    ...(harnessId === 'codex' ? { codexPermissionPreset: resources.permissionMode
+      ? codexPresetForPermissionMode(resources.permissionMode)
+      : readAppSettings().agentPreference.codex.defaultPermissionPreset || codexPresetForPermissionMode(permissionMode) } : {}),
   }
+}
+
+/** Virtual proposals and stored Profiles use the same default resolution. */
+export function agentProfileLaunchConfig(provider: ReturnType<typeof listSessionProviders>[number]): SessionAgentLaunchConfig {
+  return launchDefaultConfig(provider.harnessId, profileResources(provider, {
+    acpAgentId: provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null,
+  }).defaultConfig)
 }
 
 /**
@@ -313,7 +330,9 @@ function usableProviders(): Array<{
   provider: ReturnType<typeof listSessionProviders>[number]
   acpAgentId: string | null
 }> {
+  const enabled = isAgentProfilesEnabled()
   return listSessionProviders()
+    .filter((provider) => enabled || !readAgentProfile(provider.config))
     .filter(isProviderUsable)
     .map((provider) => ({
       provider,
@@ -329,50 +348,61 @@ function usableProviders(): Array<{
  */
 export function sessionAgentLaunchDefaults(
   profile: SessionAgentProfile,
-  launch: Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode'> | undefined,
+  launch: Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode' | 'permissionMode'> | undefined,
 ): SessionAgentLaunchConfig {
   const explicit = launchDefaultsFromConfig(launch)
   const provider = Object.keys(explicit).length ? listSessionProviders().find((row) => row.id === profile.id) : undefined
-  if (!provider) return profile.defaultConfig
-  const resources = profileResources(provider, { acpAgentId: profile.acpAgentId ?? null, launch: explicit })
-  const harness = { id: provider.harnessId, name: HARNESS_CAPABILITIES[provider.harnessId]?.displayName ?? provider.harnessId }
-  const errors = agentLaunchErrors(harness, resources.catalog, resources.defaultConfig.model, explicit)
-  if (errors.length) throw new Error(errors.join(' '))
-  return launchDefaultConfig(provider.harnessId, resources.defaultConfig)
+  let config = profile.defaultConfig
+  if (provider) {
+    const resources = profileResources(provider, { acpAgentId: profile.acpAgentId ?? null, launch: explicit })
+    const harness = { id: provider.harnessId, name: HARNESS_CAPABILITIES[provider.harnessId]?.displayName ?? provider.harnessId }
+    const errors = agentLaunchErrors(harness, resources.catalog, resources.defaultConfig.model, explicit)
+    if (errors.length) throw new Error(errors.join(' '))
+    config = launchDefaultConfig(provider.harnessId, resources.defaultConfig)
+  }
+  if (launch?.permissionMode !== undefined) {
+    return profile.harnessId === 'codex' ? { ...config, codexPermissionPreset: codexPresetForPermissionMode(launch.permissionMode) } : config
+  }
+  return config
+}
+
+/** The settings page also needs Profiles whose harness is currently disabled. */
+export function sessionAgentProfile(provider: ReturnType<typeof listSessionProviders>[number]): SessionAgentProfile {
+  const acpAgentId = provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null
+  const resources = profileResources(provider, { acpAgentId })
+  const models = resources.models.map((model) => ({
+    id: model.id,
+    name: provider.harnessId === 'codex'
+      ? formatCodexModelName(model.name, model.id)
+      : (model.name || model.id),
+    ...(model.description ? { description: model.description } : {}),
+    ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
+    ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
+  }))
+  const name = profileDisplayName(provider, acpAgentId)
+  const brandKey = resolveHarnessBrandKey(provider.harnessId, acpAgentId)
+  return {
+    id: provider.id,
+    name,
+    harnessId: provider.harnessId,
+    ...(isDefaultSessionProvider(provider) && isAgentProfilesEnabled() ? { followsDefaults: true } : {}),
+    ...(acpAgentId ? { acpAgentId } : {}),
+    brandKey,
+    description: readAgentProfile(provider.config)?.identity.description
+      ?? (provider.harnessId === 'acp'
+        ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
+        : `${provider.harnessId} harness with the built-in configuration`),
+    defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig),
+    models,
+    efforts: resources.efforts,
+    apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'
+      ? listApiProvidersForHarness(provider.harnessId)
+      : [],
+  }
 }
 
 export function listSessionAgentProfiles(): SessionAgentProfile[] {
-  return usableProviders().map(({ provider, acpAgentId }) => {
-    const resources = profileResources(provider, { acpAgentId })
-    const models = resources.models.map((model) => ({
-      id: model.id,
-      name: provider.harnessId === 'codex'
-        ? formatCodexModelName(model.name, model.id)
-        : (model.name || model.id),
-      ...(model.description ? { description: model.description } : {}),
-      ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
-      ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
-    }))
-    const name = profileDisplayName(provider, acpAgentId)
-    const brandKey = resolveHarnessBrandKey(provider.harnessId, acpAgentId)
-    return {
-      id: provider.id,
-      name,
-      harnessId: provider.harnessId,
-      ...(acpAgentId ? { acpAgentId } : {}),
-      brandKey,
-      description: readAgentProfile(provider.config)?.identity.description
-        ?? (provider.harnessId === 'acp'
-          ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
-          : `${provider.harnessId} harness with the built-in configuration`),
-      defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig),
-      models,
-      efforts: resources.efforts,
-      apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'
-        ? listApiProvidersForHarness(provider.harnessId)
-        : [],
-    }
-  })
+  return usableProviders().map(({ provider }) => sessionAgentProfile(provider))
 }
 
 /**

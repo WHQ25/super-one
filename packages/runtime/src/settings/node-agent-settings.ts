@@ -35,6 +35,7 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
     permissionPreset: '',
   },
   experimentalClaudeOpenAiChatEnabled: false,
+  experimentalAgentProfilesEnabled: false,
   projectsDir: '',
 }
 
@@ -95,6 +96,7 @@ export function normalizeNodeAgentSettings(raw: unknown): NodeAgentSettings {
       ? (r.agent as Record<string, unknown>)
       : r
   return {
+    experimentalAgentProfilesEnabled: agent.experimentalAgentProfilesEnabled === true,
     claude: normalizeClaude(agent.claude),
     codex: normalizeCodex(agent.codex),
     experimentalClaudeOpenAiChatEnabled: asBoolean(
@@ -110,6 +112,7 @@ export function mergeNodeAgentSettings(
   patch: NodeAgentSettingsPatch,
 ): NodeAgentSettings {
   const next: NodeAgentSettings = {
+    experimentalAgentProfilesEnabled: patch.experimentalAgentProfilesEnabled ?? current.experimentalAgentProfilesEnabled,
     claude: { ...current.claude },
     codex: { ...current.codex },
     experimentalClaudeOpenAiChatEnabled: current.experimentalClaudeOpenAiChatEnabled,
@@ -187,6 +190,7 @@ export function loadNodeAgentSettings(configPath: string): NodeAgentSettings {
     file.claude
     || file.codex
     || typeof file.experimentalClaudeOpenAiChatEnabled === 'boolean'
+    || typeof file.experimentalAgentProfilesEnabled === 'boolean'
   ) {
     return normalizeNodeAgentSettings(file)
   }

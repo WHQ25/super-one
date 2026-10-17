@@ -1,3 +1,4 @@
+import { assertAgentProfileLaunchEnabled } from './agent-profile-feature'
 import { RealtimeVoiceHost } from './realtime-voice-host'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
@@ -36,6 +37,7 @@ import type {
 } from './types'
 
 export interface LoadedSessionData {
+  codexPermissionPreset?: import('@superone/shared/agent-types').CodexPermissionPreset
   projectPath: string
   providerId: string
   providerSessionId: string | null
@@ -207,11 +209,11 @@ export class SessionManagerImpl implements SessionManagerContract {
     let cwd = opts.cwd ?? opts.projectPath
     let missingWorktreePath: string | null = null
     let gitBranch = opts.gitBranch ?? null
-    const backend = harness.createBackend()
     let apiProviderId = opts.apiProviderId ?? null
     const resolveProviderConfig = this.persistence.resolveProviderConfig
     let permissionMode = opts.permissionMode
     let sandboxMode = opts.sandboxMode
+    let codexPermissionPreset = opts.codexPermissionPreset
     // Cold create with a known SuperOne session id (prewarm / send fallback) must
     // still carry the stored provider session id so ACP agents can session/load.
     // Only hydrate when the DB row is the same provider — harness switches must not
@@ -220,10 +222,12 @@ export class SessionManagerImpl implements SessionManagerContract {
     let selectedModel = opts.model
     let selectedEffort = opts.effort
     let restoredAccountSession = false
+    let restoringExistingSession = false
     if (opts.id && this.persistence.loadSession) {
       try {
         const prior = this.persistence.loadSession(opts.id)
         if (prior?.providerId === opts.providerId) {
+          restoringExistingSession = !!prior.providerSessionId || prior.messages.length > 0
           // A cold Codex send can arrive with the project root while the renderer
           // is still hydrating a forked session. The persisted worktree belongs to
           // the session; otherwise the first state save erases it permanently.
@@ -252,11 +256,13 @@ export class SessionManagerImpl implements SessionManagerContract {
           selectedEffort ??= prior.selectedEffort ?? undefined
           permissionMode = prior.permissionMode ?? permissionMode
           sandboxMode = prior.sandboxMode ?? sandboxMode
+          codexPermissionPreset = prior.codexPermissionPreset ?? codexPermissionPreset
         }
       } catch (err) {
         log.debug('[SessionManager] createSession loadSession hydrate skipped:', err)
       }
     }
+    if (!restoringExistingSession) assertAgentProfileLaunchEnabled(provider.config)
     if ((provider.harnessId === 'codex' || provider.harnessId === 'claude') && apiProviderId === null && !restoredAccountSession && !resumedProviderSessionId) {
       apiProviderId = this.persistence.getActiveDefaultApiProviderId?.(provider.harnessId) ?? null
     }
@@ -266,6 +272,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     const sandboxInfo = sandboxMode !== undefined
       ? { enabled: sandboxMode !== 'off', autoAllowBash: sandboxMode === 'auto' }
       : undefined
+    const backend = harness.createBackend()
     const session = new Session({
       id: sessionId,
       projectPath: opts.projectPath,
@@ -279,6 +286,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: selectedEffort,
       model: selectedModel,
       codexServiceTier: opts.codexServiceTier,
+      codexPermissionPreset,
       // Caller scope only. `Session` owns the union with the project's folders
       // and recomputes it every turn; pre-mixing them here would bake project
       // folders into the caller half, so a later removal could never propagate.
@@ -403,6 +411,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       effort: data.selectedEffort ?? undefined,
       model: data.selectedModel ?? undefined,
       codexServiceTier: data.codexServiceTier,
+      codexPermissionPreset: data.codexPermissionPreset,
       systemPromptAppend: providerSystemPromptAppend(provider.config, data.systemPromptAppend),
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),

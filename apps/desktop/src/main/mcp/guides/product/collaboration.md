@@ -1,5 +1,7 @@
 # SuperOne agent collaboration (`session_collab_*`)
 
+Agent Profile management, tools, and preapproved launches require the **Agent Profiles** experiment in **Settings → General → Experimental**. When disabled, regular collaboration still requires user review.
+
 Read this before `session_collab_request`, especially when a child needs an isolated checkout or a different project.
 
 ## Three launch modes
@@ -46,7 +48,7 @@ A suggestion is a card the user may launch whenever they like. Launching it is a
 |------|--------|
 | 1 | **Spawn / handoff:** call `session_collab_list_agents` and choose an `agentId` by its `description`. Only when a launch needs `config` beyond the user's defaults, call it again with that `id` (see [Launch defaults](#launch-defaults-providers-and-accounts)). **Link:** take `sessionId` from `@session` / session tools. |
 | 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role` and pass a short `summary` for the user to approve. Link: pass `sessionId` + `summary`. Do not write the brief yet — a rejected request never costs it. |
-| 3 | Wait for user approval. Each approved launch returns its `launchId`. |
+| 3 | Matching local Default Profile launches follow current user settings without confirmation. The host reuses saved Profile consent when it matches, and asks for other launches. Each approved launch returns its `launchId`. |
 | 4 | Call `session_collab_start({ launchId, task })` for every approved launch back-to-back. `task` is the full Markdown brief. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling and delivers `task`. Link: host binds the peer and wakes it; a `task` becomes the opening mailbox message. A retry with the same `launchId` is idempotent and keeps the first `task`. |
 | 5 | Spawn/link only: exchange durable Markdown handoffs with `session_collab_send({ to: sessionId })` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. Handoff has no step 5. |
 
@@ -110,6 +112,15 @@ What you can read to decide, when it matters. The user's instructions decide how
 | `session_collab_list_agents` → `environments[]` | The agents each other connected machine can run (see [On another machine](#on-another-machine)) |
 
 Usage and `apiProviderId` belong to the machine that reports them: a launch on another machine uses that machine's ids.
+
+## Saved Profiles and coordination
+
+For Profile creation, explicit long-term collaboration approval, deletion
+revocation and the ordinary Coordinator Profile pattern, read
+`read_manual({ domain: "product", topic: "agent-profiles" })`.
+Exact local same-project spawn/handoff configurations use dynamic Default
+Profiles or matching saved consent; other launches retain normal confirmation.
+Children start on demand.
 
 ## Choose `cwd` or `worktree`
 

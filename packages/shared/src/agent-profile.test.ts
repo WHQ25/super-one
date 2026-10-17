@@ -8,6 +8,7 @@ import {
   launchDefaultsFromConfig,
   parseAgentProfileSpec,
   providerLaunchRuntime,
+  profileApprovalConfig,
   providerSystemPromptAppend,
   readAgentProfile,
   resolveAgentLaunchDefaults,
@@ -344,5 +345,19 @@ describe('agent profile prompt', () => {
     expect(providerSystemPromptAppend({ profile: reviewer }, 'Protocol')).toBe(`${agentProfilePrompt(reviewer)}\n\nProtocol`)
     expect(providerSystemPromptAppend({}, 'Protocol')).toBe('Protocol')
     expect(providerSystemPromptAppend({})).toBeUndefined()
+  })
+})
+
+describe('reviewed Profile configuration', () => {
+  it('retains the neutral default permission for OpenCode', () => {
+    expect(profileApprovalConfig('opencode', { models: [{ id: 'model' }] }, { model: 'model', permissionMode: 'default' }, undefined)).toEqual({ model: 'model', permissionMode: 'default' })
+  })
+
+  it('replaces an inherited read-only Codex preset when the Profile selects its own permission mode', () => {
+    expect(profileApprovalConfig('codex', { models: [{ id: 'gpt' }] }, { model: 'gpt', permissionMode: 'default', codexPermissionPreset: 'read-only' }, { permissionMode: 'bypassPermissions' })).toEqual({ model: 'gpt', permissionMode: 'bypassPermissions', codexPermissionPreset: 'full-access' })
+  })
+
+  it('drops incompatible inherited runtime fields while retaining the reviewed account and sandbox', () => {
+    expect(profileApprovalConfig('claude', CLAUDE, { model: 'sonnet', effort: 'high', apiProviderId: 'account-work', sandboxMode: 'on', permissionMode: 'default' }, { model: 'haiku' })).toEqual({ model: 'haiku', apiProviderId: 'account-work', sandboxMode: 'on', permissionMode: 'default' })
   })
 })

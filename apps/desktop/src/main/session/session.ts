@@ -24,6 +24,7 @@ import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer, isBackendSteerCommand } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
+import { changeSessionPermissionMode } from './session-permission-mode'
 import { requestSettingsPatch, selectionFieldsOf, sessionRequestSelection, voiceThreadSettings, withoutSupersededRequestSelections, withoutSupersededSelections, withSessionSelections, type PendingSessionRequest, type SelectionField } from './session-request-selection'
 import type {
   AgentEvent,
@@ -46,7 +47,6 @@ import type {
   SessionGoal,
 } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { lastCompletedMessageId } from '@superone/shared/session-activity'
 import log from '../logger'
@@ -139,6 +139,7 @@ export interface SessionConstructorOptions {
   effort?: SendMessageRequest['effort']
   model?: string
   codexServiceTier?: string | null
+  codexPermissionPreset?: import('@superone/shared/agent-types').CodexPermissionPreset
   additionalDirectories?: string[]
   title?: string | null
   createdAt?: number
@@ -609,6 +610,7 @@ export class Session implements SessionContract {
       // "Fast off", so seeding null here would let a session main has never been
       // told about wipe the composer's Fast pick on every resume.
       ...(opts.codexServiceTier != null ? { selectedCodexServiceTier: opts.codexServiceTier } : {}),
+      ...(opts.codexPermissionPreset ? { selectedCodexPermissionPreset: opts.codexPermissionPreset } : {}),
     }
     this.systemPromptAppend = opts.systemPromptAppend
     this.unattended = opts.unattended === true
@@ -1105,33 +1107,17 @@ export class Session implements SessionContract {
     this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
-    // A harness that declares no modes runs its own permission configuration;
-    // reject before recording a mode it would never apply.
-    if (mode !== 'default' && HARNESS_LAUNCH_OPTIONS[this.harnessId].permissionModes.length === 0) {
-      throw new Error(`${this.harnessId} has no permission modes; permissions follow its own configuration`)
-    }
-    const prev = this.permissionMode
-    trace('permission.flow', 'session_setMode_in', { sid: this.id, prev, next: mode, status: this._status, backendStarted: this.backendStarted })
-    if (prev === mode) {
-      trace('permission.flow', 'session_setMode_noop', { sid: this.id, mode })
-      return
-    }
-    // Always push to the backend first. ACP/Claude may already have a prewarmed
-    // runtime before ensureStarted() flips backendStarted. The chip is written
-    // only after the RPC succeeds, so a failed set_mode or yolo_mode_changed
-    // leaves the previous mode in place.
-    trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode, backendStarted: this.backendStarted })
-    try {
-      await this.backend.setPermissionMode(mode)
-      trace('permission.flow', 'session_setMode_fast_done', { sid: this.id, mode })
-    } catch (err) {
-      trace('permission.flow', 'session_setMode_fast_error', { sid: this.id, mode, err: (err as Error)?.message })
-      throw err
-    }
+    const patch = await changeSessionPermissionMode(mode, {
+      id: this.id, harnessId: this.harnessId, permissionMode: this.permissionMode,
+      sandboxInfo: this.sandboxInfo, status: this._status,
+      backendStarted: this.backendStarted, backend: this.backend,
+    })
+    if (!patch) return
     this.permissionMode = mode
-    this.mergeUiSettings({ permissionMode: mode })
+    this.markSelectionPicked(selectionFieldsOf(patch))
+    this.mergeUiSettings(patch)
     this.forwardEvent({ type: 'permission_mode_change', mode })
-    this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
+    this.forwardEvent({ type: 'agent_setting_change', patch } as AgentEvent)
   }
 
   async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {

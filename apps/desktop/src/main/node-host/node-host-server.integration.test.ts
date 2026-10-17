@@ -399,6 +399,7 @@ const B_APP_SETTINGS = {
     codex: { defaultModel: 'gpt-5', defaultReasoningEffort: 'medium', defaultPermissionPreset: '' },
   },
   experimentalClaudeOpenAiChatEnabled: true,
+  experimentalAgentProfilesEnabled: false,
   defaultClonePaths: { local: '~/Code' },
   sessionContinuationHint: { enabled: false, minContextTokens: 500_000 },
 } as unknown as Parameters<typeof desktopAgentSettings>[0]
@@ -439,6 +440,7 @@ describe('DesktopNodeHost configuration', () => {
           claude: { defaultModel: 'claude-opus', defaultEffort: 'high', permissionMode: 'acceptEdits', sandboxMode: 'auto', disabledSkills: ['lint'], askUserQuestionPreviewFormat: 'markdown' },
           codex: { defaultModel: 'gpt-5', defaultEffort: 'medium', permissionPreset: '' },
           experimentalClaudeOpenAiChatEnabled: true,
+          experimentalAgentProfilesEnabled: false,
           projectsDir: '~/Code',
           // The phone's continuation hint follows this desktop's setting.
           sessionContinuationHint: { enabled: false, minContextTokens: 500_000 },

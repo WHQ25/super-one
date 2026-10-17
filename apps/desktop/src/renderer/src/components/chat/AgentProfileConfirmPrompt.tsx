@@ -1,3 +1,4 @@
+import { ProfileRuntimeEditor } from '../agent-profiles/ProfileRuntimeEditor'
 /**
  * HITL prompt for agent_profile_apply / agent_profile_delete.
  *
@@ -7,7 +8,8 @@
  * before → after, delete lists the agents in the destructive style. The
  * harness is fixed and shown as the glyph in front of each profile name.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { ProfileLaunchReview } from './ProfileLaunchReview'
+import { useCallback, useEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bot, Pencil, Trash2 } from 'lucide-react'
 import type {
@@ -27,23 +29,16 @@ import {
   AGENT_PROFILE_DESCRIPTION_MAX,
   AGENT_PROFILE_INSTRUCTIONS_MAX,
   AGENT_PROFILE_NAME_MAX,
-  launchDefaultsFromConfig,
+  profileApprovalConfig,
 } from '@superone/shared/agent-profile'
-import {
-  agentProfileOptionRows,
-  agentProfileOptionsForModel,
-  isModelBoundOption,
-  setAgentProfileOptionRow,
-  type AgentProfileOptionKey,
-} from '@superone/shared/agent-profile-options'
+
 import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { cn } from '@superone/ui/lib/utils'
 import { useScopedSessionActions } from '@/stores/chat'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
-import type { LaunchModelPatch } from '@/harness-ui/launch-model'
 import { ExpandablePrompt } from './AutomationConfirmPrompt'
-import { HarnessGlyph, LaunchSettingsBar } from './launch-settings-bar'
+import { HarnessGlyph } from './launch-settings-bar'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
@@ -193,40 +188,6 @@ function ProfileEditor({
   onChange: (patch: Partial<AgentProfileDraft>) => void
 }) {
   const { t } = useTranslation()
-  const { agent, catalog } = editor
-  const defaults = agent?.defaultConfig
-  const { LaunchModelControl } = HARNESS_CONTROLS[view.harnessId]
-  // An unset field shows what a launch would start with; it stays unset until the user picks.
-  const model = draft.model ?? defaults?.model
-  const optionDefaults = useMemo(() => launchDefaultsFromConfig(defaults).options, [defaults])
-  const optionParams = useMemo(
-    () => agentProfileOptionRows(view.harnessId, catalog, model, draft.options, optionDefaults, {
-      field: (key) => t(`${P}.fields.${key}`),
-      userDefault: t(`${P}.userDefault`),
-      on: t(`${P}.on`),
-      off: t(`${P}.off`),
-    }),
-    [view.harnessId, catalog, model, draft.options, optionDefaults, t],
-  )
-
-  const changeModel = (patch: LaunchModelPatch) => {
-    const next: Partial<AgentProfileDraft> = {}
-    if (patch.model && patch.model !== draft.model) {
-      next.model = patch.model
-      next.options = agentProfileOptionsForModel(view.harnessId, catalog, patch.model, draft.options)
-    }
-    if (patch.effort) next.effort = patch.effort
-    if (Object.keys(next).length) onChange(next)
-  }
-
-  const changeOption = (rowId: string, value: string) => {
-    // A model-bound option is only valid for the model it was picked on, so that model is pinned too.
-    const key = rowId.split('.')[0] as AgentProfileOptionKey
-    onChange({
-      options: setAgentProfileOptionRow(draft.options, rowId, value),
-      ...(!draft.model && model && isModelBoundOption(key) ? { model } : {}),
-    })
-  }
 
   return (
     <div className="space-y-1.5" data-profile-editor="">
@@ -255,27 +216,7 @@ function ProfileEditor({
           invalid={!draft.description.trim()}
         />
       </div>
-      <LaunchSettingsBar
-        harnessId={view.harnessId}
-        settings={{ permissionMode: draft.permissionMode ?? defaults?.permissionMode }}
-        offerSandbox={false}
-        onChange={(patch) => {
-          if (patch.permissionMode) onChange({ permissionMode: patch.permissionMode as PermissionMode })
-        }}
-      >
-        <LaunchModelControl
-          profile={agent}
-          catalog="local"
-          acpAgentId={view.acpAgentId ?? null}
-          apiProviderId={defaults?.apiProviderId}
-          hideApiProvider
-          model={model}
-          effort={draft.effort ?? defaults?.effort}
-          optionParams={optionParams}
-          onOptionParamChange={changeOption}
-          onChange={changeModel}
-        />
-      </LaunchSettingsBar>
+      <ProfileRuntimeEditor harnessId={view.harnessId} acpAgentId={view.acpAgentId} editor={editor} draft={draft} onChange={onChange} />
       <div className="px-1.5 pt-0.5">
         <div className="text-xs text-muted-foreground">{t(`${P}.fields.instructions`)}</div>
         <EditableText
@@ -375,6 +316,10 @@ export function AgentProfileConfirmPrompt({
   const subject = profiles[0]
   const [draft, setDraft] = useState(editor?.draft)
   const canApprove = !draft || isDraftValid(draft)
+  const approvalConfig = payload.collaborationApproval && draft && editor
+    ? profileApprovalConfig(subject.harnessId, editor.catalog, payload.collaborationApproval.baseConfig,
+      { model: draft.model, effort: draft.effort, permissionMode: draft.permissionMode, options: draft.options })
+    : payload.collaborationApproval?.config
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -460,6 +405,14 @@ export function AgentProfileConfirmPrompt({
             />
           </div>
         ) : null}
+        {payload.collaborationApproval && <div className="mb-3 space-y-2 rounded border border-border bg-muted/20 p-2 text-xs">
+          <p>{t('chat.permission.agentProfile.approvalNote')}</p>
+          <ProfileLaunchReview config={approvalConfig!} harnessId={subject?.harnessId} acpAgentId={subject?.acpAgentId} />
+          {operation === 'update' && subject && <div className="space-y-1">
+            <p>{subject.description}</p>
+            {subject.instructions && <ExpandablePrompt prompt={subject.instructions} expandTitle={t('chat.permission.agentProfile.fields.instructions')} collapseTitle={t('chat.permission.agentProfile.fields.instructions')} />}
+          </div>}
+        </div>}
         </div>
 
         <div className="shrink-0">

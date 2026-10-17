@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
+import { SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { agentProfilePrompt } from '@superone/shared/agent-profile'
 import { openNodeDatabase } from '../db/database'
 import { EventLog } from './event-log'
@@ -31,7 +32,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
-function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner }) {
+function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner; agentProfilesEnabled?: () => boolean }) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'collab-unit-'))
   dirs.push(nodeHome)
   const db = openNodeDatabase(join(nodeHome, 'state.sqlite'))
@@ -61,6 +62,7 @@ function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner })
     projects,
     workspaceGit,
     sessionProviders,
+    experimentalAgentProfilesEnabled: opts?.agentProfilesEnabled ?? (() => true),
   }
   const collab = new CollaborationService(deps)
   collaborations.push(collab)
@@ -68,6 +70,64 @@ function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner })
 }
 
 describe('collaboration grants + mailbox', () => {
+  it('requires user confirmation for defaults while Agent Profiles is disabled', async () => {
+    const { collab, sessions, projects, nodeHome } = bootCollab({ agentProfilesEnabled: () => false })
+    const parent = sessions.create({ projectId: projects.open(nodeHome).projectId, harnessId: 'claude', title: 'Parent' })
+    const confirm = vi.spyOn(sessions, 'requestAgentsConfirm').mockResolvedValue({ action: 'decline' })
+    const result = await collab.request({ parentSessionId: parent.sessionId, requireUserConfirm: true,
+      launches: [{ agentId: 'claude-base', name: 'Worker', role: 'Implementer', summary: 'Build it' }] })
+    expect(result.status).toBe('rejected')
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(collab.listProfiles().find((profile) => profile.id === 'claude-base')?.followsDefaults).toBeUndefined()
+  })
+
+  it.each([false, true])('revokes a pending default Profile grant when disabled, including form edits: %s', async (withFormEdits) => {
+    let enabled = true
+    const { collab, sessions, projects, nodeHome } = bootCollab({ agentProfilesEnabled: () => enabled })
+    const parent = sessions.create({ projectId: projects.open(nodeHome).projectId, harnessId: 'claude', title: 'Parent' })
+    const result = await collab.request({ parentSessionId: parent.sessionId, requireUserConfirm: true,
+      launches: [{ agentId: 'claude-base', name: 'Worker', role: 'Implementer', summary: 'Build it' }] })
+    if (result.status !== 'approved') throw new Error('Expected approved')
+    enabled = false
+    await expect(collab.start({ callerSessionId: parent.sessionId, launchId: result.launches[0].launchId, task: 'Build it', ...(withFormEdits ? { formAnswers: { [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify([{ config: { model: 'changed' } }]) } } : {}) })).rejects.toThrow(/experimental/)
+  })
+
+  it('uses a dynamic default Profile without MCP confirmation and refreshes the account at start', async () => {
+    const { collab, sessions, projects, providers, nodeHome } = bootCollab()
+    const parent = sessions.create({ projectId: projects.open(nodeHome).projectId, harnessId: 'claude', title: 'Parent' })
+    const confirm = vi.spyOn(sessions, 'requestAgentsConfirm').mockResolvedValue({ action: 'decline' })
+    const result = await collab.request({ parentSessionId: parent.sessionId, requireUserConfirm: true,
+      launches: [{ agentId: 'claude-base', name: 'Worker', role: 'Implementer', summary: 'Build it' }] })
+    expect(result.status).toBe('approved')
+    expect(confirm).not.toHaveBeenCalled()
+    expect(collab.listProfiles().find((profile) => profile.id === 'claude-base')?.followsDefaults).toBe(true)
+    const credential = providers.createCredential({ platformId: 'anthropic', planId: 'api', name: 'New default', secret: 'sk-test' })
+    providers.setBinding({ consumer: 'chat:claude', credentialId: credential.id })
+    if (result.status !== 'approved') throw new Error('Expected approved')
+    const started = await collab.start({ callerSessionId: parent.sessionId, launchId: result.launches[0].launchId, task: 'Build it' })
+    expect(sessions.get(started.sessionId)?.apiProviderId).toBe(credential.id)
+  })
+
+  it('keeps default Profile overrides on the MCP confirmation path, including discarded unsafe fields', async () => {
+    const { collab, sessions, projects, nodeHome } = bootCollab()
+    const parent = sessions.create({ projectId: projects.open(nodeHome).projectId, harnessId: 'claude', title: 'Parent' })
+    const confirm = vi.spyOn(sessions, 'requestAgentsConfirm').mockResolvedValue({ action: 'decline' })
+    const result = await collab.request({ parentSessionId: parent.sessionId, requireUserConfirm: true,
+      launches: [{ agentId: 'claude-base', name: 'Worker', role: 'Implementer', summary: 'Build it', config: { permissionMode: 'bypassPermissions' } }] })
+    expect(result.status).toBe('rejected')
+    expect(confirm).toHaveBeenCalledOnce()
+  })
+
+  it('does not persist a default Profile grant after cancellation', async () => {
+    const { collab, sessions, projects, nodeHome, db } = bootCollab()
+    const parent = sessions.create({ projectId: projects.open(nodeHome).projectId, harnessId: 'claude', title: 'Parent' })
+    const controller = new AbortController()
+    controller.abort()
+    expect(await collab.request({ parentSessionId: parent.sessionId, requireUserConfirm: true, signal: controller.signal,
+      launches: [{ agentId: 'claude-base', name: 'Worker', role: 'Implementer', summary: 'Build it' }] })).toEqual({ status: 'cancelled' })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_collaboration_grants').get()).toEqual({ count: 0 })
+  })
+
   it('listProfiles returns session_providers base profiles when catalog is empty', () => {
     const { collab } = bootCollab()
     // openNodeDatabase seeds claude-base / codex-base / … via session_providers.

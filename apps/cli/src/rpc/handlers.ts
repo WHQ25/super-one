@@ -144,6 +144,7 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
   const sessionProviders = dispatchSessionProviderRpc(method, payload, {
     client: ctx.client,
     sessionProviders: ctx.sessionProviders,
+    agentProfilesEnabled: () => loadNodeAgentSettings(ctx.settingsConfigPath).experimentalAgentProfilesEnabled,
   })
   if (sessionProviders) return sessionProviders
 

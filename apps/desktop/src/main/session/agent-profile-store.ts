@@ -1,10 +1,11 @@
 /**
  * Agent profile writes on this desktop: the one path that changes a
- * `config.profile` row, called by the agent_profile_* tools once the user has
- * confirmed the exact change. RPC and IPC provider writes refuse profile rows
+ * `config.profile` row, called by the confirmed tools and human settings UI.
+ * Generic RPC and IPC provider writes refuse profile rows
  * (`session-provider-store.ts`), so every profile write passes these checks.
  */
 
+import { assertAgentProfilesEnabled } from './agent-profile-feature'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { readAgentProfile, validateAgentProfileRuntime, type AgentProfileCatalog } from '@superone/shared/agent-profile'
 import type { AgentProfileListChoice } from '@superone/shared/agent-profile-options'
@@ -64,22 +65,30 @@ function assertNameFree(row: SessionProvider): void {
   if (taken) throw new Error(`An agent named "${row.name}" already exists (${taken.id}).`)
 }
 
-export async function createAgentProfile(input: { harnessId: HarnessId; name: string; config: { profile: unknown } }): Promise<SessionProvider> {
+/** Wrap the final synchronous write when a caller also commits reviewed consent. */
+type ProfileCommit = (write: () => SessionProvider) => SessionProvider
+
+export async function createAgentProfile(input: { harnessId: HarnessId; name: string; config: { profile: unknown } }, commit: ProfileCommit = (write) => write()): Promise<SessionProvider> {
+  assertAgentProfilesEnabled()
   const draft: SessionProvider = { id: '', harnessId: input.harnessId, name: input.name, isBase: false, config: input.config, createdAt: 0, updatedAt: 0 }
   await assertCatalogFits(draft)
+  assertAgentProfilesEnabled()
   assertNameFree(draft)
-  return sessionProviderStore().profiles.create(input)
+  return commit(() => sessionProviderStore().profiles.create(input))
 }
 
 /** Fails, writing nothing, when the row no longer matches `expected` (the row the user confirmed against). */
 export async function updateAgentProfile(
   expected: SessionProvider,
   patch: { name: string; config: { profile: unknown } },
+  commit: ProfileCommit = (write) => write(),
 ): Promise<SessionProvider> {
+  assertAgentProfilesEnabled()
   const next = { ...expected, ...patch }
   await assertCatalogFits(next)
+  assertAgentProfilesEnabled()
   assertNameFree(next)
-  return sessionProviderStore().profiles.update(expected.id, patch, expected)
+  return commit(() => sessionProviderStore().profiles.update(expected.id, patch, expected))
 }
 
 /**
@@ -90,6 +99,7 @@ export function deleteAgentProfile(
   expected: SessionProvider,
   liveSessions: { rebindProviderSessions?(fromProviderId: string, toProviderId: string): void } | null,
 ): boolean {
+  assertAgentProfilesEnabled()
   const deleted = deleteProviderRow(expected, () => sessionProviderStore().profiles.delete(expected.id, expected))
   if (deleted) liveSessions?.rebindProviderSessions?.(expected.id, `${expected.harnessId}-base`)
   return deleted

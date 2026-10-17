@@ -11,6 +11,7 @@
 
 import type { HarnessId, PermissionMode, SessionAgentLaunchConfig } from './agent-types'
 import { HARNESS_LAUNCH_OPTIONS } from './launch-options'
+import { codexPresetForPermissionMode } from './harness/harness-sandbox'
 import {
   agentProfileOptionChoices,
   HARNESS_PROFILE_OPTIONS,
@@ -418,6 +419,20 @@ export function launchConfigFromDefaults(defaults: AgentLaunchDefaults): LaunchR
     ...(Object.keys(options).length ? { options } : {}),
     ...(defaults.permissionMode ? { permissionMode: defaults.permissionMode } : {}),
   }
+}
+
+/** Freeze the user-reviewed default layer, then apply an editable Profile proposal. */
+export function profileApprovalConfig(
+  harnessId: HarnessId,
+  catalog: AgentProfileCatalog,
+  baseConfig: SessionAgentLaunchConfig,
+  profile: AgentProfileRuntime | undefined,
+): SessionAgentLaunchConfig {
+  const { model: _model, effort: _effort, fastMode: _fast, options: _options, permissionMode: _mode, codexPermissionPreset, ...host } = baseConfig
+  const resolved = launchConfigFromDefaults(resolveAgentLaunchDefaults({ harnessId, catalog, base: { ...launchDefaultsFromConfig(baseConfig), permissionMode: baseConfig.permissionMode }, profile }))
+  const permissionMode = resolved.permissionMode ?? baseConfig.permissionMode
+  const preset = profile?.permissionMode && harnessId === 'codex' ? codexPresetForPermissionMode(profile.permissionMode) : codexPermissionPreset
+  return { ...host, ...resolved, ...(permissionMode ? { permissionMode } : {}), ...(preset ? { codexPermissionPreset: preset } : {}) }
 }
 
 /** The fields a launch config sets explicitly, as resolver input. */

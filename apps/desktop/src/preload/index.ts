@@ -1,3 +1,4 @@
+import { AGENT_PROFILE_CHANNELS, type AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import { CodexAccountIpcChannels } from '@superone/shared/codex-accounts'
 import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
@@ -1494,6 +1495,13 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,
   refreshAcpModels: (agentId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_REFRESH_MODELS, agentId) as Promise<import('@superone/shared/agent-types').AcpResources>,
+
+  agentProfiles: {
+    list: () => ipcRenderer.invoke(AGENT_PROFILE_CHANNELS.list),
+    get: (id) => ipcRenderer.invoke(AGENT_PROFILE_CHANNELS.get, id),
+    save: (input) => ipcRenderer.invoke(AGENT_PROFILE_CHANNELS.save, input),
+    delete: (input) => ipcRenderer.invoke(AGENT_PROFILE_CHANNELS.delete, input),
+  } satisfies AgentProfileManagementAPI,
 
   // Session Providers (new session layer)
   sessionProviders: {

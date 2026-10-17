@@ -1,3 +1,4 @@
+import { assertAgentProfileLaunchEnabled, isAgentProfilesEnabled } from './agent-profile-feature'
 /**
  * session_collab_start: create (spawn/handoff) or bind (link) the approved
  * session and deliver its opening task.
@@ -45,6 +46,10 @@ import {
   wakeLinkPeer,
 } from './collaboration-host'
 import type { Session, SessionManager } from './types'
+import { currentApprovalFingerprint, isPreapprovedProfileLaunch } from './agent-profile-approval'
+import { getSessionProvider } from './session-provider-repo'
+import { isDefaultSessionProvider } from '@superone/shared/session-provider-definitions'
+import { profileLaunchConfig } from '@superone/shared/agent-profile-launch'
 
 /** Title (null while untitled) and project of the session that launched `grant`. */
 function parentSessionInfo(grant: GrantRow): { title: string | null; projectPath: string | null } {
@@ -114,6 +119,7 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
     effort: config.effort as EffortLevel | undefined,
     // Cursor takes model parameters per turn and keeps the last ones it was given.
     ...(config.options?.modelParams ? { cursor: { params: config.options.modelParams } } : {}),
+    ...(config.codexPermissionPreset ? { codex: { permissionPreset: config.codexPermissionPreset } } : {}),
     clientMessageId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     source: 'collaboration',
     collaboration: {
@@ -161,7 +167,25 @@ export interface SessionStartArgs {
   task?: string
 }
 
-export async function startSessionAgent(
+const starting = new Map<string, ReturnType<typeof startSessionAgentImpl>>()
+
+/** Share simultaneous retries before asynchronous project/worktree preparation. */
+export function startSessionAgent(
+  callerSessionId: string,
+  args: SessionStartArgs,
+  host: SessionManager,
+  assertControl: () => void = () => {},
+) {
+  assertControl()
+  const key = `${callerSessionId}:${typeof args.launchId === 'string' ? args.launchId.trim() : ''}`
+  const existing = starting.get(key)
+  if (existing) return existing
+  const pending = startSessionAgentImpl(callerSessionId, args, host, assertControl).finally(() => starting.delete(key))
+  starting.set(key, pending)
+  return pending
+}
+
+async function startSessionAgentImpl(
   callerSessionId: string,
   args: SessionStartArgs,
   host: SessionManager,
@@ -174,6 +198,29 @@ export async function startSessionAgent(
   } catch (error) {
     return errorResult(error)
   }
+  // A saved-Profile approval is rechecked after request, before any worktree,
+  // runtime creation or undelivered task. A completed retry has no new effect.
+  const approvedConfig = parseConfig(grant.config_json) as SessionAgentLaunchConfig & {
+    profileApproval?: { source?: 'defaults'; fingerprint: string; cwd: string }
+    launchId?: string; summary?: string; codexServiceTier?: unknown; handoffSessionId?: string
+  }
+  const originalAssertControl = assertControl
+  assertControl = () => {
+    originalAssertControl()
+    if (grant.task_sent !== 1) assertAgentProfileLaunchEnabled(getSessionProvider(grant.agent_id)?.config)
+    if (approvedConfig.profileApproval && grant.task_sent !== 1) {
+      const { profileApproval, launchId: _id, summary: _summary, codexServiceTier: _tier, handoffSessionId: _handoff, ...config } = approvedConfig
+      const profile = listSessionAgentProfiles().find((item) => item.id === grant.agent_id)
+      const row = getSessionProvider(grant.agent_id)
+      if (isAgentProfilesEnabled() && profileApproval.source === 'defaults' && profile && row && isDefaultSessionProvider(row)
+        && (profile.harnessId !== 'acp' || profile.acpAgentId)) return
+      if (!profile || !row || currentApprovalFingerprint(row, profile) !== profileApproval.fingerprint
+        || !isPreapprovedProfileLaunch(profile, { launchId: '', mode: grant.kind, agentId: grant.agent_id, name: '', role: '', summary: '', config }, profileApproval.cwd)) {
+        throw new Error('Profile approval or configuration changed. Request this launch again for user review.')
+      }
+    }
+  }
+  try { assertControl() } catch (error) { return errorResult(error) }
 
   // --- link: bind existing peer, turn-inject only (never system prompt) ---
   if (grant.kind === 'link') {
@@ -293,7 +340,7 @@ export async function startSessionAgent(
 
   const parent = host.getSession(callerSessionId)
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
-  const config = parseConfig(grant.config_json)
+  let config: typeof approvedConfig = parseConfig(grant.config_json)
   let cwd = resolveCwd(config, parent)
   const worktreeEnabled = !!config.worktree?.enabled
   // Attribute before worktree activation so the child files under the source
@@ -316,6 +363,21 @@ export async function startSessionAgent(
     gitBranch = worktree.recordedBranch
   }
   try { assertControl() } catch (error) { await rollbackWorktree(); throw error }
+
+  // Default Profile grants follow the settings in effect when the runtime is created.
+  // Existing children keep their initial settings and idempotent retries above.
+  if (approvedConfig.profileApproval?.source === 'defaults') {
+    const profile = listSessionAgentProfiles().find((item) => item.id === grant.agent_id)!
+    config = {
+      ...profileLaunchConfig(config, profile.defaultConfig),
+      profileApproval: approvedConfig.profileApproval,
+      launchId: approvedConfig.launchId,
+      summary: approvedConfig.summary,
+      ...(typeof profile.defaultConfig.fastMode === 'boolean' ? { codexServiceTier: resolveCodexServiceTier(grant.agent_id, profile.defaultConfig, profile) } : {}),
+    }
+    store().updateConfig(grant.grant_id, config)
+    grant = { ...grant, config_json: JSON.stringify(config) }
+  }
 
   const childSessionId = randomUUID()
   const agentId = grant.agent_id
@@ -347,6 +409,7 @@ export async function startSessionAgent(
       model: config.model,
       effort: config.effort as EffortLevel | undefined,
       codexServiceTier,
+      codexPermissionPreset: config.codexPermissionPreset,
       apiProviderId: config.apiProviderId,
       permissionMode: config.permissionMode as PermissionMode | undefined,
       sandboxMode: config.sandboxMode as SandboxMode | undefined,

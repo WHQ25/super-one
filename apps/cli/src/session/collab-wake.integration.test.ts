@@ -56,6 +56,7 @@ function boot() {
     providers,
     projects,
     workspaceGit,
+    experimentalAgentProfilesEnabled: () => true,
   })
   return { sessions, collab, projects, turns, leases, environmentId }
 }
@@ -134,7 +135,7 @@ describe('collab wake + agents confirm', () => {
           name: 'Rev',
           role: 'Reviewer',
           summary: 'Review.',
-          config: { cwd: projectDir },
+          config: { cwd: projectDir, effort: 'low' },
         },
       ],
       requireUserConfirm: true,

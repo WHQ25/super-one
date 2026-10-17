@@ -1,3 +1,4 @@
+import type { AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
@@ -54,6 +55,7 @@ interface AgentAPI {
 }
 
 interface AppAPI {
+  agentProfiles: AgentProfileManagementAPI
   collaborationMailbox: CollaborationMailboxAPI
   platform: NodeJS.Platform
   supportsLiquidGlass: boolean

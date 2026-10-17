@@ -195,3 +195,33 @@ describe('permission sheet state', () => {
     })).toBe('Allow access to /shared for this project')
   })
 })
+
+describe('persistent Profile consent', () => {
+  it('shows the native Codex read-only permission and derives sandbox from the preset', () => {
+    const profile = request('agent_profile_confirm')
+    const config = { model: 'gpt', permissionMode: 'default' as const, codexPermissionPreset: 'read-only' as const }
+    profile.agentProfileConfirm = { operation: 'update', profiles: [{ harnessId: 'codex', name: 'Reviewer', description: 'Review.' }], collaborationApproval: { baseConfig: config, config } }
+    expect(permissionSheetPresentation(profile).items).toEqual(expect.arrayContaining([
+      { title: 'Permission', label: true, subtitle: 'Read-only' },
+      { title: 'Sandbox', label: true, subtitle: 'on' },
+    ]))
+  })
+
+  it('shows the actual legacy ACP agent identity covered by consent', () => {
+    const profile = request('agent_profile_confirm')
+    const config = { model: 'shared-model' }
+    profile.agentProfileConfirm = { operation: 'update', profiles: [{ harnessId: 'acp', acpAgentId: 'agent-before', name: 'Worker', description: 'Implement.' }], collaborationApproval: { baseConfig: config, config } }
+    expect(permissionSheetPresentation(profile).items).toContainEqual({ title: 'ACP agent', label: true, subtitle: 'agent-before' })
+  })
+  it('explains long-term Profile consent and shows effective inherited account and sandbox', () => {
+    const profile = request('agent_profile_confirm')
+    const config = { model: 'gpt', sandboxMode: 'on' as const, apiProviderId: 'account-work' }
+    profile.agentProfileConfirm = { operation: 'update', profiles: [{ harnessId: 'codex', name: 'Implementer', description: 'Implement.', instructions: 'Preserve unrelated changes.' }], collaborationApproval: { baseConfig: config, config } }
+    const presentation = permissionSheetPresentation(profile)
+    expect(presentation.description).toMatch(/Delete the Profile to revoke approval/)
+    expect(presentation.items).toEqual(expect.arrayContaining([
+      { title: 'Sandbox', label: true, subtitle: 'on' },
+      { title: 'Provider / account', label: true, subtitle: 'account-work' },
+    ]))
+  })
+})

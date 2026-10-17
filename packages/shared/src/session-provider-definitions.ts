@@ -33,6 +33,11 @@ export function baseSessionProviderId(harnessId: HarnessId): string {
   return BASE_SESSION_PROVIDERS[harnessId].id
 }
 
+/** Only the canonical built-in row follows user defaults. Custom rows keep their own runtime. */
+export function isDefaultSessionProvider(row: { id: string; harnessId: HarnessId; isBase: boolean }): boolean {
+  return row.isBase && row.id === baseSessionProviderId(row.harnessId)
+}
+
 /**
  * How an agent picker names a provider row: a base row is its harness
  * ("Claude", not the stored "Claude (Base)"); a user-named row keeps its name.

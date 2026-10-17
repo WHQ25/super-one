@@ -24,8 +24,9 @@ vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
 }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+const profileFeature = vi.hoisted(() => ({ enabled: false }))
 vi.mock('../app-settings-service', () => ({
-  readAppSettings: () => ({}),
+  readAppSettings: () => ({ experimentalAgentProfilesEnabled: profileFeature.enabled }),
 }))
 const { mockCreateMiniApp, mockCacheAppEntry } = vi.hoisted(() => ({
   mockCreateMiniApp: vi.fn(),
@@ -130,6 +131,7 @@ function callMiniapp(
 }
 
 beforeEach(() => {
+  profileFeature.enabled = false
   vi.clearAllMocks()
   pluginExecutor.mockResolvedValue({ ok: true })
   setAppToolExecutor(pluginExecutor)
@@ -1001,3 +1003,24 @@ describe('agent access to installed mini-apps', () => {
   })
 })
 
+
+
+describe('Agent Profile experimental tool surface', () => {
+  it('gates both JSON descriptors and Claude registrations, and rejects stale calls', async () => {
+    const names = ['agent_profile_list', 'agent_profile_apply', 'agent_profile_delete']
+    createSuperoneMcpServer(PROJ_A)
+    expect(listSuperoneMcpTools(PROJ_A).filter((tool) => names.includes(tool.name))).toEqual([])
+    expect(mockRegisterTool.mock.calls.filter(([name]) => names.includes(name))).toEqual([])
+    disposeSuperoneMcpServer(PROJ_A)
+    profileFeature.enabled = true
+    mockRegisterTool.mockClear()
+    createSuperoneMcpServer(PROJ_A)
+    expect(listSuperoneMcpTools(PROJ_A).filter((tool) => names.includes(tool.name))).toHaveLength(3)
+    expect(mockRegisterTool.mock.calls.filter(([name]) => names.includes(name))).toHaveLength(3)
+    const handler = getLastHandler('agent_profile_list')
+    profileFeature.enabled = false
+    const result = await handler({})
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('experimental')
+  })
+})

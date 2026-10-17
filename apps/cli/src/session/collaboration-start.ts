@@ -1,3 +1,4 @@
+import { readAgentProfile } from '@superone/shared/agent-profile'
 import { rollbackUnusedWorktree, worktreeGit } from '@superone/runtime/git/worktree-ops'
 import { existsSync, statSync } from 'node:fs'
 import { resolve as pathResolve } from 'node:path'
@@ -8,6 +9,7 @@ import {
 } from '@superone/shared/agent-types'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
 import { launchedSessionPromptAppend } from './collaboration-profiles'
+import { profileLaunchConfig } from '@superone/shared/agent-profile-launch'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   CollaborationError,
@@ -81,7 +83,8 @@ function applyFormAnswers(ctx: CollaborationContext, grant: GrantRow, formAnswer
   if (!Array.isArray(edited) || edited.length === 0) return grant
   const patch = (edited[0] as { config?: unknown } | null)?.config
   if (!patch || typeof patch !== 'object') return grant
-  const next = patchEditableLaunchConfig(parseGrantConfig(grant.config_json), patch)
+  const next = patchEditableLaunchConfig(parseGrantConfig<NodeLaunchConfig>(grant.config_json), patch)
+  delete next.followsDefaults
   ctx.store.updateConfig(grant.grant_id, next)
   return { ...grant, config_json: JSON.stringify(next) }
 }
@@ -171,6 +174,16 @@ export async function startCollaboration(
   input.assertControl?.()
   let grant = prepareLaunchStart(ctx.store, input.callerSessionId, input)
 
+  const usedDefaultProfileApproval = parseGrantConfig<NodeLaunchConfig>(grant.config_json).followsDefaults
+  const assertProfileEnabled = () => {
+    if (!ctx.deps.experimentalAgentProfilesEnabled?.()
+      && (usedDefaultProfileApproval
+        || readAgentProfile(ctx.deps.sessionProviders?.get(grant.agent_id)?.config))) {
+      throw new CollaborationError('Agent Profiles is experimental and disabled. Enable it before launching this Profile.', 'failed_precondition')
+    }
+  }
+  if (grant.kind !== 'link' && grant.task_sent !== 1) assertProfileEnabled()
+
   // formAnswers may patch editable launch config (desktop confirm UI parity).
   // Link grants ignore form config patches.
   if (grant.kind !== 'link' && input.formAnswers && typeof input.formAnswers === 'object') {
@@ -210,7 +223,7 @@ export async function startCollaboration(
   const parent = ctx.deps.sessions.get(grant.parent_session_id)
   if (!parent) throw new CollaborationError('Parent session is not available', 'not_found')
 
-  const config = parseGrantConfig<NodeLaunchConfig>(grant.config_json)
+  let config = parseGrantConfig<NodeLaunchConfig>(grant.config_json)
   const projectId = config.projectId ?? parent.projectId
   let cwd = resolveCwd(ctx, config, projectId, parent.cwd)
   const sourceCwd = cwd
@@ -225,9 +238,19 @@ export async function startCollaboration(
       carryLocalChanges: config.worktree.carryLocalChanges,
     })).path
   }
-  try { input.assertControl?.() } catch (error) { await rollbackWorktree(); throw error }
+  try { input.assertControl?.(); assertProfileEnabled() } catch (error) { await rollbackWorktree(); throw error }
 
   const profile = resolveProfile(new Map(ctx.listProfiles().map((p) => [p.id, p])), grant.agent_id)
+  if (config.followsDefaults) {
+    if (!profile?.followsDefaults) {
+      await rollbackWorktree()
+      throw new CollaborationError('Default Profile is no longer available', 'failed_precondition')
+    }
+    const { launchId, summary } = parseGrantConfig<{ launchId: string; summary: string }>(grant.config_json)
+    config = Object.assign(profileLaunchConfig(config, profile.defaultConfig), { followsDefaults: true, launchId, summary })
+    ctx.store.updateConfig(grant.grant_id, config)
+    grant = { ...grant, config_json: JSON.stringify(config) }
+  }
   const harnessId = (profile?.harnessId
     ?? normalizeSessionHarnessId(grant.agent_id)
     ?? 'claude') as HarnessId

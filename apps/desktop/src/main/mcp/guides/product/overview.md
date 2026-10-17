@@ -1,5 +1,7 @@
 # SuperOne — product overview
 
+Agent Profile management, tools, and preapproved launches require the **Agent Profiles** experiment in **Settings → General → Experimental**. When disabled, regular collaboration still requires user review.
+
 SuperOne is an Electron desktop app that puts every coding-agent harness on one surface: Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent share one project, one session store and one tool surface. It **extends** each harness with abilities its own CLI never had (embedded browser, computer use, iOS/Android devices, generative media, widgets), lets sessions **collaborate across harness boundaries** (`session_collab_*`), and is a place to **build your own agentic apps** (mini-apps).
 
 ## Links
@@ -18,11 +20,13 @@ SuperOne is an Electron desktop app that puts every coding-agent harness on one 
 | `overview` | This page — product identity and routing |
 | `contribute` | **Any** GitHub issue or PR (bugs, features, improvements, docs). Issue first, then optional PR. |
 | `debug` | Crashes / wrong behavior: log paths, userData, monorepo map, this machine’s runtime paths |
+| `agent-profiles` | Saved role instructions, explicit long-term collaboration approval, and the ordinary Coordinator Profile pattern |
 | `collaboration` | Before setting `config` in `session_collab_request`; covers launch defaults, choosing a provider or account from usage, shared checkout (default for read-only review), same-repo isolation for implementers, cross-project launches |
 
 ```text
 read_manual({ domain: "product", topic: "contribute" })
 read_manual({ domain: "product", topic: "debug" })
+read_manual({ domain: "product", topic: "agent-profiles" })
 read_manual({ domain: "product", topic: "collaboration" })
 ```
 

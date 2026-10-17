@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ensureAgentProfileApprovalSchema, isAgentProfileApproved } from '../session/agent-profile-approval'
+import { agentProfileLaunchConfig } from '../session/agent-profiles'
+import Database from 'better-sqlite3'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { decode as toonDecode } from '@toon-format/toon'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import type { SessionProvider } from '../session/types'
@@ -7,7 +10,15 @@ import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 const state = vi.hoisted(() => ({
   rows: new Map<string, SessionProvider>(),
   nextId: 1,
+  enabled: true,
+  db: null as unknown as Database.Database,
+  launchDefaults: {} as Record<string, unknown>,
+  acpAgentId: 'grok-build' as string | null,
 }))
+
+vi.mock('../database', () => ({ getDb: () => state.db }))
+vi.mock('../providers/credential-store', () => ({ getBinding: () => undefined, getCredentialDecrypted: () => undefined }))
+vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({ experimentalAgentProfilesEnabled: state.enabled, experimentalClaudeOpenAiChatEnabled: false }) }))
 
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
@@ -38,6 +49,7 @@ function implementProfileWriter() {
   profiles.create.mockImplementation((input: { harnessId: SessionProvider['harnessId']; name: string; config: unknown }) => {
     const row: SessionProvider = { id: `${input.harnessId}-p${state.nextId++}`, isBase: false, createdAt: 0, updatedAt: 0, ...input }
     state.rows.set(row.id, row)
+    state.db.prepare('INSERT INTO session_providers (id) VALUES (?)').run(row.id)
     return row
   })
   profiles.update.mockImplementation((id: string, patch: { name?: string; config?: unknown }, expected: SessionProvider) => {
@@ -67,8 +79,12 @@ const CLAUDE_AGENT = {
 
 vi.mock('../session/agent-profiles', () => ({
   isProviderUsable: () => true,
+  agentProfileLaunchConfig: (row: SessionProvider) => {
+    const config = row.config as { profile?: { runtime?: Record<string, unknown> } }
+    return { model: row.harnessId === 'codex' ? 'gpt-5.6' : 'sonnet', effort: 'high', permissionMode: 'default', ...state.launchDefaults, ...config.profile?.runtime }
+  },
   listSessionAgentProfiles: () => [CLAUDE_AGENT],
-  resolveAcpAgentId: () => 'grok-build',
+  resolveAcpAgentId: (row: SessionProvider) => (row.config as { agentId?: string }).agentId ?? state.acpAgentId,
   profileResources: (row: SessionProvider) => {
     const models = row.harnessId === 'claude' ? CLAUDE_MODELS : row.harnessId === 'codex' ? CODEX_MODELS : row.harnessId === 'acp' ? GROK_MODELS : []
     const host = { lists: { mode: [] } }
@@ -136,18 +152,27 @@ async function answer<T>(run: Promise<T>, requests: PermissionRequest[], action:
 }
 
 beforeEach(() => {
+  state.enabled = true
+  state.acpAgentId = 'grok-build'
+  state.launchDefaults = {}
+  state.db = new Database(':memory:')
+  state.db.exec('CREATE TABLE session_providers (id TEXT PRIMARY KEY)')
+  ensureAgentProfileApprovalSchema(state.db)
   seed()
+  for (const id of state.rows.keys()) state.db.prepare('INSERT INTO session_providers (id) VALUES (?)').run(id)
   vi.clearAllMocks()
   implementProfileWriter()
   _resetAgentProfileConfirmsForTests()
 })
+
+afterEach(() => state.db.close())
 
 describe('agent_profile_list', () => {
   it('lists only what picks a row; runtime waits for the id', async () => {
     const { parsed } = parse(await agentProfileListHandler({}))
     expect(parsed.count).toBe(4)
     expect(parsed.profiles).toEqual(expect.arrayContaining([
-      { id: 'claude-base', name: 'claude', harness: 'claude', base: true, description: 'Claude with the user\'s default configuration.' },
+      { id: 'claude-base', name: 'claude', harness: 'claude', base: true, followsDefaults: true, description: 'Claude with the user\'s default configuration.' },
       { id: 'claude-reviewer', name: 'Reviewer', harness: 'claude', base: false, description: 'Reviews diffs without editing.' },
     ]))
   })
@@ -170,6 +195,15 @@ describe('agent_profile_list', () => {
     const { parsed, isError } = parse(await agentProfileListHandler({ id: 'nope' }))
     expect(isError).toBe(true)
     expect(parsed.message).toMatch(/agent_profile_list without id/)
+  })
+
+  it('exposes the same current effective settings in the default Profile detail', async () => {
+    state.launchDefaults = { sandboxMode: 'on', apiProviderId: 'work-account', permissionMode: 'bypassPermissions' }
+    const first = parse(await agentProfileListHandler({ id: 'claude-base' })).parsed
+    expect(first.profile).toMatchObject({ base: true, followsDefaults: true })
+    expect(first.launchDefaults).toEqual(agentProfileLaunchConfig(state.rows.get('claude-base')!))
+    state.launchDefaults = { sandboxMode: 'off', apiProviderId: 'personal-account' }
+    expect(parse(await agentProfileListHandler({ id: 'claude-base' })).parsed.launchDefaults).toMatchObject(state.launchDefaults)
   })
 })
 
@@ -434,10 +468,12 @@ describe('agent_profile_apply update', () => {
     await answer(clearRun, cleared.requests, 'decline')
   })
 
-  it('refuses a no-op and a harness change', async () => {
-    const { deps } = makeDeps()
-    expect(parse(await agentProfileApplyHandler({ action: 'update', id: 'claude-reviewer', effort: 'high' }, deps)).parsed.message)
-      .toMatch(/Nothing to change/)
+  it('reviews an unchanged legacy Profile for long-term approval and refuses a harness change', async () => {
+    const { deps, requests } = makeDeps()
+    const pending = agentProfileApplyHandler({ action: 'update', id: 'claude-reviewer', effort: 'high' }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0].agentProfileConfirm?.collaborationApproval).toBeDefined()
+    await answer(pending, requests, 'decline')
     expect(parse(await agentProfileApplyHandler({ action: 'update', id: 'claude-reviewer', harnessId: 'codex' }, deps)).parsed.message)
       .toMatch(/fixed at creation/)
   })
@@ -480,6 +516,88 @@ describe('agent_profile_delete', () => {
     const { parsed, isError } = parse(await run)
     expect(isError).toBe(false)
     expect(parsed.status).toBe('cancelled')
+    expect(profiles.delete).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('Profile creation collaboration consent', () => {
+  it('requires another review if a legacy ACP Profile resolves to a different agent during confirmation', async () => {
+    const row = state.rows.get('claude-reviewer')!
+    state.rows.set(row.id, { ...row, harnessId: 'acp', config: { profile: { ...REVIEWER_PROFILE, runtime: undefined } } })
+    const { deps, requests } = makeDeps()
+    const pending = agentProfileApplyHandler({ action: 'update', id: row.id }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0].agentProfileConfirm?.profiles[0].acpAgentId).toBe('grok-build')
+    state.acpAgentId = 'agent-after'
+    expect(parse(await answer(pending, requests, 'accept')).parsed).toMatchObject({ status: 'error', message: expect.stringContaining('changed during review') })
+    expect(profiles.update).not.toHaveBeenCalled()
+    expect(state.db.prepare('SELECT COUNT(*) AS count FROM agent_profile_approvals').get()).toEqual({ count: 0 })
+  })
+  it.each(['create', 'update'] as const)('requires another review when inherited defaults change during %s confirmation', async (action) => {
+    const { deps, requests } = makeDeps()
+    const pending = agentProfileApplyHandler(action === 'create'
+      ? { action, harnessId: 'claude', name: 'Builder', description: 'Implement tasks.' }
+      : { action, id: 'claude-reviewer' }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    state.launchDefaults = { sandboxMode: 'on' }
+    expect(parse(await answer(pending, requests, 'accept')).parsed).toMatchObject({ status: 'error', message: expect.stringContaining('changed during review') })
+    expect(profiles.create).not.toHaveBeenCalled()
+    expect(profiles.update).not.toHaveBeenCalled()
+    expect(state.db.prepare('SELECT COUNT(*) AS count FROM agent_profile_approvals').get()).toEqual({ count: 0 })
+  })
+  it('includes Codex reasoning efforts in the editable approval configuration catalog', async () => {
+    const { deps, requests } = makeDeps()
+    const pending = agentProfileApplyHandler({ action: 'create', harnessId: 'codex', name: 'Codex Builder', description: 'Implement tasks.', model: 'gpt-5.6', effort: 'medium' }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0].agentProfileConfirm?.editor?.catalog.models[0].supportedEffortLevels).toEqual(['medium'])
+    await answer(pending, requests, 'decline')
+  })
+  it('persists approval only after the user confirms the exact final configuration', async () => {
+    const { deps, requests } = makeDeps()
+    const pending = agentProfileApplyHandler({ action: 'create', harnessId: 'claude', name: 'Builder', description: 'Implement tasks.', instructions: 'Make minimal changes.', model: 'sonnet', effort: 'high' }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(state.db.prepare('SELECT COUNT(*) AS count FROM agent_profile_approvals').get()).toEqual({ count: 0 })
+    expect(requests[0].agentProfileConfirm?.collaborationApproval?.config).toMatchObject({ model: 'sonnet', effort: 'high', permissionMode: 'default' })
+    const saved = parse(await answer(pending, requests, 'accept')).parsed.profile
+    const row = state.rows.get(saved.id)!
+    expect(isAgentProfileApproved({ id: row.id, defaultConfig: agentProfileLaunchConfig(row), apiProviders: [] } as import('@superone/shared/agent-types').SessionAgentProfile)).toBe(true)
+  })
+})
+
+
+describe('Agent Profile experiment', () => {
+  it('refuses stale list, apply and delete calls before reading or requesting consent', async () => {
+    state.enabled = false
+    const { deps, requests } = makeDeps()
+    for (const run of [
+      agentProfileListHandler({}),
+      agentProfileApplyHandler({ action: 'create', harnessId: 'claude', name: 'Worker', description: 'Build it' }, deps),
+      agentProfileDeleteHandler({ ids: ['claude-reviewer'] }, deps),
+    ]) {
+      const result = await run
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('experimental')
+    }
+    expect(requests).toHaveLength(0)
+    expect(profiles.create).not.toHaveBeenCalled()
+    expect(profiles.delete).not.toHaveBeenCalled()
+  })
+
+  it.each(['create', 'update', 'delete'] as const)('refuses %s if disabled while its confirmation is open', async (action) => {
+    const { deps, requests } = makeDeps()
+    const run = action === 'delete'
+      ? agentProfileDeleteHandler({ ids: ['claude-reviewer'] }, deps)
+      : agentProfileApplyHandler(action === 'create'
+        ? { action, harnessId: 'claude', name: 'Worker', description: 'Build it' }
+        : { action, id: 'claude-reviewer', description: 'Updated description' }, deps)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    state.enabled = false
+    const result = await answer(run, requests, 'accept')
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('experimental')
+    expect(profiles.create).not.toHaveBeenCalled()
+    expect(profiles.update).not.toHaveBeenCalled()
     expect(profiles.delete).not.toHaveBeenCalled()
   })
 })

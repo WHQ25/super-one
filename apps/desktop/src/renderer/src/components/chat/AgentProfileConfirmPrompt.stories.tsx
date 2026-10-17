@@ -225,3 +225,58 @@ export const Dark: Story = { args: { payload: CREATE }, globals: { theme: 'dark'
 export const DarkDelete: Story = { args: { payload: DELETE }, globals: { theme: 'dark' } }
 export const Chinese: Story = { args: { payload: UPDATE }, globals: { locale: 'zh' } }
 export const ChineseCreate: Story = { args: { payload: CREATE }, globals: { locale: 'zh' } }
+
+/** Saving explicitly approves this definition and the resolved defaults for future collaboration. */
+export const PersistentApproval: Story = {
+  args: { payload: {
+    ...CREATE,
+    collaborationApproval: {
+      baseConfig: { ...CLAUDE_AGENT.defaultConfig, sandboxMode: 'on', apiProviderId: 'claude-account:work' },
+      config: { model: 'opus', effort: 'xhigh', permissionMode: 'plan', sandboxMode: 'on', apiProviderId: 'claude-account:work', options: { ultracode: true } },
+    },
+  } },
+}
+/** An unchanged historical Profile still requires explicit review to gain approval. */
+export const LegacyApproval: Story = {
+  args: { payload: {
+    ...UPDATE_LONG,
+    changes: [],
+    collaborationApproval: {
+      baseConfig: { model: 'opus', effort: 'high', permissionMode: 'default', sandboxMode: 'on' },
+      config: { model: 'opus', effort: 'xhigh', permissionMode: 'plan', sandboxMode: 'on', apiProviderId: 'claude-account:work', options: { ultracode: true } },
+    },
+  } },
+}
+export const ApprovalNarrowChinese: Story = {
+  ...LegacyApproval,
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div style={{ width: 300 }}><Story /></div>],
+}
+
+/** A saved Profile inheriting the native Codex read-only default. */
+export const ReadOnlyCodexDefaults: Story = {
+  args: { payload: {
+    operation: 'update',
+    profiles: [{ harnessId: 'codex', name: 'Reviewer', description: 'Reviews changes using the current read-only default.' }],
+    changes: [],
+    collaborationApproval: {
+      baseConfig: { model: 'gpt', permissionMode: 'default', codexPermissionPreset: 'read-only' },
+      config: { model: 'gpt', permissionMode: 'default', codexPermissionPreset: 'read-only' },
+    },
+  } },
+}
+
+/** Legacy ACP selection is part of the reviewed consent even when the row is unpinned. */
+export const LegacyAcpApproval: Story = {
+  args: { payload: {
+    operation: 'update',
+    profiles: [{ harnessId: 'acp', acpAgentId: 'grok-build', name: 'Legacy Implementer', description: 'Implement scoped tasks using the selected ACP agent.', instructions: 'Preserve unrelated changes and report validation results.' }],
+    changes: [],
+    collaborationApproval: { baseConfig: GROK_AGENT.defaultConfig, config: GROK_AGENT.defaultConfig },
+  } },
+}
+export const UnresolvedAcpApproval: Story = {
+  args: { payload: { ...LegacyAcpApproval.args!.payload!, profiles: [{ ...LegacyAcpApproval.args!.payload!.profiles[0]!, acpAgentId: undefined }] } },
+  globals: { locale: 'zh', theme: 'dark' },
+  decorators: [(Story) => <div style={{ width: 300 }}><Story /></div>],
+}

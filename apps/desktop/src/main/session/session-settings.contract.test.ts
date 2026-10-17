@@ -234,6 +234,7 @@ describe('queued selections across settings', () => {
   it.each([
     { later: { effort: 'ultra' }, kept: { effort: 'ultra', permissionPreset: 'read-only' } },
     { later: { permissionPreset: 'full-access' }, kept: { effort: 'medium', permissionPreset: 'full-access' } },
+    { later: { permissionMode: 'auto' }, kept: { effort: 'medium', permissionPreset: 'auto-review' } },
     { later: { apiProviderId: 'credential-new' }, kept: { effort: 'medium', permissionPreset: 'read-only' } },
   ])('commits the queued model and Fast while keeping a newer pick of $later', async ({ later, kept }) => {
     const f = fixture('codex')

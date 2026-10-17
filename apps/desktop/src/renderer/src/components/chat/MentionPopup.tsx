@@ -278,6 +278,7 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
   function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true, mcpRoute = null }, ref) {
     const { t } = useTranslation()
+    const agentProfilesEnabled = useAppStore((s) => s.experimentalAgentProfilesEnabled)
     const activeProject = useChatStore((s) => s.activeProject)
     const recentFolders = useAppStore((s) => s.recentFolders)
     const fileRoot = useEffectiveProjectRoot()
@@ -611,7 +612,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return () => {
         cancelled = true
       }
-    }, [activeProject])
+    }, [activeProject, agentProfilesEnabled])
 
     const matchedAgentTargets = useMemo<FlatItem[]>(() => {
       if (isPortalMode) return []

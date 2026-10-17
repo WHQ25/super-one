@@ -1,3 +1,4 @@
+import { readAgentProfile } from '@superone/shared/agent-profile'
 import { isAbsolute } from 'node:path'
 import { normalizeSessionHarnessId, OPERATION_SCOPES } from '@superone/shared/environment'
 import { loadNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
@@ -112,6 +113,9 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
     const providerId =
       typeof p.providerId === 'string' && p.providerId.trim() ? p.providerId.trim() : undefined
     const profile = providerId ? ctx.sessionProviders?.get(providerId) ?? null : null
+    if (!ctx.sessions.createOnHost && readAgentProfile(profile?.config) && !agentSettings.experimentalAgentProfilesEnabled) {
+      return { error: { code: 'failed_precondition', message: 'Agent Profiles is experimental and disabled on this host.' } }
+    }
     const profileSettings = profile
       ? settingsFromSessionProviderConfig(profile.config)
       : {}

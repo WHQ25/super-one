@@ -64,6 +64,12 @@ describe('normalizeStartTask', () => {
 })
 
 describe('confirmed launch merge', () => {
+  it('keeps native read-only consent until the user selects a different shared permission mode', () => {
+    const config = { permissionMode: 'default' as const, codexPermissionPreset: 'read-only' as const }
+    expect(patchEditableLaunchConfig(config, { permissionMode: 'bypassPermissions' }).codexPermissionPreset).toBe('full-access')
+    expect(patchEditableLaunchConfig(config, { permissionMode: 'default', codexPermissionPreset: 'full-access' }).codexPermissionPreset).toBe('read-only')
+  })
+
   const proposed: SessionAgentLaunchProposal[] = [{
     launchId: 'a',
     mode: 'spawn',

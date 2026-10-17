@@ -64,6 +64,8 @@ export interface SessionProvider {
 }
 
 export interface SessionCreateOptions {
+  /** Host-resolved Codex default that cannot be expressed as a shared permission mode. */
+  codexPermissionPreset?: import('@superone/shared/agent-types').CodexPermissionPreset
   projectPath: string
   cwd?: string
   providerId: string

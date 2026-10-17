@@ -132,6 +132,14 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ experimentalAgentsEnabled: v as boolean }),
       },
       {
+        key: 'experimentalAgentProfilesEnabled',
+        label: 'Enable Agent Profiles',
+        type: 'boolean',
+        note: 'Experimental: enable Profile management, tools, and preapproved local collaboration launches.',
+        read: (s) => s.experimentalAgentProfilesEnabled,
+        toPatch: (v) => ({ experimentalAgentProfilesEnabled: v as boolean }),
+      },
+      {
         key: 'experimentalRemoteNodesEnabled',
         label: 'Enable Remote Nodes',
         type: 'boolean',

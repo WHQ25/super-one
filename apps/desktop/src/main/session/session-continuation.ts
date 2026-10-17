@@ -78,7 +78,7 @@ export interface DesktopContinuations {
    * The collaboration prompt and approved run settings `sessionId` runs with
    * as a spawn child, which its successor inherits; null for any other session.
    */
-  launch(sessionId: string): { systemPromptAppend?: string; permissionMode?: PermissionMode; sandboxMode?: SandboxMode } | null
+  launch(sessionId: string): { systemPromptAppend?: string; permissionMode?: PermissionMode; sandboxMode?: SandboxMode; codexPermissionPreset?: import('@superone/shared/agent-types').CodexPermissionPreset } | null
 }
 
 export const desktopContinuations: DesktopContinuations = {
@@ -103,6 +103,7 @@ export const desktopContinuations: DesktopContinuations = {
       systemPromptAppend,
       ...(config?.permissionMode ? { permissionMode: config.permissionMode } : {}),
       ...(config?.sandboxMode ? { sandboxMode: config.sandboxMode } : {}),
+      ...(config?.codexPermissionPreset ? { codexPermissionPreset: config.codexPermissionPreset } : {}),
     }
   },
 }

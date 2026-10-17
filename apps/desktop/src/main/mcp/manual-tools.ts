@@ -1,3 +1,4 @@
+import { AGENT_PROFILES_DISABLED_MESSAGE, isAgentProfilesEnabled } from '../session/agent-profile-feature'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { AVAILABLE_MODULES, getGuidelines } from '../generative-ui/guidelines'
 import overviewMd from './guides/overview.md?raw'
@@ -26,6 +27,7 @@ import productOverviewMd from './guides/product/overview.md?raw'
 import productContributeMd from './guides/product/contribute.md?raw'
 import productDebugMd from './guides/product/debug.md?raw'
 import productCollaborationMd from './guides/product/collaboration.md?raw'
+import productAgentProfilesMd from './guides/product/agent-profiles.md?raw'
 import productSessionsMd from './guides/product/sessions.md?raw'
 import productAutomationMd from './guides/product/automation.md?raw'
 import productDevicesMd from './guides/product/devices.md?raw'
@@ -82,6 +84,7 @@ const PRODUCT_GUIDES = {
   contribute: productContributeMd,
   debug: productDebugMd,
   collaboration: productCollaborationMd,
+  'agent-profiles': productAgentProfilesMd,
   sessions: productSessionsMd,
   automation: productAutomationMd,
   devices: productDevicesMd,
@@ -119,7 +122,7 @@ const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {
 }
 
 const DOMAIN_SUMMARIES: Record<ManualDomain, string> = {
-  product: 'Product support and contributing: overview, issues/PRs, logs, collaboration launch rules, and session archive tools.',
+  product: 'Product support and contributing: overview, issues/PRs, logs, Agent Profiles, collaboration launch rules, and session archive tools.',
   miniapp: 'Mini-app development: scaffold, APIs, packaging, tools.',
   media: 'Image/video generation: provider-specific parameters and silent-failure modes.',
   widget: 'Inline chat widget design guidelines, plus the `native` module for handing generated media to SuperOne\'s own gallery, or several files to its previewer, instead of authoring one. Saved templates use widget_list_templates.',
@@ -151,7 +154,7 @@ function formatCatalog(): string {
     lines.push(DOMAIN_SUMMARIES[domain])
     if (domain === 'product') {
       lines.push(`Topics: ${PRODUCT_GUIDE_TOPICS.join(', ')}`)
-      lines.push('Issues / PRs: `topic: "contribute"`. Logs: `topic: "debug"`. Collab/worktree: `topic: "collaboration"`.')
+      lines.push('Issues / PRs: `topic: "contribute"`. Logs: `topic: "debug"`. Profiles/Coordinator: `topic: "agent-profiles"`. Collab/worktree: `topic: "collaboration"`.')
     } else if (domain === 'miniapp') {
       lines.push(`Topics: ${MINIAPP_GUIDE_TOPICS.join(', ')}`)
       lines.push('Start with `domain: "miniapp", topic: "overview"`.')
@@ -175,6 +178,7 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- overview — product identity, links, when to use contribute vs debug vs collaboration',
       '- contribute — GitHub issues and PRs (bugs, features, improvements); issue first, optional red–green PR',
       '- debug — log paths, userData, monorepo map, this machine’s runtime paths',
+      '- agent-profiles — saved role instructions, explicit collaboration preapproval, and the Coordinator pattern',
       '- collaboration — session_collab_* launches: same-repo worktrees, cross-project cwd, implementers, and reviewers',
       '- sessions — session_list / session_search / session_read / session_cleanup: archive cite, handoff, cleanup',
       '- automation — automation_apply schedule and agentConfig shapes, presets, and the approval dialog',
@@ -185,6 +189,7 @@ function formatDomainIndex(domain: ManualDomain): string {
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',
+      'Call `read_manual({ domain: "product", topic: "agent-profiles" })` for reusable roles and the Coordinator pattern.',
       'Call `read_manual({ domain: "product", topic: "collaboration" })` before setting config.cwd or config.worktree in session_collab_request.',
       'Call `read_manual({ domain: "product", topic: "sessions" })` before browsing or cleaning other sessions.',
       'Call `read_manual({ domain: "product", topic: "show-your-work" })` before reporting work you verified on a device, in the browser or on the desktop.',
@@ -326,6 +331,7 @@ export async function manualReadHandler(args: ManualReadArgs) {
         `Unknown product topic "${args.topic}". Valid topics: ${PRODUCT_GUIDE_TOPICS.join(', ')}.`,
       )
     }
+    if (args.topic === 'agent-profiles' && !isAgentProfilesEnabled()) return textResult(AGENT_PROFILES_DISABLED_MESSAGE)
     const text = PRODUCT_GUIDES[args.topic as ProductGuideTopic]
     if (args.topic === 'debug') {
       return textResult(`${text}\n\n${runtimePathsSection()}`)

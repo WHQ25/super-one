@@ -42,6 +42,8 @@ the same commit.
 
 ### Features
 
+- [agent-profile-preapproval.md](features/agent-profile-preapproval.md) — explicit saved Profile consent and exact collaboration launch boundaries
+
 - [subscription-usage.md](features/subscription-usage.md) — quota estimates and reset-aware warnings
 - [widgets.md](features/widgets.md) — `widget_show`: the short model result, drawing widgets from the call input, templates
 - [inline-files-previewer.md](features/inline-files-previewer.md) — `@native/files-previewer`

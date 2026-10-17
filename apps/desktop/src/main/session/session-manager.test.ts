@@ -1,9 +1,11 @@
+vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({ experimentalAgentProfilesEnabled: hoisted.profilesEnabled }) }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 import type { BackendStartOptions, HarnessId, SessionBackend, SessionProvider } from './types'
 import { watchSessionCloses } from '../session-list-watch'
 
 const hoisted = vi.hoisted(() => ({
+  profilesEnabled: true,
   providers: new Map<string, SessionProvider>(),
   backendsCreated: [] as SessionBackend[],
   existsSyncMock: vi.fn<(path: string) => boolean>(() => true),
@@ -150,6 +152,7 @@ describe('SessionManager', () => {
   let mgr: SessionManagerImpl
 
   beforeEach(() => {
+    hoisted.profilesEnabled = true
     hoisted.providers.clear()
     hoisted.backendsCreated.length = 0
     hoisted.existsSyncMock.mockReset()
@@ -365,6 +368,14 @@ describe('SessionManager', () => {
       const codex = mgr.createSession({ projectPath: '/p', providerId: 'codex-base' })
       expect(claude.snapshot.harnessId).toBe('claude')
       expect(codex.snapshot.harnessId).toBe('codex')
+    })
+
+    it('carries the native read-only Codex default through create, cold create and resume', () => {
+      const manager = new SessionManagerImpl({ loadSession: () => ({ projectPath: '/project', providerId: 'codex-base', providerSessionId: 'thread', messages: [], totalCostUsd: 0, contextTokens: 0, codexPermissionPreset: 'read-only' }) })
+      const created = manager.createSession({ projectPath: '/project', providerId: 'codex-base', codexPermissionPreset: 'read-only' })
+      const cold = manager.createSession({ id: 'cold', projectPath: '/project', providerId: 'codex-base' })
+      const resumed = manager.resumeSession('resumed')
+      for (const session of [created, cold, resumed]) expect(session.getUiSettings().selectedCodexPermissionPreset).toBe('read-only')
     })
 
     it('throws when provider does not exist', () => {
@@ -779,6 +790,15 @@ describe('SessionManager', () => {
         config: { apiKey: 'sk-x', profile: REVIEWER },
       })
     }
+
+    it('blocks new Profile sessions when disabled while allowing stored sessions to resume', () => {
+      seedProfile()
+      hoisted.profilesEnabled = false
+      expect(() => mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer' })).toThrow(/experimental/)
+      const stored = new SessionManagerImpl({ loadSession: () => ({ projectPath: '/p', providerId: 'claude-reviewer', providerSessionId: 'existing-thread', messages: [], totalCostUsd: 0, contextTokens: 0 }) })
+      expect(appendOf(stored.resumeSession('restored-profile'))).toBe(BLOCK)
+      expect(appendOf(stored.createSession({ id: 'cold-profile', projectPath: '/p', providerId: 'claude-reviewer' }))).toBe(BLOCK)
+    })
 
     it('puts the profile block ahead of the collaboration protocol on create', () => {
       seedProfile()

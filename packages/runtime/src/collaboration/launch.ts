@@ -8,6 +8,7 @@ import {
   type SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import { CollaborationError } from './errors'
+import { codexPresetForPermissionMode } from '@superone/shared/harness/harness-sandbox'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LABEL_MAX = 64
@@ -142,7 +143,7 @@ export function patchEditableLaunchConfig<T extends SessionAgentLaunchConfig>(ba
       ? { apiProviderId: patch.apiProviderId }
       : {}),
     ...(typeof patch.permissionMode === 'string' && EDITABLE_PERMISSION_MODES.has(patch.permissionMode)
-      ? { permissionMode: patch.permissionMode }
+      ? { permissionMode: patch.permissionMode, ...(base.codexPermissionPreset && patch.permissionMode !== base.permissionMode ? { codexPermissionPreset: codexPresetForPermissionMode(patch.permissionMode) } : {}) }
       : {}),
     ...(typeof patch.sandboxMode === 'string' && EDITABLE_SANDBOX_MODES.has(patch.sandboxMode)
       ? { sandboxMode: patch.sandboxMode }

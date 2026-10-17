@@ -18,6 +18,7 @@ import {
 } from '@superone/runtime/collaboration'
 import { resolveProfile, type CollaborationContext, type NodeLaunchConfig } from './collaboration-context'
 import { collaborationLaunchDefaults } from './collaboration-profiles'
+import { matchesProfileLaunchDefaults, profileLaunchConfig } from '@superone/shared/agent-profile-launch'
 
 export interface CollaborationRequestInput {
   parentSessionId: string
@@ -71,6 +72,7 @@ function normalizeLaunches(
   const parent = ctx.deps.sessions.get(input.parentSessionId)!
   const profiles = new Map(profileList.map((p) => [p.id, p]))
   return input.launches.map((launch) => {
+    if (launch.config && Object.hasOwn(launch.config, 'followsDefaults')) throw new CollaborationError('Launch bookkeeping is host-owned', 'invalid_argument')
     const mode = resolveLaunchMode(launch.mode)
     const launchId = launch.launchId?.trim() || randomUUID()
 
@@ -178,17 +180,36 @@ export async function requestCollaboration(
   }
 
   let confirmed = normalized
-  if (input.requireUserConfirm) {
+  const parent = ctx.deps.sessions.get(input.parentSessionId)!
+  const cwd = parent.cwd ?? ctx.deps.projects.get(parent.projectId)?.path ?? ''
+  const profiles = new Map(profileList.map((profile) => [profile.id, profile]))
+  const preapproved = new Set(normalized.filter((launch, index) => {
+    const profile = resolveProfile(profiles, launch.agentId)
+    const requested = { ...launch, config: { ...launch.config, ...input.launches[index].config } }
+    return profile?.followsDefaults && matchesProfileLaunchDefaults(requested, profile.defaultConfig, cwd)
+  }).map((launch) => launch.launchId))
+  const needsReview = normalized.filter((launch) => !preapproved.has(launch.launchId))
+  if (input.signal?.aborted) return { status: 'cancelled' }
+  if (input.requireUserConfirm && needsReview.length) {
     const outcome = await ctx.deps.sessions.requestAgentsConfirm({
       sessionId: input.parentSessionId,
-      launches: normalized,
+      launches: needsReview,
       profiles: profileList,
       signal: input.signal,
     })
     if (outcome.action === 'cancel') return { status: 'cancelled' }
     if (outcome.action === 'decline') return { status: 'rejected', feedback: outcome.content?.feedback }
-    confirmed = mergeConfirmedLaunches(normalized, outcome.content)
+    confirmed = [...normalized.filter((launch) => preapproved.has(launch.launchId)), ...mergeConfirmedLaunches(needsReview, outcome.content)]
   }
+
+  if (input.signal?.aborted) return { status: 'cancelled' }
+  const current = new Map(ctx.listProfiles().map((profile) => [profile.id, profile]))
+  confirmed = confirmed.map((launch) => {
+    if (!preapproved.has(launch.launchId)) return launch
+    const profile = resolveProfile(current, launch.agentId)
+    if (!profile?.followsDefaults) throw new CollaborationError('Default Profile is no longer available', 'failed_precondition')
+    return { ...launch, config: { ...profileLaunchConfig(launch.config, profile.defaultConfig), followsDefaults: true } }
+  })
 
   const launches = ctx.store.transaction(() =>
     confirmed.map((launch) => createGrant(ctx, input.parentSessionId, launch)))

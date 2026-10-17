@@ -1,3 +1,6 @@
+import { registerProfileApprovalScenarios } from './agent-profile-approval.test-scenarios'
+import { registerDefaultProfileScenarios } from './default-agent-profile.test-scenarios'
+import { ensureAgentProfileApprovalSchema } from './agent-profile-approval'
 import { collaborationStore, listUnreadCollaborationMessages, onCollaborationMailboxChanged } from './collaboration-mailbox'
 import Database from 'better-sqlite3'
 import { execFileSync } from 'child_process'
@@ -12,6 +15,7 @@ import type { Session, SessionCreateOptions, SessionManager } from './types'
 const TEST_CWD = process.cwd()
 
 const state = vi.hoisted(() => ({
+  agentProfilesEnabled: true,
   db: null as Database.Database | null,
   activateWorktree: vi.fn(),
   rollbackWorktree: vi.fn(async () => {}),
@@ -81,6 +85,7 @@ vi.mock('../app-settings-service', () => ({
   readAppSettings: () => ({
     // Credential fixture uses openai-chat; Claude needs the bridge flag to list it.
     experimentalClaudeOpenAiChatEnabled: true,
+    experimentalAgentProfilesEnabled: state.agentProfilesEnabled,
     agentPreference: state.agentPreference,
   }),
 }))
@@ -91,6 +96,8 @@ vi.mock('../database', () => ({
 }))
 vi.mock('../providers/credential-store', () => ({
   listCredentials: () => state.credentials,
+  getBinding: () => undefined,
+  getCredentialDecrypted: (id: string) => state.credentials.find((credential) => credential.id === id),
 }))
 vi.mock('../agent/claude-account-service', () => ({
   listKnownAccounts: () => state.claudeAccounts,
@@ -106,6 +113,7 @@ vi.mock('../providers/registry', () => ({
 }))
 vi.mock('./session-provider-repo', () => ({
   listSessionProviders: () => state.providers,
+  getSessionProvider: (id: string) => state.providers.find((row) => row.id === id) ?? null,
 }))
 vi.mock('../harness/service', () => ({
   getHarnessInstallation: (id: string) => ({
@@ -295,20 +303,20 @@ async function approveLaunches(
       config: { cwd: TEST_CWD, model: 'test-model', effort: 'high', ...configPatch },
     })),
   }, host)
-  const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
-  if (event.type !== 'permission_request') throw new Error('Expected permission request')
-  const launches = event.request.sessionAgentsConfirm!.launches
-  resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
-    [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+  const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as AgentEvent | undefined
+  if (event?.type === 'permission_request') resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+    [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
   })
   return resultJson(await promise).launches as Array<ApprovedTestLaunch & { agentId: string }>
 }
 
 beforeEach(() => {
+  state.agentProfilesEnabled = true
   if (state.db) stopCollaborationWakes()
   state.db?.close()
   state.db = new Database(':memory:')
   createSchema(state.db)
+  ensureAgentProfileApprovalSchema(state.db)
   insertSessionRow('parent', TEST_CWD, 'Parent', { providerId: 'claude-base' })
   state.activateWorktree.mockReset()
   state.rollbackWorktree.mockClear()
@@ -361,7 +369,7 @@ describe('session collaboration', () => {
   it('offers a harness whose model catalog has not been fetched yet', () => {
     state.resourceCache = {}
     expect(listSessionAgentProfiles()).toEqual([
-      expect.objectContaining({ id: 'claude-base', models: [], defaultConfig: { permissionMode: 'default' } }),
+      expect.objectContaining({ id: 'claude-base', models: [], defaultConfig: { model: 'test-model', effort: 'high', permissionMode: 'default' } }),
     ])
   })
 
@@ -551,7 +559,7 @@ describe('@agent mention targets', () => {
     expect(listSessionAgentProfiles()).toEqual([
       expect.objectContaining({
         id: 'codex-base',
-        defaultConfig: { model: 'gpt-5.6-sol', effort: 'medium', fastMode: true, permissionMode: 'default' },
+        defaultConfig: { model: 'gpt-5.6-sol', effort: 'medium', fastMode: true, permissionMode: 'default', codexPermissionPreset: 'default' },
         models: [
           expect.objectContaining({
             id: 'gpt-5.6-sol',
@@ -650,7 +658,7 @@ describe('@agent mention targets', () => {
     ])
   })
 
-  it('inherits profile defaults through approval and applies them to the initial task', async () => {
+  it('inherits current defaults without confirmation and applies them to the initial task', async () => {
     const parent = fakeSession('parent')
     const { host, createSession } = fakeHost(parent)
     const promise = requestSessionAgents(parent.id, {
@@ -662,13 +670,9 @@ describe('@agent mention targets', () => {
         role: 'Worker',
       }],
     }, host)
-    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
-    if (event.type !== 'permission_request') throw new Error('Expected permission request')
-    const launches = event.request.sessionAgentsConfirm!.launches
+    const launches = resultJson(await promise).launches
+    expect(parent.emitHostEvent).not.toHaveBeenCalled()
     expect(launches[0].config).toMatchObject({ model: 'test-model', effort: 'high' })
-    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
-      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
-    })
 
     const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
     await startLaunch(grants[0], host)
@@ -715,13 +719,9 @@ describe('@agent mention targets', () => {
         role: 'Worker',
       }],
     }, host)
-    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
-    if (event.type !== 'permission_request') throw new Error('Expected permission request')
-    const launches = event.request.sessionAgentsConfirm!.launches
+    const launches = resultJson(await promise).launches
+    expect(parent.emitHostEvent).not.toHaveBeenCalled()
     expect(launches[0].config.fastMode).toBe(true)
-    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
-      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
-    })
 
     const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
     const started = resultJson(await startLaunch(grants[0], host))
@@ -734,6 +734,7 @@ describe('@agent mention targets', () => {
       permissionMode: 'default',
       sandboxMode: 'off',
       codexServiceTier: 'priority',
+      codexPermissionPreset: 'default',
     })
     expect(started.config).toMatchObject({ fastMode: true })
   })
@@ -808,7 +809,7 @@ describe('@agent mention targets', () => {
         summary: 'Task',
         name: 'Agent',
         role: 'Worker',
-        config: { cwd: TEST_CWD },
+        config: { cwd: TEST_CWD, effort: 'low' },
       }],
     }, host)
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -1086,6 +1087,7 @@ describe('@agent mention targets', () => {
         summary: 'This launch should never be approved',
         name: 'Cancelled',
         role: 'Worker',
+        config: { effort: 'low' },
       }],
     }, host, controller.signal)
     const requestEvent = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -1113,7 +1115,7 @@ describe('@agent mention targets', () => {
         summary: 'Original task',
         name: 'Original',
         role: 'Worker',
-        config: { cwd: TEST_CWD, model: 'test-model', permissionMode: 'default', sandboxMode: 'off' },
+        config: { cwd: TEST_CWD, model: 'test-model', effort: 'low', permissionMode: 'default', sandboxMode: 'off' },
       }],
     }, host)
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -1345,7 +1347,7 @@ describe('@agent mention targets', () => {
         summary: 'Review the diff carefully',
         name: 'Alice',
         role: 'Reviewer',
-        config: { cwd: TEST_CWD, model: 'test-model' },
+        config: { cwd: TEST_CWD, model: 'test-model', effort: 'low' },
       }],
     }, host)
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -1665,7 +1667,7 @@ describe('@agent mention targets', () => {
         summary: 'Run phase 3.',
         name: 'Eli',
         role: 'Implementer',
-        config: { cwd: TEST_CWD },
+        config: { cwd: TEST_CWD, effort: 'low' },
       }],
     }, host)
     const event = (sibling.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls
@@ -1891,17 +1893,12 @@ describe('child session project attribution', () => {
         config: { model: 'test-model', effort: 'high' },
       }],
     }, host)
-    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
-    if (event.type !== 'permission_request') throw new Error('Expected permission request')
-    const proposed = event.request.sessionAgentsConfirm!.launches[0]!
+    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch & { config: { cwd: string } }>
+    const proposed = grants[0]!
     expect(proposed.config.cwd).toBe(TEST_CWD)
     expect(proposed.config.cwd).not.toBe(parentWt)
     expect(proposed.config.cwd).not.toBe(parentWtCanon)
 
-    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
-      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
-    })
-    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
     await startLaunch(grants[0]!, host)
 
     expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
@@ -2472,4 +2469,31 @@ describe('a child whose parent runs on another machine', () => {
     const read = await retrieveSessionMessages('external-child', {}, host)
     expect(read.isError).toBe(true)
   })
+})
+
+registerProfileApprovalScenarios({
+  db: () => state.db!,
+  providers: () => state.providers as unknown as import('./types').SessionProvider[],
+  duringProjectResolution: (effect) => { state.resolveMainWorktreeDir.mockImplementationOnce(async (path) => { effect(); return path }) },
+  setAcpAgent: (id, source) => {
+    if (source === 'preference') state.agentPreference.acp.selectedAgentId = id
+    else state.resourceCache.acp = { ...(state.resourceCache.acp as object), selectedAgentId: id }
+  },
+})
+
+registerDefaultProfileScenarios({
+  setEnabled: (enabled) => { state.agentProfilesEnabled = enabled },
+  providers: () => state.providers as unknown as SessionProvider[],
+  setDefaults: ({ model, effort, permissionMode, sandboxMode, apiProviderId }) => {
+    Object.assign(state.agentPreference.claude, { ...(model ? { defaultModel: model } : {}), ...(effort ? { defaultEffort: effort } : {}), ...(permissionMode ? { defaultPermissionMode: permissionMode } : {}), ...(sandboxMode ? { defaultSandboxMode: sandboxMode } : {}) })
+    if (apiProviderId !== undefined) state.defaultChatProviderId = apiProviderId
+  },
+  setAcpAgent: (id) => { state.agentPreference.acp.selectedAgentId = id },
+  useReadOnlyCodex: () => {
+    state.providers = [{ id: 'codex-base', harnessId: 'codex', name: 'Codex', isBase: true, config: {}, createdAt: 0, updatedAt: 0 }]
+    state.resourceCache.codex = { models: [{ id: 'gpt', name: 'GPT', supportedReasoningEfforts: [{ value: 'high' }] }] }
+    Object.assign(state.agentPreference.codex, { defaultModel: 'gpt', defaultPermissionPreset: 'read-only' })
+  },
+  duringProjectResolution: (effect) => { state.resolveMainWorktreeDir.mockImplementationOnce(async (path) => { effect(); return path }) },
+  grantCount: () => (state.db!.prepare('SELECT COUNT(*) AS count FROM session_collaboration_grants').get() as { count: number }).count,
 })

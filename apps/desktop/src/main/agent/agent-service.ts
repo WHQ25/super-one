@@ -1,3 +1,6 @@
+import { isAgentProfilesEnabled } from '../session/agent-profile-feature'
+import { readAgentProfile } from '@superone/shared/agent-profile'
+import { registerAgentProfileManagementIpc, unregisterAgentProfileManagementIpc } from '../session/agent-profile-management-ipc'
 import { readDefaultSessionPrefs } from '../session/session-preferences'
 import { preferredVoiceRequest, windowVoiceEndpoint, readyWindowVoice } from './realtime-voice-control'
 import { codexAccountStore } from '../codex/codex-account-store'
@@ -1084,6 +1087,7 @@ export class AgentService {
 
   setup(): void {
     const windowIpc = windowControlIpc(ipcMain)
+    registerAgentProfileManagementIpc(windowIpc, () => this.sessionManager)
 
     // --- Session-scoped handlers (projectPath as first arg) ---
 
@@ -2049,7 +2053,8 @@ export class AgentService {
 
     windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST, async () => {
       const { listSessionProviders } = await import('../session/session-provider-repo')
-      return listSessionProviders()
+      const enabled = isAgentProfilesEnabled()
+      return listSessionProviders().filter((row) => enabled || !readAgentProfile(row.config))
     })
 
     // Composer @-mention list. Derived from the same usable-provider set as
@@ -2249,6 +2254,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.HOOKS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.HOOKS_SAVE)
     ipcMain.removeHandler(AgentIpcChannels.HOOKS_DELETE)
+    unregisterAgentProfileManagementIpc(ipcMain)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_MENTION_TARGETS)
     ipcMain.removeHandler(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS)

@@ -1,9 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactElement } from 'react'
+import { useState } from 'react'
 import { DEFAULT_NOTIFICATION_SETTINGS } from '@superone/shared/notifications'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 import { useAppStore } from '@/stores/app'
 import { SettingsLayout } from './SettingsLayout'
+import { profileManagementFixture } from './agent-profiles/agent-profile-management.test-fixtures'
 
 const GB = 1024 ** 3
 
@@ -34,11 +36,13 @@ mockIpc('app', 'checkForUpdates', async () => undefined)
 mockIpc('app', 'listPlatforms', async () => [])
 mockIpc('app', 'listCredentials', async () => [])
 mockIpc('app', 'listBindings', async () => [])
+mockIpc('app', 'getMediaServerPort', async () => 18080)
 
 function seed(patch: Partial<ReturnType<typeof useAppStore.getState>>) {
   return (Story: () => ReactElement) => {
     useAppStore.setState({
       settingsTab: 'app-settings',
+      experimentalAgentProfilesEnabled: false,
       appVersion: '0.71.2',
       appVariant: 'stable',
       alphaDownloadUrl: 'https://example.com/alpha',
@@ -68,6 +72,20 @@ type Story = StoryObj<typeof SettingsLayout>
 /** Grouped sidebar with the General page: every group is one tinted card with inset dividers. */
 export const General: Story = { decorators: [seed({})] }
 
+function withProfileApi(Story: () => ReactElement) {
+  const [{ api }] = useState(profileManagementFixture)
+  mockIpc('app', 'agentProfiles', Object.assign(() => undefined, api))
+  return <Story />
+}
+
+/** The Profile manager sits immediately below Harnesses in the Agent group. */
+export const AgentProfiles: Story = { decorators: [
+  seed({ settingsTab: 'agent-profiles', experimentalAgentProfilesEnabled: true }),
+  withProfileApi,
+] }
+
+export const AgentProfilesChineseDark: Story = { ...AgentProfiles, globals: { locale: 'zh', theme: 'dark' } }
+
 /** An update mid-download puts a progress bar under the update row. */
 export const UpdateDownloading: Story = {
   decorators: [seed({ updateStatus: 'downloading', updateVersion: '0.72.0', updateProgress: 42 })],
@@ -77,3 +95,7 @@ export const UpdateDownloading: Story = {
 export const Narrow: Story = {
   decorators: [seed({}), (Story) => <div className="flex w-[720px]"><Story /></div>],
 }
+
+/** A previously selected Profile tab falls back to General when the experiment is off. */
+export const AgentProfilesDisabled: Story = { decorators: [seed({ settingsTab: 'agent-profiles' }), withProfileApi] }
+export const AgentProfilesDisabledChineseDark: Story = { ...AgentProfilesDisabled, globals: { locale: 'zh', theme: 'dark' } }

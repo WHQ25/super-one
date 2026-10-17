@@ -1,3 +1,4 @@
+import { readAgentProfile } from '@superone/shared/agent-profile'
 /**
  * `sessionProviders.*`: the host's session-layer provider profiles
  * (`claude-base`, custom multi-profile entries, …) over its session provider store.
@@ -12,6 +13,7 @@ import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 export interface SessionProviderRpcContext {
   client: AuthenticatedClient
   sessionProviders: SessionProviderStore
+  agentProfilesEnabled?: () => boolean
 }
 
 const SESSION_PROVIDER_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: SessionProviderRpcContext) => RpcResult>> = {
@@ -47,7 +49,8 @@ function handleList(payload: unknown, ctx: SessionProviderRpcContext): RpcResult
     const providers = harnessId
       ? ctx.sessionProviders.listByHarness(harnessId)
       : ctx.sessionProviders.list()
-    return { result: { providers } }
+    const enabled = ctx.agentProfilesEnabled?.() === true
+    return { result: { providers: providers.filter((provider) => enabled || !readAgentProfile(provider.config)) } }
   } catch (err) {
     return mapThrown(err)
   }

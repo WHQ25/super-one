@@ -3330,6 +3330,8 @@ export type Messages = {
       }
     }
     workflow: {
+      running: string
+      elapsed: string
       agentState: string
       phase: string
       toolCalls: string
@@ -7909,6 +7911,8 @@ export const en: Messages = {
       },
     },
     workflow: {
+      running: 'Running',
+      elapsed: 'Elapsed',
       agentState: 'Status',
       phase: 'Phase',
       toolCalls: 'Tool Calls',

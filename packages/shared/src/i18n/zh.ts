@@ -3406,6 +3406,8 @@ export const zh: Messages = {
       },
     },
     workflow: {
+      running: '运行中',
+      elapsed: '已耗时',
       agentState: '状态',
       phase: '阶段',
       toolCalls: '工具调用',

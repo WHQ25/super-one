@@ -52,7 +52,6 @@ export interface WorkflowBlockPresenterProps {
   retryBadge?: ReactNode
   logs: string[]
   resultText?: string
-  runningSummary?: string
   terminalSummary?: string
   formatTokens: (tokens: number) => string
   StructuredOutput: ComponentType<WorkflowStructuredOutputProps>
@@ -153,7 +152,6 @@ export function WorkflowBlockPresenter({
   retryBadge,
   logs,
   resultText,
-  runningSummary,
   terminalSummary,
   formatTokens,
   StructuredOutput,
@@ -250,13 +248,16 @@ export function WorkflowBlockPresenter({
           <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
             {isRunning ? (
               <>
-                <Loader2 className="size-3 animate-spin" />
-                <span>{runningSummary || t('chat.workflow.running', 'Running…')}</span>
+                <Loader2 className="size-3 shrink-0 animate-spin" />
+                <span className="min-w-0 flex-1 truncate">
+                  {t('chat.workflow.running', 'Running')}
+                  {' · '}{t('chat.workflow.elapsed', 'Elapsed')} {formatElapsed(elapsed) || '0s'}
+                </span>
               </>
             ) : terminalStatus === 'failed' ? (
               <>
                 <X className="size-3 shrink-0 text-foreground" />
-                <span>
+                <span className="min-w-0 flex-1 truncate" title={terminalSummary}>
                   {t('chat.workflow.failed', 'Workflow failed')}
                   {terminalSummary ? ` · ${terminalSummary}` : ''}
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
@@ -265,7 +266,7 @@ export function WorkflowBlockPresenter({
             ) : terminalStatus === 'stopped' ? (
               <>
                 <CircleStop className="size-3 shrink-0 text-muted-foreground" />
-                <span>
+                <span className="min-w-0 flex-1 truncate">
                   {t('chat.workflow.stopped', 'Workflow stopped')}
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
                 </span>
@@ -273,18 +274,18 @@ export function WorkflowBlockPresenter({
             ) : isComplete ? (
               <>
                 <Check className="size-3 shrink-0 text-muted-foreground" />
-                <span>
+                <span className="min-w-0 flex-1 truncate">
                   {t('chat.workflow.done', 'Workflow complete')}
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
                 </span>
               </>
             ) : (
               <>
-                <Loader2 className="size-3 animate-spin" />
-                <span>{t('chat.workflow.spawning', 'Starting workflow…')}</span>
+                <Loader2 className="size-3 shrink-0 animate-spin" />
+                <span className="min-w-0 flex-1 truncate">{t('chat.workflow.spawning', 'Starting workflow…')}</span>
               </>
             )}
-            <span className="ml-auto flex items-center gap-1.5">{stats}</span>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">{stats}</span>
           </div>
         </div>
       )}

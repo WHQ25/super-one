@@ -808,7 +808,6 @@ function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreamin
       onOpenFullView={() => undefined}
       logs={[]}
       resultText={launchFailed ? result?.summary : (toolBlock.taskResultText ?? detail.taskResultText)}
-      runningSummary={summary}
       terminalSummary={summary}
       formatTokens={formatTokens}
       StructuredOutput={({ data }) => <PlainCode>{data}</PlainCode>}

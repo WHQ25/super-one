@@ -303,3 +303,31 @@ export const Narrow: Story = {
     },
   ],
 }
+
+/** Long progress text cannot displace the total agent count or tokens. */
+export const RunningFooterNarrow: Story = {
+  args: {
+    toolBlock: makeToolBlock('wf-footer-narrow'),
+    resultBlock: makeResultBlock('wf-footer-narrow'),
+    isStreaming: false,
+    defaultExpanded: true,
+  },
+  decorators: [
+    (Story) => <StoryShell width={320}><Story /></StoryShell>,
+    (Story) => (
+      <>
+        <SeedTaskProgress
+          toolUseId="wf-footer-narrow"
+          progress={{
+            completed: false,
+            description: 'phase: Verify · Review(done) → Verify(active) → Fix(pending) · Checking every finding against the source and reproducing the reported failures',
+            toolUses: 120,
+            totalTokens: 1_240_000,
+            durationMs: 154_000,
+          }}
+        />
+        <Story />
+      </>
+    ),
+  ],
+}

@@ -246,10 +246,6 @@ export function WorkflowBlock({
         : undefined}
       logs={output?.logs ?? []}
       resultText={resultText}
-      runningSummary={stripWorkflowNamePrefix(
-        progress?.summary || progress?.description || toolBlock.taskSummary,
-        name,
-      )}
       terminalSummary={launchFailed
         ? launchError
         : stripWorkflowNamePrefix(progress?.summary, name)}

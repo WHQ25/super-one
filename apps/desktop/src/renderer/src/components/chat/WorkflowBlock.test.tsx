@@ -152,7 +152,7 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
         defaultExpanded
       />,
     )
-    expect(screen.getByText('Running…')).toBeInTheDocument()
+    expect(screen.getByText('Running · Elapsed 0s')).toBeInTheDocument()
     expect(screen.queryByText('Workflow complete')).not.toBeInTheDocument()
   })
 
@@ -276,7 +276,8 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
     expect(tile).toHaveAttribute('data-status', 'running')
     expect(tile).toHaveClass('animate-pulse')
     expect(screen.queryByText('running')).not.toBeInTheDocument()
-    expect(screen.getByText(/phase: Execute/)).toBeInTheDocument()
+    expect(screen.queryByText(/phase: Execute/)).not.toBeInTheDocument()
+    expect(screen.getByText('Running · Elapsed 12s')).toBeInTheDocument()
     // Grok resolves ~/.grok/sessions/.../workflows/<run_id> → full view available
     expect(screen.getByTitle('Open full view')).toBeInTheDocument()
   })
@@ -323,7 +324,7 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
         defaultExpanded
       />,
     )
-    expect(screen.getByText('Running…')).toBeInTheDocument()
+    expect(screen.getByText('Running · Elapsed 0s')).toBeInTheDocument()
     expect(screen.queryByText('Workflow complete')).not.toBeInTheDocument()
   })
 

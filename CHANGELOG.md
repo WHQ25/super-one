@@ -22,17 +22,28 @@ Every alpha release keeps its own notes on its GitHub Release.
   labels, titled page links and artifact listings in desktop and phone chat.
 - Customize each harness's dark primary color independently of its light palette;
   switch appearance and Liquid Glass from the palette popover.
+- Arrange sessions in custom split layouts, including uneven nested splits and
+  layouts in other local or remote sessions; let layout tools close tabs beyond
+  those opened by the caller.
+- Preview and control iPhone Duo folding in 2D and 3D, with hinge-angle controls
+  and input routed to the active display.
+- Show session timer tool summaries and pending scheduled wakeups in chat.
 
 ### Changed
 
-- Update the bundled and managed Codex runtime to 0.163.0 and expose its expanded
-  Realtime v3 voice catalog.
+- Update bundled and managed Codex to 0.163.0 and expose its Realtime v3 voices.
 - Use compact realtime voice controls and an audio-driven waveform, and keep live
   captions in the transcript on desktop.
-- Let layout tools split in other sessions and close tabs beyond those opened by
-  the caller.
-- Show launched suggested tasks as titled session chips and name built-in agents
-  after their harnesses.
+- Launch configured suggested tasks on their source host from desktop and phone,
+  show their titled session chips, and name built-in agents after their harnesses.
+- Offer Claude Fast Mode according to the connected SDK's capabilities.
+- Put reusable agent profile management behind an opt-in experiment, with reviewed
+  settings and defaults that follow the current harness configuration.
+
+### Performance
+
+- Prefetch transcript history one screen before its edge while preventing short
+  history windows from repeatedly loading in both directions.
 
 ### Fixed
 
@@ -45,6 +56,61 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Preserve newer appearance changes when the initial theme read returns late.
 - Keep failed favicons on their fallback even when the image error arrives before
   the renderer finishes its effects.
+- Require an explicit tap on a detected QR code instead of selecting the first
+  result, including correct camera coordinates on Android.
+- Preserve Claude timers when an otherwise idle session would release its runtime.
+- Keep voice controls reachable across harnesses and sessions, isolate incoming
+  audio from UI work, and apply the selected worktree before starting voice.
+- Give mobile questions the composer space and keep their fields and actions
+  visible with the keyboard open.
+- Follow app-locked orientation in device previews and restore simulator video
+  after stream restarts.
+- Hide internal Codex collaboration wakes in restored timelines, unify turn-error
+  details, and center history loaders and new-session Git chips.
+
+## [0.75.0-alpha.1] - 2026-10-18
+
+### Added
+
+- Arrange sessions in custom split layouts, including uneven nested splits and
+  layouts in other local or remote sessions.
+- Preview and control iPhone Duo folding in 2D and 3D, with hinge-angle controls
+  and input routed to the active display.
+- Show session timer tool summaries and pending scheduled wakeups in chat.
+- Manage reusable agent profiles through an opt-in experiment, with reviewed
+  settings and defaults that follow the current harness configuration.
+
+### Changed
+
+- Update bundled and managed Codex to 0.163.0 and expose its Realtime v3 voices.
+- Launch configured suggested tasks on their source host from desktop and phone,
+  and offer Claude Fast Mode according to the connected SDK's capabilities.
+
+### Performance
+
+- Prefetch transcript history one screen before its edge while preventing short
+  history windows from repeatedly loading in both directions.
+
+### Fixed
+
+- Require an explicit tap on a detected QR code instead of selecting the first
+  result; include Android camera coordinates in a new native build.
+- Preserve Claude timers when an otherwise idle session would release its runtime.
+- Keep voice controls reachable across harnesses and sessions, isolate incoming
+  audio from UI work, and apply the selected worktree before starting voice.
+- Give mobile questions the composer space and keep their fields and actions
+  visible with the keyboard open.
+- Follow app-locked orientation in device previews and restore simulator video
+  after stream restarts.
+- Hide internal Codex collaboration wakes in restored timelines, unify turn-error
+  details, and center history loaders and new-session Git chips.
+
+### Tests
+
+- Cover profile approvals, split-layout routing, foldable-device control and
+  explicit QR-code selection.
+- Refresh Fast Mode payload snapshots, experimental-setting subscriptions and
+  isolated node-host fixtures.
 
 ## [0.75.0-alpha] - 2026-10-16
 

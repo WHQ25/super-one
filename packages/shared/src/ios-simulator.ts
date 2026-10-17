@@ -179,9 +179,9 @@ export interface IosSimulatorSessionState {
   previewMode: IosSimulatorPreviewMode
   interactive: boolean
   /**
-   * Which way up the guest is lying. Set only once a rotation the host asked for
-   * was seen to land — apps that pin themselves upright never turn — so this is a
-   * reading, not a request. A rotation the guest starts on its own stays invisible.
+   * Physical device orientation last delivered by the host. The preview shell turns
+   * to match even when the foreground app keeps its content orientation locked.
+   * A rotation the guest starts on its own stays invisible.
    */
   orientation: IosSimulatorOrientation
   /**

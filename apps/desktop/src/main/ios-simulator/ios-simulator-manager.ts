@@ -27,13 +27,10 @@ import {
   iosSimulatorFoldForm,
   iosSimulatorFoldPanel,
   isIosSimulatorTextTypeable,
-  isIosSimulatorLandscape,
   splitIosSimulatorText,
 } from '@superone/shared/ios-simulator'
-import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-tree'
+import type { IosSimulatorAccessibilityDump } from './a11y-tree'
 import type {
-  IosSimulatorNativeAttachment,
-  IosSimulatorNativeStreamInfo,
   IosSimulatorFrameHash,
   IosSimulatorFrameOcr,
   IosSimulatorFrameOcrOptions,
@@ -51,60 +48,15 @@ import { ensureZoneDir, type ZoneOwner } from '../environment/zone-owner'
 import { currentCallOwner } from '../mcp/artifact-registry'
 import { SimctlClient } from './simctl'
 import type { IosSimulatorFoldLayout } from './device-chrome'
+import type {
+  IosSimulatorChromePort,
+  IosSimulatorManagerOptions,
+  IosSimulatorNativePort,
+  IosSimulatorPort,
+} from './ios-simulator-ports'
 import log from '../logger'
 
-export interface IosSimulatorPort {
-  status(): Promise<Omit<IosSimulatorStatus, 'helper' | 'previewMode'>>
-  listDevices(): Promise<IosSimulatorDevice[]>
-  listRuntimes(): Promise<IosSimulatorRuntimeOption[]>
-  listDeviceTypeBundles(): Promise<Map<string, string>>
-  create(request: IosSimulatorCreateRequest): Promise<string>
-  boot(udid: string): Promise<void>
-  shutdown(udid: string): Promise<void>
-  writePasteboard(udid: string, text: string): Promise<void>
-}
-
-export interface IosSimulatorNativePort {
-  attachment: IosSimulatorNativeAttachment | null
-  /** The size the helper negotiated, which a scaled preview shrinks below attachment. */
-  streamInfo: IosSimulatorNativeStreamInfo | null
-  /** False once the helper process died, so a cached session has to be rebuilt. */
-  alive: boolean
-  /** `screenId` names the screen to show; omitted, the helper shows the largest. */
-  attach(udid: string, screenId?: number): Promise<IosSimulatorNativeAttachment>
-  /**
-   * Sweep a foldable's hinge to `position` (0 closed ... 1 open) and show `screenId`;
-   * `tent` then stands it as a tent. The frame stream keeps its old display; the
-   * caller restarts it.
-   */
-  fold(position: number, durationMs: number, screenId: number, tent?: boolean): Promise<IosSimulatorNativeAttachment>
-  startFrames(
-    preferredMode: 'native-framebuffer' | 'native-h264',
-    quality: IosSimulatorPreviewQuality,
-    listener: (frame: NativeFramePacket) => void,
-  ): Promise<IosSimulatorNativeStreamInfo>
-  closeFrames(): Promise<void>
-  input(input: IosSimulatorInput): Promise<IosSimulatorInputResult>
-  dumpAccessibility(options?: { maxDepth?: number; maxNodes?: number })
-    : Promise<IosSimulatorAccessibilityDump>
-  hitTestAccessibility(x: number, y: number): Promise<IosSimulatorRawNode>
-  frameHash(): Promise<IosSimulatorFrameHash>
-  frameOcr(options: IosSimulatorFrameOcrOptions): Promise<IosSimulatorFrameOcr>
-  performAccessibility(action: string, generation: number, uid: number): Promise<void>
-  dispose(): Promise<void>
-}
-
-/** Loads Apple's own device artwork from the local Xcode install. */
-export interface IosSimulatorChromePort {
-  load(
-    deviceTypeIdentifier: string,
-    bundlePath: string,
-    xcodeVersion: string | null,
-    screenId?: number | null,
-  ): Promise<IosSimulatorChrome | null>
-  /** A foldable's two panels; null for a single-screen device. */
-  foldLayout?(deviceTypeIdentifier: string, bundlePath: string): Promise<IosSimulatorFoldLayout | null>
-}
+export type { IosSimulatorChromePort, IosSimulatorNativePort, IosSimulatorPort } from './ios-simulator-ports'
 
 /**
  * How long a full 0-180 sweep takes; a shorter move takes its share, so a hinge
@@ -126,36 +78,6 @@ const FOLD_FORM_ORIENTATION = {
   tent: 'landscape-right',
   open: 'portrait',
 } as const satisfies Record<IosSimulatorFoldForm, IosSimulatorOrientation>
-
-interface ManagerOptions {
-  simctl?: IosSimulatorPort
-  chrome?: IosSimulatorChromePort
-  capture?: IosSimulatorCapturePort
-  /** Screenshots and recordings land in `<captureRoot>/<udid>/`. */
-  captureRoot?: string
-  helperProbe: () => Promise<IosSimulatorHelperProbe | null>
-  nativeFactory: () => Promise<IosSimulatorNativePort>
-  attachAttempts?: number
-  attachRetryMs?: number
-  /**
-   * A preview that fails to start leaves the panel on its spinner with nothing else
-   * to show, so the reason has to leave this class somehow.
-   */
-  onStreamError?: (udid: string, error: unknown) => void
-  /**
-   * Suppresses Apple's Simulator.app for as long as this app holds a device it booted
-   * itself, returning the stop. See `external-simulator.ts` — a running Simulator.app
-   * opens a window for anything that boots, and `flutter run` / `expo run:ios` /
-   * Xcode launch it again mid-session, so one hide at boot time is not enough.
-   */
-  watchExternalSimulator?: () => () => void
-  /** How long to wait for the guest to actually turn before calling it a refusal. */
-  rotationConfirmMs?: number
-  rotationPollMs?: number
-  /** How long to keep re-offering text to a guest that has not settled its focus yet. */
-  focusConfirmMs?: number
-  focusPollMs?: number
-}
 
 interface NativeSession {
   udid: string
@@ -216,8 +138,8 @@ export class IosSimulatorManager {
   /** udid -> the name the last listing saw. For messages only; see `withOwnership`. */
   private readonly deviceNames = new Map<string, string>()
   private readonly superOneBooted = new Set<string>()
-  // Keyed by device, not session: the guest keeps its orientation across a detach,
-  // a rebind, or a panel remount, and only a shutdown puts it back to portrait.
+  // Physical device orientation, independent of whether the app follows it. Kept
+  // across a detach, rebind or panel remount; shutdown puts it back to portrait.
   private readonly orientations = new Map<string, IosSimulatorOrientation>()
   // Same reasoning, same lifetime: the guest keeps a keyboard plugged or unplugged
   // until something tells it otherwise, and the helper plugs one in on every attach.
@@ -240,8 +162,6 @@ export class IosSimulatorManager {
   private readonly watchExternalSimulator: () => () => void
   /** Non-null exactly while the watcher is running, so it is started only once. */
   private stopExternalSimulatorWatch: (() => void) | null = null
-  private readonly rotationConfirmMs: number
-  private readonly rotationPollMs: number
   private readonly focusConfirmMs: number
   private readonly focusPollMs: number
   // Host-owned state changes reach the renderer through here. Without it a rotation
@@ -250,7 +170,7 @@ export class IosSimulatorManager {
   private readonly stateListeners = new Set<(state: IosSimulatorSessionState) => void>()
   private statusFlight: Promise<IosSimulatorStatus> | null = null
 
-  constructor(options: ManagerOptions) {
+  constructor(options: IosSimulatorManagerOptions) {
     this.simctl = options.simctl ?? new SimctlClient()
     this.capture = options.capture ?? new SimctlCapture()
     this.captureRoot = options.captureRoot ?? null
@@ -261,8 +181,6 @@ export class IosSimulatorManager {
     this.attachRetryMs = options.attachRetryMs ?? 250
     this.onStreamError = options.onStreamError ?? (() => undefined)
     this.watchExternalSimulator = options.watchExternalSimulator ?? (() => () => undefined)
-    this.rotationConfirmMs = options.rotationConfirmMs ?? 1_500
-    this.rotationPollMs = options.rotationPollMs ?? 100
     this.focusConfirmMs = options.focusConfirmMs ?? 600
     this.focusPollMs = options.focusPollMs ?? 50
   }
@@ -836,82 +754,18 @@ export class IosSimulatorManager {
   }
 
   /**
-   * Turn a delivered rotation into a reading of the guest.
-   *
-   * The send succeeding means the orientation event reached the guest workspace, not
-   * that anything acted on it: SpringBoard on iPhone, Spotlight, and any app that
-   * pins itself upright ignore it silently. Trusting the send is what let `device_act`
-   * report a rotation that never happened, and what let the panel draw a landscape
-   * shell around a device still standing up.
+   * Keep the device's physical turn when delivery succeeds. An app may lock its
+   * content orientation; the unchanged framebuffer then turns with the shell.
    */
   private async settleRotation(
     udid: string,
     orientation: IosSimulatorOrientation,
     result: IosSimulatorInputResult,
   ): Promise<IosSimulatorInputResult> {
-    const previous = this.orientations.get(udid) ?? 'portrait'
-    const turned = result.ok && await this.confirmRotation(udid, orientation, previous)
-    if (turned) this.orientations.set(udid, orientation)
-    // Published on refusal too: the panel turns its shell the moment the user clicks
-    // the button, so something has to be able to turn it back. Awaited rather than
-    // fired off, so a caller that reads the state back cannot beat its own event.
+    if (result.ok) this.orientations.set(udid, orientation)
+    // Publish failures too, so an optimistic panel rolls back a failed delivery.
     await this.publishSessionState(udid)
-    if (!result.ok || turned) return result
-    return {
-      ok: false,
-      error: 'The rotation reached the guest but the foreground app kept its own '
-        + 'orientation. Apps that lock themselves upright — the home screen, Spotlight '
-        + '— never turn; try one that supports both, such as Safari.',
-    }
-  }
-
-  /**
-   * Ask the guest, rather than the host, which way up it is.
-   *
-   * Accessibility is the only channel that answers for the guest: its frames come
-   * back in the rotated screen's own point space, so the root frame swaps width and
-   * height exactly when the guest really turned. Nothing on the display port carries
-   * orientation — the framebuffer keeps its portrait shape either way.
-   *
-   * It can only see quarter turns. The two portraits look alike to it, as do the two
-   * landscapes, so a half turn is still taken on trust.
-   */
-  private async confirmRotation(
-    udid: string,
-    target: IosSimulatorOrientation,
-    previous: IosSimulatorOrientation,
-  ): Promise<boolean> {
-    const wantLandscape = isIosSimulatorLandscape(target)
-    if (wantLandscape === isIosSimulatorLandscape(previous)) return true
-    // A foldable reports the cover's root frame whichever panel is lit, so an unfolded
-    // one has nothing here that turns. Trusted, like a half turn.
-    const layout = this.foldLayouts.get(udid)
-    if (layout && this.foldPanel(udid, layout) !== layout.cover) return true
-
-    const deadline = Date.now() + this.rotationConfirmMs
-    for (;;) {
-      // Only the root frame is read, so the dump is kept to it.
-      const frame = await this.rootAccessibilityFrame(udid)
-      // `null` means this helper cannot see the guest at all. Verifying is a bonus,
-      // not a precondition — refusing here would take away a control that works.
-      if (frame === null) return true
-      const [, , width, height] = frame
-      // A guest mid-launch reports a zero-sized root; that is not a portrait reading.
-      if (width > 0 && height > 0 && width > height === wantLandscape) return true
-      if (Date.now() >= deadline) return false
-      await delay(this.rotationPollMs)
-    }
-  }
-
-  private async rootAccessibilityFrame(
-    udid: string,
-  ): Promise<[number, number, number, number] | null> {
-    try {
-      const dump = await this.accessibilityDump(udid, { maxDepth: 1, maxNodes: 1 })
-      return dump.tree.frame ?? null
-    } catch {
-      return null
-    }
+    return result
   }
 
   /**

@@ -41,6 +41,9 @@ Two platform differences that are load-bearing rather than cosmetic:
   shape, so the host turns the whole device as one rigid CSS rotation. Android
   re-shapes the framebuffer and scrcpy re-sends a session packet with the axes swapped
   — whatever draws it must RESIZE, not rotate.
+  A delivered iOS rotation updates the device's physical orientation even if the
+  foreground app locks its content orientation. Keep that framebuffer unchanged and
+  turn it with the shell; an app orientation lock is not an input error.
 
 The renderer consumes the neutral `device:*` IPC channels and `DeviceDescriptor`.
 Shared panel, stream, input, PiP and catalog code lives under `components/device/`;

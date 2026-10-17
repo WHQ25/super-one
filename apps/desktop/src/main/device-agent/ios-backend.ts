@@ -8,7 +8,7 @@ import {
   mergeRecognizedText,
   type NormalizedAccessibilityTree,
 } from '../device/tree'
-import { normalizeAccessibilityTree } from '../ios-simulator/a11y-tree'
+import { accessibilityOrientation, normalizeAccessibilityTree } from '../ios-simulator/a11y-tree'
 import { IOS_SIMULATOR_ROTATION_DEGREES } from '@superone/shared/ios-simulator'
 import {
   gestureDurationMs,
@@ -87,6 +87,7 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
   } | null = null
 
   private deviceLabel = 'iOS Simulator'
+  private contentOrientation: DeviceOrientation = 'portrait'
 
   /**
    * Addressed by DEVICE, not by the session holding it.
@@ -138,10 +139,11 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
           'Neither the accessibility tree nor the framebuffer could be read.',
         )
       }
+      if (dump) this.contentOrientation = accessibilityOrientation(dump, orientation, this.contentOrientation)
       return {
         dump,
         frameHash,
-        tree: dump ? normalizeAccessibilityTree(dump, orientation) : null,
+        tree: dump ? normalizeAccessibilityTree(dump, this.contentOrientation) : null,
       }
     }
 

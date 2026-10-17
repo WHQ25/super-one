@@ -2,155 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   IosSimulatorDevice,
   IosSimulatorFrame,
-  IosSimulatorInput,
-  IosSimulatorPreviewQuality,
-  IosSimulatorStatus,
 } from '@superone/shared/ios-simulator'
-import {
-  IOS_SIMULATOR_INPUT_ERROR,
-  isIosSimulatorLandscape,
-} from '@superone/shared/ios-simulator'
-import type {
-  IosSimulatorNativeAttachment,
-  IosSimulatorNativeStreamInfo,
-  NativeFramePacket,
-} from './helper-client'
+import { IOS_SIMULATOR_INPUT_ERROR } from '@superone/shared/ios-simulator'
+import type { IosSimulatorNativeAttachment, IosSimulatorNativeStreamInfo } from './helper-client'
 import { IosSimulatorManager } from './ios-simulator-manager'
 import { IosSimulatorDevicePort } from './device-port'
 
-const status: IosSimulatorStatus = {
-  supported: true,
-  platform: 'darwin',
-  developerDirectory: '/Applications/Xcode.app/Contents/Developer',
-  xcodeVersion: 'Xcode 26.6',
-  xcodeBuild: '17F113',
-  simctlPath: '/usr/bin/simctl',
-  previewMode: 'native-framebuffer',
-  helper: null,
-}
-
-function device(overrides: Partial<IosSimulatorDevice> = {}): IosSimulatorDevice {
-  return {
-    udid: 'device-a',
-    name: 'iPhone 17 Pro',
-    runtimeIdentifier: 'runtime-ios-26',
-    runtimeName: 'iOS 26.0',
-    state: 'Shutdown',
-    booted: false,
-    available: true,
-    ownedBySuperOne: false,
-    ...overrides,
-  }
-}
-
-function setup(initial = device()) {
-  let current = initial
-  let attachment: IosSimulatorNativeAttachment | null = null
-  let frameListener: ((frame: NativeFramePacket) => void) | null = null
-  const simctl = {
-    status: vi.fn(async () => status),
-    listDevices: vi.fn(async () => [current]),
-    listRuntimes: vi.fn(async () => []),
-    listDeviceTypeBundles: vi.fn(async () => new Map<string, string>()),
-    create: vi.fn(async () => current.udid),
-    boot: vi.fn(async () => { current = device({ ...current, state: 'Booted', booted: true }) }),
-    shutdown: vi.fn(async () => { current = device({ ...current, state: 'Shutdown', booted: false }) }),
-    writePasteboard: vi.fn(async () => {}),
-  }
-  let streamInfo: IosSimulatorNativeStreamInfo | null = null
-  let alive = true
-  let guestLandscape = false
-  let guestFollowsRotation = true
-  const native = {
-    get attachment() { return attachment },
-    get streamInfo() { return streamInfo },
-    get alive() { return alive },
-    attach: vi.fn(async (udid: string, _screenId?: number) => {
-      // A rebuild hands back a fresh process, so attaching revives the fake too.
-      alive = true
-      attachment = { udid, pixelWidth: 1179, pixelHeight: 2556, inputAvailable: true }
-      return attachment
-    }),
-    // The Duo's panels: cover is screen 1, the inner panel screen 3.
-    fold: vi.fn(async (_position: number, _durationMs: number, screenId: number) => {
-      attachment = {
-        ...attachment!,
-        pixelWidth: screenId === 3 ? 2007 : 1398,
-        pixelHeight: screenId === 3 ? 2853 : 2034,
-      }
-      return attachment
-    }),
-    startFrames: vi.fn(async (
-      _preferredMode: 'native-framebuffer' | 'native-h264',
-      quality: IosSimulatorPreviewQuality,
-      listener: (frame: NativeFramePacket) => void,
-    ) => {
-      // Mirrors the helper, which rejects `stream.start` while one is open.
-      if (frameListener) throw new Error('Frame stream is already running.')
-      frameListener = listener
-      // Mirrors the helper's own rounding so a scaled stream reports what it encodes.
-      const scale = quality.scale
-      streamInfo = {
-        codec: 'h264' as const,
-        pixelWidth: scale >= 1 ? 1179 : Math.round(1179 * scale) & ~1,
-        pixelHeight: scale >= 1 ? 2556 : Math.round(2556 * scale) & ~1,
-      }
-      return streamInfo
-    }),
-    closeFrames: vi.fn(async () => { frameListener = null; streamInfo = null }),
-    input: vi.fn(async (input: IosSimulatorInput) => {
-      // Models an app that follows the device, which is what most of them do. The
-      // guest is what the manager now reads back, so the fake has to have one.
-      if (input.type === 'rotate' && guestFollowsRotation) {
-        guestLandscape = isIosSimulatorLandscape(input.orientation)
-      }
-      return { ok: true }
-    }),
-    // Guest POINT space, so the root frame turns with the device -- this is the only
-    // reading that says whether the guest acted on the orientation event.
-    dumpAccessibility: vi.fn(async () => ({
-      generation: 1,
-      nodes: 1,
-      complete: true,
-      tree: {
-        uid: 1,
-        role: 'application',
-        frame: (guestLandscape ? [0, 0, 956, 440] : [0, 0, 440, 956]) as [number, number, number, number],
-      },
-    })),
-    hitTestAccessibility: vi.fn(async () => ({ uid: 1 })),
-    performAccessibility: vi.fn(async () => {}),
-    dispose: vi.fn(async () => { attachment = null; frameListener = null; streamInfo = null }),
-  }
-  const nativeFactory = vi.fn(async () => native)
-  const stopped: string[] = []
-  const capture = {
-    screenshot: vi.fn(async () => {}),
-    startRecording: vi.fn(async (_udid: string, outputPath: string) => ({
-      stop: vi.fn(async () => { stopped.push(outputPath) }),
-    })),
-  }
-  return {
-    simctl,
-    capture,
-    stopped,
-    native,
-    nativeFactory,
-    /** An app that pins itself upright -- the home screen, Spotlight, most modals. */
-    lockGuestUpright: () => { guestFollowsRotation = false },
-    /** The helper process going away underneath a session that still holds it. */
-    crashHelper: () => {
-      alive = false
-      attachment = null
-      frameListener = null
-      streamInfo = null
-    },
-    emitFrame: (frame: NativeFramePacket = {
-      kind: 'h264', keyframe: true, timestampUs: 123_000,
-      data: Buffer.from([0, 0, 0, 1, 0x65]),
-    }) => frameListener?.(frame),
-  }
-}
+import { device, setup, status } from './ios-simulator-manager.fixture'
 
 describe('IosSimulatorManager', () => {
   it('passes the selected Xcode version to the device chrome loader', async () => {
@@ -794,14 +652,11 @@ function rotationManager(harness: ReturnType<typeof setup>) {
     nativeFactory: harness.nativeFactory,
     helperProbe: async () => null,
     attachAttempts: 1,
-    // Real guests take a few hundred milliseconds to turn; the fake turns at once.
-    rotationConfirmMs: 50,
-    rotationPollMs: 5,
   })
 }
 
 describe('IosSimulatorManager rotation', () => {
-  it('reports the orientation the guest accepted, and forgets it on shutdown', async () => {
+  it('keeps the delivered device orientation, and forgets it on shutdown', async () => {
     const harness = setup()
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
@@ -814,7 +669,7 @@ describe('IosSimulatorManager rotation', () => {
     expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 
-  it('leaves the panel upright when the guest refuses the rotation', async () => {
+  it('leaves the panel upright when rotation delivery fails', async () => {
     const harness = setup()
     harness.native.input.mockResolvedValue({ ok: false, error: 'Rotation was rejected.' })
     const manager = new IosSimulatorManager({
@@ -981,8 +836,8 @@ describe('IosSimulatorManager stream lifetime', () => {
   })
 })
 
-describe('IosSimulatorManager rotation (refusals)', () => {
-  it('leaves the panel upright when the guest refuses the rotation', async () => {
+describe('IosSimulatorManager content orientation locks', () => {
+  it('leaves the panel upright when rotation delivery fails', async () => {
     const harness = setup()
     harness.native.input.mockResolvedValue({ ok: false, error: 'Rotation was rejected.' })
     const manager = rotationManager(harness)
@@ -993,22 +848,32 @@ describe('IosSimulatorManager rotation (refusals)', () => {
     expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 
-  it('fails the rotation when the event lands but the foreground app stays upright', async () => {
+  it('turns the device without changing the preview when the app stays upright', async () => {
     const harness = setup()
     harness.lockGuestUpright()
     const manager = rotationManager(harness)
     await manager.boot('session-a', 'device-a')
 
-    const result = await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
+    const frames: IosSimulatorFrame[] = []
+    const stop = manager.subscribePreview('device-a', (frame) => { frames.push(frame) })
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledOnce())
+    harness.emitFrame()
+    const frame = frames.at(-1)!
 
-    // Delivering the event is not performing the rotation: reporting the send made
-    // `device_act` claim a turn that never happened.
-    expect(result.ok).toBe(false)
-    expect(result.error).toMatch(/kept its own orientation/i)
-    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
+    for (const orientation of ['landscape-right', 'portrait-upside-down', 'landscape-left', 'portrait'] as const) {
+      const result = await manager.input('device-a', { type: 'rotate', orientation })
+
+      expect(result).toEqual({ ok: true })
+      expect((await manager.getSessionState('device-a')).orientation).toBe(orientation)
+    }
+    expect(harness.native.dumpAccessibility).not.toHaveBeenCalled()
+    expect(harness.native.startFrames).toHaveBeenCalledOnce()
+    expect(harness.native.closeFrames).not.toHaveBeenCalled()
+    expect(frames).toEqual([frame])
+    stop()
   })
 
-  it('takes a half turn on trust, because the screen keeps its shape through one', async () => {
+  it('turns the device upside down while the app stays upright', async () => {
     const harness = setup()
     harness.lockGuestUpright()
     const manager = rotationManager(harness)
@@ -1031,8 +896,6 @@ describe('IosSimulatorManager rotation (refusals)', () => {
 
     const result = await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
-    // Verification is a bonus. A helper build without accessibility would otherwise
-    // lose a control that works perfectly well.
     expect(result.ok).toBe(true)
     expect((await manager.getSessionState('device-a')).orientation).toBe('landscape-left')
   })
@@ -1053,7 +916,7 @@ describe('IosSimulatorManager session state pushes', () => {
     expect(seen).toEqual(['landscape-left'])
   })
 
-  it('announces a refused rotation too, so an optimistic panel can turn back', async () => {
+  it('announces the device turn even when the app keeps its own orientation', async () => {
     const harness = setup()
     harness.lockGuestUpright()
     const manager = rotationManager(harness)
@@ -1063,7 +926,7 @@ describe('IosSimulatorManager session state pushes', () => {
 
     await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
-    expect(seen).toEqual(['portrait'])
+    expect(seen).toEqual(['landscape-left'])
   })
 
   it('stops announcing once the listener unsubscribes', async () => {
@@ -1078,241 +941,5 @@ describe('IosSimulatorManager session state pushes', () => {
     await manager.input('device-a', { type: 'rotate', orientation: 'portrait' })
 
     expect(seen).toEqual(['landscape-left'])
-  })
-})
-
-describe('IosSimulatorManager foldable', () => {
-  const open = (hingeDegrees: number) => ({ hingeDegrees, tent: false })
-
-  const DUO = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo'
-  const layout = {
-    cover: { screenId: 1, panelRotation: 0 as const },
-    inner: { screenId: 3, panelRotation: 90 as const },
-  }
-
-  function duo(initial = device({ deviceTypeIdentifier: DUO })) {
-    const harness = setup(initial)
-    harness.simctl.listDeviceTypeBundles.mockResolvedValue(new Map([[DUO, '/duo']]))
-    const chrome = { load: vi.fn(async () => null), foldLayout: vi.fn(async () => layout) }
-    const manager = new IosSimulatorManager({
-      simctl: harness.simctl,
-      chrome,
-      nativeFactory: harness.nativeFactory,
-      capture: harness.capture,
-      captureRoot: '/captures',
-      helperProbe: async () => null,
-      attachAttempts: 1,
-      rotationConfirmMs: 50,
-      rotationPollMs: 5,
-    })
-    return { ...harness, chrome, manager }
-  }
-
-  it('boots closed on the cover without moving a hinge it already knows', async () => {
-    const { manager, native } = duo()
-
-    const state = await manager.boot('session-a', 'device-a')
-
-    expect(native.attach).toHaveBeenCalledWith('device-a', 1)
-    expect(native.fold).not.toHaveBeenCalled()
-    expect(state.fold).toEqual({ hingeDegrees: 0, tent: false, panel: 'cover', panelRotation: 0 })
-  })
-
-  it('closes a foldable it finds running, since the hinge cannot be read', async () => {
-    const { manager, native } = duo(device({ deviceTypeIdentifier: DUO, state: 'Booted', booted: true }))
-
-    await manager.bind('session-a', 'device-a')
-
-    // An unfolded device left by someone else would show its black cover forever.
-    expect(native.fold).toHaveBeenCalledWith(0, expect.any(Number), 1, false)
-  })
-
-  it('unfolds onto the inner panel and reopens the stream there', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-    const stop = manager.subscribePreview('device-a', () => undefined)
-    await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalledTimes(1))
-    const published: IosSimulatorSessionState[] = []
-    manager.onSessionState((state) => published.push(state))
-
-    await manager.setFoldPosition('device-a', open(180))
-
-    expect(native.fold).toHaveBeenCalledWith(1, expect.any(Number), 3, false)
-    expect(native.startFrames).toHaveBeenCalledTimes(2)
-    expect(published.at(-1)).toEqual(expect.objectContaining({
-      pixelWidth: 2007,
-      pixelHeight: 2853,
-      fold: { hingeDegrees: 180, tent: false, panel: 'inner', panelRotation: 90 },
-    }))
-    expect(await manager.foldPosition('device-a')).toEqual(open(180))
-    stop()
-    await manager.dispose()
-  })
-
-  it('moves to any angle between, which the guest already shows on the inner panel', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-
-    await manager.setFoldPosition('device-a', open(135))
-
-    expect(native.fold).toHaveBeenCalledWith(0.75, expect.any(Number), 3, false)
-    expect(await manager.foldPosition('device-a')).toEqual(open(135))
-    // Up to 60 the angle is a tent's, never an inner opening.
-    await expect(manager.setFoldPosition('device-a', open(45))).rejects.toThrow(/up to 60/)
-    await expect(manager.setFoldPosition('device-a', open(181))).rejects.toThrow(/between 0 and 180/)
-  })
-
-  it('keeps the stream through a move within one panel, and sweeps only its share', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-    const stop = manager.subscribePreview('device-a', () => undefined)
-    await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalledTimes(1))
-
-    await manager.setFoldPosition('device-a', open(180))
-    await manager.setFoldPosition('device-a', open(120))
-
-    // Closed to open swaps panels; 180 to 120 stays on the inner one.
-    expect(native.startFrames).toHaveBeenCalledTimes(2)
-    expect(native.fold).toHaveBeenNthCalledWith(1, 1, 600, 3, false)
-    expect(native.fold).toHaveBeenNthCalledWith(2, 120 / 180, 200, 3, false)
-    stop()
-    await manager.dispose()
-  })
-
-  it('stands as a tent on its edge: turned, half open, and the cover lit', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-    const stop = manager.subscribePreview('device-a', () => undefined)
-    await vi.waitFor(() => expect(native.startFrames).toHaveBeenCalledTimes(1))
-    const published: IosSimulatorSessionState[] = []
-    manager.onSessionState((state) => published.push(state))
-
-    await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true })
-
-    // Turned first, then stood up from closed: the pose rides the fold, after its sweep.
-    expect(native.input).toHaveBeenCalledWith({ type: 'rotate', orientation: 'landscape-right' })
-    expect(native.fold).toHaveBeenLastCalledWith(0, expect.any(Number), 1, true)
-    // The cover was lit before and is lit now, so the stream keeps its display.
-    expect(native.startFrames).toHaveBeenCalledTimes(1)
-    expect(published.at(-1)).toEqual(expect.objectContaining({
-      orientation: 'landscape-right',
-      fold: { hingeDegrees: 60, tent: true, panel: 'cover', panelRotation: 0 },
-    }))
-    stop()
-    await manager.dispose()
-  })
-
-  it('stands a tent up from closed whatever the hinge was, and opens it wider without the guest', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-    await manager.setFoldPosition('device-a', open(180))
-    native.fold.mockClear()
-
-    await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true })
-    await manager.setFoldPosition('device-a', { hingeDegrees: 30, tent: true })
-
-    // From open the switch to the tent would be a cover swap that never finishes; a
-    // tent's angle after that is the host's alone, since the guest pose has none.
-    expect(native.fold.mock.calls.map((call) => [call[0], call[1], call[2], call[3]])).toEqual([[0, 600, 1, true]])
-    expect(await manager.foldPosition('device-a')).toEqual({ hingeDegrees: 30, tent: true })
-    await expect(manager.setFoldPosition('device-a', { hingeDegrees: 90, tent: true })).rejects.toThrow(/up to 60/)
-  })
-
-  it('holds each new form its own way, and leaves a turn alone within one', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-    await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true })
-    native.input.mockClear()
-
-    // Out of the tent: opened is held upright again, its inner panel then landscape.
-    await manager.setFoldPosition('device-a', open(180))
-    expect(native.input).toHaveBeenCalledWith({ type: 'rotate', orientation: 'portrait' })
-
-    // The user turns it; a wider or narrower opening keeps that turn.
-    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
-    native.input.mockClear()
-    await manager.setFoldPosition('device-a', open(120))
-    expect(native.input).not.toHaveBeenCalled()
-
-    // A named posture is a form, so it is held its own way even within one: back upright.
-    await manager.setFoldPosition('device-a', open(180), { hold: true })
-    expect(native.input).toHaveBeenCalledWith({ type: 'rotate', orientation: 'portrait' })
-    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
-    native.input.mockClear()
-
-    // Folding shut is a phone again, upright.
-    const states: IosSimulatorSessionState[] = []
-    manager.onSessionState((state) => states.push(state))
-    await manager.setFoldPosition('device-a', open(0))
-    expect(native.input).toHaveBeenCalledWith({ type: 'rotate', orientation: 'portrait' })
-    expect(states.at(-1)?.orientation).toBe('portrait')
-  })
-
-  it('closes on the way out of a tent, since a sweep alone would leave the cover lit', async () => {
-    const { manager, native } = duo()
-    await manager.boot('session-a', 'device-a')
-    await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true })
-    native.fold.mockClear()
-
-    await manager.setFoldPosition('device-a', open(120))
-
-    expect(native.fold.mock.calls.map((call) => [call[0], call[2], call[3]])).toEqual([[0, 1, false], [120 / 180, 3, false]])
-    expect(await manager.foldPosition('device-a')).toEqual(open(120))
-
-    native.fold.mockClear()
-    await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true })
-    await manager.setFoldPosition('device-a', open(0))
-    // Closing from a tent is one sweep: closed already shows the cover.
-    expect(native.fold.mock.calls.map((call) => [call[0], call[2], call[3]])).toEqual([[0, 1, true], [0, 1, false]])
-  })
-
-  it('loads the chrome of whichever panel the hinge shows', async () => {
-    const { manager, chrome } = duo()
-    await manager.boot('session-a', 'device-a')
-
-    await manager.chrome('device-a')
-    await manager.setFoldPosition('device-a', open(180))
-    await manager.chrome('device-a')
-
-    expect(chrome.load.mock.calls.map((call) => (call as unknown[])[3])).toEqual([1, 3])
-  })
-
-  it('trusts a rotation on the inner panel, whose turn accessibility cannot see', async () => {
-    const { manager, lockGuestUpright } = duo()
-    lockGuestUpright()
-    await manager.boot('session-a', 'device-a')
-    await manager.setFoldPosition('device-a', open(180))
-
-    const result = await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
-
-    expect(result.ok).toBe(true)
-  })
-
-  it('captures the lit panel rather than simctl\'s default cover', async () => {
-    const { manager, capture } = duo()
-    await manager.boot('session-a', 'device-a')
-    await manager.setFoldPosition('device-a', open(180))
-
-    const shot = await manager.screenshot('device-a')
-    await manager.startRecording('device-a')
-
-    expect(capture.screenshot).toHaveBeenCalledWith('device-a', shot.path, 3)
-    expect(capture.startRecording).toHaveBeenCalledWith('device-a', expect.any(String), 3)
-  })
-
-  it('forgets the hinge on shutdown, and refuses one on a single-screen device', async () => {
-    const { manager } = duo()
-    await manager.boot('session-a', 'device-a')
-    await manager.setFoldPosition('device-a', open(180))
-
-    await manager.shutdown('device-a')
-
-    expect(await manager.foldPosition('device-a')).toEqual(open(0))
-
-    const flat = setup()
-    const single = new IosSimulatorManager({
-      simctl: flat.simctl, nativeFactory: flat.nativeFactory, helperProbe: async () => null,
-    })
-    await expect(single.setFoldPosition('device-a', open(180))).rejects.toThrow(/UNSUPPORTED/)
   })
 })

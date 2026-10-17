@@ -10,6 +10,7 @@
 import type { DeviceUiBounds, DeviceUiNode } from '@superone/shared/device-agent'
 import {
   IOS_SIMULATOR_ROTATION_DEGREES,
+  isIosSimulatorLandscape,
   type IosSimulatorOrientation,
 } from '@superone/shared/ios-simulator'
 import type { NormalizedAccessibilityTree } from '../device/tree'
@@ -33,7 +34,7 @@ export interface IosSimulatorRawNode {
   identifier?: string
   enabled?: boolean
   focused?: boolean
-  /** `[x, y, width, height]` in guest points, already rotated with the device. */
+  /** `[x, y, width, height]` in the app's own oriented guest points. */
   frame?: [number, number, number, number]
   children?: IosSimulatorRawNode[]
   truncatedChildren?: number
@@ -44,6 +45,24 @@ export interface IosSimulatorAccessibilityDump {
   nodes: number
   complete: boolean
   tree: IosSimulatorRawNode
+}
+
+/**
+ * The root's axes reveal an app that did not follow a physical quarter turn.
+ * Keep its last compatible content orientation in that case. The root cannot
+ * distinguish a half turn, so matching axes still use the delivered orientation.
+ */
+export function accessibilityOrientation(
+  dump: IosSimulatorAccessibilityDump,
+  device: IosSimulatorOrientation,
+  previous: IosSimulatorOrientation,
+): IosSimulatorOrientation {
+  const frame = dump.tree.frame
+  if (!frame || !(frame[2] > 0) || !(frame[3] > 0) || frame[2] === frame[3]) return device
+  const landscape = frame[2] > frame[3]
+  if (landscape === isIosSimulatorLandscape(device)) return device
+  if (landscape === isIosSimulatorLandscape(previous)) return previous
+  return landscape ? 'landscape-right' : 'portrait'
 }
 
 /**

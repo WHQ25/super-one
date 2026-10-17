@@ -96,6 +96,43 @@ function managerWith(overrides: Record<string, unknown>): IosSimulatorManager {
   } as unknown as IosSimulatorManager
 }
 
+describe('iOS content orientation locks', () => {
+  it('keeps portrait app bounds in framebuffer space when the device turns sideways', async () => {
+    const backend = new IosSimulatorBackend(managerWith({
+      getSessionState: async () => ({
+        device: { name: 'iPhone' }, phase: 'ready', orientation: 'landscape-right',
+        pixelWidth: 1320, pixelHeight: 2868,
+      }),
+      accessibilityDump: async () => namedTree(),
+    }), 'device-a')
+
+    const observation = await backend.observe({ immediate: true })
+
+    expect(observation.orientation).toBe('landscape-right')
+    expect(observation.root.children?.[0]?.bounds).toEqual([0.1, 0.1, 0.3, 0.2])
+  })
+
+  it('keeps the last landscape content orientation when the device turns upright', async () => {
+    let orientation = 'landscape-left'
+    const dump = namedTree()
+    dump.tree.frame = [0, 0, 200, 100]
+    const backend = new IosSimulatorBackend(managerWith({
+      getSessionState: async () => ({
+        device: { name: 'iPhone' }, phase: 'ready', orientation,
+      }),
+      accessibilityDump: async () => dump,
+    }), 'device-a')
+    const landscape = await backend.observe({ immediate: true })
+    expect(landscape.root.children?.[0]?.bounds).toEqual([0.4, 0.05, 0.4, 0.15])
+
+    orientation = 'portrait'
+    const upright = await backend.observe({ immediate: true })
+
+    expect(upright.orientation).toBe('portrait')
+    expect(upright.root.children?.[0]?.bounds).toEqual(landscape.root.children?.[0]?.bounds)
+  })
+})
+
 describe('IosSimulatorBackend observation sources', () => {
   it('keeps the app\'s own tree and never pays for OCR when the app names its controls', async () => {
     const frameOcr = vi.fn()

@@ -1,4 +1,6 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import i18n from 'i18next'
 import {
   ANDROID_PHONE_REFERENCE_MODEL, type DeviceDescriptor, type DeviceFrame, type DeviceState,
 } from '@superone/shared/device'
@@ -85,6 +87,36 @@ async function innerPanelFrame(deviceId: string): Promise<DeviceFrame> {
   }
 }
 
+/** A fixed portrait picture: rotating the device never redraws this app. */
+async function portraitLockedFrame(deviceId: string): Promise<DeviceFrame> {
+  const canvas = new OffscreenCanvas(393, 852)
+  const context = canvas.getContext('2d')!
+  const gradient = context.createLinearGradient(0, 0, 393, 852)
+  gradient.addColorStop(0, '#172554')
+  gradient.addColorStop(1, '#6d28d9')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 393, 852)
+  context.fillStyle = '#fff'
+  context.textAlign = 'center'
+  context.font = '600 24px system-ui'
+  context.fillText('Portrait-locked app', 196, 100)
+  context.font = '16px system-ui'
+  context.fillText('Content keeps its orientation', 196, 132)
+  for (let index = 0; index < 20; index++) {
+    const x = 30 + (index % 4) * 92
+    const y = 190 + Math.floor(index / 4) * 112
+    context.fillStyle = ['#38bdf8', '#fbbf24', '#fb7185', '#34d399'][index % 4]!
+    context.beginPath()
+    context.roundRect(x, y, 56, 56, 14)
+    context.fill()
+  }
+  const png = new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer())
+  return {
+    deviceId, sequence: 1, timestampMs: 0, mimeType: 'image/png', keyframe: true,
+    codecConfig: false, data: png,
+  }
+}
+
 const foldedState = (fold: IosSimulatorFoldState, orientation: DeviceState['orientation'] = 'portrait'): DeviceState => ({
   deviceId: DUO.id, owner: 'story', device: DUO, phase: 'ready', interactive: true,
   orientation, pixelWidth: 2007, pixelHeight: 2853,
@@ -92,14 +124,19 @@ const foldedState = (fold: IosSimulatorFoldState, orientation: DeviceState['orie
 })
 
 /** A panel with nothing bound yet: the header and its view switch, over a device not yet started. */
-const devicePanel = (view3d: boolean, chrome: IosSimulatorChrome | null = null): Decorator => (Story) => {
+const devicePanel = (
+  view3d: boolean,
+  chrome: IosSimulatorChrome | null = null,
+  frame: ((deviceId: string) => Promise<DeviceFrame>) | null = chrome ? innerPanelFrame : null,
+): Decorator => (Story) => {
   writeDeviceView3d(view3d)
+  mockIpc('app', 'getAppSettings', async () => ({}))
   mockIpc('app', 'listDeviceModels', async () => [WITH_BODY.model, ANDROID_PHONE_REFERENCE_MODEL])
   ;(window as unknown as { environment: unknown }).environment = {
     iosSimulatorChrome: async () => chrome,
     onDeviceState: () => () => {},
     onDeviceFrame: (deviceId: string, listener: (frame: DeviceFrame) => void) => {
-      if (chrome) void innerPanelFrame(deviceId).then(listener)
+      if (frame) void frame(deviceId).then(listener)
       return () => {}
     },
     onDeviceRotateGesture: () => () => {},
@@ -138,6 +175,30 @@ type Story = StoryObj<typeof meta>
 /** The 2D | 3D switch sits beside the device name when this machine has the model's body. */
 export const FlatSelected: Story = { decorators: [devicePanel(false)] }
 export const ThreeDSelected: Story = { decorators: [devicePanel(true)] }
+const portraitLockedPanel = devicePanel(false, null, portraitLockedFrame)
+/** The device turns; a portrait-locked app stays unchanged within its screen. */
+export const PortraitLockedApp: Story = {
+  args: {
+    sessionState: {
+      deviceId: WITH_BODY.id, owner: 'story', device: WITH_BODY, phase: 'ready', interactive: true,
+      orientation: 'portrait', pixelWidth: 1179, pixelHeight: 2556,
+      ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true },
+    },
+  },
+  decorators: [portraitLockedPanel],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await waitFor(() => expect(canvasElement.querySelector('canvas')).not.toBeNull())
+    const picture = canvasElement.querySelector('canvas')
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('activity.device.rotateRight') }))
+    await waitFor(() => expect((picture?.closest('[style*="rotate"]') as HTMLElement)?.style.transform).toBe('rotate(90deg)'))
+    await expect(canvasElement.querySelector('canvas')).toBe(picture)
+  },
+}
+export const PortraitLockedAppNarrow: Story = {
+  ...PortraitLockedApp,
+  decorators: [portraitLockedPanel, (Story) => <div className="h-full w-[260px]"><Story /></div>],
+}
 /** Ordinary Android AVDs share the local Pixel 10 Pro reference shell. */
 export const AndroidPhone: Story = {
   args: { devices: [ANDROID_PHONE], device: ANDROID_PHONE },

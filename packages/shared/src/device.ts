@@ -461,10 +461,8 @@ export interface DeviceState {
   /** Whether input is accepted. False while booting, or on a device that refused HID. */
   interactive: boolean
   /**
-   * Which way up the device is lying.
-   *
-   * A reading, not a request: an app pinned upright never turns, so this reports what
-   * was observed to land rather than what was asked for.
+   * Physical device orientation last delivered or observed by the host. An app can
+   * keep its own content orientation locked while the preview device turns.
    */
   orientation: DeviceOrientation
   /** The device's own framebuffer size. Absent until a stream has attached. */

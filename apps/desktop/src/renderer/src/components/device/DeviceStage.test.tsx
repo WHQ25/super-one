@@ -382,14 +382,29 @@ describe('iOS Simulator stage rotation', () => {
       .toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('turns back when the host reports the guest refused the turn', async () => {
+  it('keeps the turned shell and the same preview after a delivered rotation', async () => {
+    const { pushSessionState, openDeviceStream, closeDeviceStream } = stubEnvironment(async () => CHROME)
+    const user = userEvent.setup()
+
+    renderStage(READY)
+    await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    const canvas = video.builtWith.at(-1)!
+    await user.click(screen.getByRole('button', { name: 'Rotate Right' }))
+    pushSessionState({ ...READY, orientation: 'landscape-right' })
+
+    expect(canvas.closest('[style*="rotate"]')).toHaveStyle({ transform: 'rotate(90deg)' })
+    expect(video.builtWith).toEqual([canvas])
+    expect(openDeviceStream).toHaveBeenCalledOnce()
+    expect(closeDeviceStream).not.toHaveBeenCalled()
+  })
+
+  it('turns back when rotation delivery fails', async () => {
     const { pushSessionState } = stubEnvironment(async () => CHROME)
     const user = userEvent.setup()
 
     renderStage(READY)
     await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
-    // The button turns the shell straight away, so a guest that pins itself upright
-    // — the home screen, Spotlight — used to leave the panel lying down alone.
+    // Only failed delivery rolls back the physical device orientation.
     await user.click(screen.getByRole('button', { name: 'Rotate Right' }))
     pushSessionState(READY)
 

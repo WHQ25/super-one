@@ -1,3 +1,5 @@
+import { isSuggestTaskTool } from '@superone/shared/suggested-task'
+
 export interface CompactChatModePorts {
   isWidgetShowTool(toolName: string): boolean
 }
@@ -9,7 +11,7 @@ export interface CompactChatModePorts {
  * expanding Detail restores the turn's real order instead of re-ordering it.
  *
  * Pinned = the agent's own prose (markdown), tools whose call *is* addressed
- * to the user (widget_show, AskUserQuestion), and delegated work (subagents,
+ * to the user (widget_show, AskUserQuestion, session_suggest_task), and delegated work (subagents,
  * workflows), wherever they appear — mid-turn narration is content, not
  * process, and a delegation card is the user's handle on its own work. Everything after the last pinned item is
  * pinned too, so an interrupted turn that ends mid-tool still surfaces its
@@ -21,13 +23,15 @@ export interface CompactChatModePorts {
 
 /**
  * Tools whose call is aimed at the user rather than at the task: a widget is
- * the answer's surface, and a question is a turn addressed to the reader.
- * Burying either under "Detail" hides the one thing the turn wants seen.
+ * the answer's surface, a question is a turn addressed to the reader, and a
+ * suggested task is a card only the user can launch. Burying any of them under
+ * "Detail" hides the one thing the turn wants seen.
  */
 export function isPinnedToolName(toolName: string, ports: CompactChatModePorts): boolean {
   return ports.isWidgetShowTool(toolName)
     || toolName === 'AskUserQuestion'
     || toolName.endsWith('__AskUserQuestion')
+    || isSuggestTaskTool(toolName)
 }
 
 /** Min visible process segments before compact mode collapses them under Detail. */

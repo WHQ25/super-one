@@ -72,7 +72,8 @@ function record(value: unknown): Row {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
 }
 
-function isSuggestTool(toolName: unknown): boolean {
+/** True for a `session_suggest_task` call under any harness's tool-name form. */
+export function isSuggestTaskTool(toolName: unknown): boolean {
   if (typeof toolName !== 'string') return false
   const mcp = parseMcpToolName(toolName)
   return mcp?.serverName === 'superone' && mcp.mcpToolName === SUGGEST_TASK_TOOL_NAME
@@ -114,7 +115,7 @@ function contentOf(message: unknown): Row[] {
 function locateToolUse(messages: readonly unknown[], toolUseId: unknown): Located | null {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
     const use = contentOf(messages[messageIndex]).find((row) => row.type === 'tool_use' && row.toolUseId === toolUseId)
-    if (use) return isSuggestTool(use.toolName) ? { messageIndex, rowId: String(use.toolUseId), row: use } : null
+    if (use) return isSuggestTaskTool(use.toolName) ? { messageIndex, rowId: String(use.toolUseId), row: use } : null
   }
   return null
 }

@@ -88,6 +88,17 @@ describe('partitionTurnForCompactMode', () => {
     expect(shape(runs)).toEqual(['c:early', 'p:ask', 'c:late', 'p:answer'])
   })
 
+  it('pins suggested-task cards — only the user can launch them', () => {
+    const items = [
+      { kind: 'tools', id: 'early' },
+      { kind: 'block', block: { type: 'tool_use', toolName: 'mcp__superone__session_suggest_task' }, id: 'suggest' },
+      { kind: 'tools', id: 'late' },
+      text('answer'),
+    ]
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:early', 'p:suggest', 'c:late', 'p:answer'])
+  })
+
   it('pins subagent and workflow cards — delegated work stays visible outside Detail', () => {
     const items = [
       { kind: 'tools', id: 'early' },

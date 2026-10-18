@@ -76,21 +76,33 @@ export const StableFooter: Story = {
     const footer = dialog.lastElementChild as HTMLElement
     const height = footer.getBoundingClientRect().height
     const assertHeight = () => expect(footer.getBoundingClientRect().height).toBe(height)
+    const assertPaletteFlushRight = () => {
+      const label = page.getByText(/^(Dark Palette|Light Palette)$/)
+      const degree = page.getByText(/^\d+°$/)
+      const delta = Math.abs(degree.getBoundingClientRect().right - label.getBoundingClientRect().right)
+      expect(delta).toBeLessThanOrEqual(1)
+    }
+    assertPaletteFlushRight()
     fireEvent.change(page.getByRole('slider'), { target: { value: '130' } })
     await expect(await page.findByRole('button', { name: 'Reset' })).toBeVisible()
     await assertHeight()
+    assertPaletteFlushRight()
     await userEvent.click(page.getByRole('button', { name: 'Reset' }))
     await waitFor(() => expect(page.getByRole('slider')).toHaveValue('255'))
     await assertHeight()
+    assertPaletteFlushRight()
     await userEvent.click(page.getByRole('button', { name: 'Light', pressed: false }))
     await waitFor(() => expect(page.getByRole('button', { name: 'Advanced' })).toBeVisible())
     await assertHeight()
+    assertPaletteFlushRight()
     fireEvent.change(page.getByRole('slider', { name: /^Claude|^Codex/ }), { target: { value: '300' } })
     await expect(await page.findByRole('button', { name: 'Reset' })).toBeVisible()
     await assertHeight()
+    assertPaletteFlushRight()
     await userEvent.click(page.getByRole('button', { name: 'Dark', pressed: false }))
     await waitFor(() => expect(page.getByRole('button', { name: 'Dark', pressed: true })).toBeVisible())
     await assertHeight()
+    assertPaletteFlushRight()
   },
 }
 export const DarkCustomized: Story = { ...Dark, args: { customized: true } }

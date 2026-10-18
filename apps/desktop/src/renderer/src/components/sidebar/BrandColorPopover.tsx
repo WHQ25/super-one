@@ -229,21 +229,20 @@ function BasicMode({
               {t('settings.appearance.palette.advanced')}
             </Button>
           )}
-          <p className={cn('min-w-0 flex-1 truncate text-[11px] text-muted-foreground', onAdvanced && 'text-right')}>
+          {isCustom && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onReset}
+              className="ml-auto h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="size-3" />
+              {t('settings.appearance.palette.reset')}
+            </Button>
+          )}
+          <p className={cn('min-w-0 truncate text-[11px] text-muted-foreground', !isCustom && 'ml-auto')}>
             {t(`settings.appearance.palette.${dark ? 'darkPalette' : 'lightPalette'}`)}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onReset}
-            disabled={!isCustom}
-            aria-hidden={!isCustom}
-            tabIndex={isCustom ? 0 : -1}
-            className={cn('h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground', !isCustom && 'invisible')}
-          >
-            <RotateCcw className="size-3" />
-            {t('settings.appearance.palette.reset')}
-          </Button>
         </div>
       </div>
     </>

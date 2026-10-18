@@ -64,6 +64,27 @@ afterEach(() => {
 })
 
 describe('brand palette appearance controls', () => {
+  it('pins the palette name to the trailing edge and shows Reset only for a custom hue', async () => {
+    mode = 'dark'
+    document.documentElement.classList.add('dark')
+    useAppStore.setState({ darkBrandHues: initial.darkBrandHues })
+    render(<Surface />)
+    fireEvent.click(screen.getByRole('button', { name: /^Customize/ }))
+
+    const label = await screen.findByText('Dark Palette')
+    const row = label.parentElement
+    expect(row?.lastElementChild).toBe(label)
+    expect(label).toHaveClass('ml-auto')
+    expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '130' } })
+    const reset = await screen.findByRole('button', { name: 'Reset' })
+    expect(reset).toHaveClass('ml-auto')
+    expect(label).not.toHaveClass('ml-auto')
+    expect(row?.lastElementChild).toBe(label)
+    expect(reset.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it.each(Object.keys(HARNESS_DEFAULT_BRAND_HUE) as HarnessId[])(
     'keeps the original blue and primary foreground for an uncustomized dark %s', async harness => {
       mode = 'dark'

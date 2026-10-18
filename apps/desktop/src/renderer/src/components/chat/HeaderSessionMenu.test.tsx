@@ -43,12 +43,6 @@ describe('HeaderSessionMenu data source', () => {
     expect(trigger(container)).not.toBeNull()
   })
 
-  it('renders nothing for a freshly created session with no messages yet', () => {
-    seedProject({ active: 'draft-empty', sessions: [], messages: [] })
-    const { container } = render(<HeaderSessionMenu sessionId="draft-empty" folderPath={FOLDER} />)
-    expect(trigger(container)).toBeNull()
-  })
-
   it('renders the menu trigger when the session exists in the persisted list', () => {
     const persisted: SessionHistoryEntry = {
       sessionId: 'saved-1',
@@ -96,6 +90,18 @@ describe('HeaderSessionMenu item set', () => {
     // Still the shared actions the sidebar row has.
     expect(screen.getByRole('menuitem', { name: 'Rename Session' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
+  })
+
+  it('offers only the chat form entries on a new session with no messages yet', async () => {
+    seedProject({ active: 'draft-empty', sessions: [], messages: [] })
+    act(() => { useActivityPanelStore.setState({ showPanel: false, maximized: false, chatFloating: false }) })
+    const user = userEvent.setup()
+    const { container } = render(<HeaderSessionMenu sessionId="draft-empty" folderPath={FOLDER} />)
+
+    await user.click(trigger(container) as HTMLElement)
+
+    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent)
+    expect(items).toEqual(['Float Chat', 'Convert to Mini Window'])
   })
 
   it('floats the chat from beside the mini window entry, and docks it back', async () => {

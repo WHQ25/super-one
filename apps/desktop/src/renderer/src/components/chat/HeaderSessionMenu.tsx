@@ -20,7 +20,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { setChatFloating } from '@/lib/layout-actions'
-import { buildSessionMenuItems } from '@/lib/session-menu-items'
+import { buildChatFormItems, buildSessionMenuItems } from '@/lib/session-menu-items'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
@@ -86,6 +86,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     }),
   )
 
+  const isLive = useChatStore((s) => !!s.projectSessions[folderPath]?._sessions[sessionId])
   const sideChatAvailable = useCanOpenSideChat(sessionId)
   const chatFloating = useActivityPanelStore(selectPanelFillsWindow)
 
@@ -111,32 +112,38 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     }
   }, [sessionId, folderPath, t, afterMutate])
 
-  if (!entry) return null
+  if (!entry && !isLive) return null
+
+  const chatView = { floating: chatFloating, onToggle: () => setChatFloating(!chatFloating) }
 
   // Header menu acts on the session you are already reading, so it deliberately
   // diverges from the sidebar row menu: no Hide (it would hide the open session),
   // no Add to Chat (mentioning the session you are typing in is a no-op), and the
   // mini window converts this window instead of spawning a second one.
-  const items = buildSessionMenuItems(
-    entry,
-    folderPath,
-    t,
-    {
-      onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
-      onPin: async () => {
-        const { setSessionFlags } = await import('@/lib/session-client')
-        await setSessionFlags(folderPath, entry.sessionId, { isPinned: !entry.isPinned })
-        await afterMutate()
-      },
-      onFork: handleFork,
-      // Only offered where a side chat can actually dock beside the session:
-      // the foreground chat of a local project. `resolveSideChatTarget` owns the
-      // rest of the rule (forkable harness, non-empty, not already a side chat).
-      onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
-      chatView: { floating: chatFloating, onToggle: () => setChatFloating(!chatFloating) },
-    },
-    { miniWindow: 'convert' },
-  )
+  // A new session with no message yet has nothing to rename, pin or fork, so it
+  // only offers the entries that change how the chat is shown.
+  const items = entry
+    ? buildSessionMenuItems(
+        entry,
+        folderPath,
+        t,
+        {
+          onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
+          onPin: async () => {
+            const { setSessionFlags } = await import('@/lib/session-client')
+            await setSessionFlags(folderPath, entry.sessionId, { isPinned: !entry.isPinned })
+            await afterMutate()
+          },
+          onFork: handleFork,
+          // Only offered where a side chat can actually dock beside the session:
+          // the foreground chat of a local project. `resolveSideChatTarget` owns the
+          // rest of the rule (forkable harness, non-empty, not already a side chat).
+          onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
+          chatView,
+        },
+        { miniWindow: 'convert' },
+      )
+    : buildChatFormItems({ sessionId, title: '' }, folderPath, t, chatView, { miniWindow: 'convert' })
 
   const dialog = (
     <RenameSessionDialog target={renameTarget} onClose={() => setRenameTarget(null)} onRenamed={() => void afterMutate()} />

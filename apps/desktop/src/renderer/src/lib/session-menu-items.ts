@@ -90,6 +90,45 @@ export async function resolveSessionIdForCopy(
   return { id: session.sessionId, isHarnessId: false }
 }
 
+/**
+ * How this chat is shown: floated/docked over the activity panel, or as a mini
+ * window. The only entries that make sense before a session has a first message.
+ */
+export function buildChatFormItems(
+  session: Pick<SessionHistoryEntry, 'sessionId' | 'title'>,
+  folderPath: string,
+  t: TFunction,
+  chatView: SessionMenuHandlers['chatView'],
+  options: SessionMenuOptions = {},
+): AdaptiveMenuEntry[] {
+  const miniMode = options.miniWindow ?? 'open'
+  return [
+    ...(chatView
+      ? [{
+          kind: 'item' as const,
+          id: 'chatView',
+          label: t(chatView.floating ? 'sidebar.contextMenu.dockChat' : 'sidebar.contextMenu.floatChat'),
+          icon: chatView.floating ? Columns2 : AppWindow,
+          onSelect: chatView.onToggle,
+        }]
+      : []),
+    // Mini window is a desktop shell around the same chat store; remote: project keys work via selectProject/switchSession.
+    {
+      kind: 'item',
+      id: 'mini',
+      label: t(miniMode === 'convert' ? 'sidebar.contextMenu.convertToMiniWindow' : 'sidebar.contextMenu.openInMiniWindow'),
+      icon: PictureInPicture2,
+      onSelect: () => {
+        if (miniMode === 'convert') {
+          enterMiniWindow({ projectPath: folderPath, sessionId: session.sessionId, title: session.title })
+        } else {
+          void window.app.openSessionWindow(folderPath, session.sessionId, session.title)
+        }
+      },
+    },
+  ]
+}
+
 export function buildSessionMenuItems(
   session: SessionHistoryEntry,
   folderPath: string,
@@ -105,7 +144,6 @@ export function buildSessionMenuItems(
   const tags = session.tags ?? []
 
   const onHide = handlers.onHide
-  const miniMode = options.miniWindow ?? 'open'
 
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
@@ -137,30 +175,7 @@ export function buildSessionMenuItems(
           }],
     },
     { kind: 'separator' },
-    // How this chat is shown; the mini window is the other answer to the same question.
-    ...(handlers.chatView
-      ? [{
-          kind: 'item' as const,
-          id: 'chatView',
-          label: t(handlers.chatView.floating ? 'sidebar.contextMenu.dockChat' : 'sidebar.contextMenu.floatChat'),
-          icon: handlers.chatView.floating ? Columns2 : AppWindow,
-          onSelect: handlers.chatView.onToggle,
-        }]
-      : []),
-    // Mini window is a desktop shell around the same chat store; remote: project keys work via selectProject/switchSession.
-    {
-      kind: 'item',
-      id: 'mini',
-      label: t(miniMode === 'convert' ? 'sidebar.contextMenu.convertToMiniWindow' : 'sidebar.contextMenu.openInMiniWindow'),
-      icon: PictureInPicture2,
-      onSelect: () => {
-        if (miniMode === 'convert') {
-          enterMiniWindow({ projectPath: folderPath, sessionId: session.sessionId, title: session.title })
-        } else {
-          void window.app.openSessionWindow(folderPath, session.sessionId, session.title)
-        }
-      },
-    },
+    ...buildChatFormItems(session, folderPath, t, handlers.chatView, options),
     { kind: 'separator' },
   ]
 

@@ -13,7 +13,7 @@ import { HeaderSessionMenu } from './HeaderSessionMenu'
 const FOLDER = '/Users/me/project'
 const SESSION = 'story-session'
 
-function seed(floating: boolean) {
+function seed(floating: boolean, empty = false) {
   const project = createDefaultProjectState()
   project._activeSessionId = SESSION
   project._sessions = {
@@ -21,7 +21,7 @@ function seed(floating: boolean) {
       ...createDefaultPerSessionState(),
       cwd: FOLDER,
       _title: 'Refactor the layout tools',
-      messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hi' }] }] as never,
+      messages: empty ? [] : [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hi' }] }] as never,
     },
   }
   useChatStore.setState({ projectSessions: { [FOLDER]: project }, activeProject: FOLDER })
@@ -29,16 +29,16 @@ function seed(floating: boolean) {
   useActivityPanelStore.setState({ showPanel: floating, maximized: false, chatFloating: floating })
 }
 
-function MenuPreview({ floating }: { floating: boolean }) {
+function MenuPreview({ floating, empty = false }: { floating: boolean; empty?: boolean }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    seed(floating)
+    seed(floating, empty)
     setReady(true)
-  }, [floating])
+  }, [floating, empty])
   if (!ready) return null
   return (
     <div className="group/htitle flex items-center gap-1 text-xs text-muted-foreground">
-      Refactor the layout tools
+      {empty ? 'New Session' : 'Refactor the layout tools'}
       <HeaderSessionMenu sessionId={SESSION} folderPath={FOLDER} />
     </div>
   )
@@ -88,4 +88,14 @@ export const FloatingDark: Story = {
   ...Floating,
   name: 'floating · dark',
   globals: { theme: 'dark' },
+}
+
+export const NewSession: Story = {
+  name: 'new session · form entries only',
+  args: { empty: true },
+  play: async ({ canvasElement }) => {
+    await openMenu(canvasElement)
+    const items = await within(document.body).findAllByRole('menuitem')
+    await expect(items.map((item) => item.textContent)).toEqual(['Float Chat', 'Convert to Mini Window'])
+  },
 }

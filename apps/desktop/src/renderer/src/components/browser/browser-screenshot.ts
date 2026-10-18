@@ -55,7 +55,7 @@ async function analyzeProbeFrame(id: string, budget: CaptureBudget): Promise<Cap
 async function waitForFullResolutionBrowserCapture(id: string, budget: CaptureBudget): Promise<void> {
   const deadline = Date.now() + PROBE_READY_TIMEOUT_MS
   let consecutiveSharpFrames = 0
-  let lastAnalysis: CaptureProbeAnalysis = { ready: false, matchedPixels: 0, sampledPixels: 0, centerPixels: [] }
+  let lastAnalysis: CaptureProbeAnalysis = { ready: false, matchedPixels: 0, sampledPixels: 0, centerPixels: [], runCount: 0 }
 
   try {
     // Inside the try: an install that times out may still land later, and the
@@ -73,7 +73,8 @@ async function waitForFullResolutionBrowserCapture(id: string, budget: CaptureBu
     if (consecutiveSharpFrames < 2) {
       throw new Error(
         `Browser capture did not reach full resolution after ${PROBE_READY_TIMEOUT_MS}ms `
-        + `(${lastAnalysis.matchedPixels}/${lastAnalysis.sampledPixels} probe pixels matched; `
+        + `(${lastAnalysis.matchedPixels}/${lastAnalysis.sampledPixels} probe pixels pure; `
+        + `runs=${lastAnalysis.runCount}; `
         + `centers=${lastAnalysis.centerPixels.map((pixel) => pixel.join(',')).join('/')})`,
       )
     }

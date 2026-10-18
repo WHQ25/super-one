@@ -154,6 +154,8 @@ function MediaControls({ media, state, root, fullscreen = false, extra, classNam
       <IconButton size="md" tooltip={state.playing ? t('mediaPlayer.pause') : t('mediaPlayer.play')} onClick={() => togglePlay(media.current)}>
         {state.playing ? <Pause /> : <Play />}
       </IconButton>
+      {/* Left-anchored so the slider grows rightward and the icon stays under the pointer. */}
+      <VolumeControl media={media} state={state} />
       <MediaRange
         className="mx-1 flex-1"
         label={t('mediaPlayer.seek')}
@@ -167,7 +169,6 @@ function MediaControls({ media, state, root, fullscreen = false, extra, classNam
       <span className="shrink-0 px-1 text-xs tabular-nums text-muted-foreground">
         {formatClockDuration(state.currentTime * 1000)} / {formatClockDuration(state.duration * 1000)}
       </span>
-      <VolumeControl media={media} state={state} />
       {extra}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>

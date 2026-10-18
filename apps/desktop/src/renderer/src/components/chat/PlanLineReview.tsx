@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import {
   selectionTextToLineRange,
@@ -24,10 +23,9 @@ import {
   type StickySwatch,
 } from './plan-sticky-palette'
 import {
-  MARKER_OVERSHOOT,
-  StickyPaper,
-  StickyPinFace,
-  markerStrokeStyle,
+  MarkerStroke,
+  StickyNoteEditor,
+  StickyPinButton,
   strokeSeed,
 } from './plan-sticky-visuals'
 import { useIsDark } from '@/hooks/use-is-dark'
@@ -360,17 +358,13 @@ export function PlanLineReview({
     ? strokeBands.flatMap(({ key, bands, swatch }) =>
         bands.map((b, i) =>
           createPortal(
-            <div
+            <MarkerStroke
               key={`stroke-${key}-${i}`}
-              aria-hidden
-              className={cn('pointer-events-none fixed', Z_CLASS.PLAN_MARKER)}
-              style={{
-                top: b.top,
-                left: b.left - MARKER_OVERSHOOT,
-                width: Math.max(b.width, 8) + MARKER_OVERSHOOT * 2,
-                height: b.height,
-                ...markerStrokeStyle(swatch, isDark, strokeSeed(key, i)),
-              }}
+              band={b}
+              swatch={swatch}
+              isDark={isDark}
+              seed={strokeSeed(key, i)}
+              className={cn('fixed', Z_CLASS.PLAN_MARKER)}
             />,
             portalTarget,
           ),
@@ -384,26 +378,17 @@ export function PlanLineReview({
     if (!pos || !portalTarget) return null
     const swatch = stickyForComment(c.id, comments)
     return createPortal(
-      <button
+      <StickyPinButton
         key={c.id}
-        type="button"
-        data-plan-sticky-ui
-        aria-label={`${t('chat.plan.comments')} · ${swatch.label}`}
-        className={cn(
-          'fixed flex cursor-pointer items-center justify-center',
-          Z_CLASS.PLAN_STICKY,
-          'transition-[filter] hover:brightness-[1.06]',
-        )}
-        style={{
-          top: pos.top,
-          left: pos.left,
-          transform: `rotate(${index % 2 === 0 ? -3 : 2.5}deg)`,
-          filter: `drop-shadow(1px 1.5px 1.5px rgb(0 0 0 / ${isDark ? 0.5 : 0.28}))`,
-        }}
+        swatch={swatch}
+        isDark={isDark}
+        index={index}
+        size={PIN}
+        position={pos}
+        label={`${t('chat.plan.comments')} · ${swatch.label}`}
+        className={cn('fixed', Z_CLASS.PLAN_STICKY)}
         onClick={() => openExisting(c)}
-      >
-        <StickyPinFace swatch={swatch} isDark={isDark} index={index} size={PIN} />
-      </button>,
+      />,
       portalTarget,
     )
   })
@@ -424,47 +409,30 @@ export function PlanLineReview({
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <StickyPaper swatch={openSwatch} isDark={isDark} width={202} minHeight={190}>
-            <button
-              type="button"
-              className="absolute right-1.5 top-1 z-[1] flex size-5 items-center justify-center opacity-35 hover:opacity-80"
-              style={{ color: openSwatch.text }}
-              aria-label={
-                note.mode === 'edit'
-                  ? t('chat.plan.removeComment')
-                  : t('chat.plan.cancelComment')
+          <StickyNoteEditor
+            swatch={openSwatch}
+            isDark={isDark}
+            inputRef={inputRef}
+            value={note.text}
+            placeholder={t('chat.plan.commentPlaceholder')}
+            dismissLabel={
+              note.mode === 'edit'
+                ? t('chat.plan.removeComment')
+                : t('chat.plan.cancelComment')
+            }
+            onChange={(text) => setNote((n) => (n ? { ...n, text } : n))}
+            onDismiss={() => {
+              if (note.mode === 'edit' && note.commentId) {
+                removeComment(note.commentId)
+              } else {
+                closeNote()
               }
-              onClick={() => {
-                if (note.mode === 'edit' && note.commentId) {
-                  removeComment(note.commentId)
-                } else {
-                  closeNote()
-                }
-              }}
-            >
-              <X className="size-3.5" strokeWidth={2.25} />
-            </button>
-            <textarea
-              ref={inputRef}
-              data-plan-draft
-              rows={5}
-              value={note.text}
-              onChange={(e) => setNote((n) => (n ? { ...n, text: e.target.value } : n))}
-              onBlur={(e) => {
-                const related = e.relatedTarget as HTMLElement | null
-                if (related?.closest?.('[data-plan-sticky-ui]')) return
-                const current = noteRef.current
-                if (current) saveNoteRef.current(current)
-              }}
-              placeholder={t('chat.plan.commentPlaceholder')}
-              className="relative z-0 w-full resize-none bg-transparent text-xs leading-relaxed placeholder:opacity-40 focus:outline-none"
-              style={{
-                minHeight: 128,
-                padding: '24px 16px 20px',
-                color: openSwatch.text,
-              }}
-            />
-          </StickyPaper>
+            }}
+            onCommit={() => {
+              const current = noteRef.current
+              if (current) saveNoteRef.current(current)
+            }}
+          />
         </div>,
         portalTarget,
       )

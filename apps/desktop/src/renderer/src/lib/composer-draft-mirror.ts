@@ -5,7 +5,7 @@ import { claimDraftForSession, ensureDraftIdForSession, hasDraftContent } from '
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 
 const MIRRORED_FIELDS = [
-  'draftText', 'draftJson', 'attachments', 'browserAnnotations', 'mentions', 'miniAppContexts', 'userSelections',
+  'draftText', 'draftJson', 'attachments', 'browserAnnotations', 'mentions', 'miniAppContexts', 'userSelections', 'replyComments',
 ] as const
 type MirroredField = typeof MIRRORED_FIELDS[number]
 

@@ -829,6 +829,7 @@ function createEmptySession() {
     lastAssistantMessageId: null,
     miniAppContexts: {},
     userSelections: [],
+    replyComments: [],
     _historyHydrated: true,
   }
 }

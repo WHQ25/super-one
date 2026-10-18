@@ -45,6 +45,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     activeCodexMessageId: null,
     miniAppContexts: {},
     userSelections: [],
+    replyComments: [],
     _historyHydrated: true,
   }
 }

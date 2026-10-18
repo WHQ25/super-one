@@ -6446,6 +6446,35 @@ describe('user selection (right-click → "添加到聊天" quote chips)', () =>
   })
 })
 
+describe('reply comments (sticky notes on agent replies)', () => {
+  beforeEach(() => {
+    setupProject('/test')
+  })
+
+  const comment = { id: 'c1', messageId: 'a1', anchorText: 'use a Range', quote: 'use a Range', text: 'why not marks?' }
+
+  it('add / update / remove edit the active session', () => {
+    const store = useChatStore.getState()
+    store.addReplyComment(comment)
+    store.addReplyComment({ ...comment, id: 'c2' })
+    store.updateReplyComment('c1', 'reworded')
+    store.removeReplyComment('c2')
+    expect(getActiveDraftSession('/test')!.replyComments).toEqual([{ ...comment, text: 'reworded' }])
+  })
+
+  it('sendMessage sends comments to the agent, shows them as quotes, then clears them', async () => {
+    useChatStore.getState().addUserSelection('a quote')
+    useChatStore.getState().addReplyComment(comment)
+    await useChatStore.getState().sendMessage('')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).toContain('<reply_comments>\nThe user commented on passages of this conversation:\n\n1. On this passage:\n> use a Range\nComment: why not marks?\n</reply_comments>')
+    expect(payload.userSelections).toEqual(['a quote', 'why not marks?\n\n> use a Range'])
+    const sess = getActiveDraftSession('/test')!
+    expect(sess.messages.find((m) => m.role === 'user')?.userSelections).toEqual(payload.userSelections)
+    expect(sess.replyComments).toEqual([])
+  })
+})
+
 describe('streamingTokens lifecycle around turn boundaries', () => {
   it('clears streamingTokens and freezes consumedTokens on message_interrupted', () => {
     setupProject('/test')

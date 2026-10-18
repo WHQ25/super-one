@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
+import { cn } from '@superone/ui/lib/utils'
 import { createPortal } from 'react-dom'
-import { Copy, MessageCirclePlus, MessageSquarePlus, type LucideIcon } from 'lucide-react'
+import { Copy, MessageCirclePlus, MessageSquarePlus, StickyNote, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore, useSessionScope } from '@/stores/chat'
 import type { SessionWriteTarget } from '@/stores/chat'
@@ -9,6 +10,8 @@ import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { tryCopyRich } from '@/lib/clipboard'
 import { selectionCopy } from '@/utils/selection-copy'
+import { ReplyCommentLayer, type ReplyCommentLayerHandle } from './ReplyCommentLayer'
+import { replyCommentAnchor } from './reply-comment-target'
 
 export interface SelectionMenuPos {
   x: number
@@ -94,10 +97,11 @@ interface SelectionMenuProps {
   onCopy: () => void
   onAddToChat: () => void
   onAskInSideChat?: () => void
+  onAddComment?: () => void
   onClose: () => void
 }
 
-export function SelectionMenu({ pos, onCopy, onAddToChat, onAskInSideChat, onClose }: SelectionMenuProps) {
+export function SelectionMenu({ pos, onCopy, onAddToChat, onAskInSideChat, onAddComment, onClose }: SelectionMenuProps) {
   const { t } = useTranslation()
   return (
     <ContextMenuPopover
@@ -106,6 +110,9 @@ export function SelectionMenu({ pos, onCopy, onAddToChat, onAskInSideChat, onClo
       actions={[
         { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: onCopy },
         { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: onAddToChat },
+        ...(onAddComment
+          ? [{ id: 'addComment', label: t('chat.selectionMenu.addComment'), icon: StickyNote, onSelect: onAddComment }]
+          : []),
         // Absent, not disabled, on a harness that cannot fork: the action's whole
         // value is that the side chat already knows the conversation.
         ...(onAskInSideChat
@@ -121,6 +128,7 @@ interface MenuState {
   y: number
   text: string
   html?: string
+  onAddComment?: () => void
 }
 
 export function useSelectionMenu(target?: SessionWriteTarget) {
@@ -140,21 +148,27 @@ export function useSelectionMenu(target?: SessionWriteTarget) {
     void (html ? tryCopyRich(text, html) : navigator.clipboard.writeText(text))
   }
 
-  /** `text` is the selection as copying writes it (Markdown for a reply); `html` its rich flavour. */
-  const openMenu = (text: string, x: number, y: number, html?: string) => {
+  /**
+   * `text` is the selection as copying writes it (Markdown for a reply); `html` its rich flavour.
+   * `onAddComment` offers commenting on the selection where it can carry one.
+   */
+  const openMenu = (text: string, x: number, y: number, html?: string, onAddComment?: () => void) => {
     const selText = text.trim()
     if (!selText) return
     if (liquidGlass) {
       void showNativeContextMenu([
         { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: () => copy(selText, html) },
         { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addToChat(selText) },
+        ...(onAddComment
+          ? [{ id: 'addComment', label: t('chat.selectionMenu.addComment'), icon: StickyNote, onSelect: onAddComment }]
+          : []),
         ...(canSideChat
           ? [{ id: 'askInSideChat', label: t('chat.selectionMenu.askInSideChat'), icon: MessageCirclePlus, onSelect: () => askInSideChat(selText) }]
           : []),
       ])
       return
     }
-    setMenu({ x, y, text: selText, html })
+    setMenu({ x, y, text: selText, html, onAddComment })
   }
 
   const menuNode = menu ? (
@@ -163,6 +177,7 @@ export function useSelectionMenu(target?: SessionWriteTarget) {
       onCopy={() => copy(menu.text, menu.html)}
       onAddToChat={() => addToChat(menu.text)}
       onAskInSideChat={canSideChat ? () => askInSideChat(menu.text) : undefined}
+      onAddComment={menu.onAddComment}
       onClose={() => setMenu(null)}
     />
   ) : null
@@ -175,22 +190,37 @@ interface SelectionContextMenuZoneProps {
   className?: string
 }
 
+/** A transcript whose selections can be copied, quoted into chat, or commented on with sticky notes drawn over it. */
 export function SelectionContextMenuZone({ children, className }: SelectionContextMenuZoneProps) {
   const sessionScope = useSessionScope()
   const { openMenu, menuNode } = useSelectionMenu(sessionScope ?? undefined)
+  const zoneRef = useRef<HTMLDivElement>(null)
+  const commentLayerRef = useRef<ReplyCommentLayerHandle>(null)
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
     const selection = window.getSelection()
     // Same text Cmd+C would copy: a reply as Markdown, chips as what they stand for.
     const copied = selectionCopy(selection)
-    openMenu(copied?.plain ?? selection?.toString() ?? '', event.clientX, event.clientY, copied?.html)
+    const text = copied?.plain ?? selection?.toString() ?? ''
+    // Captured now: choosing the item may already have collapsed the selection.
+    const anchor = zoneRef.current ? replyCommentAnchor(selection, zoneRef.current) : null
+    const onAddComment = anchor
+      ? () => {
+          // The selection becomes the highlighter stroke.
+          window.getSelection()?.removeAllRanges()
+          // Quoted as Add to Chat would quote it.
+          commentLayerRef.current?.startDraft({ ...anchor, quote: text.trim() })
+        }
+      : undefined
+    openMenu(text, event.clientX, event.clientY, copied?.html, onAddComment)
   }
 
   return (
-    <div className={className} onContextMenu={handleContextMenu}>
+    <div ref={zoneRef} className={cn('relative', className)} onContextMenu={handleContextMenu}>
       {children}
       {menuNode}
+      <ReplyCommentLayer rootRef={zoneRef} ref={commentLayerRef} />
     </div>
   )
 }

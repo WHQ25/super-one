@@ -1,11 +1,17 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactNode, Ref } from 'react'
+import { X } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
 import type { StickySwatch } from './plan-sticky-palette'
+import type { HighlightBand, ViewportCorner } from './plan-annotation-dom'
 
 /**
- * Physical-media look for plan annotations: chisel-tip marker strokes and
- * 3M Post-it sheets. Pure presentation — no DOM measuring, no state — so both
- * `PlanLineReview` and Storybook render the exact same pixels.
+ * Physical-media look for sticky annotations: chisel-tip marker strokes and
+ * 3M Post-it sheets. Pure presentation — no DOM measuring, no state — so
+ * `PlanLineReview`, reply comments and Storybook render the exact same pixels.
  */
+
+/** Marks sticky UI, so selection and blur handlers leave clicks on it alone. */
+export const STICKY_UI_ATTR = 'data-plan-sticky-ui'
 
 /** Deterministic 0..1 from a seed, so a stroke keeps its wobble across re-renders. */
 function noise(seed: number, salt: number): number {
@@ -184,5 +190,114 @@ export function StickyPinFace({ swatch, isDark = false, index, size = 18 }: Stic
     >
       {index + 1}
     </span>
+  )
+}
+
+export interface MarkerStrokeProps {
+  band: HighlightBand
+  swatch: StickySwatch
+  isDark: boolean
+  seed: number
+  /** Positioning (`fixed` / `absolute`) and stacking. */
+  className?: string
+}
+
+/** One line of highlighter ink over a highlight band. */
+export function MarkerStroke({ band, swatch, isDark, seed, className }: MarkerStrokeProps) {
+  return (
+    <div
+      aria-hidden
+      className={cn('pointer-events-none', className)}
+      style={{
+        top: band.top,
+        left: band.left - MARKER_OVERSHOOT,
+        width: Math.max(band.width, 8) + MARKER_OVERSHOOT * 2,
+        height: band.height,
+        ...markerStrokeStyle(swatch, isDark, seed),
+      }}
+    />
+  )
+}
+
+export interface StickyPinButtonProps extends StickyPinProps {
+  position: ViewportCorner
+  label: string
+  /** Positioning (`fixed` / `absolute`) and stacking. */
+  className?: string
+  onClick: () => void
+}
+
+/** A collapsed note stuck at a highlight's corner; opens the note. */
+export function StickyPinButton({ swatch, isDark = false, index, size = 18, position, label, className, onClick }: StickyPinButtonProps) {
+  return (
+    <button
+      type="button"
+      data-plan-sticky-ui
+      aria-label={label}
+      className={cn('flex cursor-pointer items-center justify-center transition-[filter] hover:brightness-[1.06]', className)}
+      style={{
+        top: position.top,
+        left: position.left,
+        transform: `rotate(${index % 2 === 0 ? -3 : 2.5}deg)`,
+        filter: `drop-shadow(1px 1.5px 1.5px rgb(0 0 0 / ${isDark ? 0.5 : 0.28}))`,
+      }}
+      onClick={onClick}
+    >
+      <StickyPinFace swatch={swatch} isDark={isDark} index={index} size={size} />
+    </button>
+  )
+}
+
+export interface StickyNoteEditorProps {
+  swatch: StickySwatch
+  isDark: boolean
+  value: string
+  placeholder: string
+  /** The corner button: cancels a new note, deletes a saved one. */
+  dismissLabel: string
+  inputRef?: Ref<HTMLTextAreaElement>
+  autoFocus?: boolean
+  onChange: (text: string) => void
+  onDismiss: () => void
+  /** Focus left the note for anything but other sticky UI. */
+  onCommit: () => void
+}
+
+/** An open Post-it the user writes a comment on. */
+export function StickyNoteEditor({
+  swatch, isDark, value, placeholder, dismissLabel, inputRef, autoFocus, onChange, onDismiss, onCommit,
+}: StickyNoteEditorProps) {
+  return (
+    <StickyPaper swatch={swatch} isDark={isDark} width={202} minHeight={190}>
+      <button
+        type="button"
+        className="absolute right-1.5 top-1 z-[1] flex size-5 items-center justify-center opacity-35 hover:opacity-80"
+        style={{ color: swatch.text }}
+        aria-label={dismissLabel}
+        onClick={onDismiss}
+      >
+        <X className="size-3.5" strokeWidth={2.25} />
+      </button>
+      <textarea
+        ref={inputRef}
+        data-plan-draft
+        rows={5}
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => {
+          const related = e.relatedTarget as HTMLElement | null
+          if (related?.closest?.(`[${STICKY_UI_ATTR}]`)) return
+          onCommit()
+        }}
+        placeholder={placeholder}
+        className="relative z-0 w-full resize-none bg-transparent text-xs leading-relaxed placeholder:opacity-40 focus:outline-none"
+        style={{
+          minHeight: 128,
+          padding: '24px 16px 20px',
+          color: swatch.text,
+        }}
+      />
+    </StickyPaper>
   )
 }

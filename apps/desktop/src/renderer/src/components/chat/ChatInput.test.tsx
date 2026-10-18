@@ -20,6 +20,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     queuedMessages: [] as Array<{ id: string }>,
     miniAppContexts: {} as Record<string, never>,
     userSelections: [] as string[],
+    replyComments: [] as Array<{ id: string; messageId: string; quote: string; text: string }>,
     projectAdditionalDirs: [] as string[],
     userAdditionalDirs: [] as string[],
     codexProjectAdditionalDirs: [] as string[],

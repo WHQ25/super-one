@@ -63,6 +63,7 @@ export type {
 } from './types'
 export { SUBAGENT_COLOR_POOL } from './types'
 export type { BrowserAnnotation } from './helpers/browser-annotation'
+export type { ReplyComment } from './helpers/reply-comments'
 export { DEFAULT_PROVIDER }
 export const SESSIONS_PAGE_SIZE = 30
 const CODEX_LAST_SELECTION_STORAGE_KEY = 'super-one.codex.last-selection.v1'

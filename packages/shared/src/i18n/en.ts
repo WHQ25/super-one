@@ -2017,6 +2017,11 @@ export type Messages = {
       copy: string
       addToChat: string
       askInSideChat: string
+      addComment: string
+    }
+    replyComments: {
+      count_one: string
+      count_other: string
     }
     messageMenu: {
       copy: string
@@ -6634,6 +6639,11 @@ export const en: Messages = {
       copy: 'Copy',
       addToChat: 'Add to Chat',
       askInSideChat: 'Ask in Side Chat',
+      addComment: 'Add Comment',
+    },
+    replyComments: {
+      count_one: '{{count}} comment',
+      count_other: '{{count}} comments',
     },
     messageMenu: {
       copy: 'Copy',

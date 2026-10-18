@@ -9,6 +9,7 @@ vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: { addUserSelection: typeof addUserSelection }) => unknown) =>
     selector({ addUserSelection }),
   useSessionScope: () => null,
+  useActiveSession: (selector: (state: { replyComments: [] }) => unknown) => selector({ replyComments: [] }),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -17,6 +18,7 @@ vi.mock('react-i18next', () => ({
       const map: Record<string, string> = {
         'chat.selectionMenu.copy': '复制',
         'chat.selectionMenu.addToChat': '添加到聊天',
+        'chat.selectionMenu.addComment': '添加评论',
       }
       return map[key] ?? key
     },
@@ -73,6 +75,8 @@ describe('SelectionContextMenuZone', () => {
 
     expect(screen.getByText('复制')).toBeTruthy()
     expect(screen.getByText('添加到聊天')).toBeTruthy()
+    // Anything Add to Chat can quote takes a comment too.
+    expect(screen.getByText('添加评论')).toBeTruthy()
   })
 
   it('does not open the menu when no text is selected, and suppresses the browser default', () => {

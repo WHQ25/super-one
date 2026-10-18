@@ -2,6 +2,7 @@ import type { StateCreator } from 'zustand'
 import type { ImageAttachment } from '@superone/shared/agent-types'
 import type { ChatStore, Mention, SessionWriteTarget } from '../types'
 import type { BrowserAnnotation } from '../helpers/browser-annotation'
+import type { ReplyComment } from '../helpers/reply-comments'
 import { commitPerSession, updateActivePerSession, updateProjectState } from '../index'
 
 /**
@@ -37,6 +38,10 @@ export interface CoreSlice {
   addUserSelection: (text: string, target?: SessionWriteTarget) => void
   removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
   clearUserSelections: (target?: SessionWriteTarget) => void
+  addReplyComment: (comment: ReplyComment, target?: SessionWriteTarget) => void
+  updateReplyComment: (id: string, text: string, target?: SessionWriteTarget) => void
+  removeReplyComment: (id: string, target?: SessionWriteTarget) => void
+  clearReplyComments: (target?: SessionWriteTarget) => void
   setShowDirManager: (show: boolean) => void
   setShowReviewPanel: (show: boolean, initialMode?: 'uncommitted' | 'branch' | 'commit') => void
 }
@@ -207,6 +212,28 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
 
   clearUserSelections: (target) => {
     set((s) => commitPerSession(s, target, () => ({ userSelections: [] })))
+  },
+
+  addReplyComment: (comment, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      replyComments: [...sess.replyComments, comment],
+    })))
+  },
+
+  updateReplyComment: (id, text, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      replyComments: sess.replyComments.map((c) => (c.id === id ? { ...c, text } : c)),
+    })))
+  },
+
+  removeReplyComment: (id, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      replyComments: sess.replyComments.filter((c) => c.id !== id),
+    })))
+  },
+
+  clearReplyComments: (target) => {
+    set((s) => commitPerSession(s, target, () => ({ replyComments: [] })))
   },
 
   setShowDirManager: (show) => {

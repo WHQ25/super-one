@@ -61,6 +61,8 @@ import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentNode } from './attachment-node'
 import { ChipSelection } from './chip-selection'
 import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
+import { ReplyCommentChips } from './ReplyCommentChips'
+import { requestReplyCommentEdit } from './reply-comment-target'
 import { buildChatImage, originalPending, useOriginalUploads, watchOriginals } from './attachment-originals'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
@@ -161,13 +163,15 @@ export function ChatInput({
       clearMiniAppContext: s.clearMiniAppContext,
       removeUserSelectionAt: s.removeUserSelectionAt,
       clearUserSelections: s.clearUserSelections,
+      removeReplyComment: s.removeReplyComment,
+      clearReplyComments: s.clearReplyComments,
       addDir: s.addDir,
       removeDir: s.removeDir,
     })))
     const { sendMessage, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
     const mcpRoute = useMcpAppFileRoute(sessionScope)
-    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, openCodeAgentId, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, projectExtraDirs, additionalDirs, additionalDirsDirty } =
+    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, openCodeAgentId, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, replyComments, projectExtraDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         draftJson: s.draftJson,
@@ -181,6 +185,7 @@ export function ChatInput({
         queuedMessages: s.queuedMessages,
         miniAppContexts: s.miniAppContexts,
         userSelections: s.userSelections,
+        replyComments: s.replyComments,
         projectExtraDirs: s.projectExtraDirs,
         additionalDirs: s.additionalDirs,
         additionalDirsDirty: s.additionalDirsDirty,
@@ -222,7 +227,7 @@ export function ChatInput({
       removeBrowserAnnotation,
       clearBrowserAnnotations,
       addMention, removeMention, dismissCommandPopup, toggleMiniAppContext,
-      clearMiniAppContext, removeUserSelectionAt, clearUserSelections, addDir, removeDir,
+      clearMiniAppContext, removeUserSelectionAt, clearUserSelections, removeReplyComment, clearReplyComments, addDir, removeDir,
       scopedInterrupt,
     } = useMemo(() => {
       const target = sessionScope ?? undefined
@@ -246,6 +251,8 @@ export function ChatInput({
         clearMiniAppContext: (id: string) => storeActions.clearMiniAppContext(id, target),
         removeUserSelectionAt: (i: number) => storeActions.removeUserSelectionAt(i, target),
         clearUserSelections: () => storeActions.clearUserSelections(target),
+        removeReplyComment: (id: string) => storeActions.removeReplyComment(id, target),
+        clearReplyComments: () => storeActions.clearReplyComments(target),
         addDir: (p: string, scope: 'session' | 'project') => storeActions.addDir(p, scope, target),
         removeDir: (p: string, scope: 'session' | 'project') => storeActions.removeDir(p, scope, target),
         // Stop must interrupt the pane it is rendered in, not whichever session
@@ -331,7 +338,7 @@ export function ChatInput({
     const canOpenSideChat = useCanOpenSideChat()
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const planMode = inPlanMode(activeProviderForResources, { permissionMode, selectedCodexCollaborationMode, openCodeAgentId })
-    const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
+    const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || replyComments.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
     const sessionProject = sessionScope?.projectPath ?? activeProject
     const scheduleServed = useEnvironmentServes(sessionProject, 'session.scheduledSend.set')
@@ -2148,6 +2155,8 @@ export function ChatInput({
         )}
 
         <BrowserAnnotationChips annotations={browserAnnotations} onRemove={removeBrowserAnnotation} onClear={clearBrowserAnnotations} />
+
+        <ReplyCommentChips comments={replyComments} onOpen={requestReplyCommentEdit} onRemove={removeReplyComment} onClear={clearReplyComments} />
 
         <McpAppContextAttachments />
 

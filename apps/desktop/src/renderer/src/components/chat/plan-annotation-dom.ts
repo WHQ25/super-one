@@ -9,14 +9,17 @@ export const STICKY_DRAFT_CLASS = 'plan-sticky-mark plan-sticky-draft'
 
 type TextPart = { node: Text; start: number; text: string }
 
-function collectTextParts(root: HTMLElement): { parts: TextPart[]; full: string } {
+function collectTextParts(root: HTMLElement, from?: Node): { parts: TextPart[]; full: string } {
   const parts: TextPart[] = []
   let full = ''
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  // Walking on from `from` starts at its first descendant text.
+  if (from) w.currentNode = from
   let n: Node | null
   while ((n = w.nextNode())) {
     const node = n as Text
-    if (node.parentElement?.closest(`mark[${STICKY_ID_ATTR}], mark[${STICKY_DRAFT_ATTR}]`)) {
+    // Marks hold annotated text; sticky UI (pins, notes) is never the annotated text.
+    if (node.parentElement?.closest(`mark[${STICKY_ID_ATTR}], mark[${STICKY_DRAFT_ATTR}], [data-plan-sticky-ui]`)) {
       continue
     }
     const text = node.textContent ?? ''
@@ -61,12 +64,12 @@ function rangeFromOffsets(parts: TextPart[], start: number, end: number): Range 
   }
 }
 
-/** Find a Range for `quote` inside `root` (exact, then whitespace-collapsed). */
-export function findTextRange(root: HTMLElement, quote: string): Range | null {
+/** Find a Range for `quote` inside `root`, after `from` when given (exact, then whitespace-collapsed). */
+export function findTextRange(root: HTMLElement, quote: string, from?: Node): Range | null {
   const q = quote.replace(/\r\n/g, '\n')
   const trimmed = q.trim()
   if (!trimmed) return null
-  const { parts, full } = collectTextParts(root)
+  const { parts, full } = collectTextParts(root, from)
   if (!full) return null
 
   let idx = full.indexOf(q)
@@ -256,6 +259,11 @@ function collectMarkRects(marks: HTMLElement[]): DOMRect[] {
   return out
 }
 
+/** Line-box rects of a range, in viewport coordinates. */
+export function rangeRects(range: Range): DOMRect[] {
+  return [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
+}
+
 /**
  * Top-right of the **entire selection** (union of all mark fragments):
  * min(top) + max(right) — so multi-line highlights pin to the overall NE corner.
@@ -264,7 +272,11 @@ export function selectionTopRightViewport(
   marks: HTMLElement[],
   pinSize = 18,
 ): ViewportCorner | null {
-  const rects = collectMarkRects(marks)
+  return topRightOfRects(collectMarkRects(marks), pinSize)
+}
+
+/** `selectionTopRightViewport` over rects in any one coordinate space. */
+export function topRightOfRects(rects: readonly DOMRectReadOnly[], pinSize = 18): ViewportCorner | null {
   if (rects.length === 0) return null
   let minTop = Infinity
   let maxRight = -Infinity
@@ -297,11 +309,18 @@ export function highlightBandsFromMarks(
   marks: HTMLElement[],
   opts?: { lineSlack?: number; strokeRatio?: number },
 ): HighlightBand[] {
+  return highlightBandsFromRects(collectMarkRects(marks), opts)
+}
+
+/** `highlightBandsFromMarks` over rects in any one coordinate space. */
+export function highlightBandsFromRects(
+  rects: readonly DOMRectReadOnly[],
+  opts?: { lineSlack?: number; strokeRatio?: number },
+): HighlightBand[] {
   const lineSlack = opts?.lineSlack ?? 6
   /** Stroke thickness as a fraction of line box height. */
   const strokeRatio = opts?.strokeRatio ?? 0.9
 
-  const rects = collectMarkRects(marks)
   if (rects.length === 0) return []
 
   const heights = rects.map((r) => r.height).sort((a, b) => a - b)

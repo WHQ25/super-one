@@ -139,6 +139,7 @@ export function keepRendererOwnedState(
     attachments: current.attachments,
     mentions: current.mentions,
     browserAnnotations: current.browserAnnotations,
+    replyComments: current.replyComments,
     queuedMessages: current.queuedMessages,
     // Both halves of the same fact: the ghost text and the alternatives beside it.
     // Carrying only one leaves the composer showing half a suggestion set.

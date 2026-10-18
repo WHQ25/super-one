@@ -43,6 +43,7 @@ import type { SessionControlHolder } from '@superone/shared/environment'
 import type { StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import type { ChatCoreSession } from '@superone/chat-core'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
+import type { ReplyComment } from './helpers/reply-comments'
 
 export type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
 export type ChatProvider = HarnessId
@@ -309,6 +310,7 @@ export interface PerSessionState extends ChatCoreSession {
   lastAssistantMessageId: string | null
   miniAppContexts: Record<string, MiniAppContextSlot>
   userSelections: string[]
+  replyComments: ReplyComment[]
   _historyHydrated: boolean
   apiProviderId: string | null
 }
@@ -545,6 +547,10 @@ export interface ChatStore {
   addUserSelection: (text: string, target?: SessionWriteTarget) => void
   removeUserSelectionAt: (index: number, target?: SessionWriteTarget) => void
   clearUserSelections: (target?: SessionWriteTarget) => void
+  addReplyComment: (comment: ReplyComment, target?: SessionWriteTarget) => void
+  updateReplyComment: (id: string, text: string, target?: SessionWriteTarget) => void
+  removeReplyComment: (id: string, target?: SessionWriteTarget) => void
+  clearReplyComments: (target?: SessionWriteTarget) => void
 
   /** Hydrate `projectExtraDirs` from the host's project catalog (local or remote). */
   refreshProjectExtraDirs: (projectPath?: string) => Promise<void>

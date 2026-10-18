@@ -2124,6 +2124,11 @@ export const zh: Messages = {
       copy: '复制',
       addToChat: '添加到聊天',
       askInSideChat: '在临时对话中提问',
+      addComment: '添加评论',
+    },
+    replyComments: {
+      count_one: '{{count}} 条评论',
+      count_other: '{{count}} 条评论',
     },
     messageMenu: {
       copy: '复制',

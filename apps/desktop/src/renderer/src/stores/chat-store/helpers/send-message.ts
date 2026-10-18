@@ -8,6 +8,7 @@ import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/share
 import { pendingSlashCommandFrom } from '@superone/chat-core'
 import { newMessageId } from '@superone/shared/message-id'
 import { buildBrowserAnnotationText } from './browser-annotation'
+import { buildReplyCommentsText, replyCommentSelection } from './reply-comments'
 import { createDefaultPerSessionState, createSessionId } from '../defaults'
 import { createLocalTextUserMessage, formatCodexLoginStart, parseCodexCommand, type CodexCommand } from './codex-helpers'
 import { resetLock, type ChatStoreSet } from './lifecycle'
@@ -175,6 +176,10 @@ export async function sendMessageImpl(
       .join('\n')
     quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
   }
+  const replyComments = session.replyComments
+  const replyCommentSuffix = replyComments.length > 0 ? '\n\n' + buildReplyCommentsText(replyComments) : ''
+  // The bubble shows sent comments among its quoted selections.
+  const displaySelections = [...userSelections, ...replyComments.map(replyCommentSelection)]
   const effectiveProvider: ChatProvider = resolveProvider(session)
   // @codex / @grok — the agent id is already decided, so the reminder pins it
   // and tells the model to skip session_collab_list_agents entirely.
@@ -306,6 +311,7 @@ export async function sendMessageImpl(
     agentContent +
     contextSuffix +
     quoteSuffix +
+    replyCommentSuffix +
     sessionReminderSuffix +
     agentReminderSuffix +
     capabilityReminderSuffix +
@@ -523,7 +529,7 @@ export async function sendMessageImpl(
     content: userContent,
     attachments: attachments.length > 0 ? attachments : undefined,
     contexts: messageContexts,
-    userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+    userSelections: displaySelections.length > 0 ? displaySelections : undefined,
   }
   const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
   const isRecapSlash = !isQueuedSend && isRecapSlashSend(effectiveProvider, finalContent)
@@ -539,6 +545,7 @@ export async function sendMessageImpl(
       mentions: [],
       miniAppContexts: {},
       userSelections: [],
+      replyComments: [],
       codexPlanRejectHintActive: false,
       additionalDirsDirty: false,
       draftId: null,
@@ -647,7 +654,7 @@ export async function sendMessageImpl(
         images: attachments,
         userMessageContent: userContent,
         contexts: messageContexts,
-        userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+        userSelections: displaySelections.length > 0 ? displaySelections : undefined,
         queued: isQueuedSend,
         firstTurn: session.messages.length === 0,
         ...codexTurn,

@@ -16,8 +16,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Added
 
 - Browse Codex plugins on desktop from curated home shelves, category pages,
-  and a detail page for apps, skills, and developer metadata. Install remote
-  plugins with their backend ids on desktop and remote nodes.
+  and a detail page for apps, skills, and developer metadata. Remote nodes
+  cannot search or install curated plugins yet.
 - Preview Codex realtime voices in desktop preferences, grouped by their primary
   language and accent.
 - Offer a new-session handoff on desktop and phone when a long session's reported
@@ -33,8 +33,16 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Preview and control iPhone Duo folding in 2D and 3D, with hinge-angle controls
   and input routed to the active display.
 - Show session timer tool summaries and pending scheduled wakeups in chat.
-- Set each Claude MCP tool to allow, ask or deny from the MCP settings tool list,
-  saved as Claude Code permission rules.
+- Add sticky-note comments to transcript selections. A comment goes out with
+  the next turn, shows with the quoted selection, and its highlight clears
+  once sent.
+- Let agents adjust the native window and read back the layout state each
+  action changed, scoped to the requesting window.
+- Set each Claude MCP tool to allow, ask, or deny from the MCP settings tool
+  list, saved as a Claude Code permission rule.
+- Let config tools change notifications, power mode, theme, Codex voice, mod
+  folders, default providers, project output style, and the dev app icon.
+  Secret fields stay masked, and an interrupted turn applies nothing.
 
 ### Changed
 
@@ -44,9 +52,11 @@ Every alpha release keeps its own notes on its GitHub Release.
   captions in the transcript on desktop.
 - Launch configured suggested tasks on their source host from desktop and phone,
   show their titled session chips, and name built-in agents after their harnesses.
+  Suggested-task cards stay visible when detail is collapsed.
 - Offer Claude Fast Mode according to the connected SDK's capabilities.
 - Put reusable agent profile management behind an opt-in experiment, with reviewed
   settings and defaults that follow the current harness configuration.
+- Highlight Codex ultra effort labels with a purple glow.
 
 ### Performance
 
@@ -59,6 +69,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   scrolls, and align Markdown table action buttons with the right edge.
 - Limit selector screenshots to the visible viewport and report when the target
   needs scrolling into view.
+- Accept sharp browser-capture frames at fractional display scales, including
+  1.25, instead of timing out.
 - Restore remote notification titles and project targets, and use compact Windows
   toasts that remain actionable in Action Center.
 - Preserve newer appearance changes when the initial theme read returns late.
@@ -71,10 +83,52 @@ Every alpha release keeps its own notes on its GitHub Release.
   audio from UI work, and apply the selected worktree before starting voice.
 - Give mobile questions the composer space and keep their fields and actions
   visible with the keyboard open.
+- Reopen a dismissed mobile update when the user checks for updates manually.
 - Follow app-locked orientation in device previews and restore simulator video
   after stream restarts.
 - Hide internal Codex collaboration wakes in restored timelines, unify turn-error
   details, and center history loaders and new-session Git chips.
+- Show elapsed time and keep workflow footer stats.
+- Show the title menu on a session that has no messages yet, so it can be
+  floated or turned into a mini window before the first send.
+- Move the media volume control next to the play button.
+
+## [0.75.0-alpha.2] - 2026-10-19
+
+### Added
+
+- Browse Codex plugins on desktop from curated home shelves, category pages,
+  and a detail page for apps, skills, and developer metadata. Remote nodes
+  cannot search or install curated plugins yet.
+- Preview Codex realtime voices in desktop preferences, grouped by their primary
+  language and accent.
+- Add sticky-note comments to transcript selections. A comment goes out with
+  the next turn, shows with the quoted selection, and its highlight clears
+  once sent.
+- Let agents adjust the native window and read back the layout state each
+  action changed, scoped to the requesting window.
+- Set each Claude MCP tool to allow, ask, or deny from the MCP settings tool
+  list, saved as a Claude Code permission rule.
+- Let config tools change notifications, power mode, theme, Codex voice, mod
+  folders, default providers, project output style, and the dev app icon.
+  Secret fields stay masked, and an interrupted turn applies nothing.
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.302 (Claude Code 2.1.302).
+- Highlight Codex ultra effort labels with a purple glow.
+
+### Fixed
+
+- Reopen a dismissed mobile update when the user checks for updates manually.
+- Show elapsed time and keep workflow footer stats.
+- Keep suggested-task cards visible when detail is collapsed.
+- Show the title menu on a session that has no messages yet, so it can be
+  floated or turned into a mini window before the first send.
+- Move the media volume control next to the play button.
+- Pin the palette name to the trailing edge of the popover.
+- Accept sharp browser-capture frames at fractional display scales, including
+  1.25, instead of timing out.
 
 ## [0.75.0-alpha.1] - 2026-10-18
 

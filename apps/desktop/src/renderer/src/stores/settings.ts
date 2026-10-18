@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentInfo, HookConfig, HookSavePayload, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '@superone/shared/agent-types'
+import type { AgentInfo, HookConfig, HookSavePayload, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, McpToolPermission, PluginDetail, PluginInfo, ResourceScope, SkillDetail, SkillInfo } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, Platform } from '@superone/shared/platform-registry'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { useAppStore } from './app'
@@ -71,6 +71,10 @@ interface SettingsState {
   saveMcpConfig: (name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope) => Promise<void>
   deleteMcpConfig: (name: string, scope: ResourceScope) => Promise<void>
   toggleMcpConfig: (name: string, disabled: boolean, scope: ResourceScope) => Promise<void>
+  /** Claude permission of each exact `mcp__server__tool` rule, keyed by rule name (local projects only). */
+  mcpToolPermissions: Record<string, McpToolPermission>
+  fetchMcpToolPermissions: () => Promise<void>
+  setMcpToolPermission: (serverName: string, toolName: string, permission: McpToolPermission | null, scope: ResourceScope) => Promise<void>
   selectMcp: (name: string | null) => void
 
   // Codex MCP config (separate field — read-only)
@@ -180,6 +184,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   mcpStatus: [],
   mcpMeta: {},
   mcpMetaCache: {},
+  mcpToolPermissions: {},
   selectedMcpName: null,
   codexMcpConfigs: [],
   codexMcpStatus: [],
@@ -543,6 +548,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await window.app.toggleMcpConfig(pp, name, disabled, scope)
     }
     await get().checkMcpServers()
+  },
+
+  fetchMcpToolPermissions: async () => {
+    const pp = getProjectPath()
+    if (isRemoteProjectPath(pp)) return set({ mcpToolPermissions: {} })
+    set({ mcpToolPermissions: await window.app.listMcpToolPermissions(pp) })
+  },
+
+  setMcpToolPermission: async (serverName, toolName, permission, scope) => {
+    try {
+      await window.app.setMcpToolPermission(getProjectPath(), serverName, toolName, permission, scope)
+    } finally {
+      await get().fetchMcpToolPermissions()
+    }
   },
 
   selectMcp: (name) => set({ selectedMcpName: name }),

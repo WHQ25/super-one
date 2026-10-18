@@ -8,6 +8,7 @@ import { Badge } from '@superone/ui/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import { isRemoteProjectPath } from '@/lib/remote-resource-ops'
 import { McpDetailHeader, McpDetailPage, McpToolsSection } from './McpDetailPage'
 import { AddServerPanel } from './AddServerPanel'
 import {
@@ -364,6 +365,7 @@ function LibraryView({ onClose }: { onClose: () => void }) {
 
 function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onToggle: (name: string, disabled: boolean) => void }) {
   const { t } = useTranslation()
+  const currentFolder = useAppStore((s) => s.currentFolder)
   const isDisabled = server.status === 'disabled'
   const isConnected = server.status === 'connected'
   const tools = server.tools ?? []
@@ -381,6 +383,7 @@ function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onTog
         tools={tools}
         toolCount={server.toolCount}
         emptyText={isConnected ? t('resources.mcp.noToolsConnected') : isDisabled ? t('resources.mcp.noToolsDisabled') : t('resources.mcp.noToolsDisconnected')}
+        permissions={isRemoteProjectPath(currentFolder ?? '') ? undefined : { serverName: server.name, scope: 'claudeai' }}
       />
     </div>
   )

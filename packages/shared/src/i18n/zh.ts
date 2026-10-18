@@ -3947,6 +3947,14 @@ export const zh: Messages = {
       noToolsConnected: '没有可用工具',
       noToolsDisabled: '启用服务器后可查看可用工具',
       noToolsDisconnected: '连接服务器后可查看可用工具',
+      toolPermission: {
+        label: '{{name}} 的权限',
+        hint: 'Claude 权限规则。「询问」会在每次调用前确认，即使会话本会放行；「拒绝」会禁止调用该工具。',
+        default: '默认',
+        allow: '允许',
+        ask: '询问',
+        deny: '拒绝',
+      },
       form: {
         title: '添加 MCP 服务器',
         paste: '粘贴',

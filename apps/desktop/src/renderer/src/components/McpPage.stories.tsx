@@ -7,7 +7,8 @@ import type { ReactElement } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import i18n from 'i18next'
-import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
+import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, McpToolPermission } from '@superone/shared/agent-types'
+import { claudeMcpToolRuleName } from '@superone/shared/tool-ui'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 import { useAppStore } from '@/stores/app'
@@ -35,7 +36,7 @@ const STATUS: McpServerInfo[] = [
   { name: 'linear', scope: 'user', status: 'failed', error: 'spawn ECONNREFUSED 127.0.0.1:443 — the server closed the connection before completing the MCP initialize handshake', toolCount: 0 },
   { name: 'postgres', scope: 'user', status: 'disabled', toolCount: 0 },
   { name: 'demo-bundle', scope: 'user', status: 'pending', toolCount: 0 },
-  { name: 'Gmail', scope: 'claudeai', status: 'connected', toolCount: 12, tools: [{ name: 'search_threads', description: 'Search Gmail threads.' }] },
+  { name: 'claude.ai Gmail', scope: 'claudeai', status: 'connected', toolCount: 12, tools: [{ name: 'search_threads', description: 'Search Gmail threads.' }] },
   { name: 'Google Drive', scope: 'claudeai', status: 'disabled', toolCount: 0 },
 ]
 
@@ -91,9 +92,17 @@ interface Seed {
   bundles?: McpbInstalledEntry[]
   /** Keep the health check pending so the claude.ai section shows its loading row. */
   checking?: boolean
+  /** Claude permission rules, keyed by `mcp__server__tool` rule name. */
+  toolPermissions?: Record<string, McpToolPermission>
 }
 
-function seed({ provider = 'claude', configs = [], status = [], meta = {}, library = [], bundles = [], checking }: Seed) {
+/** `write_file` asks before every call; Gmail's `search_threads` is denied. */
+const TOOL_PERMISSIONS: Record<string, McpToolPermission> = {
+  [claudeMcpToolRuleName('filesystem', 'write_file')]: 'ask',
+  [claudeMcpToolRuleName('claude.ai Gmail', 'search_threads')]: 'deny',
+}
+
+function seed({ provider = 'claude', configs = [], status = [], meta = {}, library = [], bundles = [], checking, toolPermissions = {} }: Seed) {
   return (Story: () => ReactElement) => {
     let current = configs.map((c) => ({ ...c }))
     const toggle = async (_pp: unknown, name: unknown, disabled: unknown) => {
@@ -114,6 +123,12 @@ function seed({ provider = 'claude', configs = [], status = [], meta = {}, libra
     mockIpc('app', 'deleteMcpLibraryEntry', async () => undefined)
     mockIpc('app', 'oauthAuthorize', async () => ({}))
     mockIpc('app', 'revealMcpb', async () => undefined)
+    let permissions = { ...toolPermissions }
+    mockIpc('app', 'listMcpToolPermissions', async () => permissions)
+    mockIpc('app', 'setMcpToolPermission', async (_pp: unknown, server: unknown, tool: unknown, permission: unknown) => {
+      const { [claudeMcpToolRuleName(String(server), String(tool))]: _, ...rest } = permissions
+      permissions = permission ? { ...rest, [claudeMcpToolRuleName(String(server), String(tool))]: permission as McpToolPermission } : rest
+    })
     useAppStore.setState({ settingsProvider: provider, currentFolder: '/Users/demo/projects/superone' })
     useSettingsStore.setState({
       mcpConfigs: [],
@@ -124,6 +139,7 @@ function seed({ provider = 'claude', configs = [], status = [], meta = {}, libra
       dshMcpConfigs: [],
       mcpLibrary: [],
       mcpbInstalled: [],
+      mcpToolPermissions: {},
       selectedMcpName: null,
     })
     return <Story />
@@ -151,13 +167,13 @@ type Story = StoryObj<typeof McpPage>
 
 const body = (canvasElement: HTMLElement) => within(canvasElement.ownerDocument.body)
 
-const POPULATED: Seed = { configs: CONFIGS, status: STATUS, meta: META, library: LIBRARY, bundles: BUNDLES }
+const POPULATED: Seed = { configs: CONFIGS, status: STATUS, meta: META, library: LIBRARY, bundles: BUNDLES, toolPermissions: TOOL_PERMISSIONS }
 
 /** Connected, needs-auth, failed (long error), disabled, pending and bundle rows, plus the claude.ai section. */
 export const Populated: Story = {
   decorators: [seed(POPULATED)],
   play: async ({ canvasElement }) => {
-    await expect(await body(canvasElement).findByText('Gmail')).toBeInTheDocument()
+    await expect(await body(canvasElement).findByText('claude.ai Gmail')).toBeInTheDocument()
   },
 }
 
@@ -215,8 +231,37 @@ export const ClaudeAiDetail: Story = {
   decorators: [seed(POPULATED)],
   play: async ({ canvasElement }) => {
     const screen = body(canvasElement)
-    await userEvent.click(await screen.findByText('Gmail'))
+    await userEvent.click(await screen.findByText('claude.ai Gmail'))
     await expect(await screen.findByText('search_threads')).toBeInTheDocument()
+    await expect(await screen.findByRole('combobox', { name: i18n.t('resources.mcp.toolPermission.label', { name: 'search_threads' }) }))
+      .toHaveTextContent(i18n.t('resources.mcp.toolPermission.deny'))
+  },
+}
+
+/** Per-tool Claude permission rules: `write_file` starts at Ask; `read_file` is switched to Deny. */
+export const ServerDetailToolPermissions: Story = {
+  decorators: [seed(POPULATED)],
+  play: async ({ canvasElement }) => {
+    const screen = body(canvasElement)
+    await userEvent.click(await screen.findByText('filesystem'))
+    const label = (name: string) => i18n.t('resources.mcp.toolPermission.label', { name })
+    await expect(await screen.findByRole('combobox', { name: label('write_file') })).toHaveTextContent(i18n.t('resources.mcp.toolPermission.ask'))
+    const readFile = screen.getByRole('combobox', { name: label('read_file') })
+    await expect(readFile).toHaveTextContent(i18n.t('resources.mcp.toolPermission.default'))
+    await userEvent.click(readFile)
+    await userEvent.click(await screen.findByRole('option', { name: i18n.t('resources.mcp.toolPermission.deny') }))
+    await expect(readFile).toHaveTextContent(i18n.t('resources.mcp.toolPermission.deny'))
+  },
+}
+
+/** Codex keeps its own approval config: the tool list stays read-only. */
+export const CodexServerDetail: Story = {
+  decorators: [seed({ provider: 'codex', configs: CONFIGS, status: STATUS.filter((s) => s.scope !== 'claudeai') })],
+  play: async ({ canvasElement }) => {
+    const screen = body(canvasElement)
+    await userEvent.click(await screen.findByText('filesystem'))
+    await expect(await screen.findByText('read_file')).toBeInTheDocument()
+    await expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   },
 }
 

@@ -186,6 +186,21 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
   return { serverName, mcpToolName }
 }
 
+/**
+ * Claude Code's name segment for an MCP server or tool: characters outside
+ * `[a-zA-Z0-9_-]` become `_`; claude.ai connector names also collapse runs of
+ * `_` and trim them at the ends.
+ */
+function normalizeClaudeMcpName(name: string): string {
+  const normalized = name.replace(/[^a-zA-Z0-9_-]/g, '_')
+  return name.startsWith('claude.ai ') ? normalized.replace(/_+/g, '_').replace(/^_|_$/g, '') : normalized
+}
+
+/** The `mcp__{server}__{tool}` name Claude Code gives a tool, as permission rules spell it. */
+export function claudeMcpToolRuleName(serverName: string, toolName: string): string {
+  return `mcp__${normalizeClaudeMcpName(serverName)}__${normalizeClaudeMcpName(toolName)}`
+}
+
 /** Tools whose chat row is never useful (meta / discovery / MCP envelope). */
 const HIDDEN_UI_TOOL_NAMES = new Set([
   'TodoWrite',

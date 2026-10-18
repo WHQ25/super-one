@@ -3,9 +3,6 @@
  * Parity with desktop `hooks-config-service`.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { homedir as osHomedir } from 'node:os'
 import type {
   HookConfig,
   HookEntry,
@@ -13,46 +10,23 @@ import type {
   HookSavePayload,
   HookScope,
 } from '@superone/shared/agent-types'
+import {
+  getLocalSettingsPath,
+  getProjectSettingsPath,
+  getUserSettingsPath,
+  readJsonObject,
+  writeSettingsJson,
+} from './claude-settings-files'
 
 export interface HooksConfigOptions {
   /** Override home (tests / node isolation). Default: os.homedir(). */
   homeDir?: string
 }
 
-function homeOf(opts?: HooksConfigOptions): string {
-  return opts?.homeDir ?? osHomedir()
-}
-
-function getUserSettingsPath(opts?: HooksConfigOptions): string {
-  return join(homeOf(opts), '.claude', 'settings.json')
-}
-
-function getProjectSettingsPath(cwd: string): string {
-  return join(cwd, '.claude', 'settings.json')
-}
-
-function getLocalSettingsPath(cwd: string): string {
-  return join(cwd, '.claude', 'settings.local.json')
-}
-
 function pathFor(scope: HookScope, cwd: string, opts?: HooksConfigOptions): string {
   if (scope === 'user') return getUserSettingsPath(opts)
   if (scope === 'project') return getProjectSettingsPath(cwd)
   return getLocalSettingsPath(cwd)
-}
-
-function readJsonFile(filePath: string): Record<string, unknown> {
-  if (!existsSync(filePath)) return {}
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf-8')) as Record<string, unknown>
-  } catch {
-    return {}
-  }
-}
-
-function writeJsonFile(filePath: string, data: Record<string, unknown>): void {
-  mkdirSync(dirname(filePath), { recursive: true })
-  writeFileSync(filePath, JSON.stringify(data, null, 2))
 }
 
 interface MatcherGroup {
@@ -94,7 +68,7 @@ export function listHooks(cwd: string, opts?: HooksConfigOptions): HookConfig[] 
   const result: HookConfig[] = []
   const scopes: HookScope[] = ['user', 'project', 'local']
   for (const scope of scopes) {
-    const data = readJsonFile(pathFor(scope, cwd, opts))
+    const data = readJsonObject(pathFor(scope, cwd, opts))
     const hooks = getHooksMap(data)
     for (const event of Object.keys(hooks)) {
       const groups = hooks[event] ?? []
@@ -125,7 +99,7 @@ export function saveHook(
     deleteHook(cwd, replaceId, opts)
   }
   const filePath = pathFor(payload.scope, cwd, opts)
-  const data = readJsonFile(filePath)
+  const data = readJsonObject(filePath)
   if (!data.hooks || typeof data.hooks !== 'object' || Array.isArray(data.hooks)) {
     data.hooks = {}
   }
@@ -142,7 +116,7 @@ export function saveHook(
   }
   if (!Array.isArray(group.hooks)) group.hooks = []
   group.hooks.push(payload.entry)
-  writeJsonFile(filePath, data)
+  writeSettingsJson(filePath, data)
 }
 
 export function deleteHook(cwd: string, id: string, opts?: HooksConfigOptions): void {
@@ -150,7 +124,7 @@ export function deleteHook(cwd: string, id: string, opts?: HooksConfigOptions): 
   if (!parsed) return
   const { scope, event, gIdx, eIdx } = parsed
   const filePath = pathFor(scope, cwd, opts)
-  const data = readJsonFile(filePath)
+  const data = readJsonObject(filePath)
   const hooks = getHooksMap(data)
   const groups = hooks[event]
   if (!Array.isArray(groups) || !groups[gIdx]) return
@@ -165,5 +139,5 @@ export function deleteHook(cwd: string, id: string, opts?: HooksConfigOptions): 
   } else {
     data.hooks = hooks
   }
-  writeJsonFile(filePath, data)
+  writeSettingsJson(filePath, data)
 }

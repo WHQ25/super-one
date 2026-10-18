@@ -107,6 +107,10 @@ export {
 } from './plugins-manage'
 export { parsePluginValidateReport, reviewPluginMods } from './plugin-review'
 export {
+  listClaudeMcpToolPermissions,
+  setClaudeMcpToolPermission,
+} from './mcp-tool-permissions-claude'
+export {
   listHooks,
   saveHook,
   deleteHook,

@@ -27,6 +27,14 @@ import type {
   SkillFileEntry,
 } from '@superone/shared/agent-types'
 import { isPathAtOrWithinAllowed } from './path-security'
+import {
+  getLocalSettingsPath,
+  getProjectSettingsPath,
+  getUserSettingsPath,
+  readJsonObject,
+  settingsLayers,
+  writeSettingsJson,
+} from './claude-settings-files'
 
 export interface PluginsManageOptions {
   /** Override home (tests / node isolation). Default: os.homedir(). */
@@ -53,26 +61,6 @@ function installCountsFile(opts?: PluginsManageOptions): string {
   return join(pluginsDir(opts), 'install-counts-cache.json')
 }
 
-function getUserSettingsPath(opts?: PluginsManageOptions): string {
-  return join(homeOf(opts), '.claude', 'settings.json')
-}
-function getProjectSettingsPath(cwd: string): string {
-  return join(cwd, '.claude', 'settings.json')
-}
-function getLocalSettingsPath(cwd: string): string {
-  return join(cwd, '.claude', 'settings.local.json')
-}
-
-function readJsonObject(filePath: string): Record<string, unknown> {
-  if (!existsSync(filePath)) return {}
-  try {
-    const data = JSON.parse(readFileSync(filePath, 'utf-8'))
-    return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
-  } catch {
-    return {}
-  }
-}
-
 function readExtraKnownMarketplaces(filePath: string): Record<string, unknown> {
   const data = readJsonObject(filePath)
   const ek = data.extraKnownMarketplaces
@@ -94,11 +82,6 @@ function getMarketplaceScopeMap(cwd: string, opts?: PluginsManageOptions): Map<s
     }
   }
   return map
-}
-
-function writeSettingsJson(filePath: string, data: Record<string, unknown>): void {
-  mkdirSync(dirname(filePath), { recursive: true })
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n')
 }
 
 function removeMarketplaceFromSettings(filePath: string, name: string): boolean {
@@ -348,11 +331,6 @@ function findPluginSourceDir(mpDir: string, pluginName: string): string | null {
   return null
 }
 
-/** Settings files that hold `enabledPlugins`, lowest precedence first (user < project < local). */
-function enabledPluginsSources(cwd: string, opts?: PluginsManageOptions): string[] {
-  return cwd ? [getUserSettingsPath(opts), getProjectSettingsPath(cwd), getLocalSettingsPath(cwd)] : [getUserSettingsPath(opts)]
-}
-
 function enabledPluginsEntry(filePath: string, key: string): unknown {
   const map = readJsonObject(filePath).enabledPlugins
   return map && typeof map === 'object' && !Array.isArray(map) ? (map as Record<string, unknown>)[key] : undefined
@@ -365,7 +343,7 @@ function enabledPluginsEntry(filePath: string, key: string): unknown {
  */
 export function isPluginEnabled(cwd: string, key: string, defaultEnabled: boolean | undefined, opts?: PluginsManageOptions): boolean {
   let value: unknown
-  for (const file of enabledPluginsSources(cwd, opts)) {
+  for (const file of settingsLayers(cwd, opts)) {
     const entry = enabledPluginsEntry(file, key)
     if (entry !== undefined) value = entry
   }
@@ -378,7 +356,7 @@ export function isPluginEnabled(cwd: string, key: string, defaultEnabled: boolea
  * file of the plugin's scope, so the change always takes effect.
  */
 export function setPluginEnabled(cwd: string, key: string, scope: ResourceScope, enabled: boolean, opts?: PluginsManageOptions): void {
-  const sources = enabledPluginsSources(cwd, opts)
+  const sources = settingsLayers(cwd, opts)
   const deciding = [...sources].reverse().find((file) => enabledPluginsEntry(file, key) !== undefined)
   const target = deciding ?? (scope === 'user' || !cwd ? getUserSettingsPath(opts) : getProjectSettingsPath(cwd))
   const data = readJsonObject(target)

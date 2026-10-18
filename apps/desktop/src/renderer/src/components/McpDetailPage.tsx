@@ -1,13 +1,16 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowLeft, Trash2, ShieldAlert, Package, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@superone/ui/components/ui/select'
+import { claudeMcpToolRuleName } from '@superone/shared/tool-ui'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import { isRemoteProjectPath } from '@/lib/remote-resource-ops'
 import { McpIcon } from './McpPage'
 import { SettingsCard, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
-import type { McpServerConfig, McpServerInfo, McpServerMeta, McpToolInfo } from '@superone/shared/agent-types'
+import type { McpServerConfig, McpServerInfo, McpServerMeta, McpToolInfo, McpToolPermission, ResourceScope } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 
 /** Back link plus server identity; shared by configured and claude.ai server detail views. */
@@ -46,17 +49,55 @@ export function McpDetailHeader({ icon, name, statusDotClass, badges, subtitle, 
   )
 }
 
+const TOOL_PERMISSION_OPTIONS = ['default', 'allow', 'ask', 'deny'] as const
+
+/** A tool's Claude permission rule: none (follow the session's mode), allow, ask or deny. */
+function McpToolPermissionSelect({ serverName, toolName, scope }: { serverName: string; toolName: string; scope: ResourceScope }) {
+  const { t } = useTranslation()
+  const permission = useSettingsStore((s) => s.mcpToolPermissions[claudeMcpToolRuleName(serverName, toolName)])
+  const setMcpToolPermission = useSettingsStore((s) => s.setMcpToolPermission)
+  return (
+    <Select
+      value={permission ?? 'default'}
+      onValueChange={(value) => void setMcpToolPermission(serverName, toolName, value === 'default' ? null : value as McpToolPermission, scope)}
+    >
+      <SelectTrigger
+        size="sm"
+        className="w-24 shrink-0 border-border bg-background px-2.5 data-[size=sm]:h-7 dark:bg-background"
+        aria-label={t('resources.mcp.toolPermission.label', { name: toolName })}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {TOOL_PERMISSION_OPTIONS.map((option) => (
+          <SelectItem key={option} value={option}>{t(`resources.mcp.toolPermission.${option}`)}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 /** The server's tool list, one row per tool, or a muted line explaining why there are none. */
-export function McpToolsSection({ tools, toolCount, emptyText, describe }: {
+export function McpToolsSection({ tools, toolCount, emptyText, describe, permissions }: {
   tools: McpToolInfo[]
   toolCount?: number
   emptyText: string
   /** Fallback description lookup (probe meta is more reliable than SDK status). */
   describe?: (tool: McpToolInfo) => string | undefined
+  /** Claude server whose tools get a permission rule control; omitted where rules do not apply. */
+  permissions?: { serverName: string; scope: ResourceScope }
 }) {
   const { t } = useTranslation()
+  const fetchMcpToolPermissions = useSettingsStore((s) => s.fetchMcpToolPermissions)
+  const editable = permissions != null && tools.length > 0
+  useEffect(() => {
+    if (editable) void fetchMcpToolPermissions()
+  }, [editable, fetchMcpToolPermissions])
   return (
     <SettingsSection title={t('resources.mcp.tools')} description={toolCount != null ? `(${toolCount})` : undefined}>
+      {editable && (
+        <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>{t('resources.mcp.toolPermission.hint')}</p>
+      )}
       {tools.length > 0 ? (
         tools.map((tool) => {
           const desc = tool.description || describe?.(tool)
@@ -65,7 +106,9 @@ export function McpToolsSection({ tools, toolCount, emptyText, describe }: {
               key={tool.name}
               label={<span className="font-mono break-all">{tool.name}</span>}
               description={desc}
-            />
+            >
+              {permissions && <McpToolPermissionSelect serverName={permissions.serverName} toolName={tool.name} scope={permissions.scope} />}
+            </SettingsRow>
           )
         })
       ) : (
@@ -87,6 +130,7 @@ function ConfigField({ label, children }: { label: string; children: ReactNode }
 export function McpDetailPage({ config, status, meta }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta }) {
   const { t } = useTranslation()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const currentFolder = useAppStore((s) => s.currentFolder)
   const { selectMcp, saveMcpConfig, deleteMcpConfig, checkMcpServers, mcpbInstalled, uninstallMcpb, revealMcpb } = useSettingsStore()
   const bundleProvider = settingsProvider === 'dsh' ? null : settingsProvider === 'codex' ? 'codex' : 'claude'
   const bundle = bundleProvider
@@ -169,6 +213,7 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
   const tools = status?.tools ?? []
   const isConnected = status?.status === 'connected'
   const needsAuth = status?.status === 'needs-auth'
+  const canEditToolPermissions = settingsProvider === 'claude' && !isRemoteProjectPath(currentFolder ?? '')
 
   // Build description lookup from probe meta (more reliable than SDK status)
   const metaToolMap = new Map(meta?.tools?.map((t) => [t.name, t.description]) ?? [])
@@ -301,6 +346,7 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
         toolCount={status?.toolCount}
         emptyText={isConnected ? t('resources.mcp.noToolsConnected') : t('resources.mcp.noToolsDisconnected')}
         describe={(tool) => metaToolMap.get(tool.name)}
+        permissions={canEditToolPermissions ? { serverName: config.name, scope: config.scope } : undefined}
       />
 
       {/* Uninstall */}

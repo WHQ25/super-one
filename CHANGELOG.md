@@ -30,6 +30,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Preview and control iPhone Duo folding in 2D and 3D, with hinge-angle controls
   and input routed to the active display.
 - Show session timer tool summaries and pending scheduled wakeups in chat.
+- Set each Claude MCP tool to allow, ask or deny from the MCP settings tool list,
+  saved as Claude Code permission rules.
 
 ### Changed
 

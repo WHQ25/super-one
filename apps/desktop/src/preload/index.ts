@@ -1417,6 +1417,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_DELETE_CONFIG, projectPath, name, scope),
   toggleMcpConfig: (projectPath: string, name: string, disabled: boolean, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_TOGGLE_CONFIG, projectPath, name, disabled, scope),
+  listMcpToolPermissions: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_LIST_TOOL_PERMISSIONS, projectPath),
+  setMcpToolPermission: (projectPath: string, serverName: string, toolName: string, permission: string | null, scope: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_SET_TOOL_PERMISSION, projectPath, serverName, toolName, permission, scope),
   checkMcpServers: (projectPath: string, harness?: HarnessId) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_CHECK_SERVERS, projectPath, harness),
   getMcpMetaCache: () =>

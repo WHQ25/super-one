@@ -3871,6 +3871,14 @@ export type Messages = {
       noToolsConnected: string
       noToolsDisabled: string
       noToolsDisconnected: string
+      toolPermission: {
+        label: string
+        hint: string
+        default: string
+        allow: string
+        ask: string
+        deny: string
+      }
       form: {
         title: string
         paste: string
@@ -8452,6 +8460,14 @@ export const en: Messages = {
       noToolsConnected: 'No tools available',
       noToolsDisabled: 'Enable the server to see available tools',
       noToolsDisconnected: 'Connect the server to see available tools',
+      toolPermission: {
+        label: 'Permission for {{name}}',
+        hint: 'Claude permission rules. Ask confirms before every call, even when the session would allow it; Deny blocks the tool.',
+        default: 'Default',
+        allow: 'Allow',
+        ask: 'Ask',
+        deny: 'Deny',
+      },
       form: {
         title: 'Add MCP Server',
         paste: 'Paste',

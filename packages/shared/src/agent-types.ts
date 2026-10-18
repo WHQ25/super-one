@@ -1650,6 +1650,9 @@ export interface McpToolInfo {
   description?: string
 }
 
+/** Claude Code permission rule list (`permissions.allow|ask|deny`) that holds an MCP tool's exact rule. */
+export type McpToolPermission = 'allow' | 'ask' | 'deny'
+
 export interface McpServerInfo {
   name: string
   pluginId?: string
@@ -4403,6 +4406,8 @@ export const AgentIpcChannels = {
   MCP_SAVE_CONFIG: 'mcp:save-config',
   MCP_DELETE_CONFIG: 'mcp:delete-config',
   MCP_TOGGLE_CONFIG: 'mcp:toggle-config',
+  MCP_LIST_TOOL_PERMISSIONS: 'mcp:list-tool-permissions',
+  MCP_SET_TOOL_PERMISSION: 'mcp:set-tool-permission',
   MCP_CHECK_SERVERS: 'mcp:check-servers',
   MCP_META_CACHE: 'mcp:meta-cache',
   MCP_PROBE_ICONS: 'mcp:probe-icons',

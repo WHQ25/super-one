@@ -24,7 +24,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { windowControlIpc } from '../session/control-context'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types';
+import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexPermissionPreset, type CodexReasoningEffort, type McpToolPermission, type ModelOption, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types';
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
@@ -82,7 +82,7 @@ function getGitRoot(cwd: string): string {
 import { createSession, createAutomationSession, loadSessionMessage, readSessionHarnessId } from '../db-sessions';
 import { getSessionRecord } from '../session/session-repo'
 import { worktreeExists } from '../git/worktree-alive'
-import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
+import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig, listMcpToolPermissions, setMcpToolPermission } from '../mcp-config-service'
 import {
   deleteDshMcpConfig,
   listDshMcpConfigs,
@@ -1893,6 +1893,20 @@ export class AgentService {
       }
       if (scope !== 'claudeai') toggleMcpConfig(name, disabled, scope, projectPath)
       await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: !disabled, saved: false })
+    })
+
+    // Claude Code re-reads changed settings files, so running sessions pick
+    // these rules up without a reconnect. Remote nodes do not serve them yet.
+    windowIpc.handle(AgentIpcChannels.MCP_LIST_TOOL_PERMISSIONS, async (_event, projectPath: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) return {}
+      return listMcpToolPermissions(projectPath)
+    })
+
+    windowIpc.handle(AgentIpcChannels.MCP_SET_TOOL_PERMISSION, async (_event, projectPath: string, serverName: string, toolName: string, permission: McpToolPermission | null, scope: ResourceScope) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) throw new Error('MCP tool permissions are not supported on remote projects')
+      setMcpToolPermission(projectPath, serverName, toolName, permission, scope)
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string, harness?: HarnessId) => {

@@ -51,7 +51,13 @@ export async function evaluateWaitConditions(
   // A tab that has not printed anything yet is starting, not idle: a fresh login
   // shell must draw its prompt before "quiet for N ms" means anything.
   if (c.idleMs !== undefined) out.idle = session.lastOutputAt > 0 && now - session.lastOutputAt >= c.idleMs
-  if (c.exited) out.exited = session.status !== 'running' || !session.control.commandRunning
+  if (c.exited) {
+    // `commandRunning` drops as soon as the shell is foreground again, but the
+    // grant is cleared only inside `poll`. Observe here so a met wait has
+    // already released control, instead of racing the control interval.
+    if (session.status === 'running') session.control.poll()
+    out.exited = session.status !== 'running' || !session.control.commandRunning
+  }
   return out
 }
 

@@ -89,7 +89,7 @@ export function ReplyCommentChips({ comments, onOpen, onRemove, onClear }: Reply
                     <StickyPinFace swatch={stickyForIndex(index)} isDark={isDark} index={index} size={14} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-xs leading-relaxed text-foreground/90">{c.text}</span>
-                      <span className="mt-0.5 line-clamp-2 border-l-2 border-border pl-1.5 text-[11px] leading-snug text-muted-foreground">{c.quote}</span>
+                      <span className="mt-0.5 line-clamp-2 border-l-2 border-border pl-1.5 text-xs leading-snug text-muted-foreground">{c.quote}</span>
                     </span>
                   </button>
                   <button

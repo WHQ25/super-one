@@ -1,5 +1,5 @@
 /**
- * Storybook: Settings → Harnesses → Plugins tab (Claude marketplace surface).
+ * Storybook: Settings → Harnesses → Plugins tab (Claude and Codex marketplaces).
  * Every plugin/marketplace IPC is mocked, so rows can be expanded, installed and
  * browsed without a real Claude config directory or network access.
  */
@@ -301,6 +301,33 @@ export const Marketplaces: Story = {
   decorators: [seed({ plugins: INSTALLED, marketplace: MARKETPLACE })],
   play: async ({ canvasElement }) => {
     await expect(await body(canvasElement).findByText(OFFICIAL.marketplace)).toBeInTheDocument()
+  },
+}
+
+export const CodexRemoteMarketplace: Story = {
+  decorators: [(Story) => {
+    let installed = false
+    const plugins = (healthInstalled: boolean) => [
+      { id: 'plugin_gmail', name: 'Gmail', description: 'Read and manage Gmail', iconUrl: null, iconUrlDark: null, install: null, installed: false, installedKey: null },
+      { id: 'plugin_health', name: 'Health', description: 'Explore your health data', iconUrl: null, iconUrlDark: null, install: healthInstalled ? null : { pluginName: 'plugin_health', remoteMarketplaceName: 'openai-curated-remote' }, installed: healthInstalled, installedKey: healthInstalled ? 'health@openai-curated-remote' : null },
+    ]
+    mockIpc('app', 'codexListPluginDirectory', async () => ({
+      remote: false,
+      sections: [{ id: 'featured', title: 'Popular', urlSlug: 'featured', plugins: plugins(installed) }],
+    }))
+    mockIpc('app', 'codexSearchPlugins', async () => ({ plugins: [], remote: false }))
+    mockIpc('app', 'codexListPersonalPlugins', async () => ({ plugins: [], remote: false }))
+    mockIpc('app', 'codexInstallPluginTarget', async () => { installed = true })
+    mockIpc('app', 'cacheRemoteImage', async () => null)
+    useAppStore.setState({ settingsProvider: 'codex', currentFolder: '/project' })
+    useSettingsStore.setState({ plugins: [], marketplacePlugins: [], pluginDetail: null, marketplacePluginDetail: null })
+    return <Story />
+  }],
+  play: async ({ canvasElement }) => {
+    const screen = body(canvasElement)
+    await expect(await screen.findByRole('tab', { name: 'Public' })).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Install Health' }))
+    await expect(await screen.findByRole('button', { name: 'Health actions' })).toBeInTheDocument()
   },
 }
 

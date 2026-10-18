@@ -228,6 +228,8 @@ import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessio
 import { CodexExperimentService } from './codex/codex-experiment-service'
 import { createHarnessCatalog } from './harness/harness-catalog'
 import { CodexPluginsService } from './codex/codex-plugins-service'
+import { fetchCodexPluginCategory, fetchCodexPluginDetail, fetchCodexPluginHome } from './codex/codex-plugin-home'
+import { applyCodexInstalledCards, applyCodexInstalledPlugins, CodexPluginDirectoryError, type CodexPluginInstallTarget } from '@superone/shared/codex-plugin-shelf'
 import { CodexHooksService } from './codex/codex-hooks-service'
 import { CodexMarketplaceService } from './codex/codex-marketplace-service'
 import { setCodexSkillsWatcherWindow } from './codex/codex-skills-watcher'
@@ -2801,6 +2803,62 @@ function registerIpcHandlers(): void {
       return
     }
     await codexPluginsService.installPlugin(projectPath, key)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_CATEGORY, async (_event, projectPath: string, slug: string, pageToken?: string | null) => {
+    const remote = Boolean(projectPath && parseRemoteProjectKey(projectPath))
+    const page = await fetchCodexPluginCategory(slug, pageToken)
+    if (remote) return { ...page, remote: true }
+    try {
+      const installed = await codexPluginsService.listInstalledIdentities(projectPath ?? '')
+      return { ...page, plugins: applyCodexInstalledCards(page.plugins, installed), remote: false }
+    } catch {
+      return { ...page, remote: false }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_DETAIL, async (_event, projectPath: string, pluginId: string) => {
+    const remote = Boolean(projectPath && parseRemoteProjectKey(projectPath))
+    const plugin = await fetchCodexPluginDetail(pluginId)
+    if (remote) return { plugin, remote: true }
+    try {
+      const installed = await codexPluginsService.listInstalledIdentities(projectPath ?? '')
+      const [stamped] = applyCodexInstalledCards([plugin], installed)
+      return { plugin: stamped ?? plugin, remote: false }
+    } catch {
+      return { plugin, remote: false }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_DIRECTORY, async (_event, projectPath: string) => {
+    const remote = Boolean(projectPath && parseRemoteProjectKey(projectPath))
+    const sections = await fetchCodexPluginHome()
+    if (remote) return { sections, remote: true }
+    try {
+      const installed = await codexPluginsService.listInstalledIdentities(projectPath ?? '')
+      return { sections: applyCodexInstalledPlugins(sections, installed), remote: false }
+    } catch {
+      return { sections, remote: false }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_SEARCH, async (_event, projectPath: string, searchTerm: string) => {
+    if (projectPath && parseRemoteProjectKey(projectPath)) return { plugins: [], remote: true }
+    const plugins = await codexPluginsService.searchPluginShelf(projectPath ?? '', searchTerm)
+    return { plugins, remote: false }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_PERSONAL, async (_event, projectPath: string) => {
+    if (projectPath && parseRemoteProjectKey(projectPath)) return { plugins: [], remote: true }
+    const plugins = await codexPluginsService.listPersonalPluginShelf(projectPath ?? '')
+    return { plugins, remote: false }
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_PLUGINS_INSTALL_TARGET, async (_event, projectPath: string, target: CodexPluginInstallTarget) => {
+    if (projectPath && parseRemoteProjectKey(projectPath)) {
+      throw new Error(CodexPluginDirectoryError.remoteInstall)
+    }
+    await codexPluginsService.installPluginTarget(projectPath ?? '', target)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_MCP_SAVE_CONFIG, (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: 'user' | 'project') => {

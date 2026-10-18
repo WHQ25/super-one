@@ -440,8 +440,9 @@ describe('dispatchCodexRpc', () => {
     }
   })
 
-  it('codex.plugins.list|install smoke with mocked app-server', async () => {
+  it.each(['local', 'remote'] as const)('lists and installs %s plugins through the node RPC', async (source) => {
     let installed = false
+    const installRequests: Record<string, unknown>[] = []
     const spawnFn: CodexSpawnFn = vi.fn(() => {
       const child = createFakeChild()
       attachAutoResponder(child, {
@@ -449,20 +450,22 @@ describe('dispatchCodexRpc', () => {
           marketplaces: [
             {
               name: 'demo-mp',
-              path: '/mp',
+              path: source === 'local' ? '/mp' : null,
               plugins: [
                 {
                   id: 'demo@demo-mp',
+                  remotePluginId: source === 'remote' ? 'plugin_backend_123' : null,
                   name: 'demo',
                   installed,
                   enabled: installed,
-                  source: { path: '/mp/demo' },
+                  source: source === 'local' ? { type: 'local', path: '/mp/demo' } : { type: 'remote' },
                 },
               ],
             },
           ],
         }),
-        'plugin/install': () => {
+        'plugin/install': (params) => {
+          installRequests.push(params)
           installed = true
           return {}
         },
@@ -482,6 +485,11 @@ describe('dispatchCodexRpc', () => {
     expect(list1?.error).toBeUndefined()
     expect((list1?.result as { plugins: unknown[] }).plugins).toEqual([])
 
+    const marketplace = await dispatchCodexRpc('codex.plugins.list', { projectId: 'p1', marketplace: true }, ctx)
+    expect((marketplace?.result as { plugins: unknown[] }).plugins).toEqual([
+      expect.objectContaining({ key: 'demo@demo-mp', installed: false }),
+    ])
+
     const install = await dispatchCodexRpc(
       'codex.plugins.install',
       { projectId: 'p1', key: 'demo@demo-mp' },
@@ -489,6 +497,9 @@ describe('dispatchCodexRpc', () => {
     )
     expect(install?.error).toBeUndefined()
     expect(install?.result).toMatchObject({ ok: true, key: 'demo@demo-mp' })
+    expect(installRequests).toEqual([source === 'local'
+      ? { marketplacePath: '/mp', pluginName: 'demo' }
+      : { remoteMarketplaceName: 'demo-mp', pluginName: 'plugin_backend_123' }])
 
     const list2 = await dispatchCodexRpc('codex.plugins.list', { projectId: 'p1' }, ctx)
     expect((list2?.result as { plugins: Array<{ key: string }> }).plugins[0]?.key).toBe(

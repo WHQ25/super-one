@@ -23,6 +23,7 @@ import type { CodexAppServerHandle } from './app-server-client'
 import { safePublicError } from './app-server-client'
 import { trackCodexSubscription } from './subscription-usage'
 import { readCachedCodexUsage, UsageThrottle, USAGE_POLL_MS } from './codex-usage-cache'
+import { buildCodexPluginRequestParams, type CodexPluginTarget } from './plugin-target'
 
 const rateLimitThrottle = new UsageThrottle<CodexRateLimits | null>(USAGE_POLL_MS)
 const accountUsageThrottle = new UsageThrottle<CodexAccountUsage | null>(USAGE_POLL_MS)
@@ -489,11 +490,8 @@ export async function importExternalAgentConfig(
   }
 }
 
-export interface CodexPluginInventoryRecord {
+export interface CodexPluginInventoryRecord extends CodexPluginTarget {
   key: string
-  name: string
-  marketplace: string
-  marketplacePath: string
   sourcePath?: string
   installed: boolean
   enabled: boolean
@@ -514,7 +512,7 @@ export async function listPluginInventory(
     if (!marketplace) continue
     const marketplaceName = readString(marketplace.name)
     const marketplacePath = readString(marketplace.path)
-    if (!marketplaceName || !marketplacePath) continue
+    if (!marketplaceName) continue
     const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : []
     for (const rawPlugin of plugins) {
       const plugin = asRecord(rawPlugin)
@@ -529,6 +527,7 @@ export async function listPluginInventory(
         name,
         marketplace: marketplaceName,
         marketplacePath,
+        remotePluginId: readString(plugin.remotePluginId) ?? undefined,
         sourcePath,
         installed: readBoolean(plugin.installed) ?? false,
         enabled: readBoolean(plugin.enabled) ?? false,
@@ -540,10 +539,9 @@ export async function listPluginInventory(
 
 export async function installPlugin(
   client: CodexAppServerHandle,
-  marketplacePath: string,
-  pluginName: string,
+  plugin: CodexPluginTarget,
 ): Promise<void> {
-  await client.request('plugin/install', { marketplacePath, pluginName })
+  await client.request('plugin/install', buildCodexPluginRequestParams(plugin))
 }
 
 export async function uninstallPlugin(

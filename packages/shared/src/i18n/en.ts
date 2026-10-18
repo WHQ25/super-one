@@ -3979,6 +3979,23 @@ export type Messages = {
       title: string
       subtitleClaude: string
       subtitleCodex: string
+      tabPublic: string
+      tabPersonal: string
+      directorySearchPlaceholder: string
+      unavailableNamed: string
+      installNamed: string
+      uninstallPlugin: string
+      pluginActions: string
+      emptyPersonal: string
+      emptyPersonalHint: string
+      emptyDirectory: string
+      directoryError: string
+      directorySignedOut: string
+      directoryExpired: string
+      searching: string
+      loadMore: string
+      remoteInstallUnavailable: string
+      remoteDirectoryHint: string
       tabMarketplace: string
       tabInstalled: string
       emptyMarketplace: string
@@ -4034,6 +4051,10 @@ export type Messages = {
         privacy: string
         terms: string
         starterPrompts: string
+        developer: string
+        category: string
+        version: string
+        byDeveloper: string
         noFiles: string
         selectResource: string
         emptyFolder: string
@@ -8572,7 +8593,24 @@ export const en: Messages = {
     plugins: {
       title: 'Plugins',
       subtitleClaude: 'Browse and manage Claude Code plugins',
-      subtitleCodex: 'Browse and manage Codex plugins',
+      subtitleCodex: 'Connect plugins to let Codex work across your tools',
+      tabPublic: 'Public',
+      tabPersonal: 'Personal',
+      directorySearchPlaceholder: 'Search plugins',
+      unavailableNamed: '{{name}} is unavailable',
+      installNamed: 'Install {{name}}',
+      uninstallPlugin: 'Uninstall',
+      pluginActions: '{{name}} actions',
+      emptyPersonal: 'No personal plugins',
+      emptyPersonalHint: 'Plugins you create or that are shared with you show up here.',
+      emptyDirectory: 'No plugins to show',
+      directoryError: 'Could not load plugins.',
+      directorySignedOut: 'Sign in to Codex to browse plugins.',
+      directoryExpired: 'Codex login expired. Open Codex to refresh it.',
+      searching: 'Searching plugins…',
+      loadMore: 'Load more plugins',
+      remoteInstallUnavailable: 'Installing curated plugins on a remote node is not available yet.',
+      remoteDirectoryHint: 'This remote project cannot search or install curated plugins yet.',
       tabMarketplace: 'Marketplaces',
       tabInstalled: 'Installed ({{count}})',
       emptyMarketplace: 'No marketplaces found',
@@ -8628,6 +8666,10 @@ export const en: Messages = {
         privacy: 'Privacy',
         terms: 'Terms',
         starterPrompts: 'Starter Prompts',
+        developer: 'Developer',
+        category: 'Category',
+        version: 'Version',
+        byDeveloper: 'By {{name}}',
         noFiles: 'No resources in this plugin',
         selectResource: 'Select a resource to preview',
         emptyFolder: 'Empty Folder',

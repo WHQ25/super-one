@@ -1,5 +1,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, resolve } from 'path'
+import { buildCodexPluginRequestParams, type CodexPluginTarget } from '@superone/codex/plugin-target'
+import {
+  codexInstalledIdentities,
+  codexPluginInstallParams,
+  codexShelfCardsFromList,
+  codexShelfCardsFromSearch,
+  type CodexInstalledPluginIdentity,
+  type CodexPluginInstallTarget,
+  type CodexPluginShelfCard,
+} from '@superone/shared/codex-plugin-shelf'
 import type {
   MarketplacePlugin,
   PluginAppSummary,
@@ -13,13 +23,12 @@ import type {
 } from '@superone/shared/agent-types'
 import type { CodexExperimentService } from './codex-experiment-service'
 
-interface PluginInventoryRecord {
+interface PluginInventoryRecord extends CodexPluginTarget {
   key: string
-  name: string
-  marketplace: string
   marketplaceDisplayName?: string
-  marketplacePath: string
   sourcePath?: string
+  version?: string
+  localVersion?: string
   installed: boolean
   enabled: boolean
   installPolicy?: PluginInstallPolicy
@@ -122,13 +131,13 @@ function readPluginManifest(sourcePath: string): PluginManifest | null {
   }
 }
 
-function detectPluginContents(sourcePath: string): Omit<PluginInfo, 'name' | 'marketplace' | 'key' | 'scope' | 'description' | 'author' | 'version' | 'installPath' | 'installedAt' | 'latestVersion' | 'hasUpdate'> {
+function detectPluginContents(sourcePath?: string): Omit<PluginInfo, 'name' | 'marketplace' | 'key' | 'scope' | 'description' | 'author' | 'version' | 'installPath' | 'installedAt' | 'latestVersion' | 'hasUpdate'> {
   return {
-    hasCommands: existsSync(join(sourcePath, 'commands')),
-    hasAgents: existsSync(join(sourcePath, 'agents')),
-    hasSkills: existsSync(join(sourcePath, 'skills')),
-    hasHooks: existsSync(join(sourcePath, 'hooks')) || existsSync(join(sourcePath, 'hooks.json')),
-    hasMcpServers: existsSync(join(sourcePath, '.mcp.json')),
+    hasCommands: !!sourcePath && existsSync(join(sourcePath, 'commands')),
+    hasAgents: !!sourcePath && existsSync(join(sourcePath, 'agents')),
+    hasSkills: !!sourcePath && existsSync(join(sourcePath, 'skills')),
+    hasHooks: !!sourcePath && (existsSync(join(sourcePath, 'hooks')) || existsSync(join(sourcePath, 'hooks.json'))),
+    hasMcpServers: !!sourcePath && existsSync(join(sourcePath, '.mcp.json')),
   }
 }
 
@@ -174,7 +183,7 @@ function mapMarketplacePlugin(record: PluginInventoryRecord): MarketplacePlugin 
 }
 
 function mapInstalledPlugin(
-  record: PluginInventoryRecord & { sourcePath: string },
+  record: PluginInventoryRecord,
   description: string,
   author: string | undefined,
   version: string | undefined,
@@ -188,7 +197,7 @@ function mapInstalledPlugin(
     description,
     ...buildPluginMetadata({ ...record, developerName: author ?? record.developerName }),
     version,
-    installPath: record.sourcePath,
+    installPath: record.sourcePath ?? '',
     ...contents,
     hasUpdate: false,
   }
@@ -215,7 +224,7 @@ export class CodexPluginsService {
 
         const marketplaceName = readString(marketplace.name)
         const marketplacePath = readString(marketplace.path)
-        if (!marketplaceName || !marketplacePath) continue
+        if (!marketplaceName) continue
         const marketplaceInterface = asRecord(marketplace.interface)
 
         const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : []
@@ -236,7 +245,10 @@ export class CodexPluginsService {
             marketplace: marketplaceName,
             marketplaceDisplayName: readString(marketplaceInterface?.displayName) ?? undefined,
             marketplacePath,
+            remotePluginId: readString(plugin.remotePluginId) ?? undefined,
             sourcePath,
+            version: readString(plugin.version) ?? undefined,
+            localVersion: readString(plugin.localVersion) ?? undefined,
             installed: readBoolean(plugin.installed) ?? false,
             enabled: readBoolean(plugin.enabled) ?? false,
             installPolicy: readPolicy(plugin.installPolicy, ['NOT_AVAILABLE', 'AVAILABLE', 'INSTALLED_BY_DEFAULT'] as const),
@@ -252,9 +264,14 @@ export class CodexPluginsService {
             termsOfServiceUrl: readString(pluginInterface?.termsOfServiceUrl) ?? readString(pluginInterface?.termsOfServiceURL) ?? undefined,
             defaultPrompts: readStringArray(pluginInterface?.defaultPrompt),
             brandColor: readString(pluginInterface?.brandColor) ?? undefined,
-            iconPath: resolvePluginAssetPath(pluginInterface?.composerIcon, sourcePath),
-            logoPath: resolvePluginAssetPath(pluginInterface?.logo, sourcePath),
-            screenshots: readResolvedAssetArray(pluginInterface?.screenshots, sourcePath),
+            iconPath: resolvePluginAssetPath(pluginInterface?.composerIcon, sourcePath)
+              ?? resolvePluginAssetPath(pluginInterface?.composerIconUrl),
+            logoPath: resolvePluginAssetPath(pluginInterface?.logo, sourcePath)
+              ?? resolvePluginAssetPath(pluginInterface?.logoUrl),
+            screenshots: [
+              ...readResolvedAssetArray(pluginInterface?.screenshots, sourcePath),
+              ...readResolvedAssetArray(pluginInterface?.screenshotUrls),
+            ],
           })
         }
       }
@@ -271,16 +288,16 @@ export class CodexPluginsService {
   async listPlugins(projectPath: string): Promise<PluginInfo[]> {
     const records = await this.listInventory(projectPath)
     return records
-      .filter((record): record is PluginInventoryRecord & { sourcePath: string } => record.installed && !!record.sourcePath)
+      .filter((record) => record.installed)
       .map((record) => {
         const sourcePath = record.sourcePath
-        const manifest = readPluginManifest(sourcePath)
+        const manifest = sourcePath ? readPluginManifest(sourcePath) : null
         const contents = detectPluginContents(sourcePath)
         return mapInstalledPlugin(
           record,
           record.shortDescription ?? record.longDescription ?? manifest?.description ?? '',
           record.developerName ?? manifest?.author?.name,
-          manifest?.version,
+          record.localVersion ?? manifest?.version ?? record.version,
           contents,
         )
       })
@@ -288,19 +305,16 @@ export class CodexPluginsService {
 
   async readPlugin(projectPath: string, key: string): Promise<PluginDetail | null> {
     const record = await this.findPlugin(projectPath, key)
-    if (!record || !record.sourcePath) return null
+    if (!record) return null
     const sourcePath = record.sourcePath
 
     const detail = await this.codexService.withAppServerRequest(projectPath, async (request) => {
-      return request('plugin/read', {
-        marketplacePath: record.marketplacePath,
-        pluginName: record.name,
-      })
+      return request('plugin/read', buildCodexPluginRequestParams(record))
     })
 
     const detailContainer = asRecord(detail)
     const detailRecord = asRecord(detailContainer?.plugin) ?? detailContainer
-    const manifest = readPluginManifest(sourcePath)
+    const manifest = sourcePath ? readPluginManifest(sourcePath) : null
     const contents = detectPluginContents(sourcePath)
     const summaryRecord = asRecord(detailRecord?.summary)
     const description = readString(detailRecord?.description)
@@ -316,7 +330,7 @@ export class CodexPluginsService {
       { ...record, sourcePath },
       description,
       author,
-      manifest?.version,
+      record.localVersion ?? manifest?.version ?? record.version,
       {
         ...contents,
         hasMcpServers: contents.hasMcpServers || mcpServers.length > 0,
@@ -363,7 +377,7 @@ export class CodexPluginsService {
       apps,
       skills,
       mcpServers,
-      files: scanDir(sourcePath),
+      files: sourcePath ? scanDir(sourcePath) : [],
     }
   }
 
@@ -392,10 +406,7 @@ export class CodexPluginsService {
     if (!record) throw new Error(`Unknown Codex plugin: ${key}`)
 
     await this.codexService.withAppServerRequest(projectPath, async (request) => {
-      await request('plugin/install', {
-        marketplacePath: record.marketplacePath,
-        pluginName: record.name,
-      })
+      await request('plugin/install', buildCodexPluginRequestParams(record))
     })
   }
 
@@ -404,6 +415,50 @@ export class CodexPluginsService {
       await request('plugin/uninstall', {
         pluginId: key,
       })
+    })
+  }
+
+  /** Installed plugin ids only. Does not load the remote catalog. */
+  async listInstalledIdentities(projectPath: string): Promise<CodexInstalledPluginIdentity[]> {
+    return this.codexService.withAppServerRequest(projectPath, async (request) => {
+      const result = await request('plugin/installed', compactRecord({
+        cwds: projectPath ? [projectPath] : undefined,
+      }))
+      return codexInstalledIdentities(result)
+    })
+  }
+
+  /** Public shelf search. An empty term is not sent. */
+  async searchPluginShelf(projectPath: string, searchTerm: string): Promise<CodexPluginShelfCard[]> {
+    const term = searchTerm.trim()
+    if (!term) return []
+    return this.codexService.withAppServerRequest(projectPath, async (request) => {
+      const result = await request('plugin/search', compactRecord({
+        searchTerm: term,
+        scope: 'global',
+        cwds: projectPath ? [projectPath] : undefined,
+        limit: 24,
+      }))
+      return codexShelfCardsFromSearch(result)
+    })
+  }
+
+  /** Plugins the user created or that were shared with them. Kinds stay explicit so the global catalog stays out. */
+  async listPersonalPluginShelf(projectPath: string): Promise<CodexPluginShelfCard[]> {
+    return this.codexService.withAppServerRequest(projectPath, async (request) => {
+      const result = await request('plugin/list', compactRecord({
+        cwds: projectPath ? [projectPath] : undefined,
+        marketplaceKinds: ['created-by-me-remote', 'shared-with-me'],
+      }))
+      return codexShelfCardsFromList(result)
+    })
+  }
+
+  /** Install a shelf card by the id already in hand. Does not call plugin/list. */
+  async installPluginTarget(projectPath: string, target: CodexPluginInstallTarget): Promise<void> {
+    const params = codexPluginInstallParams(target)
+    await this.codexService.withAppServerRequest(projectPath, async (request) => {
+      await request('plugin/install', params)
     })
   }
 }

@@ -4384,6 +4384,12 @@ export const AgentIpcChannels = {
   CODEX_PLUGINS_DELETE: 'codex:plugins-delete',
   CODEX_PLUGINS_LIST_MARKETPLACE: 'codex:plugins-list-marketplace',
   CODEX_PLUGINS_INSTALL: 'codex:plugins-install',
+  CODEX_PLUGINS_DIRECTORY: 'codex:plugins-directory',
+  CODEX_PLUGINS_CATEGORY: 'codex:plugins-category',
+  CODEX_PLUGINS_DETAIL: 'codex:plugins-detail',
+  CODEX_PLUGINS_SEARCH: 'codex:plugins-search',
+  CODEX_PLUGINS_PERSONAL: 'codex:plugins-personal',
+  CODEX_PLUGINS_INSTALL_TARGET: 'codex:plugins-install-target',
 
   // Codex MCP config
   CODEX_MCP_LIST_CONFIG: 'codex:mcp-list-config',

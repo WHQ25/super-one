@@ -13,6 +13,7 @@ import type { PreviewerFile } from '@superone/shared/generative-ui/native-widget
 import type { ComputerUseDisplayInfo, ComputerUseViewfinderClaim, ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
 import type { AttachmentOriginalStatus, OpenCodeResources, StageAttachmentOriginalRequest } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
+import type { CodexPluginCategoryResult, CodexPluginDetailResult, CodexPluginDirectoryResult, CodexPluginInstallTarget, CodexPluginShelfListResult } from '@superone/shared/codex-plugin-shelf'
 import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, ControllerPairingEvent, NodeHostController, NodePairingEvent, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexConfigRequirements, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexResources, CodexSetAuthRequest, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, McpToolPermission, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, ScheduledSend, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppHostLogEvent, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
@@ -354,6 +355,15 @@ interface AppAPI extends WindowLayoutAPI {
   codexDeletePlugin(projectPath: string, key: string, scope: ResourceScope): Promise<void>
   codexListMarketplacePlugins(projectPath: string): Promise<MarketplacePlugin[]>
   codexInstallPlugin(projectPath: string, key: string, scope: ResourceScope): Promise<void>
+  /** Curated public shelves. Does not include the full remote catalog. */
+  codexListPluginDirectory(projectPath: string): Promise<CodexPluginDirectoryResult>
+  /** One page of a curated category. Pass the previous `nextPageToken`, or null for the first page. */
+  codexListPluginCategory(projectPath: string, slug: string, pageToken?: string | null): Promise<CodexPluginCategoryResult>
+  /** Hosted metadata for one curated plugin. Does not read the local install. */
+  codexGetPluginDetail(projectPath: string, pluginId: string): Promise<CodexPluginDetailResult>
+  codexSearchPlugins(projectPath: string, searchTerm: string): Promise<CodexPluginShelfListResult>
+  codexListPersonalPlugins(projectPath: string): Promise<CodexPluginShelfListResult>
+  codexInstallPluginTarget(projectPath: string, target: CodexPluginInstallTarget): Promise<void>
 
   // Codex MCP config
   codexListMcpConfigs(projectPath: string): Promise<McpServerConfig[]>

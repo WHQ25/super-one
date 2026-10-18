@@ -78,10 +78,10 @@ voices still come from
 | `model/list` | partial | Desktop catalog, efforts and speed tiers; availableAccessPrograms is not mapped. | `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `modelProvider/capabilities/read` | unused | No client call or dedicated handler. | — |
 | `permissionProfile/list` | unused | No client call or dedicated handler. | — |
-| `plugin/install` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-plugins-service.ts` |
-| `plugin/installed` | unused | No client call or dedicated handler. | — |
-| `plugin/list` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-plugins-service.ts` |
-| `plugin/read` | partial | Desktop plugin detail; onboardingSkill is not exposed. | `apps/desktop/src/main/codex/codex-plugins-service.ts` |
+| `plugin/install` | used | Local entries use marketplacePath/name; remote entries use remoteMarketplaceName/backend remotePluginId on desktop and nodes. | `packages/codex/src/codex-admin.ts`, `packages/codex/src/plugin-target.ts`, `apps/desktop/src/main/codex/codex-plugins-service.ts` |
+| `plugin/installed` | partial | Desktop reads installed ids to mark curated shelf cards. It is not the plugins page list. | `apps/desktop/src/main/codex/codex-plugins-service.ts` |
+| `plugin/list` | used | Installed and marketplace management still list marketplaces, including null remote paths. The Codex shelves do not use the unfiltered call; personal plugins pass explicit marketplace kinds. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-plugins-service.ts` |
+| `plugin/read` | partial | Desktop local and remote detail; local file exploration requires sourcePath. Remote skills without paths and onboardingSkill are not exposed. | `apps/desktop/src/main/codex/codex-plugins-service.ts`, `packages/codex/src/plugin-target.ts` |
 | `plugin/reconcile` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `plugin/share/checkout` | unused | No client call or dedicated handler. | — |
 | `plugin/share/delete` | unused | No client call or dedicated handler. | — |
@@ -150,7 +150,7 @@ voices still come from
 | `memory/reset` | unused | No client call or dedicated handler. | — |
 | `memory/status` | unused | No client call or dedicated handler. | — |
 | `mock/experimentalMethod` | unused | No client call or dedicated handler. | — |
-| `plugin/search` | unused | No client call or dedicated handler. | — |
+| `plugin/search` | used | Public search on the Codex plugin shelves. An empty term is not sent. | `apps/desktop/src/main/codex/codex-plugins-service.ts` |
 | `process/kill` | unused | No client call or dedicated handler. | — |
 | `process/resizePty` | unused | No client call or dedicated handler. | — |
 | `process/spawn` | unused | No client call or dedicated handler. | — |

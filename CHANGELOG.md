@@ -15,6 +15,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Browse Codex plugins on desktop from curated home shelves, category pages,
+  and a detail page for apps, skills, and developer metadata. Install remote
+  plugins with their backend ids on desktop and remote nodes.
 - Preview Codex realtime voices in desktop preferences, grouped by their primary
   language and accent.
 - Offer a new-session handoff on desktop and phone when a long session's reported

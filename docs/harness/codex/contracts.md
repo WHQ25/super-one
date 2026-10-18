@@ -5,6 +5,62 @@ Upstream behavior SuperOne depends on that the app-server schema does not state.
 its area. Realtime is experimental upstream (`features.realtime_conversation`,
 enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 
+## Remote plugin catalog identity
+
+- **Behavior:** A remote-only marketplace has `path: null`; its plugin source is
+  `{ type: "remote" }` and has no local filesystem path, including after install.
+  `plugin/read` and `plugin/install` require `remoteMarketplaceName` plus the
+  backend `remotePluginId` in `pluginName`. Local marketplace entries retain
+  `marketplacePath` plus their local plugin name. Display names and local plugin
+  keys are not backend remote IDs.
+- **Observed:** Exact 0.163.0 protocol/source and a live read-only `plugin/list`
+  on 2026-10-18. Remote read/install request shapes are covered by fixtures;
+  no live installation was performed.
+- **Depends on it:** Desktop `codex-plugins-service.ts` and shared
+  `codex-admin.ts` retain remote marketplaces. Both use
+  `packages/codex/src/plugin-target.ts` to address read/install requests.
+  Desktop displays remote artwork URLs and catalog versions without reading a
+  local manifest or scanning files when no source path exists.
+- **Guard:** Desktop `codex-plugins-service.test.ts`, node
+  `codex-handlers.test.ts`, and the `CodexRemoteMarketplace` PluginsPage story.
+  Remote skill file exploration and plugin onboarding remain outside this path.
+
+## Curated plugin home
+
+- **Behavior:** The Codex app's plugin home is `GET /ps/plugins/home` on the
+  ChatGPT plugin service, not `featuredPluginIds` and not the full
+  `plugin/list` catalog. Observed on 2026-10-18: 17 ordered sections, nine
+  plugins each. The app renders six per section. Opening a category calls
+  `GET /ps/plugin-categories/{urlSlug}/plugins?scope=GLOBAL&limit=50` and
+  follows `pagination.next_page_token` as `pageToken`. The slug is the home
+  section `url_slug`. The server returns up to about 700 plugins per page.
+  Popular is one page of 50. Productivity is 1640 plugins across three pages.
+  Opening a plugin calls `GET /ps/plugins/{pluginId}`. That document's
+  `release.interface` carries the long description, developer, category,
+  version, https links, capabilities, and screenshots. Apps come from
+  `release.app_templates` (name, description, and logo). Skills come from
+  `release.skills`, using the skill name, short description, and icon. MCP
+  names come from `release.mcp_servers`. Installed state is
+  not on the document; the page stamps it from `plugin/installed`. The page
+  does not call `plugin/read` or `plugin/list`. A card installs with
+  `plugin/install` using `remoteMarketplaceName: openai-curated-remote` and
+  `pluginName` set to the
+  plugin id, without listing the catalog. `NOT_AVAILABLE` and
+  `DISABLED_BY_ADMIN` are not installable. Public search is `plugin/search`
+  and is not sent for an empty term. Personal plugins are `plugin/list` with
+  `marketplaceKinds` `created-by-me-remote` and `shared-with-me` only.
+- **Observed:** Live read-only home, category, and plugin-detail responses
+  and the installed Codex app client, 2026-10-18, Codex 0.163.0. No plugin
+  was installed. The sampled detail document was the GitHub curated plugin.
+- **Depends on it:** Desktop `codex-plugin-home.ts` fetches the shelves,
+  category pages, and plugin documents with the existing Codex login and does
+  not return the access token. The Codex plugins page renders those shelves,
+  category pages, and plugin pages and does not call the unfiltered
+  `plugin/list`.
+- **Guard:** `packages/shared/src/codex-plugin-shelf.test.ts`,
+  `codex-plugin-home.test.ts`, `CodexPluginDirectory.test.tsx`, and the
+  `Settings/Harnesses/Plugins/Codex` stories.
+
 ## Compaction boundaries inside a turn
 
 `contextCompaction` items have their own IDs. SuperOne deduplicates their

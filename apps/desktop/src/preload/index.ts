@@ -1343,6 +1343,18 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_LIST_MARKETPLACE, projectPath),
   codexInstallPlugin: (projectPath: string, key: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_INSTALL, projectPath, key, scope),
+  codexListPluginDirectory: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_DIRECTORY, projectPath),
+  codexListPluginCategory: (projectPath: string, slug: string, pageToken?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_CATEGORY, projectPath, slug, pageToken ?? null),
+  codexGetPluginDetail: (projectPath: string, pluginId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_DETAIL, projectPath, pluginId),
+  codexSearchPlugins: (projectPath: string, searchTerm: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_SEARCH, projectPath, searchTerm),
+  codexListPersonalPlugins: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_PERSONAL, projectPath),
+  codexInstallPluginTarget: (projectPath: string, target: { pluginName: string; remoteMarketplaceName?: string; marketplacePath?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLUGINS_INSTALL_TARGET, projectPath, target),
 
   // Codex MCP config
   codexListMcpConfigs: (projectPath: string) =>

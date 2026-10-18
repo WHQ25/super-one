@@ -50,6 +50,7 @@ import {
 import { SettingsCard, SettingsRow } from '@/components/settings/SettingsSection'
 import { SettingsEmptyState, SettingsLoadingState } from '@/components/settings/SettingsEmptyState'
 import { SettingsSegmentedControl } from '@/components/settings/SettingsSegmentedControl'
+import { CodexPluginDirectory } from './CodexPluginDirectory'
 import { resolveAssetUrls } from '@/lib/path-utils'
 import { scopeBadgeClass } from '@/lib/scope-badge'
 import type {
@@ -1636,7 +1637,7 @@ function MarketplaceDetailView({
 
 // --- Add marketplace dialog ---
 
-function AddMarketplaceDialog({
+export function AddMarketplaceDialog({
   open,
   onOpenChange,
   onAdd,
@@ -1761,6 +1762,26 @@ function AddMarketplaceBody({
 type PluginsTab = 'marketplace' | 'installed'
 
 export function PluginsPage() {
+  const settingsProvider = useAppStore((s) => s.settingsProvider)
+  const addMarketplace = useSettingsStore((s) => s.addMarketplace)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  if (settingsProvider === 'codex') {
+    return (
+      <>
+        <CodexPluginDirectory onAddMarketplace={() => setAddDialogOpen(true)} />
+        <AddMarketplaceDialog
+          open={addDialogOpen}
+          onOpenChange={setAddDialogOpen}
+          onAdd={addMarketplace}
+          allowProjectScope={false}
+        />
+      </>
+    )
+  }
+  return <MarketplacePluginsPage />
+}
+
+function MarketplacePluginsPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const settingsProvider = useAppStore((s) => s.settingsProvider)

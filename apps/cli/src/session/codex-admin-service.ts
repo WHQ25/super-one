@@ -293,7 +293,7 @@ export class CodexAdminService {
       const records = await listPluginInventory(client, path)
       const record = records.find((r) => r.key === key)
       if (!record) throw new Error(`Unknown Codex plugin: ${key}`)
-      await installPlugin(client, record.marketplacePath, record.name)
+      await installPlugin(client, record)
     })
   }
 

@@ -107,16 +107,17 @@ describe('CodexPluginsService', () => {
           marketplaces: [
             {
               name: 'remote-marketplace',
-              path: 'https://example.com/marketplace.json',
+              path: null,
               plugins: [
                 {
                   id: 'remote-plugin@remote-marketplace',
+                  remotePluginId: 'plugin_backend_123',
                   name: 'remote-plugin',
                   installed: false,
                   enabled: false,
                   installPolicy: 'AVAILABLE',
                   authPolicy: 'ON_INSTALL',
-                  source: { type: 'remote', url: 'https://example.com/remote-plugin.zip' },
+                  source: { type: 'remote' },
                   interface: {
                     displayName: 'Remote Plugin',
                     shortDescription: 'Install remotely',
@@ -152,9 +153,63 @@ describe('CodexPluginsService', () => {
     await service.installPlugin('/project', 'remote-plugin@remote-marketplace')
 
     expect(requestMock).toHaveBeenLastCalledWith('plugin/install', {
-      marketplacePath: 'https://example.com/marketplace.json',
-      pluginName: 'remote-plugin',
+      remoteMarketplaceName: 'remote-marketplace',
+      pluginName: 'plugin_backend_123',
     })
+  })
+
+  it('keeps installed remote plugins and reads their details without local filesystem access', async () => {
+    const requestMock = vi.fn(async (method: string) => {
+      if (method === 'plugin/list') return {
+        marketplaces: [{
+          name: 'openai-curated-remote',
+          path: null,
+          plugins: [{
+            id: 'github@openai-curated-remote',
+            remotePluginId: 'app_github_123',
+            name: 'github',
+            installed: true,
+            enabled: true,
+            version: '2.0.0',
+            localVersion: '1.0.0',
+            source: { type: 'remote' },
+            interface: {
+              displayName: 'GitHub',
+              shortDescription: 'Manage GitHub',
+              composerIconUrl: 'https://example.com/github.svg',
+              logoUrl: 'https://example.com/github.png',
+              screenshotUrls: ['https://example.com/github-shot.png'],
+            },
+          }],
+        }],
+      }
+      if (method === 'plugin/read') return { plugin: { description: 'Remote GitHub details', mcpServers: ['github'], apps: [], skills: [] } }
+      throw new Error(`unexpected method ${method}`)
+    })
+    withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(requestMock))
+
+    expect(await service.listPlugins('/project')).toEqual([expect.objectContaining({
+      key: 'github@openai-curated-remote',
+      displayName: 'GitHub',
+      installPath: '',
+      version: '1.0.0',
+      iconPath: 'https://example.com/github.svg',
+      logoPath: 'https://example.com/github.png',
+      screenshots: ['https://example.com/github-shot.png'],
+    })])
+    expect(await service.readPlugin('/project', 'github@openai-curated-remote')).toMatchObject({
+      description: 'Remote GitHub details',
+      hasMcpServers: true,
+      files: [],
+    })
+    expect(requestMock).toHaveBeenLastCalledWith('plugin/read', {
+      remoteMarketplaceName: 'openai-curated-remote',
+      pluginName: 'app_github_123',
+    })
+    expect(await service.readPluginFile('/project', 'github@openai-curated-remote', 'README.md')).toBeNull()
+    expect(readFileSyncMock).not.toHaveBeenCalled()
+    expect(readdirSyncMock).not.toHaveBeenCalled()
+    expect(existsSyncMock).not.toHaveBeenCalled()
   })
 
   it('maps installed plugins and reads manifest metadata', async () => {
@@ -460,5 +515,67 @@ describe('CodexPluginsService', () => {
     expect(requestMock).toHaveBeenCalledWith('plugin/uninstall', {
       pluginId: 'github@openai-curated',
     })
+  })
+
+  it('reads installed identities without listing the catalog', async () => {
+    const requestMock = vi.fn(async () => ({
+      marketplaces: [{
+        name: 'openai-curated-remote',
+        path: null,
+        plugins: [{ id: 'github@openai-curated-remote', remotePluginId: 'plugin_1', name: 'github', installed: true }],
+      }],
+    }))
+    withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(requestMock))
+
+    await expect(service.listInstalledIdentities('/project')).resolves.toEqual([{
+      key: 'github@openai-curated-remote',
+      remotePluginId: 'plugin_1',
+      name: 'github',
+    }])
+    expect(requestMock).toHaveBeenCalledWith('plugin/installed', { cwds: ['/project'] })
+  })
+
+  it('searches the public shelf and skips an empty term', async () => {
+    const requestMock = vi.fn(async () => ({ data: [] }))
+    withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(requestMock))
+
+    await expect(service.searchPluginShelf('/project', '   ')).resolves.toEqual([])
+    expect(requestMock).not.toHaveBeenCalled()
+
+    await service.searchPluginShelf('/project', 'gmail')
+    expect(requestMock).toHaveBeenCalledWith('plugin/search', {
+      searchTerm: 'gmail',
+      scope: 'global',
+      cwds: ['/project'],
+      limit: 24,
+    })
+  })
+
+  it('lists personal plugins with explicit kinds', async () => {
+    const requestMock = vi.fn(async () => ({ marketplaces: [] }))
+    withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(requestMock))
+
+    await service.listPersonalPluginShelf('/project')
+    expect(requestMock).toHaveBeenCalledWith('plugin/list', {
+      cwds: ['/project'],
+      marketplaceKinds: ['created-by-me-remote', 'shared-with-me'],
+    })
+  })
+
+  it('installs a curated plugin by remote id without listing the catalog', async () => {
+    const requestMock = vi.fn(async () => ({}))
+    withAppServerRequestMock.mockImplementation(async (_projectPath, fn) => fn(requestMock))
+
+    await service.installPluginTarget('/project', {
+      pluginName: 'plugin_1',
+      remoteMarketplaceName: 'openai-curated-remote',
+    })
+    expect(requestMock).toHaveBeenCalledTimes(1)
+    expect(requestMock).toHaveBeenCalledWith('plugin/install', {
+      remoteMarketplaceName: 'openai-curated-remote',
+      pluginName: 'plugin_1',
+    })
+    await expect(service.installPluginTarget('/project', { pluginName: '../nope', remoteMarketplaceName: 'openai-curated-remote' })).rejects.toThrow(/plugin id/)
+    expect(requestMock).toHaveBeenCalledTimes(1)
   })
 })

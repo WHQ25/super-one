@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useWindowMiniModeStore } from '../stores/window-mini-mode'
 import {
   buildSessionMenuItems,
   resolveSessionIdForCopy,
@@ -153,14 +154,20 @@ describe('buildSessionMenuItems header vs sidebar shape', () => {
     expect(ids).toContain('mini')
   })
 
-  it('converts this window instead of spawning one when miniWindow is convert', () => {
+  it('converts this window instead of spawning one when miniWindow is convert', async () => {
+    // The fold store is process-wide. Another file may have left it mid-transition,
+    // and the native resize is scheduled on a microtask so the shell can paint first.
+    useWindowMiniModeStore.setState({ mode: null, phase: 'app', panelsFolded: false })
     const items = buildSessionMenuItems(base, '/Users/me/app', t, handlers, { miniWindow: 'convert' })
     const mini = item(items, 'mini')
     expect(mini?.label).toBe('sidebar.contextMenu.convertToMiniWindow')
     mini?.onSelect()
+    await Promise.resolve()
     // Fourth argument is the measured fold choreography — covered by the store's test.
     expect(window.app.convertWindowToMini).toHaveBeenCalledWith('/Users/me/app', 'sid-1', 'Chat', expect.any(Array))
     expect(window.app.openSessionWindow).not.toHaveBeenCalled()
+    await Promise.resolve()
+    useWindowMiniModeStore.setState({ mode: null, phase: 'app', panelsFolded: false })
   })
 
   it('spawns a separate mini window by default (sidebar rows)', () => {

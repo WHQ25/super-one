@@ -1,6 +1,6 @@
 # Claude Agent SDK API surface
 
-Ledger version: `0.3.300` · Check: `bun scripts/harness-api-inventory.ts claude`
+Ledger version: `0.3.302` · Check: `bun scripts/harness-api-inventory.ts claude`
 
 Every upstream interface of `@anthropic-ai/claude-agent-sdk` and how SuperOne uses it. Runtimes: **desktop** (local sessions), **node** (remote node CLI through `packages/claude`), **probe** (catalog queries with `maxTurns: 0`). Status vocabulary and row format: [docs/harness/README.md](../README.md#ledger-api-surfacemd). Undeclared messages and methods SuperOne relies on are in [contracts.md](contracts.md#typed-messages-may-not-be-emitted-untyped-ones-may-be).
 
@@ -25,9 +25,11 @@ Runtime exports of `sdk.d.ts`: functions, classes and constants. Types are not l
 | Name | Status | Usage | Code |
 |---|---|---|---|
 | `AbortError` | unused | No `instanceof AbortError` checks; interrupts are tracked by our own flags (`getInterrupted`, `signal.aborted`). | — |
+| `BUILTIN_TOOL_NAMES` | unused | Alpha list of built-in tool names for checking permission rules and tool settings; SuperOne keeps its own tool catalogs (backlog #21). | — |
 | `EXIT_REASONS` | n/a | SessionEnd hook reason enum; we register only PreToolUse and Stop hooks. | — |
 | `HOOK_EVENTS` | unused | Unused; we duplicate it in `packages/shared/src/agent-types.ts` (`HookEventName`) and `HookEditorDialog.tsx`, and both copies are already missing PreModelSwitch, PostModelSwitch, DirectoryAdded and MessageDisplay. | — |
 | `InMemorySessionStore` | unused | Reference `SessionStore` for transcript mirroring; SuperOne keeps its own SQLite transcript. | — |
+| `LEGACY_TOOL_NAME_ALIASES` | unused | Alpha map of former tool names that rules still accept; SuperOne writes only current `mcp__` rule names. | — |
 | `ORG_POLICY_LIMIT_PREFIXES` | unused | Unused; org-disabled errors fall through to the generic prose classifier in `packages/shared/src/agent-error.ts`. | — |
 | `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` | unused | Only matters for custom string system prompts; we use the `claude_code` preset plus `append`. | — |
 | `USAGE_LIMIT_ERROR_PREFIXES` | unused | Unused; we detect limits from `rate_limit_event` status `rejected`, the typed assistant error and the `/usage limit/` regex in `packages/shared/src/agent-error.ts`, not the SDK prefixes. | — |
@@ -89,7 +91,7 @@ Fields of `Options` passed to `query()` / `startup()`. "(warmup key)" marks fiel
 | `maxBudgetUsd` | unused | Would cap a session's spend in USD. | — |
 | `maxThinkingTokens` | deprecated | Deprecated upstream in favor of `thinking`, which we use. | — |
 | `maxTurns` | partial | Set to `0` only in the metadata probes (`/help` prompt), never in chat sessions. | `packages/claude/src/fetch-models.ts`, `apps/desktop/src/main/agent/claude-models.ts`, `apps/desktop/src/main/index.ts` |
-| `mcpServers` | used | Desktop passes `{superone: in-process sdk McpServer}`; node passes the merged disk MCP plus the host-action sdk server. | `apps/desktop/src/main/agent/claude-query.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
+| `mcpServers` | used | Desktop passes `{superone: in-process sdk McpServer}`; node passes the merged disk MCP plus the host-action sdk server. No entry sets `tools[].permission_policy`; per-tool MCP permissions are settings rules (backlog #20). | `apps/desktop/src/main/agent/claude-query.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `model` | used | Desktop and the node live session map it via `resolveMappedClaudeModelId`; `runClaudeSdkTurn` passes the raw value (warmup key). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
 | `onElicitation` | partial | Desktop only: MCP elicitation goes to the UI through `createOnElicitation`; node doesn't pass it. | `apps/desktop/src/main/agent/claude-query.ts`, `apps/desktop/src/main/agent/claude-permissions.ts` |
 | `onUserDialog` | unused | Would render CLI dialogs such as `refusal_fallback_prompt`. | — |
@@ -147,7 +149,7 @@ Methods of the `Query` returned by `query()`.
 | `reconnectMcpServer` | used | Reconnects an MCP server by name after its config is saved in the desktop MCP settings. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/desktop/src/main/agent/agent-service.ts` |
 | `reinitialize` | unused | Would re-send `initialize` after a transport gap to get back pending `can_use_tool` and dialog requests. | — |
 | `reloadOutputStyles` | unused | Would re-read the output-style directories in the middle of a session. | — |
-| `reloadPlugins` | used | Reloads plugins from disk after a plugin install, toggle or option change (desktop Plugins page, node plugin RPCs), and on user request; the answer refreshes the slash list and a non-zero `error_count` shows a plugin notice. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/desktop/src/main/agent/agent-service.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
+| `reloadPlugins` | used | Reloads plugins from disk after a plugin install, toggle or option change (desktop Plugins page, node plugin RPCs), and on user request; the answer refreshes the slash list and a non-zero `error_count` shows a plugin notice. `addPlugins` is unused (backlog #22). | `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/desktop/src/main/agent/agent-service.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `reloadSkills` | unused | Would refresh the skill list without restarting. SuperOne passes `skills` at spawn instead. | — |
 | `rewindFiles` | used | Desktop checkpoint restore and dry-run preview (`enableFileCheckpointing: true`), started from the renderer's rewind action. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `seedReadState` | unused | Would seed the Read cache so an Edit works after its Read was removed from context. | — |

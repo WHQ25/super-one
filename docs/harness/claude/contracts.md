@@ -224,6 +224,20 @@ re-check an entry when an upgrade touches its area.
   (main-thread-only SuperOne tools).
 - **Guard:** `apps/desktop/src/main/agent/claude-query.test.ts`.
 
+### MCP tool permission rule names
+
+- **Behavior:** A tool's rule name is `mcp__{server}__{tool}`, each segment with
+  characters outside `[a-zA-Z0-9_-]` replaced by `_`. For a `claude.ai ` server,
+  runs of `_` also collapse and are trimmed at the ends. Rules from user,
+  project and local settings merge; deny is checked before ask, and ask before
+  allow. An SDK `tools[].permission_policy` turns into the same rules.
+- **Observed:** 0.3.302, native binary (`Cn`, `qs`, `UQe`).
+- **Depends on it:** `claudeMcpToolRuleName` in `packages/shared/src/tool-ui.ts`
+  and `packages/runtime/src/fs/mcp-tool-permissions-claude.ts`, which back the
+  MCP settings page's per-tool permission control.
+- **Guard:** `packages/runtime/src/fs/mcp-tool-permissions-claude.test.ts` (name
+  shapes only; the binary's rule is unguarded).
+
 ### Subagents do not see the main system prompt append
 
 - **Behavior:** `systemPrompt.append` reaches the main agent only; there is no

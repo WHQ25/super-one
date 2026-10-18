@@ -36,6 +36,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Changed
 
 - Update bundled and managed Codex to 0.163.0 and expose its Realtime v3 voices.
+- Upgrade Claude Agent SDK to 0.3.302 (Claude Code 2.1.302).
 - Use compact realtime voice controls and an audio-driven waveform, and keep live
   captions in the transcript on desktop.
 - Launch configured suggested tasks on their source host from desktop and phone,

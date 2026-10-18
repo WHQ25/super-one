@@ -27,6 +27,9 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 17 | `SDKRateLimitInfo.overageEnabled` | 0.3.295 | Tell a usage-limit warning apart for accounts with extra usage on, before overage starts | `rate_limit_event` handling reads only `resetsAt` / `isUsingOverage` today | open |
 | 18 | Settings hook `onFailure: 'block'` | 0.3.296 | Fail-closed hooks in the settings.json hook editor | Hook editor schema and shared hook types change | open |
 | 19 | Elicitation `property_order` | 0.3.299 | Field order for transports without JSON key order | Desktop IPC and the relay carry JSON, which keeps the server's order already | rejected |
+| 20 | sdk-server `tools[].permission_policy` (`always_ask` / `always_deny`) | 0.3.301 | Ask or deny individual SuperOne host tools natively, even under `bypassPermissions` | Claude-only; the CLI lowers it to the same ask/deny rules the MCP settings page writes for user servers, which cannot use it (they load through `settingSources`, and stdio has no policy) | open; user servers use settings rules ([0.3.302](upgrades/0.3.302.md)) |
+| 21 | `BUILTIN_TOOL_NAMES` / `LEGACY_TOOL_NAME_ALIASES` | 0.3.301 (alpha) | Validate built-in tool names in permission rules and tool settings | Alpha and documented as incomplete; SuperOne edits only `mcp__` rules today | open |
+| 22 | `reloadPlugins({ addPlugins })` | 0.3.301 | Load a plugin folder into a running session without restart | Plugin dev folders already load at spawn; refused on remote and sandboxed sessions | open |
 
 ## Integration gaps
 

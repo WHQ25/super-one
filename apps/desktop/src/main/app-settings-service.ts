@@ -527,7 +527,7 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
   }
 }
 
-function readCodexRealtimeVoice(value: unknown): string | null {
+export function readCodexRealtimeVoice(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const voice = value.trim().toLowerCase()
   return voice === '' || /^[a-z][a-z0-9_-]{0,63}$/.test(voice) ? voice : null

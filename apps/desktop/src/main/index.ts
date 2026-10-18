@@ -1,4 +1,6 @@
+import { registerAppIconIpc, setAppIconFile } from './app-icon-settings'
 import { registerWindowLayoutIpc } from './window-layout-ipc'
+import { setConfigResourceServices } from './mcp/config-resource-services'
 import { registerSessionLinkIpc } from './environment/session-link-ipc'
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMediaComposerIpc } from './media-gen/composer-ipc'
@@ -268,7 +270,7 @@ import {
   windowsChromeBackground,
 } from './window-glass'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
-import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
+import { applyAppIcon, getAppIcon } from './app-icon'
 import { planStartDrag } from './start-drag'
 import type { PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
@@ -1162,6 +1164,7 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   if (result.locale) {
     await applyLocale(result.locale)
   }
+  if (patch.themeMode !== undefined) setThemeMode(result.themeMode)
   if (patch?.liquidGlass !== undefined) {
     applyWindowAppearance()
   }
@@ -1285,7 +1288,6 @@ function broadcastTheme(): void {
 function setThemeMode(mode: ThemeMode): void {
   if (currentThemeMode === mode) return
   currentThemeMode = mode
-  saveAppSettings({ themeMode: mode })
   syncNativeAppearance()
   currentDarkTheme = nativeTheme.shouldUseDarkColors
   applyWindowAppearance()
@@ -4376,34 +4378,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_SUGGEST, (_e, query: string, limit?: number) => suggestBrowserHistory(query, limit))
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_DELETE, (_e, url: string | null) => deleteBrowserHistory(url))
 
-  if (is.dev) {
-  ipcMain.handle(AgentIpcChannels.APP_ICON_PICK_FILE, async () => {
-    const result = await dialog.showOpenDialog(getMainWindow(), {
-      title: t('settings.general.appIcon.label'),
-      properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
-  })
-
-  ipcMain.handle(AgentIpcChannels.APP_ICON_SET, (_e, pngDataUri: string) => {
-    const match = /^data:image\/png;base64,(.+)$/.exec(pngDataUri ?? '')
-    if (!match) throw new Error('App icon must be a PNG data URI')
-    const buffer = Buffer.from(match[1], 'base64')
-    const storedPath = storeCustomIcon(buffer)
-    const settings = saveAppSettings({ customAppIconPath: storedPath })
-    applyAppIcon(storedPath, allWindows)
-    return settings
-  })
-
-  ipcMain.handle(AgentIpcChannels.APP_ICON_RESET, () => {
-    clearStoredCustomIcons()
-    const settings = saveAppSettings({ customAppIconPath: null })
-    applyAppIcon(null, allWindows)
-    return settings
-  })
-  }
+  registerAppIconIpc(getMainWindow)
 
   ipcMain.handle(AgentIpcChannels.SET_FAST_MODE, (_e, enabled: boolean) => {
     const settingsPath = join(homedir(), '.claude', 'settings.json')
@@ -4618,9 +4593,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GET_THEME, () => ({ mode: currentThemeMode, dark: currentDarkTheme }))
 
-  ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, mode: ThemeMode): void => {
-    setThemeMode(mode)
-  })
+  ipcMain.handle(AgentIpcChannels.SET_THEME, (_e, mode: ThemeMode) => applyAppSettingsPatch({ themeMode: mode }))
 
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const claude = getCachedHarnessResources('claude')
@@ -5118,6 +5091,11 @@ function registerIpcHandlers(): void {
     },
   })
   setAppSettingsApplier(applyAppSettingsPatch)
+  setConfigResourceServices({
+    providerBindingChanged: (consumer) => agentService.providerBindingChanged(consumer),
+    projectPreferencesChanged: () => agentService.markAllNeedsRebuild(),
+    ...(is.dev ? { setAppIcon: setAppIconFile } : {}),
+  })
   setBrowserDownloadTaskHost({
     emitHostEvent(sessionId, event) {
       sessionManager.getSession(sessionId)?.emitHostEvent(event)

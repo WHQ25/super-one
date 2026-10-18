@@ -31,7 +31,7 @@ export const MINIAPP_GUIDE_TOPICS = [
 export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
 export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
 
-export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'agent-profiles', 'collaboration', 'sessions', 'automation', 'devices', 'browser', 'memory', 'show-your-work'] as const
+export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'settings', 'agent-profiles', 'collaboration', 'sessions', 'automation', 'devices', 'browser', 'memory', 'show-your-work'] as const
 
 export const READ_MANUAL_INPUT_SCHEMA = {
   type: 'object',

@@ -1,3 +1,4 @@
+import productSettingsMd from './guides/product/settings.md?raw'
 import { AGENT_PROFILES_DISABLED_MESSAGE, isAgentProfilesEnabled } from '../session/agent-profile-feature'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { AVAILABLE_MODULES, getGuidelines } from '../generative-ui/guidelines'
@@ -84,6 +85,7 @@ const PRODUCT_GUIDES = {
   contribute: productContributeMd,
   debug: productDebugMd,
   collaboration: productCollaborationMd,
+  settings: productSettingsMd,
   'agent-profiles': productAgentProfilesMd,
   sessions: productSessionsMd,
   automation: productAutomationMd,
@@ -181,6 +183,7 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- agent-profiles — saved role instructions, explicit collaboration preapproval, and the Coordinator pattern',
       '- collaboration — session_collab_* launches: same-repo worktrees, cross-project cwd, implementers, and reviewers',
       '- sessions — session_list / session_search / session_read / session_cleanup: archive cite, handoff, cleanup',
+      '- settings — config_read/config_apply preferences, default providers, project output style, Jev key, and development icon',
       '- automation — automation_apply schedule and agentConfig shapes, presets, and the approval dialog',
       '- devices — device_* loop for phones and tablets: grants, refs vs OCR, settling, batching, waits',
       '- browser — browser_* recording ladder, perf modes, and the saved-action step grammar',

@@ -27,8 +27,10 @@ export interface ResourceDef<TRecord = unknown> {
   description: string
   /** Default true. Set false for resources that aren't scoped to the session's active project (e.g. AI provider credentials). */
   projectScoped?: boolean
+  operations?: readonly ('create' | 'update' | 'delete')[]
+  validate?: (values: Record<string, unknown>, record: TRecord) => void
   fields: ResourceFieldDef[]
-  identifyBy: (record: TRecord) => { title: string; subtitle?: string }
+  identifyBy: (record: TRecord, proposedValues?: Record<string, unknown>) => { title: string; subtitle?: string }
   list: (projectPath: string) => TRecord[]
   toRecordSummary: (record: TRecord) => Record<string, unknown>
   /** Where the proposed change lands. Drives both the write and the labels the confirm dialog shows. */
@@ -36,7 +38,7 @@ export interface ResourceDef<TRecord = unknown> {
   /** Current value of a field, including virtual ones projected out of nested structures. */
   readField?: (record: TRecord, key: string, ctx: ConfigFieldContext) => unknown
   create: (projectPath: string, values: Record<string, unknown>, ctx: ConfigFieldContext) => TRecord
-  update: (id: string, values: Record<string, unknown>, ctx: ConfigFieldContext) => TRecord | undefined
+  update: (id: string, values: Record<string, unknown>, ctx: ConfigFieldContext) => TRecord | undefined | Promise<TRecord | undefined>
   delete: (id: string) => boolean
 }
 

@@ -1,3 +1,4 @@
+import { CONFIG_SETTINGS_DOMAINS } from '../config-tool-schema'
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
 import {
   MANUAL_READ_DESCRIPTION,
@@ -64,16 +65,7 @@ export const HOST_ACTION_SETUP_DESCRIPTORS: HostActionSuperoneToolDescriptor[] =
       "properties": {
         "domain": {
           "type": "string",
-          "enum": [
-            "general",
-            "appearance",
-            "browser",
-            "computer-use",
-            "agent-claude",
-            "agent-codex",
-            "ai-provider",
-            "custom-platform"
-          ],
+          "enum": CONFIG_SETTINGS_DOMAINS,
           "description": "Which settings domain to read. Omit to list all domains with their descriptions."
         },
         "recordId": {
@@ -92,7 +84,7 @@ export const HOST_ACTION_SETUP_DESCRIPTORS: HostActionSuperoneToolDescriptor[] =
       "properties": {
         "changes": {
           "type": "array",
-          "description": "Scalar settings changes to propose. Each item targets one field key from config_read. Mutually exclusive with `resource`.",
+          "description": "Settings changes to propose. Each item targets one field key from config_read. Mutually exclusive with `resource`.",
           "items": {
             "type": "object",
             "properties": {
@@ -105,7 +97,9 @@ export const HOST_ACTION_SETUP_DESCRIPTORS: HostActionSuperoneToolDescriptor[] =
                   "string",
                   "number",
                   "boolean",
-                  "null"
+                  "null",
+                  "array",
+                  "object"
                 ],
                 "description": "The new value. Use null (or \"\") to reset a clearable field to its default."
               }

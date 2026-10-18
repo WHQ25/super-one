@@ -131,7 +131,7 @@ export const SESSION_CLEANUP_DESCRIPTION =
 export const CONFIG_READ_DESCRIPTION =
   'Read live SuperOne settings and their field schema. Always call this before config_apply. ' +
   'Omit domain to list settings and resource domains; pass domain to read exact keys, current values, and constraints. ' +
-  'For resource domains, pass recordId to read one record before updating or deleting it. Use read_manual for documentation.'
+  'For resource domains, pass recordId to read one record before updating or deleting it. See read_manual product/settings for defaults, project preferences, Jev keys and icons.'
 
 export const CONFIG_APPLY_DESCRIPTION =
   'Propose a settings change or resource create/update/delete using keys returned by config_read. ' +

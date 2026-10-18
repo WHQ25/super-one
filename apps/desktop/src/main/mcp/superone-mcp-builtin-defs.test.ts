@@ -7,6 +7,7 @@ import { getComputerUseToolDescriptors } from '../computer-use/tools'
 import { setJevFastLoopEnabledForTests } from '../jev/run-tool-common'
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
+import { SETTINGS_DOMAIN_IDS } from './settings-registry'
 import {
   BROWSER_TOOLS_CALL_DESCRIPTION,
   BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION,
@@ -50,6 +51,11 @@ import {
 const SEPARATELY_DESCRIBED = ['browser_', 'widget_', 'device_']
 
 describe('built-in superone tool registration surfaces', () => {
+  it('allows reading every settings domain advertised by the registry', () => {
+    const descriptor = BUILT_IN_SUPERONE_TOOL_DEFS.find((tool) => tool.name === 'config_read')!
+    const domains = (descriptor.inputSchema.properties as Record<string, { enum: string[] }>).domain.enum
+    expect(SETTINGS_DOMAIN_IDS.filter((domain) => !domains.includes(domain))).toEqual([])
+  })
   // The Host Action dump is the full surface; the *_run tools only list while Jev is on.
   beforeAll(() => setJevFastLoopEnabledForTests(true))
   afterAll(() => setJevFastLoopEnabledForTests(null))

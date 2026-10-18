@@ -1,3 +1,4 @@
+import { getConfigResourceServices } from './config-resource-services'
 import { createEnvironmentArchiveTools } from './environment-archive-tools'
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
 import { bindLocalCallScope } from './local-call-scope'
@@ -345,6 +346,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
     sessionId,
     sessionHost: getSessionHost(),
     applyAppSettings: getAppSettingsApplier(),
+    configServices: getConfigResourceServices(),
     terminals: getTerminalToolDeps(),
   })
   registerWidgetTools(server, {

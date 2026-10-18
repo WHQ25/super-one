@@ -1,3 +1,4 @@
+import { getConfigResourceServices } from './config-resource-services'
 import { createEnvironmentArchiveTools } from './environment-archive-tools'
 import { logToolFailure } from './tool-error-log'
 import {
@@ -224,6 +225,7 @@ async function runSuperoneMcpTool(
       sessionId,
       sessionHost: getSessionHost(),
       applyAppSettings: getAppSettingsApplier(),
+      configServices: getConfigResourceServices(),
       terminals: getTerminalToolDeps(),
       signal,
     })

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { AppSettings } from '@superone/shared/agent-types'
+import { GENERAL_EXTRA_FIELDS } from './settings-extra-fields'
+import { DEFAULT_NOTIFICATION_SETTINGS } from '@superone/shared/notifications'
 import {
   buildDomainGuide,
   buildPatchFromValues,
@@ -19,6 +21,8 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     experimentalAgentProfilesEnabled: false,
     experimentalRemoteNodesEnabled: false,
     jevFastLoopEnabled: false,
+    notifications: DEFAULT_NOTIFICATION_SETTINGS,
+    dshSubagentModelSelection: { enabled: false, allowedModels: [] },
     crispText: true,
     autoExpandFileDiffs: false,
     detailChatMode: false,
@@ -63,6 +67,48 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
 }
 
 describe('settings registry validation', () => {
+  it('merges independent notification changes without losing other kinds', () => {
+    const { patch, rejected } = buildPatchFromValues({
+      notificationsEnabled: true, notificationQuestion: false, notificationCompleted: false,
+    }, makeSettings())
+    expect(rejected).toEqual([])
+    expect(patch.notifications).toEqual({ enabled: true, kinds: { question: false, completed: false } })
+  })
+
+  it('exposes theme, power, voice, Claude Mod and protocol preferences', () => {
+    const { patch, rejected } = buildPatchFromValues({
+      themeMode: 'dark', powerMode: 'lid-closed-on-ac', codexRealtimeVoice: 'marin',
+      claudeDrawModInterfaces: false, experimentalClaudeOpenAiChatEnabled: true,
+    }, makeSettings())
+    expect(rejected).toEqual([])
+    expect(patch).toMatchObject({
+      themeMode: 'dark', powerMode: 'lid-closed-on-ac', experimentalClaudeOpenAiChatEnabled: true,
+      agentPreference: { claude: { drawModInterfaces: false }, codex: { realtimeVoice: 'marin' } },
+    })
+  })
+
+  it('rejects invalid voice and power choices instead of reporting an unapplied change', () => {
+    expect(buildPatchFromValues({ codexRealtimeVoice: '../voice', powerMode: 'never' }, makeSettings()).applied).toEqual([])
+    expect(buildPatchFromValues({ codexRealtimeVoice: ' MARIN ' }, makeSettings()).patch.agentPreference?.codex?.realtimeVoice).toBe('marin')
+  })
+
+  it('accepts native lists and revalidates edited JSON before saving Mod directories', () => {
+    const first = validateChanges([{ key: 'claudeModDevFolders', value: ['/tmp/mods'] }], makeSettings())
+    expect(first.rejected).toEqual([])
+    expect(toConfirmFields(first.valid)[0].proposedValue).toBe('[\n  "/tmp/mods"\n]')
+    expect(buildPatchFromValues({ claudeModDevFolders: '["/tmp/edited"]' }, makeSettings()).patch.agentPreference?.claude?.modDevFolders).toEqual(['/tmp/edited'])
+    expect(buildPatchFromValues({ claudeModDevFolders: '[42]' }, makeSettings()).applied).toEqual([])
+    expect(buildPatchFromValues({ claudeModDevFolders: [] }, makeSettings()).patch.agentPreference?.claude?.modDevFolders).toEqual([])
+  })
+
+  it('validates DeepSeek subagent selection instead of silently dropping malformed models', () => {
+    const selection = { enabled: true, allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-flash' }] }
+    const result = buildPatchFromValues({ dshSubagentModelSelection: selection }, makeSettings())
+    expect(result.rejected).toEqual([])
+    expect(result.patch.dshSubagentModelSelection).toEqual(selection)
+    expect(buildPatchFromValues({ dshSubagentModelSelection: { enabled: 'yes', allowedModels: [] } }, makeSettings()).applied).toEqual([])
+    expect(buildPatchFromValues({ dshSubagentModelSelection: { enabled: true, allowedModels: [{ model: 'x' }] } }, makeSettings()).applied).toEqual([])
+  })
   it('does not expose an OpenCode permission preset through config tools', () => {
     const { valid, rejected } = validateChanges([{ key: 'opencodeDefaultPermissionMode', value: 'bypassPermissions' }], makeSettings())
     expect(valid).toEqual([])
@@ -266,6 +312,7 @@ describe('settings registry — new field groups', () => {
       { key: 'harnessOrder', currentValue: null },
       { key: 'defaultHarness', currentValue: null },
       { key: 'secondaryHarness', currentValue: null },
+      ...GENERAL_EXTRA_FIELDS.map((field) => ({ key: field.key })),
     ])
   })
 })
@@ -281,6 +328,7 @@ describe('settings registry guide', () => {
     expect(listDomainSummaries().find((d) => d.domain === 'terminal')).toBeFalsy()
     const guide = buildDomainGuide('appearance', makeSettings({ terminalFontSize: 15 }))
     expect(guide?.fields.map((f) => f.key)).toEqual([
+      'themeMode',
       'liquidGlass',
       'uiFontFamily',
       'crispText',

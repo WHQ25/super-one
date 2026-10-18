@@ -56,16 +56,8 @@ export const SESSION_COLLABORATION_TOOL_NAMES = [
   'session_collab_retrieve',
 ] as const
 
-export const CONFIG_SETTINGS_DOMAINS = [
-  'general',
-  'appearance',
-  'browser',
-  'computer-use',
-  'agent-claude',
-  'agent-codex',
-  'ai-provider',
-  'custom-platform',
-] as const
+import { CONFIG_SETTINGS_DOMAINS } from '@superone/shared/config-tool-schema'
+export { CONFIG_SETTINGS_DOMAINS }
 
 import {
   MANUAL_READ_DESCRIPTION,
@@ -377,13 +369,13 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       properties: {
         changes: {
           type: 'array',
-          description: 'Scalar settings changes to propose. Each item targets one field key from config_read. Mutually exclusive with `resource`.',
+          description: 'Settings changes to propose. Each item targets one field key from config_read. Mutually exclusive with `resource`.',
           items: {
             type: 'object',
             properties: {
               key: { type: 'string', description: 'The settings field key, exactly as returned by config_read.' },
               value: {
-                type: ['string', 'number', 'boolean', 'null'],
+                type: ['string', 'number', 'boolean', 'null', 'array', 'object'],
                 description: 'The new value. Use null (or "") to reset a clearable field to its default.',
               },
             },

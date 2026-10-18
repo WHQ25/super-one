@@ -194,6 +194,7 @@ export interface BuiltInSuperoneToolDeps {
   sessionHost: SessionTitleHost | null
   /** Persist an app-settings patch through the shared side-effect + broadcast path. */
   applyAppSettings: (patch: AppSettingsPatch) => Promise<AppSettings> | AppSettings
+  configServices?: import('./config-resource-services').ConfigResourceServices
   /** Local terminal tabs + per-project command rules; absent where no PTY host exists. */
   terminals?: TerminalToolDeps
   signal?: AbortSignal
@@ -620,8 +621,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         changes: z.array(z.object({
           key: z.string().describe('The settings field key, exactly as returned by config_read.'),
-          value: z.union([z.string(), z.number(), z.boolean(), z.null()]).describe('The new value. Use null or "" to reset a clearable field to its default.'),
-        })).optional().describe('Scalar settings changes to propose. Mutually exclusive with `resource`.'),
+          value: z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.unknown()), z.record(z.string(), z.unknown())]).describe('The new value. Use null or "" to reset a clearable field to its default.'),
+        })).optional().describe('Settings changes to propose. Mutually exclusive with `resource`.'),
         resource: z.object({
           resource: z.string().describe('The resource domain, e.g. "credential" — as returned by config_read.'),
           operation: z.enum(['create', 'update', 'delete']).describe('Which operation to perform.'),

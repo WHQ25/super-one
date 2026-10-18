@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type {
   ConfigConfirmField,
   ConfigConfirmPayload,
@@ -90,12 +90,19 @@ mockIpc("app", "listBindings", () => Promise.resolve([]));
 
 function ConfigPermissionPrompt({
   payload,
+  width = 560,
 }: {
   payload: ConfigConfirmPayload;
+  width?: number;
 }) {
+  useMemo(() => {
+    mockIpc('app', 'getAppSettings', () => Promise.resolve({ suggestionHarness: null }));
+    mockIpc('app', 'getMediaServerPort', () => Promise.resolve(0));
+    mockIpc('miniapp', 'hostList', () => Promise.resolve([]));
+  }, []);
   const [result, setResult] = useState<string | null>(null);
   return (
-    <div className="@container w-[560px]">
+    <div className="@container" style={{ width, maxWidth: '100%' }}>
       <ConfigConfirmPrompt
         payload={payload}
         onConfirm={(values) => setResult(`confirm ${JSON.stringify(values)}`)}
@@ -565,4 +572,27 @@ export const RawJsonFallback: Story = {
       ])}
     />
   ),
+};
+
+export const AdditionalPreferences: Story = {
+  name: "config_apply · notifications, power, theme and structured preferences",
+  render: () => <ConfigPermissionPrompt width={360} payload={{ fields: [
+    field({ domain: 'general', key: 'notificationsEnabled', label: 'Notifications', type: 'boolean', currentValue: true, proposedValue: false }),
+    field({ domain: 'general', key: 'notificationCompleted', label: 'Notifications: completed', type: 'boolean', currentValue: true, proposedValue: false }),
+    field({ domain: 'general', key: 'powerMode', label: 'Power Mode', type: 'enum', enumValues: ['system', 'prevent-idle-sleep', 'lid-closed-on-ac'], currentValue: 'system', proposedValue: 'prevent-idle-sleep' }),
+    field({ domain: 'appearance', key: 'themeMode', label: 'Theme Mode', type: 'enum', enumValues: ['system', 'light', 'dark'], currentValue: 'system', proposedValue: 'dark' }),
+    field({ domain: 'agent-codex', key: 'codexRealtimeVoice', label: 'Realtime Voice', type: 'string', clearable: true, currentValue: '', proposedValue: 'marin' }),
+    field({ domain: 'agent-claude', key: 'claudeModDevFolders', label: 'Mod Development Folders', type: 'json', currentValue: '[]', proposedValue: JSON.stringify(['/tmp/example-mod-with-a-long-development-directory-name'], null, 2) }),
+    field({ domain: 'agent-dsh', key: 'dshSubagentModelSelection', label: 'Subagent Model Selection', type: 'json', currentValue: '{}', proposedValue: JSON.stringify({ enabled: true, allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-flash' }] }, null, 2) }),
+  ] }} />,
+};
+
+export const SettingsResources: Story = {
+  name: "config_apply · default provider, project style, secret and development icon",
+  render: () => <div className="space-y-5">{[
+    resourcePayload('update', [field({ key: 'credentialId', label: 'Credential ID', type: 'string', currentValue: null, proposedValue: RELAY_KEY.id })], { resource: 'default-provider', recordId: 'media:image', title: 'Default Image Provider', subtitle: 'Automatic → My Relay / Personal Key', context: undefined }),
+    resourcePayload('update', [field({ key: 'outputStyle', label: 'Output Style', type: 'string', currentValue: '', proposedValue: 'Learning' })], { resource: 'project-claude', recordId: '/tmp/project', title: 'Claude Project Preferences', subtitle: '/tmp/project', context: undefined }),
+    resourcePayload('update', [field({ key: 'apiKey', label: 'Jev API Key', type: 'string', secret: true, currentValue: '***oldkey', proposedValue: 'example-key-for-story-only' })], { resource: 'jev', recordId: 'jev', title: 'Jev API Key', subtitle: undefined, context: undefined }),
+    resourcePayload('update', [field({ key: 'filePath', label: 'Image File', type: 'string', currentValue: '/tmp/icon.png', proposedValue: null })], { resource: 'app-icon', recordId: 'app-icon', title: 'Application Icon', subtitle: undefined, context: undefined }),
+  ].map((payload) => <ConfigPermissionPrompt key={payload.resource?.resource} payload={payload} />)}</div>,
 };

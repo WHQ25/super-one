@@ -26,7 +26,7 @@ import {
 import type { BuiltInSuperoneToolDeps, SessionTitleSetter } from './superone-mcp-builtins'
 
 export interface ConfigApplyArgs {
-  changes?: Array<{ key: string; value: string | number | boolean | null }>
+  changes?: Array<{ key: string; value: unknown }>
   resource?: {
     resource: string
     operation: 'create' | 'update' | 'delete'
@@ -158,13 +158,16 @@ function unknownValueKeys(resourceDef: ResourceDef, operation: 'create' | 'updat
 }
 
 async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>, deps: BuiltInSuperoneToolDeps) {
-  const resourceDef = findResourceDef(req.resource)
+  const resourceDef = findResourceDef(req.resource, deps.configServices)
   if (!resourceDef) {
     return toolResult({
       status: 'error',
       message: `Unknown resource: ${req.resource}`,
-      availableResources: listResourceSummaries().map((r) => r.domain),
+      availableResources: listResourceSummaries(deps.configServices).map((r) => r.domain),
     })
+  }
+  if (resourceDef.operations && !resourceDef.operations.includes(req.operation)) {
+    return toolResult({ status: 'error', message: `Unsupported operation for ${req.resource}. Use: ${resourceDef.operations.join(', ')}` })
   }
   if ((req.operation === 'update' || req.operation === 'delete') && !req.recordId) {
     return toolResult({ status: 'error', message: `\`recordId\` is required for operation "${req.operation}"` })
@@ -209,8 +212,13 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
     if (!existing) return toolResult({ status: 'error', message: `No ${req.resource} found with id "${req.recordId}"` })
   }
 
+  try {
+    if (req.operation !== 'delete') resourceDef.validate?.(values, existing)
+  } catch (error) {
+    return toolResult({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+  }
   const ctx = resourceContext(resourceDef, existing, values)
-  const identity = existing ? resourceDef.identifyBy(existing) : null
+  const identity = existing ? resourceDef.identifyBy(existing, values) : null
   const title = identity?.title ?? (typeof values.name === 'string' ? values.name : `New ${resourceDef.label}`)
   const subtitle = identity?.subtitle
 
@@ -293,10 +301,11 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
     key: f.key,
     label: f.label,
     type: f.type,
-    oldValue: f.currentValue,
-    newValue: f.key in finalValues ? finalValues[f.key] : f.proposedValue,
+    oldValue: f.secret ? '***' : f.currentValue,
+    newValue: f.secret ? '***' : f.key in finalValues ? finalValues[f.key] : f.proposedValue,
   }))
 
+  if (deps.signal?.aborted) return toolResult({ status: 'cancelled', hint: 'The turn was interrupted. Nothing was changed.' })
   try {
     if (req.operation === 'delete') {
       const ok = resourceDef.delete(req.recordId!)
@@ -305,9 +314,10 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
     }
     // Selectors never reach the dialog, so re-derive the context from the agent's values plus the
     // user's edits — the user may have retargeted a change by editing e.g. the platform it lands on.
+    resourceDef.validate?.(finalValues, existing)
     const finalCtx = resourceContext(resourceDef, existing, { ...values, ...finalValues })
     if (req.operation === 'update') {
-      const updated = resourceDef.update(req.recordId!, finalValues, finalCtx)
+      const updated = await resourceDef.update(req.recordId!, finalValues, finalCtx)
       if (!updated) return toolResult({ status: 'error', message: `Failed to update ${req.resource} "${req.recordId}" — it may have been removed.` })
       return toolResult({ status: 'applied', operation: 'update', resource: req.resource, resourceLabel: resourceDef.label, title, applied: resourceChanges, record: resourceDef.toRecordSummary(updated) })
     }
@@ -320,10 +330,10 @@ async function applyResourceChange(req: NonNullable<ConfigApplyArgs['resource']>
 
 export function configReadHandler(args: { domain?: string; recordId?: string }, deps: BuiltInSuperoneToolDeps) {
   if (!args.domain) {
-    return toolResult({ domains: [...listDomainSummaries(), ...listResourceSummaries()] })
+    return toolResult({ domains: [...listDomainSummaries(), ...listResourceSummaries(deps.configServices)] })
   }
 
-  const resourceDef = findResourceDef(args.domain)
+  const resourceDef = findResourceDef(args.domain, deps.configServices)
   if (resourceDef) {
     let projectPath = ''
     if (resourceDef.projectScoped !== false) {
@@ -359,6 +369,7 @@ export function configReadHandler(args: { domain?: string; recordId?: string }, 
       label: resourceDef.label,
       description: resourceDef.description,
       fields: resourceDef.fields,
+      operations: resourceDef.operations ?? ['create', 'update', 'delete'],
       records: records.map((r) => ({ id: (r as { id?: string }).id, ...resourceDef.identifyBy(r) })),
       hint: 'Call config_read again with `recordId` to read one record\'s current values. When updating, send only the fields that change.',
     })
@@ -370,13 +381,14 @@ export function configReadHandler(args: { domain?: string; recordId?: string }, 
     return toolResult({
       status: 'error',
       message: `Unknown settings domain: ${args.domain}`,
-      availableDomains: [...listDomainSummaries(), ...listResourceSummaries()].map((d) => d.domain),
+      availableDomains: [...listDomainSummaries(), ...listResourceSummaries(deps.configServices)].map((d) => d.domain),
     })
   }
   return toolResult(guide)
 }
 
 export async function configApplyHandler(args: ConfigApplyArgs, deps: BuiltInSuperoneToolDeps) {
+  if (args.resource && args.changes) return toolResult({ status: 'error', message: 'Pass exactly one of changes or resource. Nothing was changed.' })
   if (args.resource) return applyResourceChange(args.resource, deps)
 
   const changes = Array.isArray(args.changes) ? args.changes : []
@@ -454,6 +466,7 @@ export async function configApplyHandler(args: ConfigApplyArgs, deps: BuiltInSup
     return toolResult({ status: 'error', message: 'No valid changes remained after user edits.', rejected: applyRejected })
   }
 
+  if (deps.signal?.aborted) return toolResult({ status: 'cancelled', hint: 'The turn was interrupted. Nothing was changed.' })
   try {
     await deps.applyAppSettings(patch)
   } catch (error) {

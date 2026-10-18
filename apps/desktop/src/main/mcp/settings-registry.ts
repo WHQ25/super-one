@@ -2,17 +2,20 @@ import type { AppSettings, AppSettingsPatch, ConfigConfirmField, HarnessId } fro
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { SESSION_CONTINUATION_MIN_CONTEXT_TOKENS } from '@superone/shared/session-continuation'
+import { CLAUDE_EXTRA_FIELDS, DSH_SUBAGENT_FIELD, GENERAL_EXTRA_FIELDS, THEME_MODE_FIELD } from './settings-extra-fields'
 import {
   parseSuggestionHarnessKey,
+  readCodexRealtimeVoice,
   serializeSuggestionHarness,
 } from '../app-settings-service'
 
-export type ConfigValue = string | number | boolean | null
+export type ConfigValue = string | number | boolean | null | unknown[] | Record<string, unknown>
 
 export interface SettingsFieldDef {
   key: string
   label: string
-  type: 'boolean' | 'enum' | 'number' | 'string'
+  type: 'boolean' | 'enum' | 'number' | 'string' | 'json'
+  parse?: (raw: unknown) => ConfigValue
   enumValues?: readonly string[]
   min?: number
   max?: number
@@ -59,6 +62,7 @@ const SESSION_DEFAULT_DOMAINS: SettingsDomainDef[] = SESSION_DEFAULT_HARNESSES
   label: `${SESSION_DEFAULT_LABELS[harnessId]} Defaults`,
   description: `Default settings for new ${SESSION_DEFAULT_LABELS[harnessId]} chat sessions.`,
   fields: [
+    ...(harnessId === 'dsh' ? [DSH_SUBAGENT_FIELD] : []),
     {
       key: `${harnessId}DefaultPermissionMode`,
       label: 'Default Permission Mode',
@@ -104,7 +108,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
   {
     domain: 'general',
     label: 'General',
-    description: 'Language, updates, privacy, and experimental features — matches the General settings page.',
+    description: 'Language, notifications, power, privacy, and experimental features — matches the General settings page.',
     fields: [
       {
         key: 'locale',
@@ -205,6 +209,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         read: (s) => serializeSuggestionHarness(s.secondaryHarness),
         toPatch: (v) => ({ secondaryHarness: parseSuggestionHarnessKey(v) }),
       },
+      ...GENERAL_EXTRA_FIELDS,
     ],
   },
   {
@@ -212,6 +217,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
     label: 'Appearance',
     description: 'Visual look of the app window, built-in terminal, and mermaid diagrams — matches the Appearance settings page.',
     fields: [
+      THEME_MODE_FIELD,
       {
         key: 'liquidGlass',
         label: 'Liquid Glass',
@@ -422,6 +428,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
     label: 'Claude Defaults',
     description: 'Default settings for new Claude chat sessions.',
     fields: [
+      ...CLAUDE_EXTRA_FIELDS,
       {
         key: 'claudeDefaultModel',
         label: 'Default Model',
@@ -486,6 +493,17 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
     label: 'Codex Defaults',
     description: 'Default settings for new Codex chat sessions.',
     fields: [
+      {
+        key: 'codexRealtimeVoice', label: 'Realtime Voice', type: 'string', clearTo: '',
+        note: 'Codex realtime voice id. Empty restores the harness default.',
+        parse: (value) => {
+          const voice = readCodexRealtimeVoice(value)
+          if (voice === null) throw new Error('Invalid Codex realtime voice id')
+          return voice
+        },
+        read: (s) => s.agentPreference.codex.realtimeVoice,
+        toPatch: (v) => ({ agentPreference: { codex: { realtimeVoice: (v ?? '') as string } } }),
+      },
       {
         key: 'codexDefaultModel',
         label: 'Default Model',
@@ -561,6 +579,15 @@ export function findField(key: string): { field: SettingsFieldDef; domain: strin
 export type CoerceResult = { ok: true; value: ConfigValue } | { ok: false; reason: string }
 
 export function coerceValue(field: SettingsFieldDef, raw: unknown): CoerceResult {
+  if (field.type === 'json') {
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (!field.parse) return { ok: false, reason: `${field.key} has no JSON validator` }
+      return { ok: true, value: field.parse(parsed) }
+    } catch (error) {
+      return { ok: false, reason: `${field.key}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
   const isEmpty = raw === null || raw === undefined || raw === ''
   if (isEmpty) {
     if (field.clearTo !== undefined) return { ok: true, value: field.clearTo }
@@ -585,7 +612,11 @@ export function coerceValue(field: SettingsFieldDef, raw: unknown): CoerceResult
     }
     case 'string':
       if (typeof raw !== 'string') return { ok: false, reason: `${field.key} must be a string` }
-      return { ok: true, value: raw }
+      try {
+        return { ok: true, value: field.parse ? field.parse(raw) : raw }
+      } catch (error) {
+        return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+      }
   }
 }
 
@@ -686,8 +717,8 @@ export function toConfirmFields(valid: ValidatedChange[]): ConfigConfirmField[] 
     ...(field.max !== undefined ? { max: field.max } : {}),
     clearable: field.clearTo !== undefined,
     ...(field.note ? { note: field.note } : {}),
-    currentValue,
-    proposedValue,
+    currentValue: field.type === 'json' ? JSON.stringify(currentValue, null, 2) : currentValue,
+    proposedValue: field.type === 'json' ? JSON.stringify(proposedValue, null, 2) : proposedValue,
   }))
 }
 
@@ -700,10 +731,13 @@ function mergePatches(patches: AppSettingsPatch[]): AppSettingsPatch {
         const next = value as NonNullable<AppSettingsPatch['agentPreference']>
         merged.agentPreference = {
           ...prev,
-          claude: { ...prev.claude, ...next.claude },
-          codex: { ...prev.codex, ...next.codex },
-          acp: { ...prev.acp, ...next.acp },
+          ...Object.fromEntries(Object.entries(next).map(([harness, values]) => [
+            harness, { ...prev[harness as HarnessId], ...values },
+          ])),
         }
+      } else if (key === 'notifications') {
+        const next = patch.notifications
+        merged.notifications = { ...merged.notifications, ...next, kinds: { ...merged.notifications?.kinds, ...next?.kinds } }
       } else {
         ;(merged as Record<string, unknown>)[key] = value
       }

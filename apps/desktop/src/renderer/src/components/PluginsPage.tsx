@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { formatRelativeTime } from '@superone/shared/relative-time'
 import {
   ArrowLeft,
@@ -1765,7 +1766,7 @@ export function PluginsPage() {
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const addMarketplace = useSettingsStore((s) => s.addMarketplace)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  if (settingsProvider === 'codex') {
+  if (HARNESS_CAPABILITIES[settingsProvider].supportsCuratedPluginDirectory) {
     return (
       <>
         <CodexPluginDirectory onAddMarketplace={() => setAddDialogOpen(true)} />

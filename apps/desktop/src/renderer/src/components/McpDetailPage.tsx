@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@superone/ui/components/ui/select'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { claudeMcpToolRuleName } from '@superone/shared/tool-ui'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -213,7 +214,8 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
   const tools = status?.tools ?? []
   const isConnected = status?.status === 'connected'
   const needsAuth = status?.status === 'needs-auth'
-  const canEditToolPermissions = settingsProvider === 'claude' && !isRemoteProjectPath(currentFolder ?? '')
+  const canEditToolPermissions = HARNESS_CAPABILITIES[settingsProvider].supportsMcpToolPermissionRules
+    && !isRemoteProjectPath(currentFolder ?? '')
 
   // Build description lookup from probe meta (more reliable than SDK status)
   const metaToolMap = new Map(meta?.tools?.map((t) => [t.name, t.description]) ?? [])

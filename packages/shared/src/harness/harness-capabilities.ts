@@ -136,6 +136,16 @@ export interface HarnessCapabilities {
    */
   supportsShortWidgetResult: boolean
   /**
+   * The plugins settings page is a curated directory (shelves, categories, detail)
+   * instead of the marketplace list.
+   */
+  supportsCuratedPluginDirectory: boolean
+  /**
+   * Each MCP tool can be set to allow, ask, or deny as a Claude Code permission
+   * rule. Other harnesses have no equivalent settings-file rule for one tool.
+   */
+  supportsMcpToolPermissionRules: boolean
+  /**
    * Words the harness acts on when they appear in the prompt text, for that turn
    * only. The composer highlights them; on any other harness they are plain text.
    */
@@ -167,6 +177,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: true,
     supportsShortWidgetResult: true,
+    supportsCuratedPluginDirectory: false,
+    supportsMcpToolPermissionRules: true,
     // `ultrathink` adds a deeper-reasoning reminder to the turn (effort is
     // untouched); `ultracode` opts it into the Workflow tool, on messages stamped
     // human — see `claudeMessageOrigin`.
@@ -197,6 +209,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: true,
+    supportsCuratedPluginDirectory: true,
+    supportsMcpToolPermissionRules: false,
     promptKeywords: [],
     displayName: 'Codex',
   },
@@ -235,6 +249,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: false,
+    supportsCuratedPluginDirectory: false,
+    supportsMcpToolPermissionRules: false,
     promptKeywords: [],
     displayName: 'Others',
   },
@@ -257,6 +273,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: false,
+    supportsCuratedPluginDirectory: false,
+    supportsMcpToolPermissionRules: false,
     promptKeywords: [],
     displayName: 'OpenCode',
   },
@@ -281,6 +299,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'executor',
     modUi: false,
     supportsShortWidgetResult: false,
+    supportsCuratedPluginDirectory: false,
+    supportsMcpToolPermissionRules: false,
     promptKeywords: [],
     displayName: 'Cursor',
   },
@@ -318,6 +338,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: false,
+    supportsCuratedPluginDirectory: false,
+    supportsMcpToolPermissionRules: false,
     promptKeywords: [],
     displayName: 'DeepSeek',
   },

@@ -3,6 +3,10 @@ import type { BarcodeScanningResult } from 'expo-camera'
 // Expo can throttle identical results for 500 ms. Keep stationary targets alive
 // across that interval, then expire detections which have not been refreshed.
 export const QR_CANDIDATE_TTL_MS = 1000
+// A lone detection is only trusted after no neighbour has appeared for this
+// long. Small or distant codes in the same frame were measured on Android to go
+// up to ~730 ms between detections, so the window must exceed that gap.
+export const QR_AUTO_SELECT_MS = 1000
 const MAX_CANDIDATES = 24
 
 export type ScannerSize = { width: number; height: number }
@@ -12,6 +16,10 @@ export type QrCandidate = {
   result: BarcodeScanningResult
   rect: ScannerRect
   seenAt: number
+}
+
+export function sameQrCandidate(a: QrCandidate, b: QrCandidate): boolean {
+  return a.id === b.id && a.result.type === b.result.type && a.result.data === b.result.data
 }
 
 export function expireQrCandidates(candidates: QrCandidate[], now: number): QrCandidate[] {

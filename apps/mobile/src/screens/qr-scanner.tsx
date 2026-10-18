@@ -1,10 +1,15 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState, StyleSheet } from 'react-native'
-import { expireQrCandidates, observeQrCandidate, type QrCandidate, type ScannerSize } from './qr-scanner-state'
+import {
+  expireQrCandidates, observeQrCandidate, QR_AUTO_SELECT_MS, sameQrCandidate, type QrCandidate, type ScannerSize,
+} from './qr-scanner-state'
 import { QrScannerView } from './qr-scanner-view'
 
-/** A generic QR picker: detecting a code never submits it automatically. */
+/**
+ * A generic QR picker: a lone code submits once no neighbour appears within
+ * the settle window; several codes wait for the user to tap one.
+ */
 export function QrScanner(props: {
   onSelect: (result: BarcodeScanningResult) => void
   onCancel: () => void
@@ -20,7 +25,21 @@ export function QrScanner(props: {
   const epoch = useRef(0)
   const cameraEpoch = epoch.current
   const latest = useRef<QrCandidate[]>([])
-  const clear = useCallback(() => { epoch.current++; latest.current = []; setCandidates([]) }, [])
+  const lone = useRef<{ candidate: QrCandidate; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const selectRef = useRef<(candidate: QrCandidate) => void>(() => {})
+  const update = useCallback((next: QrCandidate[]) => {
+    latest.current = next
+    setCandidates(next)
+    // Restart the window whenever the scene changes, e.g. two codes become one.
+    const only = next.length === 1 ? next[0]! : null
+    if (only && lone.current && sameQrCandidate(lone.current.candidate, only)) return
+    if (lone.current) clearTimeout(lone.current.timer)
+    lone.current = only ? {
+      candidate: only,
+      timer: setTimeout(() => { lone.current = null; selectRef.current(only) }, QR_AUTO_SELECT_MS),
+    } : null
+  }, [])
+  const clear = useCallback(() => { epoch.current++; update([]) }, [update])
   useEffect(() => {
     mounted.current = true
     const subscription = AppState.addEventListener('change', (state) => {
@@ -30,21 +49,24 @@ export function QrScanner(props: {
     })
     const timer = setInterval(() => {
       const next = expireQrCandidates(latest.current, Date.now())
-      if (next === latest.current) return
-      latest.current = next
-      setCandidates(next)
+      if (next !== latest.current) update(next)
     }, 200)
-    return () => { mounted.current = false; subscription.remove(); clearInterval(timer) }
-  }, [clear])
+    return () => {
+      mounted.current = false
+      subscription.remove()
+      clearInterval(timer)
+      if (lone.current) clearTimeout(lone.current.timer)
+    }
+  }, [clear, update])
 
   const select = (candidate: QrCandidate) => {
     if (settled.current || !mounted.current || !activeRef.current || error) return
-    const current = expireQrCandidates(latest.current, Date.now()).find((item) => item.id === candidate.id
-      && item.result.type === candidate.result.type && item.result.data === candidate.result.data)
+    const current = expireQrCandidates(latest.current, Date.now()).find((item) => sameQrCandidate(item, candidate))
     if (!current) return
     settled.current = true
     props.onSelect(current.result)
   }
+  selectRef.current = select
   return <QrScannerView
     size={size}
     candidates={candidates}
@@ -64,9 +86,7 @@ export function QrScanner(props: {
       barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
       onBarcodeScanned={(result) => {
         if (settled.current || !mounted.current || !activeRef.current || epoch.current !== cameraEpoch) return
-        const next = observeQrCandidate(latest.current, result, size, Date.now())
-        latest.current = next
-        setCandidates(next)
+        update(observeQrCandidate(latest.current, result, size, Date.now()))
       }}
       onMountError={() => {
         if (!mounted.current || epoch.current !== cameraEpoch) return

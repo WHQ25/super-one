@@ -12,8 +12,8 @@ function Preview(props: { count?: number; error?: boolean; theme?: 'light' | 'da
 }
 
 export default { title: 'Mobile/QrScanner', component: QrScannerView, render: Preview }
-export const MultipleCodes = { name: 'Multiple codes · tap either target' }
-export const OneCode = { name: 'Single code · still waits for a tap', args: { count: 1 } }
+export const MultipleCodes = { name: 'Multiple codes · tap a target' }
+export const OneCode = { name: 'Single code · reading, no target', args: { count: 1 } }
 export const Searching = { args: { count: 0 } }
 export const CameraError = { args: { error: true } }
 export const LightMode = { args: { theme: 'light' } }

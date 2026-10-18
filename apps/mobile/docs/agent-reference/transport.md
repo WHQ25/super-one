@@ -29,14 +29,20 @@ and reports input and bounded resize messages to RN.
 
 ## QR selection
 
-`screens/qr-scanner.tsx` collects QR detections and submits only after the user taps
-a numbered target, even when only one code is visible. The scanner does not filter
+`screens/qr-scanner.tsx` collects QR detections. A lone code submits once no other
+code has appeared for `QR_AUTO_SELECT_MS` (cameras report each code in a frame as a
+separate event, so the first detection alone cannot prove there is no neighbour).
+With several codes, numbered targets appear and the user taps one; when the scene
+drops back to one code, the window restarts. The scanner does not filter
 payloads by business purpose; its caller owns parsing and routing. Targets expire
 after one second without a detection and clear on resize, camera failure or app
-backgrounding. No QR payload appears in labels or logs.
+backgrounding. Because a resize clears targets, nothing beside the preview may change
+size with the scanner state; the hint keeps a fixed two-line height. No QR payload appears in labels or logs.
 
 The pinned `expo-camera` Android patch reports every detected code and maps rotated
-image coordinates into the cropped preview. `package.json` explicitly builds
+image coordinates into the cropped preview. It also skips the camera rebind when
+`barcodeScannerEnabled` is unchanged: Fabric on Android resends every prop on each
+render, so every detection would otherwise restart the preview. `package.json` explicitly builds
 `expo-camera` from source; its precompiled AAR would bypass the patch. Android needs
 a new native binary for this change. Camera geometry tests run with
 `./gradlew -I ../scripts/qr-scanner-android-tests.gradle :expo-camera:testDebugUnitTest --tests '*BarcodeCoordinatesTest'`

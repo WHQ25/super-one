@@ -5,15 +5,17 @@ import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import type { ModelPreviewViewState } from '@/components/coding/ModelPreview'
+import { useEffectiveProjectRoot } from '@/stores/app'
+import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { PreviewerFullscreen } from './PreviewerFullscreen'
 import { PreviewerStage } from './PreviewerStage'
 import { PreviewerDots, PreviewerFileChip } from './previewer-chrome'
+import { previewerLoadRoot } from './previewer-load-root'
 import { usePreviewerFile } from './use-previewer-file'
 import { useStageContentHeight } from './use-stage-height'
 
 export interface FilesPreviewerProps {
   payload: NativeWidgetPayload
-  projectPath?: string | null
 }
 
 /**
@@ -37,8 +39,10 @@ export function isStageControlTarget(target: EventTarget | null): boolean {
  * stage, not a workspace — arrows and dots move between files, the stage click
  * opens fullscreen, and that is the whole interaction surface.
  */
-export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
+export function FilesPreviewer({ payload }: FilesPreviewerProps) {
   const { t } = useTranslation()
+  const scope = useSessionScope()
+  const effectiveRoot = useEffectiveProjectRoot()
   const [files, setFiles] = useState<PreviewerFile[]>(payload.files ?? [])
   const [index, setIndex] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
@@ -47,7 +51,8 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
   const stageRef = useRef<HTMLDivElement>(null)
   const [cardWidth, setCardWidth] = useState(0)
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
-  const root = payload.root ?? ''
+  // A desktop node stores a host path. This pane loads it as a remote project.
+  const root = previewerLoadRoot(payload.root ?? '', scope?.projectPath, effectiveRoot)
 
   useEffect(() => { setFiles(payload.files ?? []) }, [payload])
 
@@ -152,7 +157,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
           state={state}
           mode="card"
           root={root}
-          projectPath={projectPath}
+          projectPath={root}
           initialModelViewState={modelViewStates[file.absolutePath] ?? null}
           onUndecodable={markUndecodable}
           onRetry={retry}
@@ -192,7 +197,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
         index={index}
         onIndexChange={goTo}
         root={root}
-        projectPath={projectPath}
+        projectPath={root}
         modelViewState={modelViewStates[file.absolutePath] ?? null}
         onModelViewStateChange={handleModelViewStateChange}
         onFilesChange={setFiles}

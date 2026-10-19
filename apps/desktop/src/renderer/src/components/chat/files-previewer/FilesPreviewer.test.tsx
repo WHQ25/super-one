@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
+import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { FilesPreviewer } from './FilesPreviewer'
 
 vi.mock('@/components/coding/ModelPreview', () => ({
@@ -83,6 +84,30 @@ describe('files previewer card — remote sessions', () => {
     expect(img).toHaveAttribute('src', 'data:image/png;base64,aW1n')
     // It went through readProjectFile with the remote root, never a bare file:// URL.
     expect(readProjectFile).toHaveBeenCalledWith(REMOTE_ROOT, nodeShot.absolutePath)
+  })
+
+  it('loads a desktop-node file through the pane remote key when the payload root is a host path', async () => {
+    const shot: PreviewerFile = {
+      path: '/home/node/proj/shot.png',
+      absolutePath: '/home/node/proj/shot.png',
+      name: 'shot.png',
+      kind: 'image',
+      size: 12,
+      note: 'on the node',
+    }
+    readProjectFile.mockResolvedValue({
+      path: shot.absolutePath,
+      content: 'data:image/png;base64,aW1n',
+      language: 'image',
+    })
+    render(
+      <SessionScopeProvider value={{ projectPath: REMOTE_ROOT, sessionId: 's1' }}>
+        <FilesPreviewer payload={{ kind: 'native', nativeType: 'files-previewer', title: 't', root: '/home/node/proj', files: [shot] }} />
+      </SessionScopeProvider>,
+    )
+    const img = await screen.findByAltText('shot.png')
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,aW1n')
+    expect(readProjectFile).toHaveBeenCalledWith(REMOTE_ROOT, 'shot.png')
   })
 })
 

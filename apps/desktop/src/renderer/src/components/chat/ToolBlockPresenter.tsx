@@ -611,7 +611,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     // row *is* the block. Streaming and the subagent stub fall through to the compact row.
     const nativeWidget = result && !isStreaming && allowExpand ? parseNativeWidgetResult(result) : null
     if (nativeWidget?.nativeType === 'files-previewer') {
-      return <FilesPreviewer payload={nativeWidget} projectPath={nativeWidget.root} />
+      return <FilesPreviewer payload={nativeWidget} />
     }
     const widgetData = resolveWidgetCall(input, result, !isStreaming)
     // Interrupted while its input streamed, a call drew no widget and keeps the default row.

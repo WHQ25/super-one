@@ -59,7 +59,10 @@ Forbidden paths are `unpreviewable/outside_readable_roots` rather than missing.
 
 Remote context comes from `environment/files-previewer-context.ts`, because a
 node session has no local `SessionManager` entry. The payload root is
-`remote:<connectionId>:<hostPath>`. `environment/files-previewer-remote.ts` handles:
+`remote:<connectionId>:<hostPath>`. A desktop node runs `widget_show` in its
+own session, so the stored root stays that machine's host path. The controller
+does not rewrite the result; its card supplies the remote key at load time
+(§4.3). `environment/files-previewer-remote.ts` handles:
 
 - Node-zone paths: resolve any desktop mirror path back to its node identity,
   stat and mirror through the artifact RPCs, then classify and sniff locally.
@@ -120,9 +123,12 @@ selected file on close. Keep nested viewer shortcuts from advancing two slides.
 
 ### 4.3 Loading and errors
 
-`use-previewer-file.ts` reads only the current slide, using the payload's root
-and absolute path rather than the active project selection. Text uses the host
-file reader; media uses local or remote media URLs. A mirrored remote-zone file
+`use-previewer-file.ts` reads only the current slide. A payload root that is
+already `remote:<connectionId>:<hostPath>` is used as stored. A host-path root
+on a remote pane is loaded through that pane's remote project key, or through
+the active worktree key when it belongs to the same connection and contains
+the payload root. A local pane keeps the host path. Text uses the host file
+reader; media uses local or remote media URLs. A mirrored remote-zone file
 can use its local media URL, avoiding project-file RPC size limits.
 
 Retry re-stats the file through `statSessionFile`; a media URL alone cannot tell

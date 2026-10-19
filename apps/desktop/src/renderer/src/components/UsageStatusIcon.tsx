@@ -12,10 +12,10 @@ import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores/chat'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
+import type { ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
-import { formatTokens, formatWindowLabel, WindowBar as WindowRow } from './provider-usage'
+import { ExtraUsageBar, formatCreditExpiry, formatTokens, formatWindowLabel, ResetGrantsRow, WindowBar as WindowRow } from './provider-usage'
 import { USAGE_POLL_MS, type UsageWindow } from '@superone/shared/subscription-usage'
 import { formatUsageDuration } from '@superone/shared/subscription-usage-presentation'
 import { useSubscriptionAlert } from './use-subscription-alert'
@@ -123,19 +123,6 @@ function useRateLimitTip(sessionId: string | null, info: RateLimitTipInfo | null
   return visible ? activeInfo : null
 }
 
-function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
-  const { t } = useTranslation()
-  const value = extra.limitDollars != null
-    ? `$${extra.usedDollars.toFixed(2)} / $${extra.limitDollars.toFixed(2)}`
-    : `$${extra.usedDollars.toFixed(2)}`
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="opacity-70">{t('usageGauge.extraUsage')}</span>
-      <span className="font-medium tabular-nums">{value}</span>
-    </div>
-  )
-}
-
 /** Remaining prepaid ("bought") credits — spends after the included pool is gone. */
 function CreditBalanceRow({ dollars }: { dollars: number }) {
   const { t } = useTranslation()
@@ -205,10 +192,6 @@ function ResetCreditsRow({ count, credits, projectPath, apiProviderId, onConsume
       </div>
     </div>
   )
-}
-
-function formatCreditExpiry(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
@@ -523,7 +506,8 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credenti
         {limits.windows.map((w) => (
           <WindowRow key={w.id ?? w.label} {...w} />
         ))}
-        {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+        {limits.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
+        <ResetGrantsRow grants={limits.resetGrants} />
         {limits.error && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
       </RateLimitGauge>
     </RateLimitTipHost>
@@ -638,7 +622,7 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
         {limits.windows.map((w) => (
           <WindowRow key={w.id ?? w.label} {...w} />
         ))}
-        {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+        {limits.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
         {limits.creditBalanceDollars != null && (
           <CreditBalanceRow dollars={limits.creditBalanceDollars} />
         )}

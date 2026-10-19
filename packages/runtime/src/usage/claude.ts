@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import type { ClaudeRateLimits, ClaudeRateLimitWindow } from '@superone/shared/agent-types'
+import type { ClaudeRateLimits, ClaudeRateLimitWindow, ClaudeResetGrant } from '@superone/shared/agent-types'
 import { AsyncCoalescer } from '../async-coalescer'
 import { fetchWithTimeout, isoToEpochSeconds, parseJson, retryAfterMs, silentLog, type UsageLog } from './http'
 import { UsageThrottle, type UsageReading } from './throttle'
@@ -22,8 +22,15 @@ const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
 const REFRESH_BUFFER_MS = 5 * 60 * 1000
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
+/**
+ * The read Claude Code makes when it checks for a reset to offer: `cedar_ember=1` opts in to the
+ * one-off reset grants (`null` on the plain read), `skip_spend=1` drops the spend it does not need.
+ */
+const RESET_GRANTS_URL = `${USAGE_URL}?cedar_ember=1&skip_spend=1`
 const USAGE_USER_AGENT = 'claude-code/2.1.289'
 const MIN_USAGE_FETCH_INTERVAL_MS = 5 * 60 * 1000
+/** Sending the grants opt-in on every usage read draws sustained 429s on the usage endpoint. */
+const MIN_RESET_GRANTS_FETCH_INTERVAL_MS = 60 * 60 * 1000
 
 // ---------- credential store ----------
 
@@ -275,6 +282,7 @@ export interface ClaudeUsageResponse {
   seven_day_omelette?: UsageWindow | null
   limits?: UsageLimitEntry[] | null
   extra_usage?: { is_enabled?: boolean; used_credits?: number; monthly_limit?: number }
+  cedar_ember?: { eligible?: boolean; grants?: Array<{ id?: string; resets_left?: number; ends_at?: string } | null> } | null
 }
 
 /** Top-level windows emitted before the model-scoped ones from `limits`. */
@@ -329,12 +337,28 @@ export function parseClaudeUsage(data: ClaudeUsageResponse, planType: string | n
   let extraUsage: ClaudeRateLimits['extraUsage'] = null
   const extra = data.extra_usage
   if (extra?.is_enabled && typeof extra.used_credits === 'number') {
-    extraUsage = {
-      usedDollars: extra.used_credits / 100,
-      limitDollars: typeof extra.monthly_limit === 'number' && extra.monthly_limit > 0 ? extra.monthly_limit / 100 : null,
-    }
+    const limitDollars = typeof extra.monthly_limit === 'number' && extra.monthly_limit > 0 ? extra.monthly_limit / 100 : null
+    // Uncapped and unspent says nothing; a cap is worth showing even before the first dollar.
+    if (limitDollars !== null || extra.used_credits > 0) extraUsage = { usedDollars: extra.used_credits / 100, limitDollars }
   }
   return { windows, extraUsage, planType }
+}
+
+/**
+ * Reset grants the account can use, from the grants read. An account outside the program (no
+ * block) or not eligible has none, and like Claude Code a malformed grant voids the whole block.
+ * Lapsed grants are kept: the reading is cached for an hour, so the renderer drops them by clock.
+ */
+export function parseClaudeResetGrants(data: ClaudeUsageResponse): ClaudeResetGrant[] {
+  const block = data.cedar_ember
+  if (!block?.eligible || !Array.isArray(block.grants)) return []
+  const grants: ClaudeResetGrant[] = []
+  for (const grant of block.grants) {
+    if (!grant?.id || typeof grant.resets_left !== 'number' || !Number.isFinite(grant.resets_left)) return []
+    const resetsLeft = Math.floor(grant.resets_left)
+    if (resetsLeft > 0) grants.push({ resetsLeft, expiresAt: isoToEpochSeconds(grant.ends_at) })
+  }
+  return grants
 }
 
 export function claudePlanType(oauth: OAuthCreds): string | null {
@@ -345,8 +369,8 @@ export function claudePlanType(oauth: OAuthCreds): string | null {
   return tierMatch ? `${base} ${tierMatch[1]}x` : base
 }
 
-function fetchUsage(accessToken: string): Promise<Response> {
-  return fetchWithTimeout(USAGE_URL, {
+function fetchUsage(accessToken: string, url = USAGE_URL): Promise<Response> {
+  return fetchWithTimeout(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${accessToken.trim()}`,
@@ -364,6 +388,25 @@ export function claudeCredentialFingerprint(creds: LoadedClaudeCreds): string {
 }
 
 const throttle = new UsageThrottle<ClaudeRateLimits>(MIN_USAGE_FETCH_INTERVAL_MS)
+const resetGrantsThrottle = new UsageThrottle<ClaudeResetGrant[]>(MIN_RESET_GRANTS_FETCH_INTERVAL_MS)
+
+/**
+ * Reset grants at most once an hour per login, read after a successful usage read so the token is
+ * known-good; a failure (429 included) only costs the grants row and is retried an hour later.
+ */
+async function readResetGrants(credentialDir: string | null, creds: LoadedClaudeCreds, accessToken: string, log: UsageLog): Promise<ClaudeResetGrant[] | null> {
+  const { value } = await resetGrantsThrottle.read(credentialDir ?? '', claudeCredentialFingerprint(creds), false, async () => {
+    const resp = await fetchUsage(accessToken, RESET_GRANTS_URL)
+    if (resp.status === 429) return { rateLimitedForMs: retryAfterMs(resp) ?? 0 }
+    if (!resp.ok) {
+      log.warn('[claude-usage] reset grants request failed status=%d', resp.status)
+      return { error: `HTTP ${resp.status}` }
+    }
+    const data = parseJson(await resp.text()) as ClaudeUsageResponse | null
+    return data ? { value: parseClaudeResetGrants(data) } : { error: 'Claude reset grants response changed.' }
+  })
+  return value
+}
 
 /**
  * The subscription windows of one credential domain (`null` = the CLI's default login),
@@ -381,7 +424,8 @@ export async function readClaudeRateLimits(credentialDir: string | null, opts: {
     if (resp.status === 401 || resp.status === 403) {
       const refreshed = await refreshClaudeToken(creds, log)
       if (!refreshed) return { error: 'Claude login expired. Sign in to Claude again.' }
-      resp = await fetchUsage(refreshed)
+      accessToken = refreshed
+      resp = await fetchUsage(accessToken)
     }
     if (resp.status === 429) {
       const retryMs = retryAfterMs(resp)
@@ -392,6 +436,7 @@ export async function readClaudeRateLimits(credentialDir: string | null, opts: {
     if (!resp.ok) return { fingerprint, error: `Claude usage request failed (HTTP ${resp.status}).` }
     const data = parseJson(await resp.text()) as ClaudeUsageResponse | null
     if (!data) return { fingerprint, error: 'Claude usage response changed.' }
-    return { fingerprint, value: { ...parseClaudeUsage(data, claudePlanType(creds.oauth)), fetchedAt: Date.now() } }
+    const resetGrants = await readResetGrants(credentialDir, creds, accessToken, log)
+    return { fingerprint, value: { ...parseClaudeUsage(data, claudePlanType(creds.oauth)), ...(resetGrants ? { resetGrants } : {}), fetchedAt: Date.now() } }
   }, opts.preferCached)
 }

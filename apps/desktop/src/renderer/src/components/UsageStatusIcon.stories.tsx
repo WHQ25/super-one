@@ -30,6 +30,7 @@ function mockRateLimitIpc(): void {
       { label: '7d', usedPercent: 41, resetsAt: Math.floor(Date.now() / 1000) + 4 * 24 * 3600 },
     ],
     extraUsage: { usedDollars: 1.2, limitDollars: 25 },
+    resetGrants: [{ resetsLeft: 2, expiresAt: Math.floor(Date.now() / 1000) + 3 * 24 * 3600 }],
     fetchedAt: Date.now(),
   }))
   mockIpc('app', 'codexGetRateLimits', async () => null)

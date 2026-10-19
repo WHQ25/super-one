@@ -14,7 +14,8 @@ const meta = {
   args: { accounts, meters: Object.fromEntries(accounts.map((row, index) => [row.credentialDir!, { limits: { windows: [
     { label: '5-hour', usedPercent: index ? 86 : 23, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
     { label: 'Weekly', usedPercent: index ? 72 : 48, resetsAt: Math.floor(Date.now() / 1000) + 86400 },
-  ], extraUsage: null, planType: row.subscriptionType } }])), onRefresh: noop, onRefreshUsage: noop, onSignIn: noop, onSignOut: noop, onRemove: noop, onSetDefault: noop, onCancel: noop },
+  ], extraUsage: index ? { usedDollars: 41.5, limitDollars: 50 } : null, ...(index ? {} : { resetGrants: [{ resetsLeft: 1, expiresAt: Math.floor(Date.now() / 1000) + 3 * 86400 }] }),
+  planType: row.subscriptionType } }])), onRefresh: noop, onRefreshUsage: noop, onSignIn: noop, onSignOut: noop, onRemove: noop, onSetDefault: noop, onCancel: noop },
 } satisfies Meta<typeof ClaudeAccountsPanel>
 export default meta
 type Story = StoryObj<typeof meta>
@@ -25,6 +26,7 @@ export const UsageLoading: Story = { args: { meters: { '/accounts/personal': { l
 export const RefreshingOneAccount: Story = { args: { meters: { ...meta.args.meters, '/accounts/personal': { ...meta.args.meters['/accounts/personal'], loading: true } } } }
 export const ErrorRetry: Story = { args: { error: 'Could not load Claude accounts. Refresh to retry.' } }
 export const IdentityUnavailable: Story = { args: { accounts: accounts.map((row) => ({ ...row, identityStatus: 'unavailable' })) } }
+export const UncappedExtraUsage: Story = { args: { meters: { '/accounts/personal': { limits: { windows: [{ label: '5-hour', usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 1800 }], extraUsage: { usedDollars: 1234.56, limitDollars: null }, planType: 'max' } } } } }
 export const UsageUnavailable: Story = { args: { meters: { '/accounts/personal': { error: true } } } }
 export const SignedOut: Story = { args: { accounts: [{ ...accounts[0]!, loggedIn: false, identityStatus: 'signedOut' }] } }
 export const BrowserLogin: Story = { args: { signingIn: true, busy: true } }

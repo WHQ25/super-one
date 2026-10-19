@@ -51,21 +51,24 @@ describe('Claude subscription sampling at the source', () => {
     let used = 70
     const fetch = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/profile') ? { account: { uuid: auth.email, email: auth.email }, organization: { uuid: 'org-test' } } : { seven_day: { utilization: used, resets_at: new Date(start + 86400_000).toISOString() } })))
     vi.stubGlobal('fetch', fetch)
+    const calls = (grants: boolean) => fetch.mock.calls.filter(([url]) => url.includes('cedar_ember') === grants).length
     let reading = await getClaudeRateLimits(false, null)
     expect(reading?.windows[0].forecast?.basis).toBe('cycle-average')
     expect(reading?.windows[0].forecast?.confirmed).toBe(false)
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(calls(false)).toBe(2)
     for (let m = 1; m < 5; m++) {
       vi.setSystemTime(start + m * 60_000)
       expect((await getClaudeRateLimits(false, null))?.fetchedAt).toBe(start)
     }
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(calls(false)).toBe(2)
     for (let m = 5; m <= 25; m += 5) {
       vi.setSystemTime(start + m * 60_000)
       used += 2
       reading = await getClaudeRateLimits(false, null)
     }
     expect(reading?.windows[0].forecast?.confirmed).toBe(true)
+    // Five usage reads in 25 minutes; the reset grants read is hourly.
+    expect(calls(true)).toBe(1)
     const sampledAt = reading!.fetchedAt
     const quotaKey = reading!.quotaKey
     vi.setSystemTime(start + 30 * 60_000)

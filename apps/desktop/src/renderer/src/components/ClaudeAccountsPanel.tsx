@@ -9,7 +9,7 @@ import { Skeleton } from '@superone/ui/components/ui/skeleton'
 import { SettingsEmptyState } from './settings/SettingsEmptyState'
 import { ProviderLabel } from './ProviderLabel'
 import { ProviderAccountCard, ProviderAccountHeader } from './ProviderAccountHeader'
-import { InfoRow, WindowBar } from './provider-usage'
+import { ExtraUsageBar, ResetGrantsRow, WindowBar } from './provider-usage'
 import { claudeAccountsChanged } from '@/hooks/useClaudeAccounts'
 import { AccountUsageRefreshButton } from './AccountUsageRefreshButton'
 import { useProviderAccountMeters } from './use-provider-account-meters'
@@ -43,8 +43,8 @@ export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, sign
           {meter?.loading && !meter.limits && <Skeleton className="h-10 w-full" />}
           {meter?.error && <span className="text-xs text-muted-foreground">{t('resources.providers.claudeUsageUnavailable')}</span>}
           {meter?.limits?.windows.map((window) => <WindowBar key={window.id ?? window.label} {...window} />)}
-          {meter?.limits?.extraUsage && <InfoRow label={t('usageGauge.extraUsage')} value={meter.limits.extraUsage.limitDollars != null
-            ? `$${meter.limits.extraUsage.usedDollars.toFixed(2)} / $${meter.limits.extraUsage.limitDollars.toFixed(2)}` : `$${meter.limits.extraUsage.usedDollars.toFixed(2)}`} />}
+          {meter?.limits?.extraUsage && <ExtraUsageBar extra={meter.limits.extraUsage} />}
+          <ResetGrantsRow grants={meter?.limits?.resetGrants} />
         </div>}
         <div className="flex flex-wrap items-center gap-2">
           {account.credentialDir && (account.loggedIn

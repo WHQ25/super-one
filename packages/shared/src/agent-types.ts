@@ -3641,12 +3641,21 @@ export interface ClaudeExtraUsage {
   limitDollars: number | null
 }
 
+/** One of Anthropic's one-off usage-limit reset grants (`cedar_ember`); claimed from Claude Code, not here. */
+export interface ClaudeResetGrant {
+  resetsLeft: number
+  /** Unix seconds after which the grant's resets lapse; `null` when it does not say. */
+  expiresAt: number | null
+}
+
 export interface ClaudeRateLimits {
   quotaKey?: string
   /** A failed refresh; the last successful reading and its timestamp are retained. */
   error?: string
   windows: ClaudeRateLimitWindow[]
   extraUsage: ClaudeExtraUsage | null
+  /** Usable reset grants; absent until the hourly grants read has answered. */
+  resetGrants?: ClaudeResetGrant[]
   planType: string | null
   fetchedAt?: number | null
 }

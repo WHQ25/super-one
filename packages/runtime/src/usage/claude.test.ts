@@ -52,6 +52,11 @@ describe('parseUsage (Claude /api/oauth/usage → ClaudeRateLimits)', () => {
     expect(result.extraUsage).toEqual({ usedDollars: 2.5, limitDollars: null })
   })
 
+  it('drops uncapped extra_usage with nothing spent but keeps an unspent cap', () => {
+    expect(parseUsage({ extra_usage: { is_enabled: true, used_credits: 0, monthly_limit: 0 } }, null).extraUsage).toBeNull()
+    expect(parseUsage({ extra_usage: { is_enabled: true, used_credits: 0, monthly_limit: 5000 } }, null).extraUsage).toEqual({ usedDollars: 0, limitDollars: 50 })
+  })
+
   it('ignores extra_usage when not enabled', () => {
     const data: UsageResponse = { extra_usage: { is_enabled: false, used_credits: 500, monthly_limit: 10000 } }
 

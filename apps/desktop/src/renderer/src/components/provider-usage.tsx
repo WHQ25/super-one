@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { usageWindowTone, type UsageWindow } from '@superone/shared/subscription-usage'
-import { usageForecastCopy } from '@superone/shared/subscription-usage-presentation'
+import { availableResetGrants, extraUsageCopy, usageForecastCopy } from '@superone/shared/subscription-usage-presentation'
+import type { ClaudeExtraUsage, ClaudeResetGrant } from '@superone/shared/agent-types'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -31,6 +32,12 @@ export function formatResetIn(resetsAtSeconds: number | null, t: TFunction): str
   return t('usageGauge.resetsIn', { time })
 }
 
+export function formatCreditExpiry(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+const TONE_BAR_CLASS = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500' } as const
+
 export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
@@ -52,7 +59,7 @@ export function WindowBar(window: UsageWindow) {
   const resetIn = formatResetIn(resetsAt, t)
   const tone = usageWindowTone(window, now)
   const copy = usageForecastCopy(window, now)
-  const color = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500' }[tone]
+  const color = TONE_BAR_CLASS[tone]
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
@@ -66,6 +73,41 @@ export function WindowBar(window: UsageWindow) {
         <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${remaining}%` }} />
       </div>
       {copy && <span className="text-[11px] text-muted-foreground">{t(`usageGauge.forecast.${copy.key}`, { time: copy.time })}</span>}
+    </div>
+  )
+}
+
+/** Spend beyond the plan; a capped allowance gets a bar of the share spent. */
+export function ExtraUsageBar({ extra }: { extra: ClaudeExtraUsage }) {
+  const { t } = useTranslation()
+  const { value, usedPercent } = extraUsageCopy(extra)
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="opacity-70">{t('usageGauge.extraUsage')}</span>
+        <span className="font-medium tabular-nums">{value}</span>
+      </div>
+      {usedPercent != null && (
+        <div className="h-1 w-full overflow-hidden rounded-full bg-border/60">
+          <div className={cn('h-full rounded-full transition-all', TONE_BAR_CLASS[usageWindowTone({ usedPercent, resetsAt: null })])} style={{ width: `${usedPercent}%` }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Claude's one-off limit resets, read-only: Claude Code offers them when a limit is hit. */
+export function ResetGrantsRow({ grants }: { grants?: ClaudeResetGrant[] }) {
+  const { t } = useTranslation()
+  const available = availableResetGrants(grants)
+  if (!available) return null
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs">
+      <span className="opacity-70">{t('usageGauge.resetCredits')}</span>
+      <span className="flex items-center gap-1.5">
+        {available.nextExpiresAt != null && <span className="opacity-50">{t('usageGauge.resetCreditExpires', { date: formatCreditExpiry(available.nextExpiresAt) })} ·</span>}
+        <span className="font-medium tabular-nums">{available.count}</span>
+      </span>
     </div>
   )
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { usageForecastCopy } from '@superone/shared/subscription-usage-presentation'
+import { availableResetGrants, extraUsageCopy, usageForecastCopy } from '@superone/shared/subscription-usage-presentation'
 import type { UsageWindow } from '@superone/shared/subscription-usage'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { RefreshCw } from 'lucide-react-native'
-import type { CodexRateLimitResetOutcome, RemoteUsage } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, CodexRateLimitResetOutcome, RemoteUsage } from '@superone/shared/agent-types'
 import { formatTokens } from '@superone/shared/format-tokens'
 import { Text } from './text'
 import { ProviderBrand } from './provider-brand'
@@ -73,6 +73,13 @@ function Row({ label, value, tone }: { label: string; value: string; tone?: Mete
   </View>
 }
 
+function MeterBar({ percent, color }: { percent: number; color: string }) {
+  const { tokens: { colors } } = useMobileTheme()
+  return <View style={{ height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: colors.muted }}>
+    <View style={{ width: `${percent}%`, height: '100%', backgroundColor: color }} />
+  </View>
+}
+
 function WindowRow({ window, now }: { window: UsageWindow; now: number }) {
   const { label, usedPercent, resetsAt } = window
   const { tokens: { colors } } = useMobileTheme()
@@ -102,11 +109,29 @@ function WindowRow({ window, now }: { window: UsageWindow; now: number }) {
         </Text>
       </View>
     </View>
-    <View style={{ height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: colors.muted }}>
-      <View style={{ width: `${remaining}%`, height: '100%', backgroundColor: fill }} />
-    </View>
+    <MeterBar percent={remaining} color={fill} />
     {copy ? <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{t(forecastText[copy.key]).replace('{{time}}', copy.time ?? '')}</Text> : null}
   </View>
+}
+
+/** Spend beyond the plan; a capped allowance gets a bar of the share spent. */
+function ExtraUsage({ extra }: { extra: ClaudeExtraUsage }) {
+  const { t } = useMobileLocale()
+  const toneColor = useToneColor()
+  const { value, usedPercent } = extraUsageCopy(extra)
+  return <View style={{ gap: 4 }}>
+    <Row label={t('Extra usage')} value={value} />
+    {usedPercent != null ? <MeterBar percent={usedPercent} color={toneColor(usageTone(usedPercent))} /> : null}
+  </View>
+}
+
+/** Claude's one-off limit resets, read-only: Claude Code offers them when a limit is hit. */
+function ResetGrants({ usage, now }: { usage: RemoteUsage; now: number }) {
+  const { t } = useMobileLocale()
+  const available = availableResetGrants(usage.resetGrants, now)
+  if (!available) return null
+  const expires = available.nextExpiresAt != null ? `${t('Expires')} ${new Date(available.nextExpiresAt * 1000).toLocaleDateString()} · ` : ''
+  return <Row label={t('Reset credits')} value={`${expires}${available.count}`} />
 }
 
 function ResetCredits({ usage, onConsume }: { usage: RemoteUsage; onConsume: UsageMeterProps['onConsumeResetCredit'] }) {
@@ -219,10 +244,10 @@ export function UsagePanel({ usage, rateLimit, onConsumeResetCredit }: Pick<Usag
     </View>
     {liveNote}
     {usage.windows.map((window) => <WindowRow key={window.id ?? window.label} window={window} now={now} />)}
-    {usage.extraUsage ? <Row label={t('Extra usage')}
-      value={`$${usage.extraUsage.usedDollars.toFixed(2)}${usage.extraUsage.limitDollars != null ? ` / $${usage.extraUsage.limitDollars.toFixed(2)}` : ''}`} /> : null}
+    {usage.extraUsage ? <ExtraUsage extra={usage.extraUsage} /> : null}
     {usage.creditBalanceDollars != null ? <Row label={t('Credit balance')} value={`$${usage.creditBalanceDollars.toFixed(2)}`} /> : null}
     <ResetCredits usage={usage} onConsume={onConsumeResetCredit} />
+    <ResetGrants usage={usage} now={now} />
     <CodexStats usage={usage} />
     {agoMinutes != null ? <Text style={{ color: colors.mutedForeground, fontSize: 10, opacity: 0.8 }}>
       {agoMinutes === 0 ? t('Updated just now') : `${t('Updated')} ${agoMinutes}m ${t('ago')}`}

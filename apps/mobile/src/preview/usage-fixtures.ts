@@ -8,6 +8,7 @@ export const USAGE_FIXTURES = {
   claude: {
     kind: 'claude', title: 'Claude', account: 'dev@example.com', planType: 'Max 5x', fetchedAt: now - 2 * 60_000,
     extraUsage: { usedDollars: 3.25, limitDollars: 50 },
+    resetGrants: [{ resetsLeft: 1, expiresAt: inSeconds(3 * 86_400) }],
     windows: [
       { label: '5h', usedPercent: 37, resetsAt: inSeconds(2 * 3600 + 15 * 60) },
       { label: 'Weekly', usedPercent: 12, resetsAt: inSeconds(4 * 86_400 + 3 * 3600) },

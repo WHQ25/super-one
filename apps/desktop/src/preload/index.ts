@@ -1126,6 +1126,8 @@ const appAPI = {
   claudeCancelSignIn: () => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_CANCEL_SIGN_IN),
   claudeSignOutAccount: (credentialDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_OUT_ACCOUNT, credentialDir),
+  claudeRemoveAccount: (credentialDir: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CLAUDE_REMOVE_ACCOUNT, credentialDir),
 
   providerGetRateLimits: (apiProviderId: string, force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDER_GET_RATE_LIMITS, apiProviderId, force),

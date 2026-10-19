@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ClaudeAccount } from '@superone/shared/agent-types'
@@ -45,8 +45,9 @@ export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
   const generation = listGeneration
   // Read the external CLI first so existing installations retain their initial default.
   const cli = await readAccount(null, force)
-  const accounts = [...(cli.loggedIn || cli.email ? [cli] : []), ...await Promise.all(store.dirs().map((dir) => readAccount(dir, force)))]
-  const resolved = dedupeAccounts(accounts).map((account) => ({ ...account, isDefault: store.isDefault(account.credentialDir) }))
+  // A signed-out CLI login belongs to the external CLI; SuperOne can neither renew nor remove it.
+  const accounts = [...(cli.loggedIn ? [cli] : []), ...await Promise.all(store.dirs().map((dir) => readAccount(dir, force)))]
+  const resolved = dedupeAccounts(accounts, (account) => account.credentialDir && store.get(account.credentialDir)?.ownerIdentity).map((account) => ({ ...account, isDefault: store.isDefault(account.credentialDir) }))
   if (generation === listGeneration) listCache = { accounts: resolved, at: Date.now() }
   return resolved
 }
@@ -64,6 +65,12 @@ export function createAccountDir(): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   return dir
 }
+/** A new card exists only once its sign-in succeeds. */
+export async function addAccount(email?: string | null): Promise<ClaudeAccount | null> {
+  const dir = createAccountDir()
+  try { return await signInAccount(dir, email) }
+  catch (error) { await removeAccount(dir).catch(() => {}); throw error }
+}
 export async function signInAccount(dir: string, email?: string | null): Promise<ClaudeAccount | null> {
   const store = claudeAccountStore()
   store.assertManaged(dir)
@@ -71,6 +78,7 @@ export async function signInAccount(dir: string, email?: string | null): Promise
   const previousIdentity = store.get(dir)?.account.identityKey
   const controller = new AbortController()
   login = controller
+  let signedIn: ClaudeAccount
   try {
     const args = ['login', '--claudeai']
     if (email?.trim()) args.push('--email', email.trim())
@@ -82,8 +90,19 @@ export async function signInAccount(dir: string, email?: string | null): Promise
       store.update(dir, { account: { ...account, loggedIn: false, identityStatus: 'signedOut' } })
       throw new Error('This profile belongs to another Claude account. Add the other account separately.')
     }
-    return account
+    signedIn = account
   } finally { if (login === controller) login = null; invalidateAccountListCache() }
+  // One identity keeps one card: signed-out domains this login supersedes are retired.
+  const identity = signedIn.identityKey
+  if (identity) {
+    for (const other of store.dirs()) {
+      const known = store.get(other)
+      if (other === dir || known?.ownerIdentity !== identity || known.account.loggedIn) continue
+      const wasDefault = store.isDefault(other)
+      await deleteAccountDir(other).then(() => { if (wasDefault) store.setDefault(dir) }, () => {})
+    }
+  }
+  return signedIn
 }
 export function cancelSignIn(): void { login?.abort() }
 export async function signOutAccount(dir: string): Promise<void> {
@@ -91,6 +110,19 @@ export async function signOutAccount(dir: string): Promise<void> {
   await runAuth(['logout'], dir, STATUS_TIMEOUT_MS)
   // Keep the domain and last identity so the user can reauthenticate the same card/session.
   await readAccount(dir, true)
+  invalidateAccountListCache()
+}
+/** Revokes the domain's own credentials before deleting it; shared transcripts are only linked in. */
+export async function removeAccount(dir: string): Promise<void> {
+  claudeAccountStore().assertManaged(dir)
+  if (login) throw new Error('Finish or cancel the current Claude sign-in first.')
+  await deleteAccountDir(dir)
+}
+async function deleteAccountDir(dir: string): Promise<void> {
+  // A signed-out or mismatched domain may still hold another identity's token.
+  await runAuth(['logout'], dir, STATUS_TIMEOUT_MS).catch(() => {})
+  rmSync(dir, { recursive: true, force: true })
+  claudeAccountStore().forget(dir)
   invalidateAccountListCache()
 }
 export async function setDefaultAccount(dir: string | null): Promise<void> {

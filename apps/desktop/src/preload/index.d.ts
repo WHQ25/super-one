@@ -227,6 +227,8 @@ interface AppAPI extends WindowLayoutAPI {
   claudeSetDefaultAccount(credentialDir: string | null): Promise<void>
   claudeCancelSignIn(): Promise<void>
   claudeSignOutAccount(credentialDir: string): Promise<void>
+  /** Signs the domain out and deletes it. */
+  claudeRemoveAccount(credentialDir: string): Promise<void>
   providerGetRateLimits(apiProviderId: string, force?: boolean): Promise<ProviderRateLimits | null>
   acpGetRateLimits(projectPath: string, agentId: string, force?: boolean): Promise<ProviderRateLimits | null>
   /** Observe the sandbox Grok will apply; SuperOne never sets it, so this is read-only. */

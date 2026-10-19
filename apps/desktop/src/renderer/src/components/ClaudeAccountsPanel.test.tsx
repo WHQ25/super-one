@@ -17,6 +17,7 @@ beforeEach(() => {
     claudeGetRateLimits: vi.fn(async (_force: boolean, dir: string) => ({ windows: [{ label: '5-hour', usedPercent: dir === a.credentialDir ? 20 : 80, resetsAt: null }], extraUsage: null, planType: 'max' })),
     claudeSetDefaultAccount: vi.fn(async (dir: string) => { accounts = accounts.map((row) => ({ ...row, isDefault: row.credentialDir === dir })) }),
     claudeSignOutAccount: vi.fn(async (dir: string) => { accounts = accounts.map((row) => row.credentialDir === dir ? { ...row, loggedIn: false } : row) }),
+    claudeRemoveAccount: vi.fn(async (dir: string) => { accounts = accounts.filter((row) => row.credentialDir !== dir) }),
     claudeSignInAccount: vi.fn(async (_email: unknown, dir: string) => { accounts = accounts.map((row) => row.credentialDir === dir ? { ...row, loggedIn: true } : row); return accounts.find((row) => row.credentialDir === dir) }),
   })
 })
@@ -40,6 +41,15 @@ describe('Claude account cards and selection updates', () => {
     fireEvent.click(signIn)
     await waitFor(() => expect(window.app.claudeSignInAccount).toHaveBeenCalledWith(undefined, b.credentialDir))
     await waitFor(() => expect(screen.queryByRole('button', { name: /sign in again/i })).not.toBeInTheDocument())
+  })
+  it('removes a signed-out card that cannot be reauthenticated', async () => {
+    render(<ClaudeAuthSettings />)
+    await screen.findByText('b@example.test')
+    expect(screen.queryByRole('button', { name: /remove account/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: /sign out/i })[1]!)
+    fireEvent.click(await screen.findByRole('button', { name: /remove account/i }))
+    await waitFor(() => expect(screen.queryByText('b@example.test')).not.toBeInTheDocument())
+    expect(window.app.claudeRemoveAccount).toHaveBeenCalledWith(b.credentialDir)
   })
   it('discards a stale meter response after a newer refresh has completed', async () => {
     let finish!: (value: unknown) => void

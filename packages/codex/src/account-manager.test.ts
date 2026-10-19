@@ -117,6 +117,16 @@ describe('Codex login and account isolation', () => {
     expect((await manager.list()).map((a) => a.id)).toEqual([b.accountId])
   })
 
+  it('forgets a signed-in profile whose status can no longer be read', async () => {
+    const { store } = fixture()
+    const id = store.allocate()
+    store.update(id, { signedIn: true, authMode: 'chatgpt', requiresOpenaiAuth: true, email: 'gone@example.test', planType: 'plus' })
+    const manager = new CodexAccountManager(store, async () => { throw new Error('Codex app-server unavailable') })
+    managers.push(manager)
+    await manager.remove(codexAccountProviderId(id))
+    expect(store.list()).toEqual([])
+  })
+
   it('does not let a delayed status response restore a removed profile', async () => {
     const { store } = fixture()
     const id = store.allocate()

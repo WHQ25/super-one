@@ -97,6 +97,13 @@ export class ClaudeAccountStore {
     if (index.defaultDir === undefined && value.account.loggedIn) index.defaultDir = dir
     this.write(index)
   }
+  /** Drop a removed domain's metadata; a removed default re-initializes from the next signed-in read. */
+  forget(dir: string): void {
+    const index = this.read()
+    delete index.accounts[key(dir)]
+    if (index.defaultDir === dir) delete index.defaultDir
+    this.write(index)
+  }
   isDefault(dir: string | null): boolean { return this.read().defaultDir === dir }
   defaultProviderId(): string | null {
     const dir = this.read().defaultDir

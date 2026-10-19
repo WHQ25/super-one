@@ -14,7 +14,7 @@ const meta = {
   args: { accounts, meters: Object.fromEntries(accounts.map((row, index) => [row.credentialDir!, { limits: { windows: [
     { label: '5-hour', usedPercent: index ? 86 : 23, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
     { label: 'Weekly', usedPercent: index ? 72 : 48, resetsAt: Math.floor(Date.now() / 1000) + 86400 },
-  ], extraUsage: null, planType: row.subscriptionType } }])), onRefresh: noop, onRefreshUsage: noop, onSignIn: noop, onSignOut: noop, onSetDefault: noop, onCancel: noop },
+  ], extraUsage: null, planType: row.subscriptionType } }])), onRefresh: noop, onRefreshUsage: noop, onSignIn: noop, onSignOut: noop, onRemove: noop, onSetDefault: noop, onCancel: noop },
 } satisfies Meta<typeof ClaudeAccountsPanel>
 export default meta
 type Story = StoryObj<typeof meta>
@@ -37,10 +37,16 @@ function InteractivePanel(props: ClaudeAccountsPanelProps) {
   return <ClaudeAccountsPanel {...props} accounts={rows}
     onSetDefault={(dir) => setRows((old) => old.map((row) => ({ ...row, isDefault: row.credentialDir === dir })))}
     onSignOut={(dir) => setRows((old) => old.map((row) => row.credentialDir === dir ? { ...row, loggedIn: false } : row))}
+    onRemove={(dir) => setRows((old) => old.filter((row) => row.credentialDir !== dir))}
     onSignIn={(dir) => setRows((old) => dir ? old.map((row) => row.credentialDir === dir ? { ...row, loggedIn: true } : row) : [...old, { ...accounts[0]!, credentialDir: `/accounts/${old.length}`, email: `new-${old.length}@example.com`, isDefault: false }])} />
 }
 export const ChangeDefault: Story = { render: (args) => <InteractivePanel {...args} />, play: async ({ canvasElement }) => {
   const canvas = within(canvasElement)
   await userEvent.click(canvas.getByRole('button', { name: /set as default/i }))
   await expect(canvas.getByText('work@example.com').parentElement).toHaveTextContent('Default')
+} }
+export const RemoveSignedOut: Story = { args: { accounts: [accounts[0]!, { ...accounts[1]!, loggedIn: false, identityStatus: 'signedOut' }] }, render: (args) => <InteractivePanel {...args} />, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement)
+  await userEvent.click(canvas.getByRole('button', { name: /remove account/i }))
+  await expect(canvas.queryByText('work@example.com')).not.toBeInTheDocument()
 } }

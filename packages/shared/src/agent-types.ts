@@ -4294,6 +4294,7 @@ export const AgentIpcChannels = {
   CLAUDE_LIST_ACCOUNTS: 'claude:list-accounts',
   CLAUDE_SIGN_IN_ACCOUNT: 'claude:sign-in-account',
   CLAUDE_SIGN_OUT_ACCOUNT: 'claude:sign-out-account',
+  CLAUDE_REMOVE_ACCOUNT: 'claude:remove-account',
   CLAUDE_SET_DEFAULT_ACCOUNT: 'claude:set-default-account',
   CLAUDE_CANCEL_SIGN_IN: 'claude:cancel-sign-in',
 

@@ -25,6 +25,16 @@ describe('dedupeAccounts', () => {
     expect(out).toHaveLength(2)
   })
 
+  it('folds a signed-out domain into the live or remaining card of the identity it was verified as', () => {
+    const out = (id: string | null) => ({ ...at(id, null), email: 'me@example.com' })
+    const owners: Record<string, string> = { '/accounts/old': 'me|org-a', '/accounts/older': 'me|org-a', '/accounts/other': 'me|org-b' }
+    const ownerOf = (account: { credentialDir: string | null }) => owners[account.credentialDir ?? '']
+    expect(dedupeAccounts([out('/accounts/old'), at('/accounts/new', 'me|org-a'), out('/accounts/other')], ownerOf).map((a) => a.credentialDir))
+      .toEqual(['/accounts/new', '/accounts/other'])
+    expect(dedupeAccounts([out('/accounts/old'), out('/accounts/older'), out('/accounts/pending')], ownerOf).map((a) => a.credentialDir))
+      .toEqual(['/accounts/old', '/accounts/pending'])
+  })
+
   it('preserves input order for identities that survive', () => {
     const out = dedupeAccounts([at(null, 'a|1'), at('/accounts/x', 'b|1'), at('/accounts/y', 'c|1')])
 

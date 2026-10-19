@@ -76,6 +76,7 @@ export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disab
             {pending?.accountId !== account.id && <div className="flex flex-wrap items-center gap-2">
               {account.signedIn ? <>
                 <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignOut(account.id)}><LogOut data-icon="inline-start" />{t('settings.harnesses.codexAccount.signOut')}</Button>
+                {account.unavailable && <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onRemove(account.id)}><Trash2 data-icon="inline-start" />{t('settings.harnesses.codexAccount.removeAccount')}</Button>}
                 {!account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={blocked || account.unavailable} onClick={() => onSetDefault(account.id)}>
                   <Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}
                 </Button>}

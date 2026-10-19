@@ -105,13 +105,13 @@ export class CodexAccountStore {
     this.write(data)
   }
 
-  /** Forget a signed-out profile's card. Codex credentials and local history are not deleted. */
-  remove(id: string): void {
+  /** Forget a profile's card. Codex credentials and local history are not deleted. */
+  remove(id: string, unreachable = false): void {
     codexAccountId(codexAccountProviderId(id))
     const data = this.read()
     const account = data.accounts.find((a) => a.id === id)
     if (!account) return
-    if (account.status.signedIn) throw new Error('Sign out before removing this Codex account.')
+    if (account.status.signedIn && !unreachable) throw new Error('Sign out before removing this Codex account.')
     data.accounts = data.accounts.filter((a) => a.id !== id)
     if (data.defaultId === id) data.defaultId = data.accounts.find((a) => a.status.signedIn)?.id ?? null
     this.write(data)

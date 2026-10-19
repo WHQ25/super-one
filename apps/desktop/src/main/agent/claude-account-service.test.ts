@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { claudeAccountProviderId, CLAUDE_CLI_ACCOUNT_PROVIDER_ID } from '@superone/shared/agent-types'
@@ -15,7 +15,7 @@ vi.mock('node:child_process', () => ({
     done(null)
   },
 }))
-import { authEnv, claudeAccountConfig, createAccountDir, invalidateAccountListCache, listAccounts, readAccount, setDefaultAccount, signInAccount, signOutAccount } from './claude-account-service'
+import { addAccount, authEnv, claudeAccountConfig, createAccountDir, invalidateAccountListCache, listAccounts, readAccount, removeAccount, setDefaultAccount, signInAccount, signOutAccount } from './claude-account-service'
 import { claudeAccountStore } from './claude-account-store'
 
 function credentials(dir: string, token: string) {
@@ -105,6 +105,29 @@ describe('Claude managed account lifecycle', () => {
     await expect(signInAccount(dir)).rejects.toThrow(/another Claude account/)
     expect(claudeAccountStore().get(dir)?.ownerIdentity).toBe('a|org')
     expect(() => claudeAccountConfig(claudeAccountProviderId(dir))).toThrow(/sign in/)
+  })
+  it('revokes and deletes a removed domain, letting the default fall to the next signed-in account', async () => {
+    const a = createAccountDir(), b = createAccountDir(); credentials(a, 'a'); credentials(b, 'b')
+    await listAccounts(true); await setDefaultAccount(b)
+    await removeAccount(b)
+    expect(fixture.calls).toEqual([expect.objectContaining({ args: ['auth', 'logout'], env: expect.objectContaining({ CLAUDE_CONFIG_DIR: b }) })])
+    expect(existsSync(b)).toBe(false)
+    expect(existsSync(join(fixture.home, 'shared'))).toBe(true)
+    expect((await listAccounts(true)).map((row) => [row.credentialDir, row.isDefault])).toEqual([[a, true]])
+  })
+  it('keeps one card per identity when a lapsed account is added again', async () => {
+    const old = createAccountDir(); credentials(old, 'a'); await listAccounts(true); await setDefaultAccount(old)
+    await signOutAccount(old)
+    const fresh = createAccountDir(); credentials(fresh, 'a')
+    expect((await listAccounts(true)).map((row) => row.credentialDir)).toEqual([fresh])
+    await signInAccount(fresh)
+    expect(existsSync(old)).toBe(false)
+    expect((await listAccounts(true)).map((row) => [row.credentialDir, row.loggedIn, row.isDefault])).toEqual([[fresh, true, true]])
+  })
+  it('leaves no card behind when adding an account does not complete', async () => {
+    await expect(addAccount()).rejects.toThrow(/did not complete/)
+    expect(claudeAccountStore().dirs()).toEqual([])
+    expect(await listAccounts(true)).toEqual([])
   })
   it('refuses account paths outside the registry and clears inherited login credentials', () => {
     expect(() => claudeAccountConfig('claude-account:/somewhere-else')).toThrow(/Unknown/)

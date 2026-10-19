@@ -49,4 +49,4 @@ export const UsageUnavailable: Story = { args: { meters: { [accounts[0]!.id]: { 
 export const TokenStatisticsOnly: Story = { args: { meters: { [accounts[0]!.id]: { usage: { lifetimeTokens: 12500000, peakDailyTokens: null, currentStreakDays: null, longestStreakDays: null, longestRunningTurnSec: null } } } } }
 export const RefreshingUsage: Story = { args: { meters: { ...meta.args.meters, [accounts[0]!.id]: { ...meta.args.meters[accounts[0]!.id], loading: true } } } }
 export const StaleUsage: Story = { args: { meters: { [accounts[0]!.id]: { ...meta.args.meters[accounts[0]!.id], error: true } } } }
-export const AccountUnavailable: Story = { args: { accounts: [{ ...accounts[0]!, unavailable: true }] } }
+export const AccountUnavailable: Story = { args: { accounts: [{ ...accounts[0]!, unavailable: true }, accounts[1]!] }, render: (args) => <InteractivePanel {...args} /> }

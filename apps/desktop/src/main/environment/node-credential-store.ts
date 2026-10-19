@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ChannelCredential } from '@superone/runtime/server/secure-channel-client'
+import log from '../logger'
 
 /**
  * Fail-closed credential storage for long-lived node credentials.
@@ -10,6 +11,11 @@ import type { ChannelCredential } from '@superone/runtime/server/secure-channel-
  * Unlike the provider secret-store (which may fall back to plaintext), node
  * refresh tokens and device keys are NEVER written in plaintext. When OS
  * secure storage is unavailable, credentials stay in-memory only (or save is refused).
+ *
+ * The file is loaded on first access, not at construction, and retried while
+ * secure storage is unavailable: the store must not depend on when its owner
+ * is built during startup. Entries that fail to decrypt are written back
+ * unchanged, so a failed load never erases them.
  */
 
 export interface NodeDeviceCredential {
@@ -33,19 +39,21 @@ export interface NodeDeviceCredential {
   channel?: ChannelCredential
 }
 
+interface StoredEntry {
+  connectionId: string
+  environmentId: string
+  nodePublicKeyFingerprint: string
+  clientSessionId: string
+  baseUrl: string
+  label: string
+  updatedAt: number
+  /** safeStorage blob: enc:v1:<base64> containing JSON of secrets */
+  secretsBlob: string
+}
+
 interface StoredFile {
   version: 1
-  entries: Array<{
-    connectionId: string
-    environmentId: string
-    nodePublicKeyFingerprint: string
-    clientSessionId: string
-    baseUrl: string
-    label: string
-    updatedAt: number
-    /** safeStorage blob: enc:v1:<base64> containing JSON of secrets */
-    secretsBlob: string
-  }>
+  entries: StoredEntry[]
 }
 
 const ENC_PREFIX = 'enc:v1:'
@@ -57,13 +65,16 @@ export type CredentialSaveResult =
 
 export class NodeCredentialStore {
   private memory = new Map<string, NodeDeviceCredential>()
+  /** On-disk entries this process could not decrypt, kept verbatim for the next write. */
+  private unreadable = new Map<string, StoredEntry>()
+  private loaded = false
+  private warnedUnavailable = false
   private readonly filePath: string
 
   constructor(userDataDir: string) {
     const dir = join(userDataDir, 'node-credentials')
     mkdirSync(dir, { recursive: true })
     this.filePath = join(dir, 'credentials.json')
-    this.loadFromDisk()
   }
 
   isSecureStorageAvailable(): boolean {
@@ -75,10 +86,12 @@ export class NodeCredentialStore {
   }
 
   get(connectionId: string): NodeDeviceCredential | null {
+    this.ensureLoaded()
     return this.memory.get(connectionId) ?? null
   }
 
   getByEnvironmentId(environmentId: string): NodeDeviceCredential | null {
+    this.ensureLoaded()
     for (const c of this.memory.values()) {
       if (c.environmentId === environmentId) return c
     }
@@ -86,6 +99,7 @@ export class NodeCredentialStore {
   }
 
   list(): NodeDeviceCredential[] {
+    this.ensureLoaded()
     return [...this.memory.values()].map((c) => ({ ...c }))
   }
 
@@ -96,7 +110,10 @@ export class NodeCredentialStore {
    * - return persisted:false so UI can warn
    */
   save(cred: NodeDeviceCredential): CredentialSaveResult {
+    // Load first: a write must carry the entries already on disk.
+    this.ensureLoaded()
     this.memory.set(cred.connectionId, { ...cred, updatedAt: Date.now() })
+    this.unreadable.delete(cred.connectionId)
 
     if (!this.isSecureStorageAvailable()) {
       return { ok: true, persisted: false, reason: 'secure_storage_unavailable' }
@@ -111,13 +128,15 @@ export class NodeCredentialStore {
   }
 
   updateRefreshToken(connectionId: string, refreshToken: string): CredentialSaveResult {
-    const existing = this.memory.get(connectionId)
+    const existing = this.get(connectionId)
     if (!existing) return { ok: false, reason: 'not_found' }
     return this.save({ ...existing, refreshToken, updatedAt: Date.now() })
   }
 
   remove(connectionId: string): void {
+    this.ensureLoaded()
     this.memory.delete(connectionId)
+    this.unreadable.delete(connectionId)
     if (this.isSecureStorageAvailable()) {
       try {
         this.flushToDisk()
@@ -127,17 +146,42 @@ export class NodeCredentialStore {
     }
   }
 
-  private loadFromDisk(): void {
-    if (!existsSync(this.filePath)) return
-    if (!this.isSecureStorageAvailable()) {
-      // Fail closed: do not load ciphertext we cannot decrypt; do not load plaintext.
+  /** Load the file once secure storage can decrypt it; until then, retry on every access. */
+  private ensureLoaded(): void {
+    if (this.loaded) return
+    if (!existsSync(this.filePath)) {
+      this.loaded = true
       return
     }
+    if (!this.isSecureStorageAvailable()) {
+      // Fail closed: do not load ciphertext we cannot decrypt; do not load plaintext.
+      if (!this.warnedUnavailable) {
+        this.warnedUnavailable = true
+        log.warn('[node-credentials] secure storage unavailable; stored credentials not loaded yet')
+      }
+      return
+    }
+    this.loaded = true
+
+    let raw: StoredFile
     try {
-      const raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as StoredFile
-      if (raw.version !== 1 || !Array.isArray(raw.entries)) return
-      for (const entry of raw.entries) {
-        if (!entry.secretsBlob?.startsWith(ENC_PREFIX)) continue
+      raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as StoredFile
+    } catch (err) {
+      log.warn('[node-credentials] unreadable credentials file: %s', errorMessage(err))
+      return
+    }
+    if (raw.version !== 1 || !Array.isArray(raw.entries)) {
+      log.warn('[node-credentials] unsupported credentials file version=%s', String(raw.version))
+      return
+    }
+    for (const entry of raw.entries) {
+      // A credential saved in this process before the load is newer than disk.
+      if (this.memory.has(entry.connectionId)) continue
+      if (!entry.secretsBlob?.startsWith(ENC_PREFIX)) {
+        log.warn('[node-credentials] skipped unencrypted entry connectionId=%s', entry.connectionId)
+        continue
+      }
+      try {
         const plain = safeStorage.decryptString(Buffer.from(entry.secretsBlob.slice(ENC_PREFIX.length), 'base64'))
         const secrets = JSON.parse(plain) as {
           devicePrivateKeyPem: string
@@ -158,9 +202,14 @@ export class NodeCredentialStore {
           label: entry.label,
           updatedAt: entry.updatedAt,
         })
+      } catch (err) {
+        this.unreadable.set(entry.connectionId, entry)
+        log.warn(
+          '[node-credentials] failed to decrypt entry connectionId=%s: %s',
+          entry.connectionId,
+          errorMessage(err),
+        )
       }
-    } catch {
-      /* corrupt file — start empty */
     }
   }
 
@@ -168,7 +217,7 @@ export class NodeCredentialStore {
     if (!this.isSecureStorageAvailable()) {
       throw new Error('secure storage unavailable; refusing plaintext node credential write')
     }
-    const entries: StoredFile['entries'] = []
+    const entries: StoredEntry[] = [...this.unreadable.values()]
     for (const cred of this.memory.values()) {
       const secretsJson = JSON.stringify({
         devicePrivateKeyPem: cred.devicePrivateKeyPem,
@@ -203,4 +252,8 @@ export class NodeCredentialStore {
       throw err
     }
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }

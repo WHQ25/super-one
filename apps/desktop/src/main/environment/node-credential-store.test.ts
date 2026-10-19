@@ -25,6 +25,8 @@ vi.mock('electron', () => ({
   },
 }))
 
+vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
+
 import { NodeCredentialStore } from './node-credential-store'
 
 const dirs: string[] = []
@@ -119,5 +121,53 @@ describe('NodeCredentialStore', () => {
 
     const reloaded = new NodeCredentialStore(dir).get('c1')
     expect(reloaded?.refreshToken).toBe('refresh-rotated')
+  })
+
+  it('loads stored credentials once secure storage becomes available after construction', () => {
+    const dir = tempDir()
+    new NodeCredentialStore(dir).save(sample)
+
+    electron.available = false
+    const store = new NodeCredentialStore(dir)
+    expect(store.get('c1')).toBeNull()
+
+    electron.available = true
+    expect(store.get('c1')?.refreshToken).toBe('refresh-secret')
+  })
+
+  it('loads the other entries when one cannot be decrypted, and keeps it on the next write', async () => {
+    const dir = tempDir()
+    const first = new NodeCredentialStore(dir)
+    first.save(sample)
+    first.save({ ...sample, connectionId: 'c2', refreshToken: 'refresh-2' })
+    // c1 was encrypted with a key this process no longer has.
+    electron.store.delete('blob-0')
+    electron.store.delete('blob-1')
+
+    const store = new NodeCredentialStore(dir)
+    expect(store.get('c1')).toBeNull()
+    expect(store.get('c2')?.refreshToken).toBe('refresh-2')
+
+    store.save({ ...sample, connectionId: 'c3', refreshToken: 'refresh-3' })
+    const fs = await import('node:fs')
+    const raw = JSON.parse(fs.readFileSync(join(dir, 'node-credentials', 'credentials.json'), 'utf8'))
+    expect(raw.entries.map((e: { connectionId: string }) => e.connectionId).sort()).toEqual(['c1', 'c2', 'c3'])
+  })
+
+  it('drops an undecryptable entry when it is removed or replaced', async () => {
+    const dir = tempDir()
+    const first = new NodeCredentialStore(dir)
+    first.save(sample)
+    first.save({ ...sample, connectionId: 'c2' })
+    electron.store.clear()
+
+    const store = new NodeCredentialStore(dir)
+    store.remove('c1')
+    store.save({ ...sample, connectionId: 'c2', refreshToken: 'repaired' })
+
+    const fs = await import('node:fs')
+    const raw = JSON.parse(fs.readFileSync(join(dir, 'node-credentials', 'credentials.json'), 'utf8'))
+    expect(raw.entries.map((e: { connectionId: string }) => e.connectionId)).toEqual(['c2'])
+    expect(new NodeCredentialStore(dir).get('c2')?.refreshToken).toBe('repaired')
   })
 })

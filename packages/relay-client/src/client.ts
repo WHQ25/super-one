@@ -56,6 +56,41 @@ function channelReady(): ChannelReady {
 
 const defaultOpenSocket: OpenSocket = (url) => new WebSocket(url) as unknown as SocketLike
 
+export function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function abortError(): Error {
+  const error = new Error('aborted')
+  error.name = 'AbortError'
+  return error
+}
+
+/** A same-socket handshake replacement. Callers waiting for a channel follow the new one. */
+function isChannelRestart(error: unknown): boolean {
+  return error instanceof Error && error.message === 'channel restarted'
+}
+
+function raceAbort<T>(request: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return request
+  if (signal.aborted) {
+    void request.catch(() => {})
+    return Promise.reject(abortError())
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort)
+      reject(abortError())
+      void request.catch(() => {})
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    request.then(
+      (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
+      (error) => { signal.removeEventListener('abort', onAbort); reject(error) },
+    )
+  })
+}
+
 export class RelayClient {
   private ws: SocketLike | null = null
   private credential: ChannelCredential | null = null
@@ -170,8 +205,13 @@ export class RelayClient {
   }
 
   async rpc<T = unknown>(method: string, payload: unknown = {}, options: PhoneRpcOptions = {}): Promise<T> {
-    const protocol = await this.protocolReady(options.timeoutMs ?? 15_000, method)
-    const result = await protocol.rpc<T>(method, payload, options)
+    const signal = options.signal
+    if (signal?.aborted) throw abortError()
+    // A request already on the wire fails when `peer_connected` restarts the
+    // handshake. Callers restore on the new channel; only the wait for a channel
+    // follows that restart (see `whenChannelReady`).
+    const protocol = await this.protocolReady(options.timeoutMs ?? 15_000, method, signal)
+    const result = await raceAbort(protocol.rpc<T>(method, payload, options), signal)
     if (method === 'project.open' || method === 'project.update' || method === 'project.remove' || method === 'git.clone') this.projects.invalidate()
     return result
   }
@@ -255,10 +295,12 @@ export class RelayClient {
     return (await this.protocolReady(15_000, 'session.unsubscribeDetail')).unsubscribeDetail(input, options)
   }
 
-  private async protocolReady(timeoutMs: number, method: string): Promise<PhoneProtocol> {
+  private async protocolReady(timeoutMs: number, method: string, signal?: AbortSignal): Promise<PhoneProtocol> {
+    if (signal?.aborted) throw abortError()
     const ws = this.ws
     if (!ws) throw new Error('not connected')
-    await this.whenChannelReady(ws, timeoutMs, method)
+    await this.whenChannelReady(ws, timeoutMs, method, signal)
+    if (signal?.aborted) throw abortError()
     if (this.ws !== ws) throw new Error('connection replaced')
     if (!this.protocol) throw new DesktopUpgradeRequiredError(this.host)
     return this.protocol
@@ -338,14 +380,34 @@ export class RelayClient {
   }
 
   /** Resolves once both the paired channel and the native host contract are verified. */
-  private whenChannelReady(ws: SocketLike, timeoutMs: number, name: string): Promise<void> {
+  private whenChannelReady(ws: SocketLike, timeoutMs: number, name: string, signal?: AbortSignal): Promise<void> {
     if (this.ws !== ws) return Promise.reject(new Error('connection replaced'))
+    if (signal?.aborted) return Promise.reject(abortError())
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`rpc timeout: ${name}`)), timeoutMs)
-      this.ready.promise.then(
-        () => { clearTimeout(timer); resolve() },
-        (error: Error) => { clearTimeout(timer); reject(error) },
-      )
+      let settled = false
+      const finish = (error?: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        if (error) reject(error)
+        else resolve()
+      }
+      const onAbort = () => finish(abortError())
+      const timer = setTimeout(() => finish(new Error(`rpc timeout: ${name}`)), timeoutMs)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      // `peer_connected` starts a new handshake on this same socket. Waiters want
+      // the channel that replaces the previous one, not an error named after the restart.
+      const wait = () => {
+        this.ready.promise.then(
+          () => finish(),
+          (error: Error) => {
+            if (!settled && this.ws === ws && isChannelRestart(error)) { wait(); return }
+            finish(this.ws === ws ? error : new Error('connection replaced'))
+          },
+        )
+      }
+      wait()
     })
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import { errorMessage } from '../ui-action'
 import type { NativeComposerController } from '../ui/native-composer-input'
 
 /** One tap owns preparation and sending, including asynchronous session creation. */
@@ -22,7 +23,8 @@ export function useComposerSend(
       if (!mounted.current || currentScope.current !== scope) return
       await send()
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Message failed. Please try again.')
+      const message = errorMessage(error, 'Message failed. Please try again.')
+      if (message) onError(message)
     } finally {
       active.current = false
     }

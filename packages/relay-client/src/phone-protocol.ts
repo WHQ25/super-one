@@ -28,6 +28,8 @@ export interface PhoneRpcOptions {
   environmentId?: string
   idempotencyKey?: string
   timeoutMs?: number
+  /** Rejects the local wait. The host may still finish a request that already left the phone. */
+  signal?: AbortSignal
 }
 
 export interface PhoneTopicStream {

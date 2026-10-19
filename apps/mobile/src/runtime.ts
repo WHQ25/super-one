@@ -139,7 +139,7 @@ export class ChatRuntime {
     void this.control(method, payload).catch(error => this.hooks.onCommandError?.(error instanceof Error ? error.message : String(error)))
   }
 
-  async open(projectPath: string, sessionId: string, prepared?: import('@superone/relay-client').RestoredSession): Promise<void> {
+  async open(projectPath: string, sessionId: string, prepared?: import('@superone/relay-client').RestoredSession, signal?: AbortSignal): Promise<void> {
     this.persistTranscript()
     if (this.projectPath !== projectPath || this.sessionId !== sessionId) this.widgetComposers.releaseAll()
     this.projectPath = projectPath
@@ -156,7 +156,7 @@ export class ChatRuntime {
     this.navigationRequest = null
     const generation = ++this.restoreGeneration
     const restore = this.restoreQueue.then(async () => {
-      if (generation !== this.restoreGeneration) return
+      if (generation !== this.restoreGeneration || signal?.aborted) return
       const windowed = !prepared && this.windowEnabled(projectPath)
       const cachedWindow = windowed ? this.readWindow(projectPath, sessionId) : null
       const cached = cachedWindow ? null : this.readTranscript(projectPath, sessionId)
@@ -178,14 +178,14 @@ export class ChatRuntime {
       if (prepared) restored = prepared
       else if (windowed) {
         try {
-          restored = await restoreWindowSession(this.client, projectPath, sessionId, cachedWindow, { viewport: this.hooks.transcriptWindow?.viewport() })
+          restored = await restoreWindowSession(this.client, projectPath, sessionId, cachedWindow, { viewport: this.hooks.transcriptWindow?.viewport(), signal })
         } catch (error) {
           if (!(error instanceof TranscriptWindowUnsupportedError)) throw error
           this.windowUnsupported.add(projectPath)
-          restored = await restoreSession(this.client, projectPath, sessionId, this.readTranscript(projectPath, sessionId))
+          restored = await restoreSession(this.client, projectPath, sessionId, this.readTranscript(projectPath, sessionId), signal)
         }
-      } else restored = await restoreSession(this.client, projectPath, sessionId, cached)
-      if (generation !== this.restoreGeneration) return
+      } else restored = await restoreSession(this.client, projectPath, sessionId, cached, signal)
+      if (generation !== this.restoreGeneration || signal?.aborted) return
       this.window = 'window' in restored ? new TranscriptWindowSync(restored.window) : null
       this.sourceEnvironmentId = restored.snapshot.sourceEnvironmentId ?? null
       this.realtimeVoice = restored.snapshot.realtimeVoice
@@ -262,6 +262,11 @@ export class ChatRuntime {
     })
     this.restoreQueue = restore.catch(() => {})
     await restore
+    if (signal?.aborted) {
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      throw error
+    }
   }
 
   /** Messages entering from the host or the cache: legacy Codex rows read as content, App context restored. */
@@ -447,7 +452,7 @@ export class ChatRuntime {
     return this.open(this.projectPath, this.sessionId)
   }
 
-  async create(projectPath: string, opts: CreateSessionOptions = {}): Promise<string> {
+  async create(projectPath: string, opts: CreateSessionOptions = {}, signal?: AbortSignal): Promise<string> {
     const sessionId = opts.sessionId ?? randomId()
     if (opts.provider) this.provider = opts.provider
     this.projectPath = projectPath
@@ -456,7 +461,7 @@ export class ChatRuntime {
     this.realtimeVoice = undefined
     this.creating = true
     try {
-      const id = await this.createOnHost(projectPath, sessionId, opts)
+      const id = await this.createOnHost(projectPath, sessionId, opts, signal)
       this.creating = false
       // A staged turn moves from "creating" to "sending" here.
       this.dirty = true
@@ -471,9 +476,14 @@ export class ChatRuntime {
     }
   }
 
-  private async createOnHost(projectPath: string, sessionId: string, opts: CreateSessionOptions): Promise<string> {
+  private async createOnHost(projectPath: string, sessionId: string, opts: CreateSessionOptions, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) {
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      throw error
+    }
     const project = await this.client.resolveProject(projectPath)
-    const res = await this.client.rpc<{ sessionId: string }>('session.create', createSessionPayload(project, sessionId, opts), { environmentId: project.environmentId })
+    const res = await this.client.rpc<{ sessionId: string }>('session.create', createSessionPayload(project, sessionId, opts), { environmentId: project.environmentId, signal })
     const id = res.sessionId
     this.sessionId = id
     this.sourceEnvironmentId = project.environmentId

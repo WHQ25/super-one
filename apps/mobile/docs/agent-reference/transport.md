@@ -87,7 +87,11 @@ from `apps/mobile/android`.
   verdict) and the desktop's next `handshake` runs the restore. `peer_disconnected` is
   the same `offline`. A `peer_connected` with no `peer_disconnected` before it is a
   desktop that redialled before the relay saw its old socket close; it dropped every
-  event meanwhile, so it is `reconnecting` until its handshake restores. A
+  event meanwhile, so it is `reconnecting` until its handshake restores. That
+  handshake restart is internal. A read still waiting for a channel follows the
+  new one. A request already on the wire is cancelled so restore can run again on
+  the new channel, and the phone does not show `channel restarted` as an error.
+  A
   handshake-driven restore completes only on the channel it started on: a handshake
   that lands mid-restore runs it again, and a failed one retries with the same
   bounded backoff until the desktop leaves or the socket drops, since nothing else
@@ -95,12 +99,16 @@ from `apps/mobile/android`.
   and painted `Reconnecting…` for a desktop that was simply off. LAN never probes: there
   the desktop *is* the socket peer. Re-send the current connection
   snapshot whenever the Chat WebView reports `ready` after a renderer reload.
-- Opening and creating sessions are mutually exclusive because every restore uses the
-  client's single event buffer. Validate new-session worktree input before disposing
-  the current session grant and stream; on transition failure, dispose the incomplete runtime and reopen
-  the workspace drawer instead of leaving a stale chat detail active.
+- Opening and creating sessions share the client's single event buffer, so only one
+  restore runs at a time. A newer switch aborts the in-flight restore. That restore
+  still releases the buffer, and the newer switch starts only after the release.
+  The cancelled switch does not surface a status error or clear the session the
+  newer switch is opening. Validate new-session worktree input before disposing
+  the current session grant and stream; on a transition failure that is not a
+  cancellation, dispose the incomplete runtime and reopen the workspace drawer
+  instead of leaving a stale chat detail active.
 - Released buffers assign the runtime epoch. Live batches from older epochs are
-  dropped, and overlapping restores may only commit their newest generation.
+  dropped, and a cancelled restore must not commit over the newer one.
 - Script-fatal errors and native iOS/Android WebView process exits reload and
   hydrate the chat document, bounded to two reloads per 10-second window.
 - Transcript paints use `TranscriptDelivery`: one unacknowledged projection plus

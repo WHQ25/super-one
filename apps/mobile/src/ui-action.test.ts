@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { SessionTransitionSupersededError } from './session-transition'
 import { runUiAction } from './ui-action'
 
 describe('runUiAction', () => {
@@ -20,5 +21,18 @@ describe('runUiAction', () => {
 
     expect(onError).toHaveBeenCalledOnce()
     expect(onError).toHaveBeenCalledWith('request failed')
+  })
+
+  it('hides a cancelled session switch and replaces an internal channel restart', async () => {
+    const onError = vi.fn()
+    runUiAction(() => { throw new SessionTransitionSupersededError() }, onError, 'failed to open session')
+    runUiAction(() => Promise.reject(new Error('channel restarted')), onError, 'failed to open session')
+    const aborted = new Error('aborted')
+    aborted.name = 'AbortError'
+    runUiAction(() => Promise.reject(aborted), onError, 'failed to open session')
+    await Promise.resolve()
+
+    expect(onError).toHaveBeenCalledOnce()
+    expect(onError).toHaveBeenCalledWith('failed to open session')
   })
 })

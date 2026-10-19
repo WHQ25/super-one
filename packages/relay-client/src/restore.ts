@@ -5,7 +5,13 @@ import type {
   SandboxInfo,
   SessionGoal,
 } from '@superone/shared/agent-types'
-import type { RelayClient } from './client'
+import { isAbortError, type RelayClient } from './client'
+
+function aborted(): Error {
+  const error = new Error('aborted')
+  error.name = 'AbortError'
+  return error
+}
 import { createDefaultChatCoreSession } from '@superone/chat-core'
 import type { SessionLoadResult } from '@superone/shared/environment/session-messages'
 import type { ProjectRef } from '@superone/shared/environment/refs'
@@ -126,7 +132,7 @@ export function dropIncompleteTail(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /** Fill a cached transcript through bounded, stable-anchor pages. The last page owns the restore cursor. */
-async function restoreHistory(client: RelayClient, project: ProjectRef, sessionId: string, first: SessionLoadResult, cached?: CachedTranscript | null) {
+async function restoreHistory(client: RelayClient, project: ProjectRef, sessionId: string, first: SessionLoadResult, cached?: CachedTranscript | null, signal?: AbortSignal) {
   const complete = dropIncompleteTail(cached?.messages ?? [])
   const fallback = { loaded: first, messages: first.messages, cursor: first.before, hasMore: first.before != null }
   if (!complete.length || (!first.messages.length && first.before == null)) return fallback
@@ -137,7 +143,7 @@ async function restoreHistory(client: RelayClient, project: ProjectRef, sessionI
   for (let i = 0; i < AFTER_PAGE_CAP; i++) {
     let page: SessionLoadResult
     try {
-      page = await client.rpc<SessionLoadResult>('session.load', { sessionId, projectId: project.projectId, anchorId, direction: 'after', limit: AFTER_PAGE_SIZE, includeState: false }, { environmentId: project.environmentId })
+      page = await client.rpc<SessionLoadResult>('session.load', { sessionId, projectId: project.projectId, anchorId, direction: 'after', limit: AFTER_PAGE_SIZE, includeState: false }, { environmentId: project.environmentId, signal })
     } catch (error) {
       // A removed anchor invalidates this cache. Link failures must reach reconnect.
       if ((error as { code?: string }).code === 'not_found') return fallback
@@ -150,7 +156,7 @@ async function restoreHistory(client: RelayClient, project: ProjectRef, sessionI
     anchorId = next
   }
   // A long gap cannot be represented as a contiguous cache; restart with the newest bounded page.
-  const loaded = await client.rpc<SessionLoadResult>('session.load', { sessionId, projectId: project.projectId, limit: 8 }, { environmentId: project.environmentId })
+  const loaded = await client.rpc<SessionLoadResult>('session.load', { sessionId, projectId: project.projectId, limit: 8 }, { environmentId: project.environmentId, signal })
   return { loaded, messages: loaded.messages, cursor: loaded.before, hasMore: loaded.before != null }
 }
 
@@ -176,23 +182,29 @@ export async function restoreSession(
   projectPath: string,
   sessionId: string,
   cached?: CachedTranscript | null,
+  signal?: AbortSignal,
 ): Promise<RestoredSession> {
   const started = performance.now()
   client.startBuffering()
   try {
+    if (signal?.aborted) throw aborted()
     await client.stopSession()
+    if (signal?.aborted) throw aborted()
     const project = await client.resolveProject(projectPath)
     const [first, descriptor] = await Promise.all([
-      client.rpc<SessionLoadResult>('session.load', { sessionId, projectId: project.projectId, limit: 8 }, { environmentId: project.environmentId }),
-      client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: project.environmentId }),
+      client.rpc<SessionLoadResult>('session.load', { sessionId, projectId: project.projectId, limit: 8 }, { environmentId: project.environmentId, signal }),
+      client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: project.environmentId, signal }),
     ])
     const snapshotAt = performance.now()
-    const history = await restoreHistory(client, project, sessionId, first, cached)
+    const history = await restoreHistory(client, project, sessionId, first, cached, signal)
     const historyAt = performance.now()
     const session = { environmentId: project.environmentId, sessionId }
+    if (signal?.aborted) throw aborted()
     await client.acquireControl(session)
+    if (signal?.aborted) throw aborted()
     const loaded = history.loaded
     const provider = typeof loaded.state.sessionProvider === 'string' ? loaded.state.sessionProvider : cached?.provider
+    if (signal?.aborted) throw aborted()
     await client.followSession({ session, projectPath, provider, cursor: loaded.cursor })
     const subscribedAt = performance.now()
     const { epoch, batches } = client.releaseBuffer()
@@ -216,6 +228,7 @@ export async function restoreSession(
   } catch (error) {
     client.releaseBuffer()
     await client.stopSession().catch(() => {})
+    if (isAbortError(error)) throw error
     if (HOST_REFUSALS.has((error as { code?: string }).code ?? '')) throw new RestoreRejectedError((error as Error).message, { cause: error })
     throw error
   }

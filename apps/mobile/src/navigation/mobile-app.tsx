@@ -118,7 +118,7 @@ import { cacheDownload, cacheMcpAppDownload, type CachedDownload } from '../mcp-
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { retireMobileConnection } from '../mobile-connection-lifecycle'
-import { SessionTransition, SessionTransitionBusyError } from '../session-transition'
+import { isAbortError, SessionTransition, SessionTransitionSupersededError } from '../session-transition'
 import { findSession, readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
@@ -147,7 +147,7 @@ import { ProjectPickerScreen } from '../screens/project-picker-screen'
 import { SessionSearchScreen } from '../screens/session-search-screen'
 import { AddProjectScreen } from '../screens/add-project-screen'
 import { WorktreeScreen } from '../screens/worktree-screen'
-import { runUiAction } from '../ui-action'
+import { errorMessage, isTransientChannelStatus, runUiAction } from '../ui-action'
 import { FilesScreen } from '../screens/files-screen'
 import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
@@ -187,7 +187,12 @@ export function MobileApp() {
   const [screen, setScreen] = useState<Screen>('pair')
   const [paste, setPaste] = useState('')
   const [lan, setLan] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatusMessage] = useState('')
+  // A relay handshake restart is internal. The header already says Connecting.
+  const setStatus = (message: string) => {
+    if (isTransientChannelStatus(message)) return
+    setStatusMessage(message)
+  }
   const [code, setCode] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
@@ -1585,11 +1590,12 @@ export function MobileApp() {
     }, setStatus, 'leave session failed')
   }
   const failSessionTransition = (error: unknown) => {
-    if (error instanceof SessionTransitionBusyError) { setStatus(error.message); return }
+    // The newer switch owns the screen. This one's failure must not clear it or toast.
+    if (error instanceof SessionTransitionSupersededError || isAbortError(error)) return
     switchComposerDraft(null)
     clearActiveSession()
     returnToWorkspace()
-    setStatus(error instanceof Error ? error.message : 'session transition failed')
+    setStatus(errorMessage(error, 'session transition failed'))
   }
   const restoreWorkspaceRoute = (path = projects[0]?.path) => {
     const client = clientRef.current
@@ -1604,16 +1610,22 @@ export function MobileApp() {
     harnessSelection.resetForProvider(selectedProvider)
     setProject(projects.find(row => row.path === path) ?? projects[0] ?? null)
   }
-  const runWorkspaceTransition = (action: () => Promise<void>) => sessionTransitionRef.current.run(async () => {
+  const runWorkspaceTransition = (action: (signal: AbortSignal) => Promise<void>) => sessionTransitionRef.current.run(async (signal) => {
     ++sessionLinkGenerationRef.current
-    await action()
+    await action(signal)
   })
-  const openSession = (row: SessionRow, targetProject = project) => runWorkspaceTransition(async () => {
-    restoreWorkspaceRoute(targetProject?.path)
+  const openSession = (row: SessionRow, targetProject = project) => runWorkspaceTransition(async (signal) => {
     const client = clientRef.current
     const p = targetProject
     if (!client || !p) return
+    if (p.path !== project?.path) {
+      await openProject(p, true, true)
+      if (signal.aborted) return
+    }
+    restoreWorkspaceRoute(p.path)
+    if (clientRef.current !== client) return
     await remoteDrafts.park()
+    if (signal.aborted) return
     if (runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
       transcriptSync.activate()
       setScreen('chat')
@@ -1633,7 +1645,8 @@ export function MobileApp() {
       setHarness(provider)
       const runtime = bindRuntime(client)
       setScreen('chat')
-      await runtime.open(p.path, row.sessionId)
+      await runtime.open(p.path, row.sessionId, undefined, signal)
+      if (signal.aborted || runtimeRef.current !== runtime) return
       setSessionLoading(false)
       console.info('[SessionRestore]', runtime.restoreMetrics)
       refreshRuntimeCatalog(runtime, provider, true)
@@ -1641,7 +1654,7 @@ export function MobileApp() {
       // only watches the open session, so coming back has to re-read the tree.
       void refreshGitInfo(p.path).catch(() => {})
     } finally {
-      setSessionLoading(false)
+      if (!signal.aborted) setSessionLoading(false)
     }
   }).catch(failSessionTransition)
 
@@ -1653,7 +1666,8 @@ export function MobileApp() {
     const target = projects.find((item) => item.path === row.projectPath)
       ?? (row.projectPath ? { path: row.projectPath, name: row.projectName ?? row.projectPath } : project)
     if (!target) throw new Error('no project for this session')
-    if (target.path !== project?.path) await openProject(target)
+    // Project loading belongs to the switch itself. Doing it first used to reject
+    // the new switch while the previous restore still held the buffer.
     await openSession(row, target)
   }
 
@@ -1783,7 +1797,12 @@ export function MobileApp() {
    */
   const startNewSession = (targetProject = project, continuation?: {
     from: string; composer: SessionComposerSnapshot; worktree: NewSessionWorktreeSelection
-  }) => runWorkspaceTransition(async () => {
+  }) => runWorkspaceTransition(async (signal) => {
+    if (targetProject && targetProject.path !== project?.path) {
+      await openProject(targetProject, true, true)
+      if (signal.aborted) return
+    }
+    setSessionLoading(false)
     const wasRouted = !!routedEnvironmentIdRef.current
     restoreWorkspaceRoute()
     if (wasRouted && !projects.some(row => row.path === targetProject?.path)) targetProject = projects[0] ?? null
@@ -1823,12 +1842,16 @@ export function MobileApp() {
   })
   /** Open a project for a new session — the picker's only exit that keeps state. */
   const chooseProject = (target: Project) =>
-    runUiAction(async () => {
+    runUiAction(() => {
       if (!sessionId && remoteDrafts.activeId) {
-        await openProject(target, false)
-        setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
-        setScreen('chat')
-      } else { await openProject(target); await startNewSession(target) }
+        return runWorkspaceTransition(async (signal) => {
+          await openProject(target, false, true)
+          if (signal.aborted) return
+          setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+          setScreen('chat')
+        })
+      }
+      return startNewSession(target)
     },
       setStatus, 'failed to open project')
 
@@ -1924,14 +1947,15 @@ export function MobileApp() {
       setStatus(selectionError)
       return
     }
-    return sessionTransitionRef.current.run(async () => {
-      if (signal?.aborted) return
+    return sessionTransitionRef.current.run(async (transitionSignal) => {
+      if (signal?.aborted || transitionSignal.aborted) return
       // Voice leaves any typed text saved as a draft; it never submits a fake first turn.
       if (!turn && !forSchedule) {
         await remoteDrafts.park()
-        if (signal?.aborted) { remoteDrafts.begin(); return }
+        if (signal?.aborted || transitionSignal.aborted) { remoteDrafts.begin(); return }
       }
       await client.stopSession()
+      if (signal?.aborted || transitionSignal.aborted) return
       const runtime = bindRuntime(client)
       const id = (turn || forSchedule ? remoteDrafts.originSessionId : null) ?? randomId()
       // Leave the landing immediately — the first send should look like desktop,
@@ -1941,6 +1965,7 @@ export function MobileApp() {
       setScreen('chat')
       if (turn) runtime.stageTurn(turn.clientMessageId, turn.text, turn.images, turn.userMessageContent)
       const draftControl = turn || forSchedule ? await remoteDrafts.prepareSend() : {}
+      if (signal?.aborted || transitionSignal.aborted) return
       await runtime.create(p.path, {
         ...draftControl,
         sessionId: id,
@@ -1953,7 +1978,7 @@ export function MobileApp() {
           modeId: harnessSelection.selectedModeId,
           apiProviderId: turn ? harnessSelection.selectedProviderId : harnessSelection.selectedProviderId ?? harnessSelection.defaultProviderId,
         }),
-      })
+      }, transitionSignal)
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
       setContinuesFrom(null)
       if (runtime.sessionId !== id) setSessionId(runtime.sessionId)
@@ -2421,8 +2446,8 @@ export function MobileApp() {
       runUiAction(() => runWorkspaceTransition(() => remoteDrafts.open(row)), setStatus, 'Could not open draft'),
     onDeleteDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
       runUiAction(() => remoteDrafts.remove(row), setStatus, 'Could not delete draft'),
-    onNewSession: (p: Project) => runUiAction(async () => { await openProject(p); await startNewSession(p) }, setStatus, 'failed to open project'),
-    onOpenSession: (p: Project, row: SessionRow) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
+    onNewSession: (p: Project) => runUiAction(() => startNewSession(p), setStatus, 'failed to open project'),
+    onOpenSession: (p: Project, row: SessionRow) => runUiAction(() => openSession(row, p), setStatus, 'failed to open session'),
     ...sessionListActions,
     onSearch: () => setScreen('session-search'),
     onAddProject: () => { setAddProjectOrigin('workspace'); setScreen('add-project') },

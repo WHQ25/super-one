@@ -16,8 +16,14 @@ import {
   windowLookup,
   type TranscriptWindowState,
 } from '@superone/shared/transcript-window/window-store'
-import type { RelayClient } from './client'
+import { isAbortError, type RelayClient } from './client'
 import { RestoreRejectedError, snapshotFromLoad, type RestoredSession } from './restore'
+
+function aborted(): Error {
+  const error = new Error('aborted')
+  error.name = 'AbortError'
+  return error
+}
 
 /** A transcript window kept on the phone for one session: fragment bodies with their digests. */
 export type CachedWindow = {
@@ -36,6 +42,7 @@ export type RestoredWindowSession = Omit<RestoredSession, 'messages' | 'hasMore'
 export interface WindowRestoreOptions {
   viewport?: { width: number; height: number }
   budget?: Partial<TranscriptWindowBudget>
+  signal?: AbortSignal
 }
 
 /** The host does not serve transcript windows; restore the legacy way. */
@@ -59,9 +66,12 @@ export async function restoreWindowSession(
   options: WindowRestoreOptions = {},
 ): Promise<RestoredWindowSession> {
   const started = performance.now()
+  const signal = options.signal
   client.startBuffering()
   try {
+    if (signal?.aborted) throw aborted()
     await client.stopSession()
+    if (signal?.aborted) throw aborted()
     const project = await client.resolveProject(projectPath)
     const held = cached?.schema === TRANSCRIPT_WINDOW_SCHEMA ? cached.window : null
     const request = (have: boolean): TranscriptWindowRequest & { projectId: string } => ({
@@ -71,21 +81,25 @@ export async function restoreWindowSession(
       ...(have && held ? { have: windowCoverage(held.messages) } : {}),
     })
     const [first, descriptor] = await Promise.all([
-      readWindow(client, project, request(true)),
-      client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: project.environmentId }),
+      readWindow(client, project, request(true), signal),
+      client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: project.environmentId, signal }),
     ])
     let result = first
     let applied = applyWindowResult(null, result, windowLookup(held))
     // The cache lost a body it claimed: read again without claiming anything.
     if (applied.missing.length) {
-      result = await readWindow(client, project, request(false))
+      if (signal?.aborted) throw aborted()
+      result = await readWindow(client, project, request(false), signal)
       applied = applyWindowResult(null, result, windowLookup(null))
     }
     const windowAt = performance.now()
     const session = { environmentId: project.environmentId, sessionId }
+    if (signal?.aborted) throw aborted()
     await client.acquireControl(session)
+    if (signal?.aborted) throw aborted()
     const state = result.state ?? {}
     const provider = typeof state.sessionProvider === 'string' ? state.sessionProvider : cached?.provider
+    if (signal?.aborted) throw aborted()
     await client.followSession({ session, projectPath, provider, cursor: result.cursor })
     const subscribedAt = performance.now()
     const { epoch, batches } = client.releaseBuffer()
@@ -113,15 +127,15 @@ export async function restoreWindowSession(
   } catch (error) {
     client.releaseBuffer()
     await client.stopSession().catch(() => {})
-    if (error instanceof TranscriptWindowUnsupportedError) throw error
+    if (isAbortError(error) || error instanceof TranscriptWindowUnsupportedError) throw error
     if (HOST_REFUSALS.has((error as { code?: string }).code ?? '')) throw new RestoreRejectedError((error as Error).message, { cause: error })
     throw error
   }
 }
 
-async function readWindow(client: RelayClient, project: ProjectRef, request: TranscriptWindowRequest): Promise<TranscriptWindowResult> {
+async function readWindow(client: RelayClient, project: ProjectRef, request: TranscriptWindowRequest, signal?: AbortSignal): Promise<TranscriptWindowResult> {
   try {
-    return await client.rpc<TranscriptWindowResult>(TRANSCRIPT_WINDOW_METHOD, request, { environmentId: project.environmentId })
+    return await client.rpc<TranscriptWindowResult>(TRANSCRIPT_WINDOW_METHOD, request, { environmentId: project.environmentId, signal })
   } catch (error) {
     if (isUnservedMethod(error)) throw new TranscriptWindowUnsupportedError(TRANSCRIPT_WINDOW_METHOD, { cause: error })
     throw error

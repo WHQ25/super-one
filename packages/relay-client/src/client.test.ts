@@ -83,6 +83,43 @@ describe('native RelayClient socket adapter', () => {
     expect(onEvents).not.toHaveBeenCalled()
     expect(client.releaseBuffer().batches).toEqual([])
   })
+  it('follows a handshake restart while a read is still waiting for the channel', async () => {
+    const { client, sockets } = fixture()
+    await client.connectRelay(RELAY)
+    const socket = sockets[0]!
+    const pending = client.rpc('environment.list')
+    socket.emit({ type: 'peer_connected' })
+    const host = completeNativeHandshake(socket, TEST_LINK, 'desk')
+    await client.verifyHost()
+    let request!: Record<string, unknown>
+    await vi.waitFor(() => { request = host.replyRpc(socket, { environments: [] }) })
+    expect(request).toMatchObject({ type: 'rpc', method: 'environment.list' })
+    await expect(pending).resolves.toEqual({ environments: [] })
+  })
+  it('cancels a read already on the wire when the handshake restarts', async () => {
+    const { client, sockets } = fixture()
+    await client.connectRelay(RELAY)
+    const socket = sockets[0]!
+    const host = completeNativeHandshake(socket, TEST_LINK, 'desk')
+    await client.verifyHost()
+    const pending = client.rpc('environment.list')
+    const rejected = expect(pending).rejects.toThrow('channel restarted')
+    await vi.waitFor(() => {
+      expect(host.readRpc(socket).some(request => request.method === 'environment.list')).toBe(true)
+    })
+    socket.emit({ type: 'peer_connected' })
+    await rejected
+  })
+  it('stops the local wait when the caller aborts', async () => {
+    const { client, sockets } = fixture()
+    await client.connectRelay(RELAY)
+    completeNativeHandshake(sockets[0]!)
+    await client.verifyHost()
+    const controller = new AbortController()
+    const pending = client.rpc('environment.list', {}, { signal: controller.signal })
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  })
   it('reruns both handshakes for a returning desktop and reports only verified host contracts', async () => {
     const onControl = vi.fn()
     const { client, sockets } = fixture({ onControl })

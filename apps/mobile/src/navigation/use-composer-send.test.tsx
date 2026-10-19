@@ -50,6 +50,14 @@ test('switching sessions during preparation cancels the send', async () => {
   expect(send).not.toHaveBeenCalled()
 })
 
+test('a relay handshake restart is reported as a send failure', async () => {
+  const onError = jest.fn()
+  const send = jest.fn(() => { throw new Error('channel restarted') })
+  const { result } = await renderHook(() => useComposerSend({ current: null }, 'session', send, onError))
+  await act(() => result.current())
+  expect(onError).toHaveBeenCalledWith('Message failed. Please try again.')
+})
+
 test('the fallback editor sends without native preparation and surfaces transport failures', async () => {
   const onError = jest.fn()
   const send = jest.fn(() => { throw new Error('Disconnected') })

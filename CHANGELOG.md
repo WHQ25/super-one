@@ -15,6 +15,56 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Show Claude's one-off usage-limit reset grants, and draw a capped extra usage
+  allowance as a bar of the share spent. An uncapped allowance with nothing
+  spent no longer shows $0.00.
+- Turn the selected remote host off from the sidebar; it stays disconnected
+  until turned back on.
+- Remove signed-out Claude logins and unreachable Codex profiles from the
+  accounts list. Codex credentials and local history are kept.
+- Fill the phone's todo strip from ACP plan and todo updates.
+
+### Fixed
+
+- Show another desktop's sessions before their data arrives, keep spawned
+  sessions with their parents, and point the file tree at the remote project.
+- Restore a session's todo list on the phone when it was opened after missing
+  live updates.
+- Keep stored node credentials that fail to load instead of dropping them on
+  the next save, and log why they failed.
+- Steady the phone QR scanner, and submit a lone code automatically after a
+  second; numbered targets appear only when several codes are visible.
+- Release terminal control as soon as a wait sees the shell prompt again.
+
+## [0.75.1-alpha] - 2026-10-19
+
+### Added
+
+- Show Claude's one-off usage-limit reset grants, and draw a capped extra usage
+  allowance as a bar of the share spent. An uncapped allowance with nothing
+  spent no longer shows $0.00.
+- Turn the selected remote host off from the sidebar; it stays disconnected
+  until turned back on.
+- Remove signed-out Claude logins and unreachable Codex profiles from the
+  accounts list. Codex credentials and local history are kept.
+- Fill the phone's todo strip from ACP plan and todo updates.
+
+### Fixed
+
+- Show another desktop's sessions before their data arrives, keep spawned
+  sessions with their parents, and point the file tree at the remote project.
+- Restore a session's todo list on the phone when it was opened after missing
+  live updates.
+- Keep stored node credentials that fail to load instead of dropping them on
+  the next save, and log why they failed.
+- Steady the phone QR scanner, and submit a lone code automatically after a
+  second; numbered targets appear only when several codes are visible.
+- Release terminal control as soon as a wait sees the shell prompt again.
+
+## [0.75.0] - 2026-10-19
+
+### Added
+
 - Browse Codex plugins on desktop from curated home shelves, category pages,
   and a detail page for apps, skills, and developer metadata. Remote nodes
   cannot search or install curated plugins yet.
@@ -92,130 +142,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Show the title menu on a session that has no messages yet, so it can be
   floated or turned into a mini window before the first send.
 - Move the media volume control next to the play button.
-
-## [0.75.0-alpha.2] - 2026-10-19
-
-### Added
-
-- Browse Codex plugins on desktop from curated home shelves, category pages,
-  and a detail page for apps, skills, and developer metadata. Remote nodes
-  cannot search or install curated plugins yet.
-- Preview Codex realtime voices in desktop preferences, grouped by their primary
-  language and accent.
-- Add sticky-note comments to transcript selections. A comment goes out with
-  the next turn, shows with the quoted selection, and its highlight clears
-  once sent.
-- Let agents adjust the native window and read back the layout state each
-  action changed, scoped to the requesting window.
-- Set each Claude MCP tool to allow, ask, or deny from the MCP settings tool
-  list, saved as a Claude Code permission rule.
-- Let config tools change notifications, power mode, theme, Codex voice, mod
-  folders, default providers, project output style, and the dev app icon.
-  Secret fields stay masked, and an interrupted turn applies nothing.
-
-### Changed
-
-- Upgrade Claude Agent SDK to 0.3.302 (Claude Code 2.1.302).
-- Highlight Codex ultra effort labels with a purple glow.
-
-### Fixed
-
-- Reopen a dismissed mobile update when the user checks for updates manually.
-- Show elapsed time and keep workflow footer stats.
-- Keep suggested-task cards visible when detail is collapsed.
-- Show the title menu on a session that has no messages yet, so it can be
-  floated or turned into a mini window before the first send.
-- Move the media volume control next to the play button.
-- Pin the palette name to the trailing edge of the popover.
-- Accept sharp browser-capture frames at fractional display scales, including
-  1.25, instead of timing out.
-
-## [0.75.0-alpha.1] - 2026-10-18
-
-### Added
-
-- Arrange sessions in custom split layouts, including uneven nested splits and
-  layouts in other local or remote sessions.
-- Preview and control iPhone Duo folding in 2D and 3D, with hinge-angle controls
-  and input routed to the active display.
-- Show session timer tool summaries and pending scheduled wakeups in chat.
-- Manage reusable agent profiles through an opt-in experiment, with reviewed
-  settings and defaults that follow the current harness configuration.
-
-### Changed
-
-- Update bundled and managed Codex to 0.163.0 and expose its Realtime v3 voices.
-- Launch configured suggested tasks on their source host from desktop and phone,
-  and offer Claude Fast Mode according to the connected SDK's capabilities.
-
-### Performance
-
-- Prefetch transcript history one screen before its edge while preventing short
-  history windows from repeatedly loading in both directions.
-
-### Fixed
-
-- Require an explicit tap on a detected QR code instead of selecting the first
-  result; include Android camera coordinates in a new native build.
-- Preserve Claude timers when an otherwise idle session would release its runtime.
-- Keep voice controls reachable across harnesses and sessions, isolate incoming
-  audio from UI work, and apply the selected worktree before starting voice.
-- Give mobile questions the composer space and keep their fields and actions
-  visible with the keyboard open.
-- Follow app-locked orientation in device previews and restore simulator video
-  after stream restarts.
-- Hide internal Codex collaboration wakes in restored timelines, unify turn-error
-  details, and center history loaders and new-session Git chips.
-
-### Tests
-
-- Cover profile approvals, split-layout routing, foldable-device control and
-  explicit QR-code selection.
-- Refresh Fast Mode payload snapshots, experimental-setting subscriptions and
-  isolated node-host fixtures.
-
-## [0.75.0-alpha] - 2026-10-16
-
-### Added
-
-- Offer a new-session handoff on desktop and phone when a long session's reported
-  prompt cache expires. Preserve the checkout and settings, mention the previous
-  session and transfer active collaboration, including remote children.
-- Enable Artifact tools for eligible Claude subscription sessions, with action
-  labels, titled page links and artifact listings in desktop and phone chat.
-- Customize each harness's dark primary color independently of its light palette;
-  switch appearance and Liquid Glass from the palette popover.
-
-### Changed
-
-- Use compact realtime voice controls and an audio-driven waveform, and keep live
-  captions in the transcript on desktop.
-- Let layout tools split in other sessions and close tabs beyond those opened by
-  the caller.
-- Show launched suggested tasks as titled session chips and name built-in agents
-  after their harnesses.
-
-### Fixed
-
-- Keep tall approval and form frames and their actions visible while the content
-  scrolls, and align Markdown table action buttons with the right edge.
-- Limit selector screenshots to the visible viewport and report when the target
-  needs scrolling into view.
-- Restore remote notification titles and project targets, and use compact Windows
-  toasts that remain actionable in Action Center.
-- Preserve newer appearance changes when the initial theme read returns late.
-- Keep failed favicons on their fallback even when the image error arrives before
-  the renderer finishes its effects.
-
-### Tests
-
-- Cover session-continuation preferences and collaboration handoff behavior.
-
-### CI
-
-- Preserve npm Trusted Publishing authorization across desktop and follow-up
-  release stages.
-- Resolve the macOS helper compiler and SDK from the selected developer toolchain.
 
 ## [0.74.0] - 2026-10-15
 

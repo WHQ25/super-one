@@ -8,7 +8,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionHostPort } from '@superone/runtime/server'
 import type { EventLog, NodeSessionRecord, PendingInteraction } from '@superone/runtime/session'
 import { chatMessageToSessionMessageBlock } from '@superone/shared/node-message-catalog'
-import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession, withTranscriptTodos, type ChatCoreSession } from '@superone/chat-core'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
 import type { NodeHostSessionManager } from './desktop-session-host'
@@ -237,9 +237,13 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     // No awaits after this point: facts, rows and cursor cover the same session version.
     const row = this.requireRow(sessionId)
     const live = this.reads.sessions.getSession(sessionId)
+    const replay = [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]
     let state: ChatCoreSession = createDefaultChatCoreSession()
-    for (const event of [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]) state = { ...state, ...applyEventToSession(state, event) }
+    for (const event of replay) state = { ...state, ...applyEventToSession(state, event) }
     const all = this.messages(sessionId)
+    if (input.includeState !== false) {
+      state = withTranscriptTodos(state, all, replay.some((event) => event.type === 'todos_updated'))
+    }
     state.pendingAsyncQuestions = pendingCodexAsyncQuestions(all)
     const { start, end } = sessionMessageRange(all, input)
     const messages = all.slice(start, end)

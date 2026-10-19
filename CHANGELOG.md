@@ -15,28 +15,57 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Show Claude's one-off usage-limit reset grants, and draw a capped extra usage
-  allowance as a bar of the share spent. An uncapped allowance with nothing
-  spent no longer shows $0.00.
-- Turn the selected remote host off from the sidebar; it stays disconnected
-  until turned back on.
-- Remove signed-out Claude logins and unreachable Codex profiles from the
-  accounts list. Codex credentials and local history are kept.
-- Fill the phone's todo strip from ACP plan and todo updates.
+- Page remote sessions back to their first message. Hosts read only the rows
+  a window needs and report the real total, instead of parsing whole
+  transcripts to show the newest 200 messages; expanding a summarized row
+  reads only that row. **Breaking:** a host no longer sends a session's
+  content events to a controlling desktop that shows it without a transcript
+  window — update controlling desktops together with their hosts.
+
+### Performance
+
+- Switching sessions on the phone shows the newest messages as soon as they
+  are read; stopping and acquiring sessions run alongside the read instead of
+  before it.
 
 ### Fixed
 
-- Show another desktop's sessions before their data arrives, keep spawned
-  sessions with their parents, and point the file tree at the remote project.
-- Restore a session's todo list on the phone when it was opened after missing
-  live updates.
-- Keep stored node credentials that fail to load instead of dropping them on
-  the next save, and log why they failed.
-- Steady the phone QR scanner, and submit a lone code automatically after a
-  second; numbered targets appear only when several codes are visible.
-- Release terminal control as soon as a wait sees the shell prompt again.
+- The phone no longer shows "channel restarted" when the relay restarts a
+  handshake, and a newer session switch cancels the previous one instead of
+  being rejected while it is still restoring.
+- A relay connection that closes keeps its real error — closed, desktop
+  upgrade, or identity conflict — instead of reporting "connection replaced".
+- The sidebar shows loading on the folder or session icon instead of adding a
+  Loading row that shifted the list.
 
-## [0.75.1-alpha] - 2026-10-19
+## [0.75.2-alpha] - 2026-10-20
+
+### Added
+
+- Page remote sessions back to their first message. Hosts read only the rows
+  a window needs and report the real total, instead of parsing whole
+  transcripts to show the newest 200 messages; expanding a summarized row
+  reads only that row. **Breaking:** a host no longer sends a session's
+  content events to a controlling desktop that shows it without a transcript
+  window — update controlling desktops together with their hosts.
+
+### Performance
+
+- Switching sessions on the phone shows the newest messages as soon as they
+  are read; stopping and acquiring sessions run alongside the read instead of
+  before it.
+
+### Fixed
+
+- The phone no longer shows "channel restarted" when the relay restarts a
+  handshake, and a newer session switch cancels the previous one instead of
+  being rejected while it is still restoring.
+- A relay connection that closes keeps its real error — closed, desktop
+  upgrade, or identity conflict — instead of reporting "connection replaced".
+- The sidebar shows loading on the folder or session icon instead of adding a
+  Loading row that shifted the list.
+
+## [0.75.1] - 2026-10-19
 
 ### Added
 

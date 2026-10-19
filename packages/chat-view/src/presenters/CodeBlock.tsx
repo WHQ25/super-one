@@ -10,6 +10,7 @@ import {
 import { Check, Copy } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { useIsCodeFenceIncomplete } from 'streamdown'
+import { fenceHighlightLanguage } from './fence-language'
 
 const DARK_FG = '#e1e4e8'
 const LIGHT_FG = '#24292e'
@@ -99,7 +100,7 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
   }, [fallbackFg])
 
   const normalizeLanguage = useCallback((raw: string): string => {
-    const value = raw.trim().toLowerCase()
+    const value = fenceHighlightLanguage(raw).trim().toLowerCase()
     if (value === 'text' || value === 'plaintext' || value === 'txt') return 'md'
     if (value === 'rhai') return 'rhai'
     return value || 'md'

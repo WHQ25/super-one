@@ -43,6 +43,12 @@ export function route(name: string): string {
 }
 \`\`\`
 
+\`\`\`12:14:src/gateway.ts
+export function route(name: string): string {
+  return name
+}
+\`\`\`
+
 > Servers without App use stay native.
 `
 

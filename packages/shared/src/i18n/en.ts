@@ -360,6 +360,8 @@ export type Messages = {
     thisPc: string
     hostDisconnected: string
     hostConnectHint: string
+    hostConnectFailed: string
+    hostDisconnectFailed: string
     hostUpgrading: string
     hostUpgraded: string
     hostUpgradeFailed: string
@@ -4910,7 +4912,9 @@ export const en: Messages = {
     thisMac: 'This Mac',
     thisPc: 'This PC',
     hostDisconnected: 'Host offline',
-    hostConnectHint: 'Connect this host in Settings → Remote Control to browse its projects.',
+    hostConnectHint: 'Use the power button next to the host name to connect.',
+    hostConnectFailed: 'Could not connect: {{message}}',
+    hostDisconnectFailed: 'Could not disconnect: {{message}}',
     hostUpgrading: 'Upgrading {{label}} from SuperOne CLI {{remoteVersion}} to {{targetVersion}}…',
     hostUpgraded: '{{label}} upgraded to SuperOne CLI {{version}}',
     hostUpgradeFailed: 'Could not upgrade {{label}}: {{error}}',

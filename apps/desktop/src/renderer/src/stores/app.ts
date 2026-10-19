@@ -533,6 +533,8 @@ async function openDefaultProjectForHost(
     const items = await window.environment.listItems()
     if (generation !== hostSwitchGeneration) return
     const host = items.find((h) => h.connectionId === connectionId)
+    // Stay on the empty disconnected sidebar until the user turns the host back on.
+    if (host?.desired === false) return
     const live = host?.state === 'connected' || host?.state === 'synchronizing'
     if (!live) {
       await window.environment.connect(connectionId)

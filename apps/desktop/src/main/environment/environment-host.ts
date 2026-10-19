@@ -2479,6 +2479,7 @@ export class EnvironmentHost {
         label: known.label,
         kind: 'remote',
         state,
+        ...(typeof known.desired === 'boolean' ? { desired: known.desired } : {}),
         blockReason: snapshot?.blockReason,
         lastError: snapshot?.lastError,
         nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,

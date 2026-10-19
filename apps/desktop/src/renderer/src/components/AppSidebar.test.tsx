@@ -180,10 +180,11 @@ describe('AppSidebar interactions', () => {
     expect(screen.getByRole('button', { name: 'Add Project' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sort Projects' })).toBeInTheDocument()
     const actions = refreshButton.parentElement
-    expect(actions?.children).toHaveLength(3)
+    expect(actions?.children).toHaveLength(4)
     expect(actions?.children[0]?.querySelector('.lucide-plus')).not.toBeNull()
     expect(actions?.children[1]?.querySelector('.lucide-arrow-down-up')).not.toBeNull()
     expect(actions?.children[2]).toBe(refreshButton)
+    expect(actions?.children[3]?.querySelector('.lucide-power')).not.toBeNull()
 
     fireEvent.click(refreshButton)
 
@@ -193,6 +194,69 @@ describe('AppSidebar interactions', () => {
         { refresh: true },
       )
     })
+  })
+
+  it('disconnects the selected remote host from the power button', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', kind: 'remote', state: 'connected', desired: true, label: 'remote lab', endpointProfiles: [] },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'project-1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 1 },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+    await screen.findByText('remote-app')
+
+    const power = screen.getByRole('button', { name: 'Disconnect' })
+    expect(power).toHaveClass('text-success')
+    fireEvent.click(power)
+
+    await waitFor(() => {
+      expect(mockEnvironment.disconnect).toHaveBeenCalledWith('env-remote')
+    })
+    expect(mockEnvironment.connect).not.toHaveBeenCalled()
+  })
+
+  it('shows a turned-off host as offline and connects it from the power button', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', kind: 'remote', state: 'disconnected', desired: false, label: 'remote lab', endpointProfiles: [] },
+    ])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    expect(await screen.findByText('Host offline')).toBeInTheDocument()
+    expect(screen.getByText('Use the power button next to the host name to connect.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+    expect(mockEnvironment.connect).not.toHaveBeenCalled()
+    expect(mockEnvironment.listProjects).not.toHaveBeenCalled()
+
+    const power = screen.getByRole('button', { name: 'Connect' })
+    expect(power).toHaveClass('text-destructive')
+    fireEvent.click(power)
+
+    await waitFor(() => {
+      expect(mockEnvironment.connect).toHaveBeenCalledWith('env-remote')
+    })
+  })
+
+  it('hides the host power toggle while this computer is selected', async () => {
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+    await screen.findByText('project-a')
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull()
   })
 
   it('hides a normal session when clicking hide icon', async () => {

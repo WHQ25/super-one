@@ -82,6 +82,13 @@ export function useHostProjects(options?: UseHostProjectsOptions): UseHostProjec
         const items = await window.environment.listItems()
         if (cancelled) return
         const host = items.find((h) => h.connectionId === selectedHostConnectionId)
+        // An explicit disconnect sets desired=false. Dialing here is what made
+        // that toggle reconnect immediately while the host stayed selected.
+        if (host?.desired === false) {
+          setRemoteProjects([])
+          setError(null)
+          return
+        }
         const live = host?.state === 'connected' || host?.state === 'synchronizing'
         if (!live) {
           await window.environment.connect(selectedHostConnectionId)

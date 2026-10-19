@@ -22,6 +22,12 @@ export interface EnvironmentListItem {
   kind: 'local' | 'remote'
   /** Local is always `connected`; remote reflects its supervisor. */
   state: SupervisorState
+  /**
+   * `false` after an explicit disconnect: stay down until the user connects.
+   * Omitted (legacy records) or `true`: callers may dial on their own.
+   * Do not auto-connect when this is `false`.
+   */
+  desired?: boolean
   blockReason?: string
   lastError?: string
   /** Present once an authenticated descriptor exchange has happened. */

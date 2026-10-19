@@ -151,6 +151,7 @@ describe('environment list', () => {
 
     expect(list).toHaveLength(2)
     expect(remote?.label).toBe('linux-box')
+    expect(remote?.desired).toBe(true)
     expect(remote?.environmentId).toBe(rt.identity.environmentId)
     expect(remote?.nodePublicKeyFingerprint).toBe(rt.identity.publicKeyFingerprint)
     expect(remote?.state).toBe('connected')
@@ -173,6 +174,7 @@ describe('environment list', () => {
 
     expect(remote).toBeTruthy()
     expect(remote?.state).toBe('disconnected')
+    expect(remote?.desired).toBe(false)
     // Endpoint metadata survives disconnect so the UI can offer reconnect.
     expect(remote?.endpointProfiles.length).toBeGreaterThan(0)
     host.dispose()

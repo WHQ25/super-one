@@ -42,6 +42,7 @@ import { useDraftsStore } from '@/stores/drafts'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
+import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
@@ -146,6 +147,8 @@ export const AppSidebar = memo(function AppSidebar() {
    */
   const handledOutdatedHostsRef = useRef<Set<string>>(new Set())
   const [openProjectDialogOpen, setOpenProjectDialogOpen] = useState(false)
+  /** Connect or disconnect requested from the host-name power button. */
+  const [connectionBusy, setConnectionBusy] = useState<'connect' | 'disconnect' | null>(null)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const expandedFoldersRef = useRef(expandedFolders)
   const {
@@ -190,6 +193,32 @@ export const AppSidebar = memo(function AppSidebar() {
     if (selectedHostConnectionId === 'local' || hostProjectsLoading) return
     refreshHostProjectsRaw({ force: true })
   }, [selectedHostConnectionId, hostProjectsLoading, refreshHostProjectsRaw])
+
+  const selectedHost = useMemo(
+    () => hostItems.find((host) => host.connectionId === selectedHostConnectionId) ?? null,
+    [hostItems, selectedHostConnectionId],
+  )
+  const hostLive = selectedHost?.state === 'connected' || selectedHost?.state === 'synchronizing'
+  const hostConnecting = selectedHost?.state === 'connecting'
+  // Keep the offline note up while disconnect finishes. Hide it only for the
+  // connect click, which should show the project list loading instead.
+  const hostTurnedOff = selectedHost?.desired === false && connectionBusy !== 'connect'
+
+  const toggleHostConnection = useCallback(() => {
+    if (selectedHostConnectionId === 'local' || connectionBusy) return
+    const turningOff = hostLive || hostConnecting
+    setConnectionBusy(turningOff ? 'disconnect' : 'connect')
+    const request = turningOff
+      ? window.environment.disconnect(selectedHostConnectionId)
+      : window.environment.connect(selectedHostConnectionId).then(() => undefined)
+    void request.catch((err: unknown) => {
+      toast.error(t(turningOff ? 'sidebar.hostDisconnectFailed' : 'sidebar.hostConnectFailed', {
+        message: err instanceof Error ? err.message : String(err),
+      }))
+    }).finally(() => {
+      setConnectionBusy(null)
+    })
+  }, [selectedHostConnectionId, connectionBusy, hostLive, hostConnecting, t])
 
   // Drop selection if the remote host was forgotten.
   useEffect(() => {
@@ -653,21 +682,29 @@ export const AppSidebar = memo(function AppSidebar() {
             </DropdownMenuContent>
           </DropdownMenu>
           {selectedHostConnectionId !== 'local' && (
-            <IconButton
-              size="sm"
-              tooltip={t('common.refresh')}
-              disabled={hostProjectsLoading}
-              onClick={refreshHostProjects}
-            >
-              <RotateCw className={cn('size-3', hostProjectsLoading && 'animate-spin')} />
-            </IconButton>
+            <>
+              <IconButton
+                size="sm"
+                tooltip={t('common.refresh')}
+                disabled={hostProjectsLoading || hostTurnedOff}
+                onClick={refreshHostProjects}
+              >
+                <RotateCw className={cn('size-3', hostProjectsLoading && 'animate-spin')} />
+              </IconButton>
+              <HostConnectionToggle
+                connected={hostLive || hostConnecting}
+                busy={connectionBusy !== null}
+                spinning={hostConnecting}
+                onToggle={toggleHostConnection}
+              />
+            </>
           )}
         </div>
       </div>
 
       {/* Project list + drafts (same level) for the selected host */}
       <div className="min-h-0 flex-1">
-        {selectedHostConnectionId !== 'local' && hostProjectsError ? (
+        {selectedHostConnectionId !== 'local' && hostProjectsError && !hostTurnedOff ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs text-sidebar-foreground/70">
             <Button
               variant="outline"
@@ -679,7 +716,7 @@ export const AppSidebar = memo(function AppSidebar() {
             </Button>
             <span className="break-words px-2">{hostProjectsError}</span>
           </div>
-        ) : hostProjectsLoading ? (
+        ) : hostProjectsLoading && !hostTurnedOff ? (
           <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
             {t('common.loading')}
           </div>
@@ -688,7 +725,12 @@ export const AppSidebar = memo(function AppSidebar() {
             <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
               {/* Drafts are environment-scoped peers of projects — no section header. */}
               <DraftsSection connectionId={selectedHostConnectionId} />
-              {sortedFolders.map((folder) => {
+              {hostTurnedOff ? (
+                <div className="flex flex-col items-center justify-center gap-1 p-4 text-center text-xs text-sidebar-foreground/70">
+                  <span>{t('sidebar.hostDisconnected')}</span>
+                  <span className="break-words px-2">{t('sidebar.hostConnectHint')}</span>
+                </div>
+              ) : sortedFolders.map((folder) => {
                 return (
                   <ProjectSidebarRow
                     key={folder.path}
@@ -710,7 +752,7 @@ export const AppSidebar = memo(function AppSidebar() {
                   />
                 )
               })}
-              {sortedFolders.length === 0 && !hasDrafts && (
+              {!hostTurnedOff && sortedFolders.length === 0 && !hasDrafts && (
                 <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
                   {t('sidebar.empty')}
                 </div>

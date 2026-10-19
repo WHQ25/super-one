@@ -465,6 +465,25 @@ describe('setSelectedHostConnectionId', () => {
     useAppStore.setState({ experimentalRemoteNodesEnabled: true })
   })
 
+  it('does not dial a host the user disconnected', async () => {
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'disconnected', desired: false, label: 'lab' },
+    ])
+    resetStore({ selectedHostConnectionId: 'local', currentFolder: null })
+
+    useAppStore.getState().setSelectedHostConnectionId('env-remote')
+
+    await vi.waitFor(() => {
+      expect(mockEnvironment.listItems).toHaveBeenCalled()
+      expect(useAppStore.getState().isSwitchingHostProject).toBe(false)
+    })
+    expect(mockEnvironment.connect).not.toHaveBeenCalled()
+    expect(mockEnvironment.listProjects).not.toHaveBeenCalled()
+    expect(useAppStore.getState().selectedHostConnectionId).toBe('env-remote')
+    expect(useAppStore.getState().currentFolder).toBeNull()
+    expect(useAppStore.getState().isSwitchingHostProject).toBe(false)
+  })
+
   it('opens the default project when no project was selected before the host switch', async () => {
     mockEnvironment.listItems.mockResolvedValue([
       { connectionId: 'env-remote', state: 'connected', label: 'lab' },

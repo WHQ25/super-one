@@ -61,6 +61,7 @@ export const mockEnvironment = {
   onStatusEvent: vi.fn(() => () => {}),
   onProjectsChanged: vi.fn(() => () => {}),
   connect: vi.fn(async () => {}),
+  disconnect: vi.fn(async () => {}),
   upgradeNode: vi.fn(async () => ({ version: '0.50.3-alpha', warnings: [] as string[] })),
   listProjects: vi.fn(async (): Promise<Array<{
     projectId: string

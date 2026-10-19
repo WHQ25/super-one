@@ -96,6 +96,36 @@ describe('useHostProjects', () => {
     expect(connect).not.toHaveBeenCalled()
   })
 
+  it('stays down when the user has turned the host off', async () => {
+    listItems.mockResolvedValue([
+      { connectionId: 'env-off', state: 'disconnected', desired: false, label: 'lab' },
+    ])
+
+    const { result, rerender } = renderHook(() => useHostProjects())
+    act(() => {
+      useAppStore.setState({ selectedHostConnectionId: 'env-off' })
+    })
+    rerender()
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+    expect(connect).not.toHaveBeenCalled()
+    expect(listProjects).not.toHaveBeenCalled()
+    expect(result.current.projects).toEqual([])
+    expect(result.current.error).toBeNull()
+
+    const listed = listItems.mock.calls.length
+    act(() => {
+      statusListener?.({ connectionId: 'env-off', state: 'disconnected', generation: 2 })
+    })
+    await waitFor(() => {
+      expect(listItems.mock.calls.length).toBeGreaterThan(listed)
+    })
+    expect(connect).not.toHaveBeenCalled()
+    expect(listProjects).not.toHaveBeenCalled()
+  })
+
   it('connects a disconnected remote host before listing projects', async () => {
     listItems.mockResolvedValue([
       { connectionId: 'env-2', state: 'disconnected', label: 'lab' },

@@ -408,7 +408,10 @@ export class RelayClient {
           () => finish(),
           (error: Error) => {
             if (!settled && this.ws === ws && isChannelRestart(error)) { wait(); return }
-            finish(this.ws === ws ? error : new Error('connection replaced'))
+            // `handleClosed` nulls `this.ws` before this microtask runs. A missing
+            // socket is this connection ending, so its error (closed, upgrade,
+            // identity conflict) must survive. Only another live socket is stale.
+            finish(this.ws !== null && this.ws !== ws ? new Error('connection replaced') : error)
           },
         )
       }

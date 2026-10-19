@@ -193,16 +193,18 @@ export const SessionRow = memo(function SessionRow({
           >
             {childSession && <CornerDownRight className="size-3 shrink-0 text-sidebar-foreground/45" />}
             <div className="relative flex size-3 shrink-0 items-center justify-center">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onHideSession(session.sessionId, !session.isHidden, folderPath)
-                }}
-                className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/session:opacity-100"
-              >
-                {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-              </button>
-              <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
+              {!opening && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onHideSession(session.sessionId, !session.isHidden, folderPath)
+                  }}
+                  className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/session:opacity-100"
+                >
+                  {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+                </button>
+              )}
+              <span className={cn('pointer-events-none transition-opacity', !opening && 'group-hover/session:opacity-0')}>
                 {opening
                   ? <Loader2 aria-label={t('common.loading')} className="size-3 animate-spin text-sidebar-foreground/70" />
                   : scheduled

@@ -107,7 +107,11 @@ export const LoadingSessions: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const spinner = canvas.getByLabelText('Loading...')
-    await expect(spinner.closest('.h-9')).not.toBeNull()
+    const row = spinner.closest('.h-9')
+    await expect(row).not.toBeNull()
+    await expect(spinner).toHaveClass('size-3.5')
+    await expect(spinner).not.toHaveClass('group-hover:hidden')
+    await expect(row?.querySelector('.lucide-chevron-right')).toHaveClass('!hidden')
     await expect(canvas.queryByText('Loading...')).not.toBeInTheDocument()
     await expect(canvas.queryByText('No sessions')).not.toBeInTheDocument()
   },

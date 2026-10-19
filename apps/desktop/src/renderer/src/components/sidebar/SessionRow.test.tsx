@@ -49,6 +49,37 @@ describe('SessionRow opening icon', () => {
     expect(row?.querySelector('.session-row-title')).toHaveTextContent('Hydrating the remote transcript')
     expect(container.querySelectorAll('.group\\/session')).toHaveLength(1)
   })
+
+  it('keeps the opening spinner in front of the hide control', () => {
+    render(
+      <div>
+        <SessionRow
+          session={entry('open', 'Hydrating the remote transcript')}
+          folderPath={FOLDER}
+          animateTitle={false}
+          opening
+          {...noop}
+        />
+        <SessionRow
+          session={entry('idle', 'Idle session')}
+          folderPath={FOLDER}
+          animateTitle={false}
+          {...noop}
+        />
+      </div>,
+    )
+
+    const spinner = screen.getByLabelText('Loading...')
+    expect(spinner.parentElement?.className ?? '').not.toContain('group-hover/session:opacity-0')
+    const openingRow = spinner.closest('.group\\/session')
+    expect(openingRow?.querySelector('.lucide-eye-off')).toBeNull()
+    expect(openingRow?.querySelector('.lucide-eye')).toBeNull()
+
+    const idleRow = screen.getByText('Idle session').closest('.group\\/session')
+    expect(idleRow?.querySelector('.lucide-eye-off')).not.toBeNull()
+    const idleGlyph = idleRow?.querySelector('.lucide-message-square')
+    expect(idleGlyph?.parentElement?.className ?? '').toContain('group-hover/session:opacity-0')
+  })
 })
 
 describe('SessionRow scheduled icon', () => {

@@ -463,12 +463,17 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             <ChevronRight className={cn(
               'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
               isExpanded && 'rotate-90',
-              folder.missing && '!hidden'
+              // Loading keeps the spinner; the hover chevron must not replace it.
+              (folder.missing || sessionsLoading) && '!hidden'
             )} />
             {folder.missing
               ? <FolderX className="size-4.5 shrink-0 text-destructive" />
               : sessionsLoading
-                ? <Loader2 aria-label={t('common.loading')} className="size-4.5 shrink-0 animate-spin text-sidebar-foreground/70 group-hover:hidden" />
+                ? (
+                    <span className="flex size-4.5 shrink-0 items-center justify-center">
+                      <Loader2 aria-label={t('common.loading')} className="size-3.5 animate-spin text-sidebar-foreground/70" />
+                    </span>
+                  )
                 : isExpanded
                   ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
                   : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />

@@ -160,7 +160,10 @@ export const Opening: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const spinner = canvas.getByLabelText('Loading...')
-    await expect(spinner.closest('.group\\/session')).not.toBeNull()
+    const row = spinner.closest('.group\\/session')
+    await expect(row).not.toBeNull()
+    await expect(spinner.parentElement?.className ?? '').not.toContain('group-hover/session:opacity-0')
+    await expect(row?.querySelector('.lucide-eye-off')).toBeNull()
     await expect(canvas.getByText('Hydrating the remote transcript')).toBeInTheDocument()
   },
 }

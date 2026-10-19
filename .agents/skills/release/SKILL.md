@@ -1,7 +1,7 @@
 ---
 name: release
 description: Release SuperOne desktop builds or mobile native/OTA updates using the repository release workflows.
-arguments: "[alpha|stable|mobile] [major]"
+arguments: "[alpha|stable|mobile] [major|<X.Y.Z>]"
 argument-hint: "alpha | stable | mobile"
 compatibility: "Requires git, gh, bun, npm, curl, jq, GitHub Actions access, an EAS login for mobile, and network approval for GitHub, npm, expo.dev and dl.super-one.dev."
 ---
@@ -14,7 +14,7 @@ argument, then read **one** reference file and follow it end to end:
 | Command | Reads | What it does |
 |---|---|---|
 | `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG → desktop build + promote → publish → set-latest → `release.yml stage=publish` (CLI / harness / relay / due mobile OTA), then any due native mobile builds |
-| `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable `X.Y.0`, then the stable phone apps from the same commit; writes no file |
+| `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable at its base, then the stable phone apps from the same commit; writes no file |
 | `/release mobile` | `references/mobile.md` | Mobile only, between desktop releases: per platform, OTA or native build, whichever is due (the alpha phone apps) |
 
 The crossing points: an alpha release's Step 1 runs `mobile.md` → **Decide**,
@@ -34,31 +34,41 @@ Do not rename the caller as part of a release-order change.
 - **`alpha`** (default) / **`stable`** — which of the two side-by-side desktop
   apps is being released, not a channel of one app. **`mobile`** — the mobile
   app alone, on its alpha line (SuperOne Alpha on both platforms).
-- **`major`** — the only override, alpha only: open the next major instead of
-  what the rule below derives. Use it for a breaking change after 1.0 (Step 1
-  proposes it when the range carries `!` / `BREAKING CHANGE:`) or when asked.
+- **`major`** — alpha only: open the next major instead of what the rule below
+  derives. Use it for a breaking change after 1.0 (Step 1 proposes it when the
+  range carries `!` / `BREAKING CHANGE:`) or when asked.
+- **`<X.Y.Z>`** — alpha only: an explicit base the user chose (e.g. `0.75.1` to
+  ship a patch on both lines). The rule below is the default, not a veto: when
+  the user names a version, or a position word, or says "hotfix", ship what they
+  asked. Step 1 shows the derived version next to it with one line on the
+  consequence; it does not argue twice. Only hard constraints refuse: the base
+  must be a plain `X.Y.Z` above the latest alpha and the latest stable (updaters
+  ignore anything lower), and its tag and npm version must be unused.
 - Position words from the old syntax (`build`, `feature`, `patch`, `ota`) are
-  not arguments. If the user passes one and it disagrees with the plan, show the
-  difference in Step 1 and ship the plan unless they say otherwise.
+  translated to a version (`patch` = next patch of the latest stable) and
+  treated like `<X.Y.Z>`.
 
 ### How the version is decided
 
-**By where the stable line stands, not by commit types.** Features and fixes
-decide what the CHANGELOG says, never the number.
+**By where the stable line stands, not by commit types**, unless the user names
+a version (see **Arguments**). Features and fixes decide what the CHANGELOG
+says, never the number.
 
 | Release | Latest stable vs. latest alpha base `X.Y.Z` | Ships |
 |---|---|---|
 | alpha | stable below the base | `X.Y.Z-alpha.<N+1>` — iterate the base (**build**) |
 | alpha | stable equals the base, or a hotfix moved past it | `X.(Y+1).0-alpha` above both — open the next **feature** |
 | alpha + `major` | any | `(X+1).0.0-alpha` |
-| stable | alpha base above stable | `X.Y.0` cut from the latest alpha tag's commit |
+| alpha + `<X.Y.Z>` | any, if above both | `X.Y.Z-alpha` |
+| stable | alpha base above stable | the alpha base, cut from the latest alpha tag's commit |
 | stable | stable already at the alpha base | nothing to cut — say so and stop |
 
-The patch position belongs to the stable line: `X.Y.1+` exists only to hotfix
-a shipped `X.Y.0`. Alpha never spends it. (There is no hotfix flow yet; design
-it with the first real case.) `nextAlphaRelease` in
-`apps/desktop/packaged-version.cjs` is the alpha half of this table;
-`references/desktop.md` has the history behind it.
+By default the patch position is left to the stable line, so the derived rule
+never spends `X.Y.1+` on alpha. A **hotfix** is the user-chosen case: `/release
+alpha <X.Y.(Z+1)>` from `main`, then `/release stable` cuts the same commit;
+the next derived alpha then opens the next minor on its own.
+`nextAlphaRelease` in `apps/desktop/packaged-version.cjs` is the derived alpha
+half of this table; `references/desktop.md` has the history behind it.
 
 ## Shared rules
 

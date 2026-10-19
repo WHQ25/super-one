@@ -52,7 +52,7 @@ versions no alpha was ever called, and bumping per feature is how
 
 **It keeps the patch position free for stable hotfixes.** `0.61.1` and `0.62.1`
 never existed as stable releases because the alpha line consumed the patch
-position on every ship. Alpha now never spends it, so `X.Y.1+` is always free to
+position on every ship. The derived alpha no longer spends it, so `X.Y.1+` stays free to
 hotfix a shipped `X.Y.0`, and a hotfix that moves stable past the alpha base
 simply makes the next alpha open the next minor.
 
@@ -110,9 +110,10 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
    That prints `{ alpha, stable, bump, base, prereleaseN, version }` — e.g. alpha `v0.69.0-alpha.1`, stable `v0.68.0` → `build`, `0.69.0-alpha.2`, `prereleaseN=2`. `alpha` is `v<previous>` for every diff below.
    - `bump=build`: the root/desktop `package.json` base must already equal `base`; do not bump X.Y.Z.
    - `bump=feature` / `major`: `base` is the new `package.json` version; `prereleaseN` is blank.
+   - **User-named `<X.Y.Z>`** (`SKILL.md` → **Arguments**): it replaces the derived plan and is handled like `feature` — `base` is that number, `prereleaseN` is blank, the version is `X.Y.Z-alpha`. Check only the hard constraints (above both tags; `v<X.Y.Z>-alpha` and `@super-one/cli@<X.Y.Z>-alpha` unused).
 2. **Breaking changes**: check the range for `!` / `BREAKING CHANGE:` (`git log --format=%B v<previous>..HEAD`). After 1.0, one of them means proposing `major` in the confirmation; before 1.0 it only goes into the notes.
 3. `git log --oneline --no-decorate v<previous>..HEAD` enumerates the commits for the CHANGELOG. Empty → nothing to release; say so and stop.
-4. If the user passed an old position word that disagrees with the plan, note it for the confirmation (`Passed: patch; plan: build — shipping build unless you say otherwise`).
+4. If the user chose a version, note the derived one for the confirmation (`Chosen: 0.75.1-alpha (derived: 0.76.0-alpha)`) and ship the choice.
 5. **Decide whether relay deploys this release** (to this variant's relay): run `git diff --quiet v<previous>..HEAD -- apps/relay/`, where `v<previous>` is the last release of the **same variant** — a stable cut compares against the previous stable tag, since the stable relay has not seen the alpha-only changes. Non-empty diff → relay will be deployed and `apps/relay/package.json` will jump to the new version (skipping any intermediate versions where it wasn't deployed). Empty diff → relay is left alone.
 6. **Decide whether harness R2 publish runs this release**:
    ```bash
@@ -137,7 +138,7 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
      - Omit **Tests** and **CI**. Real work, but not a stable user's release notes.
 9. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
    - `Local CI: green` with each check, or stop before this message if any check is red
-   - `Current: v<previous> → New: <version>` with the reason, e.g. `(build — stable v0.68.0 is behind base 0.69.0)` or `(feature — stable v0.69.0 shipped the base)`. On a line directly below: a proposed `major` (with the breaking commits), or an old position word the user passed that disagrees with the plan.
+   - `Current: v<previous> → New: <version>` with the reason, e.g. `(build — stable v0.68.0 is behind base 0.69.0)` or `(feature — stable v0.69.0 shipped the base)`. On a line directly below: a proposed `major` (with the breaking commits), or the derived version next to a user-chosen one.
    - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous>)`
    - `CLI npm: yes (@super-one/cli@A.B.C-alpha, dist-tag alpha)` — default for every release (required for SSH registry install). Only note skip if the user explicitly asks for a desktop-only release.
    - `Harness R2: yes (channel=<alpha|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
@@ -325,7 +326,7 @@ Show the user:
 A stable release is **not** a bump of the alpha line. It is the same tree that
 has been running as alpha, packaged under the stable identity:
 
-1. **Plan the cut** (`SKILL.md` → **How the version is decided**): the latest alpha tag and the latest stable tag, found as in Step 1. If the alpha's base is not above the stable, there is nothing to cut — say so and stop (a hotfix of a shipped stable has no flow yet). Otherwise the stable is that base, built from the **latest alpha tag's commit** (`git rev-parse v<alpha>^{commit}`): the newest tree that has run in the field. Use that SHA as `ref` — do **not** create a bump commit, or the stable binary is "the validated tree plus a commit nobody ran". Show the version, the SHA and its alpha tag, and the `[Unreleased]` notes at that commit in the one confirmation.
+1. **Plan the cut** (`SKILL.md` → **How the version is decided**): the latest alpha tag and the latest stable tag, found as in Step 1. If the alpha's base is not above the stable, there is nothing to cut — say so and stop (to hotfix a shipped stable, first release an alpha at the patch base the user names; `SKILL.md` → **How the version is decided**). Otherwise the stable is that base, built from the **latest alpha tag's commit** (`git rev-parse v<alpha>^{commit}`): the newest tree that has run in the field. Use that SHA as `ref` — do **not** create a bump commit, or the stable binary is "the validated tree plus a commit nobody ran". Show the version, the SHA and its alpha tag, and the `[Unreleased]` notes at that commit in the one confirmation.
 2. One dispatch, under the stable identity:
    ```bash
    gh workflow run release.yml --ref main \
@@ -368,6 +369,10 @@ has been running as alpha, packaged under the stable identity:
    from *this* SHA (its `mobile/<platform>/v*-build<N>` tag points at it, e.g.
    one shipped early and was rolled back): build nothing, re-point each
    platform at it with `build_id` (`mobile.md` → **Recovery**, rollback row).
+   When a stable app's current build already has the runtime (`mobile.md` →
+   **Decide** on its stable channel, `APP_VARIANT` unset), that platform takes a
+   stable OTA through Step 8.5's `mobile_ota` instead of a native build — the
+   usual case for a hotfix cut.
 
 The alpha line keeps moving independently; nothing about the stable cut changes
 `package.json`, so the next alpha release continues from where it was.
@@ -439,11 +444,12 @@ gh workflow run prune-releases.yml --ref main \
 
 ## Invariants
 
-- **The version is derived from the stable line, never chosen at release time.**
-  Alpha iterates its base (`X.Y.Z-alpha.N`) until stable ships that base, then
-  opens the next minor; the patch position is stable's alone (table in
-  `SKILL.md`). `major` is the only override. Commit types shape the CHANGELOG,
-  not the number.
+- **The version is derived from the stable line unless the user chooses one.**
+  By default alpha iterates its base (`X.Y.Z-alpha.N`) until stable ships that
+  base, then opens the next minor, leaving the patch position to stable hotfixes
+  (table in `SKILL.md`). `major` or a user-named `<X.Y.Z>` overrides it; only
+  the ordering, tag and npm constraints are hard. Commit types shape the
+  CHANGELOG, not the number.
 - Local git never creates or force-pushes tags for releases. GitHub owns tag creation at publish time.
 - **Do not push `.github/workflows/**` to `main` while a release is in flight** (from dispatch until promote is green). `gh release create --target <sha>` makes GitHub compare `<sha>..HEAD`, and any workflow change in that range requires `workflows: write` — a scope `GITHUB_TOKEN` can never hold — so promote fails with a 403 that looks like a permissions bug. Other pushes are fine; the target SHA pins the build regardless. See Recovery Patterns for the two-step recovery if it happens anyway.
 - `CHANGELOG.md` entries describe only **verified** behavior — no "may fix" or speculative claims.

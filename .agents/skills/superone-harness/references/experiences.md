@@ -37,7 +37,7 @@ same claim, and the two drift.
 |---|:--:|:--:|:--:|:--:|:--:|:--:|
 | MCP | ✅ | ✅ host-injected | ✅ host-injected | ✅ V1 + V2 native OAuth | ✅ | ❌ |
 | Plan mode | ✅ host | ✅ | ✅ agent-driven | ✅ | ✅ | ❌ |
-| Todos | ✅ | ❌ | ✅ via plan entries | ✅ | ✅ | ✅ |
+| Todos | ✅ | ❌ | ✅ `todos_updated` | ✅ | ✅ | ✅ |
 | Subagents | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Compact | ✅ | ✅ | ✅ `/compact` → `x.ai/compact_conversation` | ✅ | ❌ | ❌ |
 | Streaming tool input | ✅ | ❌ | ❌ | ✅ desktop V2 + paired phone | ✅ | ❌ |
@@ -200,6 +200,8 @@ Both are pure event-driven — no per-harness UI, only the capability flag and t
 |---|---|
 | Todos | emit `todos_updated`, set `supportsTodos` |
 | Subagents | emit `task_started` + tool blocks carrying `parentToolUseId`, set `supportsSubagents` |
+
+ACP plan entries and a completed `todo_write` emit `todos_updated` after the hidden TodoWrite pair. The phone drops that pair. The merged list is `rawOutput.TodosUpdated.state.todos`.
 
 Subagent nesting is rebuilt from `parentToolUseId` **recursively** — a single-level grouping leaks
 deep agents' output into the parent. Running-state is decided solely by

@@ -1,3 +1,4 @@
+import { acpTodoItems, todosUpdatedEvent, todosUpdatedFromAcpTool } from '@superone/shared/acp-todos'
 import type { AgentErrorInfo, AgentEvent, SlashCommandInfo } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk'
@@ -6,6 +7,7 @@ import { extractModelConfig, modesFromConfigOptions } from './config-map'
 import { isHiddenAcpPermissionSlashCommand } from './slash-filter'
 import {
   extractEmbeddedTerminalId,
+  normalizeAcpTool,
   queryFromWebSearchRawOutput,
   textFromContent,
   toolUseBlock,
@@ -42,7 +44,7 @@ function mapPlanToTodoEvents(messageId: string, entries: Array<{ content?: strin
     })
   const toolUseId = `acp-plan:${messageId}`
   const input = JSON.stringify({ todos })
-  return [
+  const events: AgentEvent[] = [
     {
       type: 'content_delta',
       messageId,
@@ -65,6 +67,10 @@ function mapPlanToTodoEvents(messageId: string, entries: Array<{ content?: strin
       },
     },
   ]
+  // The phone drops the hidden TodoWrite call. `todos_updated` is what fills its strip.
+  const items = acpTodoItems(todos)
+  if (items) events.push(todosUpdatedEvent(items))
+  return events
 }
 
 export interface MapSessionUpdateOptions {
@@ -166,6 +172,14 @@ export function mapSessionUpdate(
           })
         }
       }
+      const normalizedTodos = normalizeAcpTool(update, { terminalCommand })
+      const todoSnapshot = todosUpdatedFromAcpTool({
+        toolName: normalizedTodos?.toolName,
+        status: update.status,
+        rawOutput: 'rawOutput' in update ? update.rawOutput : undefined,
+        todos: normalizedTodos?.input.todos,
+      })
+      if (todoSnapshot) events.push(todoSnapshot)
       return events
     }
     case 'plan': {

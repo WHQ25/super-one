@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import { restoredTodos } from './todos'
+import { createDefaultChatCoreSession } from './defaults'
+import { restoredTodos, withTranscriptTodos } from './todos'
 
 const turn = (...content: ContentBlock[]): ChatMessage => ({ id: 'm', role: 'assistant', status: 'complete', content, createdAt: '', providerId: 'claude' })
 const todoWrite = (...statuses: string[]): ContentBlock => ({
@@ -18,5 +19,18 @@ describe('restoredTodos', () => {
     expect(restoredTodos([turn(todoWrite('pending')), turn(todoWrite('completed'))])).toBeNull()
     expect(restoredTodos([turn(todoWrite('pending'), { type: 'tool_use', toolUseId: 'c', toolName: 'TaskCreate', input: '{}' })])).toBeNull()
     expect(restoredTodos([turn({ type: 'text', text: 'no todos' })])).toBeNull()
+  })
+})
+
+describe('withTranscriptTodos', () => {
+  it('fills a cold snapshot from the latest open TodoWrite', () => {
+    const state = withTranscriptTodos(createDefaultChatCoreSession(), [turn(todoWrite('pending'))], false)
+    expect(state.todos['1']).toMatchObject({ subject: 'step 1', status: 'pending' })
+    expect(withTranscriptTodos(createDefaultChatCoreSession(), [turn(todoWrite('completed'))], false).todos).toEqual({})
+  })
+
+  it('keeps a replayed list, including a clear, ahead of an older TodoWrite', () => {
+    const cleared = { ...createDefaultChatCoreSession(), todos: {} }
+    expect(withTranscriptTodos(cleared, [turn(todoWrite('pending'))], true).todos).toEqual({})
   })
 })

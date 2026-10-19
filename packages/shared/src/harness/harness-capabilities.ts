@@ -219,7 +219,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsMcp: true,
     // Agent-driven plan + x.ai/exit_plan_mode approval is shipped (not host enter-plan).
     supportsPlanMode: true,
-    // ACP session/update plan entries map to todo_write-style UI events.
+    // Plan entries and a completed todo_write emit todos_updated for the phone strip.
     supportsTodos: true,
     // Subagent_* notifications already map to task rows, but there is no nested
     // child chrome for ACP. Keep false until Task UI can host those sessions.

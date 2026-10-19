@@ -12,6 +12,44 @@ function update(value: Record<string, unknown>): SessionUpdate {
 }
 
 describe('ACP AgentEvent mapper', () => {
+  it('emits todos_updated for a plan and for a merged todo_write result', () => {
+    const plan = mapSessionUpdate(update({
+      sessionUpdate: 'plan',
+      entries: [
+        { content: 'Explore', status: 'completed' },
+        { content: 'Implement', status: 'in_progress' },
+      ],
+    }), { messageId: 'message-1' })
+    expect(plan.at(-1)).toEqual({
+      type: 'todos_updated',
+      todos: [
+        { id: '1', subject: 'Explore', description: '', status: 'completed' },
+        { id: '2', subject: 'Implement', description: '', status: 'in_progress', activeForm: 'Implement' },
+      ],
+    })
+
+    const written = mapSessionUpdate(update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_todo',
+      title: 'todo_write',
+      status: 'completed',
+      rawInput: { merge: true, todos: [{ id: '2', status: 'in_progress' }] },
+      rawOutput: {
+        type: 'Todo',
+        TodosUpdated: {
+          state: { todos: { '1': { content: 'Explore', status: 'pending' } } },
+        },
+      },
+    }), { messageId: 'message-1' })
+    expect(written.at(-1)).toEqual({
+      type: 'todos_updated',
+      todos: [{ id: '1', subject: 'Explore', description: '', status: 'pending' }],
+    })
+    expect(written.findIndex((event) => event.type === 'todos_updated')).toBeGreaterThan(
+      written.findIndex((event) => event.type === 'content_delta' && event.delta.type === 'tool_result'),
+    )
+  })
+
   it('projects text, thought, tools, usage, and lifecycle without legacy deltas', () => {
     const events: AgentEvent[] = []
     const mapper = createAcpAgentEventMapper({

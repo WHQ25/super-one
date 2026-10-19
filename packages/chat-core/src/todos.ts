@@ -39,6 +39,21 @@ const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
  * was a whole-list `TodoWrite` and not every todo is done. Task tools build a
  * list across calls, which a restore cannot replay.
  */
+/**
+ * Cold host snapshot for a phone that missed live `todos_updated` events.
+ * A replayed update wins, including a clear, so an older TodoWrite cannot bring the list back.
+ */
+export function withTranscriptTodos(
+  state: ChatCoreSession,
+  messages: readonly ChatMessage[],
+  replayedTodosUpdated: boolean,
+): ChatCoreSession {
+  if (replayedTodosUpdated) return state
+  const restored = restoredTodos(messages)
+  if (!restored) return state
+  return { ...state, ...todoListUpdate(state, restored) }
+}
+
 export function restoredTodos(messages: readonly ChatMessage[]): Record<string, TodoItem> | null {
   for (let m = messages.length - 1; m >= 0; m--) {
     const content = messages[m]!.content

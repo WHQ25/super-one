@@ -314,7 +314,7 @@ describe('mapSessionUpdate', () => {
       ],
     }
     const events = mapSessionUpdate(update, ctx)
-    expect(events).toHaveLength(2)
+    expect(events).toHaveLength(3)
     const use = toolUseDelta(events)
     expect(use.toolName).toBe('TodoWrite')
     expect(use.toolUseId).toBe('acp-plan:msg-1')
@@ -327,6 +327,58 @@ describe('mapSessionUpdate', () => {
     expect(result).toMatchObject({
       type: 'content_delta',
       delta: { type: 'tool_result', toolUseId: 'acp-plan:msg-1', isError: false },
+    })
+    expect(events[2]).toEqual({
+      type: 'todos_updated',
+      todos: [
+        { id: '1', subject: 'Explore', description: '', status: 'completed' },
+        { id: '2', subject: 'Implement', description: '', status: 'in_progress', activeForm: 'Implement' },
+      ],
+    })
+  })
+
+  it('publishes the merged todo_write list after the tool result', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_todo',
+      title: 'todo_write',
+      status: 'completed',
+      rawInput: { merge: true, todos: [{ id: '2', status: 'in_progress' }] },
+      rawOutput: {
+        type: 'Todo',
+        TodosUpdated: {
+          state: {
+            todos: {
+              '1': { content: 'Explore', status: 'pending' },
+              '2': { content: 'Implement', status: 'in_progress' },
+            },
+          },
+        },
+      },
+    }, ctx)
+    const resultIndex = events.findIndex((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(resultIndex).toBeGreaterThanOrEqual(0)
+    expect(events.at(-1)).toEqual({
+      type: 'todos_updated',
+      todos: [
+        { id: '1', subject: 'Explore', description: '', status: 'pending' },
+        { id: '2', subject: 'Implement', description: '', status: 'in_progress', activeForm: 'Implement' },
+      ],
+    })
+    expect(events.length - 1).toBeGreaterThan(resultIndex)
+  })
+
+  it('falls back to the todo_write input when the tool returns no snapshot', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_todo',
+      title: 'todo_write',
+      status: 'completed',
+      rawInput: { merge: false, todos: [{ id: '1', content: 'Ship', status: 'pending' }] },
+    }, ctx)
+    expect(events.at(-1)).toEqual({
+      type: 'todos_updated',
+      todos: [{ id: '1', subject: 'Ship', description: '', status: 'pending' }],
     })
   })
 

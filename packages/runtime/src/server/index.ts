@@ -39,6 +39,8 @@ export type {
   RpcExtensionDispatch,
   HostCapabilityFlags,
   SessionHostPort,
+  TranscriptAccess,
+  TranscriptWindowView,
   ControlLeasePort,
   ArtifactZonePort,
   ProjectsPort,

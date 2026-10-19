@@ -13,10 +13,10 @@ describe('SessionTransition', () => {
     const gate = new Promise<void>((resolve) => { release = resolve })
     const transition = new SessionTransition()
     const seen: string[] = []
-    let firstSignal: AbortSignal | null = null
+    const signals: AbortSignal[] = []
 
     const running = transition.run(async (signal) => {
-      firstSignal = signal
+      signals.push(signal)
       seen.push('start-a')
       await gate
       if (signal.aborted) throw aborted()
@@ -27,7 +27,7 @@ describe('SessionTransition', () => {
     expect(() => transition.assertIdle()).toThrow(SessionTransitionSupersededError)
 
     const second = transition.run(async () => { seen.push('b') })
-    expect(firstSignal?.aborted).toBe(true)
+    expect(signals[0]?.aborted).toBe(true)
     expect(seen).toEqual(['start-a'])
 
     release()

@@ -44,6 +44,17 @@ import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
 import type { ClaudeUsageAccount, CodexUsageAccount, UsageLog } from '../usage/index'
 import type { SessionCreateSelections } from '@superone/shared/environment/session-create'
+import type { TranscriptAccess } from '../stream/delivery/transcript-access'
+
+export type { TranscriptAccess } from '../stream/delivery/transcript-access'
+
+/** One consistent transcript window: rows, derived state, and cursor from a single turn. */
+export interface TranscriptWindowView {
+  transcript: TranscriptAccess
+  state: Record<string, unknown>
+  restore?: SessionLoadResult['restore']
+  cursor: SessionLoadResult['cursor']
+}
 
 /** Host-owned project catalog (CLI: ProjectRegistry). */
 export interface ProjectsPort {
@@ -332,10 +343,21 @@ export interface SessionHostPort {
   listMessages(input: SessionRuntimeInput<'listMessages'>): SessionMessagesListResult
   /** `session.load`: reduced state and a page of messages at the session's current version. */
   load(input: SessionRuntimeInput<'load'>): SessionLoadResult | Promise<SessionLoadResult>
+  /**
+   * Bounded `session.transcriptWindow` read. `read` runs synchronously after
+   * preparation, in the same turn as the row, state, and cursor reads, and must not await.
+   */
+  readTranscriptWindow?<T>(input: {
+    sessionId: string
+    includeState: boolean
+    read: (view: TranscriptWindowView) => T
+  }): Promise<T>
   /** The session's whole reduced transcript now, for summaries and expanded detail. */
   messages(sessionId: string): readonly ChatMessage[]
   /** Canonical voice backing rows may lie outside the persisted chat spine. */
   detailMessages?(sessionId: string): readonly ChatMessage[]
+  /** One row to expand, read by id when the host can do so without the whole transcript. */
+  detailMessage?(sessionId: string, messageId: string): ChatMessage | null
   /** A cheaper navigation index than the shared one built from `messages` (the desktop reads SQLite outlines). */
   historyIndex?(sessionId: string): SessionHistoryIndex | Promise<SessionHistoryIndex>
 

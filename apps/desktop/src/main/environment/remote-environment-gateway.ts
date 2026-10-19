@@ -34,6 +34,7 @@ import type {
   SendMessageInput,
   SessionGateway,
   SessionLoadResult,
+  TranscriptWindowResult,
   SessionMessagesListResult,
   SessionRef,
   SubscribeEventsInput,
@@ -1266,6 +1267,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           ...(input.anchorId !== undefined ? { anchorId: input.anchorId } : {}),
           ...(input.direction !== undefined ? { direction: input.direction } : {}),
         })
+      },
+      transcriptWindow: (input) => {
+        this.assertEnv(input.session.environmentId)
+        const { session, ...request } = input
+        return this.client.rpc<TranscriptWindowResult>('session.transcriptWindow', { sessionId: session.sessionId, ...request })
       },
       subscribeDetail: (input) => {
         this.assertEnv(input.session.environmentId)

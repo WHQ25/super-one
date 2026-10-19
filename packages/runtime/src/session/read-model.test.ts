@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
 import { openNodeDatabase, type NodeDatabase } from '../db'
 import { EventLog } from './event-log'
 import { sessionReadModel } from './read-model'
@@ -205,5 +206,88 @@ describe('SessionReadModel', () => {
     const loaded = restarted.runtime.load({ sessionId: session.sessionId })
     expect(loaded.messages.map((m) => [m.role, textOf(m)])).toEqual([['user', 'hi'], ['assistant', 'old answer']])
     expect(restarted.db.prepare(`SELECT COUNT(*) AS n FROM session_messages WHERE session_id = ?`).get(session.sessionId)).toEqual({ n: 2 })
+  })
+
+  it('reads a current cold checkpoint by index, equal to a full load, and does not write it back', async () => {
+    const path = dbPath()
+    const first = boot(path, scriptedTurn())
+    const session = first.runtime.create({ projectId: 'p', harnessId: 'claude' })
+    await first.runtime.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'u1', client, ...lease })
+    await until(() => first.runtime.get(session.sessionId)?.status === 'idle')
+    const stored = first.db.prepare(`SELECT COUNT(*) AS n FROM session_messages WHERE session_id = ?`).get(session.sessionId) as { n: number }
+    const sample = first.db.prepare(`SELECT message_json FROM session_messages WHERE session_id = ? ORDER BY sort_order DESC LIMIT 1`).get(session.sessionId) as { message_json: string }
+    await first.runtime.dispose()
+    first.db.close()
+
+    const db = openNodeDatabase(path)
+    dbs.push(db)
+    const insert = db.prepare(`INSERT INTO session_messages (session_id, message_id, sort_order, message_json) VALUES (?, ?, ?, ?)`)
+    for (let i = 0; i < 300; i++) {
+      const message = JSON.parse(sample.message_json) as { id: string }
+      message.id = `extra-${i}`
+      insert.run(session.sessionId, message.id, stored.n + i, JSON.stringify(message))
+    }
+    db.close()
+
+    const second = boot(path)
+    const total = stored.n + 300
+    const cold = await second.runtime.readTranscriptWindow({
+      sessionId: session.sessionId,
+      includeState: true,
+      read: (view) => ({
+        count: view.transcript.count,
+        rows: [0, total - 2, total - 1].map((index) => view.transcript.messageAt(index)),
+        indexOf: view.transcript.indexOf('extra-10'),
+        parsed: view.transcript.parsed?.() ?? null,
+        state: view.state,
+        cursor: view.cursor,
+      }),
+    })
+    expect(cold).toMatchObject({ count: total, parsed: 3, indexOf: stored.n + 10 })
+    expect(second.db.prepare(`SELECT COUNT(*) AS n FROM session_messages WHERE session_id = ?`).get(session.sessionId)).toEqual({ n: total })
+
+    const full = second.runtime.load({ sessionId: session.sessionId, full: true })
+    expect(cold.rows).toEqual([0, total - 2, total - 1].map((index) => full.messages[index]))
+    expect(cold.state).toEqual(full.state)
+    expect(cold.cursor).toEqual(full.cursor)
+
+    const hot = await second.runtime.readTranscriptWindow({
+      sessionId: session.sessionId,
+      includeState: false,
+      read: (view) => view.transcript.parsed?.() ?? 'memory',
+    })
+    expect(hot).toBe('memory')
+    await second.runtime.dispose()
+  })
+
+  it('reads a checkpoint with later events as a full session, so no reduction runs over partial rows', async () => {
+    const path = dbPath()
+    const first = boot(path, scriptedTurn())
+    const session = first.runtime.create({ projectId: 'p', harnessId: 'claude' })
+    await first.runtime.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'u1', client, ...lease })
+    await until(() => first.runtime.get(session.sessionId)?.status === 'idle')
+    await first.runtime.dispose()
+    first.db.close()
+
+    const db = openNodeDatabase(path)
+    dbs.push(db)
+    new EventLog(db, 'env').appendSession({
+      sessionId: session.sessionId,
+      eventType: SESSION_DURABLE_EVENT.userMessage,
+      payload: { blockId: 'later', text: 'after checkpoint' },
+    })
+    db.close()
+
+    const second = boot(path)
+    const opened = await second.runtime.readTranscriptWindow({
+      sessionId: session.sessionId,
+      includeState: true,
+      read: (view) => {
+        const last = view.transcript.messageAt(view.transcript.count - 1)
+        return { parsed: view.transcript.parsed?.() ?? 'memory', id: last.id, text: textOf(last) }
+      },
+    })
+    expect(opened).toEqual({ parsed: 'memory', id: 'later', text: 'after checkpoint' })
+    await second.runtime.dispose()
   })
 })

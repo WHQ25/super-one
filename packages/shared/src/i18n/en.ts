@@ -2033,6 +2033,11 @@ export type Messages = {
     transcriptWindow: {
       earlierPart: string
       omitted: string
+      loadEarlier: string
+      loadNewer: string
+      summarized: string
+      paging: string
+      resyncing: string
     }
     error: {
       detailsToggle: string
@@ -6678,6 +6683,11 @@ export const en: Messages = {
     transcriptWindow: {
       earlierPart: 'Earlier part of this message',
       omitted: 'Too large to show here',
+      loadEarlier: 'Load Earlier',
+      loadNewer: 'Load Newer',
+      summarized: 'Longer messages are summarized until expanded.',
+      paging: 'Loading history…',
+      resyncing: 'Refreshing transcript…',
     },
     error: {
       detailsToggle: 'Error Details',

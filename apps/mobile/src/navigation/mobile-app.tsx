@@ -161,6 +161,7 @@ import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
 import { subscribeHarnessResources, bindHarnessPersistence, markHarnessResourcesStale, peekHarnessResource, preloadHarnessResources, requestHarnessResource } from '../harness-resource-cache'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
+import { useTranscriptBackgroundFlush } from '../use-transcript-background-flush'
 import { useDeviceDiscovery } from './use-device-discovery'
 import { useDesktopPairing } from './use-desktop-pairing'
 import { isFullBleedScreen } from '../layout-state'
@@ -508,6 +509,7 @@ export function MobileApp() {
   const disconnectTransport = () => retireMobileConnection({
     client: clientRef, controller: reconnectControllerRef, connection: connectionRef, suppressReconnect: suppressReconnectRef,
   })
+  useTranscriptBackgroundFlush(runtimeRef)
   useReconnectOnForeground(() => {
     networkLedger.mark('foreground')
     const client = clientRef.current

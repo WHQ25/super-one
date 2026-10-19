@@ -86,6 +86,53 @@ describe('phone control grants', () => {
     control.close()
   })
 
+  it('sends with the grant the pending acquire admits', async () => {
+    let reply!: (lease: ControlLease) => void
+    const rpc = vi.fn((method: string) => {
+      if (method === 'session.acquireControl') return new Promise<ControlLease>((resolve) => { reply = resolve })
+      return Promise.resolve(null)
+    })
+    const control = new PhoneControlLeases(rpc as never)
+    const acquiring = control.acquire(resource)
+    const sent = control.call(resource, 'session.send', { text: 'hi' })
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual(['session.acquireControl'])
+    reply(grant('held'))
+    await acquiring
+    await sent
+    expect(rpc).toHaveBeenLastCalledWith('session.send', { text: 'hi', sessionId: 's', leaseId: 'held', generation: '1' }, { environmentId: 'desk' })
+    control.close()
+  })
+
+  it('makes a send wait on a gated acquire before its request goes out', async () => {
+    const rpc = vi.fn(async (method: string) => method === 'session.acquireControl' ? grant('next') : null)
+    const control = new PhoneControlLeases(rpc as never)
+    let open!: () => void
+    const acquiring = control.acquire(resource, { after: new Promise<void>((resolve) => { open = resolve }) })
+    const sent = control.call(resource, 'session.send', { text: 'hi' })
+    await Promise.resolve()
+    expect(rpc).not.toHaveBeenCalled()
+    open()
+    await acquiring
+    await sent
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual(['session.acquireControl', 'session.send'])
+    expect(rpc).toHaveBeenLastCalledWith('session.send', { text: 'hi', sessionId: 's', leaseId: 'next', generation: '1' }, { environmentId: 'desk' })
+    control.close()
+  })
+
+  it('fails a waiting send when that acquire fails', async () => {
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'session.acquireControl') throw new Error('busy')
+      return null
+    })
+    const control = new PhoneControlLeases(rpc as never)
+    const acquiring = control.acquire(resource)
+    const sent = control.call(resource, 'session.send', { text: 'hi' })
+    await expect(acquiring).rejects.toThrow('busy')
+    await expect(sent).rejects.toThrow('busy')
+    expect(rpc.mock.calls.filter(([method]) => method === 'session.send')).toHaveLength(0)
+    control.close()
+  })
+
   it('clears timers with the connection and cannot install an acquisition that finishes after close', async () => {
     vi.useFakeTimers()
     let resolve!: (lease: ControlLease) => void

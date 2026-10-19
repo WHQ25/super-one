@@ -6,7 +6,14 @@ import { fragmentDigest, fragmentMessage } from '@superone/shared/transcript-win
 import { DEFAULT_WINDOW_BUDGET, selectTranscriptWindow } from '@superone/shared/transcript-window/select-window'
 import { conversation, longReplyText, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
 import { ChatRuntime } from './runtime'
+import { flushTranscriptWrites } from './transcript-write-queue'
 import { runtimeTestClient, sessionLoadFixture } from './runtime-test-client'
+import { cacheableWindow } from '@superone/shared/transcript-window/window-sync'
+
+vi.mock('@superone/shared/transcript-window/window-sync', async (actual) => {
+  const module = await actual<typeof import('@superone/shared/transcript-window/window-sync')>()
+  return { ...module, cacheableWindow: vi.fn(module.cacheableWindow) }
+})
 
 /** A host serving windows over `transcript`, answering every other call like the shared fake. */
 function windowHost(transcript: { current: ChatMessage[] }, options: { windows?: boolean; hold?: (request: TranscriptWindowRequest) => Promise<void> | undefined } = {}) {
@@ -62,6 +69,25 @@ function appendPatch(id: string, before: string, after: string, total: number): 
 }
 
 describe('ChatRuntime transcript windows', () => {
+  it('drops the cover when the window arrives and before subscribe finishes', async () => {
+    const transcript = { current: [textMessage('u', 'user', 'Hi')] }
+    const { client } = windowHost(transcript)
+    let releaseFollow!: () => void
+    client.followSession.mockImplementation(() => new Promise<void>((resolve) => { releaseFollow = resolve }))
+    const onCachedHydrate = vi.fn()
+    const runtime = new ChatRuntime(client as never, () => {}, { ...cache().hooks, onCachedHydrate })
+    let settled = false
+    const opening = runtime.open('/p', 's').then(() => { settled = true })
+    await vi.waitFor(() => expect(onCachedHydrate).toHaveBeenCalledOnce())
+    expect(settled).toBe(false)
+    expect(runtime.messages.map((message) => message.id)).toEqual(['u'])
+    await vi.waitFor(() => expect(client.followSession).toHaveBeenCalledOnce())
+    releaseFollow()
+    await opening
+    expect(client.followSession).toHaveBeenCalledOnce()
+    runtime.dispose()
+  })
+
   it('opens as a window and follows appended text without whole-message events', async () => {
     const transcript = { current: [textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Hello', 'streaming')] }
     const { client, windows } = windowHost(transcript)
@@ -75,6 +101,7 @@ describe('ChatRuntime transcript windows', () => {
     runtime.flush()
     expect(runtime.messages[1].content[0]).toMatchObject({ text: 'Hello world' })
     runtime.dispose()
+    flushTranscriptWrites()
     expect(stored.get('/p:s')?.window.messages.map((m) => m.id)).toEqual(['u', 'a'])
   })
 
@@ -174,6 +201,57 @@ describe('ChatRuntime transcript windows', () => {
     runtime.dispose()
   })
 
+  it('does not stringify the window it leaves before the next read starts', async () => {
+    const transcript = { current: [textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Hello', 'streaming')] }
+    const { client } = windowHost(transcript)
+    const { hooks, stored } = cache()
+    let writes = 0
+    const putWindow = hooks.transcripts.putWindow!
+    hooks.transcripts.putWindow = (...args) => { writes += 1; return putWindow(...args) }
+    const runtime = new ChatRuntime(client as never, () => {}, hooks)
+    await runtime.open('/p', 's')
+    flushTranscriptWrites()
+    const written = writes
+    runtime.ingest([event({ type: 'transcript_window', patch: appendPatch('a', 'Hello', 'Hello there', 2) })])
+    vi.mocked(cacheableWindow).mockClear()
+    const opening = runtime.open('/p', 'next')
+    expect(writes).toBe(written)
+    // Trimming measures bodies; the switch leaves it to the deferred write.
+    expect(cacheableWindow).not.toHaveBeenCalled()
+    await opening
+    expect(writes).toBe(written)
+    flushTranscriptWrites()
+    expect(writes).toBeGreaterThan(written)
+    expect(JSON.stringify(stored.get('/p:s'))).toContain('Hello there')
+    runtime.dispose()
+    flushTranscriptWrites()
+  })
+
+  it('writes a dirty window when the turn stops and when the app backgrounds', async () => {
+    const transcript = { current: [textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Hello', 'streaming')] }
+    const { client } = windowHost(transcript)
+    const { hooks, stored } = cache()
+    const runtime = new ChatRuntime(client as never, () => {}, hooks)
+    await runtime.open('/p', 's')
+    flushTranscriptWrites()
+    const before = JSON.stringify(stored.get('/p:s'))
+    runtime.ingest([event({ type: 'transcript_window', patch: appendPatch('a', 'Hello', 'Hello world', 2) })])
+    flushTranscriptWrites()
+    expect(JSON.stringify(stored.get('/p:s'))).toBe(before)
+    runtime.background()
+    expect(JSON.stringify(stored.get('/p:s'))).not.toBe(before)
+    const backgrounded = JSON.stringify(stored.get('/p:s'))
+    runtime.ingest([event({ type: 'status_change', status: 'streaming' })])
+    runtime.ingest([event({ type: 'transcript_window', patch: appendPatch('a', 'Hello world', 'Hello world!', 2) })])
+    flushTranscriptWrites()
+    expect(JSON.stringify(stored.get('/p:s'))).toBe(backgrounded)
+    runtime.ingest([event({ type: 'status_change', status: 'idle' })])
+    flushTranscriptWrites()
+    expect(JSON.stringify(stored.get('/p:s'))).not.toBe(backgrounded)
+    runtime.dispose()
+    flushTranscriptWrites()
+  })
+
   it('reopens from its cached window claiming the fragments it holds', async () => {
     const transcript = { current: conversation(6) }
     const { client, windows } = windowHost(transcript)
@@ -181,6 +259,7 @@ describe('ChatRuntime transcript windows', () => {
     const first = new ChatRuntime(client as never, () => {}, hooks)
     await first.open('/p', 's')
     first.dispose()
+    flushTranscriptWrites()
     transcript.current = [...transcript.current, ...conversation(2, 'n')]
     const paint = vi.fn()
     const second = new ChatRuntime(client as never, paint, hooks)

@@ -19,6 +19,7 @@ import { createNodeSessionEventMapper, type NodeSessionEventMapper } from '@supe
 import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
 import { nodePendingInteractionFields } from '@superone/shared/node-session-messages'
 import type { TransactionalSqliteDatabase } from '../sqlite'
+import { arrayTranscript, sqliteTranscript, type TranscriptAccess } from '../stream/delivery/transcript-access'
 import type { EventLog } from './event-log'
 import { buildSessionMessageCatalog } from './message-catalog'
 import type { NodeSessionRecord } from './types'
@@ -113,6 +114,41 @@ export class SessionReadModel {
       session.core = { ...session.core, ...applyEventToSession(session.core, event, this.ports) }
     }
     session.applied = envelope.sessionVersion ?? session.applied
+  }
+
+  /**
+   * A transcript window. A cold session whose checkpoint is current is read by
+   * index: nothing is reduced, so its rows equal a full load's, and they are
+   * neither cached nor checkpointed. A session in memory, one with no
+   * checkpoint, or one with events after its checkpoint (a turn that did not
+   * finish) uses the complete session.
+   */
+  openWindow(sessionId: string, includeState: boolean): {
+    transcript: TranscriptAccess
+    state: Record<string, unknown>
+    cursor: SessionLoadResult['cursor']
+  } {
+    const checkpoint = this.sessions.has(sessionId) ? undefined : this.db
+      .prepare(`SELECT applied_version, state_json FROM session_read_models WHERE session_id = ?`)
+      .get(sessionId) as { applied_version: number; state_json: string } | undefined
+    const current = checkpoint && !this.log.listForSession(sessionId, Number.MAX_SAFE_INTEGER, checkpoint.applied_version).length
+    if (!checkpoint || !current) {
+      const session = this.load(sessionId)
+      return {
+        transcript: arrayTranscript(session.core.messages),
+        state: includeState ? coreState(session.core) : {},
+        cursor: { sequence: this.log.headSequence(), epoch: this.log.epoch, version: session.applied },
+      }
+    }
+    const core: ChatCoreSession = { ...createDefaultChatCoreSession(), ...JSON.parse(checkpoint.state_json), messages: [] }
+    return {
+      transcript: sqliteTranscript<{ message_json: string; sort_order: number }>(this.db, {
+        table: 'session_messages', idColumn: 'message_id', columns: 'message_json, sort_order', sessionId,
+        parse: (row) => JSON.parse(row.message_json) as ChatMessage,
+      }),
+      state: includeState ? coreState(core) : {},
+      cursor: { sequence: this.log.headSequence(), epoch: this.log.epoch, version: checkpoint.applied_version },
+    }
   }
 
   private load(sessionId: string): LoadedSession {
@@ -213,6 +249,11 @@ export class SessionReadModel {
     })()
     session.storedOrder = order
   }
+}
+
+function coreState(core: ChatCoreSession): Record<string, unknown> {
+  const { messages: _messages, ...state } = core
+  return state as unknown as Record<string, unknown>
 }
 
 /** The `SessionRuntime` read-model option over a SQLite log: the log applies every event to it. */

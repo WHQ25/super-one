@@ -14,11 +14,26 @@ export class PhoneControlLeases {
   private readonly held = new Map<string, Held>()
   private readonly acquisitions = new Map<string, number>()
   private readonly revoked = new Map<string, true>()
+  /** Acquires that have not settled. A send waits on the one for its resource. */
+  private readonly pending = new Map<string, Promise<ControlLease>>()
   private closed = false
 
   constructor(private readonly rpc: Rpc, private readonly onLost: (resource: Resource, error: Error) => void = () => {}) {}
 
-  async acquire(resource: Resource, options: { reclaim?: boolean } = {}): Promise<ControlLease> {
+  /**
+   * `after` delays the host request, not the registration: a send issued while
+   * that promise runs (a same-session stop) already waits for this grant.
+   */
+  async acquire(resource: Resource, options: { reclaim?: boolean; after?: Promise<unknown> } = {}): Promise<ControlLease> {
+    const resourceKey = key(resource)
+    const { after, ...admit } = options
+    const task = after ? after.then(() => this.admit(resource, admit)) : this.admit(resource, admit)
+    this.pending.set(resourceKey, task)
+    try { return await task }
+    finally { if (this.pending.get(resourceKey) === task) this.pending.delete(resourceKey) }
+  }
+
+  private async admit(resource: Resource, options: { reclaim?: boolean }): Promise<ControlLease> {
     if (this.closed) throw new Error('connection closed')
     const resourceKey = key(resource)
     const generation = (this.acquisitions.get(resourceKey) ?? 0) + 1
@@ -45,8 +60,19 @@ export class PhoneControlLeases {
     return { leaseId: held.lease.leaseId, generation: held.lease.generation }
   }
 
+  /** The grant a send waited for. A later grant must not be borrowed, and a failed acquire fails the send. */
+  private async proofAfter(resource: Resource, pending: Promise<ControlLease>): Promise<MutatingControlContext> {
+    const lease = await pending
+    const held = this.held.get(key(resource))
+    if (!held || held.lease.leaseId !== lease.leaseId || held.lease.generation !== lease.generation) {
+      throw Object.assign(new Error('session or terminal control is required'), { code: 'lease_required' })
+    }
+    return { leaseId: lease.leaseId, generation: lease.generation }
+  }
+
   async call<T>(resource: Resource, method: string, payload: Record<string, unknown> = {}, options: Omit<PhoneRpcOptions, 'environmentId'> = {}): Promise<T> {
-    const proof = this.proof(resource)
+    const pending = this.pending.get(key(resource))
+    const proof = pending ? await this.proofAfter(resource, pending) : this.proof(resource)
     const held = this.held.get(key(resource))!
     try { return await this.rpc<T>(method, { ...payload, ...identity(resource), ...proof }, { ...options, environmentId: resource.environmentId }) }
     catch (error) {

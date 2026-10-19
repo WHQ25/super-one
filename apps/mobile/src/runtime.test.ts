@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CachedTranscript } from '@superone/relay-client'
 import { ChatRuntime } from './runtime'
+import { flushTranscriptWrites } from './transcript-write-queue'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { sessionCreationOptions } from './navigation/session-creation-options'
 
@@ -345,6 +346,7 @@ describe('ChatRuntime', () => {
     runtime.stageTurn('user_first', 'hello')
     await expect(runtime.create('/p', { sessionId: 's1' })).rejects.toThrow('Worktree path not found')
     runtime.dispose()
+    flushTranscriptWrites()
     expect(put).not.toHaveBeenCalled()
   })
 
@@ -540,6 +542,7 @@ describe('ChatRuntime', () => {
       },
     })
     await runtime.open('/p', 's1')
+    flushTranscriptWrites()
     expect(store.get('/p\0s1')?.messages).toEqual(history)
     client.sent.length = 0
     await runtime.open('/p', 's1')
@@ -564,6 +567,7 @@ describe('ChatRuntime', () => {
       ],
     }
     runtime.dispose()
+    flushTranscriptWrites()
     expect(store.get('/p\0s1')?.messages.map((row) => row.id)).toEqual(['done'])
   })
 

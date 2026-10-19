@@ -19,6 +19,7 @@ export function createSessionView(base: RelayClient) {
       if (!preparing) base.activateSessionView(stop)
     }
     if (property === 'stopSession') return stop
+    if (property === 'followedSession') return () => feed.followed()
     if (property === 'startBuffering') return () => preparing ? buffer.start() : base.startBuffering()
     if (property === 'releaseBuffer') return () => preparing
       ? { epoch: base.buffer.epoch, batches: buffer.release().batches }

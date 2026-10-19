@@ -4,6 +4,7 @@
  */
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { withCodexContents } from '@superone/shared/codex-content'
+import type { SessionLoadResult } from '@superone/shared/environment'
 import { hostPathsEqual, parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
@@ -79,6 +80,19 @@ function applyRemoteSessionRow(
   }
 }
 
+/** Edges the desktop paints for a window read. A legacy load has none. */
+export function remoteTranscriptEdges(
+  loaded: Pick<SessionLoadResult, 'transcriptWindow' | 'summarized'>,
+): PerSessionState['transcriptWindow'] {
+  if (!loaded.transcriptWindow) return null
+  return {
+    older: loaded.transcriptWindow.older,
+    newer: loaded.transcriptWindow.newer,
+    total: loaded.transcriptWindow.total,
+    ...(loaded.summarized ? { summarized: true as const } : {}),
+  }
+}
+
 /** The fields of a node snapshot's state its event reducer derives; the rest stay the renderer's. */
 const SNAPSHOT_STATE_KEYS = [
   'status', 'awaitingAssistantReply', 'lastAssistantMessageId',
@@ -106,6 +120,15 @@ export async function hydrateRemoteSession(
   if (!remote) {
     return { hydrated: previous ?? createDefaultPerSessionState(), snap: null }
   }
+  // A session the host already owns starts its window read beside the row read.
+  // A first adopt waits for the row, so the follow uses that harness, and a
+  // draft the node has never seen does not open at all.
+  const openInput = (providerId: string) => ({ sessionId, projectPath: projectKey, providerId, transcript: true as const })
+  const openPromise = previous?.hostSessionOwned === true
+    ? window.environment.openRemoteSession(remote.connectionId, openInput(previous.sessionProvider || previous.preferredProvider || 'claude'))
+    : null
+  // Observed now: if the row read throws first, nothing else awaits this read.
+  void openPromise?.catch(() => {})
   const snap = (await window.environment.getSession(
     remote.connectionId,
     sessionId,
@@ -113,12 +136,10 @@ export async function hydrateRemoteSession(
   const hydrated = applyRemoteSessionRow(remote, previous, snap, opts)
   // Draft session ids only exist in the renderer until first send.
   if (!snap?.sessionId) return { hydrated, snap }
-  const loaded = await window.environment.openRemoteSession(remote.connectionId, {
-    sessionId,
-    projectPath: projectKey,
-    providerId: hydrated.sessionProvider || hydrated.preferredProvider || 'claude',
-    limit: 200,
-  })
+  const loaded = await (openPromise ?? window.environment.openRemoteSession(
+    remote.connectionId,
+    openInput(hydrated.sessionProvider || hydrated.preferredProvider || 'claude'),
+  ))
   const state = loaded.state as Partial<PerSessionState>
   const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
   const provider = hydrated.sessionProvider || hydrated.preferredProvider
@@ -127,10 +148,45 @@ export async function hydrateRemoteSession(
     applySessionLoadRealtimeTimeline(sessionId, loaded)
   }
   // Older pages are committed and never change: keep those already held.
+  // A window read returns the whole held range and sets `before` null.
   const page = withCodexContents(loaded.messages)
   const first = loaded.before == null ? -1 : hydrated.messages.findIndex((message) => message.id === page[0]?.id)
   const messages = first > 0 ? [...hydrated.messages.slice(0, first), ...page] : page
-  return { hydrated: { ...hydrated, ...derived, messages, _historyHydrated: true }, snap }
+  return {
+    hydrated: {
+      ...hydrated,
+      ...derived,
+      messages,
+      _historyHydrated: true,
+      transcriptWindow: remoteTranscriptEdges(loaded),
+      transcriptResyncing: false,
+    },
+    snap,
+  }
+}
+
+/**
+ * Page a remote session's held window toward older or newer rows. The session
+ * row and state are unchanged, so only the window is read: main returns the
+ * whole held range with the page joined.
+ */
+export async function pageRemoteTranscript(
+  projectKey: string,
+  sessionId: string,
+  session: Pick<PerSessionState, 'sessionProvider' | 'preferredProvider'>,
+  page: { anchor: { messageId: string; key?: string }; direction: 'before' | 'after' },
+): Promise<Pick<PerSessionState, 'messages' | 'transcriptWindow'> | null> {
+  const remote = parseRemoteProjectKey(projectKey)
+  if (!remote) return null
+  const loaded = await window.environment.openRemoteSession(remote.connectionId, {
+    sessionId,
+    projectPath: projectKey,
+    providerId: session.sessionProvider || session.preferredProvider || 'claude',
+    transcript: true,
+    anchor: page.anchor,
+    direction: page.direction,
+  })
+  return { messages: withCodexContents(loaded.messages), transcriptWindow: remoteTranscriptEdges(loaded) }
 }
 
 /** A hydrated session with the composer and queue the renderer owns kept from `current`. */

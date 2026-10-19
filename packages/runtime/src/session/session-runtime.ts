@@ -8,6 +8,7 @@ import { McpAppAttachmentIndex } from './mcp-apps-index'
 import { hydrateMcpAppResource, mcpAppStatePatch } from '../mcp-apps/attachment-state'
 import { ArtifactWakes } from './artifact-wakes'
 import { InputAdmission } from './input-admission'
+import type { TranscriptAccess } from '../stream/delivery/transcript-access'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
@@ -950,6 +951,34 @@ export class SessionRuntime {
     const snapshot = this.requireReadModel().snapshot(sessionId, input)
     // The newest page ends with the session's last message.
     return snapshot.after == null ? { ...snapshot, messages: this.withProviderResume(sessionId, snapshot.messages) } : snapshot
+  }
+
+  /**
+   * Bounded `session.transcriptWindow` read. `read` runs in this turn.
+   * A cold checkpoint stays out of the read-model cache.
+   */
+  readTranscriptWindow<T>(input: {
+    sessionId: string
+    includeState: boolean
+    read: (view: {
+      transcript: TranscriptAccess
+      state: Record<string, unknown>
+      cursor: SessionLoadResult['cursor']
+    }) => T
+  }): Promise<T> {
+    const sessionId = this.requireSessionId(input.sessionId)
+    const opened = this.requireReadModel().openWindow(sessionId, input.includeState)
+    const resume = this.live.get(sessionId)?.providerResume
+    const last = opened.transcript.count - 1
+    const transcript = !resume ? opened.transcript : {
+      ...opened.transcript,
+      messageAt: (index: number) => {
+        const message = opened.transcript.messageAt(index)
+        if (index !== last || message.role !== 'assistant' || message.resumePointId) return message
+        return { ...message, resumePointId: resume }
+      },
+    }
+    return Promise.resolve(input.read({ transcript, state: opened.state, cursor: opened.cursor }))
   }
 
   /** The session's reduced transcript now; a host without a read model keeps none. */

@@ -312,6 +312,20 @@ export interface PerSessionState extends ChatCoreSession {
   userSelections: string[]
   replyComments: ReplyComment[]
   _historyHydrated: boolean
+  /**
+   * Edges of the remote transcript window this desktop holds. Null after a
+   * legacy `session.load`. Local sessions leave it unset.
+   */
+  transcriptWindow?: {
+    older: { messageId: string; key?: string } | null
+    newer: { messageId: string; key?: string } | null
+    total: number
+    summarized?: true
+  } | null
+  /** Main asked for this session to be read again. Cleared when that snapshot lands. */
+  transcriptResyncing?: boolean
+  /** A page of older or newer history is being read into the window. */
+  transcriptPaging?: boolean
   apiProviderId: string | null
 }
 

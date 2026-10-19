@@ -30,9 +30,10 @@ import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import type { VoiceCapability } from '@superone/shared/realtime-voice'
-import { restoreSession, restoreWindowSession, TranscriptWindowUnsupportedError, type RestoredSession, type RestoredWindowSession } from '@superone/relay-client'
+import { restoreSession, restoreWindowSession, TranscriptWindowUnsupportedError, type RestoredSession, type RestoredWindowSession, type WindowRestorePreview } from '@superone/relay-client'
 import { TRANSCRIPT_WINDOW_METHOD, TRANSCRIPT_WINDOW_SCHEMA, type TranscriptWindowPatch, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
-import { TranscriptWindowSync } from './transcript-window-sync'
+import { cacheableWindow, TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
+import { enqueueTranscriptWrite, flushTranscriptWrites, holdTranscriptCover } from './transcript-write-queue'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
 import { isDuplicateSend } from '@superone/shared/send-failure'
@@ -79,7 +80,10 @@ export class ChatRuntime {
   models: { id?: string; name?: string }[] = []
   private timer: ReturnType<typeof setTimeout> | null = null
   private dirty = false
-  restoreMetrics: (RestoredSession | RestoredWindowSession)['metrics'] | null = null
+  /** The open window differs from the snapshot last handed to the write queue. */
+  private transcriptDirty = false
+  /** `cacheReadMs` is the cached blob's read and parse before the host restore. */
+  restoreMetrics: ((RestoredSession | RestoredWindowSession)['metrics'] & { cacheReadMs?: number }) | null = null
   hasMoreHistory = false
   navigationAvailable = false
   private navigationIndex: SessionHistoryIndex | null = null
@@ -140,7 +144,9 @@ export class ChatRuntime {
   }
 
   async open(projectPath: string, sessionId: string, prepared?: import('@superone/relay-client').RestoredSession, signal?: AbortSignal): Promise<void> {
-    this.persistTranscript()
+    const releaseCover = holdTranscriptCover()
+    try {
+    this.enqueueTranscript()
     if (this.projectPath !== projectPath || this.sessionId !== sessionId) this.widgetComposers.releaseAll()
     this.projectPath = projectPath
     this.sessionId = sessionId
@@ -158,8 +164,10 @@ export class ChatRuntime {
     const restore = this.restoreQueue.then(async () => {
       if (generation !== this.restoreGeneration || signal?.aborted) return
       const windowed = !prepared && this.windowEnabled(projectPath)
+      const readStarted = performance.now()
       const cachedWindow = windowed ? this.readWindow(projectPath, sessionId) : null
       const cached = cachedWindow ? null : this.readTranscript(projectPath, sessionId)
+      const cacheReadMs = performance.now() - readStarted
       networkLedger.mark('open-session')
       const cachedMessages = cachedWindow ? new TranscriptWindowSync(cachedWindow.window).messages() : cached?.messages ?? []
       if (cachedMessages.length) {
@@ -178,7 +186,14 @@ export class ChatRuntime {
       if (prepared) restored = prepared
       else if (windowed) {
         try {
-          restored = await restoreWindowSession(this.client, projectPath, sessionId, cachedWindow, { viewport: this.hooks.transcriptWindow?.viewport(), signal })
+          restored = await restoreWindowSession(this.client, projectPath, sessionId, cachedWindow, {
+            viewport: this.hooks.transcriptWindow?.viewport(), signal,
+            onWindow: (preview) => {
+              if (generation !== this.restoreGeneration || signal?.aborted) return
+              this.paintWindow(preview)
+              releaseCover()
+            },
+          })
         } catch (error) {
           if (!(error instanceof TranscriptWindowUnsupportedError)) throw error
           this.windowUnsupported.add(projectPath)
@@ -189,7 +204,7 @@ export class ChatRuntime {
       this.window = 'window' in restored ? new TranscriptWindowSync(restored.window) : null
       this.sourceEnvironmentId = restored.snapshot.sourceEnvironmentId ?? null
       this.realtimeVoice = restored.snapshot.realtimeVoice
-      this.restoreMetrics = restored.metrics
+      this.restoreMetrics = { ...restored.metrics, cacheReadMs }
       this.appContexts.restore(restored.snapshot.mcpAppContexts)
       this.navigationAvailable = restored.navigationAvailable === true
       this.hasMoreHistory = 'window' in restored ? this.window!.hasOlder : restored.hasMore
@@ -257,7 +272,7 @@ export class ChatRuntime {
       this.dirty = true
       // Replayed history is a baseline, even when the connection epoch is unchanged.
       this.flush(true)
-      this.persistTranscript()
+      this.enqueueTranscript(true)
       networkLedger.checkpoint('restore-ready')
     })
     this.restoreQueue = restore.catch(() => {})
@@ -267,6 +282,27 @@ export class ChatRuntime {
       error.name = 'AbortError'
       throw error
     }
+    } finally {
+      releaseCover()
+    }
+  }
+
+  /** The host window is on the document. The cover drops before the lease and the subscription. */
+  private paintWindow(preview: WindowRestorePreview): void {
+    this.window = new TranscriptWindowSync(preview.window)
+    const session = { ...createDefaultChatCoreSession(), ...preview.state } as SessionState
+    session.messages = this.hydrated(this.window.messages())
+    if (preview.provider) {
+      session.sessionProvider = preview.provider as SessionState['sessionProvider']
+      this.provider = preview.provider
+    }
+    this.navigationAvailable = preview.navigationAvailable
+    this.hasMoreHistory = this.window.hasOlder
+    this.appContexts.restore(preview.snapshot.mcpAppContexts)
+    this.session = session
+    this.dirty = true
+    this.flush(true)
+    this.hooks.onCachedHydrate?.()
   }
 
   /** Messages entering from the host or the cache: legacy Codex rows read as content, App context restored. */
@@ -321,7 +357,7 @@ export class ChatRuntime {
       if (later.some(({ patch }) => !sync.applyPatch(patch))) this.resync()
       this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
       this.hasMoreHistory = sync.hasOlder
-      this.persistTranscript()
+      this.enqueueTranscript(true)
       const replace = !edge
       return this.windowPage(replace ? this.session.messages : this.session.messages.filter((message) => before.get(message.id) !== message), replace)
     })()
@@ -361,6 +397,7 @@ export class ChatRuntime {
     const applied = sync.applyPatch(patch)
     this.hasMoreHistory = sync.hasOlder
     this.dirty = true
+    this.transcriptDirty = true
     if (!applied) this.resync()
   }
 
@@ -395,7 +432,7 @@ export class ChatRuntime {
       this.session = { ...this.session, messages: this.hydrated(this.session.messages) }
       this.historyCursor = page.cursor ?? null
       this.hasMoreHistory = Boolean(page.hasMore && this.historyCursor != null && this.historyCursor !== cursor)
-      this.persistTranscript()
+      this.enqueueTranscript(true)
       return this.hydrated(older)
     })()
     this.historyRequest = request
@@ -550,19 +587,27 @@ export class ChatRuntime {
 
   ingest(events: unknown[], epoch: number = this.eventEpoch): void {
     if (epoch !== this.eventEpoch) return
+    const streaming = this.session.status === 'streaming'
     for (const ev of events) this.apply(ev as AgentEvent)
     if (this.window && this.dirty) this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
     this.schedule()
+    if (streaming && this.session.status !== 'streaming') this.enqueueTranscript()
   }
 
   get epoch(): number {
     return this.eventEpoch
   }
 
+  /** The app is leaving the foreground. Idle may never run. */
+  background(): void {
+    this.enqueueTranscript()
+    flushTranscriptWrites()
+  }
+
   dispose(): void {
     this.widgetComposers.dispose()
     this.inputRequestSends.clear()
-    this.persistTranscript()
+    this.enqueueTranscript()
     this.restoreGeneration += 1
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
@@ -589,22 +634,32 @@ export class ChatRuntime {
     return this.hooks.transcriptWindow !== undefined && !this.windowUnsupported.has(projectPath)
   }
 
-  private persistTranscript(): void {
+  /** Capture the open window and replace any write already queued for this session. */
+  private enqueueTranscript(force = false): void {
+    if (force) this.transcriptDirty = true
+    if (!this.transcriptDirty) return
     const pairingId = this.pairingId()
     if (!pairingId || !this.hooks.transcripts || !this.projectPath || !this.sessionId) return
+    const projectPath = this.projectPath
+    const sessionId = this.sessionId
+    const key = `${pairingId}\0${projectPath}\0${sessionId}`
     if (this.window) {
-      if (!this.window.current.messages.length) return
-      this.hooks.transcripts.putWindow?.(pairingId, this.projectPath, this.sessionId, {
-        schema: TRANSCRIPT_WINDOW_SCHEMA,
-        window: this.window.cacheable(),
+      if (!this.window.current.messages.length || !this.hooks.transcripts.putWindow) return
+      // The state is immutable; trimming measures bodies, so it runs in the deferred write.
+      const state = this.window.current
+      const facts = {
         provider: String(this.provider),
         navigationAvailable: this.navigationAvailable,
         ...(this.appContexts.snapshot() ? { mcpAppContexts: this.appContexts.snapshot() } : {}),
+      }
+      this.transcriptDirty = false
+      enqueueTranscriptWrite(`${key}\0window`, () => {
+        this.hooks.transcripts?.putWindow?.(pairingId, projectPath, sessionId, { schema: TRANSCRIPT_WINDOW_SCHEMA, window: cacheableWindow(state), ...facts })
       })
       return
     }
     if (this.session.messages.length === 0) return
-    this.hooks.transcripts.put(pairingId, this.projectPath, this.sessionId, {
+    const transcript = {
       messages: this.session.messages.filter((message) =>
         (!message.status || message.status === 'complete') && !message.metadata?.sendFailure),
       provider: String(this.provider),
@@ -612,7 +667,9 @@ export class ChatRuntime {
       cursor: this.historyCursor,
       navigationAvailable: this.navigationAvailable,
       ...(this.appContexts.snapshot() ? { mcpAppContexts: this.appContexts.snapshot() } : {}),
-    })
+    }
+    this.transcriptDirty = false
+    enqueueTranscriptWrite(`${key}\0messages`, () => { this.hooks.transcripts?.put?.(pairingId, projectPath, sessionId, transcript) })
   }
 
   send(content: string, extra: SendMessageOptions = {}): void {
@@ -1077,7 +1134,7 @@ export class ChatRuntime {
       const restored = this.inputRequestSends.reject(this.session, event.clientMessageId, event.error, queued)
       if (restored) {
         this.failedSends.delete(event.clientMessageId)
-        this.session = { ...this.session, ...restored }; this.dirty = true
+        this.session = { ...this.session, ...restored }; this.dirty = true; this.transcriptDirty = true
         return
       }
     }
@@ -1092,6 +1149,7 @@ export class ChatRuntime {
     if (!this.shouldApplyEvent(event)) return
     this.session = this.reduce(this.session, event)
     this.dirty = true
+    this.transcriptDirty = true
     if (event.type === 'session_recap') this.hooks.onSessionRecap?.(this.sessionId)
   }
 

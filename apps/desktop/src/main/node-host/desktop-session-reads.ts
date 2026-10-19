@@ -4,8 +4,10 @@ import {
   type EnvironmentEventEnvelope,
 } from '@superone/shared/environment'
 import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
-import type { ChatMessage } from '@superone/shared/agent-types'
-import type { SessionHostPort } from '@superone/runtime/server'
+import type { ChatMessage, SandboxInfo } from '@superone/shared/agent-types'
+import type { SessionRestoreFacts } from '@superone/shared/environment'
+import type { SessionHostPort, TranscriptWindowView } from '@superone/runtime/server'
+import { arrayTranscript } from '@superone/runtime/stream/delivery/transcript-access'
 import type { EventLog, NodeSessionRecord, PendingInteraction } from '@superone/runtime/session'
 import { chatMessageToSessionMessageBlock } from '@superone/shared/node-message-catalog'
 import { applyEventToSession, createDefaultChatCoreSession, withTranscriptTodos, type ChatCoreSession } from '@superone/chat-core'
@@ -15,6 +17,7 @@ import type { NodeHostSessionManager } from './desktop-session-host'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { activeTurnOutsidePage, sessionMessageRange } from '@superone/shared/environment/session-message-range'
 import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { coldMcpMessages, coldQuestionMessages, coldTodoMessage, openColdTranscript } from '../session/cold-transcript'
 import { sessionRestoreFacts, type DesktopRestorePorts } from '../session/session-restore-facts'
 
 /**
@@ -30,6 +33,8 @@ export interface DesktopSessionRows<Row extends DesktopSessionRow> {
   list(projectId?: string): Row[]
   /** Persisted transcript page (desktop end-cursor pagination). */
   loadMessages(sessionId: string, limit: number, cursor?: number): { messages: ChatMessage[]; cursor: number | null; hasMore: boolean }
+  /** One stored message by id, without paging the transcript in. */
+  loadMessage?(sessionId: string, messageId: string): ChatMessage | null
 }
 
 export interface DesktopSessionReadsDeps<Row extends DesktopSessionRow> {
@@ -94,6 +99,11 @@ export function notFound(): Error {
   return Object.assign(new Error('session not found'), { code: 'not_found' })
 }
 
+function coldTodoMessages(sessionId: string): ChatMessage[] {
+  const message = coldTodoMessage(sessionId)
+  return message ? [message] : []
+}
+
 function sessionFamilyId(row: { sessionId: string; parentSessionId?: string | null }): string {
   return row.parentSessionId || row.sessionId
 }
@@ -128,8 +138,8 @@ export function pageSessionRows<T extends { sessionId: string; parentSessionId?:
  * stored transcript.
  */
 export abstract class DesktopSessionReads<Row extends DesktopSessionRow> implements Pick<SessionHostPort,
-  'get' | 'list' | 'load' | 'messages' | 'listMessages' | 'snapshotSequence' | 'listEventsAfter' | 'streamEpoch'
-  | 'streamingAfter' | 'streamingEvents' | 'onEventsAppended' | 'viewEvent' | 'detailMessages'> {
+  'get' | 'list' | 'load' | 'readTranscriptWindow' | 'messages' | 'listMessages' | 'snapshotSequence' | 'listEventsAfter' | 'streamEpoch'
+  | 'streamingAfter' | 'streamingEvents' | 'onEventsAppended' | 'viewEvent' | 'detailMessages' | 'detailMessage'> {
   /** When each live prompt was first seen, so its `createdAt` is stable across reads. */
   private readonly promptSeenAt = new Map<string, number>()
   private readonly watchedPrompts = new WeakSet<Session>()
@@ -233,40 +243,81 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
   async load(input: Parameters<SessionHostPort['load']>[0]) {
     const sessionId = String(input.sessionId ?? '').trim()
     this.requireRow(sessionId)
-    const sandboxInfo = input.includeState === false ? undefined : await this.reads.restore?.prepare?.(this.reads.sessions.getSession(sessionId))
+    const includeState = input.includeState !== false
+    const sandboxInfo = includeState ? await this.reads.restore?.prepare?.(this.reads.sessions.getSession(sessionId)) : undefined
     // No awaits after this point: facts, rows and cursor cover the same session version.
+    const all = this.messages(sessionId)
+    const snap = this.snapshotAt(sessionId, includeState, sandboxInfo, { todos: all, questions: all, history: all })
+    const { start, end } = sessionMessageRange(all, input)
+    const messages = all.slice(start, end)
+    if (!includeState) return {
+      sessionId, state: {}, messages, before: start > 0 ? start : null, after: end < all.length ? end : null, cursor: snap.cursor,
+    }
+    const activeTurn = snap.live ? activeTurnOutsidePage(all, { start, end }) : []
+    return {
+      sessionId,
+      state: snap.state,
+      messages,
+      ...(activeTurn.length ? { activeTurn } : {}),
+      ...(snap.restore ? { restore: snap.restore } : {}),
+      before: start > 0 ? start : null,
+      after: end < all.length ? end : null,
+      cursor: snap.cursor,
+    }
+  }
+
+  /**
+   * The window read. `read` runs in this turn, after `prepare` and with no
+   * further await, so the rows it touches, the derived state, and the cursor
+   * describe one session version. A live session feeds the cutter its snapshot.
+   * A cold session parses only the rows the cutter asks for.
+   */
+  async readTranscriptWindow<T>(input: { sessionId: string; includeState: boolean; read: (view: TranscriptWindowView) => T }): Promise<T> {
+    const sessionId = String(input.sessionId ?? '').trim()
+    this.requireRow(sessionId)
+    const includeState = input.includeState !== false
+    const sandboxInfo = includeState ? await this.reads.restore?.prepare?.(this.reads.sessions.getSession(sessionId)) : undefined
+    const live = this.reads.sessions.getSession(sessionId)
+    const transcript = live ? arrayTranscript(live.snapshot.messages) : openColdTranscript(sessionId)
+    const sources = live
+      ? { todos: live.snapshot.messages, questions: live.snapshot.messages, history: live.snapshot.messages }
+      : includeState
+        ? { todos: coldTodoMessages(sessionId), questions: coldQuestionMessages(sessionId), history: coldMcpMessages(sessionId) }
+        : { todos: [], questions: [], history: [] }
+    const snap = this.snapshotAt(sessionId, includeState, sandboxInfo, sources)
+    return input.read({
+      transcript,
+      state: snap.state,
+      ...(snap.restore ? { restore: snap.restore } : {}),
+      cursor: snap.cursor,
+    })
+  }
+
+  /** Reduced state at the cursor. Callers have already finished every await. */
+  private snapshotAt(sessionId: string, includeState: boolean, sandboxInfo: SandboxInfo | undefined, sources: {
+    todos: readonly ChatMessage[]
+    questions: readonly ChatMessage[]
+    history: readonly ChatMessage[]
+  }) {
     const row = this.requireRow(sessionId)
     const live = this.reads.sessions.getSession(sessionId)
     const replay = [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]
     let state: ChatCoreSession = createDefaultChatCoreSession()
     for (const event of replay) state = { ...state, ...applyEventToSession(state, event) }
-    const all = this.messages(sessionId)
-    if (input.includeState !== false) {
-      state = withTranscriptTodos(state, all, replay.some((event) => event.type === 'todos_updated'))
-    }
-    state.pendingAsyncQuestions = pendingCodexAsyncQuestions(all)
-    const { start, end } = sessionMessageRange(all, input)
-    const messages = all.slice(start, end)
-    if (input.includeState === false) return {
-      sessionId, state: {}, messages, before: start > 0 ? start : null, after: end < all.length ? end : null,
-      cursor: { sequence: this.reads.events.headSequence(), epoch: this.reads.events.epoch, version: this.reads.events.sessionVersion(sessionId) },
-    }
-    const activeTurn = live ? activeTurnOutsidePage(all, { start, end }) : []
-    const facts = sessionRestoreFacts({ session: live, row, history: all, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
+    const { events } = this.reads
+    const cursor = { sequence: events.headSequence(), epoch: events.epoch, version: events.sessionVersion(sessionId) }
+    if (!includeState) return { live, state: {} as Record<string, unknown>, restore: undefined as SessionRestoreFacts | undefined, cursor }
+    state = withTranscriptTodos(state, sources.todos, replay.some((event) => event.type === 'todos_updated'))
+    state.pendingAsyncQuestions = pendingCodexAsyncQuestions(sources.questions)
+    const facts = sessionRestoreFacts({ session: live, row, history: sources.history, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
     const { restore, ...current } = facts
     const stored = this.reads.restore?.stored?.(sessionId) ?? null
-    const { messages: _messages, ...rest } = { ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath, _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId, _worktreeRemoved: restore.worktreeMissing, ...(stored ? { stored } : {}) }
-    const { events } = this.reads
-    return {
-      sessionId,
-      state: rest as unknown as Record<string, unknown>,
-      messages,
-      ...(activeTurn.length ? { activeTurn } : {}),
-      restore,
-      before: start > 0 ? start : null,
-      after: end < all.length ? end : null,
-      cursor: { sequence: events.headSequence(), epoch: events.epoch, version: events.sessionVersion(sessionId) },
+    const { messages: _messages, ...rest } = {
+      ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath,
+      _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId,
+      _worktreeRemoved: restore.worktreeMissing, ...(stored ? { stored } : {}),
     }
+    return { live, state: rest as unknown as Record<string, unknown>, restore, cursor }
   }
 
   messages(sessionId: string): ChatMessage[] {
@@ -288,6 +339,17 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     const byId = new Map(messages.map(message => [message.id, message]))
     for (const message of canonical) if (!byId.has(message.id)) byId.set(message.id, message)
     return [...byId.values()]
+  }
+
+  /**
+   * One row to expand. A cold session reads it by id: a window can page past
+   * the newest stored page that `messages` returns.
+   */
+  detailMessage(sessionId: string, messageId: string): ChatMessage | null {
+    this.requireRow(sessionId)
+    const find = (messages: readonly ChatMessage[]) => messages.find((message) => message.id === messageId) ?? null
+    if (this.reads.sessions.getSession(sessionId) || !this.reads.rows.loadMessage) return find(this.detailMessages(sessionId))
+    return this.reads.rows.loadMessage(sessionId, messageId) ?? find(this.reads.restore?.realtime?.(sessionId)?.threadMessages ?? [])
   }
 
   listMessages(input: Parameters<SessionHostPort['listMessages']>[0]): ReturnType<SessionHostPort['listMessages']> {

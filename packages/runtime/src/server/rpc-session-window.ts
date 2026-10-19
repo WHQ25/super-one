@@ -9,7 +9,8 @@ import {
 } from '@superone/shared/environment/transcript-window'
 import { windowBudget } from '@superone/shared/transcript-window/select-window'
 import { WindowViews } from '../stream/delivery/window-views'
-import type { RpcContext, RpcResult } from './rpc-context'
+import { arrayTranscript } from '../stream/delivery/transcript-access'
+import type { RpcContext, RpcResult, TranscriptWindowView } from './rpc-context'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { readSessionTarget } from './rpc-session-reads'
 import { deliverLoad } from './session-delivery'
@@ -36,32 +37,66 @@ export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcCo
   if ('error' in parsed) return parsed
   const { anchor, direction, viewport, budget, have, holder } = parsed
   const includeState = parsed.includeState ?? !anchor
+  const request = { anchor, direction, have }
+  const limits = windowBudget({ budget, viewport })
   try {
-    const loaded = await sessions.load({ sessionId: target.sessionId, includeState, full: true })
-    const delivery = ctx.streams?.delivery
-    const selected = (delivery?.windows ?? new WindowViews()).serve({
-      sessionId: target.sessionId,
-      holder,
-      messages: loaded.messages,
-      request: { anchor, direction, have },
-      budget: windowBudget({ budget, viewport }),
-    })
-    const shaped = deliverLoad({ ...loaded, messages: [], activeTurn: undefined }, delivery)
-    const result: TranscriptWindowResult = {
-      sessionId: target.sessionId,
-      schema: TRANSCRIPT_WINDOW_SCHEMA,
-      messages: selected.messages,
-      older: selected.older,
-      newer: selected.newer,
-      total: selected.total,
-      ...(includeState ? { state: shaped.state, ...(shaped.restore ? { restore: shaped.restore } : {}) } : {}),
-      cursor: loaded.cursor,
-      ...(shaped.summarized ? { summarized: true as const } : {}),
+    if (sessions.readTranscriptWindow) {
+      // The host reads rows inside `read`, after prepare and before this turn awaits again.
+      return await sessions.readTranscriptWindow({
+        sessionId: target.sessionId,
+        includeState,
+        read: (view) => windowResult(ctx, target.sessionId, holder, request, limits, view, includeState),
+      })
     }
-    return { result }
+    const loaded = await sessions.load({ sessionId: target.sessionId, includeState, full: true })
+    return windowResult(ctx, target.sessionId, holder, request, limits, {
+      transcript: arrayTranscript(loaded.messages),
+      state: loaded.state,
+      restore: loaded.restore,
+      cursor: loaded.cursor,
+    }, includeState)
   } catch (err) {
     return mapThrown(err)
   }
+}
+
+function windowResult(
+  ctx: RpcContext,
+  sessionId: string,
+  holder: string,
+  request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have'>,
+  budget: TranscriptWindowBudget,
+  view: TranscriptWindowView,
+  includeState: boolean,
+): RpcResult {
+  const delivery = ctx.streams?.delivery
+  const selected = (delivery?.windows ?? new WindowViews()).serve({
+    sessionId,
+    holder,
+    transcript: view.transcript,
+    request,
+    budget,
+  })
+  const shaped = deliverLoad({
+    sessionId,
+    state: view.state,
+    messages: [],
+    ...(view.restore ? { restore: view.restore } : {}),
+    cursor: view.cursor,
+    before: null,
+  }, delivery)
+  const result: TranscriptWindowResult = {
+    sessionId,
+    schema: TRANSCRIPT_WINDOW_SCHEMA,
+    messages: selected.messages,
+    older: selected.older,
+    newer: selected.newer,
+    total: selected.total,
+    ...(includeState ? { state: shaped.state, ...(shaped.restore ? { restore: shaped.restore } : {}) } : {}),
+    cursor: view.cursor,
+    ...(shaped.summarized ? { summarized: true as const } : {}),
+  }
+  return { result }
 }
 
 type ParsedWindowRequest = Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'viewport' | 'have' | 'includeState'> & {

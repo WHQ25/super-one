@@ -68,6 +68,10 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
+import { readDesktopSessionWindow } from './remote-transcript-window'
+import { desktopWindowHolder } from '@superone/shared/environment/transcript-window'
+import type { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
+import { MAX_HELD } from '@superone/runtime/stream/delivery/window-views'
 import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
@@ -202,6 +206,16 @@ interface RemoteSessionTarget {
   /** Desktop project key for AgentEvent routing (`remote:<id>:<path>`). */
   projectPath?: string
   providerId?: string
+}
+
+interface RemoteSessionOpen extends RemoteSessionTarget {
+  limit?: number
+  before?: number
+  full?: boolean
+  /** Chat open and history paging. Full reads and the realtime refresh omit it. */
+  transcript?: boolean
+  anchor?: { messageId: string; key?: string }
+  direction?: 'before' | 'after' | 'around'
 }
 
 export class EnvironmentHost {
@@ -1512,6 +1526,13 @@ export class EnvironmentHost {
    * turns another client starts while it sits idle here.
    */
   private readonly followedSessions = new Map<string, Promise<FollowedRemoteSession>>()
+  /**
+   * One transcript window per remote session, kept so a switch back sends
+   * coverage. Most recently opened last; bounded like a host connection's windows.
+   */
+  private readonly remoteWindows = new Map<string, TranscriptWindowSync>()
+  /** Connections whose host does not serve `session.transcriptWindow`. */
+  private readonly transcriptWindowUnsupported = new Set<string>()
 
   private sessionCursorKey(connectionId: string, sessionId: string): string {
     return `${connectionId}:${sessionId}`
@@ -1695,8 +1716,22 @@ export class EnvironmentHost {
    * Open a remote session in the chat: follow it, then read its snapshot while
    * its events are held, so every event above the snapshot's version reaches
    * the chat and none below it does. Returns the snapshot.
+   *
+   * A chat open (`transcript`) reads `session.transcriptWindow`. A full
+   * transcript, the realtime timeline refresh, a local session, and a host
+   * that does not serve the method stay on `session.load`.
    */
-  async openRemoteSession(connectionId: string, input: RemoteSessionTarget & { limit?: number; before?: number; full?: boolean }): Promise<SessionLoadResult> {
+  async openRemoteSession(connectionId: string, input: RemoteSessionOpen): Promise<SessionLoadResult> {
+    const { gateway, local } = this.resolveSession(connectionId)
+    if (local || !input.transcript || input.full || this.transcriptWindowUnsupported.has(connectionId) || !gateway.sessions.transcriptWindow) {
+      if (!local && input.transcript && !gateway.sessions.transcriptWindow) this.transcriptWindowUnsupported.add(connectionId)
+      return this.openLoadedSession(connectionId, input)
+    }
+    return this.openWindowedSession(connectionId, input)
+  }
+
+  /** Legacy `session.load`, followed for a remote session. */
+  private async openLoadedSession(connectionId: string, input: RemoteSessionOpen): Promise<SessionLoadResult> {
     const { gateway, environmentId, local } = this.resolveSession(connectionId)
     let snapshot: SessionLoadResult | null = null
     const load = () => gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: input.limit, ...(input.before != null ? { before: input.before } : {}), ...(input.full ? { full: true } : {}) })
@@ -1707,6 +1742,37 @@ export class EnvironmentHost {
     // Already followed: its events flow above an earlier barrier, and the chat
     // reducer skips those a snapshot already holds (message `seq`).
     return snapshot ?? load()
+  }
+
+  /** `session.transcriptWindow`, with the window cursor as the follow barrier. */
+  private async openWindowedSession(connectionId: string, input: RemoteSessionOpen): Promise<SessionLoadResult> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const key = this.sessionCursorKey(connectionId, input.sessionId)
+    const read = async (): Promise<SessionLoadResult> => {
+      const loaded = await readDesktopSessionWindow({
+        held: this.remoteWindows.get(key) ?? null,
+        input: { sessionId: input.sessionId, anchor: input.anchor, direction: input.direction },
+        window: (request) => gateway.sessions.transcriptWindow!({
+          session: { environmentId, sessionId: input.sessionId },
+          holder: request.holder,
+          budget: request.budget,
+          includeState: request.includeState,
+          ...(request.anchor ? { anchor: request.anchor, direction: request.direction } : {}),
+          ...(request.have ? { have: request.have } : {}),
+        }),
+        load: () => gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: input.limit ?? 200, ...(input.full ? { full: true } : {}) }),
+      })
+      this.remoteWindows.delete(key)
+      if (loaded.via === 'load') this.transcriptWindowUnsupported.add(connectionId)
+      else if (loaded.held) {
+        this.remoteWindows.set(key, loaded.held)
+        if (this.remoteWindows.size > MAX_HELD) this.remoteWindows.delete(this.remoteWindows.keys().next().value!)
+      }
+      return loaded.snapshot
+    }
+    let snapshot: SessionLoadResult | null = null
+    await this.followRemoteSession(connectionId, input, async () => (snapshot = await read()).cursor.version)
+    return snapshot ?? await read()
   }
 
   /**
@@ -1734,12 +1800,20 @@ export class EnvironmentHost {
         skipUserMessage: false,
       })
       const session: FollowedRemoteSession = { input, unfollow: () => {} }
+      const holder = desktopWindowHolder(input.sessionId)
       session.unfollow = await this.feedFor(connectionId).follow(input.sessionId, {
         event: (envelope) => {
           if (envelope.eventType === SESSION_DURABLE_EVENT.closed || envelope.eventType === SESSION_DURABLE_EVENT.removed) {
+            this.remoteWindows.delete(key)
             notifySessionClosed({ environmentId: connectionId, sessionId: input.sessionId })
           }
-          for (const agentEvent of mapper.map(envelope)) this.agentEventSink?.(agentEvent)
+          for (const agentEvent of mapper.map(envelope)) {
+            if (agentEvent.type === 'transcript_window' && agentEvent.holder === holder) {
+              const sync = this.remoteWindows.get(key)
+              if (sync && !sync.applyPatch(agentEvent.patch)) this.resync(connectionId, input)
+            }
+            this.agentEventSink?.(agentEvent)
+          }
         },
         end: () => this.dropFollowed(key, followed),
         resync: () => this.resync(connectionId, input),
@@ -2687,6 +2761,7 @@ export class EnvironmentHost {
   /** Close the socket and any SSH tunnel; credentials are kept. Marks not desired. */
   disconnect(connectionId: string): void {
     this.stopHostActionConsumer(connectionId, 'disconnect')
+    for (const key of [...this.remoteWindows.keys()]) if (key.startsWith(`${connectionId}:`)) this.remoteWindows.delete(key)
     this.abortConnectionSessionDrains(connectionId, 'disconnect')
     this.connections.disconnect(connectionId)
     this.tunnels.close(connectionId)
@@ -3218,6 +3293,8 @@ export class EnvironmentHost {
       // Supervisor-only recovery (backoff / wake) never goes through host.connect;
       // attach Host Action here so remote tools work without a manual Connect.
       this.startHostActionConsumer(snapshot.connectionId)
+      // The host may have been upgraded while away: probe the window method again.
+      this.transcriptWindowUnsupported.delete(snapshot.connectionId)
       this.watchSessionList(snapshot.connectionId)
       this.resyncLostSessions(snapshot.connectionId)
       void this.loadRemoteProjects(snapshot.connectionId, snapshot.generation).catch(() => {})

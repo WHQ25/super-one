@@ -63,6 +63,27 @@ function patchesOf(delivered: SessionStreamFrame): TranscriptWindowPatch[] {
 }
 
 describe('session.transcriptWindow', () => {
+  it('keeps absolute indexes when the host serves a bounded transcript', async () => {
+    const messages = Array.from({ length: 250 }, (_, index) => textMessage(`m${index}`, 'user', `row ${index}`))
+    let loaded = false
+    const sessions = {
+      get: (id: string) => (id === 's' ? { projectId: 'p' } : null),
+      messages: () => messages.slice(-8),
+      load: () => { loaded = true; throw new Error('full load') },
+      readTranscriptWindow: async (input: { read: (view: { transcript: { count: number; messageAt: (index: number) => ChatMessage; indexOf: (id: string) => number }; state: Record<string, unknown>; cursor: { sequence: string; epoch: string; version: number } }) => unknown }) => input.read({
+        transcript: { count: messages.length, messageAt: (index) => messages[index]!, indexOf: (id) => messages.findIndex((message) => message.id === id) },
+        state: { status: 'streaming' },
+        cursor: { sequence: '3', epoch: 'e', version: 9 },
+      }),
+    } as unknown as SessionHostPort
+    const result = await window(context(sessions))
+    expect(loaded).toBe(false)
+    expect(result.total).toBe(250)
+    expect(result.messages[0]?.index).toBeGreaterThan(200)
+    expect(result.cursor).toEqual({ sequence: '3', epoch: 'e', version: 9 })
+    expect(result.state).toMatchObject({ status: 'streaming' })
+  })
+
   it('serves a bounded tail with state and cursor, summarized for a phone', async () => {
     const h = host([textMessage('u', 'user', 'Explain'), textMessage('a', 'assistant', longReplyText(1024 * 1024))])
     const result = await window(context(h.sessions), { viewport: { width: 390, height: 844 } })
@@ -170,15 +191,52 @@ describe('transcript window live delivery', () => {
     expect(applyWindowPatch(applied.state, patchesOf(cleared)[0], windowLookup(applied.state)).state.messages).toEqual([])
   })
 
-  it('keeps every event for a relaying desktop and tags patches with the holder', async () => {
+  it('withholds content when every reader of the session takes patches', async () => {
     const h = host([textMessage('a', 'assistant', 'Hello', 'streaming')])
     const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('relay', 'desktop')))
     await window(ctx, { holder: 'phone-1' })
     h.set([textMessage('a', 'assistant', 'Hello!', 'streaming')])
     const delivered = deliverFrame(frame(envelope(delta('!'), 2)), ctx.delivery, h.sessions).frame
     const events = delivered.events.map((e) => (e.payload as { event: AgentEvent }).event)
-    expect(events.map((e) => e.type)).toEqual(['content_delta', 'transcript_window'])
-    expect(events[1]).toMatchObject({ holder: 'phone-1' })
+    expect(events.map((e) => e.type)).toEqual(['transcript_window'])
+    expect(events[0]).toMatchObject({ holder: 'phone-1' })
+  })
+
+  it('keeps content events when the desktop is showing the session, and still patches a routed phone', async () => {
+    const h = host([textMessage('a', 'assistant', 'Hello', 'streaming')])
+    const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('relay', 'desktop')))
+    await window(ctx, { holder: 'phone-1' })
+    await window(ctx, { holder: 'desktop:s' })
+    h.set([textMessage('a', 'assistant', 'Hello!', 'streaming')])
+    const delivered = deliverFrame(frame(envelope(delta('!'), 2)), ctx.delivery, h.sessions).frame
+    const events = delivered.events.map((e) => (e.payload as { event: AgentEvent }).event)
+    expect(events.map((e) => e.type)).toEqual(['content_delta', 'transcript_window', 'transcript_window'])
+    expect(events.filter((event) => event.type === 'transcript_window').map((event) => event.holder)).toEqual(['phone-1', 'desktop:s'])
+  })
+
+  it('keeps two desktop sessions patching while one streams', async () => {
+    const messages = [textMessage('a', 'assistant', 'Hello', 'streaming')]
+    const views = new WindowViews()
+    const budget = { maxBytes: 64 * 1024, maxFragments: 8, targetChars: 1000 }
+    views.serve({ sessionId: 'a', holder: 'desktop:a', messages, request: {}, budget })
+    views.serve({ sessionId: 'b', holder: 'desktop:b', messages, request: {}, budget })
+    const next = [textMessage('a', 'assistant', 'Hello!', 'streaming')]
+    expect(views.patches('a', next).map((patch) => patch.holder)).toEqual(['desktop:a'])
+    expect(views.patches('b', next).map((patch) => patch.holder)).toEqual(['desktop:b'])
+    expect(views.holderIds('a')).toEqual(['desktop:a'])
+    expect(views.holderIds('b')).toEqual(['desktop:b'])
+  })
+
+  it('names a session whose holder the window cap evicted, so the client reads it again', () => {
+    const messages = [textMessage('a', 'assistant', 'Hello', 'streaming')]
+    const budget = { maxBytes: 64 * 1024, maxFragments: 8, targetChars: 1000 }
+    const h = host(messages)
+    const delivery = new ConnectionDelivery(deliveryPolicy('relay', 'desktop'))
+    for (let i = 0; i <= 64; i++) delivery.windows.serve({ sessionId: `s${i}`, holder: `desktop:s${i}`, messages, request: {}, budget })
+    const delivered = deliverFrame(frame(envelope(delta('!'), 2)), delivery, h.sessions).frame
+    expect(delivered.resnapshot).toEqual(['s0'])
+    expect(delivery.windows.holderIds('s0')).toEqual([])
+    expect(delivery.windows.drainEvicted()).toEqual([])
   })
 
   it('adds every message that arrived at a window that held none', async () => {
@@ -237,6 +295,25 @@ describe('transcript window live delivery', () => {
     expect(applied.stale).toBe(false)
     const text = materializeWindowMessage(applied.state.messages[0]).content.map((b) => ('text' in b ? b.text : '')).join('')
     expect(text.endsWith(' and more')).toBe(true)
+  })
+
+  it('patches a sparse absolute window the same way as the full transcript', () => {
+    const all = Array.from({ length: 30 }, (_, index) => textMessage(`m${index}`, 'assistant', `body ${index} ${'y'.repeat(80)}`))
+    const budget = { maxBytes: 128 * 1024, maxFragments: 8, targetChars: 1000 }
+    const fullViews = new WindowViews()
+    const sparseViews = new WindowViews()
+    const full = fullViews.serve({ sessionId: 's', holder: 'h', messages: all, request: {}, budget })
+    const seen = new Set<number>()
+    const sparse = sparseViews.serve({
+      sessionId: 's', holder: 'h', request: {}, budget,
+      transcript: { count: all.length, messageAt: (index) => { seen.add(index); return all[index]! }, indexOf: (id) => all.findIndex((message) => message.id === id) },
+    })
+    expect(sparse.total).toBe(full.total)
+    expect(sparse.messages).toEqual(full.messages)
+    expect(Math.min(...seen)).toBeGreaterThan(0)
+    expect(seen.size).toBeLessThanOrEqual(sparse.messages.length + 1)
+    const next = [...all, textMessage('newer', 'assistant', 'tail')]
+    expect(sparseViews.patches('s', next)).toEqual(fullViews.patches('s', next))
   })
 
   it('keeps a bounded number of held windows, dropping the least recently used', () => {

@@ -13,7 +13,7 @@ import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
 import { findPairedPhone } from '../database'
-import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
+import { createSession as createSessionRow, loadSessionMessage, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
 import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteController } from '../db-remote-controlled-sessions'
 import { disableDesktopHarness, enableDesktopHarness, getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { ensureShellPath } from '../shell-path'
@@ -166,7 +166,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       close: (id) => sessions.disposeSession(id),
       fork: async (input, assertControl) => (await import('../session/session-fork')).forkSession(input, assertControl),
     },
-    rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
+    rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated, loadMessage: loadSessionMessage },
     mcpAppResources: getMcpAppResourceStore,
     continuations: async () => (await import('../session/session-continuation')).desktopContinuations,
     restore: desktopRestorePorts,

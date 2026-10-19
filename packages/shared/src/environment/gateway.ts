@@ -11,6 +11,7 @@ import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInpu
 import type { DraftListRequest, DraftRecord, DraftUpsertRequest } from './draft-rpc'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
 import type { SessionLoadRequest, SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
+import type { TranscriptWindowRequest, TranscriptWindowResult } from './transcript-window'
 
 /**
  * Environment-scoped gateway — the only boundary desktop features should use
@@ -110,6 +111,11 @@ export interface SessionGateway {
    * hosts without a read model have none.
    */
   load?(input: { session: SessionRef } & Omit<SessionLoadRequest, 'sessionId'>): Promise<SessionLoadResult>
+  /**
+   * A bounded transcript window (`session.transcriptWindow`). Optional: hosts
+   * older than the method, or without the read port, reject it as unserved.
+   */
+  transcriptWindow?(input: { session: SessionRef; holder: string } & Omit<TranscriptWindowRequest, 'sessionId'>): Promise<TranscriptWindowResult>
   /**
    * Expand a summarized row (`remoteDetail`): its revision-0 text; later
    * packets for `subscriptionId` reach `onUpdate` (local only) until

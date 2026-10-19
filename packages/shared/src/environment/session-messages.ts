@@ -135,4 +135,13 @@ export interface SessionLoadResult {
    * events come the same way.
    */
   summarized?: true
+  /**
+   * Set by a controlling desktop after `session.transcriptWindow`. Not a field
+   * of the `session.load` protocol: older hosts and full-transcript reads omit it.
+   */
+  transcriptWindow?: {
+    older: { messageId: string; key?: string } | null
+    newer: { messageId: string; key?: string } | null
+    total: number
+  }
 }

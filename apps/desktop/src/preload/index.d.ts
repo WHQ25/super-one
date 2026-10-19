@@ -1142,12 +1142,24 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   ): Promise<unknown>
   /**
    * Open a remote session in the chat: main follows it, then returns its
-   * snapshot (`session.load`); every later event above the snapshot's version
-   * arrives as an agent event.
+   * snapshot. A chat open (`transcript`) reads `session.transcriptWindow`;
+   * a full transcript, the realtime refresh, and an older host stay on
+   * `session.load`. Events above the snapshot's version arrive as agent events.
    */
   openRemoteSession(
     connectionId: string,
-    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number; before?: number; full?: boolean },
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      limit?: number
+      before?: number
+      full?: boolean
+      /** Chat open and history paging. Full reads and the realtime refresh omit it. */
+      transcript?: boolean
+      anchor?: { messageId: string; key?: string }
+      direction?: 'before' | 'after' | 'around'
+    },
   ): Promise<SessionLoadResult>
   /** Expand a summarized row of a session: its revision-0 detail; packets follow as `remote_detail` events. */
   subscribeDetail(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate>

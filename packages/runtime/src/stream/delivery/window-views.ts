@@ -10,6 +10,7 @@ import { utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { fragmentDigest, MessageFragmenter, textBody, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
 import { selectTranscriptWindow, type SelectedWindow, type WindowSource } from '@superone/shared/transcript-window/select-window'
 import { projectWindowMessage } from './window-projection'
+import { arrayTranscript, type TranscriptAccess } from './transcript-access'
 
 /**
  * What one message may add to a live patch: a new message enters with its
@@ -20,7 +21,7 @@ export const LIVE_MESSAGE_BUDGET: TranscriptWindowBudget = { maxBytes: 64 * 1024
 /** What one patch may carry, serialized; older changed messages past it leave the window. */
 export const LIVE_PATCH_BYTES = 256 * 1024
 /** Held windows per connection; the least recently served or patched goes first. */
-const MAX_HELD = 64
+export const MAX_HELD = 64
 
 interface HeldFragment { digest: string; textLength?: number }
 
@@ -31,6 +32,11 @@ interface HeldMessage {
   keys: string[]
   omittedBefore: number
   omittedAfter: number
+}
+
+export interface EvictedWindowHolder {
+  sessionId: string
+  holder: string
 }
 
 interface HeldWindow {
@@ -57,12 +63,11 @@ class SessionFragments {
     return fragments
   }
 
-  source(messages: readonly ChatMessage[]): WindowSource {
-    let ids: Map<string, number> | undefined
+  source(transcript: TranscriptAccess): WindowSource {
     return {
-      count: messages.length,
-      at: (index) => this.of(messages[index]),
-      indexOf: (messageId) => (ids ??= new Map(messages.map((message, index) => [message.id, index]))).get(messageId) ?? -1,
+      count: transcript.count,
+      at: (index) => this.of(transcript.messageAt(index)),
+      indexOf: (messageId) => transcript.indexOf(messageId),
     }
   }
 
@@ -79,34 +84,52 @@ class SessionFragments {
  */
 export class WindowViews {
   private readonly sessions = new Map<string, { fragments: SessionFragments; holders: Map<string, HeldWindow> }>()
+  /** Holders the 64-window cap dropped since the last drain. Switching a holder off a session is not an eviction. */
+  private readonly evicted: EvictedWindowHolder[] = []
 
   has(sessionId: string): boolean {
     return (this.sessions.get(sessionId)?.holders.size ?? 0) > 0
   }
 
+  /** Holder ids following `sessionId`, oldest serve first. */
+  holderIds(sessionId: string): string[] {
+    return [...this.sessions.get(sessionId)?.holders.keys() ?? []]
+  }
+
+  /** Holders dropped by the cap. Each call takes them, so a frame reports an eviction once. */
+  drainEvicted(): EvictedWindowHolder[] {
+    return this.evicted.splice(0)
+  }
+
   serve(input: {
     sessionId: string
     holder: string
-    messages: readonly ChatMessage[]
+    /** Dense transcript. Indexes are absolute because the array is the whole session. */
+    messages?: readonly ChatMessage[]
+    /** Absolute-index transcript. `count` is the real length even when only a tail was parsed. */
+    transcript?: TranscriptAccess
     request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have'>
     budget: TranscriptWindowBudget
   }): SelectedWindow & { total: number } {
+    const transcript = input.transcript ?? (input.messages ? arrayTranscript(input.messages) : null)
+    if (!transcript) throw new Error('transcript window needs messages')
     const session = this.session(input.sessionId)
-    const selected = selectTranscriptWindow(session.fragments.source(input.messages), input.request, input.budget)
+    const selected = selectTranscriptWindow(session.fragments.source(transcript), input.request, input.budget)
     const extend = input.request.anchor && input.request.direction !== 'around' ? input.request.direction ?? 'before' : null
     const previous = session.holders.get(input.holder)
     const held = extend && previous ? previous : { messages: new Map(), order: [], atTail: false, total: 0, seen: new Map() }
     for (const message of selected.messages) {
-      const fragments = session.fragments.of(input.messages[message.index])
+      const source = transcript.messageAt(message.index)
+      const fragments = session.fragments.of(source)
       // A joined message keeps the source the client last caught up with, so the next diff still sends what changed since.
-      if (!held.messages.has(message.id)) held.seen.set(message.id, input.messages[message.index])
+      if (!held.messages.has(message.id)) held.seen.set(message.id, source)
       recordMessage(held, message, fragments, extend === 'before' ? 'before' : extend === 'after' ? 'after' : null)
     }
     const ids = selected.messages.map((message) => message.id)
     held.order = extend === 'before' ? [...ids, ...held.order.filter((id) => !ids.includes(id))]
       : extend === 'after' ? [...held.order.filter((id) => !ids.includes(id)), ...ids] : ids
     if (!extend || extend === 'after') held.atTail = selected.newer === null
-    held.total = input.messages.length
+    held.total = transcript.count
     session.holders.delete(input.holder)
     session.holders.set(input.holder, held)
     // A client follows one session: its window elsewhere is gone.
@@ -118,7 +141,7 @@ export class WindowViews {
     this.touch(input.sessionId)
     this.evict()
     session.fragments.retain(this.heldIds(input.sessionId))
-    return { ...selected, total: input.messages.length }
+    return { ...selected, total: transcript.count }
   }
 
   /** Patches for every holder of a session whose window `messages` changed. */
@@ -176,6 +199,7 @@ export class WindowViews {
       for (const holder of session.holders.keys()) {
         if (count <= MAX_HELD) break
         session.holders.delete(holder)
+        this.evicted.push({ sessionId, holder })
         count--
       }
       if (!session.holders.size) this.sessions.delete(sessionId)

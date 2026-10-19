@@ -54,17 +54,28 @@ export function withTranscriptTodos(
   return { ...state, ...todoListUpdate(state, restored) }
 }
 
+/**
+ * The newest todo tool in one message. A later `TaskCreate` / `TaskUpdate`
+ * clears a cold restore; only an open `TodoWrite` list comes back.
+ * `found` is false when the message has no todo tool, so a search can continue.
+ */
+export function todoRestoreDecision(message: ChatMessage): { found: true; todos: Record<string, TodoItem> | null } | { found: false } {
+  const content = message.content
+  for (let b = content.length - 1; b >= 0; b--) {
+    const block = content[b]!
+    if (block.type !== 'tool_use' || !TODO_TOOLS.has(block.toolName)) continue
+    if (block.toolName !== 'TodoWrite') return { found: true, todos: null }
+    let todos: Record<string, TodoItem> | null = null
+    try { todos = todoWriteTodos(JSON.parse(block.input)) } catch { return { found: true, todos: null } }
+    return { found: true, todos: todos && Object.values(todos).some(todo => todo.status !== 'completed') ? todos : null }
+  }
+  return { found: false }
+}
+
 export function restoredTodos(messages: readonly ChatMessage[]): Record<string, TodoItem> | null {
   for (let m = messages.length - 1; m >= 0; m--) {
-    const content = messages[m]!.content
-    for (let b = content.length - 1; b >= 0; b--) {
-      const block = content[b]!
-      if (block.type !== 'tool_use' || !TODO_TOOLS.has(block.toolName)) continue
-      if (block.toolName !== 'TodoWrite') return null
-      let todos: Record<string, TodoItem> | null = null
-      try { todos = todoWriteTodos(JSON.parse(block.input)) } catch { return null }
-      return todos && Object.values(todos).some(todo => todo.status !== 'completed') ? todos : null
-    }
+    const decision = todoRestoreDecision(messages[m]!)
+    if (decision.found) return decision.todos
   }
   return null
 }

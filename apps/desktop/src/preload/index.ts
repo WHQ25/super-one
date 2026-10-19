@@ -587,7 +587,18 @@ const environmentAPI = {
     ),
   openRemoteSession: (
     connectionId: string,
-    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number; before?: number; full?: boolean },
+    input: {
+      sessionId: string
+      projectPath?: string
+      providerId?: string
+      limit?: number
+      before?: number
+      full?: boolean
+      /** Chat open and history paging. Full reads and the realtime refresh omit it. */
+      transcript?: boolean
+      anchor?: { messageId: string; key?: string }
+      direction?: 'before' | 'after' | 'around'
+    },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION,

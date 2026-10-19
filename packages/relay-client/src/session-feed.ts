@@ -17,6 +17,11 @@ export class PhoneSessionFeed {
     private readonly retain?: (session: SessionRef) => () => Promise<void>,
   ) {}
 
+  /** The session this feed is following, or null after stop. Read before stop: stop clears it. */
+  followed(): SessionRef | null {
+    return this.current?.ref ?? null
+  }
+
   async follow(input: { session: SessionRef; projectPath: string; provider?: string; cursor: SessionLoadCursor }): Promise<void> {
     const previous = this.current
     const current = { ref: input.session } as NonNullable<typeof this.current>

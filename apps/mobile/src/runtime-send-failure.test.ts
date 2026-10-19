@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ChatRuntime } from './runtime'
+import { flushTranscriptWrites } from './transcript-write-queue'
 import { runtimeTestClient, type TestRpc } from './runtime-test-client'
 
 const IMAGE = { id: 'i', name: 'a.png', mimeType: 'image/png', base64: 'a' }
@@ -145,6 +146,7 @@ describe('send failure', () => {
     runtime.send('hello', { clientMessageId: 'u' })
     await settle()
     runtime.dispose()
+    flushTranscriptWrites()
     expect(put.mock.calls.at(-1)?.[3].messages.map((m: { id: string }) => m.id)).toEqual(['ok'])
   })
 })

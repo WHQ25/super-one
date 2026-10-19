@@ -78,6 +78,18 @@ describe('node session delivery', () => {
     expect(delivered.details).toEqual([{ sessionId: 's', update: { subscriptionId: 'sub', revision: 1, offset: 4, text: ' more' } }])
   })
 
+  it('expands a row the host reads by id, outside the transcript it pages', () => {
+    const relay = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
+    const older = { ...message('older plan'), id: 'older', status: 'complete' as const }
+    const byId = { messages: () => [], detailMessage: (_sessionId: string, id: string) => id === 'older' ? older : null }
+    transcript = []
+    deliverLoad(load(), relay)
+    expect(subscribeDetail(relay, byId, { sessionId: 's', detailRef: '["older","thinking",0]', subscriptionId: 'sub' }))
+      .toEqual({ subscriptionId: 'sub', revision: 0, offset: 0, text: 'older plan' })
+    expect(() => subscribeDetail(relay, byId, { sessionId: 's', detailRef: '["gone","thinking",0]', subscriptionId: 'sub2' }))
+      .toThrow(expect.objectContaining({ code: 'not_found' }))
+  })
+
   it('sends a LAN connection full rows and refuses detail it never summarized', () => {
     const lan = new ConnectionDelivery(deliveryPolicy('lan', 'desktop'))
     transcript = [message('plan')]

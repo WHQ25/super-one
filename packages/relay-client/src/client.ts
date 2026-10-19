@@ -163,6 +163,11 @@ export class RelayClient {
     return this.projects.resolve(projectPath)
   }
 
+  /** The session the visible feed is following. Null when nothing is open. */
+  followedSession(): SessionRef | null {
+    return this.sessionFeed.followed()
+  }
+
   async followSession(input: { session: SessionRef; projectPath: string; provider?: string; cursor: SessionLoadCursor }): Promise<void> {
     await this.sessionFeed.follow(input)
     this.activateSessionView(this.defaultSessionStop)
@@ -216,7 +221,7 @@ export class RelayClient {
     return result
   }
 
-  async acquireControl(resource: SessionRef | TerminalRef, options: { reclaim?: boolean } = {}): Promise<ControlLease> {
+  async acquireControl(resource: SessionRef | TerminalRef, options: { reclaim?: boolean; after?: Promise<unknown> } = {}): Promise<ControlLease> {
     return (await this.protocolReady(15_000, 'acquireControl')).control.acquire(resource, options)
   }
 

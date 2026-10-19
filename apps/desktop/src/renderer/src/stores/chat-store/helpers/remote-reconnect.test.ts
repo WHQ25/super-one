@@ -44,7 +44,7 @@ vi.mock('@/stores/chat-store/defaults', () => ({
   createDefaultProjectState: () => ({ _activeSessionId: null, _sessions: {} }),
 }))
 
-const { resyncRemoteSession } = await import('./remote-reconnect')
+const { resyncRemoteSession, setTranscriptFlag } = await import('./remote-reconnect')
 
 const CONN = 'node-1'
 const PROJECT = `remote:${CONN}:/srv/app`
@@ -190,5 +190,41 @@ describe('remote session resync', () => {
     await resyncRemoteSession(PROJECT, SID, store.set, store.get)
 
     expect(getSession).not.toHaveBeenCalled()
+  })
+
+  it('marks the transcript refreshing until the snapshot replaces it', async () => {
+    let releaseGet!: (value: unknown) => void
+    getSession.mockReturnValue(new Promise((resolve) => { releaseGet = resolve }))
+    const store = makeStore({
+      [PROJECT]: remoteProject({ [SID]: session({ status: 'streaming' }) }, SID),
+    })
+    const pending = resyncRemoteSession(PROJECT, SID, store.set, store.get)
+    expect(store.get().projectSessions[PROJECT]!._sessions[SID]!.transcriptResyncing).toBe(true)
+    releaseGet(null)
+    await pending
+    expect(store.get().projectSessions[PROJECT]!._sessions[SID]!.transcriptResyncing).toBe(false)
+    expect(openRemoteSession).not.toHaveBeenCalled()
+  })
+
+  it('clears the refreshing mark when the read fails', async () => {
+    getSession.mockRejectedValue(new Error('down'))
+    const store = makeStore({
+      [PROJECT]: remoteProject({ [SID]: session({ status: 'idle' }) }, SID),
+    })
+    await expect(resyncRemoteSession(PROJECT, SID, store.set, store.get)).rejects.toThrow('down')
+    expect(store.get().projectSessions[PROJECT]!._sessions[SID]!.transcriptResyncing).toBe(false)
+  })
+
+  it('marks a page in flight on the session and only writes when the flag changes', () => {
+    const store = makeStore({
+      [PROJECT]: remoteProject({ [SID]: session({ status: 'idle' }) }, SID),
+    })
+    setTranscriptFlag(PROJECT, SID, 'transcriptPaging', true, store.set)
+    const paging = store.get().projectSessions[PROJECT]!._sessions[SID]!
+    expect(paging.transcriptPaging).toBe(true)
+    setTranscriptFlag(PROJECT, SID, 'transcriptPaging', true, store.set)
+    expect(store.get().projectSessions[PROJECT]!._sessions[SID]).toBe(paging)
+    setTranscriptFlag(PROJECT, SID, 'transcriptPaging', false, store.set)
+    expect(store.get().projectSessions[PROJECT]!._sessions[SID]!.transcriptPaging).toBe(false)
   })
 })

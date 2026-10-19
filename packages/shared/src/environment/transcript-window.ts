@@ -131,6 +131,28 @@ export interface TranscriptWindowPatch {
 
 export const TRANSCRIPT_WINDOW_METHOD = 'session.transcriptWindow'
 
+/** One holder per remote session a controlling desktop shows. `serve` drops a holder's other sessions, so holders are not shared across sessions. */
+export const DESKTOP_WINDOW_HOLDER_PREFIX = 'desktop:'
+
+export function desktopWindowHolder(sessionId: string): string {
+  const holder = `${DESKTOP_WINDOW_HOLDER_PREFIX}${sessionId}`
+  return holder.length <= 128 ? holder : holder.slice(0, 128)
+}
+
+/** True when this connection's desktop is showing the session, so its own view still needs content events. */
+export function desktopShowsSession(holders: readonly string[]): boolean {
+  return holders.some((holder) => holder.startsWith(DESKTOP_WINDOW_HOLDER_PREFIX))
+}
+
+/**
+ * A host that does not serve a method: hosts that know of it but lack the
+ * port mark the error `unsupported`; hosts older than it answer `unknown method`.
+ */
+export function isUnservedMethod(error: unknown): boolean {
+  const { code, message, details } = (error ?? {}) as { code?: string; message?: string; details?: { unsupported?: unknown } }
+  return code === 'not_found' && (details?.unsupported === true || (typeof message === 'string' && message.startsWith('unknown method:')))
+}
+
 /**
  * A `transcript_window` event envelope. It takes the session version of the
  * frame's last event for its session, so readers that skip a version they

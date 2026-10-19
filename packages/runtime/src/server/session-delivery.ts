@@ -8,6 +8,7 @@ import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import { detailMessageId } from '../stream/delivery/projection'
 import { windowLiveEvent } from '../stream/delivery/window-projection'
 import { summarizesTranscripts } from '../stream/delivery-policy'
+import { desktopShowsSession } from '@superone/shared/environment/transcript-window'
 import type { SessionHostPort } from './rpc-context'
 
 /**
@@ -18,7 +19,7 @@ import type { SessionHostPort } from './rpc-context'
  * the session changes. Persisted transcripts and the event log stay complete.
  */
 
-type Messages = Pick<SessionHostPort, 'messages' | 'detailMessages'>
+type Messages = Pick<SessionHostPort, 'messages' | 'detailMessages' | 'detailMessage'>
 const detailMessages = (sessions: Messages, sessionId: string) => sessions.detailMessages?.(sessionId) ?? sessions.messages(sessionId)
 
 /** A load or history page as this connection receives it; loading over a summarizing link summarizes the session. */
@@ -57,8 +58,6 @@ export function deliverFrame(
   const changed = new Set<string>()
   /** The last envelope of each session holding a window: its patch takes that position. */
   const windowed = new Map<string, EnvironmentEventEnvelope>()
-  // A phone holding a window gets content as patches; a relaying desktop keeps every event for its own window.
-  const withholds = delivery.policy.surface === 'phone'
   const events = frame.events.flatMap((envelope): EnvironmentEventEnvelope[] => {
     const event = agentEventOf(envelope, sessions)
     if (!event) return [envelope]
@@ -68,7 +67,11 @@ export function deliverFrame(
     const holdsWindow = delivery.windows.has(sessionId)
     if (holdsWindow) windowed.set(sessionId, envelope)
     const shaped = delivery.event(event, sessionId, summarized ? sessions.messages(sessionId) : [])
-    const live = holdsWindow && withholds ? shaped.flatMap((next) => windowLiveEvent(next) ?? []) : shaped
+    // Withhold a session's content when every reader of it takes patches. A desktop
+    // showing the session (holder `desktop:<sessionId>`) keeps events for its own view.
+    const live = holdsWindow && !desktopShowsSession(delivery.windows.holderIds(sessionId))
+      ? shaped.flatMap((next) => windowLiveEvent(next) ?? [])
+      : shaped
     return live.map((next) => ({ ...envelope, eventType: SESSION_DURABLE_EVENT.agentEvent,
       payload: envelope.eventType === SESSION_DURABLE_EVENT.userMessage ? { event: next } : { ...(envelope.payload as object), event: next } }))
   })
@@ -83,7 +86,9 @@ export function deliverFrame(
       event.type === 'remote_detail'
         ? [{ sessionId, update: { subscriptionId: event.subscriptionId, revision: event.revision, offset: event.offset, text: event.text } }]
         : []) : [])
-  return { frame: { ...frame, events: foldDeltas(events) }, details }
+  const dropped = delivery.windows.drainEvicted().map((item) => item.sessionId)
+  const resnapshot = dropped.length ? [...new Set([...(frame.resnapshot ?? []), ...dropped])] : frame.resnapshot
+  return { frame: { ...frame, events: foldDeltas(events), ...(resnapshot?.length ? { resnapshot } : {}) }, details }
 }
 
 function foldDeltas(envelopes: EnvironmentEventEnvelope[]): EnvironmentEventEnvelope[] {
@@ -117,7 +122,9 @@ export function subscribeDetail(
   } catch (err) {
     throw Object.assign(err as Error, { code: 'invalid_argument' })
   }
-  const message = detailMessages(sessions, input.sessionId).find((candidate) => candidate.id === messageId)
+  const message = sessions.detailMessage
+    ? sessions.detailMessage(input.sessionId, messageId)
+    : detailMessages(sessions, input.sessionId).find((candidate) => candidate.id === messageId)
   if (!message) throw Object.assign(new Error('Detail not found'), { code: 'not_found' })
   try {
     return delivery.views.subscribe(input.sessionId, input.subscriptionId, input.detailRef, message)

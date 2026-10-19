@@ -149,7 +149,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const expandedFoldersRef = useRef(expandedFolders)
   const {
-    currentActiveSid, folderSessions, folderSessionsHaveMore, folderSessionsRef,
+    currentActiveSid, folderSessions, folderSessionsHaveMore, loadingFolders, folderSessionsRef,
     pinnedSessions, pinnedStatuses, loadFolderSessions, loadMoreFolderSessions,
     refreshFolderSessions, refreshPinned, handlePinSession, handleHideSession,
     executeDeleteSession,
@@ -205,14 +205,7 @@ export const AppSidebar = memo(function AppSidebar() {
   }, [expandedFolders])
 
   const toggleExpand = useCallback((folderPath: string) => {
-    const remote = parseRemoteProjectKey(folderPath)
-    if (remote) {
-      const project = hostProjects.find((item) => item.path === folderPath)
-      void selectProject(folderPath, {
-        connectionId: remote.connectionId,
-        projectId: project?.id,
-      })
-    }
+    // Expanding a folder only reveals its sessions. Selecting one is a row click.
     const isExpanded = expandedFoldersRef.current.has(folderPath)
     let willExpand = false
     setExpandedFolders((prev) => {
@@ -243,7 +236,7 @@ export const AppSidebar = memo(function AppSidebar() {
     } else {
       traceSidebar('project_expand:collapse', { folderPath, wasExpanded: isExpanded }, folderPath)
     }
-  }, [hostProjects, loadFolderSessions, selectProject])
+  }, [loadFolderSessions])
 
   const handleSwitchSession = useCallback(async (
     folderPath: string,
@@ -702,6 +695,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     folder={folder}
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
+                    sessionsLoading={loadingFolders[folder.path] === true}
                     hasMoreSessions={folderSessionsHaveMore[folder.path] ?? false}
                     onLoadMoreSessions={loadMoreFolderSessions}
                     onToggleExpand={toggleExpand}

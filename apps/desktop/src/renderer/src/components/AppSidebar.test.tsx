@@ -15,7 +15,7 @@ describe('AppSidebar interactions', () => {
     expect(actions?.querySelector('.lucide-search')).not.toBeNull()
   })
 
-  it('selects a remote project when clicking its sidebar row', async () => {
+  it('expands a remote project folder without focusing a session', async () => {
     appState.currentFolder = null
     appState.recentFolders = []
     appState.selectedHostConnectionId = 'env-remote'
@@ -33,11 +33,9 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(await screen.findByText('remote-app'))
 
     await waitFor(() => {
-      expect(appState.selectProject).toHaveBeenCalledWith(
-        'remote:env-remote:/work/remote-app',
-        { connectionId: 'env-remote', projectId: 'project-1' },
-      )
+      expect(mockEnvironment.listSessions).toHaveBeenCalled()
     })
+    expect(appState.selectProject).not.toHaveBeenCalled()
   })
 
   it('upgrades a node that trails this desktop without asking, exactly once', async () => {

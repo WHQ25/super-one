@@ -114,6 +114,11 @@ export interface NodeSessionRecord {
    * controller as Host Actions, and the child may not launch children itself.
    */
   externalParent?: { sessionId: string } | null
+  /**
+   * Spawn parent on this host (`session_collaboration_grants`). Absent for a
+   * root session and for a mailbox row whose child lives on another machine.
+   */
+  parentSessionId?: string | null
 }
 
 /** Image/document attachment for a remote turn (base64 payload). */

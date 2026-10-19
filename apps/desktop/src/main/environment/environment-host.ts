@@ -490,6 +490,8 @@ export class EnvironmentHost {
       providerResume?: string | null
       acpAgentId?: string | null
       tags?: unknown
+      /** Spawn parent on this host. List rows omit it for roots. */
+      parentSessionId?: string | null
     }
     const sessionId = String(s.sessionId ?? '')
     const ts = s.updatedAt ?? s.createdAt ?? Date.now()
@@ -517,6 +519,9 @@ export class EnvironmentHost {
       : null
     const acpAgentId = listedAgentId ?? (rawHarness === 'acp-grok' ? 'grok-build' : null)
     const tags = parseTagsJson(s.tags)
+    const parentSessionId = typeof s.parentSessionId === 'string' && s.parentSessionId.trim()
+      ? s.parentSessionId.trim()
+      : null
     return {
       sessionId,
       title: (s.title && String(s.title).trim()) || 'New session',
@@ -530,6 +535,7 @@ export class EnvironmentHost {
       isWorktree: Boolean(cwd),
       ...(providerSessionId ? { providerSessionId } : {}),
       ...(acpAgentId ? { acpAgentId } : {}),
+      ...(parentSessionId ? { parentSessionId } : {}),
       ...(tags.length ? { tags } : {}),
     }
   }

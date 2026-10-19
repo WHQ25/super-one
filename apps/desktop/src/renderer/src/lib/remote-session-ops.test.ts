@@ -68,6 +68,68 @@ describe('hydrateRemoteSession: adopting a node session', () => {
       permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: false }, apiProviderId: 'account', cwd: '/work/app/worktree', _worktreePath: '/work/app/worktree' })
     expect(createSession).not.toHaveBeenCalled()
   })
+
+  it('treats a project-root cwd as the project and keeps the spawn parent', async () => {
+    getSession.mockResolvedValueOnce({
+      sessionId: 'child', harnessId: 'claude', status: 'idle', transcript: [],
+      cwd: '/work/app/', parentSessionId: 'parent',
+    })
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'child', null, { adoptSession: true })
+    expect(hydrated.cwd).toBe('/work/app/')
+    expect(hydrated._worktreePath).toBeNull()
+    expect(hydrated._parentSessionId).toBe('parent')
+  })
+
+  it('puts a Codex session.load timeline into the voice view', async () => {
+    const { useCodexRealtimeViewStore } = await import('@/stores/codex-realtime-view')
+    useCodexRealtimeViewStore.setState({ sessions: {} })
+    getSession.mockResolvedValueOnce({ sessionId: 'voice', harnessId: 'codex', status: 'idle', transcript: [] })
+    openRemoteSession.mockResolvedValueOnce({
+      sessionId: 'voice',
+      messages: [],
+      state: {
+        realtimeSegments: [{ id: 'seg-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
+        realtimeSessionId: 'rt-1',
+      },
+      restore: { realtimeHasTimeline: true, realtimeThreadMessages: [] },
+      before: null,
+      cursor: { sequence: '1', epoch: 'e', version: 1 },
+    })
+    await hydrateRemoteSession('remote:env-1:/work/app', 'voice', null, { adoptSession: true })
+    expect(useCodexRealtimeViewStore.getState().sessions.voice).toMatchObject({
+      hasTimeline: true,
+      loadStatus: 'loaded',
+      realtimeSessionId: 'rt-1',
+    })
+  })
+
+  it('treats a dot-segment project cwd as the project root', async () => {
+    getSession.mockResolvedValueOnce({
+      sessionId: 'root', harnessId: 'claude', status: 'idle', transcript: [], cwd: '/work/app/.',
+    })
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'root', null, { adoptSession: true })
+    expect(hydrated._worktreePath).toBeNull()
+  })
+
+  it('settles an empty Codex session.load so the voice view stops loading', async () => {
+    const { useCodexRealtimeViewStore } = await import('@/stores/codex-realtime-view')
+    useCodexRealtimeViewStore.setState({ sessions: {} })
+    useCodexRealtimeViewStore.getState().setTimelineLoading('plain')
+    getSession.mockResolvedValueOnce({ sessionId: 'plain', harnessId: 'codex', status: 'idle', transcript: [] })
+    openRemoteSession.mockResolvedValueOnce({
+      sessionId: 'plain',
+      messages: [],
+      state: {},
+      restore: {},
+      before: null,
+      cursor: { sequence: '0', epoch: 'e', version: 0 },
+    })
+    await hydrateRemoteSession('remote:env-1:/work/app', 'plain', null, { adoptSession: true })
+    expect(useCodexRealtimeViewStore.getState().sessions.plain).toMatchObject({
+      hasTimeline: false,
+      loadStatus: 'loaded',
+    })
+  })
 })
 
 describe('hydrateRemoteSession', () => {

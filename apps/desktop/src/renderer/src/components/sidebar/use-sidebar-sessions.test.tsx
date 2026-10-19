@@ -88,3 +88,15 @@ it("re-reads only the paired machine's project its list notice names", async () 
   await waitFor(() => expect(result.current.folderSessions[REMOTE][0]).toMatchObject({ sessionId: 'b-own', title: 'Renamed on B' }))
   expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: 13, offset: 0 }]])
 })
+
+it('marks a folder loading until its session list returns', async () => {
+  const pending = deferred<typeof sessionFixtures.byFolder[typeof FOLDER]>()
+  mockEnvironment.listSessions.mockImplementationOnce(() => pending.promise)
+  const { result } = setup()
+  let load!: Promise<unknown>
+  await act(async () => { load = result.current.loadFolderSessions(FOLDER, 'expand') })
+  expect(result.current.loadingFolders[FOLDER]).toBe(true)
+
+  await act(async () => { pending.resolve(sessionFixtures.byFolder[FOLDER]); await load })
+  expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
+})

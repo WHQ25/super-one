@@ -6,7 +6,9 @@ const db = vi.hoisted(() => ({ current: null as Database.Database | null }))
 vi.mock('./database', () => ({ getDb: () => db.current }))
 
 import {
+  getDesktopSessionRow,
   getRemoteControlledSession,
+  listDesktopSessionRows,
   remoteControllerInfo,
   setSessionRemoteController,
 } from './db-remote-controlled-sessions'
@@ -25,7 +27,9 @@ beforeEach(() => {
       total_cost_usd REAL, context_tokens INTEGER, is_worktree INTEGER, git_branch TEXT, api_provider_id TEXT,
       acp_agent_id TEXT, selected_model TEXT, selected_effort TEXT, codex_service_tier TEXT
     );
-    CREATE TABLE session_collaboration_grants (parent_session_id TEXT, child_session_id TEXT, kind TEXT);
+    CREATE TABLE session_collaboration_grants (
+      parent_session_id TEXT, child_session_id TEXT, kind TEXT, config_json TEXT
+    );
     CREATE TABLE chat_messages (
       id TEXT, session_id TEXT, sort_order INTEGER, role TEXT, status TEXT, content_json TEXT, created_at TEXT,
       provider_id TEXT, metadata_json TEXT, checkpoint_id TEXT, resume_point_id TEXT
@@ -54,6 +58,22 @@ describe('remote-controlled sessions', () => {
     expect(remoteControllerInfo('{')).toBeNull()
     expect(remoteControllerInfo(JSON.stringify({ label: 'no id' }))).toBeNull()
     expect(remoteControllerInfo(null)).toBeNull()
+  })
+
+  it('nests spawn children with their parent and skips mailbox endpoints', () => {
+    db.current!.prepare(`INSERT INTO sessions (id, project_id, title, created_at, last_user_message_at) VALUES
+      ('parent', 'p1', 'Parent', '2026-01-03T00:00:00.000Z', '2026-01-03T00:00:00.000Z'),
+      ('child', 'p1', 'Child', '2026-01-03T01:00:00.000Z', '2026-01-04T00:00:00.000Z'),
+      ('mailbox', 'p1', 'Mailbox', '2026-01-05T00:00:00.000Z', '2026-01-05T00:00:00.000Z')`).run()
+    db.current!.prepare(`INSERT INTO session_collaboration_grants (parent_session_id, child_session_id, kind, config_json) VALUES
+      ('parent', 'child', 'spawn', '{}'),
+      ('parent', 'mailbox', 'spawn', ?)`).run(JSON.stringify({ remote: { environmentId: 'other-machine' } }))
+
+    const listed = listDesktopSessionRows('p1').map((row) => row.sessionId)
+    expect(listed.indexOf('parent')).toBeLessThan(listed.indexOf('child'))
+    expect(listed).not.toContain('mailbox')
+    expect(getDesktopSessionRow('child')?.parentSessionId).toBe('parent')
+    expect(getDesktopSessionRow('local')?.parentSessionId).toBeUndefined()
   })
 
   it('carries the controller label into the restored session state', () => {

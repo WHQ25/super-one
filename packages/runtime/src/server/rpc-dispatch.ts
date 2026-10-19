@@ -1672,6 +1672,7 @@ function mapSessionRow(s: NodeSessionRecord) {
     automationId: s.automationId ?? null,
     providerResume,
     ...(providerSessionId ? { providerSessionId } : {}),
+    ...(s.parentSessionId ? { parentSessionId: s.parentSessionId } : {}),
     tags: Array.isArray(s.tags) ? s.tags : [],
   }
 }

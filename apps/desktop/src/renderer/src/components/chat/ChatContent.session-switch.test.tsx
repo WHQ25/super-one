@@ -85,4 +85,28 @@ describe('chat transcript session switching', () => {
     const sessions = useChatStore.getState().projectSessions[PROJECT]._sessions
     for (const [id, history] of Object.entries(histories)) expect(sessions[id].messages).toEqual(history)
   })
+
+  it('shows loading while the displayed session has no history yet', () => {
+    useAppStore.setState({ harnessCatalog: null })
+    useChatStore.setState({
+      activeProject: PROJECT,
+      projectSessions: {
+        [PROJECT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'pending',
+          _sessions: {
+            pending: {
+              ...createDefaultPerSessionState(),
+              cwd: PROJECT,
+              sessionProvider: 'claude',
+              messages: [],
+              _historyHydrated: false,
+            },
+          },
+        },
+      },
+    })
+    render(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} foreground={false} />)
+    expect(screen.getByText('Loading...')).toBeInTheDocument()
+  })
 })

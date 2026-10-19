@@ -26,6 +26,8 @@ export function useCodexConversationActivation({ sessionId, projectPath, enabled
     activation.current.applied = true
     // A Details/back-link jump explicitly chose a destination before mounting.
     if (realtime.pendingJump) return
-    useCodexRealtimeViewStore.getState().setView(sessionId, voiceEngaged ? 'realtime' : 'thread')
+    // A stored call opens on the voice view, including after the call has ended.
+    // The header toggle can still show the backing thread; this runs once per entry.
+    useCodexRealtimeViewStore.getState().setView(sessionId, 'realtime')
   }, [callEngaged, key, realtime.hasTimeline, realtime.pendingJump, realtime.realtimeSessionId, realtime.starting, sessionId])
 }

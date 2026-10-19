@@ -4,7 +4,7 @@
  */
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { withCodexContents } from '@superone/shared/codex-content'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { hostPathsEqual, parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
   type NodeSessionSnapshot,
@@ -63,7 +63,9 @@ function applyRemoteSessionRow(
       ...(snap?.sandboxMode ? { sandboxInfo: { enabled: snap.sandboxMode !== 'off', autoAllowBash: snap.sandboxMode === 'auto' } } : {}),
       apiProviderId: snap?.apiProviderId ?? null,
       cwd: snap?.cwd ?? remote.path,
-      _worktreePath: snap?.cwd && snap.cwd !== remote.path ? snap.cwd : null,
+      // The project root is not a worktree. Slash differences must not store a
+      // bare host path that the file tree would read on this machine.
+      _worktreePath: snap?.cwd && !hostPathsEqual(snap.cwd, remote.path) ? snap.cwd : null,
       ...(chatProvider === 'codex' ? {
         selectedCodexModel: snap?.model ?? '', selectedCodexReasoningEffort: (snap?.effort ?? undefined) as PerSessionState['selectedCodexReasoningEffort'],
         codexModelUserChosen: !!snap?.model, codexReasoningEffortUserChosen: !!snap?.effort,
@@ -72,6 +74,7 @@ function applyRemoteSessionRow(
     sessionProvider: chatProvider,
     preferredProvider: chatProvider,
     ...(chatProvider === 'acp' && snap?.acpAgentId !== undefined ? { acpAgentId: snap.acpAgentId } : {}),
+    ...(snap ? { _parentSessionId: snap.parentSessionId ?? null } : {}),
     _title: snap?.title ?? base._title ?? null,
   }
 }
@@ -118,6 +121,11 @@ export async function hydrateRemoteSession(
   })
   const state = loaded.state as Partial<PerSessionState>
   const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
+  const provider = hydrated.sessionProvider || hydrated.preferredProvider
+  if (provider === 'codex' || loaded.restore?.realtimeHasTimeline) {
+    const { applySessionLoadRealtimeTimeline } = await import('@/stores/codex-realtime-view')
+    applySessionLoadRealtimeTimeline(sessionId, loaded)
+  }
   // Older pages are committed and never change: keep those already held.
   const page = withCodexContents(loaded.messages)
   const first = loaded.before == null ? -1 : hydrated.messages.findIndex((message) => message.id === page[0]?.id)

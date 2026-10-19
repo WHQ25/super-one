@@ -242,7 +242,9 @@ function ChatTranscript({
   return (
     <TurnDetailStateProvider scope={displayedSessionId ?? 'default'}>
     <div className="relative min-w-0 flex-1 overflow-hidden">
-      {displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
+      {displayMessages.length === 0 && !historyHydrated && !hasRealtimeTimeline ? (
+        <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+      ) : displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
         sideChatParentId
           // A side chat is empty on purpose and must never reach ChatSuggestions:
           // picking a harness there switches the project's active session, which
@@ -462,8 +464,10 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   // reaching Codex would otherwise start a backend just to read history.
   useEffect(() => {
     if (!displayedSessionId || !isCodexSession) return
+    // Remote timelines arrive with session.load. The local snapshot is this machine's SQLite.
+    if (parseRemoteProjectKey(projectPath ?? '')) return
     void restoreLocalCodexRealtimeTimeline(displayedSessionId)
-  }, [displayedSessionId, isCodexSession])
+  }, [displayedSessionId, isCodexSession, projectPath])
   useEffect(() => {
     if (
       !displayedSessionId
@@ -618,6 +622,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             {showRealtime ? (
               <CodexRealtimeTranscript
                 sessionId={displayedSessionId!}
+                projectPath={projectPath}
                 scrollViewportRef={scrollViewportRef}
                 showScrollButton={showScrollButton}
                 scrollToBottom={scrollToBottom}

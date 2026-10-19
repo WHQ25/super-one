@@ -86,6 +86,54 @@ const meta = { title: 'Chat/Session Switching', component: SessionSwitchPreview,
 export default meta
 type Story = StoryObj<typeof meta>
 
+function UnhydratedPreview() {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    const previousCatalog = useAppStore.getState().harnessCatalog
+    useChatStore.setState({
+      activeProject: PROJECT,
+      projectSessions: {
+        ...previous.projectSessions,
+        [PROJECT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'pending',
+          _sessions: {
+            pending: {
+              ...createDefaultPerSessionState(),
+              cwd: PROJECT,
+              sessionProvider: 'claude',
+              messages: [],
+              _historyHydrated: false,
+            },
+          },
+        },
+      },
+    })
+    useAppStore.setState({ harnessCatalog: null })
+    setReady(true)
+    return () => {
+      useChatStore.setState(previous)
+      useAppStore.setState({ harnessCatalog: previousCatalog })
+    }
+  }, [])
+  return (
+    <TooltipProvider>
+      <div data-testid="session-switch-preview" className="@container flex h-[560px] min-h-0 min-w-0 w-[760px] max-w-full flex-col overflow-hidden rounded-xl border border-border bg-card">
+        {ready && <ChatContent scrollViewportRef={scrollRef} foreground={false} />}
+      </div>
+    </TooltipProvider>
+  )
+}
+
+export const WaitingForHistory: Story = {
+  render: () => <UnhydratedPreview />,
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).findByText('Loading...')).resolves.toBeInTheDocument()
+  },
+}
+
 export const RepeatedSwitches: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)

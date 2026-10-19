@@ -155,6 +155,8 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
   isExpanded: boolean
   sessions: SessionHistoryEntry[]
+  /** The session list for this folder is still in flight. */
+  sessionsLoading?: boolean
   hasMoreSessions: boolean
   onLoadMoreSessions: (folderPath: string, minimumRootCount: number) => Promise<SessionHistoryEntry[]>
   onToggleExpand: (folderPath: string) => void
@@ -167,6 +169,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   folder,
   isExpanded,
   sessions: allSessions,
+  sessionsLoading = false,
   hasMoreSessions,
   onLoadMoreSessions,
   onToggleExpand,
@@ -588,8 +591,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           />
         ) : derived.showSessions ? (
           <div className="flex flex-col py-0.5 pl-2.5">
+            {sessionsLoading && derived.groupsToShow.length > 0 ? (
+              <div className="px-2.5 py-1 text-[11px] text-sidebar-foreground/70">{t('common.loading')}</div>
+            ) : null}
             {derived.groupsToShow.length === 0 ? (
-              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
+              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">
+                {sessionsLoading ? t('common.loading') : t('sidebar.contextMenu.noSessions')}
+              </div>
             ) : (
               derived.groupsToShow.map(({ parent, children }) => {
                 const hasChildren = children.length > 0

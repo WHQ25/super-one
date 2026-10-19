@@ -16,6 +16,7 @@ import { disposeHighlightCache } from '@/lib/highlight-cache'
 import {
   parseRemoteProjectKey,
   projectBelongsToHost,
+  remoteActiveFileRoot,
   remoteProjectKey,
 } from '@/lib/remote-project-key'
 
@@ -1038,6 +1039,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setActiveWorktree: (projectPath, path) => {
+    // Remote worktrees must stay remote keys. A bare host cwd would make the
+    // file tree read this machine's disk and come back empty.
+    const rooted = remoteActiveFileRoot(projectPath, path)
+    const activePath = rooted === projectPath ? null : rooted
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
@@ -1046,7 +1051,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           pendingMode: 'branch',
           pendingBranchName: '',
           pendingCarryLocalChanges: false,
-          activePath: path,
+          activePath,
         },
       },
     }))
@@ -1364,7 +1369,7 @@ export function useHasRealProject(): boolean {
 export function selectEffectiveProjectRoot(s: AppState): string | null {
   const cf = s.currentFolder
   if (!cf) return null
-  return s._worktrees[cf]?.activePath ?? cf
+  return remoteActiveFileRoot(cf, s._worktrees[cf]?.activePath ?? null)
 }
 
 export function useEffectiveProjectRoot(): string | null {

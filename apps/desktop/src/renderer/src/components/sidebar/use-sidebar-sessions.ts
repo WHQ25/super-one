@@ -29,6 +29,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
 }) {
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [folderSessionsHaveMore, setFolderSessionsHaveMore] = useState<Record<string, boolean>>({})
+  const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
   const folderSessionsRef = useRef(folderSessions)
   const folderSessionsHaveMoreRef = useRef(folderSessionsHaveMore)
@@ -54,6 +55,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
       return existing.promise
     }
 
+    setLoadingFolders((previous) => previous[folderPath] ? previous : { ...previous, [folderPath]: true })
     const request: ListRequest = { promise: Promise.resolve([]), invalidated: false }
     request.promise = (async () => {
       let seed = initial
@@ -109,6 +111,13 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
       }
     })().finally(() => {
       if (inFlight.current.get(folderPath) === request) inFlight.current.delete(folderPath)
+      if (inFlight.current.has(folderPath)) return
+      setLoadingFolders((previous) => {
+        if (!previous[folderPath]) return previous
+        const next = { ...previous }
+        delete next[folderPath]
+        return next
+      })
     })
     inFlight.current.set(folderPath, request)
     return request.promise
@@ -247,7 +256,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
 
 
   return {
-    currentActiveSid, folderSessions, folderSessionsHaveMore, folderSessionsRef,
+    currentActiveSid, folderSessions, folderSessionsHaveMore, loadingFolders, folderSessionsRef,
     pinnedSessions, pinnedStatuses, loadFolderSessions, loadMoreFolderSessions,
     refreshFolderSessions, refreshPinned, handlePinSession, handleHideSession,
     executeDeleteSession,

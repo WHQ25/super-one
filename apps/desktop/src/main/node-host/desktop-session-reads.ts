@@ -94,6 +94,32 @@ export function notFound(): Error {
   return Object.assign(new Error('session not found'), { code: 'not_found' })
 }
 
+function sessionFamilyId(row: { sessionId: string; parentSessionId?: string | null }): string {
+  return row.parentSessionId || row.sessionId
+}
+
+/**
+ * One sidebar page. A spawn parent and its children stay on the page that first
+ * includes them: the next offset is the number of rows already returned, so a
+ * short page would look like the end of the list.
+ */
+export function pageSessionRows<T extends { sessionId: string; parentSessionId?: string | null }>(
+  rows: readonly T[],
+  offset = 0,
+  limit?: number,
+): T[] {
+  const start = Math.max(0, offset)
+  if (start >= rows.length) return []
+  if (limit == null) return rows.slice(start)
+  let end = Math.min(rows.length, start + Math.max(0, limit))
+  if (end <= start) return []
+  if (end < rows.length) {
+    const family = sessionFamilyId(rows[end - 1]!)
+    while (end < rows.length && sessionFamilyId(rows[end]!) === family) end += 1
+  }
+  return rows.slice(start, end)
+}
+
 /**
  * The reading half of `session.*` on this desktop, over the sessions `rows`
  * serves: records, transcripts and the session's events from the domain log
@@ -186,6 +212,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
       hostActionToolGroups: [...DESKTOP_HOST_ACTION_TOOL_GROUPS],
       alwaysAllowedTools: [],
       ...(controller?.externalParent ? { externalParent: controller.externalParent } : {}),
+      ...(row.parentSessionId ? { parentSessionId: row.parentSessionId } : {}),
     }
   }
 
@@ -196,9 +223,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
 
   list(projectId?: string, options?: { limit?: number; offset?: number }): NodeSessionRecord[] {
     const rows = this.reads.rows.list(projectId)
-    const offset = options?.offset ?? 0
-    const page = options?.limit != null ? rows.slice(offset, offset + options.limit) : rows.slice(offset)
-    return page.map((row) => this.record(row))
+    return pageSessionRows(rows, options?.offset ?? 0, options?.limit).map((row) => this.record(row))
   }
 
   /**

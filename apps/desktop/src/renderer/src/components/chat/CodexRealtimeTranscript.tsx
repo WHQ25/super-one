@@ -14,6 +14,7 @@ import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
 import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatMessage as ChatMessageView } from './ChatMessage'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { RealtimeDelegationRow } from './RealtimeDelegationRow'
 
@@ -28,6 +29,8 @@ interface CodexRealtimeTranscriptProps {
   threadMessages: readonly ChatMessage[]
   sessionStatus: AgentStatus
   needsDecision: boolean
+  /** Remote timelines arrive with session.load. Omit this on a local session. */
+  projectPath?: string | null
 }
 
 /** Spoken rows go through the ordinary bubble so voice reads like the rest of the app. */
@@ -64,6 +67,7 @@ export function CodexRealtimeTranscript({
   threadMessages,
   sessionStatus,
   needsDecision,
+  projectPath = null,
 }: CodexRealtimeTranscriptProps) {
   const { t } = useTranslation()
   const realtime = useCodexRealtimeViewStore(
@@ -74,9 +78,11 @@ export function CodexRealtimeTranscript({
   const clearJump = useCodexRealtimeViewStore((state) => state.clearJump)
   // The provider reconcile is ChatContent's, gated on the thread id; this view only
   // makes sure the local snapshot is in even when mounted on its own.
+  // A remote key is not a row in this machine's SQLite.
   useEffect(() => {
+    if (parseRemoteProjectKey(projectPath ?? '')) return
     void restoreLocalCodexRealtimeTimeline(sessionId)
-  }, [sessionId])
+  }, [projectPath, sessionId])
 
   const transcript = useMemo(
     () => suppressRealtimeStartupEcho(threadMessages, selectRealtimeTranscript(realtime, true)),

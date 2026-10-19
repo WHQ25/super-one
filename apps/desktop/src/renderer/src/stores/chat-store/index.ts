@@ -1,4 +1,5 @@
 import { callSession, patchSessionSettings } from '@/lib/session-client'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { create } from 'zustand'
 import { useAppStore } from '../app'
 import { switchToProjectSession } from './helpers/switch-to-session'
@@ -649,10 +650,15 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
     // Track the outgoing session as "previous" so Ctrl+Tab can bounce back even if it's idle.
     const prevSid = project._activeSessionId
+    const remoteKey = parseRemoteProjectKey(activeProject)
     if (prevSid && prevSid !== sessionId) {
       // Leaving an unsent composer with text in it: persist as a draft before
       // the session state stops being reachable from the sidebar.
-      await promoteDraftIfUnsent(get(), activeProject, prevSid)
+      // A remote switch paints the next session first; saving the draft must not
+      // hold the old transcript on screen.
+      const promote = promoteDraftIfUnsent(get(), activeProject, prevSid)
+      if (remoteKey) void promote.catch((err) => console.warn('[chat] promoteDraftIfUnsent failed:', err))
+      else await promote
       set((s) => ({
         ...updateProjectState(s, activeProject, () => ({ _previousSessionId: prevSid })),
         _previousFocusedSession: { projectPath: activeProject, sessionId: prevSid },
@@ -663,12 +669,32 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       set((s) => clearUnseenCompleted(s, activeProject, sessionId))
     }
 
-    // Remote node: open the session at a node snapshot; main follows it from there.
-    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-    const remoteKey = parseRemoteProjectKey(activeProject)
+    // Remote node: show the session immediately, then fill it from the snapshot.
     if (remoteKey) {
-      const { hydrateRemoteSession, followRemoteSessionEvents, keepRendererOwnedState } = await import('@/lib/remote-session-ops')
       const prev = project._sessions[sessionId] ?? null
+      const cached = prev?._historyHydrated === true ? prev : null
+      set((s) => {
+        const proj = getProject(s, activeProject)
+        const current = proj._sessions[sessionId]
+        const next = current?._historyHydrated
+          ? current
+          : { ...(current ?? createDefaultPerSessionState()), _historyHydrated: false }
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [activeProject]: {
+              ...proj,
+              _activeSessionId: sessionId,
+              _sessions: { ...proj._sessions, [sessionId]: next },
+            },
+          },
+        }
+      })
+      useAppStore.getState().setActiveWorktree(
+        activeProject,
+        cached ? _getSessionWorktreePath(cached) : null,
+      )
+      const { hydrateRemoteSession, followRemoteSessionEvents, keepRendererOwnedState } = await import('@/lib/remote-session-ops')
       const { hydrated, snap } = await hydrateRemoteSession(
         activeProject,
         sessionId,
@@ -676,22 +702,27 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         { adoptSession: true },
       )
       // Keep the composer typed into during the awaits above.
+      // A later switch owns _activeSessionId; this hydrate must not steal it back.
       let applied = hydrated
+      let stillActive = true
       set((s) => {
         const proj = getProject(s, activeProject)
         const current = proj._sessions[sessionId]
         applied = keepRendererOwnedState(current, hydrated)
+        stillActive = proj._activeSessionId === sessionId
         return {
           projectSessions: {
             ...s.projectSessions,
             [activeProject]: {
               ...proj,
-              _activeSessionId: sessionId,
+              ...(stillActive ? { _activeSessionId: sessionId } : {}),
               _sessions: { ...proj._sessions, [sessionId]: applied },
             },
           },
         }
       })
+      if (!stillActive) return
+      useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(applied))
       // Local parity: open a live session → keep agent:event flowing (Session resume).
       // Pass the node snapshot: a turn (or pending permission) that started while
       // this tab was closed is only visible there, not in the merged state.

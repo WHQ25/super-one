@@ -450,6 +450,26 @@ describe('AgentService Realtime Voice', () => {
     expect(existing.lease.current).toBeNull()
   })
 
+  it('does not mint a local session when the project is a remote key', async () => {
+    const service = new AgentService()
+    const createSession = vi.fn()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => null),
+      createSession,
+    }
+    service.setup()
+
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)!
+    await expect(handler(null, 'remote:env-1:/work/app', 'sid-voice')).resolves.toEqual({
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: false,
+    })
+    expect(createSession).not.toHaveBeenCalled()
+  })
+
   it('creates a Codex session from the renderer draft before starting voice', async () => {
     const service = new AgentService()
     const startRealtimeVoice = vi.fn().mockResolvedValue(undefined)

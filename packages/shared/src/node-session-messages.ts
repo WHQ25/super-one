@@ -67,6 +67,8 @@ export type NodeSessionSnapshot = {
   controlReleased?: boolean
   /** Who else drives the session on the node now (desktop nodes); Take over re-acquires with `reclaim`. */
   controlHolder?: import('./environment').SessionControlHolder
+  /** Spawn parent on this host, when session.list / session.get includes it. */
+  parentSessionId?: string | null
 }
 
 /** Map node pending permission into desktop PermissionRequest for the prompt UI. */

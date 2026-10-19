@@ -2011,6 +2011,56 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
     ).toBe('第一轮 agent 回复')
     expect(ids.indexOf('a1')).toBeLessThan(ids.indexOf('a3'))
   })
+
+  it('paints the next session before the node snapshot returns and does not steal a later switch', async () => {
+    seedRemoteTwoSessions('Hello')
+    useChatStore.setState((state) => {
+      const project = state.projectSessions[projectKey]!
+      return {
+        projectSessions: {
+          ...state.projectSessions,
+          [projectKey]: {
+            ...project,
+            _sessions: {
+              ...project._sessions,
+              [sidA]: { ...project._sessions[sidA]!, messages: [], _historyHydrated: false },
+            },
+          },
+        },
+      }
+    })
+
+    let resolveA!: (value: unknown) => void
+    const getA = new Promise((resolve) => { resolveA = resolve })
+    mockWindowEnvironment.getSession.mockImplementation((_connectionId: string, sessionId: string) => (
+      sessionId === sidA
+        ? getA
+        : Promise.resolve({ sessionId, status: 'idle', harnessId: 'claude', transcript: [] })
+    ))
+    mockWindowEnvironment.openRemoteSession.mockResolvedValue({
+      messages: [],
+      state: {},
+      before: null,
+      cursor: { sequence: '1', epoch: 'e', version: 1 },
+    })
+
+    mockSetActiveWorktree.mockClear()
+    const switchA = useChatStore.getState().switchSession(sidA)
+    const project = () => useChatStore.getState().projectSessions[projectKey]!
+    expect(project()._activeSessionId).toBe(sidA)
+    expect(project()._sessions[sidA]!._historyHydrated).toBe(false)
+    expect(mockSetActiveWorktree).toHaveBeenCalledWith(projectKey, null)
+
+    const switchB = useChatStore.getState().switchSession(sidB)
+    expect(project()._activeSessionId).toBe(sidB)
+
+    resolveA({ sessionId: sidA, status: 'idle', harnessId: 'claude', transcript: [] })
+    await switchA
+    expect(project()._activeSessionId).toBe(sidB)
+    await switchB
+    expect(project()._activeSessionId).toBe(sidB)
+    expect(project()._sessions[sidA]!._historyHydrated).toBe(true)
+  })
 })
 
 describe('switchSession Case A (in _sessions)', () => {

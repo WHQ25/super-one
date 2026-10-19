@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { hydrateCodexRealtimeTimeline, resetCodexRealtimeHydrationForTests, useCodexRealtimeViewStore } from './codex-realtime-view'
+import { applySessionLoadRealtimeTimeline, hydrateCodexRealtimeTimeline, resetCodexRealtimeHydrationForTests, useCodexRealtimeViewStore } from './codex-realtime-view'
 
 function liveTranscript(sessionId: string): { role: string; text: string }[] {
   return (useCodexRealtimeViewStore.getState().sessions[sessionId]?.liveItems ?? [])
@@ -295,6 +295,42 @@ describe('codex realtime view store', () => {
       realtimeSessionId: null,
       hasTimeline: true,
       segments: [{ text: 'restored request' }],
+    })
+  })
+
+  it('does not read this machine for a remote project key', async () => {
+    const loadRealtimeTimeline = vi.fn()
+    const getRealtimeTimeline = vi.fn()
+    Object.defineProperty(window, 'agent', {
+      configurable: true,
+      value: { loadRealtimeTimeline, getRealtimeTimeline },
+    })
+
+    await hydrateCodexRealtimeTimeline('remote:env-1:/work/app', 'voice')
+
+    expect(loadRealtimeTimeline).not.toHaveBeenCalled()
+    expect(getRealtimeTimeline).not.toHaveBeenCalled()
+    expect(useCodexRealtimeViewStore.getState().sessions.voice?.loadStatus).toBe('loading')
+  })
+
+  it('settles a session.load timeline, including a Codex thread with no call', () => {
+    applySessionLoadRealtimeTimeline('voice', {
+      state: {
+        realtimeSegments: [{ id: 'seg-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
+        realtimeSessionId: 'rt-1',
+      },
+      restore: { realtimeHasTimeline: true, realtimeThreadMessages: [] },
+    })
+    expect(useCodexRealtimeViewStore.getState().sessions.voice).toMatchObject({
+      hasTimeline: true,
+      loadStatus: 'loaded',
+      realtimeSessionId: 'rt-1',
+    })
+
+    applySessionLoadRealtimeTimeline('plain', { state: {}, restore: {} })
+    expect(useCodexRealtimeViewStore.getState().sessions.plain).toMatchObject({
+      hasTimeline: false,
+      loadStatus: 'loaded',
     })
   })
 })

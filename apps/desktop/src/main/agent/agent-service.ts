@@ -1136,6 +1136,10 @@ export class AgentService {
     // A read the window makes just by showing the session: it takes no lease,
     // so looking at a session never stops a phone or controller driving it.
     windowIpc.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
+      // Remote voice history is on the node's session.load, not this SQLite.
+      if (parseRemoteProjectKey(projectPath)) {
+        return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
+      }
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
       return reconcileRealtimeTimeline(sessionId, timeline)

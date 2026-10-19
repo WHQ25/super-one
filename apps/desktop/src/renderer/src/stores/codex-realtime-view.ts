@@ -7,6 +7,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-timeline'
 import { withCodexContents } from '@superone/shared/codex-content'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export type CodexConversationView = 'thread' | 'realtime'
 
@@ -301,6 +302,42 @@ function applyTimeline(sessionId: string, timeline: RealtimeTimelineResult): voi
   useCodexRealtimeViewStore.getState().setTimeline(sessionId, timeline)
 }
 
+/** Voice facts `session.load` already returned. Null when this session has no call. */
+export function timelineFromSessionLoad(loaded: {
+  state?: Record<string, unknown> | null
+  restore?: { realtimeHasTimeline?: boolean; realtimeThreadMessages?: ChatMessage[] } | null
+} | null | undefined): RealtimeTimelineResult | null {
+  if (!loaded) return null
+  const state = loaded.state ?? {}
+  const segments = Array.isArray(state.realtimeSegments) ? state.realtimeSegments as RealtimeTimelineSegment[] : []
+  const threadMessages = loaded.restore?.realtimeThreadMessages ?? []
+  const hasTimeline = loaded.restore?.realtimeHasTimeline === true || segments.length > 0 || threadMessages.length > 0
+  if (!hasTimeline) return null
+  const active = state.realtimeSessionId
+  return {
+    segments,
+    threadMessages,
+    activeRealtimeSessionId: typeof active === 'string' ? active : null,
+    hasTimeline: true,
+  }
+}
+
+/**
+ * Put a remote `session.load` into the voice view. An empty result still
+ * settles `loadStatus`, so a Codex thread with no call does not spin forever.
+ */
+export function applySessionLoadRealtimeTimeline(sessionId: string, loaded: {
+  state?: Record<string, unknown> | null
+  restore?: { realtimeHasTimeline?: boolean; realtimeThreadMessages?: ChatMessage[] } | null
+} | null | undefined): void {
+  applyTimeline(sessionId, timelineFromSessionLoad(loaded) ?? {
+    segments: [],
+    threadMessages: [],
+    activeRealtimeSessionId: null,
+    hasTimeline: false,
+  })
+}
+
 function traceHydration(sessionId: string, step: string, data: Record<string, unknown> = {}): void {
   window.app?.trace?.('realtime.view', step, data, sessionId)
 }
@@ -334,6 +371,17 @@ export async function restoreLocalCodexRealtimeTimeline(sessionId: string): Prom
 
 /** Load the local snapshot first, then reconcile it with Codex in the background. */
 export function hydrateCodexRealtimeTimeline(projectPath: string, sessionId: string): Promise<void> {
+  // A remote key is not a directory on this machine. Local agent IPC would
+  // read the wrong SQLite row and can mint a local Codex session.
+  if (parseRemoteProjectKey(projectPath)) {
+    const current = useCodexRealtimeViewStore.getState().sessions[sessionId]
+    if (current?.hasTimeline || current?.loadStatus === 'loaded' || current?.loadStatus === 'error') {
+      return Promise.resolve()
+    }
+    useCodexRealtimeViewStore.getState().setTimelineLoading(sessionId)
+    return Promise.resolve()
+  }
+
   const existing = timelineHydrations.get(sessionId)
   if (existing) return existing
 
@@ -363,5 +411,16 @@ export function resetCodexRealtimeHydrationForTests(): void {
 }
 
 export async function refreshCodexRealtimeTimeline(projectPath: string, sessionId: string): Promise<void> {
+  const remote = parseRemoteProjectKey(projectPath)
+  if (remote) {
+    const loaded = await window.environment.openRemoteSession(remote.connectionId, {
+      sessionId,
+      projectPath,
+      providerId: 'codex',
+      limit: 1,
+    })
+    applySessionLoadRealtimeTimeline(sessionId, loaded)
+    return
+  }
   applyTimeline(sessionId, await window.agent.getRealtimeTimeline(projectPath, sessionId))
 }

@@ -6,6 +6,7 @@ import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { applyContentDelta, retractContentBlocks, sealStreamingTools } from '@superone/shared/content-delta'
 import { newMessageId } from '@superone/shared/message-id'
 import { applySubagentTaskStarted, resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
+import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { findCheckpointTarget } from '@superone/shared/checkpoint-target'
 import { buildRecapMessage, withRecapRow } from '@superone/shared/recap-row'
 
@@ -150,33 +151,73 @@ export function syncClaudeRuntimeLocation(
   }
 }
 
-export function extractResultText(raw: string): string | undefined {
-  let lastText: string | undefined
+type TranscriptRecord = {
+  type?: string
+  content?: string | Array<{ type?: string; text?: string }>
+  message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> }
+  tool_calls?: Array<{ name?: string; arguments?: string | Record<string, unknown> }>
+}
+
+function parseTranscriptArguments(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>
+  if (typeof raw !== 'string' || !raw.trim()) return {}
+  try {
+    const value = JSON.parse(raw) as unknown
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Claude `agent-*.jsonl` and Grok child `chat_history.jsonl` share one reader. */
+function readTranscriptLines(raw: string): TranscriptRecord[] {
+  const records: TranscriptRecord[] = []
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
-    let record: { type?: string; message?: { content?: Array<{ type: string; text?: string }> } }
-    try { record = JSON.parse(line) } catch { continue }
-    if (record.type !== 'assistant' || !record.message?.content) continue
-    for (const block of record.message.content) {
+    try { records.push(JSON.parse(line) as TranscriptRecord) } catch { /* skip a torn tail line */ }
+  }
+  return records
+}
+
+export function extractResultText(raw: string): string | undefined {
+  let lastText: string | undefined
+  for (const record of readTranscriptLines(raw)) {
+    if (record.type !== 'assistant') continue
+    // Grok writes the assistant text on the record; Claude nests it under message.content.
+    if (typeof record.content === 'string' && record.content.trim() && record.message == null) {
+      lastText = record.content
+      continue
+    }
+    if (Array.isArray(record.content)) {
+      for (const block of record.content) {
+        if (block?.type === 'text' && block.text) lastText = block.text
+      }
+    }
+    for (const block of record.message?.content ?? []) {
       if (block.type === 'text' && block.text) lastText = block.text
     }
   }
   return lastText
 }
 
+function shortenProjectPath(value: string, projectPath?: string): string {
+  if (!projectPath) return value
+  const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value
+}
+
 function summarizeToolInput(input: Record<string, unknown>, projectPath?: string): string {
-  if (input.file_path) {
-    let fp = String(input.file_path)
-    if (projectPath) {
-      const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
-      if (fp.startsWith(prefix)) fp = fp.slice(prefix.length)
-    }
-    return fp
-  }
+  if (input.file_path) return shortenProjectPath(String(input.file_path), projectPath)
+  if (input.target_file) return shortenProjectPath(String(input.target_file), projectPath)
   if (input.command) return String(input.command).slice(0, 120)
-  if (input.pattern) return String(input.pattern)
+  if (input.pattern) {
+    const path = input.path != null ? ` in ${shortenProjectPath(String(input.path), projectPath)}` : ''
+    return `${String(input.pattern).slice(0, 80)}${path}`.slice(0, 160)
+  }
   if (input.query) return String(input.query).slice(0, 120)
   if (input.url) return String(input.url)
+  if (input.path) return shortenProjectPath(String(input.path), projectPath)
+  if (input.target_directory) return shortenProjectPath(String(input.target_directory), projectPath)
   if (input.prompt) return String(input.prompt).slice(0, 120)
   if (input.description) return String(input.description).slice(0, 120)
   return ''
@@ -184,15 +225,21 @@ function summarizeToolInput(input: Record<string, unknown>, projectPath?: string
 
 export function extractToolEntries(raw: string, projectPath?: string): Array<{ toolName: string; description: string }> {
   const entries: Array<{ toolName: string; description: string }> = []
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue
-    let record: { type?: string; message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }> } }
-    try { record = JSON.parse(line) } catch { continue }
-    if (record.type !== 'assistant' || !record.message?.content) continue
-    for (const block of record.message.content) {
-      if (block.type === 'tool_use' && block.name) {
-        entries.push({ toolName: block.name, description: summarizeToolInput(block.input ?? {}, projectPath) })
+  const push = (rawName: string, rawInput: Record<string, unknown>): void => {
+    const { toolName, input } = normalizeTranscriptTool(rawName, rawInput)
+    entries.push({ toolName, description: summarizeToolInput(input, projectPath) })
+  }
+  for (const record of readTranscriptLines(raw)) {
+    if (record.type !== 'assistant') continue
+    // Grok child sessions: top-level tool_calls. Not Claude's message.content tool_use.
+    if (Array.isArray(record.tool_calls)) {
+      for (const call of record.tool_calls) {
+        if (typeof call.name === 'string' && call.name) push(call.name, parseTranscriptArguments(call.arguments))
       }
+      continue
+    }
+    for (const block of record.message?.content ?? []) {
+      if (block.type === 'tool_use' && block.name) push(block.name, block.input ?? {})
     }
   }
   return entries

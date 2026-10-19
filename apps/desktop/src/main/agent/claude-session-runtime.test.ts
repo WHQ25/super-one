@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText, buildUserMessage, extractClaudeTitle } from './claude-session-runtime'
+import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText, extractToolEntries, buildUserMessage, extractClaudeTitle } from './claude-session-runtime'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
@@ -597,6 +597,28 @@ describe('extractResultText', () => {
   it('handles malformed lines gracefully', () => {
     const jsonl = 'not json\n{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}'
     expect(extractResultText(jsonl)).toBe('ok')
+  })
+
+  it('reads Grok child chat_history tool calls and the last assistant text', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'assistant',
+        content: 'Scanning session ops',
+        tool_calls: [
+          { id: 'c1', name: 'grep', arguments: JSON.stringify({ pattern: 'session', path: '/proj' }) },
+          { id: 'c2', name: 'read_file', arguments: JSON.stringify({ target_file: '/proj/a.ts' }) },
+          { id: 'c3', name: 'search_tool', arguments: JSON.stringify({ query: 'session' }) },
+        ],
+      }),
+      JSON.stringify({ type: 'tool_result', tool_call_id: 'c1', content: 'hits' }),
+      JSON.stringify({ type: 'assistant', content: 'Found 3 local-only gaps.' }),
+    ].join('\n')
+    expect(extractResultText(jsonl)).toBe('Found 3 local-only gaps.')
+    expect(extractToolEntries(jsonl, '/proj')).toEqual([
+      { toolName: 'Grep', description: 'session in /proj' },
+      { toolName: 'Read', description: 'a.ts' },
+      { toolName: 'SearchTools', description: 'session' },
+    ])
   })
 })
 

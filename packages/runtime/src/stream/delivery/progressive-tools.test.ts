@@ -3,7 +3,8 @@ vi.mock('./split-text-blocks', () => ({
   splitTextIntoBlocks: vi.fn((text: string) => ({ segments: [{ type: 'text', text }], remainder: '' })),
 }))
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { configureRemoteContent, remoteContentPorts } from './remote-content'
 import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
 import { codexCommandPresentation } from '@superone/shared/codex-command-actions'
 import { codexToolDetail, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
@@ -11,6 +12,9 @@ import { codexToolDetail, projectCodexTool, projectTool, taskFileChanges, toolDe
 function assistant(content: ChatMessage['content']): ChatMessage {
   return { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content }
 }
+
+const contentPorts = remoteContentPorts()
+afterEach(() => configureRemoteContent(contentPorts))
 
 describe('progressive file-edit projection', () => {
   it('keeps every read path before truncating a long shell command and returns one complete command detail', () => {
@@ -121,6 +125,47 @@ describe('progressive file-edit projection', () => {
     }, '["m","tool","t"]')
     expect(projected).toMatchObject({ toolLineDelta: { added: 2, removed: 1 } })
     expect(JSON.parse((projected as { input: string }).input)).toEqual({ file_path: '/proj/a.ts' })
+  })
+
+  it('fills a Grok subagent detail from its child transcript when the message has no child blocks', () => {
+    configureRemoteContent({
+      ...contentPorts,
+      readAgentOutput: () => ({
+        resultText: 'Found 3 gaps.',
+        toolEntries: [
+          { toolName: 'Grep', description: 'session in /proj' },
+          { toolName: 'SearchTools', description: 'session' },
+          { toolName: 'Read', description: 'a.ts' },
+        ],
+      }),
+    })
+    const message = assistant([{
+      type: 'tool_use',
+      toolName: 'Agent',
+      toolUseId: 'spawn',
+      input: JSON.stringify({ description: 'Review local changes', prompt: 'review' }),
+      status: 'complete',
+      taskOutputFile: '/home/u/.grok/sessions/%2Fproj/sa1/chat_history.jsonl',
+      taskUsage: { totalTokens: 10, toolUses: 3, durationMs: 1000 },
+    }])
+    const detail = JSON.parse(toolDetail(message, 'spawn')) as { childBlocks: Array<Record<string, unknown>> }
+    expect(detail.childBlocks).toEqual([
+      { type: 'tool_use', toolName: 'Grep', toolUseId: 'spawn:transcript:0', input: '{}', status: 'complete', toolSummary: 'session in /proj', parentToolUseId: 'spawn' },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'spawn:transcript:2', input: '{}', status: 'complete', toolSummary: 'a.ts', parentToolUseId: 'spawn' },
+    ])
+    expect(JSON.stringify(detail)).not.toContain('chat_history')
+  })
+
+  it('keeps inline subagent children and does not read a transcript over them', () => {
+    const read = vi.fn(() => ({ toolEntries: [{ toolName: 'Grep', description: 'nope' }] }))
+    configureRemoteContent({ ...contentPorts, readAgentOutput: read })
+    const message = assistant([
+      { type: 'tool_use', toolName: 'Task', toolUseId: 'task', input: '{}', status: 'complete', taskOutputFile: '/tmp/agent.jsonl' },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'child', input: '{"file_path":"a.ts"}', status: 'complete', parentToolUseId: 'task' },
+    ])
+    const detail = JSON.parse(toolDetail(message, 'task')) as { childBlocks: Array<{ toolUseId: string }> }
+    expect(detail.childBlocks.map(block => block.toolUseId)).toEqual(['child'])
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('expands an Edit onto a precomputed diff instead of the raw old/new strings', () => {

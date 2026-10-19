@@ -3,10 +3,10 @@ import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCall
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from '@superone/shared/remote-tool-input'
-import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { isAlwaysHiddenToolName, isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { isPatchToolCall, isPatchToolName, patchToolFiles } from '@superone/shared/patch-tool'
 import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
-import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from './remote-content'
+import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, remoteContentPorts, stripMessagesForRemote } from './remote-content'
 
 const SHELL_INPUT_MAX = 1024
 
@@ -176,6 +176,23 @@ export function toolDetail(message: ChatMessage, id: string): string {
   const children = message.content.filter(block => block.type !== 'thinking' && 'parentToolUseId' in block && block.parentToolUseId === id).map(block =>
     'toolName' in block ? projectTool(block, JSON.stringify([message.id, 'tool', block.toolUseId]))
       : block.type === 'tool_result' ? { type: 'tool_result', toolUseId: block.toolUseId, summary: '', isError: block.isError } : block)
+  // Grok (and a goal subagent) never parents its tool_use blocks on this message.
+  // The desktop tails child chat_history.jsonl; the phone only has this detail,
+  // so the same file is read here into summary rows. No remoteDetail: those ids
+  // are not blocks on the message, and a second fetch would miss.
+  const transcriptChildren = children.some(block => block.type === 'tool_use') || !isSubagentToolName(tool.toolName) || !tool.taskOutputFile
+    ? []
+    : remoteContentPorts().readAgentOutput(tool.taskOutputFile).toolEntries.flatMap((entry, index) => (
+      isAlwaysHiddenToolName(entry.toolName) ? [] : [{
+        type: 'tool_use' as const,
+        toolName: entry.toolName,
+        toolUseId: `${id}:transcript:${index}`,
+        input: '{}',
+        status: 'complete' as const,
+        toolSummary: entry.description,
+        parentToolUseId: id,
+      }]
+    ))
   // A running command has no result yet; its streamed output stands in.
   const output = result && 'summary' in result ? result.summary : tool.liveOutput
   const projectedTool = projected && 'toolName' in projected ? projected : undefined
@@ -189,7 +206,7 @@ export function toolDetail(message: ChatMessage, id: string): string {
     // A background task's `result` is only its launch receipt; the run's own
     // output is patched onto the block when the task_notification lands.
     taskResultText: tool.taskResultText,
-    childBlocks: children,
+    childBlocks: transcriptChildren.length > 0 ? transcriptChildren : children,
     toolDiff: projectedTool?.toolDiff,
     toolDiffTokens: projectedTool?.toolDiffTokens,
     toolLineDelta: projectedTool?.toolLineDelta,

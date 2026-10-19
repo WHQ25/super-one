@@ -122,7 +122,7 @@ export async function hydrateRemoteSession(
   const state = loaded.state as Partial<PerSessionState>
   const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
   const provider = hydrated.sessionProvider || hydrated.preferredProvider
-  if (provider === 'codex' || loaded.restore?.realtimeHasTimeline) {
+  if ((provider && HARNESS_CAPABILITIES[provider]?.supportsRealtimeVoice) || loaded.restore?.realtimeHasTimeline) {
     const { applySessionLoadRealtimeTimeline } = await import('@/stores/codex-realtime-view')
     applySessionLoadRealtimeTimeline(sessionId, loaded)
   }

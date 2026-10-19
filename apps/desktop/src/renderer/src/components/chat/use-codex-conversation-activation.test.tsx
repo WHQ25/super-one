@@ -9,10 +9,10 @@ describe('useCodexConversationActivation', () => {
     useCodexRealtimeViewStore.setState({ sessions: {} })
   })
 
-  it('opens a stored timeline on the voice view', () => {
+  it('opens a remote call still in progress on the voice view', () => {
     useCodexRealtimeViewStore.setState({
       sessions: {
-        voice: { ...EMPTY_CODEX_REALTIME_SESSION_VIEW, hasTimeline: true, view: 'thread', loadStatus: 'loaded' },
+        voice: { ...EMPTY_CODEX_REALTIME_SESSION_VIEW, hasTimeline: true, realtimeSessionId: 'rt-1', view: 'thread', loadStatus: 'loaded' },
       },
     })
     renderHook(() => useCodexConversationActivation({

@@ -1,5 +1,6 @@
 import { useLayoutEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, within } from 'storybook/test'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
@@ -142,6 +143,26 @@ export const ScheduledClocksAlignAtRest: Story = {
       ]}
     />
   ),
+}
+
+export const Opening: Story = {
+  name: 'Opening replaces the leading glyph',
+  render: () => (
+    <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <SessionRow
+        session={entry('open', 'Hydrating the remote transcript')}
+        folderPath={FOLDER}
+        opening
+        {...noop}
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const spinner = canvas.getByLabelText('Loading...')
+    await expect(spinner.closest('.group\\/session')).not.toBeNull()
+    await expect(canvas.getByText('Hydrating the remote transcript')).toBeInTheDocument()
+  },
 }
 
 export const Selected: Story = {

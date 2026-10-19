@@ -149,6 +149,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const [openProjectDialogOpen, setOpenProjectDialogOpen] = useState(false)
   /** Connect or disconnect requested from the host-name power button. */
   const [connectionBusy, setConnectionBusy] = useState<'connect' | 'disconnect' | null>(null)
+  const [openingSession, setOpeningSession] = useState<{ folderPath: string; sessionId: string } | null>(null)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const expandedFoldersRef = useRef(expandedFolders)
   const {
@@ -288,12 +289,19 @@ export const AppSidebar = memo(function AppSidebar() {
     const project = remote
       ? hostProjects.find((p) => p.path === folderPath)
       : undefined
-    await selectProject(folderPath, {
-      connectionId: remote?.connectionId ?? 'local',
-      projectId: project?.id,
-    })
-    // switchSession handles remote hydrate (session.get) and local SQLite resume.
-    await switchSession(sessionId)
+    setOpeningSession({ folderPath, sessionId })
+    try {
+      await selectProject(folderPath, {
+        connectionId: remote?.connectionId ?? 'local',
+        projectId: project?.id,
+      })
+      // switchSession handles remote hydrate (session.get) and local SQLite resume.
+      await switchSession(sessionId)
+    } finally {
+      setOpeningSession((current) => (
+        current?.folderPath === folderPath && current.sessionId === sessionId ? null : current
+      ))
+    }
   }, [selectProject, switchSession, currentFolder, loadFolderSessions, hostProjects])
 
   const handleDeleteSession = useCallback(async () => {
@@ -588,6 +596,7 @@ export const AppSidebar = memo(function AppSidebar() {
                 isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
                 status={pinStatus}
                 isUnseen={pinUnseenFlag === '1'}
+                opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
                 onSwitchSession={handleSwitchSession}
                 onPinSession={handlePinSession}
                 onHideSession={handleHideSession}
@@ -738,6 +747,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
                     sessionsLoading={loadingFolders[folder.path] === true}
+                    openingSessionId={openingSession?.folderPath === folder.path ? openingSession.sessionId : null}
                     hasMoreSessions={folderSessionsHaveMore[folder.path] ?? false}
                     onLoadMoreSessions={loadMoreFolderSessions}
                     onToggleExpand={toggleExpand}

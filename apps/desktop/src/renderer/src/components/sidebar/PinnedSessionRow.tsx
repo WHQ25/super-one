@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react'
-import { Pin } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Loader2, Pin } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
@@ -16,6 +17,8 @@ interface PinnedSessionRowProps extends SessionMenuCallbacks {
   isActive: boolean
   status: string
   isUnseen: boolean
+  /** Replaces the glyph in front of the title while this session is opening. */
+  opening?: boolean
 }
 
 export const PinnedSessionRow = memo(function PinnedSessionRow({
@@ -23,12 +26,14 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   isActive,
   status,
   isUnseen,
+  opening = false,
   onSwitchSession,
   onPinSession,
   onHideSession,
   onRenameSession,
   onDeleteSession,
 }: PinnedSessionRowProps) {
+  const { t } = useTranslation()
   const isRunning = status === 'streaming'
   const readLastEventAt = useCallback(
     () => useChatStore.getState().projectSessions[session.folderPath]?._sessions?.[session.sessionId]?.lastEventAt ?? 0,
@@ -78,9 +83,11 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
           onClick={() => onSwitchSession(session.folderPath, session.sessionId)}
           className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-hover"
         >
-          {HarnessIcon && (
-            <span className="shrink-0">
-              <HarnessIcon status={harnessStatus} active={isActive} size={22} renderLevel="compact" />
+          {(opening || HarnessIcon) && (
+            <span className="flex size-[22px] shrink-0 items-center justify-center">
+              {opening
+                ? <Loader2 aria-label={t('common.loading')} className="size-3.5 animate-spin text-sidebar-foreground/70" />
+                : HarnessIcon && <HarnessIcon status={harnessStatus} active={isActive} size={22} renderLevel="compact" />}
             </span>
           )}
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">

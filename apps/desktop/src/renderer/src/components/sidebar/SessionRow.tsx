@@ -68,6 +68,8 @@ export type SessionRowCallbacks = SessionMenuCallbacks
 interface SessionRowProps extends SessionRowCallbacks {
   session: SessionHistoryEntry
   folderPath: string
+  /** Replaces the glyph in front of the title while this session is opening. */
+  opening?: boolean
   animateTitle?: boolean
   childSession?: boolean
   /** Parent rows with nested collab sessions can expose a hover toggle. */
@@ -79,6 +81,7 @@ interface SessionRowProps extends SessionRowCallbacks {
 export const SessionRow = memo(function SessionRow({
   session,
   folderPath,
+  opening = false,
   animateTitle = true,
   childSession = false,
   hasChildren = false,
@@ -200,7 +203,9 @@ export const SessionRow = memo(function SessionRow({
                 {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
               </button>
               <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
-                {scheduled
+                {opening
+                  ? <Loader2 aria-label={t('common.loading')} className="size-3 animate-spin text-sidebar-foreground/70" />
+                  : scheduled
                   ? <Clock
                       className="size-3 text-warning"
                       aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}

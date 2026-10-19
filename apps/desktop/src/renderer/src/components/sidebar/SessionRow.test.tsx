@@ -31,6 +31,26 @@ beforeEach(() => {
   useScheduledSendsStore.setState({ bySession: {} })
 })
 
+describe('SessionRow opening icon', () => {
+  it('replaces the leading glyph without adding a row', () => {
+    const { container } = render(
+      <SessionRow
+        session={entry('open', 'Hydrating the remote transcript')}
+        folderPath={FOLDER}
+        animateTitle={false}
+        opening
+        {...noop}
+      />,
+    )
+
+    const spinner = screen.getByLabelText('Loading...')
+    const row = spinner.closest('.group\\/session')
+    expect(row).not.toBeNull()
+    expect(row?.querySelector('.session-row-title')).toHaveTextContent('Hydrating the remote transcript')
+    expect(container.querySelectorAll('.group\\/session')).toHaveLength(1)
+  })
+})
+
 describe('SessionRow scheduled icon', () => {
   it('replaces the leading message glyph and leaves hover actions collapsed at rest', () => {
     const sendAt = Date.now() + 3_600_000

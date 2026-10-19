@@ -106,7 +106,9 @@ export const LoadingSessions: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Loading...')).toBeInTheDocument()
+    const spinner = canvas.getByLabelText('Loading...')
+    await expect(spinner.closest('.h-9')).not.toBeNull()
+    await expect(canvas.queryByText('Loading...')).not.toBeInTheDocument()
     await expect(canvas.queryByText('No sessions')).not.toBeInTheDocument()
   },
 }

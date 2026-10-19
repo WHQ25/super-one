@@ -18,12 +18,14 @@ function dedupeById(sessions: SessionHistoryEntry[]): SessionHistoryEntry[] {
 interface ProjectHistoryListProps extends SessionRowCallbacks {
   folderPath: string
   initialSessions?: SessionHistoryEntry[]
+  openingSessionId?: string | null
   onClose: () => void
 }
 
 export function ProjectHistoryList({
   folderPath,
   initialSessions,
+  openingSessionId = null,
   onClose,
   onSwitchSession,
   onPinSession,
@@ -179,6 +181,7 @@ export function ProjectHistoryList({
                   <SessionRow
                     session={session}
                     folderPath={folderPath}
+                    opening={openingSessionId === session.sessionId}
                     animateTitle={false}
                     onSwitchSession={onSwitchSession}
                     onPinSession={onPinSession}

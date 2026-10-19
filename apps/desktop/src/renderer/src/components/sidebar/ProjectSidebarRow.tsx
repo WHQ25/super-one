@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { CalendarClock, ChevronDown, ChevronRight, Folder, FolderOpen, FolderX, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
+import { CalendarClock, ChevronDown, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -155,8 +155,10 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
   isExpanded: boolean
   sessions: SessionHistoryEntry[]
-  /** The session list for this folder is still in flight. */
+  /** Session list is in flight. Spins the folder icon; does not add a row. */
   sessionsLoading?: boolean
+  /** Session whose open is in flight. Spins the icon in front of its title. */
+  openingSessionId?: string | null
   hasMoreSessions: boolean
   onLoadMoreSessions: (folderPath: string, minimumRootCount: number) => Promise<SessionHistoryEntry[]>
   onToggleExpand: (folderPath: string) => void
@@ -170,6 +172,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   isExpanded,
   sessions: allSessions,
   sessionsLoading = false,
+  openingSessionId = null,
   hasMoreSessions,
   onLoadMoreSessions,
   onToggleExpand,
@@ -464,9 +467,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             )} />
             {folder.missing
               ? <FolderX className="size-4.5 shrink-0 text-destructive" />
-              : isExpanded
-                ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-                : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+              : sessionsLoading
+                ? <Loader2 aria-label={t('common.loading')} className="size-4.5 shrink-0 animate-spin text-sidebar-foreground/70 group-hover:hidden" />
+                : isExpanded
+                  ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
+                  : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
             }
             <TooltipProvider delayDuration={500}>
               <Tooltip>
@@ -582,6 +587,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           <ProjectHistoryList
             folderPath={folder.path}
             initialSessions={allSessions}
+            openingSessionId={openingSessionId}
             onClose={() => setHistoryMode(false)}
             onSwitchSession={switchSessionInPlace}
             onPinSession={onPinSession}
@@ -591,13 +597,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           />
         ) : derived.showSessions ? (
           <div className="flex flex-col py-0.5 pl-2.5">
-            {sessionsLoading && derived.groupsToShow.length > 0 ? (
-              <div className="px-2.5 py-1 text-[11px] text-sidebar-foreground/70">{t('common.loading')}</div>
-            ) : null}
             {derived.groupsToShow.length === 0 ? (
-              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">
-                {sessionsLoading ? t('common.loading') : t('sidebar.contextMenu.noSessions')}
-              </div>
+              sessionsLoading ? null : (
+                <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
+              )
             ) : (
               derived.groupsToShow.map(({ parent, children }) => {
                 const hasChildren = children.length > 0
@@ -609,6 +612,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   <SessionRow
                     session={parent}
                     folderPath={folder.path}
+                    opening={openingSessionId === parent.sessionId}
                     hasChildren={hasChildren}
                     childrenCollapsed={childrenCollapsed}
                     onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
@@ -624,6 +628,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       session={child}
                       folderPath={folder.path}
                       childSession
+                      opening={openingSessionId === child.sessionId}
                       onSwitchSession={switchSessionInPlace}
                       onPinSession={onPinSession}
                       onHideSession={onHideSession}

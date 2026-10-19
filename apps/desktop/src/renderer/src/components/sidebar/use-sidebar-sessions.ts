@@ -46,16 +46,25 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   useEffect(() => { folderSessionsHaveMoreRef.current = folderSessionsHaveMore }, [folderSessionsHaveMore])
 
   const load = useCallback((folderPath: string, reason: LoadReason, rootTarget: number, initial: SessionHistoryEntry[] = []) => {
+    // A text row would change the list height. Only an expand, or a fetch that
+    // has no rows yet, spins the folder icon. A refresh of a list already on
+    // screen stays quiet so switching sessions does not shove the rows.
+    const armFolderSpinner = () => {
+      if (reason !== 'expand' && folderSessionsRef.current[folderPath]?.length) return
+      setLoadingFolders((previous) => previous[folderPath] ? previous : { ...previous, [folderPath]: true })
+    }
+
     const existing = inFlight.current.get(folderPath)
     if (existing) {
       // A change notification invalidates the snapshot already being read. Sharing
       // that request without another read loses changes until the user navigates.
       if (reason === 'refresh') existing.invalidated = true
+      armFolderSpinner()
       traceSidebar('sessions_load:reuse', { folderPath, reason, invalidated: existing.invalidated }, folderPath)
       return existing.promise
     }
 
-    setLoadingFolders((previous) => previous[folderPath] ? previous : { ...previous, [folderPath]: true })
+    armFolderSpinner()
     const request: ListRequest = { promise: Promise.resolve([]), invalidated: false }
     request.promise = (async () => {
       let seed = initial

@@ -89,6 +89,18 @@ it("re-reads only the paired machine's project its list notice names", async () 
   expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: 13, offset: 0 }]])
 })
 
+it('keeps a cached folder quiet while a refresh is in flight', async () => {
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  const pending = deferred<typeof sessionFixtures.byFolder[typeof FOLDER]>()
+  mockEnvironment.listSessions.mockImplementationOnce(() => pending.promise)
+  let refresh!: Promise<unknown>
+  await act(async () => { refresh = result.current.loadFolderSessions(FOLDER, 'refresh') })
+  expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
+  await act(async () => { pending.resolve(sessionFixtures.byFolder[FOLDER]); await refresh })
+  expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
+})
+
 it('marks a folder loading until its session list returns', async () => {
   const pending = deferred<typeof sessionFixtures.byFolder[typeof FOLDER]>()
   mockEnvironment.listSessions.mockImplementationOnce(() => pending.promise)

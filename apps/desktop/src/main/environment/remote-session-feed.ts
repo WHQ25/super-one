@@ -19,6 +19,8 @@ export interface RemoteSessionFeedSource {
       onTerminal?: RpcStreamHandlers['onTerminal']
       onDraft?: RpcStreamHandlers['onDraft']
       onTopic?: RpcStreamHandlers['onTopic']
+      /** The topic update is on the wire; its ack may still be in flight. */
+      onUpdateQueued?: () => void
     },
   ): AsyncIterable<EnvironmentEventEnvelope>
 }
@@ -74,6 +76,8 @@ export class RemoteSessionFeed {
   private started: Promise<void> | null = null
   private failure: Error | null = null
   private readonly native = new RemoteTopicFollowers(() => this.applyInterest())
+  /** Follows waiting until their own topic update has been sent, in send order. */
+  private readonly updateWaiters: Array<() => void> = []
   private readonly interest: TopicInterest = {
     current: () => this.topics(),
     watch: (apply) => {
@@ -111,7 +115,7 @@ export class RemoteSessionFeed {
     }
     try {
       await this.start()
-      if (added) await this.applyInterest()
+      if (added) await this.interestSent()
       follower.from = await barrier()
     } catch (err) {
       unfollow()
@@ -161,6 +165,33 @@ export class RemoteSessionFeed {
    * apply them. A stream that fails meanwhile resubscribes with them from its
    * cursor, so the change is not lost.
    */
+  /**
+   * Wait until the node has been told about the new topic. When the transport
+   * reports the update frame is queued, the barrier overlaps its ack. A source
+   * that never reports that still waits until the update has been applied, so
+   * the barrier does not run before the topic was sent.
+   */
+  private async interestSent(): Promise<void> {
+    // Register before applyInterest: the transport can report the frame queued
+    // synchronously, inside that call, before its ack.
+    let resolveQueued!: () => void
+    const queued = new Promise<void>((resolve) => { resolveQueued = resolve })
+    const waiter = (): void => resolveQueued()
+    this.updateWaiters.push(waiter)
+    const applied = this.applyInterest()
+    try {
+      await Promise.race([queued, applied])
+    } finally {
+      const index = this.updateWaiters.indexOf(waiter)
+      if (index >= 0) this.updateWaiters.splice(index, 1)
+    }
+    void applied.catch(() => {})
+  }
+
+  private noteUpdateQueued(): void {
+    this.updateWaiters.shift()?.()
+  }
+
   private async applyInterest(): Promise<void> {
     const topics = this.topics()
     await Promise.all([...this.watchers].map((apply) => apply(topics)))
@@ -200,6 +231,7 @@ export class RemoteSessionFeed {
         onTerminal: (event: Parameters<NonNullable<RpcStreamHandlers['onTerminal']>>[0]) => this.native.terminal(event),
         onDraft: (event: Parameters<NonNullable<RpcStreamHandlers['onDraft']>>[0]) => this.native.draft(event),
         onTopic: (frame: TopicNoticeFrame) => { this.notice(frame); this.native.topic(frame) },
+        onUpdateQueued: () => this.noteUpdateQueued(),
       }
       for await (const envelope of this.source.subscribe(after, this.abort.signal, handlers)) {
         if (envelope.aggregateType !== 'session') continue

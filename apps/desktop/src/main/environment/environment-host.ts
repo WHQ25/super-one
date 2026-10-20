@@ -1555,7 +1555,7 @@ export class EnvironmentHost {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     feed = new RemoteSessionFeed({
       head: () => gateway.eventHeadSequence(),
-      subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign, onFrame, onTerminal, onDraft, onTopic }) => gateway.subscribeEvents({
+      subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign, onFrame, onTerminal, onDraft, onTopic, onUpdateQueued }) => gateway.subscribeEvents({
         environmentId,
         afterSequence,
         topics: interest.current(),
@@ -1564,7 +1564,7 @@ export class EnvironmentHost {
         shouldStop: () => this.remoteDrainBlock(connectionId) !== null,
         onResnapshot,
         onRealign,
-        onFrame, onTerminal, onDraft, onTopic,
+        onFrame, onTerminal, onDraft, onTopic, onUpdateQueued,
       }),
     }, environmentId)
     this.sessionFeeds.set(connectionId, feed)
@@ -1749,7 +1749,13 @@ export class EnvironmentHost {
     // Local events already reach the window through the desktop hub, in the
     // snapshot's own sequence space; a mapped follower would deliver each twice.
     if (local) return load()
-    await this.followRemoteSession(connectionId, input, async () => (snapshot = await load()).cursor.version)
+    await this.followRemoteSession(connectionId, input, async () => {
+      const loaded = await load()
+      snapshot = loaded
+      const announced = loaded.state.sessionProvider
+      if (typeof announced === 'string' && announced) input.providerId = announced
+      return loaded.cursor.version
+    })
     // Already followed: its events flow above an earlier barrier, and the chat
     // reducer skips those a snapshot already holds (message `seq`).
     return snapshot ?? load()
@@ -1783,7 +1789,13 @@ export class EnvironmentHost {
       return loaded.snapshot
     }
     let snapshot: SessionLoadResult | null = null
-    await this.followRemoteSession(connectionId, input, async () => (snapshot = await read()).cursor.version)
+    await this.followRemoteSession(connectionId, input, async () => {
+      const loaded = await read()
+      snapshot = loaded
+      const announced = loaded.state.sessionProvider
+      if (typeof announced === 'string' && announced) input.providerId = announced
+      return loaded.cursor.version
+    })
     return snapshot ?? await read()
   }
 
@@ -1848,7 +1860,8 @@ export class EnvironmentHost {
       const mapper = createNodeSessionEventMapper({
         sessionId: input.sessionId,
         projectPath: input.projectPath,
-        providerId: input.providerId,
+        // The window read fills this in before held events are delivered.
+        get providerId() { return input.providerId },
         skipUserMessage: false,
       })
       const session: FollowedRemoteSession = { input, unfollow: () => {} }

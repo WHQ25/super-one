@@ -19,7 +19,11 @@ function pushSource(head = '7', apply?: (topics: TopicRef[]) => Promise<void>) {
   const subscribe = vi.fn(async function* (_after: string, signal: AbortSignal, next: NonNullable<typeof handlers>) {
     handlers = next
     applied.push(next.interest.current())
-    next.interest.watch(async (topics) => { await apply?.(topics); applied.push(topics) })
+    next.interest.watch(async (topics) => {
+      applied.push(topics)
+      next.onUpdateQueued?.()
+      await apply?.(topics)
+    })
     while (!signal.aborted) {
       if (error) throw error
       const next = queue.shift()
@@ -251,6 +255,20 @@ describe('RemoteSessionFeed', () => {
     unobserve()
     await flush()
     expect(source.applied.at(-1)).toEqual([])
+    feed.close()
+  })
+
+  it('reads the barrier once the topic update is queued, without waiting for its ack', async () => {
+    let releaseAck!: () => void
+    const ack = new Promise<void>((resolve) => { releaseAck = resolve })
+    const source = pushSource('7', () => ack)
+    const feed = new RemoteSessionFeed(source, 'env')
+    const pending = feed.follow('a', { event: vi.fn(), end: vi.fn() }, async () => 7)
+    await pending
+    expect(source.applied.at(-1)).toEqual([
+      { kind: 'session', environmentId: 'env', sessionId: 'a' },
+    ])
+    releaseAck()
     feed.close()
   })
 

@@ -29,6 +29,8 @@ import { createDesktopConfigMethods, type DesktopConfig } from './desktop-config
 import { createDesktopResourceMethods } from './desktop-resource-methods'
 import type { ResourceHost } from '@superone/runtime/server/rpc-resources'
 import { createDesktopCodexMethods, type DesktopCodexServices } from './desktop-codex-methods'
+import { createDesktopClaudeAccountMethods } from './desktop-claude-account-methods'
+import { listAccounts as listClaudeAccounts } from '../agent/claude-account-service'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
   ArtifactZoneService,
@@ -275,6 +277,7 @@ export class DesktopDomain {
       this.phonePorts.config && createDesktopConfigMethods(this.phonePorts.config, this.context.projects!),
       this.phonePorts.resources && createDesktopResourceMethods(this.phonePorts.resources),
       this.phonePorts.codex && createDesktopCodexMethods(this.phonePorts.codex),
+      createDesktopClaudeAccountMethods(listClaudeAccounts),
     ])
     return {
       ...this.context,

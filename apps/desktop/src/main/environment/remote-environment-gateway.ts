@@ -740,6 +740,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('provider.listCredentials', {})
   }
 
+  /** Claude subscription accounts on this node. They are not the controller's logins. */
+  async claudeListAccounts(force = false): Promise<unknown> {
+    return this.client.rpc('claude.listAccounts', force ? { force: true } : {})
+  }
+
   async providerGetCredentialDecrypted(id: string): Promise<unknown> {
     return this.client.rpc('provider.getCredentialDecrypted', { id })
   }

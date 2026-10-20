@@ -20,6 +20,13 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 export const Default: Story = {}
+/** Accounts belonging to the desktop being controlled. This machine cannot sign them in or out. */
+export const RemoteDesktop: Story = { args: { manage: false }, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement)
+  await expect(canvas.getByText('personal@example.com')).toBeInTheDocument()
+  await expect(canvas.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument()
+  await expect(canvas.queryByRole('button', { name: /add account/i })).not.toBeInTheDocument()
+} }
 export const Empty: Story = { args: { accounts: [] } }
 export const Loading: Story = { args: { accounts: [], loading: true } }
 export const UsageLoading: Story = { args: { meters: { '/accounts/personal': { loading: true }, '/accounts/work': { loading: true } } } }

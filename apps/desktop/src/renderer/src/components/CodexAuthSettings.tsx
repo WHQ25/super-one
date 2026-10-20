@@ -3,13 +3,16 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { codexAccountProviderId, type CodexAccount, type CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import { useChatStore } from '@/stores/chat'
+import { useSettingsStore } from '@/stores/settings'
+import { codexProjectForScope } from '@/lib/provider-host'
 import type { CodexAccountMeters } from './CodexAccountMeters'
 import { CodexAccountsPanel } from './CodexAccountsPanel'
 import { useProviderAccountMeters } from './use-provider-account-meters'
 
 export function CodexAuthSettings({ onAuthChanged }: { onAuthChanged?: () => void }) {
   const { t } = useTranslation()
-  const projectPath = useChatStore((s) => s.activeProject)
+  const providerScope = useSettingsStore((s) => s.providerScope)
+  const projectPath = codexProjectForScope(useChatStore((s) => s.activeProject), providerScope)
   const [accounts, setAccounts] = useState<CodexAccount[]>([])
   const { meters, sync: syncMeters, load: loadMeter } = useProviderAccountMeters<CodexAccountMeters>()
   const [pending, setPending] = useState<CodexManagedLoginStart | null>(null)

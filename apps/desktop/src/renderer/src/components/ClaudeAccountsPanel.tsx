@@ -13,16 +13,19 @@ import { ExtraUsageBar, ResetGrantsRow, WindowBar } from './provider-usage'
 import { claudeAccountsChanged } from '@/hooks/useClaudeAccounts'
 import { AccountUsageRefreshButton } from './AccountUsageRefreshButton'
 import { useProviderAccountMeters } from './use-provider-account-meters'
+import { useSettingsStore } from '@/stores/settings'
 
 type Meter = { loading?: boolean; limits?: ClaudeRateLimits | null; error?: boolean }
 export interface ClaudeAccountsPanelProps {
   accounts: ClaudeAccount[]; meters?: Record<string, Meter>; loading?: boolean; busy?: boolean; signingIn?: boolean; error?: string | null
+  /** False when these rows belong to another desktop: show them, do not sign this machine in or out. */
+  manage?: boolean
   onRefresh: () => void; onRefreshUsage: (dir: string | null) => void; onSignIn: (dir?: string) => void; onSignOut: (dir: string) => void
   onRemove: (dir: string) => void
   onSetDefault: (dir: string | null) => void; onCancel: () => void
 }
 const key = (dir: string | null) => dir ?? '__cli__'
-export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, signingIn, error, onRefresh, onRefreshUsage, onSignIn, onSignOut, onRemove, onSetDefault, onCancel }: ClaudeAccountsPanelProps) {
+export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, signingIn, error, manage = true, onRefresh, onRefreshUsage, onSignIn, onSignOut, onRemove, onSetDefault, onCancel }: ClaudeAccountsPanelProps) {
   const { t } = useTranslation()
   return <section aria-label={t('resources.providers.claudeAccountsTitle')} className="flex min-w-0 flex-col gap-3">
     <header className="flex items-start justify-between gap-3">
@@ -46,7 +49,7 @@ export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, sign
           {meter?.limits?.extraUsage && <ExtraUsageBar extra={meter.limits.extraUsage} />}
           <ResetGrantsRow grants={meter?.limits?.resetGrants} />
         </div>}
-        <div className="flex flex-wrap items-center gap-2">
+        {manage && <div className="flex flex-wrap items-center gap-2">
           {account.credentialDir && (account.loggedIn
             ? <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => onSignOut(account.credentialDir!)}><LogOut data-icon="inline-start" />{t('settings.harnesses.codexAccount.signOut')}</Button>
             : <>
@@ -55,15 +58,17 @@ export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, sign
             </>)}
           {account.loggedIn && !account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => onSetDefault(account.credentialDir)}><Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}</Button>}
           {account.loggedIn && <AccountUsageRefreshButton loading={meter?.loading} disabled={busy} onClick={() => onRefreshUsage(account.credentialDir)} />}
-        </div>
+        </div>}
       </ProviderAccountCard>
     })}</ul>}
-    {signingIn ? <div className="flex items-center gap-2" role="status"><Loader2 className="size-4 animate-spin" /><span className="text-sm">{t('resources.providers.claudeSigningIn')}</span><Button variant="ghost" size="sm" onClick={onCancel}><X data-icon="inline-start" />{t('settings.harnesses.codexAccount.cancel')}</Button></div>
-      : <Button variant="ghost" size="sm" className="h-7 self-start" disabled={busy || loading} onClick={() => onSignIn()}><Plus data-icon="inline-start" />{t('resources.providers.claudeAddAccount')}</Button>}
+    {manage && (signingIn ? <div className="flex items-center gap-2" role="status"><Loader2 className="size-4 animate-spin" /><span className="text-sm">{t('resources.providers.claudeSigningIn')}</span><Button variant="ghost" size="sm" onClick={onCancel}><X data-icon="inline-start" />{t('settings.harnesses.codexAccount.cancel')}</Button></div>
+      : <Button variant="ghost" size="sm" className="h-7 self-start" disabled={busy || loading} onClick={() => onSignIn()}><Plus data-icon="inline-start" />{t('resources.providers.claudeAddAccount')}</Button>)}
   </section>
 }
 
 export function ClaudeAuthSettings() {
+  const providerScope = useSettingsStore((s) => s.providerScope)
+  const remote = providerScope !== 'local'
   const [accounts, setAccounts] = useState<ClaudeAccount[]>([])
   const { meters, sync: syncMeters, load: loadMeter } = useProviderAccountMeters<Meter>()
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [signingIn, setSigningIn] = useState(false)
@@ -77,15 +82,18 @@ export function ClaudeAuthSettings() {
     const request = ++generation.current
     setLoading(true)
     try {
-      const result = await window.app.claudeListAccounts(force)
+      const result = remote
+        ? await window.environment.listRemoteClaudeAccounts(providerScope, force)
+        : await window.app.claudeListAccounts(force)
       if (!mounted.current || request !== generation.current) return
       setAccounts(result); setError(null)
       const signedIn = result.filter((a) => a.loggedIn)
       syncMeters(signedIn.map((a) => ({ key: key(a.credentialDir), identity: a.identityKey ?? JSON.stringify([a.email, a.orgId, a.identityStatus]) })))
-      for (const account of signedIn) void refreshUsage(account.credentialDir)
+      if (!remote) for (const account of signedIn) void refreshUsage(account.credentialDir)
     } catch (error) { if (mounted.current && request === generation.current) setError(String(error instanceof Error ? error.message : error)) }
     finally { if (mounted.current && request === generation.current) setLoading(false) }
-  }, [syncMeters, refreshUsage])
+  }, [remote, providerScope, syncMeters, refreshUsage])
+  useEffect(() => { setAccounts([]) }, [providerScope])
   useEffect(() => { mounted.current = true; void refresh(); return () => { mounted.current = false; generation.current++ } }, [refresh])
   const action = async (run: () => Promise<unknown>, signIn = false) => {
     if (busy) return
@@ -94,7 +102,7 @@ export function ClaudeAuthSettings() {
     catch (error) { if (mounted.current) setError(error instanceof Error ? error.message : String(error)) }
     finally { if (mounted.current) { setBusy(false); setSigningIn(false) } }
   }
-  return <ClaudeAccountsPanel accounts={accounts} meters={meters} loading={loading} busy={busy} signingIn={signingIn} error={error}
+  return <ClaudeAccountsPanel accounts={accounts} meters={meters} loading={loading} busy={busy} signingIn={signingIn} error={error} manage={!remote}
     onRefreshUsage={(dir) => { void refreshUsage(dir, true) }}
     onRefresh={() => void refresh(true)} onSignIn={(dir) => { void action(() => window.app.claudeSignInAccount(undefined, dir), true) }}
     onSignOut={(dir) => { void action(() => window.app.claudeSignOutAccount(dir)) }} onRemove={(dir) => { void action(() => window.app.claudeRemoveAccount(dir)) }}

@@ -4964,6 +4964,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_INSTALL_PROGRESS: 'environment:installProgress',
   /** Node-local AI provider credentials (masked). */
   ENVIRONMENT_PROVIDER_LIST_CREDENTIALS: 'environment:providerListCredentials',
+  /** Claude subscription accounts on the node, not the controller. */
+  ENVIRONMENT_CLAUDE_LIST_ACCOUNTS: 'environment:claudeListAccounts',
   ENVIRONMENT_PROVIDER_CREATE_CREDENTIAL: 'environment:providerCreateCredential',
   ENVIRONMENT_PROVIDER_UPDATE_CREDENTIAL: 'environment:providerUpdateCredential',
   ENVIRONMENT_PROVIDER_DELETE_CREDENTIAL: 'environment:providerDeleteCredential',

@@ -2173,6 +2173,13 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_CLAUDE_LIST_ACCOUNTS,
+    async (_e, connectionId: string, force?: boolean) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listRemoteClaudeAccounts(connectionId, force === true)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_PROVIDER_CREATE_CREDENTIAL,
     async (_e, connectionId: string, input: Record<string, unknown>) => {
       const { getEnvironmentHost } = await import('./environment')

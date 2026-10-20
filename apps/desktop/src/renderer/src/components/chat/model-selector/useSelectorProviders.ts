@@ -6,11 +6,40 @@ import { useTranslation } from 'react-i18next'
 import { claudeAccountProviderId, type ClaudeAccount, type HarnessId } from '@superone/shared/agent-types'
 import { type Credential } from '@superone/shared/platform-registry'
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
+import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
+import { subscriptionHost } from '@/lib/provider-host'
 import { apiKeyDefaultFor } from '@/harness-ui/api-key-defaults'
 import type { SelectorProviderOption } from './GroupedModelEffortSelector'
+
+function useChatProjectPath(): string | null {
+  const scope = useSessionScope()
+  const activeProject = useChatStore((s) => s.activeProject)
+  return scope?.projectPath ?? activeProject
+}
+
+/** Claude accounts for the machine this chat runs on. A remote host never falls back to this desktop. */
+function useHostClaudeAccounts(connectionId: string | null, enabled: boolean): ClaudeAccount[] {
+  const local = useClaudeAccounts(enabled && !connectionId)
+  const [remoteAccounts, setRemoteAccounts] = useState<ClaudeAccount[]>([])
+  useEffect(() => {
+    if (!enabled || !connectionId) return
+    let cancelled = false
+    setRemoteAccounts([])
+    const load = (force = false) => {
+      void window.environment.listRemoteClaudeAccounts(connectionId, force)
+        .then((rows) => { if (!cancelled) setRemoteAccounts(Array.isArray(rows) ? rows : []) })
+        .catch(() => { if (!cancelled) setRemoteAccounts([]) })
+    }
+    load()
+    const refresh = () => load(true)
+    window.addEventListener('claude-accounts-changed', refresh)
+    return () => { cancelled = true; window.removeEventListener('claude-accounts-changed', refresh) }
+  }, [connectionId, enabled])
+  return connectionId ? remoteAccounts : local
+}
 
 /**
  * What goes in the row's key column for a Claude account. Email alone is not enough: plans are
@@ -33,9 +62,11 @@ export function useResolvedProviderId(harness: HarnessId): string | null {
   const credentials = useSettingsStore((s) => s.credentials)
   const bindings = useSettingsStore((s) => s.bindings)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
+  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const consumer = consumerForHarness(harness)
+  const accountHost = subscriptionHost(useChatProjectPath(), selectedHostConnectionId)
+  const accounts = useHostClaudeAccounts(accountHost, harness === 'claude')
 
-  const accounts = useClaudeAccounts(harness === 'claude')
   const resolved = useMemo(
     () => resolveEffectiveProviderId(platforms, credentials, bindings, consumer, apiProviderId, {
       experimentalClaudeOpenAiChatEnabled,
@@ -58,25 +89,24 @@ export function useSelectorProviders(harness: HarnessId) {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
+  const projectPath = useChatProjectPath()
+  const accountHost = subscriptionHost(projectPath, selectedHostConnectionId)
   const resolvedProviderId = useResolvedProviderId(harness)
 
-  // Keep scope aligned with host even if chat opened without a host-switch path.
+  // Credentials follow the machine this chat runs on, which is the open project
+  // when there is one and the sidebar host only before a project is chosen.
   useEffect(() => {
-    const next =
-      selectedHostConnectionId && selectedHostConnectionId !== 'local'
-        ? selectedHostConnectionId
-        : 'local'
+    const next = accountHost ?? 'local'
     if (next !== providerScope) {
       useSettingsStore.getState().setProviderScope(next)
     }
-  }, [selectedHostConnectionId, providerScope])
+  }, [accountHost, providerScope])
 
   useEffect(() => {
     void fetchProviderData()
   }, [fetchProviderData, providerScope])
 
-  const claudeAccounts = useClaudeAccounts(harness === 'claude')
-  const projectPath = useChatStore((s) => s.activeProject)
+  const claudeAccounts = useHostClaudeAccounts(accountHost, harness === 'claude')
   const [codexAccounts, setCodexAccounts] = useState<CodexAccount[]>([])
   useEffect(() => {
     setCodexAccounts([])

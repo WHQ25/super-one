@@ -795,6 +795,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         window.app.listCredentials(),
         window.app.listBindings(),
       ])
+      // A host switch that started while this read was in flight owns the store now.
+      if (get().providerScope !== scope) return
       set({ platforms, credentials, bindings })
       return
     }

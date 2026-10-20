@@ -536,6 +536,8 @@ const environmentAPI = {
   /** Node AI provider store (credentials masked). */
   listRemoteCredentials: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CREDENTIALS, connectionId),
+  listRemoteClaudeAccounts: (connectionId: string, force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CLAUDE_LIST_ACCOUNTS, connectionId, force),
   createRemoteCredential: (connectionId: string, input: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_CREATE_CREDENTIAL, connectionId, input),
   updateRemoteCredential: (connectionId: string, input: Record<string, unknown>) =>

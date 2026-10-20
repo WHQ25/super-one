@@ -1028,6 +1028,10 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).providerListCredentials()
   }
 
+  async listRemoteClaudeAccounts(connectionId: string, force = false): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).claudeListAccounts(force)
+  }
+
   // --- Remote skills / MCP (skills.* / mcp.* on the node) ---
 
   async listRemoteSkills(

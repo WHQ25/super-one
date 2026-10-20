@@ -39,7 +39,7 @@ const fixtures = vi.hoisted(() => {
     notes: '',
     sortOrder: 0,
   }
-  return { FAVICON, CUSTOM_PLATFORM, CREDENTIAL, session: { apiProviderId: null as string | null } }
+  return { FAVICON, CUSTOM_PLATFORM, CREDENTIAL, session: { apiProviderId: null as string | null }, projectPath: '/project' }
 })
 
 const CUSTOM_PLATFORM = fixtures.CUSTOM_PLATFORM as Platform
@@ -73,11 +73,14 @@ vi.mock('@/stores/app', () => {
 
 vi.mock('@/stores/chat', () => {
   const session = fixtures.session
-  const chat = { activeProject: '/project', setSessionApiProviderId: vi.fn() }
+  const actions = { setSessionApiProviderId: vi.fn() }
   return {
     useActiveSession: (selector: (s: typeof session) => unknown) => selector(session),
-    useChatStore: (selector: (s: typeof chat) => unknown) => selector(chat),
-    useScopedSessionActions: () => chat,
+    useChatStore: (selector: (s: { activeProject: string }) => unknown) => selector({
+      get activeProject() { return fixtures.projectPath },
+      ...actions,
+    }),
+    useScopedSessionActions: () => actions,
   }
 })
 
@@ -87,6 +90,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   fixtures.session.apiProviderId = null
+  fixtures.projectPath = '/project'
 })
 
 describe('model-selector provider options for a custom platform', () => {
@@ -115,5 +119,25 @@ describe('Claude account provider choices', () => {
     await waitFor(() => expect(result.current.selectedProviderId).toBe('claude-account:/accounts/c'))
     fixtures.session.apiProviderId = 'claude-account:/accounts/b'; rerender()
     expect(result.current.selectedProviderId).toBe('claude-account:/accounts/b')
+  })
+
+  it('lists the remote desktop\'s Claude and ChatGPT accounts while that project is open', async () => {
+    fixtures.projectPath = 'remote:desk:/work'
+    const localAccounts = vi.fn(async () => [{ credentialDir: '/local', loggedIn: true, isDefault: true, email: 'local@example.test', identityKey: 'local|org', orgId: 'org', orgName: 'Local', subscriptionType: 'max', projectsDirectory: null }])
+    const remoteClaude = vi.fn(async () => [{ credentialDir: '/remote/a', loggedIn: true, isDefault: true, email: 'remote@example.test', identityKey: 'remote|org', orgId: 'org', orgName: 'Remote', subscriptionType: 'max', projectsDirectory: null }])
+    const codexListAccounts = vi.fn(async () => [{ id: 'work', signedIn: true, isDefault: true, email: 'gpt@remote.test', planType: 'Plus' }])
+    vi.stubGlobal('app', { claudeListAccounts: localAccounts, codexListAccounts })
+    vi.stubGlobal('environment', { listRemoteClaudeAccounts: remoteClaude })
+
+    const claude = renderHook(() => useSelectorProviders('claude'))
+    await waitFor(() => expect(claude.result.current.selectedProviderId).toBe('claude-account:/remote/a'))
+    expect(claude.result.current.providers[0]).toMatchObject({ keyName: 'remote@example.test' })
+    expect(localAccounts).not.toHaveBeenCalled()
+    expect(remoteClaude).toHaveBeenCalledWith('desk', false)
+    claude.unmount()
+
+    const codex = renderHook(() => useSelectorProviders('codex'))
+    await waitFor(() => expect(codex.result.current.providers[0]).toMatchObject({ id: 'codex-account:work', keyName: expect.stringContaining('gpt@remote.test') }))
+    expect(codexListAccounts).toHaveBeenCalledWith('remote:desk:/work')
   })
 })

@@ -1114,6 +1114,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   getSession(connectionId: string, sessionId: string): Promise<unknown>
   /** Node-local AI provider store. */
   listRemoteCredentials(connectionId: string): Promise<unknown>
+  /** Claude subscription accounts on that node. */
+  listRemoteClaudeAccounts(connectionId: string, force?: boolean): Promise<ClaudeAccount[]>
   createRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown>
   updateRemoteCredential(connectionId: string, input: Record<string, unknown>): Promise<unknown>
   deleteRemoteCredential(connectionId: string, id: string): Promise<unknown>

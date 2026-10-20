@@ -573,6 +573,24 @@ describe('forget environment', () => {
     host.dispose()
   })
 
+  it('tells listeners the host is gone', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'forgotten-box',
+    })
+    const states: string[] = []
+    host.onStatusChange((snap) => {
+      if (snap.connectionId === connectionId) states.push(snap.state)
+    })
+    host.forget(connectionId)
+    expect(states).toContain('disconnected')
+    expect(await host.listEnvironments()).toHaveLength(1)
+    host.dispose()
+  })
+
   it('keeps the node forgotten after the host is reconstructed from disk', async () => {
     const rt = await bootNode()
     const ud = temp('env-mgmt-ud-')

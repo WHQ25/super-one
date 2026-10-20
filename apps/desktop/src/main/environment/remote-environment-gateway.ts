@@ -101,13 +101,24 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   private readonly draftGateway: DraftGateway
   readonly artifacts: ArtifactGateway
 
-  private descriptorCache: ExecutionEnvironmentDescriptor | null = null
-  /** Bumped by `clearDescriptor` so an in-flight fetch cannot repopulate after disconnect. */
-  private descriptorEpoch = 0
-  private descriptorInflight: Promise<ExecutionEnvironmentDescriptor> | null = null
+  /**
+   * B rebuilds harness ids when the descriptor is read and does not push a
+   * capability change. Reuse one descriptor across a burst of session switches,
+   * then read it again. A push from B would retire the timer.
+   */
+  private static readonly DESCRIPTOR_TTL_MS = 60_000
+  private static readonly CLAUDE_ACCOUNTS_TTL_MS = 60_000
+  private static readonly DESCRIPTOR_KEY = 'descriptor'
+  private readonly descriptors = new AsyncCoalescer<ExecutionEnvironmentDescriptor>(RemoteEnvironmentGateway.DESCRIPTOR_TTL_MS)
   private fixedEnvironmentId: string | null = null
-  /** Host-level provider and Claude account lists. They die with the connection, not with a session switch. */
-  private readonly hostCatalog = new AsyncCoalescer<unknown>(Number.POSITIVE_INFINITY)
+  /**
+   * Host-level provider lists die with the connection, not with a session switch.
+   * Claude accounts expire on the same window B uses: an out-of-band
+   * `claude auth login` never publishes `claude-accounts-changed` from an older node.
+   */
+  private readonly hostCatalog = new AsyncCoalescer<unknown>((key) => (
+    key === 'claude-accounts' ? RemoteEnvironmentGateway.CLAUDE_ACCOUNTS_TTL_MS : Number.POSITIVE_INFINITY
+  ))
 
   constructor(private readonly client: EnvironmentRpcClient) {
     this.sessions = this.createSessionGateway()
@@ -123,7 +134,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * serves none (no `draft.list`).
    */
   get drafts(): DraftGateway | undefined {
-    const capabilities = this.descriptorCache?.capabilities
+    const capabilities = this.cachedDescriptor?.capabilities
     return !capabilities || servesMethod(capabilities, 'draft.list') ? this.draftGateway : undefined
   }
 
@@ -133,7 +144,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * root is compared textually, never resolved here.
    */
   syncZone(): { syncRoot: string; os: ExecutionEnvironmentDescriptor['platform']['os'] } | null {
-    const descriptor = this.descriptorCache
+    const descriptor = this.cachedDescriptor
     if (!servesMethod(descriptor?.capabilities, ARTIFACT_RPC_METHODS.put) || !descriptor?.syncRoot) return null
     return { syncRoot: descriptor.syncRoot, os: descriptor.platform.os }
   }
@@ -234,45 +245,46 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     }
   }
 
-  /** Descriptor fetched at connect. Null until then, and after the socket drops. */
+  /** Descriptor fetched at connect. Null until then, after the socket drops, and once the TTL passes. */
   get cachedDescriptor(): ExecutionEnvironmentDescriptor | null {
-    return this.descriptorCache
+    return this.descriptors.peek(RemoteEnvironmentGateway.DESCRIPTOR_KEY) ?? null
   }
 
   /** Seed the cache from a descriptor `client.getDescriptor()` already identity-checked. */
   rememberDescriptor(descriptor: ExecutionEnvironmentDescriptor): void {
-    this.descriptorCache = descriptor
     this.fixedEnvironmentId = descriptor.environmentId
+    this.descriptors.remember(RemoteEnvironmentGateway.DESCRIPTOR_KEY, descriptor)
   }
 
   /** Drop the cached descriptor. The environment binding stays so a late call still fails closed. */
   clearDescriptor(): void {
-    this.descriptorEpoch += 1
-    this.descriptorCache = null
+    this.descriptors.invalidate(RemoteEnvironmentGateway.DESCRIPTOR_KEY)
   }
 
   /**
-   * The descriptor from connect, or one shared fetch when it is missing.
+   * The descriptor from connect, or one shared fetch when it is missing or stale.
    * Identity checks stay inside `client.getDescriptor()`; this does not dial again
    * while the cache is warm.
    */
-  async getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
-    if (this.descriptorCache) return this.descriptorCache
-    return this.refreshDescriptor()
+  getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    return this.descriptors.get(RemoteEnvironmentGateway.DESCRIPTOR_KEY, () => this.loadDescriptor())
   }
 
-  /** Always dial `environment.descriptor` (explicit connect / refresh) and share one in-flight fetch. */
+  /**
+   * Dial `environment.descriptor` (explicit connect / refresh). A fetch already
+   * in flight is shared; otherwise the warm cache is dropped first.
+   */
   refreshDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
-    if (this.descriptorInflight) return this.descriptorInflight
-    const epoch = this.descriptorEpoch
-    const work = this.client.getDescriptor().then((descriptor) => {
-      if (this.descriptorEpoch === epoch) this.rememberDescriptor(descriptor)
+    const key = RemoteEnvironmentGateway.DESCRIPTOR_KEY
+    if (!this.descriptors.isInFlight(key)) this.descriptors.invalidate(key)
+    return this.getDescriptor()
+  }
+
+  private loadDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    return this.client.getDescriptor().then((descriptor) => {
+      this.fixedEnvironmentId = descriptor.environmentId
       return descriptor
-    }).finally(() => {
-      if (this.descriptorInflight === work) this.descriptorInflight = null
     })
-    this.descriptorInflight = work
-    return work
   }
 
   /** Drop cached credential, binding, platform, and Claude account lists. */
@@ -788,8 +800,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   /** Claude subscription accounts on this node. They are not the controller's logins. */
   async claudeListAccounts(force = false): Promise<unknown> {
-    if (force) this.hostCatalog.invalidate('claude-accounts')
-    return this.hostCatalog.get('claude-accounts', () => this.client.rpc('claude.listAccounts', force ? { force: true } : {}))
+    return this.hostCatalog.get(
+      'claude-accounts',
+      () => this.client.rpc('claude.listAccounts', force ? { force: true } : {}),
+      force ? { force: true } : undefined,
+    )
   }
 
   async providerGetCredentialDecrypted(id: string): Promise<unknown> {
@@ -964,7 +979,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   /** A desktop node keeps its keys: its descriptor leaves `provider.exportBundle` out. */
   async providerExportBundle(): Promise<unknown> {
-    const capabilities = this.descriptorCache?.capabilities
+    const capabilities = this.cachedDescriptor?.capabilities
     if (capabilities && !servesMethod(capabilities, 'provider.exportBundle')) {
       throw Object.assign(new Error('This host does not share its provider keys; pull is unavailable'), { code: 'failed_precondition' })
     }

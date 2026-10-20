@@ -60,6 +60,54 @@ describe('RemoteEnvironmentGateway host catalog', () => {
     expect(rpc.mock.calls.filter((call) => call[0] === 'provider.listBindings')).toHaveLength(2)
   })
 
+  it('a forced account read does not join an ordinary in-flight read', async () => {
+    const { gw, rpc } = gateway()
+    let releaseOrdinary: (value: unknown) => void = () => {}
+    rpc.mockImplementation((method: string, payload?: { force?: boolean }) => {
+      if (method === 'claude.listAccounts' && !payload?.force) {
+        return new Promise((resolve) => { releaseOrdinary = resolve })
+      }
+      return Promise.resolve({ method, payload })
+    })
+    const ordinary = gw.claudeListAccounts()
+    const forced = gw.claudeListAccounts(true)
+    releaseOrdinary({ accounts: ['stale'] })
+    await expect(ordinary).resolves.toEqual({ accounts: ['stale'] })
+    await expect(forced).resolves.toEqual({ method: 'claude.listAccounts', payload: { force: true } })
+    await expect(gw.claudeListAccounts()).resolves.toEqual({ method: 'claude.listAccounts', payload: { force: true } })
+    expect(rpc.mock.calls.filter((call) => call[0] === 'claude.listAccounts')).toHaveLength(2)
+  })
+
+  it('refreshes claude accounts after their ttl and keeps other lists', async () => {
+    vi.useFakeTimers()
+    try {
+      const { gw, rpc } = gateway()
+      await gw.claudeListAccounts()
+      await gw.providerListCredentials()
+      vi.advanceTimersByTime(60_000)
+      await gw.claudeListAccounts()
+      await gw.providerListCredentials()
+      expect(rpc.mock.calls.filter((call) => call[0] === 'claude.listAccounts')).toHaveLength(2)
+      expect(rpc.mock.calls.filter((call) => call[0] === 'provider.listCredentials')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('re-reads a descriptor after its ttl', async () => {
+    vi.useFakeTimers()
+    try {
+      const { gw, getDescriptor } = gateway()
+      gw.rememberDescriptor(descriptor)
+      await gw.getDescriptor()
+      vi.advanceTimersByTime(60_000)
+      await gw.getDescriptor()
+      expect(getDescriptor).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('drops the catalog when asked', async () => {
     const { gw, rpc } = gateway()
     await gw.providerListCredentials()

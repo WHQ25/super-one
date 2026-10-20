@@ -73,6 +73,7 @@ import { desktopWindowHolder } from '@superone/shared/environment/transcript-win
 import type { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import { MAX_HELD } from '@superone/runtime/stream/delivery/window-views'
 import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
+import { invalidateRemoteGitReadsForConnection } from './remote-file-tree'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
@@ -2977,13 +2978,29 @@ export class EnvironmentHost {
 
   /** Disconnect and erase all client-local state for this environment. */
   forget(connectionId: string): void {
+    const previous = this.lastStatus.get(connectionId)
+    const known = this.connections.listKnown().find((item) => item.connectionId === connectionId)
+    const gateway = known ? this.connections.getGateway(known.environmentId) : undefined
+    // `connections.forget` drops the gateway before any status is published, and
+    // a host with no live socket never emits on its own. Clear while it exists,
+    // then tell listeners the row is gone.
+    gateway?.clearDescriptor()
+    gateway?.invalidateHostCatalog()
+    invalidateRemoteGitReadsForConnection(connectionId)
     this.stopHostActionConsumer(connectionId, 'forget')
     this.abortConnectionSessionDrains(connectionId, 'forget')
     this.tunnels.close(connectionId)
     this.connections.forget(connectionId)
-    this.lastStatus.delete(connectionId)
     this.remoteProjectCache.delete(connectionId)
     this.remoteProjectLoads.delete(connectionId)
+    this.publishStatus({
+      environmentId: previous?.environmentId ?? known?.environmentId ?? '',
+      connectionId,
+      state: 'disconnected',
+      attempt: 0,
+      generation: (previous?.generation ?? 0) + 1,
+    })
+    this.lastStatus.delete(connectionId)
   }
 
   /**
@@ -3361,7 +3378,14 @@ export class EnvironmentHost {
   }
 
   private publishStatus(snapshot: SupervisorSnapshot): void {
+    const previous = this.lastStatus.get(snapshot.connectionId)
     this.lastStatus.set(snapshot.connectionId, snapshot)
+    // Drop reads taken before this socket. A repeated `connected` health tick
+    // keeps them; connecting/synchronizing still holds the identity-checked descriptor.
+    const dropRemoteGitReads = snapshot.state === 'connected'
+      ? previous != null && previous.state !== 'connected'
+      : snapshot.state !== 'connecting' && snapshot.state !== 'synchronizing'
+    if (dropRemoteGitReads) invalidateRemoteGitReadsForConnection(snapshot.connectionId)
     // Structured diagnostics (no secrets) → electron-log file (main.log / dev.log).
     // Lazy import: a static import of ../logger pulls @electron-toolkit/utils and
     // breaks unit tests that only partial-mock `electron`. console.info alone never

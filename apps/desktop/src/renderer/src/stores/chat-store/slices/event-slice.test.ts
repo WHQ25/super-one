@@ -382,6 +382,46 @@ describe('provider_changed', () => {
       useSettingsStore.setState({ providerScope: 'local' })
     }
   })
+
+  it('refreshes the remote host named on the event without a local catalog read', async () => {
+    const { useSettingsStore } = await import('../../settings')
+    const fetchProviderData = vi.fn().mockResolvedValue(undefined)
+    useSettingsStore.setState({ providerScope: 'local', fetchProviderData })
+    const accounts = vi.fn()
+    window.addEventListener('claude-accounts-changed', accounts)
+    try {
+      useChatStore.getState().handleAgentEvent({
+        type: 'provider_changed',
+        harnessId: 'claude',
+        provider: null,
+        connectionId: 'conn-9',
+      } as AgentEvent)
+      await vi.waitFor(() => expect(accounts).toHaveBeenCalled())
+      expect(fetchProviderData).not.toHaveBeenCalled()
+      expect(accounts.mock.calls[0]?.[0]?.detail).toEqual({ connectionId: 'conn-9' })
+    } finally {
+      window.removeEventListener('claude-accounts-changed', accounts)
+    }
+  })
+
+  it('does not refresh remote accounts for a local codex provider change', async () => {
+    const { useSettingsStore } = await import('../../settings')
+    useSettingsStore.setState({ providerScope: 'local' })
+    const accounts = vi.fn()
+    window.addEventListener('claude-accounts-changed', accounts)
+    try {
+      useChatStore.getState().handleAgentEvent({
+        type: 'provider_changed',
+        harnessId: 'codex',
+        provider: null,
+      } as AgentEvent)
+      await import('../../settings')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(accounts).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('claude-accounts-changed', accounts)
+    }
+  })
 })
 
 describe('additional_dirs_changed', () => {

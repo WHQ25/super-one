@@ -42,7 +42,10 @@ export function invalidateAccountListCache(): void { listCache = null; listGener
 
 const accountChangeListeners = new Set<() => void>()
 
-/** Fires after a local account mutation. Does not itself drop the list cache. */
+/**
+ * Subscribe to local account mutations. This function does not drop the list
+ * cache; `notifyClaudeAccountsChanged` drops it before these listeners run.
+ */
 export function onClaudeAccountsChanged(listener: () => void): () => void {
   accountChangeListeners.add(listener)
   return () => { accountChangeListeners.delete(listener) }

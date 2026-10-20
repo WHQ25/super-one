@@ -127,6 +127,12 @@ twice back to back:
 The mounted composer showed B's session title and transcript. A later switch
 did not dial accounts, mentions, worktrees, or the provider lists again.
 
+Descriptor and `claude.listAccounts` stay cached for 60 seconds, not for the
+life of the socket: B builds `harnessIds` when the descriptor is read and does
+not push capability or out-of-band account changes. Worktree and `@git`
+capability reads expire after 30 seconds for the same reason. A switch inside
+that window still sends none of those RPCs. A push from B would retire the timers.
+
 Not measured: an account or binding changed only on B, and a worktree created
 only on B. A worktree created from A's own git IPC invalidates the cache in
 code; that path was not timed in this lab.

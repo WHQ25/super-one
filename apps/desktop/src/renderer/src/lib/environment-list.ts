@@ -3,7 +3,8 @@ import type { EnvironmentListItem } from '@superone/shared/environment'
 /**
  * One environment list for every sidebar row, chip, and settings page.
  * A session switch remounts those hooks; they share this result until a
- * supervisor status push says a node actually changed.
+ * supervisor status push says a node actually changed. With nobody subscribed,
+ * the list is not kept: a settings page that is closed never hears the push.
  */
 
 type Listener = (snapshot: { connectionId: string }) => void
@@ -45,14 +46,22 @@ function syncBinding(): void {
   }
 }
 
-/** Cached list for the current status epoch. Concurrent callers share one IPC. */
+/** Drop the cached list. The next load shares one fresh IPC. */
+export function invalidateEnvironmentList(): void {
+  drop()
+}
+
+/**
+ * Cached list while someone is subscribed. Concurrent callers share one IPC.
+ * No subscriber means no cache: nothing would hear the status push that drops it.
+ */
 export function loadEnvironmentItems(): Promise<EnvironmentListItem[]> {
   syncBinding()
-  if (items) return Promise.resolve(items)
+  if (listeners.size > 0 && items) return Promise.resolve(items)
   if (inflight) return inflight
   const started = epoch
   const promise = window.environment.listItems().then((next) => {
-    if (started === epoch) items = next
+    if (started === epoch && listeners.size > 0) items = next
     return next
   }).finally(() => {
     if (inflight === promise) inflight = null

@@ -28,7 +28,7 @@ import { deferredPhoneConnection } from './node-host/deferred-phone-connection'
 import type { PhoneConnection, PhoneLink } from './node-host/phone-endpoint'
 import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
-import { invalidateLocalGitReads } from './git/git-read-cache'
+import { invalidateLocalGitReads, mainCheckoutOfLinkedWorktree } from './git/git-read-cache'
 import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest, PairRemoteInput, RepairPairingInput } from '@superone/shared/environment'
@@ -1810,10 +1810,15 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   // Sessions and projects another client creates, renames or removes on a machine show up here.
   host.onSessionListChanged((_connectionId, projectKey) => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectKey))
   host.onProjectListChanged((connectionId) => safeSend(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, connectionId))
-  // A node's account or provider catalog changed. The renderer already refetches
-  // on provider_changed when a remote host is on screen.
-  host.onHostCatalogChanged(() => {
-    safeSend(AgentIpcChannels.EVENT, { type: 'provider_changed', harnessId: 'claude', provider: null })
+  // A node's account or provider catalog changed. connectionId lets the renderer
+  // refresh that host without forcing a local account read.
+  host.onHostCatalogChanged((connectionId) => {
+    safeSend(AgentIpcChannels.EVENT, {
+      type: 'provider_changed',
+      harnessId: 'claude',
+      provider: null,
+      connectionId,
+    })
   })
   // A machine's sidebar summaries (running, read) of sessions this desktop does not follow.
   host.onRemoteSessionActivity((event) => rendererAgentEventTransport.push(event))
@@ -4189,6 +4194,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
     startWatching(getMainWindow(), folderPath, () => {
       invalidateGitReads(folderPath)
+      // The watcher follows one folder. A linked worktree's list is also keyed
+      // by the main checkout, which this watch does not cover.
+      const mainCheckout = mainCheckoutOfLinkedWorktree(folderPath)
+      if (mainCheckout) invalidateGitReads(mainCheckout)
     })
   })
 

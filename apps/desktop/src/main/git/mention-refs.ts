@@ -18,7 +18,7 @@ import {
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
-import { cachedLocalGitMentionCapabilities, invalidateLocalGitMentionCapabilities } from './git-read-cache'
+import { cachedLocalGitMentionCapabilities } from './git-read-cache'
 
 const GIT_READ_OPTS: GitRunOptions = { timeoutMs: 20_000 }
 /** GitHub round-trips; long enough for a slow API, short enough that a popup never hangs. */
@@ -66,10 +66,8 @@ export async function resolveGitMentionCapabilities(folderPath: string): Promise
     const { getRemoteGitMentionCapabilities } = await import('../environment/remote-file-tree')
     return getRemoteGitMentionCapabilities(getEnvironmentHost(), folderPath)
   }
-  const caps = await cachedLocalGitMentionCapabilities(folderPath, () => probeLocalGitMentionCapabilities(folderPath))
-  // A failed probe is not a stable answer. The next popup tries again.
-  if (caps.repo === 'unsupported') invalidateLocalGitMentionCapabilities(folderPath)
-  return caps
+  // `unsupported` is not stored. The next popup tries again.
+  return cachedLocalGitMentionCapabilities(folderPath, () => probeLocalGitMentionCapabilities(folderPath))
 }
 
 async function probeLocalGitMentionCapabilities(folderPath: string): Promise<GitMentionCapabilities> {

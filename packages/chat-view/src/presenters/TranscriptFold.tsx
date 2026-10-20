@@ -98,11 +98,7 @@ export function TranscriptFoldPresenter({ fold, load }: TurnFoldPresenterProps &
       ) : (
         <>
           <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
-          <span role="status">
-            {fold.toolCalls > 0
-              ? t('chat.transcriptWindow.foldLoading', { count: fold.toolCalls })
-              : t('chat.transcriptWindow.foldLoadingSteps')}
-          </span>
+          <span role="status">{t('common.loading')}</span>
         </>
       )}
     </div>

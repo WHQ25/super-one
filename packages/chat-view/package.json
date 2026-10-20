@@ -5,6 +5,7 @@
   "type": "module",
   "description": "React DOM chat renderer hosted in a mobile WebView. Receives pre-reduced patches only.",
   "exports": {
+    "./EdgeLoader": "./src/EdgeLoader.tsx",
     "./SessionProviderState": "./src/SessionProviderState.tsx",
     "./presenters/RealtimeDelegationStatus": "./src/presenters/RealtimeDelegationStatus.tsx",
     "./mod-ui/ModDiff": "./src/mod-ui/ModDiff.tsx",

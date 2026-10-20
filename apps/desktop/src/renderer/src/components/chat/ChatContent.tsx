@@ -27,7 +27,7 @@ import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-na
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { VirtualTranscriptList, type VirtualTranscriptHandle } from './VirtualTranscriptList'
-import { RemoteTranscriptChrome } from './RemoteTranscriptChrome'
+import { RemoteTranscriptChrome, RemoteTranscriptEdges } from './RemoteTranscriptChrome'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { useCodexConversationActivation } from './use-codex-conversation-activation'
@@ -264,6 +264,7 @@ function ChatTranscript({
               : <ChatSuggestions draft={!!draftId || (queueProvider === 'codex' && hasRealtimeTimeline)} />
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area chat-transcript-layout h-full min-w-0" viewportRef={scrollViewportRef}>
+          <RemoteTranscriptEdges>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
             <RemoteTranscriptChrome edge="top" />
             <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={rows.map((row) => {
@@ -361,6 +362,7 @@ function ChatTranscript({
             )}
             <RemoteTranscriptChrome edge="bottom" />
           </SelectionContextMenuZone>
+          </RemoteTranscriptEdges>
         </ScrollArea>
       )}
       {displayMessages.length > 0 && (

@@ -40,6 +40,8 @@ describe('TranscriptFoldPresenter', () => {
     const { opened, reach } = observers()
     const load = vi.fn(async () => {})
     const { rerender } = render(<TranscriptFoldPresenter fold={fold} load={load} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Loading...')
+    expect(screen.queryByText(/tool call/)).toBeNull()
     expect(opened[0].init?.rootMargin).toBe('0px 0px 100% 0px')
     expect(load).not.toHaveBeenCalled()
     reach()

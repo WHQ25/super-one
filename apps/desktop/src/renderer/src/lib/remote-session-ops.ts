@@ -74,7 +74,9 @@ function applyRemoteSessionRow(
     } : {}),
     sessionProvider: chatProvider,
     preferredProvider: chatProvider,
-    ...(chatProvider === 'acp' && snap?.acpAgentId !== undefined ? { acpAgentId: snap.acpAgentId } : {}),
+    // Null from session.get means "this host did not name an agent", not
+    // "replace the brand this window already has".
+    ...(chatProvider === 'acp' && typeof snap?.acpAgentId === 'string' && snap.acpAgentId ? { acpAgentId: snap.acpAgentId } : {}),
     ...(snap ? { _parentSessionId: snap.parentSessionId ?? null } : {}),
     _title: snap?.title ?? base._title ?? null,
   }

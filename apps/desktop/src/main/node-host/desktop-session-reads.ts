@@ -246,6 +246,8 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
       alwaysAllowedTools: [],
       ...(controller?.externalParent ? { externalParent: controller.externalParent } : {}),
       ...(row.parentSessionId ? { parentSessionId: row.parentSessionId } : {}),
+      // Live agent wins; a cold row still names the agent the sidebar icon needs.
+      acpAgentId: live?.snapshot.acpAgentId || row.acpAgentId || null,
     }
   }
 

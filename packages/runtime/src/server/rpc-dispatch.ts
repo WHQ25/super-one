@@ -1674,6 +1674,7 @@ function mapSessionRow(s: NodeSessionRecord) {
     providerResume,
     ...(providerSessionId ? { providerSessionId } : {}),
     ...(s.parentSessionId ? { parentSessionId: s.parentSessionId } : {}),
+    ...(typeof s.acpAgentId === 'string' && s.acpAgentId ? { acpAgentId: s.acpAgentId } : {}),
     tags: Array.isArray(s.tags) ? s.tags : [],
   }
 }

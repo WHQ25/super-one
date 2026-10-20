@@ -82,6 +82,19 @@ describe('hydrateRemoteSession: adopting a node session', () => {
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-session', null, { adoptSession: true })
     expect(hydrated).toMatchObject({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build', selectedModel: 'grok-model', permissionMode: 'auto' })
   })
+
+  it('keeps a brand the window already holds when session.get names no agent', async () => {
+    getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp', acpAgentId: null, status: 'idle', transcript: [] })
+    const previous = { messages: [], status: 'idle', sessionProvider: 'acp', acpAgentId: 'grok-build' }
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-session', previous as never)
+    expect(hydrated).toMatchObject({ sessionProvider: 'acp', acpAgentId: 'grok-build' })
+  })
+
+  it('keeps a cursor session on cursor', async () => {
+    getSession.mockResolvedValueOnce({ sessionId: 'cur', harnessId: 'cursor', status: 'idle', transcript: [] })
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'cur', null, { adoptSession: true })
+    expect(hydrated).toMatchObject({ sessionProvider: 'cursor', preferredProvider: 'cursor' })
+  })
   it('adopts the existing Claude node session with all inherited settings and never creates another', async () => {
     getSession.mockResolvedValueOnce({ sessionId: 'host-created', harnessId: 'claude', providerId: 'claude-personal', status: 'idle', transcript: [],
       model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'on', apiProviderId: 'account', cwd: '/work/app/worktree' })

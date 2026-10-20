@@ -9,14 +9,27 @@ import { extendHistoryIndex } from '@superone/shared/session-history-index'
 export function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
-  const sessionId = String(asRecord(payload).sessionId ?? '')
+  const body = asRecord(payload)
+  const sessionId = String(body.sessionId ?? '')
   if (!ctx.sessions) return mapThrown(unsupportedMethodError('session.get'))
   const session = ctx.sessions.get(sessionId)
-  const config = session?.harnessId === 'acp' ? ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined : undefined
   if (!session) return { result: null }
-  const { transcript, ...metadata } = session
-  return { result: { ...metadata, ...(asRecord(payload).includeTranscript === false ? {} : { transcript }),
-    ...(session.harnessId === 'acp' ? { acpAgentId: config?.agentId ?? null } : {}) } }
+  const { transcript, acpAgentId: recordedAgentId, ...metadata } = session
+  const configAgentId = session.harnessId === 'acp'
+    ? (ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined)?.agentId
+    : undefined
+  // A missing agent is omitted. Writing null here makes a controller replace
+  // a brand it already holds (Grok drawn as generic ACP).
+  const acpAgentId = namedAgent(recordedAgentId) ?? namedAgent(configAgentId)
+  return { result: {
+    ...metadata,
+    ...(body.includeTranscript === false ? {} : { transcript }),
+    ...(acpAgentId ? { acpAgentId } : {}),
+  } }
+}
+
+function namedAgent(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined
 }
 
 /** A session's reduced state and newest messages, with the version they reflect. */

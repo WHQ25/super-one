@@ -78,4 +78,42 @@ describe('DesktopSessionReads.list', () => {
     expect(page.map((entry) => entry.sessionId)).toEqual(['a', 'b', 'parent', 'child', 'child-2'])
     expect(page.find((entry) => entry.sessionId === 'child')?.parentSessionId).toBe('parent')
   })
+
+  it('serves the row harness and the session ACP agent', () => {
+    const cursor = { ...row('cursor-1'), harnessId: 'cursor' as const, providerId: 'cursor-base' }
+    const cold = { ...row('cold-grok'), harnessId: 'acp' as const, acpAgentId: 'grok-build' }
+    const liveRow = { ...row('live-grok'), harnessId: 'acp' as const, acpAgentId: 'stored' }
+    const reads = new Reads({
+      environmentId: 'desktop',
+      sessions: {
+        getSession: (id: string) => id === 'live-grok'
+          ? {
+              snapshot: { acpAgentId: 'grok-live' },
+              cwd: null,
+              activityStatus: () => 'idle',
+              getPendingInteractions: () => [],
+              getCurrentPermissionMode: () => null,
+              getCurrentSandboxInfo: () => ({ enabled: false, autoAllowBash: false }),
+              getSelectedModel: () => null,
+              getSelectedEffort: () => null,
+              getApiProviderId: () => null,
+              getUiSettings: () => ({ selectedAcpModeId: null }),
+              getAgentPreset: () => null,
+              getCallerScopedDirsSnapshot: () => null,
+            }
+          : null,
+        onSession: () => () => {},
+      } as never,
+      rows: {
+        get: () => null,
+        list: () => [cursor, cold, liveRow],
+        loadMessages: () => ({ messages: [], cursor: null, hasMore: false }),
+      },
+      events: {} as never,
+    })
+    const page = reads.list('p1')
+    expect(page.find((entry) => entry.sessionId === 'cursor-1')).toMatchObject({ harnessId: 'cursor', acpAgentId: null })
+    expect(page.find((entry) => entry.sessionId === 'cold-grok')?.acpAgentId).toBe('grok-build')
+    expect(page.find((entry) => entry.sessionId === 'live-grok')?.acpAgentId).toBe('grok-live')
+  })
 })

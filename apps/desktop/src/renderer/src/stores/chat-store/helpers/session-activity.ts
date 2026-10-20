@@ -1,7 +1,16 @@
 import type { AgentEvent, AgentStatus } from '@superone/shared/agent-types'
-import type { ChatStore } from '../types'
+import type { SessionActivity } from '@superone/shared/session-activity'
+import type { ChatStore, PerSessionState } from '../types'
 import { createDefaultPerSessionState, createDefaultProjectState } from '../defaults'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
+
+/** Brand for a row whose transcript is not loaded yet. An empty agent does not clear one already held. */
+function brandFromActivity(activity: SessionActivity): Partial<PerSessionState> {
+  return {
+    ...(activity.provider ? { sessionProvider: activity.provider, preferredProvider: activity.provider } : {}),
+    ...(typeof activity.acpAgentId === 'string' && activity.acpAgentId ? { acpAgentId: activity.acpAgentId } : {}),
+  }
+}
 
 /**
  * A paired machine's sidebar summary of one of its sessions (`session_activity`
@@ -9,6 +18,8 @@ import { applyCachedCodexPermissionPreset } from './prefs-cache'
  * running state and unread dot, as its phones show them. A session whose
  * history this window holds follows its own events, which stay authoritative
  * for its status; the summary only creates a bare entry, never a transcript.
+ * That entry keeps the host harness so the sidebar icon is right before the
+ * list row arrives.
  */
 export function applySessionActivity(
   state: Pick<ChatStore, 'projectSessions' | 'activeProject'>,
@@ -31,7 +42,7 @@ export function applySessionActivity(
       ...state.projectSessions,
       [projectPath]: {
         ...project,
-        ...(followsStatus ? { _sessions: { ...project._sessions, [sessionId]: { ...(session ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }), status } } } : {}),
+        ...(followsStatus ? { _sessions: { ...project._sessions, [sessionId]: { ...(session ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }), ...brandFromActivity(activity), status } } } : {}),
         ...(unseen ? { unseenCompletedSessions: unseen } : {}),
       },
     },

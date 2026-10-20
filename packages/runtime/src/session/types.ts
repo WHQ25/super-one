@@ -119,6 +119,11 @@ export interface NodeSessionRecord {
    * root session and for a mailbox row whose child lives on another machine.
    */
   parentSessionId?: string | null
+  /**
+   * ACP agent this session runs (`grok-build`, a custom agent). Omitted by
+   * hosts that do not record one. A null must not be treated as "generic ACP".
+   */
+  acpAgentId?: string | null
 }
 
 /** Image/document attachment for a remote turn (base64 payload). */

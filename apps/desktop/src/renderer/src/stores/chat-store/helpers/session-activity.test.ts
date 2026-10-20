@@ -56,4 +56,23 @@ describe('session activity from a paired machine', () => {
     const followed = store({ s1: { status: 'streaming', _historyHydrated: true } }, { active: 's1', activeProject: B })
     expect(applySessionActivity(followed, activity({ status: 'idle', completedMessageId: 'm1' }, true))).toEqual({})
   })
+
+  it('brands an unhydrated placeholder with the host harness and ACP agent', () => {
+    const running = apply(store(), activity({ status: 'streaming', provider: 'acp', acpAgentId: 'grok-build' }))
+    expect(projectOf(running)._sessions.s1).toMatchObject({
+      status: 'streaming',
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      _historyHydrated: false,
+    })
+    const cursor = apply(store(), activity({ status: 'streaming', provider: 'cursor' }))
+    expect(projectOf(cursor)._sessions.s1).toMatchObject({ sessionProvider: 'cursor', preferredProvider: 'cursor' })
+  })
+
+  it('does not clear an ACP agent when the activity names none', () => {
+    const state = store({ s1: { status: 'idle', _historyHydrated: false, sessionProvider: 'acp', acpAgentId: 'grok-build' } })
+    const next = apply(state, activity({ status: 'streaming', provider: 'acp', acpAgentId: null }))
+    expect(projectOf(next)._sessions.s1).toMatchObject({ status: 'streaming', sessionProvider: 'acp', acpAgentId: 'grok-build' })
+  })
 })

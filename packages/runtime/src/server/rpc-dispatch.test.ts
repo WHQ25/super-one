@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
+import type { NodeSessionRecord } from '../session/index'
 import { dispatchRpc } from './rpc-dispatch'
 import { resetSandboxCapabilityCacheForTests } from '../sandbox/index'
 import type {
@@ -54,6 +55,87 @@ function projectsOnlyHost(over: Partial<RpcContext> = {}): RpcContext {
     ...over,
   }
 }
+
+function providersWithAgent(agentId: string): NonNullable<RpcContext['sessionProviders']> {
+  return {
+    get: () => ({
+      id: 'acp-custom',
+      harnessId: 'acp',
+      name: 'ACP',
+      isBase: true,
+      config: { agentId },
+      createdAt: 0,
+      updatedAt: 0,
+    }),
+  }
+}
+
+function sessionRecord(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
+  return {
+    sessionId: 's',
+    projectId: 'p1',
+    harnessId: 'claude',
+    providerId: 'claude',
+    title: null,
+    status: 'idle',
+    transcript: [],
+    pendingInteraction: null,
+    providerResume: null,
+    cwd: null,
+    createdAt: 1,
+    updatedAt: 2,
+    isPinned: false,
+    isHidden: false,
+    isUserRenamed: false,
+    controllerClientSessionId: null,
+    hostActionCapabilityVersion: 0,
+    hostActionToolGroups: [],
+    alwaysAllowedTools: [],
+    ...over,
+  }
+}
+
+describe('session list brand', () => {
+  const rows = [
+    sessionRecord({ sessionId: 'c', harnessId: 'cursor', providerId: 'cursor-base' }),
+    sessionRecord({ sessionId: 'g', harnessId: 'acp', providerId: 'acp-base', acpAgentId: 'grok-build' }),
+    sessionRecord({ sessionId: 'a', harnessId: 'acp', providerId: 'acp-base', acpAgentId: null }),
+  ]
+  const sessions = {
+    list: () => rows,
+    get: (id: string) => rows.find((row) => row.sessionId === id) ?? null,
+  } as unknown as SessionHostPort
+
+  it('lists cursor and only a named ACP agent', async () => {
+    const listed = await dispatchRpc('session.list', { projectId: 'p1', limit: 50, offset: 0 }, projectsOnlyHost({ sessions }))
+    const result = listed.result as Array<Record<string, unknown>>
+    expect(result.find((row) => row.sessionId === 'c')).toMatchObject({ harnessId: 'cursor' })
+    expect(result.find((row) => row.sessionId === 'c')).not.toHaveProperty('acpAgentId')
+    expect(result.find((row) => row.sessionId === 'g')).toMatchObject({ harnessId: 'acp', acpAgentId: 'grok-build' })
+    expect(result.find((row) => row.sessionId === 'a')).not.toHaveProperty('acpAgentId')
+  })
+
+  it('returns the session agent, then the provider config, and omits the field when neither exists', async () => {
+    const own = await dispatchRpc('session.get', { sessionId: 'g', includeTranscript: false }, projectsOnlyHost({ sessions }))
+    expect(own.result).toMatchObject({ acpAgentId: 'grok-build' })
+    expect(own.result).not.toHaveProperty('transcript')
+
+    const unnamed = await dispatchRpc('session.get', { sessionId: 'a' }, projectsOnlyHost({ sessions }))
+    expect(unnamed.result).not.toHaveProperty('acpAgentId')
+
+    const fromConfig = projectsOnlyHost({
+      sessions: { get: () => sessionRecord({ harnessId: 'acp', providerId: 'acp-custom', acpAgentId: null }) } as unknown as SessionHostPort,
+      sessionProviders: providersWithAgent('from-config'),
+    })
+    expect((await dispatchRpc('session.get', { sessionId: 's' }, fromConfig)).result).toMatchObject({ acpAgentId: 'from-config' })
+
+    const recordedWins = projectsOnlyHost({
+      sessions: { get: () => sessionRecord({ harnessId: 'acp', acpAgentId: 'custom-agent' }) } as unknown as SessionHostPort,
+      sessionProviders: providersWithAgent('grok-build'),
+    })
+    expect((await dispatchRpc('session.get', { sessionId: 's' }, recordedWins)).result).toMatchObject({ acpAgentId: 'custom-agent' })
+  })
+})
 
 describe('node rpc dispatch on a partial host', () => {
   it('serves the families whose ports the host provides', async () => {

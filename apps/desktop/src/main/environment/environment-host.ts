@@ -48,7 +48,6 @@ import {
   isControlReleasedError,
   controlHeldBy,
   desktopUpgradeRequiredMessage,
-  providerSessionIdFromResume,
   shouldBlockDesktopForNewerNode,
   shouldOfferNodeUpgrade,
   sshArgsForSpec,
@@ -121,7 +120,7 @@ import { SESSION_CALL_METHODS, SESSION_CALL_READS, type SessionCallMethod, type 
 import { getScheduledSend, getScheduledSendRemoteTarget } from '../db-scheduled-sends'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { RoutedControlPresence } from '../node-host/routed-control-presence'
-import { parseTagsJson } from '@superone/shared/session-tags'
+import { mapRemoteSessionRow } from './remote-session-row'
 import {
   deletePendingDraft,
   enqueuePendingDraft,
@@ -487,79 +486,9 @@ export class EnvironmentHost {
     return { gateway: local.protocolGateway(), environmentId: local.getEnvironmentId(), local: true }
   }
 
-  /**
-   * Map a node session record (or gateway list item) to the sidebar history row shape.
-   */
+  /** Map a node session record (or gateway list item) to the sidebar history row. */
   private mapRemoteSessionEntry(raw: unknown): SessionHistoryEntry {
-    const s = (raw ?? {}) as {
-      sessionId?: string
-      title?: string | null
-      updatedAt?: number
-      createdAt?: number
-      harnessId?: string
-      providerId?: string
-      transcript?: unknown[]
-      /** Slim session.list rows prefer this over shipping full transcript. */
-      messageCount?: number
-      status?: string
-      isPinned?: boolean
-      isHidden?: boolean
-      /** Absolute host cwd when session is bound to a worktree (or explicit root). */
-      cwd?: string | null
-      /** Bare harness session/thread id (desktop Copy Session ID). */
-      providerSessionId?: string | null
-      /** Prefixed resume token from node SessionRuntime. */
-      providerResume?: string | null
-      acpAgentId?: string | null
-      tags?: unknown
-      /** Spawn parent on this host. List rows omit it for roots. */
-      parentSessionId?: string | null
-    }
-    const sessionId = String(s.sessionId ?? '')
-    const ts = s.updatedAt ?? s.createdAt ?? Date.now()
-    const cwd = typeof s.cwd === 'string' && s.cwd.trim() ? s.cwd.trim() : null
-    const messageCount =
-      typeof s.messageCount === 'number' && Number.isFinite(s.messageCount)
-        ? Math.max(0, Math.floor(s.messageCount))
-        : Array.isArray(s.transcript)
-          ? s.transcript.length
-          : 0
-    // Prefer explicit bare id; fall back to stripping node providerResume prefix.
-    const providerSessionId =
-      (typeof s.providerSessionId === 'string' && s.providerSessionId.trim()
-        ? s.providerSessionId.trim()
-        : null) ?? providerSessionIdFromResume(s.providerResume)
-    const rawHarness = String(s.harnessId || s.providerId || 'claude')
-    const provider =
-      rawHarness === 'acp-grok'
-        ? 'acp'
-        : rawHarness === 'claude' || rawHarness === 'codex' || rawHarness === 'acp' || rawHarness === 'opencode'
-          ? rawHarness
-          : 'claude'
-    const listedAgentId = typeof s.acpAgentId === 'string' && s.acpAgentId.trim()
-      ? s.acpAgentId.trim()
-      : null
-    const acpAgentId = listedAgentId ?? (rawHarness === 'acp-grok' ? 'grok-build' : null)
-    const tags = parseTagsJson(s.tags)
-    const parentSessionId = typeof s.parentSessionId === 'string' && s.parentSessionId.trim()
-      ? s.parentSessionId.trim()
-      : null
-    return {
-      sessionId,
-      title: (s.title && String(s.title).trim()) || 'New session',
-      lastActiveAt: new Date(ts).toISOString(),
-      provider,
-      messageCount,
-      isPinned: Boolean(s.isPinned),
-      isHidden: Boolean(s.isHidden),
-      // Node sessions use cwd for worktree isolation; surface as desktop worktree fields.
-      worktreePath: cwd ?? undefined,
-      isWorktree: Boolean(cwd),
-      ...(providerSessionId ? { providerSessionId } : {}),
-      ...(acpAgentId ? { acpAgentId } : {}),
-      ...(parentSessionId ? { parentSessionId } : {}),
-      ...(tags.length ? { tags } : {}),
-    }
+    return mapRemoteSessionRow(raw)
   }
 
   /**

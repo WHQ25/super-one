@@ -18,6 +18,8 @@ import {
   nodeEndpointDescription,
   pairWithNode,
   refreshNodeAccess,
+  signWithDeviceKey,
+  type TokenResult,
 } from './node-auth-client'
 import { NodeCredentialStore, type NodeDeviceCredential } from './node-credential-store'
 import { NodeRpcClient, type NodeRoute } from './node-rpc-client'
@@ -451,8 +453,8 @@ export class NodeConnectionManager {
       endpointId: 'primary',
     }
 
-    let accessToken = ''
-    let accessExpiresAt = 0
+    let accessToken = credential.accessToken ?? ''
+    let accessExpiresAt = credential.accessExpiresAt ?? 0
     let credentialDirty = false
     let credentialPersistError: string | undefined
 
@@ -515,41 +517,100 @@ export class NodeConnectionManager {
     // Server still has a grace window for lost-response; this cuts the race at the source.
     let refreshInFlight: Promise<string> | null = null
 
-    const ensureAccess = async (): Promise<string> => {
-      // Always retry encrypted persistence when memory is ahead of disk.
-      if (credentialDirty) {
-        tryPersistCredential()
-      }
-      if (accessToken && accessExpiresAt > Date.now() + 30_000) return accessToken
-      if (refreshInFlight) return refreshInFlight
+    const applyTokens = (tokens: TokenResult): void => {
+      // Server-returned rotated refresh is authoritative in memory even if disk save fails.
+      // Using the old refresh again would trigger reuse-revocation of the valid family.
+      credential.refreshToken = tokens.refreshToken
+      credential.clientSessionId = tokens.clientSessionId
+      credential.accessToken = tokens.accessToken
+      credential.accessExpiresAt = tokens.expiresAt
+      accessToken = tokens.accessToken
+      accessExpiresAt = tokens.expiresAt
+      tryPersistCredential()
+    }
 
+    const accessStillValid = (): boolean => Boolean(accessToken) && accessExpiresAt > Date.now() + 30_000
+
+    const beginRefresh = (run: () => Promise<string>): Promise<string> => {
+      if (accessStillValid()) return Promise.resolve(accessToken)
+      if (refreshInFlight) return refreshInFlight
       refreshInFlight = (async () => {
         try {
-          // Re-check after winning the in-flight slot — a peer may have just refreshed.
-          if (accessToken && accessExpiresAt > Date.now() + 30_000) return accessToken
-          const tokens = await refreshNodeAccess({
-            baseUrl: route.baseUrl,
-            refreshToken: credential.refreshToken,
-            devicePrivateKeyPem: credential.devicePrivateKeyPem,
-            clientSessionId: credential.clientSessionId,
-            channel: credential.channel,
-            dial: route.dial,
-          })
-          // Server-returned rotated refresh is authoritative in memory even if disk save fails.
-          // Using the old refresh again would trigger reuse-revocation of the valid family.
-          credential.refreshToken = tokens.refreshToken
-          credential.clientSessionId = tokens.clientSessionId
-          accessToken = tokens.accessToken
-          accessExpiresAt = tokens.expiresAt
-          tryPersistCredential()
-          // Keep the connection usable; dirty state is retried on later ensureAccess/health.
-          return accessToken
+          if (accessStillValid()) return accessToken
+          return await run()
         } finally {
           refreshInFlight = null
         }
       })()
-
       return refreshInFlight
+    }
+
+    const authFailure = (status: number, body: unknown, fallback: string): Error => {
+      const error = (body as { error?: { code?: string; message?: string } } | null)?.error
+      return Object.assign(new Error(error?.message || fallback), {
+        code: error?.code || (status === 401 ? 'unauthorized' : 'unavailable'),
+      })
+    }
+
+    const ensureAccess = async (): Promise<string> => {
+      // Always retry encrypted persistence when memory is ahead of disk.
+      if (credentialDirty) tryPersistCredential()
+      return beginRefresh(async () => {
+        const tokens = await refreshNodeAccess({
+          baseUrl: route.baseUrl,
+          refreshToken: credential.refreshToken,
+          devicePrivateKeyPem: credential.devicePrivateKeyPem,
+          clientSessionId: credential.clientSessionId,
+          channel: credential.channel,
+          dial: route.dial,
+        })
+        applyTokens(tokens)
+        return accessToken
+      })
+    }
+
+    /**
+     * Refresh or mint on the socket that will carry RPC. A refresh that already
+     * returned a ticket is used as-is (the ticket is single-use). Failure is
+     * not retried through `refreshNodeAccess`: the refresh token may have rotated.
+     */
+    const authorizeInline = async (
+      exchange: (input: {
+        path: '/v1/token' | '/v1/ws-ticket'
+        body: Record<string, unknown>
+        accessToken?: string
+      }) => Promise<{ status: number; body: unknown }>,
+    ): Promise<string> => {
+      if (credentialDirty) tryPersistCredential()
+      let issued: string | undefined
+      if (!accessStillValid()) {
+        await beginRefresh(async () => {
+          const proofPayload = `refresh:${credential.clientSessionId}:${Date.now()}`
+          const result = await exchange({
+            path: '/v1/token',
+            body: {
+              refreshToken: credential.refreshToken,
+              proofPayload,
+              proofSignature: signWithDeviceKey(credential.devicePrivateKeyPem, proofPayload),
+              issueTicket: true,
+            },
+          })
+          if (result.status < 200 || result.status >= 300) throw authFailure(result.status, result.body, 'token refresh failed')
+          const body = result.body as TokenResult & { ticket?: string }
+          if (!body.accessToken || !body.refreshToken || !body.clientSessionId) {
+            throw Object.assign(new Error('token refresh failed'), { code: 'unauthorized' })
+          }
+          applyTokens(body)
+          issued = body.ticket
+          return accessToken
+        })
+      }
+      if (issued) return issued
+      const minted = await exchange({ path: '/v1/ws-ticket', body: {}, accessToken })
+      if (minted.status < 200 || minted.status >= 300) throw authFailure(minted.status, minted.body, 'ws ticket failed')
+      const ticket = (minted.body as { ticket?: string }).ticket
+      if (!ticket) throw Object.assign(new Error('ws ticket failed'), { code: 'unauthorized' })
+      return ticket
     }
 
     // When false (pairing), first dial uses credential.baseUrl as-is so bootstrap
@@ -565,6 +626,7 @@ export class NodeConnectionManager {
       devicePrivateKeyPem: credential.devicePrivateKeyPem,
       channel: credential.channel,
       supervised: true,
+      authorizeInline,
       getWsTicket: async () => {
         const token = await ensureAccess()
         return mintWsTicket({ baseUrl: route.baseUrl, accessToken: token, channel: credential.channel, dial: route.dial })
@@ -624,6 +686,7 @@ export class NodeConnectionManager {
         channel: credential.channel,
         supervised: true,
         heartbeatIntervalMs: 0,
+        authorizeInline,
         getWsTicket: async () =>
           mintWsTicket({ baseUrl: candidate.baseUrl, accessToken: await ensureAccess(), channel: credential.channel, dial: candidate.dial }),
       })
@@ -639,14 +702,22 @@ export class NodeConnectionManager {
     }
 
     const gateway = new RemoteEnvironmentGateway(client)
-    const supervisor = new ConnectionSupervisor({
+    // Assigned below. The dial closures run only after start(), so the binding is live.
+    let supervisor!: ConnectionSupervisor
+    supervisor = new ConnectionSupervisor({
       environmentId: credential.environmentId,
       connectionId: credential.connectionId,
       stableAfterMs: 30_000,
       connect: async () => {
+        // Captured after runConnect bumps the generation. A dispose or a newer
+        // dial makes this loop stop without marking the route failed.
+        const generation = supervisor.getSnapshot().generation
+        const current = (): boolean =>
+          supervisor.isCurrent(generation) && this.lives.get(credential.connectionId)?.client === client
         // A route that answers `/health` but not the encrypted channel (or a
         // spoofed answer) is marked failed, and the dial moves on to the next.
         for (let attempt = 1; ; attempt++) {
+          if (!current()) return
           const known = this.known.get(credential.connectionId)
           if (pinnedRoute) {
             applyRoute(pinnedRoute)
@@ -654,13 +725,16 @@ export class NodeConnectionManager {
           } else if (!skipResolverOnce && known) {
             if (this.opts.resolveReconnectRoute) {
               const resolved = await this.opts.resolveReconnectRoute(known)
+              if (!current()) return
               if (resolved) applyRoute(resolved)
             } else if (this.opts.resolveReconnectBaseUrl) {
               const resolved = await this.opts.resolveReconnectBaseUrl(known)
+              if (!current()) return
               if (resolved) applyBaseUrl(resolved)
             }
           }
           skipResolverOnce = false
+          if (!current()) return
           const tried = route
           try {
             // Probe unauthenticated health first so clone/regenerate surfaces as
@@ -679,8 +753,10 @@ export class NodeConnectionManager {
             }
             return
           } catch (err) {
+            if (!current()) return
             if (!known || !this.opts.onRouteFailed || !this.opts.resolveReconnectRoute || isRouteIndependentFailure(err)) throw err
             client.invalidateTransport('route failed')
+            if (!current()) return
             this.opts.onRouteFailed(known, tried)
             if (attempt >= MAX_ROUTES_PER_DIAL) throw err
             const next = await this.opts.resolveReconnectRoute(known)
@@ -690,6 +766,9 @@ export class NodeConnectionManager {
         }
       },
       healthProbe: async () => {
+        const generation = supervisor.getSnapshot().generation
+        const current = (): boolean =>
+          supervisor.isCurrent(generation) && this.lives.get(credential.connectionId)?.client === client
         let ok = false
         try {
           if (credentialDirty) tryPersistCredential()
@@ -706,7 +785,9 @@ export class NodeConnectionManager {
         if (route.path !== 'lan' && known && this.opts.betterRoute) {
           const better = await this.opts.betterRoute(known, route).catch(() => undefined)
           if (better) {
-            if (await verifyRoute(better)) {
+            const proved = await verifyRoute(better)
+            if (!current()) return false
+            if (proved) {
               pinnedRoute = better
               throw new Error(`switching from ${route.path} to ${better.path}`)
             }

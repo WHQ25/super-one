@@ -249,6 +249,15 @@ export class ConnectionSupervisorCore {
     this.stopHealthProbeTimer()
   }
 
+  /**
+   * Whether a dial that captured `generation` at start is still the live one.
+   * False after dispose, and after a newer dial or an offline wake bumps the
+   * generation. Callers must not record route failures once this is false.
+   */
+  isCurrent(generation: number): boolean {
+    return !this.disposed && this.generation === generation
+  }
+
   private async doWake(reason?: SupervisorWakeReason): Promise<void> {
     if (this.disposed || this.state === 'blocked') return
 

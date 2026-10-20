@@ -102,6 +102,18 @@ describe('NodeCredentialStore', () => {
     expect(raw).toContain('enc:v1:')
   })
 
+  it('round-trips an access token inside the encrypted blob only', async () => {
+    const dir = tempDir()
+    const store = new NodeCredentialStore(dir)
+    store.save({ ...sample, accessToken: 'access-secret', accessExpiresAt: 1234 })
+    const fs = await import('node:fs')
+    const raw = fs.readFileSync(join(dir, 'node-credentials', 'credentials.json'), 'utf8')
+    expect(raw).not.toContain('access-secret')
+    const loaded = new NodeCredentialStore(dir).get('c1')
+    expect(loaded?.accessToken).toBe('access-secret')
+    expect(loaded?.accessExpiresAt).toBe(1234)
+  })
+
   it('persists rotated refresh via temp+rename without plaintext on disk', async () => {
     const dir = tempDir()
     const store = new NodeCredentialStore(dir)

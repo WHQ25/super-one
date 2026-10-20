@@ -23,6 +23,9 @@ interface ProxyInstance {
   proc: ChildProcess
   ready: Promise<void>
   lastUsed: number
+  /** Requests the child has started and not finished. The idle sweep must not reap these:
+   *  Codex pins the loopback URL, and a long stream may not call ensureProxy again. */
+  inflight: number
   upstream: ProxyUpstream
 }
 
@@ -78,15 +81,25 @@ export function buildProxyEnv(config: Record<string, unknown>, runtimeEnv?: Reco
   }
 }
 
+function proxyUrl(port: number): string {
+  return `http://127.0.0.1:${port}`
+}
+
+function dropInstance(key: string, inst: ProxyInstance): void {
+  instances.delete(key)
+  forgetCodexProxyUrl(proxyUrl(inst.port))
+}
+
 function startSweepIfNeeded(): void {
   if (sweepTimer) return
   sweepTimer = setInterval(() => {
     const now = Date.now()
     for (const [key, inst] of instances) {
+      if (inst.inflight > 0) continue
       if (now - inst.lastUsed > PROXY_IDLE_MS) {
         log.info('[llm-proxy] sweep idle instance key=%s port=%d', key, inst.port)
+        dropInstance(key, inst)
         inst.proc.kill()
-        instances.delete(key)
       }
     }
     if (instances.size === 0 && sweepTimer) {
@@ -112,6 +125,19 @@ function spawnChild(port: number, upstream: ProxyUpstream): ChildProcess {
     ...(runtime.executable ? { execPath: runtime.executable } : {}),
   }
   return fork(entryPath, [], opts)
+}
+
+function watchUsage(key: string, proc: ChildProcess): void {
+  proc.on('message', (msg: unknown) => {
+    if (!msg || typeof msg !== 'object' || !('type' in msg)) return
+    if ((msg as { type: unknown }).type !== 'busy') return
+    const delta = (msg as { delta?: unknown }).delta
+    if (delta !== 1 && delta !== -1) return
+    const current = instances.get(key)
+    if (!current || current.proc !== proc) return
+    current.inflight = Math.max(0, current.inflight + delta)
+    current.lastUsed = Date.now()
+  })
 }
 
 function waitForReady(proc: ChildProcess, port: number): Promise<void> {
@@ -156,17 +182,19 @@ function waitForReady(proc: ChildProcess, port: number): Promise<void> {
 export async function ensureProxy(upstream: ProxyUpstream): Promise<{ url: string; port: number }> {
   const key = upstreamKey(upstream)
   const existing = instances.get(key)
-  if (existing) {
+  if (existing && existing.proc.exitCode == null && !existing.proc.killed) {
     existing.lastUsed = Date.now()
     await existing.ready
-    return { url: `http://127.0.0.1:${existing.port}`, port: existing.port }
+    return { url: proxyUrl(existing.port), port: existing.port }
   }
+  if (existing) dropInstance(key, existing)
 
   const port = await getFreePort()
   const proc = spawnChild(port, upstream)
   const ready = waitForReady(proc, port)
+  watchUsage(key, proc)
 
-  const inst: ProxyInstance = { port, proc, ready, lastUsed: Date.now(), upstream }
+  const inst: ProxyInstance = { port, proc, ready, lastUsed: Date.now(), inflight: 0, upstream }
   instances.set(key, inst)
   startSweepIfNeeded()
 
@@ -177,18 +205,21 @@ export async function ensureProxy(upstream: ProxyUpstream): Promise<{ url: strin
       if (recentlyUsed) {
         log.warn('[llm-proxy] unexpected exit key=%s code=%s signal=%s, restarting on same port', key, code, signal)
         const restarted = spawnChild(port, upstream)
+        watchUsage(key, restarted)
         const newReady = waitForReady(restarted, port)
         current.proc = restarted
         current.ready = newReady
+        current.inflight = 0
+        current.lastUsed = Date.now()
       } else {
-        instances.delete(key)
+        dropInstance(key, current)
       }
     }
   })
 
   await ready
   log.info('[llm-proxy] instance ready key=%s port=%d', key, port)
-  return { url: `http://127.0.0.1:${port}`, port }
+  return { url: proxyUrl(port), port }
 }
 
 export function shutdownAll(): void {
@@ -196,14 +227,29 @@ export function shutdownAll(): void {
     clearInterval(sweepTimer)
     sweepTimer = null
   }
-  for (const [key, inst] of instances) {
-    log.info('[llm-proxy] shutdown key=%s port=%d', key, inst.port)
+  const running = [...instances.values()]
+  instances.clear()
+  clearCodexProxyCache()
+  for (const inst of running) {
+    log.info('[llm-proxy] shutdown key=%s port=%d', upstreamKey(inst.upstream), inst.port)
     inst.proc.kill()
   }
-  instances.clear()
 }
 
 const codexProxyCache = new Map<string, string>()
+
+function forgetCodexProxyUrl(url: string): void {
+  for (const [key, cached] of codexProxyCache) {
+    if (cached === url) codexProxyCache.delete(key)
+  }
+}
+
+function findInstanceByUrl(url: string): ProxyInstance | undefined {
+  for (const inst of instances.values()) {
+    if (proxyUrl(inst.port) === url) return inst
+  }
+  return undefined
+}
 
 function codexProxyCacheKey(apiProviderId?: string | null): string {
   return resolveChatService('codex', apiProviderId ?? null)?.credentialId ?? apiProviderId ?? ''
@@ -220,7 +266,14 @@ export function clearCodexProxyCache(): void {
 export async function ensureCodexProxyUrl(apiProviderId?: string | null): Promise<string | undefined> {
   const key = codexProxyCacheKey(apiProviderId)
   const cached = codexProxyCache.get(key)
-  if (cached) return cached
+  if (cached) {
+    const live = findInstanceByUrl(cached)
+    if (live && live.proc.exitCode == null && !live.proc.killed) {
+      live.lastUsed = Date.now()
+      return cached
+    }
+    codexProxyCache.delete(key)
+  }
 
   const resolved = resolveChatService('codex', apiProviderId ?? null)
   if (!resolved || resolved.protocol !== 'openai-chat') return undefined

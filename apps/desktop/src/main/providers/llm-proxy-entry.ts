@@ -72,6 +72,17 @@ server.app.get('/models', async (_req: unknown, reply: ReplyLike) => { void repl
 const openAiModelList = { object: 'list', data: providerModels.map((id) => ({ id, object: 'model' })) }
 server.app.get('/v1/models', async (_req: unknown, reply: ReplyLike) => { void reply.send(openAiModelList) })
 
+function notifyBusy(delta: 1 | -1): void {
+  try {
+    if (process.connected) process.send?.({ type: 'busy', delta })
+  } catch {
+    // Parent IPC is already gone; the disconnect handler exits.
+  }
+}
+
+server.app.addHook('onRequest', async () => { notifyBusy(1) })
+server.app.addHook('onResponse', async () => { notifyBusy(-1) })
+
 server.app.addHook('preValidation', async (req: { id?: string; method: string; body?: unknown }) => {
   if (req.method === 'POST') trace('llm-proxy.in', 'raw_request', req.body, req.id)
   normalizeAdaptiveThinkingRequest(req.body)

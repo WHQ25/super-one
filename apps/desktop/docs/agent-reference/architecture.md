@@ -98,6 +98,39 @@ controller withdrawal remain window/presence adapters; withdrawal cannot require
 acquiring the phone's own grant. Resource catalogs, files, workspace operations,
 trajectory inspection and realtime voice remain separate from session commands.
 
+### Remote host reads
+
+A session switch remounts every hook that reads host-level data, and over the
+relay each RPC to the host costs about 0.55 s. Data that follows the host or
+the project, not the session, is therefore cached in main and shared, so a
+switch between open sessions of a remote project sends the host only
+`session.get`, `session.transcriptWindow`, `session.list`, `git.status` and the
+scheduled-send reads. Opening a remote session starts the window read beside
+`session.get` (`hydrateRemoteSession`, `lib/remote-session-ops.ts`).
+
+| Read | Cached in | Kept | Dropped by |
+|---|---|---|---|
+| `environment.descriptor` | `RemoteEnvironmentGateway`, fetched at connect | 60 s | disconnect, forget |
+| Provider bindings, credentials, platforms | gateway host catalog | until dropped | `catalogChanged`, A's own provider writes, disconnect, forget |
+| `claude.listAccounts` | gateway host catalog | 60 s | the same, plus `notifyClaudeAccountsChanged`; `force` bypasses it |
+| Remote `git.worktrees`, `git.mentionCapabilities` | `remote-file-tree.ts` | 30 s | A's git writes, disconnect, reconnect, forget (by connection id) |
+| Local worktree list, `@git` capabilities | `git/git-read-cache.ts` | 30 s / until dropped | git writes, the file watcher (`.git/HEAD`, `.git/index`, `.git/worktrees/`) |
+| `window.environment.listItems()` | renderer `lib/environment-list.ts` | while someone subscribes | any environment status push, `invalidateEnvironmentList()` before the settings page refreshes after a change |
+
+The TTLs exist because the host does not push every change: B computes
+`harnessIds` when the descriptor is read and announces neither capability
+changes nor account changes made outside SuperOne (`claude auth` in a
+terminal, token expiry). A host-side notice would let these reads stay until
+dropped. A remote `not-repo`, empty or `unsupported` git result is never
+cached; locally only `unsupported` is skipped.
+
+These caches use `AsyncCoalescer` (`packages/runtime/src/async-coalescer.ts`)
+with a long or per-key TTL. `invalidate` detaches a read already in flight: its
+callers still get its result, but it is not cached and the next `get` starts a
+fresh read, because a read that started before a mutation is not the newest.
+Keep that property for any new long-lived cache, and drop per-connection
+entries when the connection goes away.
+
 ### Harness UI modules
 
 Per-harness renderer behavior lives in `src/renderer/src/harness-ui/`, not in

@@ -92,6 +92,17 @@ then runs while A is paired; delete `.dev-data/instance-node-b` for a fresh node
 on B needs its harness enabled and signed in on B (Settings → Harnesses);
 A's composer offers B's enabled harnesses, so a fresh B offers none.
 
+To measure connect, open or switch latency, wrap `ipcMain.handle` and
+`NodeRpcClient.rpc` (plus the supervisor's connect steps for a connect) with
+temporary timing logs, and count RPCs per step. Drive switches over CDP with
+`useChatStore.getState().switchToSession(key, sid)`, spaced with `setTimeout`:
+A's window is in the background, so `requestAnimationFrame` does not run. For
+the off-LAN case, bake `SO_CF_RELAY_URL` into A's build, point B's stored LAN
+target in `.dev-data/known-environments.json` at an unresolvable host and
+ignore mDNS answers. Remove the probes and restore the profile afterwards. The
+expected per-switch reads are in
+[architecture.md](architecture.md#remote-host-reads).
+
 The automated version is `e2e/desktop-node-orchestration.spec.ts`
 (`bun run test:e2e:fast -- e2e/desktop-node-orchestration.spec.ts` after
 `bunx electron-vite build`). B mints a node code and A pairs it through the same

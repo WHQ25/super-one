@@ -693,11 +693,22 @@ Every dial picks its route through `NodeRouteResolver`
 (`apps/desktop/src/main/environment/node-route-resolver.ts`) over the order of
 `orderNodeRoutes` (`packages/shared/src/environment/node-route.ts`): LAN
 addresses mDNS reports for the node, the saved preference, then the other
-profiles by path (LAN, Tailscale, direct), relay last. An SSH forward is opened
-only when it is the preferred profile. With more than one candidate, each but
-the last must pass a 2.5 s `/health` identity probe; the relay is not probed.
-A lone candidate (most CLI nodes) is used as before. Only desktop nodes, paired
-with a LAN hint, are looked up over mDNS.
+profiles by path (LAN, Tailscale, direct), relay last. An SSH forward is ordered
+only when it is the preferred profile, and is then opened before anything else;
+an available relay never skips it. A lone stored candidate with no LAN hint (most
+CLI nodes) is used without a probe. Only desktop nodes, paired with a LAN hint,
+are looked up over mDNS.
+
+Otherwise the dial races, happy-eyeballs style. The mDNS browse (at most 1.5 s)
+stops waiting as soon as the target environment id answers, and an address it
+reports wins as soon as its `/health` answers. Stored direct routes each take a
+2.5 s `/health` identity probe while the relay presence check runs beside them;
+the relay is not probed. When the relay is up, a better route still pending (or
+a browse still running) gets a 250 ms grace (`LAN_RELAY_GRACE_MS`), then the
+relay is taken. A probe abandoned because another route won is not a failure.
+A dial loop whose supervisor was disposed or superseded stops at its next
+attempt (generation check) and never marks routes failed for the live
+connection.
 
 Desktop nodes follow the phone link: LAN on the same network, otherwise
 Tailscale, otherwise the relay. `/health` is unauthenticated, so it only
@@ -796,10 +807,18 @@ sealed frames:
 - After attach, the usual `handshake` / `rpc` / `ping` messages; after the
   generation handshake they travel as wire frames ([Wire framing](#wire-framing)).
 
-Node auth (§12) runs unchanged inside the channel. The desktop client
-(`node-auth-client.ts`, `node-rpc-client.ts`) uses short-lived sockets for the
-auth exchanges and opens the RPC socket the same way. A wrong channel secret
-blocks as `unauthorized`.
+Node auth (§12) runs unchanged inside the channel. A node that accepts `auth`
+frames on the socket it will attach says so with `inlineAuth: true` in
+`channel_ready` and `/health`. The desktop client (`node-rpc-client.ts`,
+`authorizeInline` in `node-connection-manager.ts`) then authenticates on the RPC
+socket itself: a refresh with `issueTicket: true` returns the access token and
+a WS ticket in one exchange, or a still-valid access token mints the ticket,
+and the same socket attaches. One channel setup per connect matters most over
+the relay (§11.4). A node without the flag gets the older path: the ticket is
+fetched on its own short-lived channel, outside the RPC socket's handshake
+timer, then the socket attaches. A failed connect aborts any auth exchange
+still waiting on its socket, so a retry never joins a dead refresh. A wrong
+channel secret blocks as `unauthorized`.
 
 Channel secrets never cross the network. The node keeps one root secret
 (`secrets/channel-root.key`, `loadOrCreateChannelRoot`) and derives a secret per
@@ -831,6 +850,11 @@ and framing are in [relay-crypto.md](relay-crypto.md#node-channel-over-the-relay
   the recovery authority.
 - The relay has no `/health` for the node; identity rests on the channel proof
   and the descriptor's environment id and key fingerprint.
+- Every relay RPC costs about 0.55 s before the node does any work, and one
+  channel setup over the production relay takes about 4–5 s. That is why a
+  connect authenticates on the RPC socket (§11.3) and why a controlling desktop
+  caches host-level reads across session switches
+  ([desktop architecture](../../apps/desktop/docs/agent-reference/architecture.md#remote-host-reads)).
 - Before dialing the relay, the client asks the relay's `/status` whether the
   node holds its room (the phone link's presence check,
   `@superone/relay-client/presence`), so an offline node fails in seconds
@@ -931,6 +955,13 @@ Lifetimes are `AUTH_CREDENTIAL_LIFETIMES` in `packages/shared/src/environment/au
 | client refresh family | 90 days since last use, rotates | keyed hash, device public key, scopes | rotated, reuse-revoked, admin-revoked, expired |
 | access token | 15 minutes | session/revocation metadata only | expired or session-revoked |
 | WebSocket ticket | 30 seconds, one `/ws` upgrade | keyed hash, proof thumbprint | consumed, expired, session-revoked |
+
+The desktop keeps the access token and its expiry beside the refresh credential
+in the safeStorage-encrypted secrets blob (`node-credential-store.ts`), so a
+reconnect or quick restart inside the token's lifetime skips refresh. A node
+that rejects it with a 401 other than a terminal revocation (clock skew, unknown
+client session, wrong issuer) makes the desktop drop and re-save it, so the next
+attempt refreshes.
 
 Pairing tokens and tickets are consumed atomically; consumption and rotation use
 compare-and-update so concurrent attempts have one winner. The node stores only

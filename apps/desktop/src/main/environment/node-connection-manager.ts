@@ -531,6 +531,21 @@ export class NodeConnectionManager {
 
     const accessStillValid = (): boolean => Boolean(accessToken) && accessExpiresAt > Date.now() + 30_000
 
+    /**
+     * A non-terminal 401 means this access token is not acceptable (clock skew,
+     * unknown client session, bad issuer). Drop it so the next attempt refreshes.
+     * A revoked family stays put: refreshing it cannot help.
+     */
+    const forgetRejectedAccess = (failure: { code?: string; message?: string }): void => {
+      const code = failure.code
+      if (code !== 'unauthorized' || isTerminalCredentialFailure(code, failure.message ?? '')) return
+      accessToken = ''
+      accessExpiresAt = 0
+      delete credential.accessToken
+      delete credential.accessExpiresAt
+      tryPersistCredential()
+    }
+
     const beginRefresh = (run: () => Promise<string>): Promise<string> => {
       if (accessStillValid()) return Promise.resolve(accessToken)
       if (refreshInFlight) return refreshInFlight
@@ -607,10 +622,27 @@ export class NodeConnectionManager {
       }
       if (issued) return issued
       const minted = await exchange({ path: '/v1/ws-ticket', body: {}, accessToken })
-      if (minted.status < 200 || minted.status >= 300) throw authFailure(minted.status, minted.body, 'ws ticket failed')
+      if (minted.status < 200 || minted.status >= 300) {
+        if (minted.status === 401) {
+          const error = (minted.body as { error?: { code?: string; message?: string } } | null)?.error
+          forgetRejectedAccess({ code: error?.code || 'unauthorized', message: error?.message })
+        }
+        throw authFailure(minted.status, minted.body, 'ws ticket failed')
+      }
       const ticket = (minted.body as { ticket?: string }).ticket
       if (!ticket) throw Object.assign(new Error('ws ticket failed'), { code: 'unauthorized' })
       return ticket
+    }
+
+    const mintTicket = async (baseUrl: string, dial: ResolvedNodeRoute['dial']): Promise<string> => {
+      const token = await ensureAccess()
+      try {
+        return await mintWsTicket({ baseUrl, accessToken: token, channel: credential.channel, dial })
+      } catch (err) {
+        const failure = err as { code?: string; message?: string }
+        forgetRejectedAccess(failure)
+        throw err
+      }
     }
 
     // When false (pairing), first dial uses credential.baseUrl as-is so bootstrap
@@ -627,10 +659,7 @@ export class NodeConnectionManager {
       channel: credential.channel,
       supervised: true,
       authorizeInline,
-      getWsTicket: async () => {
-        const token = await ensureAccess()
-        return mintWsTicket({ baseUrl: route.baseUrl, accessToken: token, channel: credential.channel, dial: route.dial })
-      },
+      getWsTicket: () => mintTicket(route.baseUrl, route.dial),
       onUnexpectedDisconnect: (error) => {
         // Defer so the close handler finishes clearing socket state first.
         queueMicrotask(() => {
@@ -687,8 +716,7 @@ export class NodeConnectionManager {
         supervised: true,
         heartbeatIntervalMs: 0,
         authorizeInline,
-        getWsTicket: async () =>
-          mintWsTicket({ baseUrl: candidate.baseUrl, accessToken: await ensureAccess(), channel: credential.channel, dial: candidate.dial }),
+        getWsTicket: () => mintTicket(candidate.baseUrl, candidate.dial),
       })
       try {
         await probe.connect()

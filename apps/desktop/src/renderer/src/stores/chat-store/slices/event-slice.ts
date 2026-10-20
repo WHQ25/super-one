@@ -28,6 +28,7 @@ import { applyWindowRows, todoUpdatesFromWindow } from '../helpers/window-messag
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { subscriptionHost } from '@/lib/provider-host'
+import { claudeAccountRefreshHost } from '../harness/claude-handler'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
@@ -151,12 +152,12 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       // change has neither, so it does not touch the remote composer.
       void import('../../settings').then(({ useSettingsStore }) => {
         const scope = useSettingsStore.getState().providerScope
-        const open = event.harnessId === 'claude'
-          ? subscriptionHost(get().activeProject, useAppStore.getState().selectedHostConnectionId)
-          : null
-        const host = event.connectionId
-          ?? (event.harnessId === 'claude' && scope !== 'local' ? scope : null)
-          ?? open
+        const host = claudeAccountRefreshHost({
+          harnessId: event.harnessId,
+          connectionId: event.connectionId,
+          scope,
+          openHost: subscriptionHost(get().activeProject, useAppStore.getState().selectedHostConnectionId),
+        })
         if (!host) return
         if (scope === host) void useSettingsStore.getState().fetchProviderData()
         window.dispatchEvent(new CustomEvent('claude-accounts-changed', { detail: { connectionId: host } }))

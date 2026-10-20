@@ -4,6 +4,24 @@ import { buildSlashCommands } from '../helpers/chat-helpers'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 /**
+ * Host whose Claude accounts a `provider_changed` notice should refresh.
+ * A connection id on the event wins for every harness. Without one, only
+ * Claude falls back to the open remote scope, then the subscription host.
+ * Null leaves the remote composer alone.
+ */
+export function claudeAccountRefreshHost(input: {
+  harnessId: string
+  connectionId?: string
+  scope: string
+  openHost: string | null
+}): string | null {
+  if (input.connectionId) return input.connectionId
+  if (input.harnessId !== 'claude') return null
+  if (input.scope !== 'local') return input.scope
+  return input.openHost
+}
+
+/**
  * Apply a freshly-fetched ClaudeResources bundle to the store: merges global
  * slash commands with per-project skills/commands, and seeds the active
  * session's default model selection when it's still empty.

@@ -136,6 +136,30 @@ describe('NodeRouteResolver', () => {
     releaseLan?.(true)
   })
 
+  it('SSH preferred + relay available → SSH chosen', async () => {
+    const ssh: EndpointProfile = { endpointId: 'ssh', kind: 'ssh-forward', label: 'ssh', target: 'me@box' }
+    const relay: EndpointProfile = {
+      endpointId: 'relay', kind: 'relay', label: 'relay', target: 'wss://relay.example', relay: { roomId: ROOM },
+    }
+    const openSshForward = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      return 'http://127.0.0.1:40000'
+    })
+    const routes = new NodeRouteResolver({
+      probe: async () => false,
+      discoverLan: async () => [],
+      openSshForward,
+      relayOnline: async () => true,
+      lanRelayGraceMs: 15,
+    })
+    await expect(routes.resolve({
+      environmentId: 'env-ssh',
+      endpointProfiles: [relay, ssh],
+      preferredEndpointId: 'ssh',
+    })).resolves.toMatchObject({ path: 'ssh', baseUrl: 'http://127.0.0.1:40000', endpointId: 'ssh' })
+    expect(openSshForward).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps Tailscale ahead of the relay when LAN is already down', async () => {
     const probe = vi.fn(async (url: string) => url.includes('100.80.0.2'))
     const routes = new NodeRouteResolver({

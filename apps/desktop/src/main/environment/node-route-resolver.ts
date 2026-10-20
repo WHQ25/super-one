@@ -137,9 +137,9 @@ export class NodeRouteResolver {
    * Direct probes and relay presence together. A discovered LAN address wins
    * as soon as it answers. The relay is taken when it is up and nothing better
    * answers within the grace — including an mDNS browse that has not finished.
-   * An SSH tunnel is opened only when no direct route and no relay answered,
-   * never in parallel just because the relay was fast. A probe abandoned
-   * because another route won is not marked failed.
+   * A preferred SSH forward is opened first: that profile is only ordered when
+   * the user chose it, and an available relay must not skip it. A probe
+   * abandoned because another route won is not marked failed.
    */
   private async race(
     target: NodeRouteTarget,
@@ -175,7 +175,6 @@ export class NodeRouteResolver {
     const pending = new Set<NodeRouteCandidate>()
     const started = new Set<string>()
     const successes: ResolvedNodeRoute[] = []
-    const ssh: NodeRouteCandidate[] = []
     let discoverPending = true
     let relayCandidate: NodeRouteCandidate | undefined
     let relaySettled = false
@@ -201,14 +200,20 @@ export class NodeRouteResolver {
       return discoverPending && ceiling > 0
     }
 
+    // orderNodeRoutes includes an SSH forward only when it is the preferred
+    // profile. Open that tunnel before the race so relay presence cannot win
+    // first and skip it. A forward that does not open falls through.
+    const preferredSsh = initial.find((candidate) => candidate.path === 'ssh')
+    if (preferredSsh) {
+      const opened = await this.open(preferredSsh, target, { probe: false })
+      if (opened) return opened
+    }
+
     const start = (candidate: NodeRouteCandidate): void => {
       const id = `${candidate.profile.endpointId}|${candidate.profile.target}`
       if (started.has(id)) return
       started.add(id)
-      if (candidate.path === 'ssh') {
-        ssh.push(candidate)
-        return
-      }
+      if (candidate.path === 'ssh') return
       if (candidate.path === 'relay') {
         relayCandidate = candidate
         void this.open(candidate, target, { probe: false }).then(
@@ -292,11 +297,6 @@ export class NodeRouteResolver {
     const held = best()
     if (held) return finish(held)
     if (relayRoute) return finish(relayRoute)
-    const forward = ssh[0]
-    if (forward) {
-      const opened = await this.open(forward, target, { probe: false })
-      if (opened) return opened
-    }
     // No relay: the last direct address is still tried, the way a sequential
     // dial used its final candidate without a probe.
     if (!relayCandidate) {

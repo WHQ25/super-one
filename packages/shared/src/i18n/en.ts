@@ -2033,6 +2033,11 @@ export type Messages = {
     transcriptWindow: {
       earlierPart: string
       omitted: string
+      foldLoading_one: string
+      foldLoading_other: string
+      foldLoadingSteps: string
+      foldFailed: string
+      foldRetry: string
       loadEarlier: string
       loadNewer: string
       summarized: string
@@ -6683,6 +6688,11 @@ export const en: Messages = {
     transcriptWindow: {
       earlierPart: 'Earlier part of this message',
       omitted: 'Too large to show here',
+      foldLoading_one: 'Loading {{count}} more tool call…',
+      foldLoading_other: 'Loading {{count}} more tool calls…',
+      foldLoadingSteps: 'Loading more steps…',
+      foldFailed: 'Couldn’t load these steps',
+      foldRetry: 'Retry',
       loadEarlier: 'Load Earlier',
       loadNewer: 'Load Newer',
       summarized: 'Longer messages are summarized until expanded.',

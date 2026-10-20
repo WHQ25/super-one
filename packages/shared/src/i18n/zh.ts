@@ -2140,6 +2140,11 @@ export const zh: Messages = {
     transcriptWindow: {
       earlierPart: '这条消息的前面部分',
       omitted: '内容过大，无法在此显示',
+      foldLoading_one: '正在加载其余 {{count}} 次工具调用…',
+      foldLoading_other: '正在加载其余 {{count}} 次工具调用…',
+      foldLoadingSteps: '正在加载其余步骤…',
+      foldFailed: '这些步骤加载失败',
+      foldRetry: '重试',
       loadEarlier: '加载更早的内容',
       loadNewer: '加载更新的内容',
       summarized: '较长的消息先显示摘要，展开后加载全文。',

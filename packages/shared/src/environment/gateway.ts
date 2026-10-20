@@ -11,7 +11,7 @@ import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInpu
 import type { DraftListRequest, DraftRecord, DraftUpsertRequest } from './draft-rpc'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
 import type { SessionLoadRequest, SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
-import type { TranscriptWindowRequest, TranscriptWindowResult } from './transcript-window'
+import type { TranscriptFoldRequest, TranscriptFoldResult, TranscriptWindowRequest, TranscriptWindowResult } from './transcript-window'
 
 /**
  * Environment-scoped gateway — the only boundary desktop features should use
@@ -116,6 +116,8 @@ export interface SessionGateway {
    * older than the method, or without the read port, reject it as unserved.
    */
   transcriptWindow?(input: { session: SessionRef; holder: string } & Omit<TranscriptWindowRequest, 'sessionId'>): Promise<TranscriptWindowResult>
+  /** The next page behind a window's fold (`session.transcriptFold`); served wherever folds are. */
+  transcriptFold?(input: { session: SessionRef } & Omit<TranscriptFoldRequest, 'sessionId'>): Promise<TranscriptFoldResult>
   /**
    * Expand a summarized row (`remoteDetail`): its revision-0 text; later
    * packets for `subscriptionId` reach `onUpdate` (local only) until

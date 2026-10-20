@@ -1,3 +1,4 @@
+import type { AgentEvent } from '@superone/shared/agent-types'
 import type { SessionLoadResult } from '@superone/shared/environment'
 import {
   desktopWindowHolder,
@@ -7,7 +8,6 @@ import {
   type TranscriptWindowRequest,
   type TranscriptWindowResult,
 } from '@superone/shared/environment/transcript-window'
-import { MAX_WINDOW_BYTES } from '@superone/shared/transcript-window/select-window'
 import { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import {
   applyWindowResult,
@@ -16,11 +16,24 @@ import {
   type TranscriptWindowState,
 } from '@superone/shared/transcript-window/window-store'
 
-/** The server's ceiling. Ordinary turns stay whole; a longer transcript pages. */
+/**
+ * A tall desktop transcript: about three wide screens, not the phone's one
+ * short screen. Fold pages stay on DESKTOP_FOLD_BUDGET.
+ */
 export const DESKTOP_WINDOW_BUDGET: TranscriptWindowBudget = {
-  maxBytes: MAX_WINDOW_BYTES,
-  maxFragments: 256,
-  targetChars: 80_000,
+  maxBytes: 512 * 1024,
+  maxFragments: 160,
+  targetChars: 18_000,
+}
+
+/**
+ * One page behind a fold: about two dozen tool rows, not the transcript
+ * window. Opening Detail and each scroll down read another page.
+ */
+export const DESKTOP_FOLD_BUDGET: TranscriptWindowBudget = {
+  maxBytes: 128 * 1024,
+  maxFragments: 48,
+  targetChars: 6_000,
 }
 
 export interface DesktopWindowOpen {
@@ -48,6 +61,7 @@ export async function loadRemoteTranscriptWindow(
     holder: desktopWindowHolder(input.sessionId),
     budget: DESKTOP_WINDOW_BUDGET,
     includeState: !input.anchor,
+    folds: true,
     ...(input.anchor ? { anchor: input.anchor, direction: input.direction } : {}),
     ...(have && held && held.current.messages.length ? { have: windowCoverage(held.current.messages) } : {}),
   })
@@ -58,7 +72,9 @@ export async function loadRemoteTranscriptWindow(
     applied = mergeDesktopWindow(null, result, 'replace')
   }
   if (applied.missing.length) throw new Error('Transcript window is missing bodies')
-  const sync = new TranscriptWindowSync(applied.state)
+  // Keep the sync the fold pages were loaded into. A new one would drop them.
+  const sync = held ?? new TranscriptWindowSync(applied.state)
+  if (held) sync.replace(applied.state)
   return {
     held: sync,
     snapshot: {
@@ -87,6 +103,31 @@ export async function readDesktopSessionWindow(args: {
   } catch (error) {
     if (!isUnservedMethod(error)) throw error
     return { snapshot: await args.load(), held: null, via: 'load' }
+  }
+}
+
+/**
+ * Apply one desktop window patch and return the rows the chat should paint.
+ * Null when the patch no longer matches the held window: the caller reads it again.
+ * The fragment bodies stay in main; the renderer receives the materialized rows.
+ */
+export function presentDesktopWindowPatch(
+  sync: TranscriptWindowSync,
+  event: Extract<AgentEvent, { type: 'transcript_window' }>,
+): Extract<AgentEvent, { type: 'transcript_window' }> | null {
+  const changed = new Set(event.patch.messages.map((message) => message.id))
+  if (!sync.applyPatch(event.patch)) return null
+  const edges = { older: sync.current.older, newer: sync.current.newer, total: sync.current.total }
+  return {
+    ...event,
+    patch: {
+      messages: [],
+      total: edges.total,
+      ...(event.patch.removed?.length ? { removed: event.patch.removed } : {}),
+      ...(event.patch.order ? { order: event.patch.order } : {}),
+    },
+    rows: sync.messages().filter((message) => changed.has(message.id)),
+    edges,
   }
 }
 

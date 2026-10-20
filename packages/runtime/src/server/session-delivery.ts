@@ -7,6 +7,7 @@ import type { EnvironmentEventEnvelope, SessionLoadResult, SessionStreamFrame } 
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import { detailMessageId } from '../stream/delivery/projection'
 import { windowLiveEvent } from '../stream/delivery/window-projection'
+import { stripEventForRemote } from '../stream/delivery/remote-content'
 import { summarizesTranscripts } from '../stream/delivery-policy'
 import { desktopShowsSession } from '@superone/shared/environment/transcript-window'
 import type { SessionHostPort } from './rpc-context'
@@ -22,14 +23,21 @@ import type { SessionHostPort } from './rpc-context'
 type Messages = Pick<SessionHostPort, 'messages' | 'detailMessages' | 'detailMessage'>
 const detailMessages = (sessions: Messages, sessionId: string) => sessions.detailMessages?.(sessionId) ?? sessions.messages(sessionId)
 
-/** A load or history page as this connection receives it; loading over a summarizing link summarizes the session. */
+/**
+ * A load or history page as this connection receives it. Summarizing is a
+ * property of the link (phone or relay), not of a desktop transcript window:
+ * that window opens a view so its live rows are shells and an expand can
+ * subscribe, and must not make a later `session.load` return those shells.
+ */
 export function deliverLoad(result: SessionLoadResult, delivery: ConnectionDelivery | undefined): SessionLoadResult {
   if (!delivery) return result
-  if (summarizesTranscripts(delivery.policy) && !delivery.views.has(result.sessionId)) delivery.views.open(result.sessionId, true)
-  const messages = delivery.messages(result.messages, result.sessionId)
-  const activeTurn = result.activeTurn && delivery.messages(result.activeTurn, result.sessionId)
+  const summarize = summarizesTranscripts(delivery.policy)
+  if (summarize && !delivery.views.has(result.sessionId)) delivery.views.open(result.sessionId, true)
+  const deliverMessages = (messages: ChatMessage[]) => summarize ? delivery.messages(messages, result.sessionId) : messages
+  const messages = deliverMessages(result.messages)
+  const activeTurn = result.activeTurn && deliverMessages(result.activeTurn)
   const restore = result.restore && { ...result.restore,
-    ...(result.restore.realtimeThreadMessages ? { realtimeThreadMessages: delivery.messages(result.restore.realtimeThreadMessages, result.sessionId) } : {}),
+    ...(result.restore.realtimeThreadMessages ? { realtimeThreadMessages: deliverMessages(result.restore.realtimeThreadMessages) } : {}),
   }
   const state = { ...result.state }
   if (Array.isArray(state.queuedMessages)) {
@@ -41,7 +49,7 @@ export function deliverLoad(result: SessionLoadResult, delivery: ConnectionDeliv
   }
   const delivered = { ...result, state: delivery.policy.surface === 'phone' ? compactChatCoreState(state) : state,
     messages, ...(restore ? { restore } : {}), ...(activeTurn ? { activeTurn } : {}) }
-  return delivery.views.has(result.sessionId) ? { ...delivered, summarized: true } : delivered
+  return summarize ? { ...delivered, summarized: true } : delivered
 }
 
 /**
@@ -62,15 +70,26 @@ export function deliverFrame(
     const event = agentEventOf(envelope, sessions)
     if (!event) return [envelope]
     const sessionId = envelope.aggregateId
-    const summarized = delivery.views.has(sessionId)
-    if (summarized) changed.add(sessionId)
     const holdsWindow = delivery.windows.has(sessionId)
     if (holdsWindow) windowed.set(sessionId, envelope)
+    // A desktop showing the session takes the same window as a phone. Its link
+    // would otherwise leave tool bodies on the wire; open the summarized view
+    // so those rows are shells and an expand can subscribe to the detail.
+    // The view belongs to that window: once the desktop holder is gone, a link
+    // that does not itself summarize goes back to full rows.
+    const desktopView = holdsWindow && desktopShowsSession(delivery.windows.holderIds(sessionId))
+    if (!desktopView && delivery.views.has(sessionId) && !summarizesTranscripts(delivery.policy)) delivery.views.close(sessionId)
+    else if (desktopView && !delivery.views.has(sessionId)) delivery.views.open(sessionId, true)
+    const summarized = delivery.views.has(sessionId)
+    if (summarized) changed.add(sessionId)
     const shaped = delivery.event(event, sessionId, summarized ? sessions.messages(sessionId) : [])
-    // Withhold a session's content when every reader of it takes patches. A desktop
-    // showing the session (holder `desktop:<sessionId>`) keeps events for its own view.
-    const live = holdsWindow && !desktopShowsSession(delivery.windows.holderIds(sessionId))
-      ? shaped.flatMap((next) => windowLiveEvent(next) ?? [])
+    // Withhold content the window patch already carries. A desktop connection
+    // does not rewrite tool rows itself, so cap whatever is still forwarded.
+    const live = holdsWindow
+      ? shaped.flatMap((next) => {
+        const kept = windowLiveEvent(next)
+        return kept ? [desktopView ? stripEventForRemote(kept) : kept] : []
+      })
       : shaped
     return live.map((next) => ({ ...envelope, eventType: SESSION_DURABLE_EVENT.agentEvent,
       payload: envelope.eventType === SESSION_DURABLE_EVENT.userMessage ? { event: next } : { ...(envelope.payload as object), event: next } }))
@@ -86,7 +105,13 @@ export function deliverFrame(
       event.type === 'remote_detail'
         ? [{ sessionId, update: { subscriptionId: event.subscriptionId, revision: event.revision, offset: event.offset, text: event.text } }]
         : []) : [])
-  const dropped = delivery.windows.drainEvicted().map((item) => item.sessionId)
+  const evicted = delivery.windows.drainEvicted()
+  if (!summarizesTranscripts(delivery.policy)) {
+    for (const item of evicted) {
+      if (!desktopShowsSession(delivery.windows.holderIds(item.sessionId))) delivery.views.close(item.sessionId)
+    }
+  }
+  const dropped = evicted.map((item) => item.sessionId)
   const resnapshot = dropped.length ? [...new Set([...(frame.resnapshot ?? []), ...dropped])] : frame.resnapshot
   return { frame: { ...frame, events: foldDeltas(events), ...(resnapshot?.length ? { resnapshot } : {}) }, details }
 }

@@ -38,6 +38,8 @@ export interface NativeActionPorts {
   loadWindowPage?(placement: 'older' | 'newer' | 'latest'): Promise<Record<string, unknown>>
   /** The whole message behind a partial row, for copy. */
   loadFullMessage?(messageId: string): Promise<Record<string, unknown>>
+  /** The next page behind a fold; the row repaints with it. */
+  loadTranscriptFold?(messageId: string, fold: string): Promise<void>
   openLink(url: string): Promise<void>
   /** Reveal the file's folder in the native browser — the chip's secondary action. */
   openFile(path: string): Promise<void>
@@ -259,6 +261,10 @@ export async function resolveNativeRequest(
       const placement = payloadString(message, 'placement')
       if (placement !== 'older' && placement !== 'newer' && placement !== 'latest') throw new Error('Invalid window placement')
       result = await ports.loadWindowPage(placement)
+    } else if (message.action === 'loadTranscriptFold') {
+      if (!ports.loadTranscriptFold) throw new Error('History is unavailable')
+      await ports.loadTranscriptFold(payloadString(message, 'messageId'), payloadString(message, 'fold'))
+      result = { ok: true }
     } else if (message.action === 'loadFullMessage') {
       if (!ports.loadFullMessage) throw new Error('Message unavailable')
       result = await ports.loadFullMessage(payloadString(message, 'messageId'))

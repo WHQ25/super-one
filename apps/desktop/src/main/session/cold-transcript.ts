@@ -21,6 +21,7 @@ const CONTEXT_MATCH = `instr(content_json, '"appInstanceId"') > 0 OR instr(COALE
 export function openColdTranscript(sessionId: string): TranscriptAccess {
   return sqliteTranscript<ColdMessageRow>(getDb(), {
     table: 'chat_messages', idColumn: 'id', columns: MESSAGE_COLUMNS, sessionId, parse: rowToChatMessage,
+    boundarySql: `SELECT ${MESSAGE_COLUMNS} FROM chat_messages WHERE session_id = ? AND instr(COALESCE(metadata_json, ''), '"transcriptBoundary"') > 0 ORDER BY sort_order ASC`,
   })
 }
 

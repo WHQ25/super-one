@@ -666,6 +666,69 @@ describe('syncLiveSnapshots', () => {
   })
 })
 
+describe('remote transcript window', () => {
+  it('replaces the open session with the window rows and keeps the unsent bubble', () => {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid'
+    const local = { ...makeMessage('u-local', 'user'), providerId: 'local', content: [{ type: 'text' as const, text: 'sending' }] }
+    const shown = { ...makeMessage('a1', 'assistant'), content: [{ type: 'text' as const, text: 'old full body' }] }
+    proj._sessions = {
+      sid: {
+        ...createDefaultPerSessionState(), _historyHydrated: true, status: 'streaming',
+        messages: [shown, local],
+        transcriptWindow: { older: null, newer: null, total: 1, summarized: true },
+      },
+    }
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p' })
+    useChatStore.getState().handleAgentEvent({
+      type: 'transcript_window',
+      projectPath: '/p',
+      sessionId: 'sid',
+      holder: 'desktop:sid',
+      patch: { messages: [], total: 40 },
+      rows: [{
+        ...makeMessage('a1', 'assistant'),
+        content: [{ type: 'tool_use', toolName: 'Read', toolUseId: 't', input: '{}', status: 'complete', remoteDetail: '["a1","tool","t"]' }],
+      }],
+      edges: { older: { messageId: 'a1' }, newer: null, total: 40 },
+    })
+    const session = useChatStore.getState().projectSessions['/p']._sessions.sid
+    expect(session.messages.map((message) => message.id)).toEqual(['a1', 'u-local'])
+    expect(session.messages[0]?.content[0]).toMatchObject({ remoteDetail: '["a1","tool","t"]' })
+    expect(JSON.stringify(session.messages)).not.toContain('old full body')
+    expect(session.messages[1]?.content[0]).toMatchObject({ text: 'sending' })
+    expect(session.transcriptWindow).toEqual({ older: { messageId: 'a1' }, newer: null, total: 40, summarized: true })
+  })
+
+  it('updates the todo panel from a window row whose call is already gone', () => {
+    const proj = createDefaultProjectState()
+    proj._activeSessionId = 'sid'
+    const shown = { ...makeMessage('a1', 'assistant'), content: [{ type: 'text' as const, text: 'working' }] }
+    proj._sessions = {
+      sid: { ...createDefaultPerSessionState(), _historyHydrated: true, status: 'streaming', messages: [shown] },
+    }
+    useChatStore.setState({ projectSessions: { '/p': proj }, activeProject: '/p' })
+    useChatStore.getState().handleAgentEvent({
+      type: 'transcript_window',
+      projectPath: '/p',
+      sessionId: 'sid',
+      holder: 'desktop:sid',
+      patch: { messages: [], total: 1 },
+      rows: [{
+        ...makeMessage('a1', 'assistant'),
+        content: [{
+          type: 'todo_result', toolUseId: 'tw-1', summary: 'ok', todoToolName: 'TodoWrite',
+          toolTodos: [{ content: 'Ship the window', status: 'in_progress', taskId: '1', activeForm: 'Shipping' }],
+        }],
+      }],
+      edges: { older: null, newer: null, total: 1 },
+    })
+    const session = useChatStore.getState().projectSessions['/p']._sessions.sid
+    expect(session.todos['1']).toMatchObject({ subject: 'Ship the window', status: 'in_progress', activeForm: 'Shipping' })
+    expect(session.showTodos).toBe(true)
+  })
+})
+
 describe('stalled streaming status', () => {
   function seedIdleSession(messages: ChatMessage[] = []) {
     const proj = createDefaultProjectState()

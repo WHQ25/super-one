@@ -11,6 +11,7 @@ import type {
   EffortLevel,
   SessionSettingsPatch,
 } from '@superone/shared/agent-types'
+import { withCodexContents } from '@superone/shared/codex-content'
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { goalComposerAction } from '@superone/shared/session-goal'
@@ -22,6 +23,7 @@ import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { clearUnseenCompleted } from '../helpers/unseen-completed'
 import { applySessionActivity } from '../helpers/session-activity'
 import { applyControlHolder, applyRemoteControlChange, externalHolder } from '../helpers/remote-control'
+import { applyWindowRows, todoUpdatesFromWindow } from '../helpers/window-messages'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
@@ -200,6 +202,44 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    // A remote window is the transcript. Its rows replace what content events
+    // would have accumulated; an unsent local bubble stays put.
+    if (event.type === 'transcript_window') {
+      if (!eventSessionId || !event.rows) return
+      const rows = withCodexContents(event.rows)
+      const edges = event.edges
+      set((s) => {
+        const project = s.projectSessions[projectPath]
+        const session = project?._sessions[eventSessionId]
+        if (!project || !session) return {}
+        const todoPatch = todoUpdatesFromWindow(session, session.messages, rows)
+        return {
+          projectSessions: {
+            ...s.projectSessions,
+            [projectPath]: {
+              ...project,
+              _sessions: {
+                ...project._sessions,
+                [eventSessionId]: {
+                  ...session,
+                  ...(todoPatch ?? {}),
+                  messages: applyWindowRows(session.messages, rows, event.patch),
+                  ...(edges ? {
+                    transcriptWindow: {
+                      older: edges.older,
+                      newer: edges.newer,
+                      total: edges.total,
+                      ...(session.transcriptWindow?.summarized ? { summarized: true as const } : {}),
+                    },
+                  } : {}),
+                },
+              },
+            },
+          },
+        }
+      })
+      return
+    }
     if (event.type === 'remote_control_changed') {
       if (eventSessionId) set((s) => applyRemoteControlChange(s, projectPath, eventSessionId, event.released))
       return

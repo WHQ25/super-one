@@ -17,14 +17,35 @@ const capturedOrders = new Map<string, number>()
 export function contentKeys(content: readonly ContentBlock[]): string[] {
   const counts = new Map<string, number>()
   return content.map(block => {
+    // A window's fold stands where its first block stood and uses up the ordinals of the blocks behind it.
+    if (block.type === 'notice' && block.fold) {
+      for (const [kind, count] of Object.entries(block.fold.keyCounts ?? {})) counts.set(kind, (counts.get(kind) ?? 0) + count)
+      return block.fold.contentKey
+    }
     if (isToolUseBlock(block)) return `tool:${block.toolUseId}`
     if (isToolResultBlock(block)) return `result:${block.toolUseId}`
-    const parent = 'parentToolUseId' in block ? block.parentToolUseId ?? '' : ''
-    const kind = `${block.type}:${parent}`
+    const kind = contentKeyKind(block)
     const count = counts.get(kind) ?? 0
     counts.set(kind, count + 1)
     return `${kind}:${count}`
   })
+}
+
+function contentKeyKind(block: ContentBlock): string {
+  const parent = 'parentToolUseId' in block ? block.parentToolUseId ?? '' : ''
+  return `${block.type}:${parent}`
+}
+
+/** The `contentKey` and `keyCounts` of a fold over `content[start..end]`, given the turn's `contentKeys`. */
+export function contentKeySpan(content: readonly ContentBlock[], keys: readonly string[], start: number, end: number): { contentKey: string; keyCounts?: Record<string, number> } {
+  const keyCounts: Record<string, number> = {}
+  for (let i = start; i <= end; i++) {
+    const block = content[i]
+    if (isToolUseBlock(block) || isToolResultBlock(block)) continue
+    const kind = contentKeyKind(block)
+    keyCounts[kind] = (keyCounts[kind] ?? 0) + 1
+  }
+  return { contentKey: keys[start], ...(Object.keys(keyCounts).length ? { keyCounts } : {}) }
 }
 
 export function blockText(block: ContentBlock): string | undefined {

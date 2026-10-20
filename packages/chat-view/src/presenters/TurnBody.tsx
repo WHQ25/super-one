@@ -6,6 +6,7 @@ import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { SuggestedTaskState } from '@superone/shared/suggested-task'
 import {
   collapsibleItems,
+  compactTurnRuns,
   countVisibleClaudeProcessSegments,
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
   partitionTurnForCompactMode,
@@ -18,6 +19,7 @@ import { renderTurnSegments, type TurnSegmentProps } from './turn-segments'
 import { ReviewMarkerPresenter, TurnNoticePresenter } from './TurnMarkers'
 import { assistantMessageProps, stringProp, toolGroupProps, toolUseProps, type ToolCallFacts } from '../mod-ui/site-props'
 import type { TurnProcessStats } from './turn-process-stats'
+import type { TurnFoldPresenterProps } from './TranscriptFold'
 
 /** One rendered run of a turn — see `partitionTurnForCompactMode`. */
 export interface TurnDetailRun {
@@ -157,6 +159,8 @@ export interface TurnBodyPresenterParts {
   ToolGroup: ComponentType<TurnToolGroupPresenterProps>
   AppToolGroup: ComponentType<TurnAppToolGroupPresenterProps>
   TurnDetail: ComponentType<TurnDetailPresenterProps>
+  /** Process a transcript window folded; it reads its pages through the host. */
+  Fold: ComponentType<TurnFoldPresenterProps>
 }
 
 export interface TurnBodyPresenterRuntime {
@@ -353,7 +357,7 @@ export function TurnBlockPresenter({
     case 'review':
       return <ReviewMarkerPresenter block={block} />
     case 'notice':
-      return <TurnNoticePresenter block={block} />
+      return block.fold ? <parts.Fold fold={block.fold} /> : <TurnNoticePresenter block={block} />
     // The phone's projection splits Bash and Todo results out of `tool_result`;
     // all three fold into the row above rather than printing a block of their own.
     case 'tool_result':
@@ -569,9 +573,9 @@ export function TurnBodyPresenter({
     runtime,
   }
   if (!detailChatMode && !isStreaming) {
-    const runs = partitionTurnForCompactMode(segments, runtime.isPinnedSegment,
-      compactTurn?.following?.segments.some(runtime.isPinnedSegment),
-      compactTurn?.grouped.segments.some(runtime.isPinnedSegment))
+    const runs = compactTurnRuns(segments, runtime.isPinnedSegment, compactTurn
+      ? { source: compactTurn.grouped.segments, following: compactTurn.following?.segments }
+      : undefined)
     const processGrouped = compactTurn?.grouped ?? grouped
     const processOptions = {
       toolResultAt: (id: string) => processGrouped.toolResultMap.get(id),

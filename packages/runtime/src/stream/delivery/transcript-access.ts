@@ -11,6 +11,8 @@ export interface TranscriptAccess {
   indexOf(messageId: string): number
   /** Stored rows parsed so far. Omitted when the transcript is already in memory. */
   parsed?(): number
+  /** Rows that carry a transcript boundary. Omitted when the caller already has the transcript. */
+  boundaryMessages?(): readonly ChatMessage[]
 }
 
 function missingRow(): Error {
@@ -28,11 +30,12 @@ export function arrayTranscript(messages: readonly ChatMessage[]): TranscriptAcc
       return message
     },
     indexOf: (messageId) => (ids ??= new Map(messages.map((message, index) => [message.id, index]))).get(messageId) ?? -1,
+    boundaryMessages: () => messages.filter((message) => message.metadata?.transcriptBoundary),
   }
 }
 
 interface SqliteReads {
-  prepare(sql: string): { get(...params: unknown[]): unknown }
+  prepare(sql: string): { get(...params: unknown[]): unknown; all?(...params: unknown[]): unknown[] }
 }
 
 /**
@@ -48,6 +51,8 @@ export function sqliteTranscript<Row extends { sort_order: number }>(db: SqliteR
   columns: string
   sessionId: string
   parse(row: Row): ChatMessage
+  /** Selects the same columns, one `?` for the session id, only rows that carry a transcript boundary. */
+  boundarySql?: string
 }): TranscriptAccess {
   const { table, idColumn, columns, sessionId } = input
   const total = (db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ?`).get(sessionId) as { count: number }).count
@@ -58,6 +63,7 @@ export function sqliteTranscript<Row extends { sort_order: number }>(db: SqliteR
   const countBefore = db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ? AND sort_order < ?`)
   const byIndex = new Map<number, { message: ChatMessage; sortOrder: number }>()
   const idIndex = new Map<string, number>()
+  let boundaries: ChatMessage[] | undefined
   return {
     count: total,
     parsed: () => byIndex.size,
@@ -87,6 +93,14 @@ export function sqliteTranscript<Row extends { sort_order: number }>(db: SqliteR
       if (index >= total) return -1
       idIndex.set(messageId, index)
       return index
+    },
+    boundaryMessages() {
+      if (!input.boundarySql) return []
+      if (!boundaries) {
+        const rows = db.prepare(input.boundarySql).all?.(sessionId) as Row[] | undefined
+        boundaries = (rows ?? []).map((row) => input.parse(row))
+      }
+      return boundaries
     },
   }
 }

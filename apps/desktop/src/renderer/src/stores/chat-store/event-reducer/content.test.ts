@@ -214,6 +214,78 @@ describe('reduceContentDelta: TaskUpdate tool result', () => {
   })
 })
 
+describe('reduceContentDelta: todo_result without the call', () => {
+  it('replaces the list from a TodoWrite todo_result', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceContentDelta(session, {
+      type: 'content_delta', messageId: 'm1',
+      delta: {
+        type: 'todo_result', toolUseId: 'tw-1', summary: 'ok', todoToolName: 'TodoWrite',
+        toolTodos: [
+          { content: 'first', status: 'completed', taskId: '1', activeForm: 'doing first' },
+          { content: 'second', status: 'pending', taskId: '2' },
+        ],
+      },
+    } as never)
+    expect(Object.keys(patch.todos ?? {})).toEqual(['1', '2'])
+    expect(patch.todos?.['1']).toMatchObject({ subject: 'first', status: 'completed', activeForm: 'doing first' })
+    expect(patch._nextTodoId).toBe(3)
+    expect(patch.showTodos).toBe(true)
+  })
+
+  it('upserts TaskCreate by taskId and does not bump the counter again', () => {
+    const session = createDefaultPerSessionState()
+    session._nextTodoId = 7
+    session.todos = { 'task-abc': { id: 'task-abc', subject: 'alpha', description: 'keep', status: 'pending' } as never }
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceContentDelta(session, {
+      type: 'content_delta', messageId: 'm1',
+      delta: {
+        type: 'todo_result', toolUseId: 'tc-1', summary: 'ok', todoToolName: 'TaskCreate',
+        toolTodos: [{ content: 'alpha', status: 'pending', taskId: 'task-abc', subject: 'alpha', description: 'now', activeForm: 'doing' }],
+      },
+    } as never)
+    expect(patch.todos?.['task-abc']).toMatchObject({ subject: 'alpha', description: 'now', activeForm: 'doing' })
+    expect(patch._nextTodoId).toBeUndefined()
+    expect(Object.keys(patch.todos ?? {})).toEqual(['task-abc'])
+  })
+
+  it('merges a TaskUpdate and deletes a task that is already gone as a no-op', () => {
+    const session = createDefaultPerSessionState()
+    session.todos = { '5': { id: '5', subject: 'x', description: '', status: 'pending', blockedBy: ['1'] } as never }
+    session.messages = [makeAssistant('m1')]
+    const merged = reduceContentDelta(session, {
+      type: 'content_delta', messageId: 'm1',
+      delta: {
+        type: 'todo_result', toolUseId: 'tu-1', summary: 'ok', todoToolName: 'TaskUpdate',
+        toolTodos: [{ content: 'updated', status: 'in_progress', taskId: '5', subject: 'updated', description: 'more', owner: 'ada', addBlockedBy: ['1', '3'] }],
+      },
+    } as never)
+    expect(merged.todos?.['5']).toMatchObject({
+      status: 'in_progress', subject: 'updated', description: 'more', owner: 'ada', blockedBy: ['1', '3'],
+    })
+    const gone = reduceContentDelta({ ...session, todos: {} }, {
+      type: 'content_delta', messageId: 'm1',
+      delta: {
+        type: 'todo_result', toolUseId: 'tu-2', summary: 'ok', todoToolName: 'TaskUpdate',
+        toolTodos: [{ content: '', status: 'deleted', taskId: 'missing' }],
+      },
+    } as never)
+    expect(gone.todos).toBeUndefined()
+  })
+
+  it('does not change the list when the result carries no items', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceContentDelta(session, {
+      type: 'content_delta', messageId: 'm1',
+      delta: { type: 'todo_result', toolUseId: 'tw-1', summary: 'failed', todoToolName: 'TodoWrite' },
+    } as never)
+    expect(patch.todos).toBeUndefined()
+  })
+})
+
 describe('reduceContentDelta: EnterPlanMode / ExitPlanMode', () => {
   it('switches permissionMode to plan when EnterPlanMode tool_result lands', () => {
     const session = createDefaultPerSessionState()

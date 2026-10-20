@@ -1,14 +1,19 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { readableContent } from '@superone/shared/codex-content'
 import type {
+  TranscriptFoldRequest,
+  TranscriptFoldResult,
   TranscriptWindowBudget,
   TranscriptWindowFragment,
   TranscriptWindowMessage,
   TranscriptWindowPatch,
   TranscriptWindowRequest,
 } from '@superone/shared/environment/transcript-window'
-import { utf8Length } from '@superone/shared/transcript-window/content-digest'
+import { contentDigest, utf8Length } from '@superone/shared/transcript-window/content-digest'
+import { foldMessageFragments, foldRevision, selectFoldPage, type FoldedFragments } from '@superone/shared/transcript-window/folds'
 import { fragmentDigest, MessageFragmenter, textBody, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
 import { selectTranscriptWindow, type SelectedWindow, type WindowSource } from '@superone/shared/transcript-window/select-window'
+import { planProcessFolds, type ProcessFoldPlan } from '@superone/chat-core/turn-process/process-folds'
 import { projectWindowMessage } from './window-projection'
 import { arrayTranscript, type TranscriptAccess } from './transcript-access'
 
@@ -47,32 +52,81 @@ interface HeldWindow {
   total: number
   /** Source object per held message, to find what changed. */
   seen: Map<string, ChatMessage>
+  /** The holder takes folds, so its window and patches cut settled process down to them. */
+  folds: boolean
 }
+
+interface FoldedView { fragments: FoldedFragments; plan: ProcessFoldPlan }
 
 /** One session's fragmenting, shared by its holders on a connection. */
 class SessionFragments {
+  /** Times a message was fragmented and planned. A reparsed copy of the same content does not count. */
+  plans = 0
   private readonly fragmenter = new MessageFragmenter()
-  private readonly cache = new WeakMap<ChatMessage, MessageFragments>()
+  private readonly cache = new WeakMap<ChatMessage, { projected: ChatMessage; fragments: MessageFragments }>()
+  private readonly foldedCache = new WeakMap<ChatMessage, { cutKey: string; view: FoldedView }>()
+  /** Last plan for a message id, so a newly parsed row does not plan the message again. */
+  private readonly bySignature = new Map<string, { contentKey: string; cutKey: string; view: FoldedView }>()
 
-  of(message: ChatMessage): MessageFragments {
-    let fragments = this.cache.get(message)
-    if (!fragments) {
-      fragments = this.fragmenter.fragment(projectWindowMessage(message))
-      this.cache.set(message, fragments)
-    }
-    return fragments
+  of(message: ChatMessage, folds = false, cuts?: readonly ChatMessage[]): MessageFragments {
+    return folds ? this.folded(message, cuts).fragments : this.entry(message).fragments
   }
 
-  source(transcript: TranscriptAccess): WindowSource {
+  /**
+   * The message with the process its settled turn collapses cut down to folds.
+   * `cuts` are the other rows that split this turn. A later read of the same
+   * content, parsed into a new object, reuses the plan; pass `cuts` only when
+   * they may have changed.
+   */
+  folded(message: ChatMessage, cuts?: readonly ChatMessage[]): FoldedView {
+    const cutKey = foldCutKey(cuts)
+    const cached = this.foldedCache.get(message)
+    // A page read omits the cuts and keeps the plan the window was cut with.
+    // A new cut on the same object plans again.
+    if (cached && (cuts === undefined || cached.cutKey === cutKey)) return cached.view
+    const contentKey = foldContentKey(message)
+    const stored = this.bySignature.get(message.id)
+    if (stored && stored.contentKey === contentKey && (cuts === undefined || stored.cutKey === cutKey)) {
+      this.foldedCache.set(message, { cutKey: stored.cutKey, view: stored.view })
+      return stored.view
+    }
+    this.plans++
+    const { projected, fragments } = this.entry(message)
+    // Fragment block indexes count `readableContent`; the plan reads the same blocks.
+    const content = readableContent(projected)
+    const planning = content === projected.content ? projected : { ...projected, content: [...content] }
+    const plan = planProcessFolds(planning, cuts?.length ? { cuts } : undefined)
+    const view = { fragments: foldMessageFragments(fragments, plan.ranges), plan }
+    this.bySignature.set(message.id, { contentKey, cutKey, view })
+    this.foldedCache.set(message, { cutKey, view })
+    return view
+  }
+
+  source(transcript: TranscriptAccess, folds = false, cuts?: ReadonlyMap<string, readonly ChatMessage[]>): WindowSource {
     return {
       count: transcript.count,
-      at: (index) => this.of(transcript.messageAt(index)),
+      at: (index) => {
+        const message = transcript.messageAt(index)
+        return this.of(message, folds, cuts?.get(message.id))
+      },
       indexOf: (messageId) => transcript.indexOf(messageId),
     }
   }
 
+  private entry(message: ChatMessage): { projected: ChatMessage; fragments: MessageFragments } {
+    let entry = this.cache.get(message)
+    if (!entry) {
+      const projected = projectWindowMessage(message)
+      entry = { projected, fragments: this.fragmenter.fragment(projected) }
+      this.cache.set(message, entry)
+    }
+    return entry
+  }
+
   retain(messages: Iterable<string>): void {
-    this.fragmenter.retain(messages)
+    const keep = new Set(messages)
+    this.fragmenter.retain(keep)
+    for (const id of this.bySignature.keys()) if (!keep.has(id)) this.bySignature.delete(id)
   }
 }
 
@@ -84,11 +138,18 @@ class SessionFragments {
  */
 export class WindowViews {
   private readonly sessions = new Map<string, { fragments: SessionFragments; holders: Map<string, HeldWindow> }>()
+  /** Fold plans for a session this connection has not opened a window on yet. */
+  private readonly spare = new Map<string, SessionFragments>()
   /** Holders the 64-window cap dropped since the last drain. Switching a holder off a session is not an eviction. */
   private readonly evicted: EvictedWindowHolder[] = []
 
   has(sessionId: string): boolean {
     return (this.sessions.get(sessionId)?.holders.size ?? 0) > 0
+  }
+
+  /** How many times this connection fragmented a message to plan its folds. */
+  plannedFolds(sessionId: string): number {
+    return this.fragmentsFor(sessionId).plans
   }
 
   /** Holder ids following `sessionId`, oldest serve first. */
@@ -108,19 +169,22 @@ export class WindowViews {
     messages?: readonly ChatMessage[]
     /** Absolute-index transcript. `count` is the real length even when only a tail was parsed. */
     transcript?: TranscriptAccess
-    request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have'>
+    request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have' | 'folds'>
     budget: TranscriptWindowBudget
   }): SelectedWindow & { total: number } {
     const transcript = input.transcript ?? (input.messages ? arrayTranscript(input.messages) : null)
     if (!transcript) throw new Error('transcript window needs messages')
+    const folds = input.request.folds === true
     const session = this.session(input.sessionId)
-    const selected = selectTranscriptWindow(session.fragments.source(transcript), input.request, input.budget)
+    const cuts = boundaryCuts(input.messages ?? transcript.boundaryMessages?.() ?? [])
+    const selected = selectTranscriptWindow(session.fragments.source(transcript, folds, cuts), input.request, input.budget)
     const extend = input.request.anchor && input.request.direction !== 'around' ? input.request.direction ?? 'before' : null
     const previous = session.holders.get(input.holder)
-    const held = extend && previous ? previous : { messages: new Map(), order: [], atTail: false, total: 0, seen: new Map() }
+    const held: HeldWindow = extend && previous?.folds === folds ? previous
+      : { messages: new Map(), order: [], atTail: false, total: 0, seen: new Map(), folds }
     for (const message of selected.messages) {
       const source = transcript.messageAt(message.index)
-      const fragments = session.fragments.of(source)
+      const fragments = session.fragments.of(source, folds, cuts.get(source.id))
       // A joined message keeps the source the client last caught up with, so the next diff still sends what changed since.
       if (!held.messages.has(message.id)) held.seen.set(message.id, source)
       recordMessage(held, message, fragments, extend === 'before' ? 'before' : extend === 'after' ? 'after' : null)
@@ -148,9 +212,10 @@ export class WindowViews {
   patches(sessionId: string, messages: readonly ChatMessage[]): Array<{ holder: string; patch: TranscriptWindowPatch }> {
     const session = this.sessions.get(sessionId)
     if (!session) return []
+    const cuts = boundaryCuts(messages)
     const out: Array<{ holder: string; patch: TranscriptWindowPatch }> = []
     for (const [holder, held] of session.holders) {
-      const patch = diffHeld(held, messages, session.fragments)
+      const patch = diffHeld(held, messages, session.fragments, cuts)
       if (patch) out.push({ holder, patch })
     }
     if (out.length) {
@@ -158,6 +223,34 @@ export class WindowViews {
       this.touch(sessionId)
     }
     return out
+  }
+
+  /**
+   * The page behind fold `request.fold` of `message`, cut as this
+   * connection's windows cut it. It changes no held window: the fold stays
+   * one fragment there, and its pages live with the client.
+   */
+  fold(sessionId: string, message: ChatMessage, request: Pick<TranscriptFoldRequest, 'fold' | 'revision' | 'after'>, budget: TranscriptWindowBudget): TranscriptFoldResult {
+    const fragments = this.fragmentsFor(sessionId)
+    const view = fragments.folded(message)
+    // With no window to retain against, keep only the message being paged.
+    if (!this.sessions.has(sessionId)) fragments.retain([message.id])
+    const inner = view.fragments.folds.get(request.fold)
+    if (!inner) throw Object.assign(new Error('Fold no longer exists'), { code: 'not_found' })
+    if (foldRevision(inner.entries) !== request.revision) throw Object.assign(new Error('Fold changed'), { code: 'failed_precondition' })
+    const page = selectFoldPage(inner, request.after, budget)
+    if (!page) throw Object.assign(new Error('Fold page anchor no longer exists'), { code: 'not_found' })
+    const rest = page.end < inner.entries.length
+      ? { ...view.plan.summarize(inner.blocks[page.end], inner.blocks[inner.blocks.length - 1]), fragments: inner.entries.length - page.end }
+      : null
+    return {
+      sessionId,
+      messageId: message.id,
+      fold: request.fold,
+      revision: request.revision,
+      fragments: inner.entries.slice(page.start, page.end).map(({ key, digest, body }) => ({ key, digest, body })),
+      rest,
+    }
   }
 
   close(sessionId: string, holder?: string): void {
@@ -173,8 +266,29 @@ export class WindowViews {
 
   private session(sessionId: string) {
     let session = this.sessions.get(sessionId)
-    if (!session) this.sessions.set(sessionId, session = { fragments: new SessionFragments(), holders: new Map() })
+    if (!session) {
+      const fragments = this.spare.get(sessionId) ?? new SessionFragments()
+      this.spare.delete(sessionId)
+      this.sessions.set(sessionId, session = { fragments, holders: new Map() })
+    }
     return session
+  }
+
+  /** The fragmenter a window already holds, or the one fold pages keep warm. */
+  private fragmentsFor(sessionId: string): SessionFragments {
+    const held = this.sessions.get(sessionId)
+    if (held) return held.fragments
+    let fragments = this.spare.get(sessionId)
+    if (!fragments) {
+      fragments = new SessionFragments()
+      this.spare.set(sessionId, fragments)
+      while (this.spare.size > MAX_HELD) {
+        const oldest = this.spare.keys().next().value
+        if (oldest === undefined) break
+        this.spare.delete(oldest)
+      }
+    }
+    return fragments
   }
 
   /** Most recently used sessions last, so eviction takes the stalest first. */
@@ -205,6 +319,30 @@ export class WindowViews {
       if (!session.holders.size) this.sessions.delete(sessionId)
     }
   }
+}
+
+function boundaryCuts(messages: readonly ChatMessage[]): Map<string, ChatMessage[]> {
+  const cuts = new Map<string, ChatMessage[]>()
+  for (const message of messages) {
+    const id = message.metadata?.transcriptBoundary?.messageId
+    if (!id || id === message.id) continue
+    const list = cuts.get(id)
+    if (list) list.push(message)
+    else cuts.set(id, [message])
+  }
+  return cuts
+}
+
+function foldContentKey(message: ChatMessage): string {
+  return contentDigest(JSON.stringify([message.role, message.status, readableContent(message)]))
+}
+
+function foldCutKey(cuts: readonly ChatMessage[] | undefined): string {
+  if (!cuts?.length) return ''
+  return cuts.map((cut) => {
+    const boundary = cut.metadata?.transcriptBoundary
+    return `${cut.id}:${boundary?.order ?? ''}:${JSON.stringify(boundary?.content ?? {})}`
+  }).join('|')
 }
 
 function recordMessage(held: HeldWindow, message: TranscriptWindowMessage, fragments: MessageFragments, join: 'before' | 'after' | null): void {
@@ -243,7 +381,7 @@ function heldFragment(digest: string, body: MessageFragments['fragments'][number
  * digest moved; a grown text slice sends its new tail). New messages at a tail
  * window enter with their newest fragments under the live budget.
  */
-function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments: SessionFragments): TranscriptWindowPatch | null {
+function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments: SessionFragments, cuts: ReadonlyMap<string, readonly ChatMessage[]>): TranscriptWindowPatch | null {
   const index = new Map(messages.map((message, i) => [message.id, i]))
   const present = held.order.filter((id) => index.has(id))
   const removed = held.order.filter((id) => !index.has(id))
@@ -263,7 +401,7 @@ function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments:
   for (let r = range.length - 1; r >= 0; r--) {
     const source = messages[range[r]]
     if (held.seen.get(source.id) === source && held.messages.has(source.id)) continue
-    const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source), range[r], Math.max(0, Math.min(LIVE_MESSAGE_BUDGET.maxBytes, remaining)))
+    const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source, held.folds, cuts.get(source.id)), range[r], Math.max(0, Math.min(LIVE_MESSAGE_BUDGET.maxBytes, remaining)))
     const bytes = message ? patchBytes(message) : 0
     if (bytes > remaining && changed.length) { start = r + 1; break }
     remaining -= bytes

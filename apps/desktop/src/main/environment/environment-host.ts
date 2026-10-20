@@ -68,7 +68,7 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
-import { readDesktopSessionWindow } from './remote-transcript-window'
+import { DESKTOP_FOLD_BUDGET, presentDesktopWindowPatch, readDesktopSessionWindow } from './remote-transcript-window'
 import { desktopWindowHolder } from '@superone/shared/environment/transcript-window'
 import type { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import { MAX_HELD } from '@superone/runtime/stream/delivery/window-views'
@@ -114,7 +114,7 @@ import type {
   DraftUpsertRequest,
   ProjectSnapshot,
 } from '@superone/shared/environment'
-import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { ChatMessage, PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { SESSION_CALL_METHODS, SESSION_CALL_READS, type SessionCallMethod, type SessionCallMethods, type SessionForkRequestInput, type SessionPermissionAnswer, type SessionPlanAnswer, type SessionQuestionAnswer, type SessionSendRequest, type SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { getScheduledSend, getScheduledSendRemoteTarget } from '../db-scheduled-sends'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
@@ -216,6 +216,12 @@ interface RemoteSessionOpen extends RemoteSessionTarget {
   transcript?: boolean
   anchor?: { messageId: string; key?: string }
   direction?: 'before' | 'after' | 'around'
+}
+
+/** A fold read the host rejected because the revision the chat holds is gone. */
+function isStaleFoldRead(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code
+  return code === 'failed_precondition' || code === 'not_found'
 }
 
 export class EnvironmentHost {
@@ -1757,6 +1763,7 @@ export class EnvironmentHost {
           holder: request.holder,
           budget: request.budget,
           includeState: request.includeState,
+          ...(request.folds ? { folds: true } : {}),
           ...(request.anchor ? { anchor: request.anchor, direction: request.direction } : {}),
           ...(request.have ? { have: request.have } : {}),
         }),
@@ -1773,6 +1780,46 @@ export class EnvironmentHost {
     let snapshot: SessionLoadResult | null = null
     await this.followRemoteSession(connectionId, input, async () => (snapshot = await read()).cursor.version)
     return snapshot ?? await read()
+  }
+
+  /**
+   * The next page behind a fold of a remote session's held window, joined
+   * into it. Returns the row with the page in place, for the chat to swap in.
+   * Main holds the fold's revision and the pages already read, so the chat
+   * names only the row and the fold.
+   */
+  async loadRemoteFold(connectionId: string, input: { sessionId: string; messageId: string; fold: string }): Promise<ChatMessage> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const key = this.sessionCursorKey(connectionId, input.sessionId)
+    const sync = this.remoteWindows.get(key)
+    const request = sync?.foldRequest(input.messageId, input.fold)
+    if (!sync || !request || !gateway.sessions.transcriptFold) {
+      this.resyncFollowed(connectionId, key)
+      throw Object.assign(new Error('History changed'), { code: 'not_found' })
+    }
+    const page = await gateway.sessions.transcriptFold({
+      session: { environmentId, sessionId: input.sessionId },
+      messageId: input.messageId, fold: input.fold, revision: request.revision,
+      ...(request.after ? { after: request.after } : {}),
+      budget: DESKTOP_FOLD_BUDGET,
+    }).catch((error: unknown) => {
+      if (isStaleFoldRead(error)) this.resyncFollowed(connectionId, key)
+      throw error
+    })
+    const message = this.remoteWindows.get(key) === sync && sync.applyFoldPage(page, request.after)
+      ? sync.messages().find((candidate) => candidate.id === input.messageId) : undefined
+    if (!message) {
+      this.resyncFollowed(connectionId, key)
+      throw Object.assign(new Error('History changed'), { code: 'not_found' })
+    }
+    return message
+  }
+
+  /** The fold the chat holds is gone. Read the session again, the way the phone does. */
+  private resyncFollowed(connectionId: string, key: string): void {
+    const followed = this.followedSessions.get(key)
+    if (!followed) return
+    void followed.then((session) => this.resync(connectionId, session.input)).catch(() => {})
   }
 
   /**
@@ -1808,9 +1855,14 @@ export class EnvironmentHost {
             notifySessionClosed({ environmentId: connectionId, sessionId: input.sessionId })
           }
           for (const agentEvent of mapper.map(envelope)) {
-            if (agentEvent.type === 'transcript_window' && agentEvent.holder === holder) {
+            if (agentEvent.type === 'transcript_window') {
+              // Other holders on this connection belong to phones this desktop relays.
+              if (agentEvent.holder !== holder) continue
               const sync = this.remoteWindows.get(key)
-              if (sync && !sync.applyPatch(agentEvent.patch)) this.resync(connectionId, input)
+              const presented = sync && presentDesktopWindowPatch(sync, agentEvent)
+              if (sync && !presented) this.resync(connectionId, input)
+              else if (presented) this.agentEventSink?.(presented)
+              continue
             }
             this.agentEventSink?.(agentEvent)
           }

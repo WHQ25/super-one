@@ -1161,6 +1161,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       direction?: 'before' | 'after' | 'around'
     },
   ): Promise<SessionLoadResult>
+  /** The next page behind a fold of a remote session's window: the row with the page joined in. */
+  loadTranscriptFold(connectionId: string, input: { sessionId: string; messageId: string; fold: string }): Promise<import('@superone/shared/agent-types').ChatMessage>
   /** Expand a summarized row of a session: its revision-0 detail; packets follow as `remote_detail` events. */
   subscribeDetail(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate>
   unsubscribeDetail(target: DetailTarget, subscriptionId: string): Promise<void>

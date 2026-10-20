@@ -47,7 +47,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.75.0",
+      "version": "0.75.2",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.4.0",
         "@ai-sdk/google": "^4.0.62",
@@ -478,6 +478,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@superone/shared": "workspace:*",
+        "diff": "^8.0.3",
       },
       "devDependencies": {
         "typescript": "^5.8.3",

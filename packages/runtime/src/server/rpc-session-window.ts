@@ -1,5 +1,7 @@
 import { OPERATION_SCOPES } from '@superone/shared/environment'
 import {
+  DESKTOP_WINDOW_HOLDER_PREFIX,
+  TRANSCRIPT_FOLD_METHOD,
   TRANSCRIPT_WINDOW_METHOD,
   TRANSCRIPT_WINDOW_SCHEMA,
   type TranscriptWindowAnchor,
@@ -35,9 +37,9 @@ export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcCo
   if ('error' in target) return target
   const parsed = parseWindowRequest(p)
   if ('error' in parsed) return parsed
-  const { anchor, direction, viewport, budget, have, holder } = parsed
+  const { anchor, direction, viewport, budget, have, holder, folds } = parsed
   const includeState = parsed.includeState ?? !anchor
-  const request = { anchor, direction, have }
+  const request = { anchor, direction, have, folds }
   const limits = windowBudget({ budget, viewport })
   try {
     if (sessions.readTranscriptWindow) {
@@ -64,7 +66,7 @@ function windowResult(
   ctx: RpcContext,
   sessionId: string,
   holder: string,
-  request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have'>,
+  request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have' | 'folds'>,
   budget: TranscriptWindowBudget,
   view: TranscriptWindowView,
   includeState: boolean,
@@ -77,6 +79,11 @@ function windowResult(
     request,
     budget,
   })
+  // The desktop paints this window and loads a row's body when it is opened.
+  // The view shells live rows only. `deliverLoad` does not summarize a direct
+  // link, so the window result says so itself.
+  const desktopWindow = Boolean(delivery) && holder.startsWith(DESKTOP_WINDOW_HOLDER_PREFIX)
+  if (desktopWindow) delivery?.views.open(sessionId, true)
   const shaped = deliverLoad({
     sessionId,
     state: view.state,
@@ -94,28 +101,51 @@ function windowResult(
     total: selected.total,
     ...(includeState ? { state: shaped.state, ...(shaped.restore ? { restore: shaped.restore } : {}) } : {}),
     cursor: view.cursor,
-    ...(shaped.summarized ? { summarized: true as const } : {}),
+    ...(shaped.summarized || desktopWindow ? { summarized: true as const } : {}),
   }
   return { result }
 }
 
-type ParsedWindowRequest = Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'viewport' | 'have' | 'includeState'> & {
+/**
+ * `session.transcriptFold`: the next page behind a fold of a window this
+ * client holds, read by message id. Folds and their pages are cut the same
+ * way on every connection, so any connection may read them.
+ */
+export async function handleSessionTranscriptFold(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const sessions = ctx.sessions
+  if (!sessions) return mapThrown(unsupportedMethodError(TRANSCRIPT_FOLD_METHOD))
+  const p = asRecord(payload)
+  const target = readSessionTarget(p, sessions)
+  if ('error' in target) return target
+  if (typeof p.messageId !== 'string' || !p.messageId) return invalid('messageId must be a non-empty string')
+  if (typeof p.fold !== 'string' || !p.fold) return invalid('fold must be a non-empty string')
+  if (typeof p.revision !== 'string' || !p.revision) return invalid('revision must be a non-empty string')
+  if (p.after !== undefined && typeof p.after !== 'string') return invalid('after must be a string')
+  const limits = parseBudget(p)
+  if ('error' in limits) return limits
+  try {
+    const message = sessions.detailMessage
+      ? sessions.detailMessage(target.sessionId, p.messageId)
+      : sessions.messages(target.sessionId).find((candidate) => candidate.id === p.messageId)
+    if (!message) return { error: { code: 'not_found', message: 'History message no longer exists' } }
+    const result = (ctx.streams?.delivery?.windows ?? new WindowViews()).fold(target.sessionId, message, {
+      fold: p.fold, revision: p.revision, ...(typeof p.after === 'string' ? { after: p.after } : {}),
+    }, windowBudget(limits))
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+type ParsedWindowRequest = Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'viewport' | 'have' | 'includeState' | 'folds'> & {
   budget?: Partial<TranscriptWindowBudget>
   holder: string
 }
 
-function parseWindowRequest(p: Record<string, unknown>): ParsedWindowRequest | RpcFailure {
-  let anchor: TranscriptWindowAnchor | undefined
-  if (p.anchor !== undefined) {
-    const a = asRecord(p.anchor)
-    if (typeof a.messageId !== 'string' || !a.messageId) return invalid('anchor.messageId must be a non-empty string')
-    if (a.key !== undefined && typeof a.key !== 'string') return invalid('anchor.key must be a string')
-    anchor = { messageId: a.messageId, ...(typeof a.key === 'string' ? { key: a.key } : {}) }
-  }
-  if (p.direction !== undefined && p.direction !== 'before' && p.direction !== 'after' && p.direction !== 'around') {
-    return invalid('direction must be before|after|around')
-  }
-  if (p.direction !== undefined && !anchor) return invalid('direction requires an anchor')
+/** A request's `viewport` and `budget`, checked. */
+function parseBudget(p: Record<string, unknown>): Pick<TranscriptWindowRequest, 'viewport' | 'budget'> | RpcFailure {
   let viewport: TranscriptWindowRequest['viewport']
   if (p.viewport !== undefined) {
     const v = asRecord(p.viewport)
@@ -130,16 +160,34 @@ function parseWindowRequest(p: Record<string, unknown>): ParsedWindowRequest | R
     }
     budget = { maxBytes: b.maxBytes as number | undefined, maxFragments: b.maxFragments as number | undefined, targetChars: b.targetChars as number | undefined }
   }
+  return { ...(viewport ? { viewport } : {}), ...(budget ? { budget } : {}) }
+}
+
+function parseWindowRequest(p: Record<string, unknown>): ParsedWindowRequest | RpcFailure {
+  let anchor: TranscriptWindowAnchor | undefined
+  if (p.anchor !== undefined) {
+    const a = asRecord(p.anchor)
+    if (typeof a.messageId !== 'string' || !a.messageId) return invalid('anchor.messageId must be a non-empty string')
+    if (a.key !== undefined && typeof a.key !== 'string') return invalid('anchor.key must be a string')
+    anchor = { messageId: a.messageId, ...(typeof a.key === 'string' ? { key: a.key } : {}) }
+  }
+  if (p.direction !== undefined && p.direction !== 'before' && p.direction !== 'after' && p.direction !== 'around') {
+    return invalid('direction must be before|after|around')
+  }
+  if (p.direction !== undefined && !anchor) return invalid('direction requires an anchor')
+  const limits = parseBudget(p)
+  if ('error' in limits) return limits
   if (p.have !== undefined && !Array.isArray(p.have)) return invalid('have must be a list')
   if (p.includeState !== undefined && typeof p.includeState !== 'boolean') return invalid('includeState must be boolean')
+  if (p.folds !== undefined && typeof p.folds !== 'boolean') return invalid('folds must be boolean')
   if (p.holder !== undefined && (typeof p.holder !== 'string' || p.holder.length > MAX_HOLDER_LENGTH)) return invalid('holder must be a short string')
   return {
     anchor,
     direction: p.direction as ParsedWindowRequest['direction'],
-    viewport,
-    budget,
+    ...limits,
     have: p.have as TranscriptWindowRequest['have'],
     includeState: p.includeState as boolean | undefined,
+    folds: p.folds === true,
     holder: typeof p.holder === 'string' ? p.holder : '',
   }
 }

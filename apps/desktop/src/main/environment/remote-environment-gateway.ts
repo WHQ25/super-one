@@ -1,4 +1,4 @@
-import { ARTIFACT_RPC_METHODS, servesMethod } from '@superone/shared/environment'
+import { ARTIFACT_RPC_METHODS, servesMethod, TRANSCRIPT_FOLD_METHOD } from '@superone/shared/environment'
 import { randomUUID } from 'node:crypto'
 import type {
   ArtifactDeleteResult,
@@ -34,6 +34,7 @@ import type {
   SendMessageInput,
   SessionGateway,
   SessionLoadResult,
+  TranscriptFoldResult,
   TranscriptWindowResult,
   SessionMessagesListResult,
   SessionRef,
@@ -1272,6 +1273,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.session.environmentId)
         const { session, ...request } = input
         return this.client.rpc<TranscriptWindowResult>('session.transcriptWindow', { sessionId: session.sessionId, ...request })
+      },
+      transcriptFold: (input) => {
+        this.assertEnv(input.session.environmentId)
+        const { session, ...request } = input
+        return this.client.rpc<TranscriptFoldResult>(TRANSCRIPT_FOLD_METHOD, { sessionId: session.sessionId, ...request })
       },
       subscribeDetail: (input) => {
         this.assertEnv(input.session.environmentId)

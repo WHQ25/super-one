@@ -145,6 +145,7 @@ export class SessionReadModel {
       transcript: sqliteTranscript<{ message_json: string; sort_order: number }>(this.db, {
         table: 'session_messages', idColumn: 'message_id', columns: 'message_json, sort_order', sessionId,
         parse: (row) => JSON.parse(row.message_json) as ChatMessage,
+        boundarySql: `SELECT message_json, sort_order FROM session_messages WHERE session_id = ? AND instr(message_json, '"transcriptBoundary"') > 0 ORDER BY sort_order ASC`,
       }),
       state: includeState ? coreState(core) : {},
       cursor: { sequence: this.log.headSequence(), epoch: this.log.epoch, version: checkpoint.applied_version },

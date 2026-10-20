@@ -109,7 +109,7 @@ export async function restoreWindowSession(
     acquire = new SessionAcquire(client, session, same ? stopping : null, signal, () => stopFailed != null)
     const held = cached?.schema === TRANSCRIPT_WINDOW_SCHEMA ? cached.window : null
     const request = (have: boolean): TranscriptWindowRequest & { projectId: string } => ({
-      sessionId, projectId: project.projectId,
+      sessionId, projectId: project.projectId, folds: true,
       ...(options.viewport ? { viewport: options.viewport } : {}),
       ...(options.budget ? { budget: options.budget } : {}),
       ...(have && held ? { have: windowCoverage(held.messages) } : {}),

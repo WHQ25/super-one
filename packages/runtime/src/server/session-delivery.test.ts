@@ -90,6 +90,24 @@ describe('node session delivery', () => {
       .toThrow(expect.objectContaining({ code: 'not_found' }))
   })
 
+  it('stops shelling live rows once the desktop window holder is gone', () => {
+    const lan = new ConnectionDelivery(deliveryPolicy('lan', 'desktop'))
+    const rows = [message('plan')]
+    lan.windows.serve({ sessionId: 's', holder: 'desktop:s', messages: rows, request: {}, budget: { maxBytes: 4096, maxFragments: 8, targetChars: 1000 } })
+    lan.views.open('s', true)
+    lan.windows.close('s', 'desktop:s')
+    transcript = rows
+    const delivered = deliverFrame(frame(envelope(thinkingDelta('plan'), 2)), lan, sessions)
+    expect((delivered.frame.events[0]!.payload as { event: AgentEvent }).event).toEqual(thinkingDelta('plan'))
+    expect(lan.views.has('s')).toBe(false)
+
+    const relay = new ConnectionDelivery(deliveryPolicy('relay', 'desktop'))
+    relay.views.open('s', true)
+    const shelled = deliverFrame(frame(envelope(thinkingDelta('plan'), 3)), relay, sessions)
+    expect((shelled.frame.events[0]!.payload as { event: AgentEvent }).event).toMatchObject({ delta: { thinking: '' } })
+    expect(relay.views.has('s')).toBe(true)
+  })
+
   it('sends a LAN connection full rows and refuses detail it never summarized', () => {
     const lan = new ConnectionDelivery(deliveryPolicy('lan', 'desktop'))
     transcript = [message('plan')]

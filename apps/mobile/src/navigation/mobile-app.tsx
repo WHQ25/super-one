@@ -734,6 +734,11 @@ export function MobileApp() {
       if (!runtime) throw new Error('no active session')
       return { message: await runtime.loadFullMessage(messageId) }
     },
+    loadTranscriptFold: async (messageId, fold) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      await runtime.loadFold(messageId, fold)
+    },
     openLink: async (url) => { await Linking.openURL(url) },
     copyText: async (text) => { await Clipboard.setStringAsync(text) },
     haptic: async (style) => {

@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Pure chat event reducer shared by desktop and Expo.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./turn-process/*": "./src/turn-process/*.ts"
   },
   "scripts": {
     "fixtures:export": "bun scripts/export-fixtures.ts",
@@ -13,7 +14,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@superone/shared": "workspace:*"
+    "@superone/shared": "workspace:*",
+    "diff": "^8.0.3"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

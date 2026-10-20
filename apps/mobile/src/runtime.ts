@@ -31,7 +31,7 @@ import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import type { VoiceCapability } from '@superone/shared/realtime-voice'
 import { restoreSession, restoreWindowSession, TranscriptWindowUnsupportedError, type RestoredSession, type RestoredWindowSession, type WindowRestorePreview } from '@superone/relay-client'
-import { TRANSCRIPT_WINDOW_METHOD, TRANSCRIPT_WINDOW_SCHEMA, type TranscriptWindowPatch, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
+import { TRANSCRIPT_FOLD_METHOD, TRANSCRIPT_WINDOW_METHOD, TRANSCRIPT_WINDOW_SCHEMA, type TranscriptFoldResult, type TranscriptWindowPatch, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
 import { cacheableWindow, TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import { enqueueTranscriptWrite, flushTranscriptWrites, holdTranscriptCover } from './transcript-write-queue'
 import { randomId } from './ids'
@@ -97,6 +97,7 @@ export class ChatRuntime {
    * serves whole messages. While set, transcript content comes only from it.
    */
   private window: TranscriptWindowSync | null = null
+  private readonly foldRequests = new Map<string, Promise<void>>()
   /** Projects whose host answered that it serves no transcript windows. */
   private readonly windowUnsupported = new Set<string>()
   /** The page request in flight; a request for another placement runs after it. */
@@ -347,6 +348,7 @@ export class ChatRuntime {
         ...(around ? { anchor: { messageId: around }, direction: 'around' } : {}),
         ...(viewport ? { viewport } : {}),
         includeState: false,
+        folds: true,
       }).finally(() => { if (this.pagePatches === patches) this.pagePatches = null })
       if (generation !== this.restoreGeneration || this.window !== sync) throw new Error('Session changed')
       if (result.schema !== TRANSCRIPT_WINDOW_SCHEMA) throw new Error('Transcript window format changed')
@@ -380,6 +382,40 @@ export class ChatRuntime {
       messages, messageOrder: this.session.messages.map((message) => message.id), replace,
       hasMoreHistory: this.hasMoreHistory, hasNewerHistory: this.hasNewerHistory,
     }
+  }
+
+  /**
+   * The next page behind a fold the window holds, joined into its message.
+   * The changed row reaches the chat view with the next paint. A fold that
+   * changed on the host reads the window again.
+   */
+  loadFold(messageId: string, key: string): Promise<void> {
+    const sync = this.window
+    if (!sync) return Promise.reject(new Error('Transcript window unavailable'))
+    const request = sync.foldRequest(messageId, key)
+    if (!request) return Promise.reject(new Error('History changed'))
+    const id = JSON.stringify([messageId, key, request.after ?? null])
+    const inFlight = this.foldRequests.get(id)
+    if (inFlight) return inFlight
+    const generation = this.restoreGeneration
+    const viewport = this.hooks.transcriptWindow?.viewport()
+    const read = (async () => {
+      const page = await this.read<TranscriptFoldResult>(TRANSCRIPT_FOLD_METHOD, {
+        messageId, fold: key, revision: request.revision,
+        ...(request.after ? { after: request.after } : {}),
+        ...(viewport ? { viewport } : {}),
+      }).catch((error: unknown) => {
+        if ((error as { code?: string }).code === 'failed_precondition' || (error as { code?: string }).code === 'not_found') this.resync()
+        throw error
+      })
+      if (generation !== this.restoreGeneration || this.window !== sync) throw new Error('Session changed')
+      if (!sync.applyFoldPage(page, request.after)) { this.resync(); throw new Error('History changed') }
+      this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
+      this.dirty = true
+      this.flush()
+    })().finally(() => this.foldRequests.delete(id))
+    this.foldRequests.set(id, read)
+    return read
   }
 
   /** The whole stored message behind a partial row, for copy and export. */

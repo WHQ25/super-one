@@ -1,48 +1,18 @@
 import type { ChatMessage, ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
-import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
 import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@superone/chat-core'
+import { parseGenerationResult, toSavedPaths, type GenerationResult } from '@superone/chat-core/turn-process/media-tools'
 
 export { isMediaGenerateVideoTool, isMediaVideoStatusTool }
-
-const MEDIA_GENERATE_IMAGE_TOOL = 'mcp__superone__media_generate_image'
-const WIDGET_SHOW_TOOL = 'mcp__superone__widget_show'
-
-/** Grok Build native Imagine tools (ACP title / resolved toolName). */
-const GROK_IMAGE_GEN_TOOLS = new Set(['ImageGen', 'ImageEdit', 'image_gen', 'image_edit'])
-const GROK_VIDEO_GEN_TOOLS = new Set([
-  'ImageToVideo',
-  'ReferenceToVideo',
-  'image_to_video',
-  'reference_to_video',
-])
-const GROK_MEDIA_OUTPUT_TYPES = new Set(['ImageGen', 'ImageEdit', 'ImageToVideo', 'ReferenceToVideo'])
-
-interface GenerationResult {
-  status?: string
-  savedPaths?: unknown
-  /** Parallel to savedPaths — downscaled previews for thumbs / agent Read. */
-  previewPaths?: unknown
-  provider?: unknown
-  model?: unknown
-  warnings?: unknown
-  generationId?: unknown
-  /** Grok MediaGenOutput / prompt_text shape */
-  path?: unknown
-  type?: unknown
-}
-
-export function isMediaGenerateImageTool(toolName: string): boolean {
-  return toolName === MEDIA_GENERATE_IMAGE_TOOL || GROK_IMAGE_GEN_TOOLS.has(toolName)
-}
-
-/** Grok native video tools return a finished path (no SuperOne status poll). */
-export function isGrokVideoGenTool(toolName: string): boolean {
-  return GROK_VIDEO_GEN_TOOLS.has(toolName)
-}
-
-export function isWidgetShowTool(toolName: string): boolean {
-  return toolName === WIDGET_SHOW_TOOL
-}
+export {
+  isFailedGenerationResult,
+  isGrokVideoGenTool,
+  isMediaGenerateImageTool,
+  isSuccessfulGenerationResult,
+  isVideoStatusStillRunning,
+  isWidgetShowTool,
+  nativeWidgetImages,
+  nativeWidgetVideos,
+} from '@superone/chat-core/turn-process/media-tools'
 
 /** Pull the human error string from a media_generate_* / status JSON (or `[Error]` text). */
 export function mediaToolErrorMessage(result?: string | null): string {
@@ -68,96 +38,11 @@ export function isMediaToolErrorResult(result?: string | null, isError?: boolean
   }
 }
 
-/**
- * `widget_show({ template: '@native/…' })` renders one of SuperOne's own surfaces rather than a
- * frame, so its items belong to the same turn-end gallery a built-in generation feeds.
- *
- * These two readers and `isHiddenToolBlock` all go through `parseNativeWidgetResult`, which is what
- * keeps the hide contract honest: a row is hidden if and only if one of these returns something.
- */
-export function nativeWidgetImages(resultText: string | undefined): ImageGenerationItem[] {
-  return parseNativeWidgetResult(resultText)?.images ?? []
-}
-
-export function nativeWidgetVideos(resultText: string | undefined): VideoGenerationItem[] {
-  return parseNativeWidgetResult(resultText)?.videos ?? []
-}
-
-/**
- * Normalize SuperOne media_generate_* JSON and Grok MediaGenOutput / prompt_text JSON
- * into the shared GenerationResult shape the gallery mapper expects.
- */
-function coerceGenerationResult(parsed: GenerationResult): GenerationResult | null {
-  const saved = toSavedPaths(parsed)
-  if (saved.length > 0) {
-    return {
-      ...parsed,
-      status: parsed.status === 'error' ? 'error' : (parsed.status ?? 'generated'),
-      savedPaths: saved,
-    }
-  }
-  // Grok typed output: { type: "ImageGen", path, filename, session_folder }
-  // or prompt_text JSON: { path, filename, session_folder, message }
-  const path = typeof parsed.path === 'string' ? parsed.path.trim() : ''
-  if (path) {
-    const type = typeof parsed.type === 'string' ? parsed.type : undefined
-    if (type && !GROK_MEDIA_OUTPUT_TYPES.has(type)) {
-      // Unknown typed payload with a path field — only accept image/video-looking paths.
-      if (!/\.(png|jpe?g|gif|webp|bmp|mp4|webm|mov)$/i.test(path) && !path.includes('/images/')) {
-        return parsed
-      }
-    }
-    return {
-      status: 'generated',
-      savedPaths: [path],
-      provider: parsed.provider ?? 'grok',
-      model: parsed.model,
-      warnings: parsed.warnings,
-      generationId: parsed.generationId,
-    }
-  }
-  // SuperOne video status polls (`running` / `error` / `generated` without paths yet)
-  // and plain error objects must pass through unchanged.
-  return parsed
-}
-
-function parseGenerationResult(resultText: string | undefined): GenerationResult | null {
-  if (!resultText) return null
-  try {
-    const parsed = JSON.parse(resultText) as GenerationResult
-    if (!parsed || typeof parsed !== 'object') return null
-    return coerceGenerationResult(parsed)
-  } catch {
-    return null
-  }
-}
-
-function toSavedPaths(parsed: GenerationResult): string[] {
-  return Array.isArray(parsed.savedPaths)
-    ? parsed.savedPaths.filter((p): p is string => typeof p === 'string')
-    : []
-}
-
 function toPreviewPaths(parsed: GenerationResult, savedPaths: string[]): (string | undefined)[] {
   const raw = Array.isArray(parsed.previewPaths)
     ? parsed.previewPaths.filter((p): p is string => typeof p === 'string')
     : []
   return savedPaths.map((_, idx) => raw[idx])
-}
-
-export function isSuccessfulGenerationResult(resultText: string | undefined): boolean {
-  const parsed = parseGenerationResult(resultText)
-  if (!parsed || parsed.status === 'error') return false
-  return toSavedPaths(parsed).length > 0
-}
-
-export function isFailedGenerationResult(resultText: string | undefined): boolean {
-  return parseGenerationResult(resultText)?.status === 'error'
-}
-
-/** A status poll that reports the job is still rendering — nothing new to show yet. */
-export function isVideoStatusStillRunning(resultText: string | undefined): boolean {
-  return parseGenerationResult(resultText)?.status === 'running'
 }
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {

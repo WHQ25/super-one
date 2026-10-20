@@ -2,18 +2,16 @@ import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@su
 import { shortenPath } from '@superone/shared/path-display'
 import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
 import { isAlwaysHiddenToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
-import { CODEX_AGENT_WAIT_TOOL, CODEX_IMAGE_GENERATION_TOOL } from '@superone/shared/codex-content'
+import { CODEX_IMAGE_GENERATION_TOOL } from '@superone/shared/codex-content'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
 import {
   isGrokVideoGenTool,
   isMediaGenerateImageTool,
   isMediaVideoStatusTool,
-  isSuccessfulGenerationResult,
   isWidgetShowTool,
   nativeWidgetImages,
   nativeWidgetVideos,
-  isVideoStatusStillRunning,
   toImageGenerationItems,
   toVideoStatusItems,
 } from './media-generation'
@@ -108,28 +106,7 @@ export function isAlwaysHiddenToolBlock(toolName: string): boolean {
   return isAlwaysHiddenToolName(toolName)
 }
 
-export function isHiddenToolBlock(toolName: string, result?: string): boolean {
-  if (isAlwaysHiddenToolBlock(toolName)) return true
-  // Waiting on agents is only news while it lasts; their cards carry the outcome.
-  if (toolName === CODEX_AGENT_WAIT_TOOL) return result !== undefined
-  // A native-template widget_show *is* the gallery, so its row would only narrate what the user can
-  // already see. A code widget, a still-streaming call, and a failed build all keep their row —
-  // this reads the same parse the gallery collects from, so the two cannot disagree.
-  if (isWidgetShowTool(toolName)) return nativeWidgetImages(result).length > 0 || nativeWidgetVideos(result).length > 0
-  if (isMediaGenerateImageTool(toolName)) return !result || isSuccessfulGenerationResult(result)
-  // Grok native video is synchronous (path on complete) — hide the tool row when the gallery
-  // will render the file, same as ImageGen.
-  if (isGrokVideoGenTool(toolName)) return !result || isSuccessfulGenerationResult(result)
-  // The submit block stays visible: it is the only progress affordance during the minutes a video
-  // renders, and the gallery card cannot stand in for it because the completing poll usually lands
-  // in a later message. Polls are hidden while running (pure noise) and on success (the gallery
-  // shows the video); a failed poll keeps its block so the error is visible.
-  if (isMediaVideoStatusTool(toolName)) {
-    return !result || isVideoStatusStillRunning(result) || isSuccessfulGenerationResult(result)
-  }
-  return false
-}
-
+export { isHiddenToolBlock } from '@superone/chat-core/turn-process/media-tools'
 
 /** Human-readable tool title for chat UI (internal toolName stays PascalCase / id). */
 const TOOL_LABELS: Record<string, string> = {

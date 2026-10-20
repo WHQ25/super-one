@@ -92,6 +92,41 @@ interface ToolMeta {
   toolTodos?: TodoToolItem[]
 }
 
+/**
+ * What a run of process (tools, reasoning) a transcript window has not loaded
+ * adds to its turn's compact Detail header, so the header reads the same
+ * folded or loaded.
+ */
+export interface ProcessFoldSummary {
+  /** Window fragments behind the fold. */
+  fragments: number
+  /** Visible process segments, as the compact Detail threshold counts them. */
+  segments: number
+  toolCalls: number
+  /** Changed files, distinct; at most `MAX_FOLD_FILES`. */
+  files: string[]
+  /** Changed files past `files`. */
+  moreFiles?: number
+  added: number
+  removed: number
+  /**
+   * `contentKeys` of the first block behind the fold, and the ordinals the
+   * blocks behind it take per kind, so a transcript boundary reads the folded
+   * turn with the keys of the whole one.
+   */
+  contentKey: string
+  keyCounts?: Record<string, number>
+}
+
+/** A folded run as a client renders it: the rest of fold `key` past `after` (`session.transcriptFold`). */
+export interface ProcessFold extends ProcessFoldSummary {
+  messageId: string
+  key: string
+  revision: string
+  /** Last inner fragment already shown; absent until the first page. */
+  after?: string
+}
+
 export interface TaskFileChange {
   path: string
   added: number
@@ -257,7 +292,7 @@ type ContentBlockData =
   /** Review mode entered or exited; `text` is the review target or the findings. */
   | { type: 'review'; id: string; phase: 'entered' | 'exited'; text: string; parentToolUseId?: string | null }
   /** A non-terminal turn notice: an error the turn continued past, or a compaction marker. */
-  | { type: 'notice'; id: string; level: 'error' | 'info'; /** `omitted`: a transcript window left out a block too large for it. */ kind?: 'compaction' | 'omitted'; text: string; parentToolUseId?: string | null }
+  | { type: 'notice'; id: string; level: 'error' | 'info'; /** `omitted`: a transcript window left out a block too large for it. `fold`: process it has not loaded. */ kind?: 'compaction' | 'omitted' | 'fold'; text: string; parentToolUseId?: string | null; fold?: ProcessFold }
   | { type: 'image'; name: string; id?: string }
   | { type: 'document'; name: string; id?: string }
 
@@ -2227,9 +2262,10 @@ export type AgentEventBase =
   | { type: 'content_retracted'; messageId: string; blocks: RetractedBlockRef[] }
   /**
    * Host → transcript-window client: the changes to the window `holder` holds,
-   * in place of the content events it summarizes. Reducers ignore it.
+   * in place of the content events it summarizes. A desktop chat also receives
+   * the rows that window paints (`rows`) and replaces its transcript with them.
    */
-  | { type: 'transcript_window'; holder?: string; patch: import('./environment/transcript-window').TranscriptWindowPatch }
+  | { type: 'transcript_window'; holder?: string; patch: import('./environment/transcript-window').TranscriptWindowPatch; rows?: ChatMessage[]; edges?: { older: { messageId: string; key?: string } | null; newer: { messageId: string; key?: string } | null; total: number } }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   /** Backend → Session only: a harness-owned durable queue reloaded. Session republishes it as `queued_messages_changed`. */
   | { type: 'queued_messages_restored'; messages: Array<{ clientMessageId: string; content: string }> }
@@ -4874,6 +4910,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SEND_SESSION_MESSAGE: 'environment:sendSessionMessage',
   /** Open a remote session in the chat at a node snapshot (`session.load`) and follow it. */
   ENVIRONMENT_OPEN_REMOTE_SESSION: 'environment:openRemoteSession',
+  ENVIRONMENT_LOAD_TRANSCRIPT_FOLD: 'environment:loadTranscriptFold',
   ENVIRONMENT_SUBSCRIBE_DETAIL: 'environment:subscribeDetail',
   ENVIRONMENT_UNSUBSCRIBE_DETAIL: 'environment:unsubscribeDetail',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',

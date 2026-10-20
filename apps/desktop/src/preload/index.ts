@@ -585,6 +585,8 @@ const environmentAPI = {
       connectionId,
       input,
     ),
+  loadTranscriptFold: (connectionId: string, input: { sessionId: string; messageId: string; fold: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LOAD_TRANSCRIPT_FOLD, connectionId, input),
   openRemoteSession: (
     connectionId: string,
     input: {

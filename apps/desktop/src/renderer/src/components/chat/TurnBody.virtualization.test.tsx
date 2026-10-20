@@ -28,6 +28,7 @@ const parts: TurnBodyPresenterParts & { Segment: typeof VirtualTurnSegment } = {
   ToolGroup: () => null,
   AppToolGroup: () => null,
   TurnDetail: ({ runs }) => <>{runs.map(run => <div key={run.key}>{run.content}</div>)}</>,
+  Fold: () => null,
 }
 const runtime: TurnBodyPresenterRuntime = {
   isBackgroundTool: () => false,

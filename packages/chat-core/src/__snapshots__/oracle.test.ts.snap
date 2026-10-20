@@ -1510,7 +1510,36 @@ exports[`recorded remote.out reducer oracle > claude-todos:msg_1774096079875_069
   "sessionProvider": "claude",
   "status": "idle",
   "taskProgress": {},
-  "todos": {},
+  "todos": {
+    "1": {
+      "activeForm": undefined,
+      "description": "",
+      "id": "1",
+      "status": "completed",
+      "subject": "设计数据模型",
+    },
+    "2": {
+      "activeForm": undefined,
+      "description": "",
+      "id": "2",
+      "status": "completed",
+      "subject": "实现 API 接口",
+    },
+    "3": {
+      "activeForm": undefined,
+      "description": "",
+      "id": "3",
+      "status": "completed",
+      "subject": "编写单元测试",
+    },
+    "4": {
+      "activeForm": undefined,
+      "description": "",
+      "id": "4",
+      "status": "completed",
+      "subject": "运行测试并验证",
+    },
+  },
   "totalCostUsd": 0.49389914999999995,
 }
 `;

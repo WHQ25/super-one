@@ -2144,6 +2144,13 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().openRemoteSession(connectionId, input)
     },
   )
+  sessionIpc.handle(
+    AgentIpcChannels.ENVIRONMENT_LOAD_TRANSCRIPT_FOLD,
+    async (_e, connectionId: string, input: { sessionId: string; messageId: string; fold: string }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().loadRemoteFold(connectionId, input)
+    },
+  )
   /** Expand a summarized row: the machine that holds the session answers. */
   sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, async (e, target: DetailTarget, subscriptionId: string) => {
     const { getEnvironmentHost } = await import('./environment')

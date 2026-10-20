@@ -1,4 +1,4 @@
-import type { ChatMessage, ContentBlock, ImageAttachment } from '../agent-types'
+import type { ChatMessage, ContentBlock, ImageAttachment, ProcessFoldSummary } from '../agent-types'
 import type { SessionLoadCursor, SessionRestoreFacts } from './session-messages'
 
 /**
@@ -49,6 +49,12 @@ export interface TranscriptWindowRequest {
   have?: TranscriptWindowCoverage[]
   /** Restore state and facts; defaults to true for a tail window only. */
   includeState?: boolean
+  /**
+   * The client renders `fold` fragments: each run of process a settled turn
+   * collapses under its compact Detail header comes as one fold, read on
+   * expand through `session.transcriptFold`.
+   */
+  folds?: boolean
 }
 
 /** Rendering context a slice needs to start mid-block. */
@@ -72,6 +78,8 @@ export type TranscriptFragmentBody =
   | { kind: 'attachment'; attachment: ImageAttachment }
   /** An atomic block whose projection alone exceeds a fragment. */
   | { kind: 'omitted'; blockType: string; bytes: number }
+  /** A run of collapsed process; `revision` hashes the fragments behind it. */
+  | { kind: 'fold'; revision: string; summary: ProcessFoldSummary }
 
 export interface TranscriptWindowFragment {
   key: string
@@ -131,6 +139,40 @@ export interface TranscriptWindowPatch {
 
 export const TRANSCRIPT_WINDOW_METHOD = 'session.transcriptWindow'
 
+/** Distinct changed files a fold lists; the rest only count. */
+export const MAX_FOLD_FILES = 100
+
+/**
+ * `session.transcriptFold`: the next page behind a fold, in content order,
+ * bodies included. A page ends on a content-block boundary, after the results
+ * of the calls it holds.
+ */
+export const TRANSCRIPT_FOLD_METHOD = 'session.transcriptFold'
+
+export interface TranscriptFoldRequest {
+  sessionId: string
+  projectId?: string
+  messageId: string
+  /** The fold's fragment key. */
+  fold: string
+  /** The fold's revision as the client holds it; a changed fold fails `failed_precondition`. */
+  revision: string
+  /** Last inner fragment the client holds; absent for the first page. */
+  after?: string
+  viewport?: { width: number; height: number }
+  budget?: Partial<TranscriptWindowBudget>
+}
+
+export interface TranscriptFoldResult {
+  sessionId: string
+  messageId: string
+  fold: string
+  revision: string
+  fragments: Array<Required<Pick<TranscriptWindowFragment, 'key' | 'digest' | 'body'>>>
+  /** The fold past this page; null when the page reached its end. */
+  rest: ProcessFoldSummary | null
+}
+
 /** One holder per remote session a controlling desktop shows. `serve` drops a holder's other sessions, so holders are not shared across sessions. */
 export const DESKTOP_WINDOW_HOLDER_PREFIX = 'desktop:'
 
@@ -139,7 +181,7 @@ export function desktopWindowHolder(sessionId: string): string {
   return holder.length <= 128 ? holder : holder.slice(0, 128)
 }
 
-/** True when this connection's desktop is showing the session, so its own view still needs content events. */
+/** True when this connection's desktop is showing the session through a transcript window. */
 export function desktopShowsSession(holders: readonly string[]): boolean {
   return holders.some((holder) => holder.startsWith(DESKTOP_WINDOW_HOLDER_PREFIX))
 }

@@ -32,6 +32,8 @@ export interface MessageFragments {
   metaDigest: string
   metaBytes: number
   fragments: FragmentEntry[]
+  /** Content index of each fragment's block (`readableContent`); -1 for an attachment. */
+  blocks: number[]
 }
 
 /** Per-block work a fragmenter keeps between calls for one message. */
@@ -55,17 +57,19 @@ export class MessageFragmenter {
     const previous = this.memo.get(message.id)
     const next = new Map<string, BlockMemo>()
     const fragments: FragmentEntry[] = (message.attachments ?? []).map((attachment, index) => attachmentEntry(index, attachment))
+    const blocks: number[] = fragments.map(() => -1)
     const keys = blockKeys(content)
     content.forEach((block, index) => {
       const key = keys[index]
       const memo = blockFragments(block, key, previous?.get(key))
       next.set(key, memo)
       fragments.push(...memo.entries)
+      for (let i = 0; i < memo.entries.length; i++) blocks.push(index)
     })
     this.memo.set(message.id, next)
     const meta = windowMeta(message)
     const metaJson = JSON.stringify(meta)
-    return { id: message.id, meta, metaDigest: contentDigest(metaJson), metaBytes: utf8Length(metaJson), fragments }
+    return { id: message.id, meta, metaDigest: contentDigest(metaJson), metaBytes: utf8Length(metaJson), fragments, blocks }
   }
 
   forget(messageId: string): void {
@@ -108,7 +112,7 @@ export function fragmentDigest(body: TranscriptFragmentBody): string {
   return contentDigest(JSON.stringify(body))
 }
 
-function entry(key: string, body: TranscriptFragmentBody, chars: number): FragmentEntry {
+export function entry(key: string, body: TranscriptFragmentBody, chars: number): FragmentEntry {
   const json = JSON.stringify(body)
   return { key, digest: contentDigest(json), body, bytes: utf8Length(json), chars }
 }

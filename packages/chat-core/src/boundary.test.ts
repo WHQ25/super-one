@@ -24,13 +24,15 @@ function hasModuleScopeMap(src: string): boolean {
 describe('chat-core package boundary', () => {
   it('package sources stay independent from desktop and browser globals', () => {
     const hits: string[] = []
-    for (const name of readdirSync(DIR).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
+    const sources = (dir: string) => readdirSync(join(DIR, dir)).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts')).map((n) => join(dir, n))
+    for (const name of [...sources(''), ...sources('turn-process')]) {
       const src = readFileSync(join(DIR, name), 'utf8')
       if (/from\s+['"]zustand['"]/.test(src)) hits.push(`${name}:zustand`)
       if (/from\s+['"]electron['"]/.test(src)) hits.push(`${name}:electron`)
       if (/from\s+['"]@\//.test(src)) hits.push(`${name}:desktop-alias`)
       if (/apps\/desktop/.test(src)) hits.push(`${name}:desktop-path`)
-      if (/from\s+['"]\.\.\//.test(src)) hits.push(`${name}:parent-import`)
+      // Imports stay inside the package: a nested module may reach the package root, not past it.
+      if (new RegExp(`from\\s+['"]${name.includes('/') ? '\\.\\./\\.\\./' : '\\.\\./'}`).test(src)) hits.push(`${name}:parent-import`)
       if (/\bwindow\s*\./.test(src)) hits.push(`${name}:window`)
       if (name !== 'ports.ts' && hasModuleScopeMap(src)) hits.push(`${name}:module-map`)
     }

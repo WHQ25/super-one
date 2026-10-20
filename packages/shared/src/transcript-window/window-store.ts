@@ -17,6 +17,8 @@ export interface WindowStoreFragment {
   key: string
   digest: string
   body: TranscriptFragmentBody
+  /** A fold shown past its first pages: the last inner fragment it follows. */
+  after?: string
 }
 
 /** A message as a client holds it: a contiguous run of its fragments. */
@@ -199,6 +201,12 @@ export function materializeWindowMessage(message: WindowStoreMessage): ChatMessa
     if (body.kind === 'block') { content.push(body.block); textBlock = null; continue }
     if (body.kind === 'omitted') {
       content.push({ type: 'notice', id: `window:${fragment.key}`, level: 'info', kind: 'omitted', text: '' })
+      textBlock = null
+      continue
+    }
+    if (body.kind === 'fold') {
+      content.push({ type: 'notice', id: `window:${fragment.key}`, level: 'info', kind: 'fold', text: '',
+        fold: { ...body.summary, messageId: message.id, key: fragment.key, revision: body.revision, ...(fragment.after ? { after: fragment.after } : {}) } })
       textBlock = null
       continue
     }

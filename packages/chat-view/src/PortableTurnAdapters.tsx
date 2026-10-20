@@ -5,8 +5,8 @@ import { ModMessageScope } from './mod-ui/react'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
 import { DeferredTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
+import type { ChatMessage, ContentBlock, ProcessFold } from '@superone/shared/agent-types'
+import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { SUGGEST_TASK_TOOL_NAME, suggestedTaskIdFromResult } from '@superone/shared/suggested-task'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
@@ -26,6 +26,7 @@ import { PortableMarkdown, PortableInsight, PlainCode } from './PortableMarkdown
 import { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
 export { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
 import { PortableToolRow } from './PortableToolRow'
+import { TranscriptFoldPresenter, type TurnFoldPresenterProps } from './presenters/TranscriptFold'
 import {
   TurnBodyPresenter,
   type TurnAppToolGroupPresenterProps,
@@ -41,8 +42,8 @@ import {
 } from './presenters/TurnBody'
 import { buildCompactTurn, turnDisplayContent } from './presenters/turn-content'
 import { parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
-import { isClaudePinnedSegment } from './presenters/compact-chat-mode'
-import { groupContentPresenter, type GroupContentPorts } from './presenters/groupContent'
+import { isPortablePinnedSegment, portableToolBlocks, PORTABLE_GROUP_PORTS } from '@superone/chat-core/turn-process/portable'
+import { groupContentPresenter } from './presenters/groupContent'
 import { DeferredReasoning } from './DeferredReasoning'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
@@ -114,16 +115,7 @@ function formatTokens(tokens: number): string {
   return `${(tokens / 1_000_000).toFixed(1)}m`
 }
 
-function isWidgetShowTool(toolName: string): boolean {
-  return toolName === 'widget_show' || toolName.endsWith('__widget_show')
-}
 
-function isWorkflowSmokeCheck(input: string): boolean {
-  const parsed = parseRecord(input)
-  return parsed.validate_only === true
-    || parsed.validateOnly === true
-    || /"(?:validate_only|validateOnly)"\s*:\s*true/.test(input)
-}
 
 function toolResultMap(blocks: ContentBlock[]): Map<string, { result: string; isError: boolean }> {
   const results = new Map<string, { result: string; isError: boolean }>()
@@ -815,12 +807,6 @@ function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreamin
   )
 }
 
-const GROUP_PORTS: GroupContentPorts = {
-  isSubagentToolName,
-  isWorkflowSmokeCheck,
-  isHiddenToolBlock,
-  resolveAppTool: () => null,
-}
 
 const TURN_PARTS: TurnBodyPresenterParts = {
   Text: PortableText,
@@ -834,6 +820,15 @@ const TURN_PARTS: TurnBodyPresenterParts = {
   ToolGroup: PortableToolGroup,
   AppToolGroup: PortableAppToolGroup,
   TurnDetail: TurnDetailSection,
+  Fold: PortableFold,
+}
+
+function loadPortableFold(fold: ProcessFold): Promise<void> {
+  return requestNativeAsync('loadTranscriptFold', { messageId: fold.messageId, fold: fold.key }).then(() => undefined)
+}
+
+function PortableFold({ fold }: TurnFoldPresenterProps) {
+  return <TranscriptFoldPresenter fold={fold} load={loadPortableFold} />
 }
 
 const TURN_RUNTIME: TurnBodyPresenterRuntime = {
@@ -841,24 +836,12 @@ const TURN_RUNTIME: TurnBodyPresenterRuntime = {
     const params = parseRecord(block.input)
     return block.toolName === 'Bash' && (params.run_in_background === true || params.background === true)
   },
-  isPinnedSegment: (segment) => isClaudePinnedSegment(segment, { isWidgetShowTool }),
+  isPinnedSegment: isPortablePinnedSegment,
   isHiddenTool: isHiddenToolBlock,
   summarizeProcess: summarizeClaudeProcess,
 }
 
-/**
- * Remote turns carry harness-specific block types (`bash`, `todo`) that the
- * shared grouping and gallery collectors only recognise as `tool_use`. Exported
- * so the turn body and the turn-end galleries normalise identically — collecting
- * from raw content would silently find no generated images.
- */
-export function portableToolBlocks(content: ContentBlock[]): ContentBlock[] {
-  return content.map((block): ContentBlock => (
-    'toolName' in block && block.type !== 'tool_use'
-      ? { ...block, type: 'tool_use' }
-      : block
-  ))
-}
+export { portableToolBlocks }
 
 /** Tool result text by tool-use id, the shape the gallery collectors expect. */
 export function portableToolResultText(content: ContentBlock[]): Map<string, string> {
@@ -889,10 +872,10 @@ export function PortableTurn({
   firstSlice?: boolean
 }) {
   const portableContent = useMemo(() => portableToolBlocks(turnDisplayContent(message)), [message.content, message.status])
-  const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
+  const grouped = useMemo(() => groupContentPresenter(portableContent, PORTABLE_GROUP_PORTS), [portableContent])
   const compactTurn = useMemo(() => buildCompactTurn(
     { source: sourceMessage, following: followingMessage, id: segmentId, first: firstSlice },
-    content => groupContentPresenter(portableToolBlocks(content), GROUP_PORTS),
+    content => groupContentPresenter(portableToolBlocks(content), PORTABLE_GROUP_PORTS),
   ), [sourceMessage, followingMessage, segmentId, firstSlice])
   const state = message.metadata?.codex?.planApproval
   const canRespond = !isStreaming && isLastAssistant

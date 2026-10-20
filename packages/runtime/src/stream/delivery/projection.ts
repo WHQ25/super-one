@@ -1,4 +1,4 @@
-import { compactMediaToolResult } from './remote-content'
+import { compactMediaToolResult, revealTodoResults } from './remote-content'
 import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 import type { AgentEvent, BashEditDiff, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { bashEditFileChanges, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
@@ -216,7 +216,10 @@ function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): Agen
     return { ...event, delta: projectTool(event.delta, reference(event.messageId, 'tool', event.delta.toolUseId)) }
   }
   if (event.type === 'content_delta' && event.delta.type === 'tool_result' && message) {
-    const projected = projectProgressiveMessage(message).content.find(block => block.type === 'tool_result' && block.toolUseId === (event.delta as { toolUseId: string }).toolUseId)
+    const toolUseId = event.delta.toolUseId
+    const revealed = revealTodoResults(message)
+    const projected = projectProgressiveMessage(revealed).content.find(block =>
+      (block.type === 'tool_result' || block.type === 'todo_result') && block.toolUseId === toolUseId)
     if (projected) return { ...event, delta: projected }
   }
   if ('metadata' in event && event.metadata?.codex) {

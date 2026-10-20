@@ -51,6 +51,7 @@
     "./presenters/ChatMessageIndicators": "./src/presenters/ChatMessageIndicators.tsx",
     "./presenters/SendFailureResendButton": "./src/presenters/SendFailureResendButton.tsx",
     "./presenters/TurnBody": "./src/presenters/TurnBody.tsx",
+    "./presenters/TranscriptFold": "./src/presenters/TranscriptFold.tsx",
     "./presenters/turn-content": "./src/presenters/turn-content.ts",
     "./presenters/CodeBlock": "./src/presenters/CodeBlock.tsx",
     "./presenters/CodexPlanBlock": "./src/presenters/CodexPlanBlock.tsx",

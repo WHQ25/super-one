@@ -1,6 +1,6 @@
 import type { AgentEvent, ChatMessage, MessageMetadata } from '@superone/shared/agent-types'
 import { projectProgressiveMessage } from './projection'
-import { stripMessagesForRemote } from './remote-content'
+import { revealTodoResults, stripMessagesForRemote } from './remote-content'
 
 /**
  * A message as transcript windows cut it: the phone projection (bodies behind
@@ -9,7 +9,8 @@ import { stripMessagesForRemote } from './remote-content'
  * connection's own surface, so a routing desktop can relay a node's window.
  */
 export function projectWindowMessage(message: ChatMessage): ChatMessage {
-  return stripMessagesForRemote([projectProgressiveMessage(message)], undefined, { splitText: false })[0]
+  // Todo items come from the original call. Shelling first would blank that input, and the row would carry an empty list.
+  return stripMessagesForRemote([projectProgressiveMessage(revealTodoResults(message))], undefined, { splitText: false })[0]
 }
 
 /** Text-like deltas: their content reaches a window holder as fragment patches. */

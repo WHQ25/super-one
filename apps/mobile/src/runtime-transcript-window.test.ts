@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import type { CachedWindow } from '@superone/relay-client'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { TranscriptWindowPatch, TranscriptWindowRequest } from '@superone/shared/environment/transcript-window'
-import { fragmentDigest, fragmentMessage } from '@superone/shared/transcript-window/fragment-message'
+import { fragmentDigest, fragmentMessage, MessageFragmenter } from '@superone/shared/transcript-window/fragment-message'
 import { DEFAULT_WINDOW_BUDGET, selectTranscriptWindow } from '@superone/shared/transcript-window/select-window'
-import { conversation, longReplyText, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
+import { conversation, longReplyText, processTurn, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
+import { foldMessageFragments, selectFoldPage } from '@superone/shared/transcript-window/folds'
 import { ChatRuntime } from './runtime'
 import { flushTranscriptWrites } from './transcript-write-queue'
 import { runtimeTestClient, sessionLoadFixture } from './runtime-test-client'
@@ -68,7 +69,61 @@ function appendPatch(id: string, before: string, after: string, total: number): 
     fragments: [{ key: fragment.key, digest: fragmentDigest(fragment.body), append: body.slice(before.length) }], omittedBefore: 0, omittedAfter: 0 }] }
 }
 
+/** A host that folds the settled reply's process and serves its pages the way `session.transcriptFold` cuts them. */
+function foldingHost(reply: ChatMessage) {
+  const transcript = [textMessage('u', 'user', 'Refactor it'), reply]
+  const range = { start: 0, end: reply.content.length - 2, summary: { segments: 5, toolCalls: 12, files: [], added: 0, removed: 0, contentKey: 'thinking::0' } }
+  const fragmenter = new MessageFragmenter()
+  const fragments = (message: ChatMessage) => message.id === reply.id ? foldMessageFragments(fragmenter.fragment(message), [range]) : fragmenter.fragment(message)
+  const source = { count: 2, at: (index: number) => fragments(transcript[index]), indexOf: (id: string) => transcript.findIndex((message) => message.id === id) }
+  const client = runtimeTestClient()
+  const answer = client.dispatch.getMockImplementation()!
+  const folds: Array<Record<string, unknown>> = []
+  client.dispatch.mockImplementation(async (call) => {
+    if (call.method === 'session.transcriptWindow') {
+      return { sessionId: 's', schema: 1, ...selectTranscriptWindow(source, call as never, DEFAULT_WINDOW_BUDGET), total: 2,
+        ...(call.includeState === false ? {} : { state: { status: 'idle', sessionProvider: 'claude' } }), cursor: { sequence: '1', epoch: 'epoch', version: 1 } }
+    }
+    if (call.method === 'session.transcriptFold') {
+      folds.push(call)
+      const folded = source.at(1) as ReturnType<typeof foldMessageFragments>
+      const inner = folded.folds.get(call.fold as string)!
+      const page = selectFoldPage(inner, call.after as string | undefined, { ...DEFAULT_WINDOW_BUDGET, maxFragments: 6 })!
+      return { sessionId: 's', messageId: reply.id, fold: call.fold, revision: call.revision,
+        fragments: inner.entries.slice(page.start, page.end).map(({ key, digest, body }) => ({ key, digest, body })),
+        rest: page.end < inner.entries.length ? { ...range.summary, fragments: inner.entries.length - page.end } : null }
+    }
+    return answer(call)
+  })
+  return { client, folds }
+}
+
 describe('ChatRuntime transcript windows', () => {
+  it('asks for folds and pages one in on demand, a read at a time', async () => {
+    const reply = processTurn('a', 12)
+    const { client, folds } = foldingHost(reply)
+    const painted: ChatMessage[][] = []
+    const runtime = new ChatRuntime(client as never, (session) => { painted.push(session.messages) }, cache().hooks)
+    await runtime.open('/p', 's')
+    const foldAt = () => runtime.messages[1].content.find((block) => block.type === 'notice' && block.fold)
+    const fold = foldAt()
+    expect(fold?.type === 'notice' && fold.fold).toMatchObject({ messageId: 'a', toolCalls: 12 })
+    const key = fold?.type === 'notice' ? fold.fold!.key : ''
+    // The view asks twice while the first read is out: one request.
+    await Promise.all([runtime.loadFold('a', key), runtime.loadFold('a', key)])
+    expect(folds).toHaveLength(1)
+    expect(folds[0]).toMatchObject({ messageId: 'a', fold: key, viewport: { width: 390, height: 844 } })
+    expect(folds[0].after).toBeUndefined()
+    const rest = foldAt()
+    expect(rest?.type === 'notice' && rest.fold?.after).toBeTruthy()
+    expect(painted.at(-1)).toBe(runtime.messages)
+    while (foldAt()) await runtime.loadFold('a', key)
+    expect(folds.length).toBeGreaterThan(2)
+    expect(folds.at(-1)?.after).toBeTruthy()
+    expect(runtime.messages[1].content.filter((block) => block.type !== 'text')).toHaveLength(reply.content.length - 1)
+    runtime.dispose()
+  })
+
   it('drops the cover when the window arrives and before subscribe finishes', async () => {
     const transcript = { current: [textMessage('u', 'user', 'Hi')] }
     const { client } = windowHost(transcript)
@@ -95,7 +150,7 @@ describe('ChatRuntime transcript windows', () => {
     const runtime = new ChatRuntime(client as never, () => {}, hooks)
     await runtime.open('/p', 's')
     expect(runtime.windowMode).toBe(true)
-    expect(windows[0]).toMatchObject({ viewport: { width: 390, height: 844 } })
+    expect(windows[0]).toMatchObject({ viewport: { width: 390, height: 844 }, folds: true })
     expect(runtime.messages.map((m) => m.id)).toEqual(['u', 'a'])
     runtime.ingest([event({ type: 'transcript_window', patch: appendPatch('a', 'Hello', 'Hello world', 2) })])
     runtime.flush()

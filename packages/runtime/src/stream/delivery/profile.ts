@@ -6,9 +6,9 @@ import {
   parseWorkflowTranscriptDir,
   remoteBashResult,
   remoteContentPorts,
-  resolveTodoToolTodos,
   stripEventForRemote,
   stripProjectPath,
+  todoResultForCall,
 } from './remote-content'
 
 /**
@@ -164,8 +164,7 @@ export class EventProfile {
       }
       if (event.delta.type === 'tool_result' && tools.todoInputs.has(event.delta.toolUseId)) {
         const entry = tools.todoInputs.get(event.delta.toolUseId)!
-        const toolTodos = resolveTodoToolTodos(entry.toolName, entry.input, event.delta.toolTodos)
-        return { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
+        return { ...event, delta: todoResultForCall(entry.toolName, entry.input, event.delta) }
       }
       if (event.delta.type === 'tool_result' && tools.widgetIds.has(event.delta.toolUseId)) {
         return { ...event, delta: event.delta }

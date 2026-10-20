@@ -3,13 +3,16 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage, Locale } from '@superone/shared/agent-types'
 import { DEFAULT_WINDOW_BUDGET, selectTranscriptWindow } from '@superone/shared/transcript-window/select-window'
 import { applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage, type TranscriptWindowState } from '@superone/shared/transcript-window/window-store'
-import { longReplyText, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
-import { MAX_FRAGMENT_BYTES } from '@superone/shared/transcript-window/fragment-message'
+import { longReplyText, processTurn, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
+import { MAX_FRAGMENT_BYTES, MessageFragmenter } from '@superone/shared/transcript-window/fragment-message'
+import { foldMessageFragments, selectFoldPage } from '@superone/shared/transcript-window/folds'
+import { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
+import { planProcessFolds } from '@superone/chat-core/turn-process/process-folds'
 import { ChatView } from './ChatView'
 import { collapsedHistoryTranscript } from './fixtures/collapsed-history'
 import type { TranscriptWindowPage } from './protocol'
 
-type Content = 'prose' | 'fence' | 'table' | 'omitted' | 'collapsed'
+type Content = 'prose' | 'fence' | 'table' | 'omitted' | 'collapsed' | 'folded'
 type Native = 'ready' | 'loading' | 'error' | 'copy-loading'
 
 const BUDGET = { ...DEFAULT_WINDOW_BUDGET, maxBytes: 48 * 1024, targetChars: 3000 }
@@ -33,12 +36,40 @@ function reply(content: Content): ChatMessage {
   return textMessage('reply', 'assistant', longReplyText(160 * 1024))
 }
 
+/** The phone's host for a settled turn of `tools` calls: process folded, pages read on demand. */
+function foldingHost(tools: number) {
+  const transcript = [textMessage('ask', 'user', 'Refactor the project.'), processTurn('reply', tools)]
+  const fragmenter = new MessageFragmenter()
+  const plans = new Map(transcript.map((message) => [message.id, planProcessFolds(message)]))
+  const folded = (message: ChatMessage) => foldMessageFragments(fragmenter.fragment(message), plans.get(message.id)!.ranges)
+  const source = { count: transcript.length, at: (index: number) => folded(transcript[index]), indexOf: (id: string) => transcript.findIndex((m) => m.id === id) }
+  const sync = new TranscriptWindowSync(applyWindowResult(null, { ...selectTranscriptWindow(source, {}, BUDGET), total: transcript.length }, EMPTY_WINDOW_LOOKUP).state)
+  return {
+    sync,
+    /** One page past what the view holds, joined: the rows that changed. */
+    page(messageId: string, key: string): ChatMessage[] {
+      const request = sync.foldRequest(messageId, key)
+      const index = source.indexOf(messageId)
+      const inner = request && index >= 0 ? source.at(index).folds.get(key) : undefined
+      const range = inner && selectFoldPage(inner, request!.after, { ...BUDGET, maxFragments: 24 })
+      if (!request || !inner || !range) throw new Error('History changed')
+      const rest = range.end < inner.entries.length
+        ? { ...plans.get(messageId)!.summarize(inner.blocks[range.end], inner.blocks[inner.blocks.length - 1]), fragments: inner.entries.length - range.end }
+        : null
+      sync.applyFoldPage({ sessionId: 's', messageId, fold: key, revision: request.revision,
+        fragments: inner.entries.slice(range.start, range.end).map(({ key, digest, body }) => ({ key, digest, body })), rest }, request.after)
+      return sync.messages().filter((message) => message.id === messageId)
+    },
+  }
+}
+
 function TranscriptWindowPreview({ content = 'prose', native = 'ready', scheme = 'light', locale = 'en', width = 430 }: {
   content?: Content; native?: Native; scheme?: 'light' | 'dark'; locale?: Locale; width?: number
 }) {
   useEffect(() => {
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
+    const folds = content === 'folded' ? foldingHost(240) : null
     const transcript = content === 'collapsed' ? collapsedHistoryTranscript()
       : [textMessage('ask', 'user', 'Show me everything.'), reply(content)]
     const source = windowSource(transcript)
@@ -58,6 +89,15 @@ function TranscriptWindowPreview({ content = 'prose', native = 'ready', scheme =
         if (native === 'error' && !failed) { failed = true; answer({ error: 'Temporary history failure' }); return }
         window = applyWindowResult(window, { ...selectTranscriptWindow(source, { anchor: window.older!, direction: 'before' }, BUDGET), total: transcript.length }, EMPTY_WINDOW_LOOKUP, 'older').state
         answer({ result: page() })
+      } else if (request.action === 'loadTranscriptFold' && folds) {
+        if (native === 'loading') return
+        if (native === 'error' && !failed) { failed = true; answer({ error: 'Temporary history failure' }); return }
+        const rows = folds.page(request.payload.messageId, request.payload.fold)
+        // The phone's paint carries the joined row; the read itself only settles.
+        setTimeout(() => {
+          host.__applyHost?.({ type: 'applyReductionPatch', messagePatches: rows })
+          answer({ result: { ok: true } })
+        }, 300)
       } else if (request.action === 'loadFullMessage') {
         if (native === 'copy-loading') return
         answer({ result: { message: transcript.find((m) => m.id === request.payload.messageId) } })
@@ -65,8 +105,8 @@ function TranscriptWindowPreview({ content = 'prose', native = 'ready', scheme =
     } }
     host.__applyHost?.({ type: 'setTheme', scheme })
     host.__applyHost?.({ type: 'setViewport', locale })
-    host.__applyHost?.({ type: 'hydrate', transcriptWindow: true, hasMoreHistory: window.older !== null, sessionStatus: 'idle',
-      messages: window.messages.map(materializeWindowMessage) })
+    host.__applyHost?.({ type: 'hydrate', transcriptWindow: true, hasMoreHistory: !folds && window.older !== null, sessionStatus: 'idle',
+      messages: folds ? folds.sync.messages() : window.messages.map(materializeWindowMessage) })
     return () => { host.ReactNativeWebView = previous }
   }, [content, native, scheme, locale])
   return <div className="mx-auto" style={{ maxWidth: width }}><ChatView /></div>
@@ -95,3 +135,14 @@ export const EarlierPartRetry: Story = { args: { native: 'error' } }
 /** Copying a partial reply fetches the whole message first; this host never answers. */
 export const CopyWhileFetching: Story = { args: { native: 'copy-loading' } }
 export const Narrow: Story = { args: { width: 320 } }
+/**
+ * A settled turn of 240 calls arrives as its reply and a Detail header with
+ * the real counts. Opening Detail reads the first page of calls; scrolling
+ * down reads the next one as the end comes near.
+ */
+export const FoldedProcess: Story = { args: { content: 'folded' } }
+/** Detail opened on a host that has not answered yet. */
+export const FoldedProcessLoading: Story = { args: { content: 'folded', native: 'loading' } }
+/** The first page fails; Retry reads it again. */
+export const FoldedProcessRetry: Story = { args: { content: 'folded', native: 'error' } }
+export const FoldedProcessNarrow: Story = { args: { content: 'folded', width: 320 } }

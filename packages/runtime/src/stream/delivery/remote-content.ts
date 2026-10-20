@@ -187,6 +187,62 @@ export function resolveTodoToolTodos(
   return resultToolTodos
 }
 
+/**
+ * Items a projected `todo_result` carries. TaskUpdate only includes a status
+ * the call actually set: the collapsed item otherwise defaults to pending,
+ * and applying that would reset a task the update did not touch.
+ */
+function todoItemsForResult(toolName: string, input: string, resultToolTodos: TodoToolItem[] | undefined): TodoToolItem[] | undefined {
+  const items = resolveTodoToolTodos(toolName, input, resultToolTodos)
+  if (toolName !== 'TaskUpdate' || !items?.[0]) return items
+  let status: unknown
+  try { status = (JSON.parse(input) as { status?: unknown } | null)?.status } catch { return items }
+  if (status == null || status === '') return [{ ...items[0], status: '' }]
+  return items
+}
+
+/**
+ * A finished todo call as the `todo_result` every remote path sends. An error
+ * result keeps its summary and carries no items, so it cannot change the list.
+ */
+export function todoResultForCall(
+  toolName: string,
+  input: string,
+  result: { toolUseId: string; summary: string; parentToolUseId?: string | null; isError?: boolean; toolTodos?: TodoToolItem[] },
+): Extract<ContentBlock, { type: 'todo_result' }> {
+  const toolTodos = result.isError ? undefined : todoItemsForResult(toolName, input, result.toolTodos)
+  return {
+    type: 'todo_result',
+    toolUseId: result.toolUseId,
+    summary: result.summary,
+    parentToolUseId: result.parentToolUseId,
+    todoToolName: toolName,
+    ...(toolTodos ? { toolTodos } : {}),
+  }
+}
+
+/**
+ * A finished todo call, rewritten from the original tool input before any
+ * shell blanks that input. The call itself stays until the remote strip drops
+ * it; the result is self-contained, so a later row can update the list after
+ * the call is gone. An error result keeps its summary and carries no items.
+ */
+export function revealTodoResults(message: ChatMessage): ChatMessage {
+  const calls = new Map<string, { toolName: string; input: string }>()
+  for (const block of message.content) {
+    if (block.type === 'tool_use' && TODO_TOOLS.has(block.toolName)) calls.set(block.toolUseId, { toolName: block.toolName, input: block.input })
+  }
+  if (!calls.size) return message
+  let changed = false
+  const content = message.content.map((block) => {
+    if (block.type !== 'tool_result' || !calls.has(block.toolUseId)) return block
+    const entry = calls.get(block.toolUseId)!
+    changed = true
+    return todoResultForCall(entry.toolName, entry.input, block)
+  })
+  return changed ? { ...message, content } : message
+}
+
 export function countLines(s: string): number {
   if (!s) return 0
   return s.split('\n').length
@@ -721,8 +777,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
         .flatMap((b) => {
           if (b.type === 'tool_result' && todoInputs.has(b.toolUseId)) {
             const entry = todoInputs.get(b.toolUseId)!
-            const toolTodos = resolveTodoToolTodos(entry.toolName, entry.input, b.toolTodos)
-            return { type: 'todo_result' as const, toolUseId: b.toolUseId, summary: b.summary, parentToolUseId: b.parentToolUseId, todoToolName: entry.toolName, toolTodos }
+            return todoResultForCall(entry.toolName, entry.input, b)
           }
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
           if (b.type === 'text') {

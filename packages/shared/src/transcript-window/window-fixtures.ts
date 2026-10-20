@@ -36,6 +36,29 @@ export function toolTurn(id: string, tools: number): ChatMessage {
   }
 }
 
+/**
+ * A settled agent turn: reasoning, then `tools` calls with their results
+ * (every third an edit), then the reply. Its process collapses under Detail.
+ */
+export function processTurn(id: string, tools: number, status: ChatMessage['status'] = 'complete'): ChatMessage {
+  return {
+    id, role: 'assistant', status, createdAt: '2026-10-13T00:00:00.000Z', providerId: 'claude',
+    content: [
+      { type: 'thinking', thinking: 'Planning the change.' },
+      ...Array.from({ length: tools }, (_, i) => {
+        const toolUseId = `${id}_t${i}`
+        const call = i % 3 === 2
+          ? { type: 'tool_use' as const, toolName: 'Edit', toolUseId, status: 'complete' as const,
+            input: JSON.stringify({ file_path: `/src/file${i % 6}.ts`, old_string: 'a\nb', new_string: 'a\nc\nd' }) }
+          : { type: 'tool_use' as const, toolName: i % 3 ? 'Bash' : 'Read', toolUseId, status: 'complete' as const,
+            input: JSON.stringify(i % 3 ? { command: `npm test -- ${i}` } : { file_path: `/src/file${i}.ts` }) }
+        return [call, { type: 'tool_result' as const, toolUseId, summary: `done ${i}` }]
+      }).flat(),
+      { type: 'text', text: 'All done: the change is in.' },
+    ],
+  }
+}
+
 /** Alternating user / assistant messages. */
 export function conversation(count: number, prefix = 'm'): ChatMessage[] {
   return Array.from({ length: count }, (_, i) => textMessage(`${prefix}${i}`, i % 2 ? 'assistant' : 'user', `Message ${i}. ${'Some words. '.repeat(20)}`))

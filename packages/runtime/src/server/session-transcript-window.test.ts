@@ -10,7 +10,7 @@ import { LIVE_MESSAGE_BUDGET, LIVE_PATCH_BYTES, WindowViews } from '../stream/de
 import { deliveryPolicy } from '../stream/delivery-policy'
 import type { RpcContext, SessionHostPort } from './rpc-context'
 import { handleSessionTranscriptWindow } from './rpc-session-window'
-import { deliverFrame } from './session-delivery'
+import { deliverFrame, deliverLoad, subscribeDetail } from './session-delivery'
 
 function host(initial: ChatMessage[]) {
   let transcript = initial
@@ -202,7 +202,7 @@ describe('transcript window live delivery', () => {
     expect(events[0]).toMatchObject({ holder: 'phone-1' })
   })
 
-  it('keeps content events when the desktop is showing the session, and still patches a routed phone', async () => {
+  it('withholds content when the desktop is showing the session, and still patches a routed phone', async () => {
     const h = host([textMessage('a', 'assistant', 'Hello', 'streaming')])
     const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('relay', 'desktop')))
     await window(ctx, { holder: 'phone-1' })
@@ -210,8 +210,74 @@ describe('transcript window live delivery', () => {
     h.set([textMessage('a', 'assistant', 'Hello!', 'streaming')])
     const delivered = deliverFrame(frame(envelope(delta('!'), 2)), ctx.delivery, h.sessions).frame
     const events = delivered.events.map((e) => (e.payload as { event: AgentEvent }).event)
-    expect(events.map((e) => e.type)).toEqual(['content_delta', 'transcript_window', 'transcript_window'])
+    expect(events.map((e) => e.type)).toEqual(['transcript_window', 'transcript_window'])
     expect(events.filter((event) => event.type === 'transcript_window').map((event) => event.holder)).toEqual(['phone-1', 'desktop:s'])
+    expect(JSON.stringify(delivered)).not.toContain('Hello!')
+  })
+
+  it('sends a desktop on a direct link the tool shell, and the body only as detail', async () => {
+    const command = `echo ${'x'.repeat(50_000)}`
+    const h = host([textMessage('a', 'assistant', 'Hello', 'streaming')])
+    const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('lan', 'desktop')))
+    const opened = await window(ctx, { holder: 'desktop:s' })
+    expect(opened.summarized).toBe(true)
+    const tool: AgentEvent = {
+      type: 'content_delta', sessionId: 's', messageId: 'a',
+      delta: { type: 'tool_use', toolName: 'Bash', toolUseId: 't', input: JSON.stringify({ command }), status: 'streaming' },
+    }
+    h.set([{
+      ...textMessage('a', 'assistant', 'Hello!', 'streaming'),
+      content: [
+        { type: 'text', text: 'Hello!' },
+        { type: 'tool_use', toolName: 'Bash', toolUseId: 't', input: JSON.stringify({ command }), status: 'streaming' },
+      ],
+    }])
+    const delivered = deliverFrame(frame(envelope(delta('!'), 2), envelope(tool, 3)), ctx.delivery, h.sessions).frame
+    const events = delivered.events.map((e) => (e.payload as { event: AgentEvent }).event)
+    expect(events.map((event) => event.type)).toEqual(['content_delta', 'transcript_window'])
+    expect(events[0]).toMatchObject({ delta: { type: 'tool_use', toolUseId: 't', remoteDetail: '["a","tool","t"]' } })
+    expect(events[1]).toMatchObject({ holder: 'desktop:s' })
+    expect(JSON.stringify(delivered)).not.toContain(command)
+  })
+
+  it('carries a todo list on the window and on the live result, and leaves a later load whole', async () => {
+    const todos = [{ content: 'Ship the window', status: 'in_progress', activeForm: 'Shipping', description: 'detail' }]
+    const input = JSON.stringify({ todos })
+    const command = `echo ${'secret-body-'.repeat(200)}`
+    const reply: ChatMessage = {
+      id: 'a', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude',
+      content: [
+        { type: 'thinking', thinking: 'private plan' },
+        { type: 'tool_use', toolName: 'TodoWrite', toolUseId: 'tw', input, status: 'complete' },
+        { type: 'tool_result', toolUseId: 'tw', summary: 'ok' },
+        { type: 'tool_use', toolName: 'Bash', toolUseId: 'sh', input: JSON.stringify({ command }), status: 'complete' },
+        { type: 'tool_result', toolUseId: 'sh', summary: 'ran' },
+      ],
+    }
+    const h = host([reply])
+    const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('lan', 'desktop')))
+    const opened = await window(ctx, { holder: 'desktop:s' })
+    expect(opened.summarized).toBe(true)
+    const painted = opened.messages.map((message) => materializeWindowMessage(message))
+    const todoResult = painted[0]?.content.find((block) => block.type === 'todo_result')
+    expect(todoResult).toMatchObject({
+      todoToolName: 'TodoWrite',
+      toolTodos: [{ content: 'Ship the window', status: 'in_progress', activeForm: 'Shipping', description: 'detail' }],
+    })
+    expect(JSON.stringify(painted)).not.toContain(command)
+
+    const loaded = deliverLoad(h.sessions.load({ sessionId: 's' }), ctx.delivery)
+    expect(loaded.summarized).toBeUndefined()
+    expect(loaded.messages).toEqual([reply])
+    const detail = subscribeDetail(ctx.delivery, h.sessions, { sessionId: 's', detailRef: '["a","tool","sh"]', subscriptionId: 'sub' })
+    expect(detail.text).toContain(command)
+
+    const result: AgentEvent = { type: 'content_delta', sessionId: 's', messageId: 'a', delta: { type: 'tool_result', toolUseId: 'tw', summary: 'ok' } }
+    const delivered = deliverFrame(frame(envelope(result, 2)), ctx.delivery, h.sessions).frame
+    const events = delivered.events.map((e) => (e.payload as { event: AgentEvent }).event)
+    expect(events[0]).toMatchObject({
+      delta: { type: 'todo_result', todoToolName: 'TodoWrite', toolTodos: [expect.objectContaining({ content: 'Ship the window' })] },
+    })
   })
 
   it('keeps two desktop sessions patching while one streams', async () => {

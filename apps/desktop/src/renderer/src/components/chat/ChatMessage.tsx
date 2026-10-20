@@ -16,6 +16,7 @@ import { TurnDetailSection } from './TurnDetailSection'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
+import { DesktopTranscriptFold } from './DesktopTranscriptFold'
 import { buildCompactTurn, turnDisplayContent } from '@superone/chat-view/presenters/turn-content'
 import { useTurnPlanApproval } from './use-turn-plan-approval'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
@@ -111,6 +112,7 @@ const TURN_PARTS: TurnBodyPresenterParts = {
   ToolGroup,
   AppToolGroup,
   TurnDetail: TurnDetailSection,
+  Fold: DesktopTranscriptFold,
 }
 
 const LONG_CONTENT_BLOCK_TURN_PARTS: TurnBodyPresenterParts = {

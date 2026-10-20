@@ -8,7 +8,7 @@ import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from './media-predic
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 import { dropHostWorkflowShadow } from './host-workflow-card'
 import { dropStreamingToolInputPreview, isTerminalMessageStatus } from './shared'
-import { todoListUpdate, todoWriteTodos } from './todos'
+import { applyTodoResult, applyTodoToolInput } from './todos'
 import { queuedAsyncQuestion } from './codex'
 import { codexAsyncQuestionItems } from '@superone/shared/codex-async-question'
 
@@ -94,59 +94,8 @@ export function reduceContentDelta(
       const tn = toolBlock.toolName
       if (!resultDelta.isError && (tn === 'TodoWrite' || tn === 'TaskCreate' || tn === 'TaskUpdate')) {
         try {
-          const input = JSON.parse(toolBlock.input)
-          const listed = tn === 'TodoWrite' ? todoWriteTodos(input) : null
-          if (listed) {
-            extraUpdates = todoListUpdate(session, listed)
-          } else if (tn === 'TaskCreate') {
-            const resolvedId = resultDelta.toolTodos?.[0]?.taskId
-            const id = resolvedId ?? String(session._nextTodoId)
-            extraUpdates = {
-              ...(resolvedId ? {} : { _nextTodoId: session._nextTodoId + 1 }),
-              showTodos: !session._todosUserDismissed,
-              todos: {
-                ...session.todos,
-                [id]: {
-                  id,
-                  subject: input.subject ?? '',
-                  description: input.description ?? '',
-                  status: 'pending',
-                  activeForm: input.activeForm,
-                },
-              },
-            }
-          } else if (tn === 'TaskUpdate' && input.taskId) {
-            const existing = session.todos[input.taskId]
-            if (existing) {
-              if (input.status === 'deleted') {
-                const { [input.taskId]: _, ...rest } = session.todos
-                extraUpdates = { todos: rest }
-              } else {
-                const mergeIds = (prev: string[] | undefined, add: unknown): string[] | undefined => {
-                  if (!Array.isArray(add) || add.length === 0) return prev
-                  return Array.from(new Set([...(prev ?? []), ...add.map(String)]))
-                }
-                const nextBlockedBy = mergeIds(existing.blockedBy, input.addBlockedBy)
-                const nextBlocks = mergeIds(existing.blocks, input.addBlocks)
-                extraUpdates = {
-                  ...(!session._todosUserDismissed && { showTodos: true }),
-                  todos: {
-                    ...session.todos,
-                    [input.taskId]: {
-                      ...existing,
-                      ...(input.status && { status: input.status }),
-                      ...(input.subject && { subject: input.subject }),
-                      ...(input.description && { description: input.description }),
-                      ...(input.activeForm && { activeForm: input.activeForm }),
-                      ...(input.owner && { owner: input.owner }),
-                      ...(nextBlockedBy && { blockedBy: nextBlockedBy }),
-                      ...(nextBlocks && { blocks: nextBlocks }),
-                    },
-                  },
-                }
-              }
-            }
-          }
+          const applied = applyTodoToolInput(session, tn, JSON.parse(toolBlock.input), resultDelta.toolTodos)
+          if (applied) extraUpdates = applied
         } catch { /* ignore malformed JSON */ }
       }
 
@@ -224,6 +173,16 @@ export function reduceContentDelta(
     }
     const stripped = dropHostWorkflowShadow(updatedMessages, resultDelta.toolUseId, resultDelta.summary)
     if (stripped) updatedMessages = stripped
+  }
+
+  // A windowed remote row has already dropped the call. The result carries the list.
+  if (event.delta.type === 'todo_result') {
+    const resultDelta = event.delta
+    ports.streaming.clear(resultDelta.toolUseId)
+    const restPreviews = dropStreamingToolInputPreview(session._streamingToolInputPreviews, resultDelta.toolUseId)
+    if (restPreviews) extraUpdates._streamingToolInputPreviews = restPreviews
+    const applied = applyTodoResult(session, resultDelta)
+    if (applied) extraUpdates = { ...extraUpdates, ...applied }
   }
 
   return { messages: updatedMessages, lastEventAt: ports.now(), ...extraUpdates }

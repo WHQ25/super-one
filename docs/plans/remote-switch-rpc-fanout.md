@@ -130,3 +130,10 @@ did not dial accounts, mentions, worktrees, or the provider lists again.
 Not measured: an account or binding changed only on B, and a worktree created
 only on B. A worktree created from A's own git IPC invalidates the cache in
 code; that path was not timed in this lab.
+
+The counts above are from loopback on one Mac. The production relay
+(`wss://relay.super-one.dev`) was not re-run from this worktree: another lab
+already holds the default desktop ports. On that relay every RPC costs about
+0.55 s before B does any work, so a switch that still sends 6 or 7 calls is
+several seconds of round trips. The method set does not change with the
+transport.

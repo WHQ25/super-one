@@ -3,13 +3,62 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { initializeChatViewI18n } from '../i18n'
 import {
+  ApiRetryIndicator,
   RecappingIndicator,
   TurnMetaIndicator,
   TurnSummaryAboveFooter,
 } from './ChatMessageIndicators'
+import { visibleRetryDetail } from './retry-banner-detail'
 
 beforeAll(async () => {
   await initializeChatViewI18n('en')
+})
+
+const grokDump = 'API error (status 500 Internal Server Error): {"error":"upstream exploded","request_id":"req_123","model":"grok-4"}'
+
+describe('visibleRetryDetail', () => {
+  it('keeps a short clause and drops an API dump', () => {
+    expect(visibleRetryDetail('timeout')).toBe('timeout')
+    expect(visibleRetryDetail('  rate limited  ')).toBe('rate limited')
+    expect(visibleRetryDetail(grokDump)).toBeUndefined()
+    expect(visibleRetryDetail('API error (status 504): upstream timeout')).toBeUndefined()
+    expect(visibleRetryDetail(undefined)).toBeUndefined()
+    expect(visibleRetryDetail('   ')).toBeUndefined()
+  })
+})
+
+function withoutTitle(html: string): string {
+  return html.replace(/\stitle="[^"]*"/g, '')
+}
+
+describe('ApiRetryIndicator', () => {
+  it('shows the retry count without the upstream dump', () => {
+    const html = renderToStaticMarkup(createElement(ApiRetryIndicator, {
+      info: { attempt: 2, maxRetries: 5, delayMs: 0, phase: 'retrying', message: grokDump },
+    }))
+    const visible = withoutTitle(html)
+    expect(visible).toContain('Retrying API request (2/5)…')
+    expect(visible).not.toContain('—')
+    expect(visible).not.toContain('upstream exploded')
+    expect(html).toContain('upstream exploded')
+  })
+
+  it('keeps a short retry reason on the banner', () => {
+    const html = renderToStaticMarkup(createElement(ApiRetryIndicator, {
+      info: { attempt: 1, delayMs: 0, message: 'timeout' },
+    }))
+    expect(html).toContain('Retrying API request (1)… — timeout')
+  })
+
+  it('hides a dump after retries are exhausted', () => {
+    const html = renderToStaticMarkup(createElement(ApiRetryIndicator, {
+      info: { attempt: 5, delayMs: 0, phase: 'exhausted', message: grokDump },
+    }))
+    const visible = withoutTitle(html)
+    expect(visible).toContain('API retries exhausted')
+    expect(visible).not.toContain('—')
+    expect(visible).not.toContain('upstream exploded')
+  })
 })
 
 describe('turn meta chrome', () => {

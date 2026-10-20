@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, Minimize2, X } from 'lucide-react'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { formatCompactDuration } from './duration-format'
+import { visibleRetryDetail } from './retry-banner-detail'
 
 import { parseCompactMarker, parseTurnMetaMarker, type TurnMetaMarker } from '@superone/shared/transcript-markers'
 export { parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, type TurnMetaMarker } from '@superone/shared/transcript-markers'
@@ -230,6 +231,7 @@ export function ApiRetryIndicator({
   const { t } = useTranslation()
   const phase = info.phase ?? 'retrying'
   const terminal = phase === 'exhausted' || phase === 'failed'
+  const detail = visibleRetryDetail(info.message)
   const [remaining, setRemaining] = useState(info.delayMs)
   const startRef = useRef(Date.now())
   useEffect(() => {
@@ -262,7 +264,7 @@ export function ApiRetryIndicator({
         title={info.message}
       >
         {label}
-        {info.message ? ` — ${info.message}` : ''}
+        {detail ? ` — ${detail}` : ''}
         {!terminal && seconds > 0 && <> {seconds}s</>}
       </span>
       {terminal && onRetry && (

@@ -128,7 +128,9 @@ the phone do not relay edits.
   version), and the plugin's `userConfig` form (`pluginConfigs` in user
   settings; sensitive values stay in the keychain). The review and the form
   are for this Mac's plugins only.
-- A reload's `error_count` shows a notice, and the slash list follows
+- A reload's `error_count` shows a notice. The slash list takes the
+  runtime's `initialize` commands (a mod's `session.start` registration is
+  only there; `ModSurface` announces it), then follows
   `system/commands_changed`.
 
 ## Not supported

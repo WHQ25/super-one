@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { sdkSlashCommands } from '@superone/shared/slash-commands'
 import {
   MOD_UI_UNAVAILABLE,
   type ModHostReply,
@@ -19,7 +20,7 @@ export const UI_SURFACE_CAPABILITY = 'ui_surface_v1'
  * public. Kept structural so tests drive the adapter without a CLI.
  */
 export interface ModSurfaceQuery {
-  initializationResult?: () => Promise<{ capabilities?: string[] }>
+  initializationResult?: () => Promise<{ capabilities?: string[]; commands?: Array<{ name: string; description: string; argumentHint?: string }> }>
   request?: (inner: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
   setUiHost?: (host: Record<string, (req: Record<string, unknown>, ctx?: { signal?: AbortSignal }) => Promise<unknown>>) => void
 }
@@ -78,7 +79,12 @@ export class ModSurface {
       promptSuggest: (req) => this.relayHostRequest('promptSuggest', req),
     })
     void query.initializationResult?.().then(
-      (init) => this.setAvailable(Array.isArray(init?.capabilities) && init.capabilities.includes(UI_SURFACE_CAPABILITY)),
+      (init) => {
+        this.setAvailable(Array.isArray(init?.capabilities) && init.capabilities.includes(UI_SURFACE_CAPABILITY))
+        // A command a mod registers while the CLI starts is only in this answer: no
+        // `commands_changed` follows it. Terminal-bound tags come from the harness catalog.
+        if (!this.disposed && Array.isArray(init?.commands)) this.opts.emit({ type: 'session_commands', commands: sdkSlashCommands(init.commands, undefined) })
+      },
       () => this.setAvailable(false),
     )
   }

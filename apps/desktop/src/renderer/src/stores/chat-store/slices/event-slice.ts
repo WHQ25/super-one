@@ -14,6 +14,7 @@ import type {
 import { withCodexContents } from '@superone/shared/codex-content'
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
+import { markTerminalBoundSlashCommands } from '@superone/shared/slash-commands'
 import { goalComposerAction } from '@superone/shared/session-goal'
 import { useAppStore } from '../../app'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
@@ -471,8 +472,10 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
 
       if (event.type === 'session_commands') {
         const claudeRes = s.harnessResources.claude
+        // A list read before the runtime's `system/init` has no terminal-bound tags; the catalog's probe has them.
+        const terminalNames = claudeRes?.slashCommands.filter((c) => c.terminalBound).map((c) => c.name)
         updatedProject.slashCommands = buildSlashCommands(
-          event.commands, claudeRes?.skills ?? [], claudeRes?.commands ?? [],
+          markTerminalBoundSlashCommands(event.commands, terminalNames), claudeRes?.skills ?? [], claudeRes?.commands ?? [],
           project._projectSkills ?? [], project._projectCommands ?? [],
           new Set(s.disabledSkills),
         )

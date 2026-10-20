@@ -59,6 +59,15 @@ describe('ModSurface availability', () => {
     expect(events).toContainEqual({ type: 'mod_ui_state', available: false })
   })
 
+  it('announces the startup commands, a mod command included, even with drawing off', async () => {
+    const commands = [{ name: 'ultra-config', description: 'Setting profiles', argumentHint: '[profile]' }]
+    const { events } = await ready(replayQuery({ initializationResult: async () => ({ capabilities: ['ui_surface_v1'], commands }) }).query, false)
+    expect(events).toContainEqual({
+      type: 'session_commands',
+      commands: [{ name: 'ultra-config', description: 'Setting profiles', argumentHint: '[profile]', isSkill: false }],
+    })
+  })
+
   it('is unavailable on an SDK without the private request API', () => {
     const emit = vi.fn()
     const surface = new ModSurface({ query: { initializationResult: async () => ({ capabilities: ['ui_surface_v1'] }) }, emit })

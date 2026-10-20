@@ -353,6 +353,8 @@ export class Session implements SessionContract {
   private _cachedAcpModels: AgentEvent | null = null
   private _cachedAcpModes: AgentEvent | null = null
   private _cachedAcpCommands: AgentEvent | null = null
+  /** The Claude runtime's own command list; `init_ready` resets the menu to the catalog. */
+  private _cachedSessionCommands: AgentEvent | null = null
   private _cachedSessionAgents: AgentEvent | null = null
   /**
    * Session-wide state the harness reports only when it changes. A subscriber
@@ -1943,6 +1945,7 @@ export class Session implements SessionContract {
   getReplayEvents(): AgentEvent[] {
     const out: AgentEvent[] = []
     if (this._cachedInitReady) out.push(this._cachedInitReady)
+    if (this._cachedSessionCommands) out.push(this._cachedSessionCommands)
     if (this._cachedWorktreeMissing) out.push(this._cachedWorktreeMissing)
     // Full composer UI state when it diverges from defaults. Live snapshots also
     // carry uiSettings for mini-window cold paint; this covers Session.on() late
@@ -2003,6 +2006,7 @@ export class Session implements SessionContract {
       activeProvider,
     }
     this._cachedInitReady = this.forwardEvent(event)
+    if (this._cachedSessionCommands) this.forwardEvent(this._cachedSessionCommands)
   }
 
   getStatus(): SessionStatus {
@@ -2267,10 +2271,10 @@ export class Session implements SessionContract {
       this.resolvedInteractions.delete(event.request.requestId)
     }
     this.observeDelivery(event)
-    // A read receipt is about the user, not the agent, and a mod redrawing is
-    // not agent work: neither may bump the session's recency nor postpone its
-    // idle runtime release.
-    if (event.type !== 'session_seen' && !event.type.startsWith('mod_')) {
+    // A read receipt is about the user, not the agent, and neither a mod
+    // redrawing nor the runtime announcing its commands is agent work: none may
+    // bump the session's recency nor postpone its idle runtime release.
+    if (event.type !== 'session_seen' && event.type !== 'session_commands' && !event.type.startsWith('mod_')) {
       this._lastEventAt = Date.now()
       this.touchRuntimeActivity()
     }
@@ -2414,6 +2418,8 @@ export class Session implements SessionContract {
       }
     } else if (tagged.type === 'acp_commands') {
       this._cachedAcpCommands = tagged
+    } else if (tagged.type === 'session_commands') {
+      this._cachedSessionCommands = tagged
     } else if (tagged.type === 'session_agents') {
       this._cachedSessionAgents = tagged
     } else if (tagged.type === 'session_goal') {

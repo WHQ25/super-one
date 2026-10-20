@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { sessionCacheExpiresAt } from '@superone/shared/session-continuation'
 import { useAppStore } from '@/stores/app'
@@ -17,15 +17,14 @@ export interface SessionContinuationOffer {
 // Dismissing holds per session until its cache expires again (a later turn).
 const dismissed = new Map<string, number>()
 const listeners = new Set<() => void>()
-let dismissals = 0
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
 
 export function dismissContinuationOffer(offer: SessionContinuationOffer): void {
+  if (dismissed.get(offer.sessionId) === offer.expiresAt) return
   dismissed.set(offer.sessionId, offer.expiresAt)
-  dismissals++
   for (const listener of listeners) listener()
 }
 
@@ -52,7 +51,14 @@ export function useSessionContinuationOffer(root?: RefObject<HTMLElement | null>
     () => (continuedIn ? null : sessionCacheExpiresAt({ messages, contextTokens, settings })),
     [continuedIn, messages, contextTokens, settings],
   )
-  useSyncExternalStore(subscribe, () => dismissals)
+  // The React Compiler caches `dismissed.get` against the session id alone.
+  // The store snapshot has to be read here, or a dismissal stays on screen
+  // until that id changes — switching to another session and back.
+  const getDismissedExpiry = useCallback(
+    () => (sessionId ? dismissed.get(sessionId) ?? null : null),
+    [sessionId],
+  )
+  const dismissedExpiresAt = useSyncExternalStore(subscribe, getDismissedExpiry, getDismissedExpiry)
   const [, setRenders] = useState(0)
   useEffect(() => {
     const delay = expiresAt === null ? 0 : expiresAt - Date.now()
@@ -62,7 +68,7 @@ export function useSessionContinuationOffer(root?: RefObject<HTMLElement | null>
     return () => clearTimeout(timer)
   }, [expiresAt])
   const due = !!projectPath && !!sessionId && expiresAt !== null && Date.now() >= expiresAt
-    && status === 'idle' && !pending && dismissed.get(sessionId) !== expiresAt
+    && status === 'idle' && !pending && dismissedExpiresAt !== expiresAt
   // Taking the editor away mid-sentence loses the person's place: wait until it loses focus.
   const typing = due && editing(root?.current)
   useEffect(() => {

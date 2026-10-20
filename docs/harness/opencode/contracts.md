@@ -127,8 +127,9 @@ Upstream behavior SuperOne depends on that the published types do not state.
   project persistence; selecting it previews the exact proposed patterns before
   sending `always`. Cancelling that preview sends no permission reply. Preview
   state is bound to the request id, so it cannot approve the next request.
-  Desktop and phone share `permission-presentation.ts`; the desktop keeps
-  its existing high-risk keyboard guard. `permission-presentation.test.ts`,
+  Desktop and phone share `permission-presentation.ts`. Enter approves a
+  desktop permission once its composer entrance animation has finished.
+  `permission-presentation.test.ts`,
   `PermissionPrompt.test.tsx`, `PermissionPrompt.integration.test.tsx`,
   `opencode-backend-v2.test.ts` and mobile `PromptSheet.test.tsx` guard this flow.
   Storybook: `Tool UI/General/Permission Prompt` (`OpenCode*` stories) and

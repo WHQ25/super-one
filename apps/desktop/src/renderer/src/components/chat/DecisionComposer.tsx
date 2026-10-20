@@ -4,8 +4,9 @@ import { ModQuestionSite } from '@superone/chat-view/mod-ui'
 import { useChatRootRef } from './is-focus-in-chat'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { CodexAsyncQuestionPrompt } from './CodexAsyncQuestionPrompt'
+import { composerStageFrom } from './ComposerSwitch'
 import { PermissionPrompt } from './PermissionPrompt'
-import { claimDecisionFocus, isHighRiskPermission, setDecisionKeyboardPolicy } from './composer-slot/decision-composer-policy'
+import { claimDecisionFocus, setDecisionKeyboardPolicy } from './composer-slot/decision-composer-policy'
 import { buildDecisionQueue, type DecisionQueueItem } from './composer-slot/decision-queue'
 
 export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) {
@@ -23,13 +24,12 @@ export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) 
   const requestKey = current ? `${current.kind}:${current.request.requestId}` : null
   const liveKey = queue[0] ? `${queue[0].kind}:${queue[0].request.requestId}` : null
   const stale = requestKey !== liveKey
-  const requireExplicitApproval = current?.kind === 'permission' && isHighRiskPermission(current.request)
 
   useLayoutEffect(() => {
     const root = chatRootRef?.current ?? containerRef.current?.closest<HTMLElement>('[data-chat-root]')
     if (!root || !requestKey) return
-    return setDecisionKeyboardPolicy(root, requestKey, requireExplicitApproval)
-  }, [chatRootRef, requestKey, requireExplicitApproval])
+    return setDecisionKeyboardPolicy(root, requestKey, composerStageFrom(containerRef.current))
+  }, [chatRootRef, requestKey])
 
   // Runs after the prompt's own effects, so a control it focused keeps focus.
   useEffect(() => {

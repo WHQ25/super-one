@@ -23,7 +23,7 @@ export function InputRequestComposer({ request }: { request?: PermissionRequest 
   const rootRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const root = chatRootRef?.current ?? rootRef.current?.closest<HTMLElement>('[data-chat-root]')
-    if (root && active && request) return setDecisionKeyboardPolicy(root, `input:${request.requestId}`, false)
+    if (root && active && request) return setDecisionKeyboardPolicy(root, `input:${request.requestId}`)
   }, [chatRootRef, request?.requestId, active])
   if (!request) return null
   return (

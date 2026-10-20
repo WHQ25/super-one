@@ -126,7 +126,7 @@ export function PlanApprovalPrompt() {
   useLayoutEffect(() => {
     const root = chatRootRef?.current ?? containerRef.current?.closest<HTMLElement>('[data-chat-root]')
     if (!root || !requestId) return
-    return setDecisionKeyboardPolicy(root, `plan:${requestId}`, false)
+    return setDecisionKeyboardPolicy(root, `plan:${requestId}`)
   }, [chatRootRef, requestId])
 
   useEffect(() => {

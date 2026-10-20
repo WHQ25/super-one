@@ -1,31 +1,37 @@
-import type { PermissionRequest } from '@superone/shared/agent-types'
-
 interface DecisionKeyboardPolicy {
   requestKey: string
   guardUntil: number
-  requireExplicitApproval: boolean
 }
 
 const keyboardPolicies = new WeakMap<HTMLElement, DecisionKeyboardPolicy>()
 const recentInputFocus = new WeakMap<HTMLElement, number>()
+/** Surfaces that do not rise in the composer slot (plan approval, app input, continuation). */
 const SHORTCUT_GUARD_MS = 500
+/**
+ * A rise that never finishes (hidden window) must not hold Enter forever.
+ * Matches ComposerSwitch's stuck-animation deadline.
+ */
+const ENTRANCE_GUARD_FALLBACK_MS = 600
 const RECENT_INPUT_FOCUS_MS = 1_000
 
-export function isHighRiskPermission(request: PermissionRequest | undefined): boolean {
-  if (!request) return false
-  if (request.defaultToNo || request.requestKind === 'terminal_command_confirm') return true
-  return /(?:^|[._-])(?:bash|shell|terminal)(?:$|[._-])/i.test(request.toolName)
-}
-
+/**
+ * Hold Enter, Space and digit shortcuts for one decision.
+ *
+ * Pass the composer stage (`data-composer-stage`) to hold them only while that
+ * stage is entering. A stage already at rest, or `null`, does not hold them.
+ * Omit the stage for the fixed window used by prompts that do not use the rise.
+ */
 export function setDecisionKeyboardPolicy(
   root: HTMLElement,
   requestKey: string,
-  requireExplicitApproval: boolean,
+  entrance?: HTMLElement | null,
 ): () => void {
-  const policy = {
+  const rising = !!entrance && entrance.getAttribute('data-phase') === 'entering'
+  const policy: DecisionKeyboardPolicy = {
     requestKey,
-    guardUntil: Date.now() + SHORTCUT_GUARD_MS,
-    requireExplicitApproval,
+    guardUntil: entrance === undefined
+      ? Date.now() + SHORTCUT_GUARD_MS
+      : rising ? Date.now() + ENTRANCE_GUARD_FALLBACK_MS : 0,
   }
   keyboardPolicies.set(root, policy)
   const guardNativeActivation = (event: KeyboardEvent) => {
@@ -39,7 +45,22 @@ export function setDecisionKeyboardPolicy(
     event.stopPropagation()
   }
   root.addEventListener('keydown', guardNativeActivation, true)
+  const release = () => { policy.guardUntil = 0 }
+  const onEntranceDone = (event: Event) => {
+    if (event.target !== entrance) return
+    release()
+  }
+  if (rising && entrance) {
+    entrance.addEventListener('animationend', onEntranceDone)
+    entrance.addEventListener('webkitAnimationEnd', onEntranceDone)
+    entrance.addEventListener('animationcancel', onEntranceDone)
+  }
   return () => {
+    if (rising && entrance) {
+      entrance.removeEventListener('animationend', onEntranceDone)
+      entrance.removeEventListener('webkitAnimationEnd', onEntranceDone)
+      entrance.removeEventListener('animationcancel', onEntranceDone)
+    }
     root.removeEventListener('keydown', guardNativeActivation, true)
     if (keyboardPolicies.get(root) === policy) keyboardPolicies.delete(root)
   }
@@ -51,14 +72,9 @@ export function shouldSuppressDecisionShortcut(event: KeyboardEvent, root: HTMLE
   if (!policy) return false
   const textarea = event.target instanceof HTMLTextAreaElement ? event.target : null
   if (textarea && event.isComposing) return false
-  // Composer newline shortcuts edit text even during the accidental-submit guard.
+  // Composer newline shortcuts edit text even while the card is rising.
   if (textarea && event.key === 'Enter' && (event.shiftKey || event.altKey)) return false
-  if (isDecisionShortcut(event) && Date.now() < policy.guardUntil) return true
-  // Enter in a feedback field rejects; it must never become a high-risk approval.
-  if (textarea?.hasAttribute('data-feedback') && event.key === 'Enter') return false
-  if (!policy.requireExplicitApproval) return false
-  if (event.key === 'Tab' && event.shiftKey) return true
-  return isDecisionShortcut(event) && !(event.key === 'Enter' && event.metaKey)
+  return isDecisionShortcut(event) && Date.now() < policy.guardUntil
 }
 
 function isDecisionShortcut(event: KeyboardEvent): boolean {

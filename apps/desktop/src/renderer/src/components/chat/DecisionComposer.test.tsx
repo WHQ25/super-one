@@ -30,13 +30,30 @@ describe('DecisionComposer', () => {
     expect(container.textContent).not.toMatch(/\d\s*\/\s*\d/)
   })
 
-  it('guards a decision already pending when the chat root first mounts', () => {
+  it('lets Enter through when a pending decision is already at rest', () => {
     session.pendingPermissions = [{ requestId: 'initial', toolName: 'Bash', input: {}, allowAlwaysAllow: false }]
     session.pendingQuestion = null
     render(<div data-chat-root=""><DecisionComposer /></div>)
     const button = screen.getByRole('button', { name: 'Permission initial' })
     button.focus()
+    expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true)
+  })
+
+  it('drops Enter until the approval card finishes rising', () => {
+    session.pendingPermissions = [{ requestId: 'rising', toolName: 'Bash', input: {}, allowAlwaysAllow: false }]
+    session.pendingQuestion = null
+    render(
+      <div data-chat-root="">
+        <div data-composer-stage="" data-phase="entering">
+          <DecisionComposer />
+        </div>
+      </div>,
+    )
+    const button = screen.getByRole('button', { name: 'Permission rising' })
+    button.focus()
     expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(false)
+    document.querySelector('[data-composer-stage]')!.dispatchEvent(new Event('animationend'))
+    expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true)
   })
 
   it('takes the focus the replaced editor dropped on <body>, but not from another surface', () => {

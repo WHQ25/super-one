@@ -5,6 +5,11 @@ type Phase = 'steady' | 'leaving' | 'entering' | 'settling'
 
 const ANIMATION_DEADLINE_MS = 600
 
+/** The element whose enter animation is the approval card's rise. */
+export function composerStageFrom(node: Node | null): HTMLElement | null {
+  return node instanceof Element ? node.closest<HTMLElement>('[data-composer-stage]') : null
+}
+
 interface ComposerSwitchProps<K extends string> {
   /** Which composer should be on screen. */
   kind: K
@@ -207,6 +212,7 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
       <div
         ref={stageRef}
         data-testid="composer-switch"
+        data-composer-stage=""
         data-phase={phase}
         onAnimationEnd={handleAnimationEnd}
         style={{ ...(floor === undefined ? {} : { minHeight: floor }), ...(heightCap === undefined ? {} : { maxHeight: heightCap }) }}

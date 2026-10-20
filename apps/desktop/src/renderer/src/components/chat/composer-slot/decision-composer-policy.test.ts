@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  isHighRiskPermission,
   leaveDecisionField,
   setDecisionKeyboardPolicy,
   shouldSuppressDecisionShortcut,
@@ -9,45 +8,74 @@ import {
 
 afterEach(() => vi.useRealTimers())
 
+function key(name: string, modifiers: Partial<KeyboardEvent> = {}): KeyboardEvent {
+  return { key: name, ...modifiers } as KeyboardEvent
+}
+
 describe('decision composer keyboard policy', () => {
-  it('guards shortcut keys briefly after a decision appears', () => {
+  it('holds shortcut keys for a short window when the prompt does not rise in the slot', () => {
     vi.useFakeTimers()
     const root = document.createElement('div')
-    setDecisionKeyboardPolicy(root, 'permission:p1', false)
+    setDecisionKeyboardPolicy(root, 'plan:p1')
 
-    expect(shouldSuppressDecisionShortcut({ key: 'Enter' } as KeyboardEvent, root)).toBe(true)
-    expect(shouldSuppressDecisionShortcut({ key: '2' } as KeyboardEvent, root)).toBe(true)
-    expect(shouldSuppressDecisionShortcut({ key: 'Escape' } as KeyboardEvent, root)).toBe(false)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(true)
+    expect(shouldSuppressDecisionShortcut(key('2'), root)).toBe(true)
+    expect(shouldSuppressDecisionShortcut(key('Escape'), root)).toBe(false)
 
     vi.advanceTimersByTime(501)
-    expect(shouldSuppressDecisionShortcut({ key: 'Enter' } as KeyboardEvent, root)).toBe(false)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(false)
   })
 
-  it('requires click or Command+Enter for high-risk approvals after the guard window', () => {
+  it('holds shortcuts only while the approval card is rising', () => {
     vi.useFakeTimers()
     const root = document.createElement('div')
-    setDecisionKeyboardPolicy(root, 'permission:p2', true)
-    vi.advanceTimersByTime(501)
+    const entrance = document.createElement('div')
+    entrance.setAttribute('data-phase', 'entering')
+    setDecisionKeyboardPolicy(root, 'permission:p2', entrance)
 
-    expect(shouldSuppressDecisionShortcut({ key: 'Enter' } as KeyboardEvent, root)).toBe(true)
-    expect(shouldSuppressDecisionShortcut({ key: '1' } as KeyboardEvent, root)).toBe(true)
-    expect(shouldSuppressDecisionShortcut({ key: 'Enter', metaKey: true } as KeyboardEvent, root)).toBe(false)
-    expect(shouldSuppressDecisionShortcut({ key: 'Tab', shiftKey: true } as KeyboardEvent, root)).toBe(true)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(true)
+    expect(shouldSuppressDecisionShortcut(key('1'), root)).toBe(true)
+    expect(shouldSuppressDecisionShortcut(key('Tab', { shiftKey: true }), root)).toBe(false)
+
+    const child = entrance.appendChild(document.createElement('span'))
+    child.dispatchEvent(new Event('animationend', { bubbles: true }))
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(true)
+
+    entrance.dispatchEvent(new Event('animationend'))
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(false)
   })
 
-  it('does not change Shift+Tab navigation for ordinary decisions', () => {
+  it('releases a rise that never ends once the animation deadline passes', () => {
     vi.useFakeTimers()
     const root = document.createElement('div')
-    setDecisionKeyboardPolicy(root, 'permission:p3', false)
-    vi.advanceTimersByTime(501)
+    const entrance = document.createElement('div')
+    entrance.setAttribute('data-phase', 'entering')
+    setDecisionKeyboardPolicy(root, 'permission:stuck', entrance)
 
-    expect(shouldSuppressDecisionShortcut({ key: 'Tab', shiftKey: true } as KeyboardEvent, root)).toBe(false)
+    vi.advanceTimersByTime(599)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(true)
+    vi.advanceTimersByTime(1)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), root)).toBe(false)
   })
 
-  it('classifies terminal commands and decline-first requests as high risk', () => {
-    expect(isHighRiskPermission({ requestId: 'a', toolName: 'Bash', input: {}, allowAlwaysAllow: false })).toBe(true)
-    expect(isHighRiskPermission({ requestId: 'b', toolName: 'Read', input: {}, allowAlwaysAllow: false, defaultToNo: true })).toBe(true)
-    expect(isHighRiskPermission({ requestId: 'c', toolName: 'Read', input: {}, allowAlwaysAllow: false })).toBe(false)
+  it('does not hold shortcuts when the card is already at rest', () => {
+    const steadyRoot = document.createElement('div')
+    const steady = document.createElement('div')
+    steady.setAttribute('data-phase', 'steady')
+    setDecisionKeyboardPolicy(steadyRoot, 'permission:rest', steady)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), steadyRoot)).toBe(false)
+
+    const bareRoot = document.createElement('div')
+    setDecisionKeyboardPolicy(bareRoot, 'permission:none', null)
+    expect(shouldSuppressDecisionShortcut(key('Enter'), bareRoot)).toBe(false)
+  })
+
+  it('does not change Shift+Tab navigation', () => {
+    vi.useFakeTimers()
+    const root = document.createElement('div')
+    setDecisionKeyboardPolicy(root, 'permission:p3')
+
+    expect(shouldSuppressDecisionShortcut(key('Tab', { shiftKey: true }), root)).toBe(false)
   })
 
   it('cancels native button activation while leaving text entry editable', () => {
@@ -57,27 +85,27 @@ describe('decision composer keyboard policy', () => {
     const input = document.createElement('input')
     const textarea = document.createElement('textarea')
     root.append(button, input, textarea)
-    const clear = setDecisionKeyboardPolicy(root, 'permission:native', true)
-    vi.advanceTimersByTime(501)
+    const clear = setDecisionKeyboardPolicy(root, 'permission:native')
 
-    for (const key of ['Enter', ' ']) {
-      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    for (const keyName of ['Enter', ' ']) {
+      const event = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true })
       button.dispatchEvent(event)
       expect(event.defaultPrevented).toBe(true)
     }
     const typing = new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true })
     input.dispatchEvent(typing)
     expect(typing.defaultPrevented).toBe(false)
-    for (const key of [' ', '1']) {
-      const typing = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    for (const keyName of [' ', '1']) {
+      const typing = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true })
       textarea.dispatchEvent(typing)
       expect(typing.defaultPrevented).toBe(false)
     }
 
-    clear()
+    vi.advanceTimersByTime(501)
     const after = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     button.dispatchEvent(after)
     expect(after.defaultPrevented).toBe(false)
+    clear()
   })
 
   it('leaves a text field for the prompt container instead of <body>', () => {

@@ -304,11 +304,14 @@ browser tab, so marking a page in the main window fills that session's composer
 wherever it is shown. The page's marks follow the chips: removing a chip in any
 window, or sending it, drops its mark from the page.
 
-Enter, Space, and digit shortcuts are ignored for 500 ms after a decision
-appears. High-risk permission requests—terminal commands, Bash-like tools, and
-decline-first requests—require a click or Command+Enter for approval. Keyboard
-handling is scoped to the owning chat pane, so prompts in another pane do not
-consume the user's keystrokes.
+Enter, Space, and digit shortcuts are ignored while a permission or question
+card is rising into the composer slot. Enter approves once that entrance
+animation ends. Reduced motion, and a session that opens onto a decision
+already at rest, skip the rise, so Enter works immediately. Plan approval,
+app input, and the continuation handoff do not use that rise; they ignore
+the same shortcuts for 500 ms after they appear. Keyboard handling is scoped
+to the owning chat pane, so prompts in another pane do not consume the user's
+keystrokes.
 
 Collaboration-child prompts remain in the child session; they are not forwarded
 to the parent composer.
@@ -330,9 +333,9 @@ preferences disable the hint and layout animations.
 Enter submits feedback or a complete answer; Shift+Enter and Alt+Enter insert a
 newline, matching the text composer. IME composition keeps its Enter key.
 Both newline shortcuts preserve native undo and redo history.
-The 500 ms guard still blocks accidental submission, while newline shortcuts
-remain editable. Enter in high-risk feedback rejects; explicit approval shortcuts
-apply outside that field.
+While those shortcuts are held, newline shortcuts remain editable and Enter in
+a feedback field does not submit. Once they are live again, Enter in feedback
+rejects.
 
 Configuration notes and descriptions use the same growing field; Enter does not
 apply configuration edits, which still require the confirmation button. Other

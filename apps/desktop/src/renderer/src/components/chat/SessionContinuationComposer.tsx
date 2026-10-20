@@ -30,7 +30,7 @@ export function SessionHandoffPrompt({ onApprove, onDismiss, shortcutKey }: {
   useLayoutEffect(() => {
     const root = chatRootRef?.current
     if (!root || !shortcutKey) return
-    return setDecisionKeyboardPolicy(root, shortcutKey, false)
+    return setDecisionKeyboardPolicy(root, shortcutKey)
   }, [chatRootRef, shortcutKey])
 
   // The editor this replaced took focus with it; keep the pane's shortcuts alive.

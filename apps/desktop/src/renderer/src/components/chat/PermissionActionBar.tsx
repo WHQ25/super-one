@@ -110,7 +110,6 @@ export function ApproveRejectBar({
   approveTone = 'approve',
   rejectTone = 'reject',
   enterApproves = true,
-  requireExplicitApproval = false,
   approveSuffix,
   extraActions,
   feedback,
@@ -131,8 +130,6 @@ export function ApproveRejectBar({
    * `defaultToNo`: the approve button then carries no key hint and Enter rejects.
    */
   enterApproves?: boolean
-  /** The parent requires a click or Command+Enter rather than bare Enter. */
-  requireExplicitApproval?: boolean
   /** Extra content inside the approve button, e.g. a selected-suggestion count. */
   approveSuffix?: ReactNode
   /**
@@ -173,13 +170,13 @@ export function ApproveRejectBar({
         tone={approveTone}
         disabled={approveDisabled}
         onClick={onApprove}
-        kbd={requireExplicitApproval ? '⌘↵' : enterRejects ? undefined : '⏎'}
+        kbd={enterRejects ? undefined : '⏎'}
       >
         {approveLabel ?? t('chat.permission.allow')}
         {approveSuffix}
       </PermissionActionButton>
       {extraActions}
-      <PermissionActionButton ref={rejectRef} tone={rejectTone} onClick={onReject} kbd={!requireExplicitApproval && enterRejects ? '↵' : 'esc'}>
+      <PermissionActionButton ref={rejectRef} tone={rejectTone} onClick={onReject} kbd={enterRejects ? '↵' : 'esc'}>
         {rejectLabel ?? t('chat.permission.deny')}
       </PermissionActionButton>
     </>

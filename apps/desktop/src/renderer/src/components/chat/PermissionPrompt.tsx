@@ -38,7 +38,7 @@ import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
 import { FolderTrustPrompt } from './FolderTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
-import { isHighRiskPermission, leaveDecisionField, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
+import { leaveDecisionField, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 interface MiniAppToolInfo {
   appId: string
@@ -163,7 +163,6 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   // Harness asked for a decline-first prompt: focus lands on Deny and Enter must
   // not approve. Only the two-button Claude row honours it; Codex never sets it.
   const defaultToNo = pendingPermission?.defaultToNo === true
-  const requireExplicitApproval = isHighRiskPermission(pendingPermission)
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
   const isInputRequest = pendingPermission?.requestKind === 'input_request'
   const formResources = useMcpFormResources(requestId, isElicitation && sessionProvider === 'codex')
@@ -392,19 +391,6 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         else handleAllow()
       }
 
-      if (
-        e.key === 'Enter'
-        && e.metaKey
-        && isHighRiskPermission(pendingPermission)
-        && !e.isComposing
-      ) {
-        e.preventDefault()
-        if (isScopedPermission) submitScopedChoice()
-        else handleAllow()
-        return
-      }
-      if (isHighRiskPermission(pendingPermission) && (e.ctrlKey || e.metaKey || e.altKey)) return
-
       if (isCollapsed) {
         if (e.key === ' ') {
           e.preventDefault()
@@ -495,7 +481,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasAlwaysButton, hasScopedAlways, rememberPreview, isScopedPermission, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule, pendingPermission])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasAlwaysButton, hasScopedAlways, rememberPreview, isScopedPermission, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule])
 
   if (!pendingPermission) return null
 
@@ -872,7 +858,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                     <PermissionActionButton
                       ref={(el) => { btnRefs.current[0] = el }}
                       tone="approve"
-                      kbd={requireExplicitApproval ? '⌘↵' : '⏎'}
+                      kbd="⏎"
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
@@ -880,7 +866,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                     <PermissionActionButton
                       ref={(el) => { btnRefs.current[1] = el }}
                       tone="primary"
-                      kbd={requireExplicitApproval ? undefined : '⇧↵'}
+                      kbd="⇧↵"
                       onClick={handleAlwaysAllow}
                     >
                       {t('chat.permission.allowForSession')}
@@ -909,7 +895,6 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                     onApprove={handleAllow}
                     onReject={handleDeny}
                     enterApproves={!defaultToNo}
-                    requireExplicitApproval={requireExplicitApproval}
                     // Two answers that differ only in lifetime read as the same word
                     // unless both say theirs. "Allow" next to "Always Allow" invites
                     // the user to assume the first one also sticks.
@@ -923,7 +908,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                       <PermissionActionButton
                         ref={(el) => { btnRefs.current[1] = el }}
                         tone="primary"
-                        kbd={requireExplicitApproval ? undefined : '⇧⏎'}
+                        kbd="⇧⏎"
                         onClick={handleAlwaysAllow}
                       >
                         {t(hasScopedAlways ? 'chat.permission.scoped.remember' : 'chat.permission.alwaysAllowDevice')}
@@ -963,7 +948,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                               components={{ rule: <span className="font-mono font-medium" /> }}
                             />
                           </span>
-                          {!requireExplicitApproval && <Kbd variant="square" className="ml-auto">{kbd}</Kbd>}
+                          <Kbd variant="square" className="ml-auto">{kbd}</Kbd>
                         </button>
                       )
                     })}
@@ -994,7 +979,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                             : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                           }
                           <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
-                          {!requireExplicitApproval && <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>}
+                          <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>
                         </button>
                       )
                     })}

@@ -32,6 +32,7 @@ import { _getSessionWorktreePath } from '@/stores/chat-store/helpers/persistence
 export interface ResumeDraftResult {
   ok: boolean
   reason?: 'failed'
+  message?: string
 }
 
 function draftAttachments(draft: DraftListEntry): ImageAttachment[] {
@@ -147,6 +148,10 @@ export async function resumeDraft(
       && draft.originSessionId
       && chat.projectSessions[projectKey]?._activeSessionId === draft.originSessionId
     ) {
+      if (connectionId !== 'local') {
+        const opened = await useDraftsStore.getState().openDraft(connectionId, draft.id)
+        paintOpenedDraft(projectKey, draft.originSessionId, opened)
+      }
       draftTrace('resume_already_active', { projectKey, sessionId: draft.originSessionId }, draft.id)
       return { ok: true }
     }
@@ -170,7 +175,8 @@ export async function resumeDraft(
     }
 
     const parked = getParkedDraft(draft.id)
-    const settings = resolvedSettings(draft)
+    const source = connectionId === 'local' ? draft : await useDraftsStore.getState().openDraft(connectionId, draft.id)
+    const settings = resolvedSettings(source)
 
     // Open the draft's project first. Sidebar hops no longer carry the draft,
     // so this must actually switch workspace + file tree — not just chat.activeProject.
@@ -196,7 +202,7 @@ export async function resumeDraft(
     let sid = ''
     let targetProject = projectKey
     if (parked) {
-      const restored = applyPersistedFields(parked.session, draft)
+      const restored = applyPersistedFields(parked.session, source)
       draftTrace('resume_path_parked', {
         restoredProvider: restored.sessionProvider ?? restored.preferredProvider,
         restoredModel: restored.selectedModel,
@@ -212,7 +218,7 @@ export async function resumeDraft(
       )
       sid = parked.sessionId
       targetProject = parked.projectPath
-      claimDraftForSession(parked.sessionId, draft.id)
+      claimDraftForSession(parked.sessionId, source.id)
       const mosaic = useMosaicStore.getState().focusOrReplaceFocused(parked.projectPath, parked.sessionId)
       draftTrace('resume_after_parked', {
         mosaicHandled: mosaic,
@@ -225,21 +231,21 @@ export async function resumeDraft(
       // Main's persisted row is authoritative; the sidebar's separate list
       // may not have loaded yet when the user opens the draft after restart.
       const reuseOrigin = await shouldReuseDraftOriginSessionId(
-        draft.originSessionId,
-        draft.originSessionId
-          ? useChatStore.getState().projectSessions[projectKey]?._sessions[draft.originSessionId]
+        source.originSessionId,
+        source.originSessionId
+          ? useChatStore.getState().projectSessions[projectKey]?._sessions[source.originSessionId]
           : undefined,
         projectKey,
       )
-      const newSid = draft.originSessionId && reuseOrigin
-        ? draft.originSessionId
+      const newSid = source.originSessionId && reuseOrigin
+        ? source.originSessionId
         : createSessionId()
       const existing = useChatStore.getState().projectSessions[projectKey]?._sessions[newSid]
       const base = existing
         ? { ...existing }
         : applyCachedCodexPermissionPreset(createDefaultPerSessionState())
       base.cwd = projectKey
-      const restored = applyPersistedFields(base, draft)
+      const restored = applyPersistedFields(base, source)
       draftTrace('resume_path_mint', {
         newSid,
         reusedOrigin: newSid === draft.originSessionId,
@@ -255,7 +261,7 @@ export async function resumeDraft(
         projectSandboxFromSettings(settings),
       )
       sid = newSid
-      claimDraftForSession(newSid, draft.id)
+      claimDraftForSession(newSid, source.id)
       const mosaic = useMosaicStore.getState().focusOrReplaceFocused(projectKey, newSid)
       draftTrace('resume_after_mint', {
         mosaicHandled: mosaic,
@@ -276,7 +282,7 @@ export async function resumeDraft(
       pending: useAppStore.getState()._worktrees[targetProject]?.pendingBaseBranch ?? null,
     }, draft.id)
 
-    releaseParkedDraft(draft.id)
+    releaseParkedDraft(source.id)
     // Keep the durable record while either device is editing. The sidebar
     // hides the open origin; deleting here made it disappear from the phone.
     useDraftsStore.getState().setResumingDraft(null)
@@ -289,8 +295,30 @@ export async function resumeDraft(
     return { ok: true }
   } catch (err) {
     // Resume died mid-way — put the row back so the draft is not stranded.
+    // A lease taken before the failure must not keep the host composer locked.
+    if (connectionId !== 'local') void useDraftsStore.getState().closeLease(connectionId, draft.id).catch(() => {})
     useDraftsStore.getState().setResumingDraft(null)
-    draftTrace('resume_failed', { err: err instanceof Error ? err.message : String(err) }, draft.id)
-    return { ok: false, reason: 'failed' }
+    const message = err instanceof Error ? err.message : String(err)
+    draftTrace('resume_failed', { err: message }, draft.id)
+    return { ok: false, reason: 'failed', message }
   }
+}
+
+/** Put an opened draft into the session that is already on screen. */
+function paintOpenedDraft(projectKey: string, sessionId: string, draft: DraftListEntry): void {
+  useChatStore.setState((s) => {
+    const project = s.projectSessions[projectKey]
+    const session = project?._sessions[sessionId]
+    if (!project || !session) return {}
+    return {
+      projectSessions: {
+        ...s.projectSessions,
+        [projectKey]: {
+          ...project,
+          _sessions: { ...project._sessions, [sessionId]: applyPersistedFields(session, draft) },
+        },
+      },
+    }
+  })
+  claimDraftForSession(sessionId, draft.id)
 }

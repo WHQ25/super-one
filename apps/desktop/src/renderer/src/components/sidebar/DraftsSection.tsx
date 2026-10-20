@@ -148,7 +148,9 @@ export const DraftsSection = memo(function DraftsSection({
   const handleResume = useCallback(
     (draft: DraftListEntry, slotY: number) => {
       setFlyOut({ draft, slotY })
-      void resumeDraft(connectionId, draft)
+      void resumeDraft(connectionId, draft).then((result) => {
+        if (!result.ok) toast.error(result.message || 'Could not open draft')
+      })
     },
     [connectionId],
   )

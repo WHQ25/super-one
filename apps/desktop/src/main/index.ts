@@ -2096,6 +2096,20 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_OPEN_DRAFT,
+    async (_e, connectionId: string, draftId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().openDraft(connectionId, draftId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_CLOSE_DRAFT,
+    async (_e, connectionId: string, draftId: string, leaseId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      await getEnvironmentHost().closeDraft(connectionId, draftId, leaseId)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DISCONNECT_DRAFT,
     async (_e, connectionId: string, draftId: string) => {
       const { getEnvironmentHost } = await import('./environment')

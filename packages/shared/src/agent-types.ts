@@ -4901,6 +4901,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_LIST_DRAFTS: 'environment:listDrafts',
   ENVIRONMENT_UPSERT_DRAFT: 'environment:upsertDraft',
   ENVIRONMENT_DELETE_DRAFT: 'environment:deleteDraft',
+  ENVIRONMENT_OPEN_DRAFT: 'environment:openDraft',
+  ENVIRONMENT_CLOSE_DRAFT: 'environment:closeDraft',
   ENVIRONMENT_DISCONNECT_DRAFT: 'environment:disconnectDraft',
   ENVIRONMENT_PREPARE_DRAFT_OPEN: 'environment:prepareDraftOpen',
   ENVIRONMENT_DRAFT_OPEN_READY: 'environment:draftOpenReady',

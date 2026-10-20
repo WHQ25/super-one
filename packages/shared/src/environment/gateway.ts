@@ -8,7 +8,7 @@ import type {
   SubscribeEventsInput,
 } from './events'
 import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInput, MutatingControlContext } from './lease'
-import type { DraftListRequest, DraftRecord, DraftUpsertRequest } from './draft-rpc'
+import type { DraftListRequest, DraftOpenResult, DraftRecord, DraftUpsertRequest } from './draft-rpc'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
 import type { SessionLoadRequest, SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
 import type { TranscriptFoldRequest, TranscriptFoldResult, TranscriptWindowRequest, TranscriptWindowResult } from './transcript-window'
@@ -337,8 +337,13 @@ export interface WorkspaceMkdirInput {
  */
 export interface DraftGateway {
   list(input?: DraftListRequest): Promise<DraftRecord[]>
-  upsert(input: DraftUpsertRequest): Promise<DraftRecord>
+  /** `leaseId` writes under the composer's `draft.open` grant. A plain upsert stays the controller outbox. */
+  upsert(input: DraftUpsertRequest & { leaseId?: string }): Promise<DraftRecord>
   delete(draftId: string): Promise<void>
+  /** Take the draft's lease and return the host's flushed copy. */
+  open?(draftId: string): Promise<DraftOpenResult>
+  /** Release a lease this client holds. */
+  close?(draftId: string, leaseId: string): Promise<void>
 }
 
 export interface WorkspaceGateway {

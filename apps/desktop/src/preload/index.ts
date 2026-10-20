@@ -470,7 +470,11 @@ const environmentAPI = {
       connectionId,
       projectPath,
     ) as Promise<DraftListEntry[]>,
-  upsertDraft: (connectionId: string, draft: DraftUpsertRequest) =>
+  openDraft: (connectionId: string, draftId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_OPEN_DRAFT, connectionId, draftId) as Promise<import('@superone/shared/environment').DraftOpenResult>,
+  closeDraft: (connectionId: string, draftId: string, leaseId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CLOSE_DRAFT, connectionId, draftId, leaseId) as Promise<void>,
+  upsertDraft: (connectionId: string, draft: DraftUpsertRequest & { leaseId?: string }) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_UPSERT_DRAFT,
       connectionId,

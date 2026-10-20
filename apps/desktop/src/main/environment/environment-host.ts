@@ -111,6 +111,7 @@ import type {
   ClonedProject,
   DraftListEntry,
   DraftGateway,
+  DraftOpenResult,
   DraftRecord,
   DraftUpsertRequest,
   ProjectSnapshot,
@@ -689,15 +690,16 @@ export class EnvironmentHost {
    * straight-through remote write has a real chance of being cut off; the
    * local queue is a synchronous disk write that cannot be.
    */
-  async upsertDraft(connectionId: string, draft: DraftUpsertRequest): Promise<DraftListEntry> {
+  async upsertDraft(connectionId: string, draft: DraftUpsertRequest & { leaseId?: string }): Promise<DraftListEntry> {
+    const { leaseId, ...record } = draft
     if (connectionId === 'local') {
       const local = this.registry.getLocal()
-      return (await local.drafts!.upsert(draft)) as DraftListEntry
+      return (await local.drafts!.upsert(record)) as DraftListEntry
     }
     if (this.keepsNoDrafts(connectionId)) throw new Error('This machine keeps no drafts')
-    enqueuePendingDraft(connectionId, draft)
+    enqueuePendingDraft(connectionId, record)
     try {
-      const saved = await this.remoteDrafts(connectionId).upsert(draft)
+      const saved = await this.remoteDrafts(connectionId).upsert(leaseId ? { ...record, leaseId } : record)
       deletePendingDraft(draft.id)
       return saved
     } catch (err) {
@@ -743,6 +745,29 @@ export class EnvironmentHost {
     const drafts = this.requireRemoteGateway(connectionId).drafts
     if (!drafts) throw new Error('This machine keeps no drafts')
     return drafts
+  }
+
+  /** Take a draft's lease. Remote opens flush the host composer first (`draft.open`). */
+  async openDraft(connectionId: string, draftId: string): Promise<DraftOpenResult> {
+    if (connectionId === 'local') {
+      const { localDraftStore } = await import('../db-drafts')
+      return localDraftStore().open(draftId, 'window')
+    }
+    const drafts = this.remoteDrafts(connectionId)
+    if (!drafts.open) throw new Error('This machine keeps no drafts')
+    return drafts.open(draftId)
+  }
+
+  /** Release a lease this desktop holds so the host composer can edit again. */
+  async closeDraft(connectionId: string, draftId: string, leaseId: string): Promise<void> {
+    if (connectionId === 'local') {
+      const { localDraftStore } = await import('../db-drafts')
+      localDraftStore().close(draftId, 'window', leaseId)
+      return
+    }
+    const drafts = this.remoteDrafts(connectionId)
+    if (!drafts.close) throw new Error('This machine keeps no drafts')
+    await drafts.close(draftId, leaseId)
   }
 
   async disconnectDraft(connectionId: string, draftId: string): Promise<void> {

@@ -8,9 +8,11 @@ import type { DraftListEntry, DraftUpsertRequest } from '@superone/shared/enviro
 const listDrafts = vi.fn()
 const upsertDraft = vi.fn()
 const deleteDraft = vi.fn()
+const openDraft = vi.fn()
+const closeDraft = vi.fn()
 
 vi.stubGlobal('window', {
-  environment: { listDrafts, upsertDraft, deleteDraft },
+  environment: { listDrafts, upsertDraft, deleteDraft, openDraft, closeDraft },
   app: { trace: vi.fn() },
 })
 
@@ -46,11 +48,39 @@ beforeEach(() => {
   upsertDraft.mockImplementation(async (_cid: string, draft: DraftUpsertRequest) =>
     entry({ id: draft.id, text: draft.text, projectPath: draft.projectPath ?? '/repo' }),
   )
+  openDraft.mockReset()
+  closeDraft.mockReset()
+  closeDraft.mockResolvedValue(undefined)
   useDraftsStore.setState({
     byConnection: {},
     loading: {},
     resumingDraftId: null,
     discardedIds: {},
+    leases: {},
+  })
+})
+
+describe('opening a remote draft', () => {
+  it('keeps the lease and sends it with the next save, without locking the composer', async () => {
+    useDraftsStore.setState({
+      byConnection: { remote: [entry({ id: 'd1', text: 'stale', controllerDeviceId: 'host-window' })] },
+    })
+    openDraft.mockResolvedValue({
+      leaseId: 'lease-1',
+      draft: entry({ id: 'd1', text: 'flushed', controllerDeviceId: 'controller' }),
+    })
+    const opened = await useDraftsStore.getState().openDraft('remote', 'd1')
+    expect(opened.controllerDeviceId).toBeNull()
+    expect(opened.text).toBe('flushed')
+    expect(useDraftsStore.getState().byConnection.remote?.[0]?.controllerDeviceId).toBeNull()
+
+    await useDraftsStore.getState().saveDraft('remote', request('d1', 'edited'))
+    expect(upsertDraft).toHaveBeenCalledWith('remote', expect.objectContaining({ id: 'd1', text: 'edited', leaseId: 'lease-1' }))
+    expect(useDraftsStore.getState().byConnection.remote?.[0]?.controllerDeviceId).toBeNull()
+
+    await useDraftsStore.getState().closeLease('remote', 'd1')
+    expect(closeDraft).toHaveBeenCalledWith('remote', 'd1', 'lease-1')
+    expect(useDraftsStore.getState().leases['d1']).toBeUndefined()
   })
 })
 

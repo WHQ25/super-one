@@ -16,6 +16,7 @@ import type {
   CreateTerminalInput,
   DraftGateway,
   DraftListResult,
+  DraftOpenResult,
   DraftUpsertResult,
   EnvironmentEventEnvelope,
   EnvironmentGateway,
@@ -208,11 +209,18 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         return res.drafts ?? []
       },
       async upsert(input) {
-        const res = await client.rpc<DraftUpsertResult>('draft.upsert', input)
+        const { leaseId, ...draft } = input
+        const res = await client.rpc<DraftUpsertResult>('draft.upsert', leaseId ? { ...draft, leaseId } : draft)
         return res.draft
       },
       async delete(draftId) {
         await client.rpc('draft.delete', { draftId })
+      },
+      async open(draftId) {
+        return client.rpc<DraftOpenResult>('draft.open', { draftId })
+      },
+      async close(draftId, leaseId) {
+        await client.rpc('draft.close', { draftId, leaseId })
       },
     }
   }

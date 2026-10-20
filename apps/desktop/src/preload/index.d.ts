@@ -23,6 +23,7 @@ import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type {
   DraftListEntry,
+  DraftOpenResult,
   DraftUpsertRequest,
   EnvironmentInstallProgress,
   EnvironmentListItem,
@@ -1062,7 +1063,11 @@ export interface EnvironmentAPI extends MediaComposerAPI {
    * unreachable node contributes nothing rather than a stale mirror.
    */
   listDrafts(connectionId: string, projectPath?: string): Promise<DraftListEntry[]>
-  upsertDraft(connectionId: string, draft: DraftUpsertRequest): Promise<DraftListEntry>
+  /** Take the host's draft lease and the flushed composer. */
+  openDraft(connectionId: string, draftId: string): Promise<DraftOpenResult>
+  /** Release a lease from `openDraft`. */
+  closeDraft(connectionId: string, draftId: string, leaseId: string): Promise<void>
+  upsertDraft(connectionId: string, draft: DraftUpsertRequest & { leaseId?: string }): Promise<DraftListEntry>
   deleteDraft(connectionId: string, draftId: string): Promise<void>
   disconnectDraft(connectionId: string, draftId: string): Promise<void>
   onDraftOpenRequested(callback: (draftId: string) => Promise<void>): () => void

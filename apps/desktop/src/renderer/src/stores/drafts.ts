@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand'
-import type { DraftListEntry, DraftUpsertRequest } from '@superone/shared/environment'
+import type { DraftListEntry, DraftOpenResult, DraftUpsertRequest } from '@superone/shared/environment'
 
 interface DraftsState {
   /** connectionId → drafts owned by that environment. */
@@ -36,6 +36,12 @@ interface DraftsState {
   removeDraft: (connectionId: string, draftId: string) => Promise<void>
   /** User deleted this draft. Tombstone so a later flush cannot put it back. */
   discardDraft: (connectionId: string, draftId: string) => Promise<void>
+  /** Draft id → lease from `draft.open`. Holding one keeps later saves writable. */
+  leases: Record<string, string>
+  /** Open a remote draft, remember its lease, and return a copy this composer can edit. */
+  openDraft: (connectionId: string, draftId: string) => Promise<DraftListEntry>
+  /** Drop a lease after the composer leaves the draft. */
+  closeLease: (connectionId: string, draftId: string) => Promise<void>
 }
 
 export const useDraftsStore = create<DraftsState>((set, get) => ({
@@ -43,6 +49,7 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
   loading: {},
   resumingDraftId: null,
   discardedIds: {},
+  leases: {},
 
   setResumingDraft: (draftId) => set({ resumingDraftId: draftId }),
 
@@ -85,11 +92,37 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
     }
   },
 
+  openDraft: async (connectionId, draftId) => {
+    const opened: DraftOpenResult = await window.environment.openDraft(connectionId, draftId)
+    const editable = { ...opened.draft, controllerDeviceId: null }
+    set((s) => ({
+      leases: { ...s.leases, [draftId]: opened.leaseId },
+      byConnection: {
+        ...s.byConnection,
+        [connectionId]: (s.byConnection[connectionId] ?? []).map((row) => (row.id === draftId ? { ...row, ...editable } : row)),
+      },
+    }))
+    return editable
+  },
+
+  closeLease: async (connectionId, draftId) => {
+    const leaseId = get().leases[draftId]
+    if (!leaseId) return
+    if (connectionId !== 'local') await window.environment.closeDraft(connectionId, draftId, leaseId)
+    set((s) => {
+      if (!s.leases[draftId]) return s
+      const leases = { ...s.leases }
+      delete leases[draftId]
+      return { leases }
+    })
+  },
+
   saveDraft: async (connectionId, draft) => {
     if (get().discardedIds[draft.id]) return
     // upsertDraft resolves with the queued projection when the node is down,
     // so the row appears immediately either way.
-    const saved = await window.environment.upsertDraft(connectionId, draft)
+    const leaseId = get().leases[draft.id]
+    const saved = await window.environment.upsertDraft(connectionId, leaseId ? { ...draft, leaseId } : draft)
     if (get().discardedIds[draft.id] || get().discardedIds[saved.id]) {
       // User deleted this row while the upsert was in flight — undo the write
       // so the next list/flush cannot resurrect it.
@@ -121,7 +154,8 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
       if (s.discardedIds[merged.id]) return s
       const list = s.byConnection[connectionId] ?? []
       const current = list.find((d) => d.id === merged.id)
-      const next = [{ ...merged, controllerDeviceId: current?.controllerDeviceId ?? merged.controllerDeviceId }, ...list.filter((d) => d.id !== merged.id)]
+      const controllerDeviceId = s.leases[merged.id] ? null : (current?.controllerDeviceId ?? merged.controllerDeviceId)
+      const next = [{ ...merged, controllerDeviceId }, ...list.filter((d) => d.id !== merged.id)]
       const deduped = merged.originSessionId
         ? next.filter((d) => d.id === merged.id || d.originSessionId !== merged.originSessionId)
         : next

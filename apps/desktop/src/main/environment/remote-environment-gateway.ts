@@ -331,7 +331,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           // `update` sends before it awaits the ack, so the snapshot read can
           // share that round trip. The ack is still awaited before this resolves.
           const pending = stream.update(next)
-          input.onUpdateQueued?.()
+          input.onUpdateQueued?.(next)
           await pending
         })
         stream = await opening

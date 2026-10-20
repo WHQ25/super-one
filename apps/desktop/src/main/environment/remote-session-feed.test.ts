@@ -21,7 +21,7 @@ function pushSource(head = '7', apply?: (topics: TopicRef[]) => Promise<void>) {
     applied.push(next.interest.current())
     next.interest.watch(async (topics) => {
       applied.push(topics)
-      next.onUpdateQueued?.()
+      next.onUpdateQueued?.(topics)
       await apply?.(topics)
     })
     while (!signal.aborted) {
@@ -269,6 +269,43 @@ describe('RemoteSessionFeed', () => {
       { kind: 'session', environmentId: 'env', sessionId: 'a' },
     ])
     releaseAck()
+    feed.close()
+  })
+
+  it('does not release a follower barrier for a topic update that omits its session', async () => {
+    const queue: Array<{ topics: TopicRef[]; release: () => void }> = []
+    const source: RemoteSessionFeedSource = {
+      head: async () => '7',
+      subscribe: async function* (_after, signal, next) {
+        next.interest.watch(async (topics) => {
+          await new Promise<void>((resolve) => queue.push({ topics, release: resolve }))
+          next.onUpdateQueued?.(topics)
+        })
+        while (!signal.aborted) {
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve()
+            signal.addEventListener('abort', () => resolve(), { once: true })
+          })
+        }
+      },
+    }
+    const feed = new RemoteSessionFeed(source, 'env')
+    const observing = feed.observe({})
+    await vi.waitFor(() => expect(queue).toHaveLength(1))
+    let barrier = false
+    const following = feed.follow('a', { event: vi.fn(), end: vi.fn() }, async () => {
+      barrier = true
+      return 7
+    })
+    await vi.waitFor(() => expect(queue).toHaveLength(2))
+    expect(queue[0]?.topics.some((topic) => topic.kind === 'session')).toBe(false)
+    queue[0]?.release()
+    await flush()
+    expect(barrier).toBe(false)
+    queue[1]?.release()
+    await following
+    expect(barrier).toBe(true)
+    await observing
     feed.close()
   })
 

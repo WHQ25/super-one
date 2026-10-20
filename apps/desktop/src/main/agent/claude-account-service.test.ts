@@ -115,6 +115,20 @@ describe('Claude managed account lifecycle', () => {
     expect(existsSync(join(fixture.home, 'shared'))).toBe(true)
     expect((await listAccounts(true)).map((row) => [row.credentialDir, row.isDefault])).toEqual([[a, true]])
   })
+  it('drops a default whose domain no longer exists', async () => {
+    const a = createAccountDir(), b = createAccountDir(); credentials(a, 'a'); credentials(b, 'b')
+    await listAccounts(true); await setDefaultAccount(b)
+    rmSync(b, { recursive: true, force: true })
+    expect(claudeAccountStore().defaultProviderId()).toBeNull()
+    expect((await listAccounts(true)).map((row) => [row.credentialDir, row.isDefault])).toEqual([[a, true]])
+  })
+  it('moves a signed-out default to the signed-in card of the same identity', async () => {
+    const old = createAccountDir(); credentials(old, 'a'); await listAccounts(true); await setDefaultAccount(old)
+    await signOutAccount(old)
+    credentials(join(fixture.home, 'shared'), 'a')
+    expect((await listAccounts(true)).map((row) => [row.credentialDir, row.isDefault])).toEqual([[null, true]])
+    expect(claudeAccountStore().defaultProviderId()).toBe(CLAUDE_CLI_ACCOUNT_PROVIDER_ID)
+  })
   it('keeps one card per identity when a lapsed account is added again', async () => {
     const old = createAccountDir(); credentials(old, 'a'); await listAccounts(true); await setDefaultAccount(old)
     await signOutAccount(old)

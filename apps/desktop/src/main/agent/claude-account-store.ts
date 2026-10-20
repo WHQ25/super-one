@@ -26,6 +26,9 @@ export class ClaudeAccountStore {
     try {
       const value = JSON.parse(readFileSync(join(this.root, 'accounts.json'), 'utf8')) as AccountIndex
       if (value.version !== 1 || !value.accounts || typeof value.accounts !== 'object') throw new Error('Invalid Claude account registry')
+      // A deleted domain cannot sign in again, so it re-initializes like a forgotten one. A read
+      // still in flight when the domain was removed writes it back after `forget`.
+      if (typeof value.defaultDir === 'string' && !existsSync(value.defaultDir)) delete value.defaultDir
       return value
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, accounts: {} }
@@ -95,6 +98,11 @@ export class ClaudeAccountStore {
     index.accounts[key(dir)] = { ...value, ...(ownerIdentity ? { ownerIdentity } : {}) }
     // Initialize once. Explicitly chosen accounts never silently change on an outage or logout.
     if (index.defaultDir === undefined && value.account.loggedIn) index.defaultDir = dir
+    // The same identity is not another account: a signed-out default folds into this card (see `dedupeAccounts`).
+    else if (index.defaultDir !== dir && value.account.loggedIn && value.account.identityStatus === 'verified') {
+      const current = index.accounts[key(index.defaultDir ?? null)]
+      if (current && !current.account.loggedIn && current.ownerIdentity === value.account.identityKey) index.defaultDir = dir
+    }
     this.write(index)
   }
   /** Drop a removed domain's metadata; a removed default re-initializes from the next signed-in read. */

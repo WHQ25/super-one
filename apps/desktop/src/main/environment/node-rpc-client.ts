@@ -290,6 +290,21 @@ export class NodeRpcClient extends EnvironmentRpcClient {
       this.connectingWs = ws
 
       let timer: ReturnType<typeof setTimeout> | null = null
+      const handshakeLimit = channel ? CHANNEL_CONNECT_TIMEOUT_MS : HANDSHAKE_TIMEOUT_MS
+      // Ticket fetch on an old node is outside the handshake slice, but the
+      // whole connect still ends at this deadline.
+      const connectDeadline = Date.now() + handshakeLimit + CHANNEL_CONNECT_TIMEOUT_MS
+      const armHandshakeTimer = (ms: number): void => {
+        if (settled) return
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => fail(transportError('handshake timeout')), Math.max(0, ms))
+      }
+      const pauseHandshakeTimer = (): void => {
+        armHandshakeTimer(connectDeadline - Date.now())
+      }
+      const restartHandshakeTimer = (): void => {
+        armHandshakeTimer(Math.min(handshakeLimit, connectDeadline - Date.now()))
+      }
       const fail = (err: Error) => {
         if (settled) return
         settled = true
@@ -311,10 +326,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
       }
 
       this.connectFail = fail
-      timer = setTimeout(
-        () => fail(transportError('handshake timeout')),
-        channel ? CHANNEL_CONNECT_TIMEOUT_MS : HANDSHAKE_TIMEOUT_MS,
-      )
+      armHandshakeTimer(handshakeLimit)
 
       ws.on('error', (err) =>
         fail(transportError(err instanceof Error ? err.message : String(err))),
@@ -430,7 +442,10 @@ export class NodeRpcClient extends EnvironmentRpcClient {
           startProtocolHandshake()
           return
         }
-        void this.attachThroughChannel(ws, channel).then(
+        void this.attachThroughChannel(ws, channel, {
+          pauseHandshakeTimer,
+          restartHandshakeTimer,
+        }).then(
           () => {
             if (settled) return
             if (this.closed || generation !== this.connectGeneration) {
@@ -724,11 +739,28 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     }
   }
 
+  /** Pause the handshake slice around an old node's ticket fetch, then restart it. */
+  private async fetchTicketOutsideHandshake<T>(
+    handshake: { pauseHandshakeTimer(): void; restartHandshakeTimer(): void },
+    fetchTicket: () => Promise<T>,
+  ): Promise<T> {
+    handshake.pauseHandshakeTimer()
+    try {
+      return await fetchTicket()
+    } finally {
+      handshake.restartHandshakeTimer()
+    }
+  }
+
   /**
    * Open the encrypted channel on a fresh socket and attach it to the node
    * session with the ticket and device proof, all inside the channel.
    */
-  private async attachThroughChannel(ws: NodeSocket, credential: ChannelCredential): Promise<void> {
+  private async attachThroughChannel(
+    ws: NodeSocket,
+    credential: ChannelCredential,
+    handshake: { pauseHandshakeTimer(): void; restartHandshakeTimer(): void },
+  ): Promise<void> {
     let channel: SecureChannel
     let inlineAuth = false
     try {
@@ -748,9 +780,11 @@ export class NodeRpcClient extends EnvironmentRpcClient {
       framing: false,
     })
     const authorize = inlineAuth ? this.opts.authorizeInline : undefined
+    // An old node has no inline auth, so the ticket is minted on its own
+    // channel. That round trip must not consume this socket's handshake budget.
     const ticket = authorize
       ? await authorize((input) => exchangeOnSecureChannel(ws, channel, { ...input, timeoutMs: CHANNEL_CONNECT_TIMEOUT_MS }))
-      : await this.opts.getWsTicket()
+      : await this.fetchTicketOutsideHandshake(handshake, () => this.opts.getWsTicket())
     const ticketId = ticket.split('.')[0] || ticket
     const sig = signWithDeviceKey(this.opts.devicePrivateKeyPem, ticketId)
     const requestId = randomUUID()

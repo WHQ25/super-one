@@ -57,11 +57,16 @@ const dirs: string[] = []
 let sharedRuntime: NodeRuntime | null = null
 let sharedNodeHome: string | null = null
 
-afterEach(() => {
+afterEach(async () => {
   resetEnvironmentHostForTests()
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   electron.store.clear()
   electron.available = true
+  // Connect fires project.list and does not wait for it. This file shares one
+  // node, so the call can land after the sending test returns and be counted
+  // by the next test's spy. Finish that socket turn before the next test.
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
 })
 
 afterAll(async () => {

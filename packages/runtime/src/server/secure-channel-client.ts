@@ -113,37 +113,52 @@ export async function secureChannelAuthRequest(input: {
 export function exchangeOnSecureChannel(
   ws: NodeSocket,
   channel: SecureChannel,
-  input: { path: string; body: Record<string, unknown>; accessToken?: string; timeoutMs: number },
+  input: {
+    path: string
+    body: Record<string, unknown>
+    accessToken?: string
+    timeoutMs: number
+    /** Rejects the exchange when the caller drops the socket. */
+    signal?: AbortSignal
+  },
 ): Promise<{ status: number; body: unknown }> {
   const requestId = randomUUID()
   return new Promise((resolve, reject) => {
-    const cleanup = () => {
+    let settled = false
+    const rejectClosed = () => reject(channelError('encrypted channel closed before the auth response'))
+    if (input.signal?.aborted) {
+      rejectClosed()
+      return
+    }
+    const finish = (settle: () => void) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
       ws.off('message', onMessage)
       ws.off('close', onClose)
+      input.signal?.removeEventListener('abort', onAbort)
+      settle()
     }
-    const timer = setTimeout(() => {
-      cleanup()
-      reject(channelError('encrypted auth request timeout'))
-    }, input.timeoutMs)
+    const timer = setTimeout(() => finish(() => reject(channelError('encrypted auth request timeout'))), input.timeoutMs)
+    const onAbort = () => finish(rejectClosed)
     const onMessage = (data: WebSocket.RawData) => {
       try {
         const msg = channel.open(data as Buffer) as { type?: string; requestId?: string; status?: number; body?: unknown }
         if (msg.type !== 'auth_result' || msg.requestId !== requestId) return
-        cleanup()
-        resolve({ status: msg.status ?? 500, body: msg.body })
+        finish(() => resolve({ status: msg.status ?? 500, body: msg.body }))
       } catch (err) {
-        cleanup()
-        reject(err)
+        finish(() => reject(err instanceof Error ? err : channelError(String(err))))
       }
     }
-    const onClose = () => {
-      cleanup()
-      reject(channelError('encrypted channel closed before the auth response'))
-    }
+    const onClose = () => finish(rejectClosed)
+    input.signal?.addEventListener('abort', onAbort)
     ws.on('message', onMessage)
     ws.on('close', onClose)
-    ws.send(channel.seal({ type: 'auth', requestId, path: input.path, body: input.body, accessToken: input.accessToken }))
+    try {
+      ws.send(channel.seal({ type: 'auth', requestId, path: input.path, body: input.body, accessToken: input.accessToken }))
+    } catch (err) {
+      finish(() => reject(err instanceof Error ? err : channelError(String(err))))
+    }
   })
 }
 export type { ChannelCredential, SecureChannel } from '@superone/relay-client/secure-channel'

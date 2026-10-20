@@ -258,7 +258,7 @@ describe('transcript window live delivery', () => {
     const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('lan', 'desktop')))
     const opened = await window(ctx, { holder: 'desktop:s' })
     expect(opened.summarized).toBe(true)
-    const painted = opened.messages.map((message) => materializeWindowMessage(message))
+    const painted = applyWindowResult(null, opened, EMPTY_WINDOW_LOOKUP).state.messages.map((message) => materializeWindowMessage(message))
     const todoResult = painted[0]?.content.find((block) => block.type === 'todo_result')
     expect(todoResult).toMatchObject({
       todoToolName: 'TodoWrite',
@@ -266,7 +266,7 @@ describe('transcript window live delivery', () => {
     })
     expect(JSON.stringify(painted)).not.toContain(command)
 
-    const loaded = deliverLoad(h.sessions.load({ sessionId: 's' }), ctx.delivery)
+    const loaded = deliverLoad(await h.sessions.load({ sessionId: 's' }), ctx.delivery)
     expect(loaded.summarized).toBeUndefined()
     expect(loaded.messages).toEqual([reply])
     const detail = subscribeDetail(ctx.delivery, h.sessions, { sessionId: 's', detailRef: '["a","tool","sh"]', subscriptionId: 'sub' })

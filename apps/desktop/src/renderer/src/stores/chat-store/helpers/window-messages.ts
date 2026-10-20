@@ -95,7 +95,7 @@ export function todoUpdatesFromWindow(
       if (block.type !== 'todo_result' || seen.has(block.toolUseId) || !block.toolTodos) continue
       const applied = applyTodoResult(current, block)
       if (!applied) continue
-      patch = { ...patch, ...applied }
+      patch = { ...(patch ?? {}), ...applied }
       current = { ...current, todos: applied.todos ?? current.todos, _nextTodoId: applied._nextTodoId ?? current._nextTodoId, _todosUserDismissed: current._todosUserDismissed }
       seen.add(block.toolUseId)
     }

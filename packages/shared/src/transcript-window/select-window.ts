@@ -6,6 +6,8 @@ import type {
   TranscriptWindowMessage,
   TranscriptWindowRequest,
 } from '../environment/transcript-window'
+
+export type { TranscriptWindowBudget }
 import { MAX_FRAGMENT_BYTES, MAX_META_BYTES, type MessageFragments } from './fragment-message'
 
 export const DEFAULT_WINDOW_BUDGET: TranscriptWindowBudget = { maxBytes: 128 * 1024, maxFragments: 48, targetChars: 6000 }

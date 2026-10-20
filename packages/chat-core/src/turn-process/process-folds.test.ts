@@ -75,7 +75,7 @@ describe('planProcessFolds', () => {
   it('leaves off-transcript text out of folds', () => {
     const content: ContentBlock[] = [
       ...['b1', 'b2'].flatMap((id) => [call('Bash', id), result(id)]),
-      { type: 'text', text: 'question', codexAsyncQuestions: [{ id: 'q', question: 'Which?' }] } as ContentBlock,
+      { type: 'text', text: 'question', codexAsyncQuestions: [{ title: 'Which?', options: null }] },
       ...['b3', 'b4'].flatMap((id) => [call('Bash', id), result(id)]),
       { type: 'text', text: 'done' },
     ]

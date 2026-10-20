@@ -51,6 +51,7 @@ import type {
 } from './remote-install'
 import type { SshForwardHandle } from './ssh-forward'
 import type { RemoteRestartOptions } from './ssh-bootstrap'
+import { remoteNodePort, remoteSuperoneHome } from './remote-data-path'
 
 const dirs: string[] = []
 let sharedRuntime: NodeRuntime | null = null
@@ -679,19 +680,34 @@ describe('add over SSH without a remote path', () => {
       installFromRegistry?: (opts: RegistryInstallOptions) => Promise<InstallResult>
       restartNode?: (opts: RemoteRestartOptions) => Promise<void>
     },
-  ): { host: EnvironmentHost; bootstrapExec: string[] } {
+  ): {
+    host: EnvironmentHost
+    bootstrapExec: string[]
+    restarts: RemoteRestartOptions[]
+    events: string[]
+  } {
     const ud = temp('env-mgmt-ud-')
     electron.setUserData(ud)
     const bootstrapExec: string[] = []
+    const restarts: RemoteRestartOptions[] = []
+    const events: string[] = []
     const host = new EnvironmentHost(ud, {
       tunnels: new SshTunnelManager(fakeForwardStarter(rt.server.url, [])),
       probeHost: async () => overrides.probe ?? linuxProbe,
       findArtifact: overrides.findArtifact ?? (() => null),
       installNode: overrides.installNode,
       installFromRegistry: overrides.installFromRegistry,
-      restartNode: overrides.restartNode,
+      restartNode: async (opts) => {
+        events.push('restart')
+        if (overrides.restartNode) {
+          await overrides.restartNode(opts)
+          return
+        }
+        restarts.push(opts)
+      },
       defaultCliVersion: '1.2.3',
       bootstrapOverSsh: async (opts) => {
+        events.push('bootstrap')
         bootstrapExec.push(opts.remoteExec)
         return {
           localBaseUrl: rt.server.url,
@@ -708,13 +724,13 @@ describe('add over SSH without a remote path', () => {
         }
       },
     })
-    return { host, bootstrapExec }
+    return { host, bootstrapExec, restarts, events }
   }
 
   it('reuses an existing remote installation when versions match', async () => {
     const rt = await bootNode()
     let installCalls = 0
-    const { host, bootstrapExec } = hostWith(rt, {
+    const { host, bootstrapExec, restarts, events } = hostWith(rt, {
       probe: {
         ...linuxProbe,
         superonePath: '/home/superone/.local/bin/superone',
@@ -734,6 +750,8 @@ describe('add over SSH without a remote path', () => {
     const result = await host.addRemoteOverSsh({ destination: 'superone@lab', label: 'lab' })
 
     expect(installCalls).toBe(0)
+    expect(restarts).toHaveLength(0)
+    expect(events).toEqual(['bootstrap'])
     expect(bootstrapExec).toEqual(['/home/superone/.local/bin/superone'])
     expect(result.installed).toBeUndefined()
     expect(result.descriptor.environmentId).toBe(rt.identity.environmentId)
@@ -743,11 +761,12 @@ describe('add over SSH without a remote path', () => {
   it('upgrades an older remote CLI to the desktop version', async () => {
     const rt = await bootNode()
     const registry: RegistryInstallOptions[] = []
-    const { host, bootstrapExec } = hostWith(rt, {
+    const { host, bootstrapExec, restarts, events } = hostWith(rt, {
       probe: {
         ...linuxProbe,
         superonePath: '/home/superone/.local/bin/superone',
         superoneVersion: '1.0.0',
+        nodeBinDir: '/home/superone/.nvm/versions/node/v22.22.2/bin',
       },
       installFromRegistry: async (opts) => {
         registry.push(opts)
@@ -768,6 +787,55 @@ describe('add over SSH without a remote path', () => {
     expect(bootstrapExec).toEqual(['/home/superone/.local/bin/superone'])
     expect(result.installed?.source).toBe('registry')
     expect(result.warnings.some((w) => /older than this desktop/i.test(w))).toBe(true)
+    // A healthy old process survives npm replacing the files. Restart before
+    // bootstrap, which only starts a node when /health is already down.
+    expect(events).toEqual(['restart', 'bootstrap'])
+    expect(restarts).toEqual([
+      expect.objectContaining({
+        destination: 'superone@lab',
+        remoteExec: '/home/superone/.local/bin/superone',
+        remoteNodeHome: `${remoteSuperoneHome('/home/superone')}/node`,
+        remotePort: remoteNodePort(),
+        nodeBinDir: '/home/superone/.nvm/versions/node/v22.22.2/bin',
+      }),
+    ])
+    host.dispose()
+  })
+
+  it('restarts a running node when the installed CLI version cannot be read', async () => {
+    const rt = await bootNode()
+    const { host, restarts, events } = hostWith(rt, {
+      probe: {
+        ...linuxProbe,
+        superonePath: '/home/superone/.local/bin/superone',
+        superoneVersion: null,
+      },
+      installFromRegistry: async (opts) => ({
+        remoteExec: '/home/superone/.local/bin/superone',
+        version: opts.version,
+        target: 'registry',
+        sha256: '',
+        source: 'registry',
+      }),
+    })
+
+    const result = await host.addRemoteOverSsh({
+      destination: 'superone@lab',
+      sshPort: 2222,
+      remoteNodeHome: '/var/lib/superone-node',
+    })
+
+    expect(result.warnings.some((w) => /could not be read/i.test(w))).toBe(true)
+    expect(events).toEqual(['restart', 'bootstrap'])
+    expect(restarts).toEqual([
+      expect.objectContaining({
+        destination: 'superone@lab',
+        extraSshArgs: ['-p', '2222'],
+        remoteExec: '/home/superone/.local/bin/superone',
+        remoteNodeHome: '/var/lib/superone-node',
+        remotePort: remoteNodePort(),
+      }),
+    ])
     host.dispose()
   })
 
@@ -797,7 +865,7 @@ describe('add over SSH without a remote path', () => {
   it('installs from npm registry by default when the host has no superone', async () => {
     const rt = await bootNode()
     const registry: RegistryInstallOptions[] = []
-    const { host, bootstrapExec } = hostWith(rt, {
+    const { host, bootstrapExec, restarts } = hostWith(rt, {
       installFromRegistry: async (opts) => {
         registry.push(opts)
         opts.onProgress?.('npm', `@super-one/cli@${opts.version}`)
@@ -823,6 +891,7 @@ describe('add over SSH without a remote path', () => {
     expect(registry[0]!.version).toBe('1.2.3')
     expect(registry[0]!.remoteHome).toBe('/home/superone')
     expect(bootstrapExec).toEqual(['/home/superone/.local/bin/superone'])
+    expect(restarts).toHaveLength(0)
     expect(result.installed?.source).toBe('registry')
     expect(phases).toEqual(['probing', 'installing', 'starting', 'pairing'])
     host.dispose()
@@ -978,6 +1047,7 @@ describe('add over SSH without a remote path', () => {
 
     const phases: string[] = []
     registry.length = 0
+    restarts.length = 0
     const result = await host.upgradeRemoteNode(added.connectionId, (p) => phases.push(p.phase))
 
     expect(result.version).toBe('1.2.3')

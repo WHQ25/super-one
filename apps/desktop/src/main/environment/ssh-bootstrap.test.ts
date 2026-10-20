@@ -5,9 +5,11 @@ import {
   buildBootstrapCommand,
   buildRemoteRestartCommand,
   extractJsonObject,
+  resolveRemoteNodeHome,
   shellQuote,
   waitForSshForwardHealth,
 } from './ssh-bootstrap'
+import { remoteSuperoneHome } from './remote-data-path'
 import { findFreePort } from './ssh-forward'
 
 describe('ssh-bootstrap helpers', () => {
@@ -28,6 +30,25 @@ describe('ssh-bootstrap helpers', () => {
       expiresAt: 123,
       pairingToken: token,
     })
+  })
+
+  it('resolves the same node home for bootstrap and an in-place restart', () => {
+    expect(
+      resolveRemoteNodeHome({
+        remoteNodeHome: '/var/lib/superone-node',
+        remoteHome: '/home/superone',
+      }),
+    ).toBe('/var/lib/superone-node')
+    expect(
+      resolveRemoteNodeHome({
+        remoteNodeHome: '~/nodes/lab',
+        remoteHome: '/home/superone',
+      }),
+    ).toBe('/home/superone/nodes/lab')
+    expect(resolveRemoteNodeHome({ remoteHome: '/home/superone' })).toBe(
+      `${remoteSuperoneHome('/home/superone')}/node`,
+    )
+    expect(resolveRemoteNodeHome({})).toBe(`${remoteSuperoneHome('/tmp')}/node`)
   })
 
   it('quotes unsafe shell segments', () => {

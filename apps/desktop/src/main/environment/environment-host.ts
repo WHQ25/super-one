@@ -77,6 +77,7 @@ import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
+  resolveRemoteNodeHome,
   restartNodeOverSsh,
   type RemoteRestartOptions,
   type SshBootstrapOptions,
@@ -2986,6 +2987,9 @@ export class EnvironmentHost {
     let remoteHome: string | undefined
     let nodeBinDir: string | undefined
     let installed: InstallResult | undefined
+    // True when this add replaces an existing CLI. A fresh install has nothing
+    // to stop; bootstrap starts the node when /health is down.
+    let restartAfterInstall = false
     const installSource: RemoteInstallSource =
       input.installSource ?? DEFAULT_REMOTE_INSTALL_SOURCE
 
@@ -3014,10 +3018,12 @@ export class EnvironmentHost {
         remoteExec = probe.superonePath!
       } else if (decision.action === 'install' || decision.action === 'upgrade_node' || decision.action === 'upgrade_node_unknown') {
         if (decision.action === 'upgrade_node') {
+          restartAfterInstall = true
           warnings.push(
             `Remote SuperOne CLI ${decision.remoteVersion} is older than this desktop (${decision.targetVersion}); upgrading the node.`,
           )
         } else if (decision.action === 'upgrade_node_unknown') {
+          restartAfterInstall = true
           warnings.push(
             `Remote SuperOne CLI version could not be read at ${decision.remotePath}; installing ${decision.targetVersion}.`,
           )
@@ -3061,6 +3067,20 @@ export class EnvironmentHost {
     }
 
     onProgress?.({ phase: 'starting' })
+    if (restartAfterInstall) {
+      // Bootstrap only starts a node when /health fails, so a process that is
+      // still healthy would keep serving the build npm just replaced.
+      await this.restartNode({
+        ...sshTarget,
+        remoteExec,
+        remoteNodeHome: resolveRemoteNodeHome({
+          remoteNodeHome: input.remoteNodeHome,
+          remoteHome,
+        }),
+        remotePort,
+        nodeBinDir,
+      })
+    }
     const boot = await this.bootstrap({
       destination: input.destination,
       remoteExec,

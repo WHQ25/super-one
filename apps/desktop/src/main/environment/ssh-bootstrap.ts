@@ -38,6 +38,22 @@ export interface SshBootstrapResult {
 }
 
 /**
+ * Absolute node home used by bootstrap and by an in-place restart.
+ * A relative `~/…` home expands with the probed remote home; otherwise the
+ * variant node directory under that home is used.
+ */
+export function resolveRemoteNodeHome(input: {
+  remoteNodeHome?: string
+  remoteHome?: string
+}): string {
+  const requested = input.remoteNodeHome?.trim() ?? ''
+  const remoteHome = input.remoteHome?.trim() ?? ''
+  if (requested && !requested.startsWith('~')) return requested
+  if (requested.startsWith('~/') && remoteHome) return `${remoteHome}/${requested.slice(2)}`
+  return `${remoteSuperoneHome(remoteHome || '/tmp')}/node`
+}
+
+/**
  * SSH bootstrap orchestration for Phase 1:
  * 1) probe remote host
  * 2) ensure node home exists / start node if needed (caller supplies remoteExec)
@@ -78,13 +94,10 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
     remoteHome = (homeMatch?.[1] || '').trim()
   }
 
-  const requestedHome = opts.remoteNodeHome?.trim()
-  const remoteAbsHome =
-    requestedHome && !requestedHome.startsWith('~')
-      ? requestedHome
-      : requestedHome?.startsWith('~/') && remoteHome
-        ? `${remoteHome}/${requestedHome.slice(2)}`
-        : `${remoteSuperoneHome(remoteHome || '/tmp')}/node`
+  const remoteAbsHome = resolveRemoteNodeHome({
+    remoteNodeHome: opts.remoteNodeHome,
+    remoteHome,
+  })
 
   // Batch directory setup, node startup, health wait, and token creation into
   // one SSH session. This avoids triggering common SSH connection rate limits.

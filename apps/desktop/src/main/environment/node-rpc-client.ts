@@ -290,6 +290,9 @@ export class NodeRpcClient extends EnvironmentRpcClient {
       this.connectingWs = ws
 
       let timer: ReturnType<typeof setTimeout> | null = null
+      // Rejects an auth frame still waiting on this socket. removeAllListeners
+      // would otherwise drop the exchange's handlers and leave it on its own timer.
+      const authAbort = new AbortController()
       const handshakeLimit = channel ? CHANNEL_CONNECT_TIMEOUT_MS : HANDSHAKE_TIMEOUT_MS
       // Ticket fetch on an old node is outside the handshake slice, but the
       // whole connect still ends at this deadline.
@@ -310,6 +313,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
         settled = true
         if (timer) clearTimeout(timer)
         timer = null
+        authAbort.abort(err)
         if (this.connectFail === fail) this.connectFail = null
         if (this.connectingWs === ws) this.connectingWs = null
         try {
@@ -445,6 +449,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
         void this.attachThroughChannel(ws, channel, {
           pauseHandshakeTimer,
           restartHandshakeTimer,
+          authSignal: authAbort.signal,
         }).then(
           () => {
             if (settled) return
@@ -759,7 +764,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
   private async attachThroughChannel(
     ws: NodeSocket,
     credential: ChannelCredential,
-    handshake: { pauseHandshakeTimer(): void; restartHandshakeTimer(): void },
+    handshake: { pauseHandshakeTimer(): void; restartHandshakeTimer(): void; authSignal: AbortSignal },
   ): Promise<void> {
     let channel: SecureChannel
     let inlineAuth = false
@@ -783,7 +788,11 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     // An old node has no inline auth, so the ticket is minted on its own
     // channel. That round trip must not consume this socket's handshake budget.
     const ticket = authorize
-      ? await authorize((input) => exchangeOnSecureChannel(ws, channel, { ...input, timeoutMs: CHANNEL_CONNECT_TIMEOUT_MS }))
+      ? await authorize((input) => exchangeOnSecureChannel(ws, channel, {
+          ...input,
+          timeoutMs: CHANNEL_CONNECT_TIMEOUT_MS,
+          signal: handshake.authSignal,
+        }))
       : await this.fetchTicketOutsideHandshake(handshake, () => this.opts.getWsTicket())
     const ticketId = ticket.split('.')[0] || ticket
     const sig = signWithDeviceKey(this.opts.devicePrivateKeyPem, ticketId)

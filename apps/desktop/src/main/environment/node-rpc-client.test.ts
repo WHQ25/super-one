@@ -238,6 +238,44 @@ describe('NodeRpcClient disconnect signaling', () => {
     }
   })
 
+  it('rejects a pending inline auth exchange when the connect fails', async () => {
+    const channel = {
+      seal: () => Buffer.from('sealed'),
+      open: () => ({}),
+      sealBytes: (data: Uint8Array) => Buffer.from(data),
+      openBytes: (data: Buffer) => data,
+    } as unknown as SecureChannel
+    vi.mocked(establishSecureChannel).mockResolvedValueOnce({ channel, ready: { type: 'channel_ready', inlineAuth: true } })
+    let exchangeStarted = false
+    let exchangeDone = false
+    const client = new NodeRpcClient({
+      baseUrl: 'http://127.0.0.1:7788',
+      devicePrivateKeyPem: generateEd25519Pem(),
+      channel: { keyId: 'k', secretHex: 'ab'.repeat(32) },
+      heartbeatIntervalMs: 0,
+      getWsTicket: async () => { throw new Error('inline node must not fetch a header ticket') },
+      authorizeInline: async (exchange) => {
+        exchangeStarted = true
+        try {
+          await exchange({ path: '/v1/ws-ticket', body: {} })
+          return 'ticket'
+        } finally {
+          exchangeDone = true
+        }
+      },
+    })
+    const connectPromise = client.connect()
+    const rejection = expect(connectPromise).rejects.toThrow(/socket lost/)
+    for (let i = 0; i < 20 && !exchangeStarted; i++) await Promise.resolve()
+    expect(exchangeStarted).toBe(true)
+    expect(exchangeDone).toBe(false)
+    lastSocket().emit('error', new Error('socket lost'))
+    await rejection
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(exchangeDone).toBe(true)
+    client.close()
+  })
+
   it('invalidateTransport drops the socket without firing unexpected disconnect', async () => {
     const onUnexpectedDisconnect = vi.fn()
     const { client, ws } = await connectClient({

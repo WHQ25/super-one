@@ -98,6 +98,55 @@ describe('NodeRouteResolver', () => {
     now += 3 * 60_000
     expect((await routes.candidates(target)).map((c) => c.path)).toEqual(['lan', 'tailscale', 'relay'])
   })
+
+  it('prefers a LAN answer that arrives inside the relay grace', async () => {
+    const probe = vi.fn(async (url: string) => {
+      if (url.includes('Studio')) {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        return true
+      }
+      return false
+    })
+    const routes = new NodeRouteResolver({
+      probe,
+      discoverLan: async () => [],
+      openSshForward: async () => undefined,
+      relayOnline: async () => true,
+      lanRelayGraceMs: 200,
+    })
+    await expect(routes.resolve(target)).resolves.toMatchObject({ path: 'lan', baseUrl: 'http://Studio.local:7791' })
+  })
+
+  it('takes the relay when LAN is still pending after the grace', async () => {
+    let releaseLan: ((ok: boolean) => void) | undefined
+    const probe = vi.fn((url: string) => {
+      if (url.includes('Studio')) return new Promise<boolean>((resolve) => { releaseLan = resolve })
+      return Promise.resolve(false)
+    })
+    const routes = new NodeRouteResolver({
+      probe,
+      discoverLan: () => new Promise<string[]>(() => {}),
+      openSshForward: async () => undefined,
+      relayOnline: async () => true,
+      lanRelayGraceMs: 40,
+    })
+    const started = Date.now()
+    await expect(routes.resolve(target)).resolves.toMatchObject({ path: 'relay' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    releaseLan?.(true)
+  })
+
+  it('keeps Tailscale ahead of the relay when LAN is already down', async () => {
+    const probe = vi.fn(async (url: string) => url.includes('100.80.0.2'))
+    const routes = new NodeRouteResolver({
+      probe,
+      discoverLan: () => new Promise<string[]>(() => {}),
+      openSshForward: async () => undefined,
+      relayOnline: async () => true,
+      lanRelayGraceMs: 200,
+    })
+    await expect(routes.resolve(target)).resolves.toMatchObject({ path: 'tailscale' })
+  })
 })
 
 describe('cachedNodeLanDiscovery', () => {
@@ -109,6 +158,28 @@ describe('cachedNodeLanDiscovery', () => {
     const discover = cachedNodeLanDiscovery(browse)
     await expect(discover('env-b')).resolves.toEqual(['http://192.168.1.20:7791'])
     await expect(discover('env-c')).resolves.toEqual(['http://192.168.1.30:7792'])
+    expect(browse).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves a caller when its node answers, and keeps the browse open for a later one', async () => {
+    type Found = { instance: string; port: number; addresses: string[]; txt: Record<string, string> }
+    let publish!: (services: Found[]) => void
+    let finish!: (services: Found[]) => void
+    const browse = vi.fn((onUpdate?: (services: Found[]) => void) => new Promise<Found[]>((resolve) => {
+      publish = (services) => onUpdate?.(services)
+      finish = resolve
+    }))
+    const discover = cachedNodeLanDiscovery(browse)
+    const first = discover('env-b')
+    const studio = { instance: 'a', port: 7791, addresses: ['192.168.1.20'], txt: { env: 'env-b' } }
+    publish([studio])
+    await expect(first).resolves.toEqual(['http://192.168.1.20:7791'])
+    let sawLater = false
+    const later = discover('env-c').then((urls) => { sawLater = true; return urls })
+    await Promise.resolve()
+    expect(sawLater).toBe(false)
+    finish([studio, { instance: 'b', port: 7792, addresses: ['192.168.1.30'], txt: { env: 'env-c' } }])
+    await expect(later).resolves.toEqual(['http://192.168.1.30:7792'])
     expect(browse).toHaveBeenCalledTimes(1)
   })
 })

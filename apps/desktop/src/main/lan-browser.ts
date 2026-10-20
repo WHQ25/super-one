@@ -86,8 +86,17 @@ export function nodeLanUrls(services: readonly LanService[], environmentId: stri
   return urls
 }
 
-/** Ask the LAN for instances of a service type and collect answers for a short window. */
-export function browseLanServices(serviceType: string, timeoutMs = BROWSE_TIMEOUT_MS): Promise<LanService[]> {
+/**
+ * Ask the LAN for instances of a service type and collect answers for a short
+ * window. `onUpdate` fires as answers arrive so a caller can stop waiting on
+ * its own target; the socket stays up until `timeoutMs` so a shared browse
+ * still records a later node.
+ */
+export function browseLanServices(
+  serviceType: string,
+  timeoutMs = BROWSE_TIMEOUT_MS,
+  onUpdate?: (services: LanService[]) => void,
+): Promise<LanService[]> {
   return new Promise((resolve) => {
     const records: MdnsAnswer[] = []
     const sources = new Map<string, string>()
@@ -127,6 +136,7 @@ export function browseLanServices(serviceType: string, timeoutMs = BROWSE_TIMEOU
       if (missing.length > 0) {
         mdns.query({ questions: missing.flatMap((name) => [{ name, type: 'SRV' }, { name, type: 'TXT' }]) })
       }
+      onUpdate?.(collectLanServices(records, serviceType, sources))
     })
     mdns.query({ questions: [{ name: domain, type: 'PTR' }] })
   })

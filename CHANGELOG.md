@@ -13,32 +13,61 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ## [Unreleased]
 
-### Added
+### Performance
 
-- Fold settled tool process into one row when a transcript window opens. The
-  detail header still counts the calls, files and diff, and expanding reads
-  them a page at a time.
+- Connect on one channel when the node advertises inline auth: refresh or mint the ticket on the RPC socket, and keep a still-valid access token so a restart can skip refresh. A failed connect aborts that exchange. Older nodes keep separate channels.
+- Open the first remote session's transcript beside the session row, and release the follow barrier only for that topic.
+- Cache host accounts, providers, git mentions, and worktrees across session switches. Drop them when the host or checkout changes, and discard cached reads that started before the drop.
+- Race LAN discovery with the relay. A discovered LAN address connects immediately; SSH stays last.
 
 ### Fixed
 
-- Measure a mod pane's content box, so a mod drawn at full width no longer
-  overflows by a few columns. Plain buttons in a mod sit on the same row as
-  the text beside them.
-- Show slash commands a Claude mod registers at session start, including
-  project commands such as `/ultra-config`.
-- Restart a remote node after an SSH CLI upgrade, so it serves the build just
-  installed instead of the process still in memory.
-- Load earlier pages of a desktop remote transcript while scrolling, and keep
-  the in-chat loading indicator to one loader.
-- Leave raw API error bodies out of the retry banner. A short reason still
-  shows, and the full text stays on the tooltip.
-- Highlight code citations by file extension.
-- Show tool rows inside an expanded Grok subagent card on the phone.
-- Load a desktop-node file preview through the pane's remote key, so the card
-  opens the same file as its header.
-- Keep sidebar loading spinners in front of the hover controls.
+- Approve a permission prompt with Enter, Space, or a digit once the card has risen.
+- Keep a preferred SSH route ahead of relay, so a live relay does not skip it.
+- Drop an access token a node rejects with 401, instead of presenting it again on the next launch. A revoked family stays stored.
+- Keep ticket fetches for older nodes outside the 15-second handshake timer, so a cold relay does not time out before attach.
+- Keep the default Claude account on a profile that can still run. A missing domain directory is created again, and a signed-out default whose identity is signed in on another card moves to that card.
+- Read Claude and ChatGPT accounts from the desktop being controlled. A fetch started on this machine does not replace the remote store after a host switch.
+- Show a remote session's harness icon and ACP model name from the host. Cursor and DeepSeek keep their own icons, a Grok session uses its own icon, and a custom ACP agent stays unnamed until the row carries its own id.
+- Hide a dismissed session handoff immediately.
+- Open a remote draft with a control lease so the host composer flushes, and release the lease when leaving.
+- Drop a Codex loopback llm-proxy URL after the idle sweep instead of reusing it. Later turns take a fresh proxy URL (Fixes #82). Codex keeps that URL for the app-server lifetime.
 
-## [0.75.3-alpha] - 2026-10-20
+### Changed
+
+- Remove the "longer messages are summarized until expanded" note from remote transcripts. Paging and on-demand detail are unchanged.
+
+## [0.75.4-alpha] - 2026-10-21
+
+### Performance
+
+- Connect on one channel when the node advertises inline auth: refresh or mint the ticket on the RPC socket, and keep a still-valid access token so a restart can skip refresh. A failed connect aborts that exchange. Older nodes keep separate channels.
+- Open the first remote session's transcript beside the session row, and release the follow barrier only for that topic.
+- Cache host accounts, providers, git mentions, and worktrees across session switches. Drop them when the host or checkout changes, and discard cached reads that started before the drop.
+- Race LAN discovery with the relay. A discovered LAN address connects immediately; SSH stays last.
+
+### Fixed
+
+- Approve a permission prompt with Enter, Space, or a digit once the card has risen.
+- Keep a preferred SSH route ahead of relay, so a live relay does not skip it.
+- Drop an access token a node rejects with 401, instead of presenting it again on the next launch. A revoked family stays stored.
+- Keep ticket fetches for older nodes outside the 15-second handshake timer, so a cold relay does not time out before attach.
+- Keep the default Claude account on a profile that can still run. A missing domain directory is created again, and a signed-out default whose identity is signed in on another card moves to that card.
+- Read Claude and ChatGPT accounts from the desktop being controlled. A fetch started on this machine does not replace the remote store after a host switch.
+- Show a remote session's harness icon and ACP model name from the host. Cursor and DeepSeek keep their own icons, a Grok session uses its own icon, and a custom ACP agent stays unnamed until the row carries its own id.
+- Hide a dismissed session handoff immediately.
+- Open a remote draft with a control lease so the host composer flushes, and release the lease when leaving.
+- Drop a Codex loopback llm-proxy URL after the idle sweep instead of reusing it. Later turns take a fresh proxy URL (Fixes #82). Codex keeps that URL for the app-server lifetime.
+
+### Changed
+
+- Remove the "longer messages are summarized until expanded" note from remote transcripts. Paging and on-demand detail are unchanged.
+
+### Tests
+
+- Drain the shared node between environment tests.
+
+## [0.75.3] - 2026-10-20
 
 ### Added
 

@@ -126,6 +126,24 @@ const BLAST_RADIUS = {
   ],
 } as ModElement
 
+/** A profile list in the shape ultra-config draws: a `plain` Button between a Text and a right-aligned meter, one row each. */
+const PROFILE_CARD = (key: string, icon: string, name: string, color: string, isOpen: boolean): ModElement => ({
+  type: 'Box',
+  props: { flexDirection: 'column', width: 60 },
+  children: [
+    {
+      type: 'Box',
+      props: { flexDirection: 'row', justifyContent: 'space-between', width: 60 },
+      children: [
+        { type: 'Box', props: { flexDirection: 'row' }, children: [T(`${isOpen ? '▾' : '▸'} `, { color: isOpen ? color : '#5a5a5a' }), T(`\u00a0${icon}\u00a0`, { backgroundColor: color, color: '#141414', bold: true }), T('\u00a0'), Button(`pick:${key}`, name, { plain: true, dimColor: !isOpen })] },
+        T('■■■■■■□□□□  6/9', { color }),
+      ],
+    },
+    T(`      ${name} tagline`, { dimColor: true, wrap: 'truncate-end' }),
+  ],
+} as ModElement)
+const PROFILE_CARDS = Col(PROFILE_CARD('saver', '◔', 'Token saver', '#8fd18f', true), PROFILE_CARD('flow', '»', 'Fast flow', '#e6c15a', false))
+
 /** Token Weather's band as the mod sends it: one row, parts separated by their own leading spaces. */
 const TOKEN_WEATHER_BAND: ModElement = {
   type: 'Box',
@@ -375,6 +393,8 @@ export const PaneClientFault: Story = { render: () => <PaneFrame tree={drawn(CLI
 export const PaneNarrow: Story = { render: () => <PaneFrame tree={drawn(PROBE_PANE)} width={300} /> }
 
 /** A tree taller than the pane scrolls; `$.ui.scroll` and the wheel move it. */
+export const PaneProfileCards: Story = { render: () => <PaneFrame tree={drawn(PROFILE_CARDS)} height={160} /> }
+
 export const PaneLongContent: Story = { render: () => <PaneFrame tree={drawn(LONG_PANE)} height={260} /> }
 
 /** blast-radius holding a command: Cancel takes the focus, 1 / 2 press. */

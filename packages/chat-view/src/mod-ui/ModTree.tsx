@@ -230,7 +230,8 @@ function ButtonNode({ node }: { node: Extract<ModElement, { type: 'Button' }> })
       type="button"
       size={touch ? 'sm' : 'xs'}
       variant={plain && !touch ? 'ghost' : variant === 'primary' ? 'default' : 'outline'}
-      className={`w-fit shrink-0 font-normal ${touch ? 'h-7 px-2.5 font-sans' : ''} ${PRESSED_CLASS}`}
+      // A desktop `plain` button is its label in one text row, as in the terminal, so it lines up with the Text beside it.
+      className={`w-fit shrink-0 font-normal ${touch ? 'h-7 px-2.5 font-sans' : plain ? 'h-[var(--mod-row)] rounded-sm px-0' : ''} ${PRESSED_CLASS}`}
       style={dimColor ? { opacity: 0.62 } : undefined}
       disabled={pending}
       onClick={press}

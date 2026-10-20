@@ -211,8 +211,13 @@ export function ModSurfaceFrame({ component, instanceId, props, plugin, onEscape
   useLayoutEffect(() => {
     const el = frameRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const measure = () =>
-      setBox({ columns: Math.max(1, Math.floor(el.clientWidth / cell.width)), bodyRows: Math.max(1, Math.floor(el.clientHeight / cell.height)) })
+    // The content box: `clientWidth` includes the frame's padding, which a mod cannot draw into.
+    const measure = () => {
+      const s = getComputedStyle(el)
+      const width = el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
+      const height = el.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)
+      setBox({ columns: Math.max(1, Math.floor(width / cell.width)), bodyRows: Math.max(1, Math.floor(height / cell.height)) })
+    }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)

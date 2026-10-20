@@ -25,6 +25,7 @@ import {
   getRemoteGitBranches,
   getRemoteWorktreeInfo,
   invalidateRemoteGitStatusCache,
+  invalidateRemoteGitReads,
   toRemoteRelativePath,
 } from './remote-file-tree'
 import type { WorkspaceEntry } from '@superone/shared/environment'
@@ -279,7 +280,7 @@ describe('getRemoteGitInfo / isRepo / branches', () => {
 
 describe('getRemoteWorktreeInfo', () => {
   beforeEach(() => {
-    invalidateRemoteGitStatusCache()
+    invalidateRemoteGitReads()
   })
 
   it('synthesizes a main worktree entry so WorkDirIndicator can show Local', async () => {
@@ -316,6 +317,22 @@ describe('getRemoteWorktreeInfo', () => {
       getGateway: () => ({ gitStatus }),
     })
     expect(await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')).toBeNull()
+  })
+
+  it('reuses one worktree list until a git read is invalidated', async () => {
+    const gitStatus = vi.fn().mockResolvedValue({ isRepo: true, branch: 'main', porcelain: '' })
+    const gitWorktrees = vi.fn().mockResolvedValue([{ path: '/work/app', branch: 'main', bare: false }])
+    const host = mockHost({ getGateway: () => ({ gitStatus, gitWorktrees }) })
+    await Promise.all([
+      getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app'),
+      getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app'),
+    ])
+    expect(gitWorktrees).toHaveBeenCalledTimes(1)
+    await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+    expect(gitWorktrees).toHaveBeenCalledTimes(1)
+    invalidateRemoteGitReads('remote:conn-1:/work/app')
+    await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+    expect(gitWorktrees).toHaveBeenCalledTimes(2)
   })
 })
 

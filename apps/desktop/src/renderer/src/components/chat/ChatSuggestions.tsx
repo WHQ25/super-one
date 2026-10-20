@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, useIsRemoteLocked, useSessionScope, type ChatProvider } from '@/stores/chat'
 import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
+import { loadEnvironmentItems } from '@/lib/environment-list'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
@@ -701,7 +702,7 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
       return
     }
     let cancelled = false
-    void window.environment.listItems().then((items) => {
+    void loadEnvironmentItems().then((items) => {
       if (cancelled) return
       const host = items.find((h) => h.connectionId === connectionId)
       setHostLabel(host?.label ?? connectionId)

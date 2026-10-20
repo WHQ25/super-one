@@ -40,11 +40,11 @@ export interface RemoteSessionListener {
 export interface RemoteListObserver {
   /** A durable session-list event (`SESSION_LIST_EVENT_TYPES`), from a node that pushes no list notices. */
   event?(envelope: EnvironmentEventEnvelope): void
-  /** A `sessionList` or `projects` notice: change events, or a snapshot that stands in for missed ones. */
+  /** A `sessionList`, `projects`, or `environment` notice: change events, or a snapshot that stands in for missed ones. */
   notice?(frame: TopicNoticeFrame): void
 }
 
-const LIST_NOTICE_KINDS: ReadonlySet<string> = new Set(['sessionList', 'projects'])
+const LIST_NOTICE_KINDS: ReadonlySet<string> = new Set(['sessionList', 'projects', 'environment'])
 
 interface Follower {
   listener: RemoteSessionListener
@@ -150,7 +150,11 @@ export class RemoteSessionFeed {
   private topics(): TopicRef[] {
     const environmentId = this.environmentId
     return [...new Map([
-      ...(this.observers.size > 0 ? [{ kind: 'sessionList' as const, environmentId }, { kind: 'projects' as const, environmentId }] : []),
+      ...(this.observers.size > 0 ? [
+        { kind: 'sessionList' as const, environmentId },
+        { kind: 'projects' as const, environmentId },
+        { kind: 'environment' as const, environmentId },
+      ] : []),
       ...[...this.followers.keys()].map((sessionId) => ({ kind: 'session' as const, environmentId, sessionId })),
       ...this.native.topics(),
     ].map(topic => [topicKey(topic), topic])).values()]

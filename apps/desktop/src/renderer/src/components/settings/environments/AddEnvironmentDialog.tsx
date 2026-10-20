@@ -1,4 +1,5 @@
 import { defaultNodeRemotePort } from '@superone/shared/environment/client-view'
+import { loadEnvironmentItems } from '@/lib/environment-list'
 import { useAppStore } from '@/stores/app'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -88,7 +89,7 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
     setSshHostsLoading(true)
     void Promise.all([
       window.environment.listSshConfigHosts().catch(() => [] as SshConfigHostEntry[]),
-      window.environment.listItems().catch(() => [] as Awaited<ReturnType<typeof window.environment.listItems>>),
+      loadEnvironmentItems().catch(() => [] as Awaited<ReturnType<typeof window.environment.listItems>>),
     ])
       .then(([hosts, items]) => {
         if (cancelled) return

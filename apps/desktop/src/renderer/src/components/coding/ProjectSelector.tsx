@@ -6,6 +6,7 @@ import type { RecentFolder } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { projectDisplayName } from '@/lib/project-display-name'
 import { useHostProjects } from '@/hooks/use-host-projects'
+import { loadEnvironmentItems } from '@/lib/environment-list'
 import { remoteProjectKey, displayHostPath } from '@/lib/remote-project-key'
 import { Check, ChevronDown, Folder, FolderOpen, Plus, RotateCw } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -62,7 +63,7 @@ export function ProjectSelector({
       ? t(window.app.platform === 'darwin' ? 'sidebar.thisMac' : 'sidebar.thisPc')
       : connectionId)
     if (!isLocal) {
-      void window.environment.listItems().then((items) => {
+      void loadEnvironmentItems().then((items) => {
         if (!cancelled) setHostLabel(items.find((host) => host.connectionId === connectionId)?.label ?? connectionId)
       }).catch(() => {})
     }

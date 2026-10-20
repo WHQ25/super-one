@@ -375,6 +375,15 @@ export class AgentService {
     }
   }
 
+  /**
+   * Claude accounts changed on this machine. Other desktops hear the existing
+   * `provider_changed` notice. Sessions are not rebuilt: an account list is not
+   * a credential or binding change.
+   */
+  publishClaudeAccountsChanged(): void {
+    this.publishEnvironmentEvent({ type: 'provider_changed', harnessId: 'claude', provider: null })
+  }
+
   /** A credential/platform change can affect either harness — rebuild and re-broadcast both. */
   providerConfigChanged(): void {
     this.markAllNeedsRebuild()

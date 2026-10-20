@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RecentFolder } from '@superone/shared/agent-types'
-import type { SupervisorSnapshot } from '@superone/shared/environment'
+import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 import { remoteProjectKey } from '@/lib/remote-project-key'
 import { onHostProjectsChanged } from '@/lib/host-projects-bus'
 import { useAppStore } from '@/stores/app'
@@ -79,7 +79,7 @@ export function useHostProjects(options?: UseHostProjectsOptions): UseHostProjec
       try {
         const force = forceNextRef.current
         forceNextRef.current = false
-        const items = await window.environment.listItems()
+        const items = await loadEnvironmentItems()
         if (cancelled) return
         const host = items.find((h) => h.connectionId === selectedHostConnectionId)
         // An explicit disconnect sets desired=false. Dialing here is what made
@@ -139,10 +139,9 @@ export function useHostProjects(options?: UseHostProjectsOptions): UseHostProjec
 
   useEffect(() => {
     if (isLocal || paused) return
-    return window.environment.onStatusEvent((snapshot: SupervisorSnapshot) => {
-      // Every snapshot for this host is a reload edge: a load that started while
-      // the host was still `synchronizing` can fail, and the host may never emit
-      // another `connected` edge afterwards.
+    // The shared list drops its cache on any status push and tells us. Reloading
+    // here still calls listItems, so a host the user turned off is read again.
+    return subscribeEnvironmentList((snapshot) => {
       if (snapshot.connectionId !== selectedHostConnectionId) return
       setRetryNonce((nonce) => nonce + 1)
     })

@@ -362,6 +362,26 @@ describe('provider_changed', () => {
 
     expect(refreshSpy).not.toHaveBeenCalled()
   })
+
+  it('refetches the open remote host catalog', async () => {
+    const { useSettingsStore } = await import('../../settings')
+    const fetchProviderData = vi.fn().mockResolvedValue(undefined)
+    useSettingsStore.setState({ providerScope: 'conn-1', fetchProviderData })
+    const accounts = vi.fn()
+    window.addEventListener('claude-accounts-changed', accounts)
+    try {
+      useChatStore.getState().handleAgentEvent({
+        type: 'provider_changed',
+        harnessId: 'claude',
+        provider: null,
+      } as AgentEvent)
+      await vi.waitFor(() => expect(fetchProviderData).toHaveBeenCalled())
+      expect(accounts).toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('claude-accounts-changed', accounts)
+      useSettingsStore.setState({ providerScope: 'local' })
+    }
+  })
 })
 
 describe('additional_dirs_changed', () => {

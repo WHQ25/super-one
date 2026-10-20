@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
 import type { HarnessId } from '@superone/shared/agent-types'
 
 const mockSourceControlReset = vi.fn()
@@ -167,6 +168,7 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetEnvironmentListCache()
   resetStore()
   // Default off so host-switch tests must opt in explicitly (see describe below).
   useAppStore.setState({ experimentalRemoteNodesEnabled: false })

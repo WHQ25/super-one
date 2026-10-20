@@ -145,6 +145,14 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       if (event.harnessId === 'codex') {
         void get().refreshCodexModels(true)
       }
+      // A remote host's accounts and provider lists live in main's connection
+      // cache. Refresh the open remote scope; a local scope has its own panel.
+      void import('../../settings').then(({ useSettingsStore }) => {
+        const scope = useSettingsStore.getState().providerScope
+        if (scope === 'local') return
+        void useSettingsStore.getState().fetchProviderData()
+        window.dispatchEvent(new CustomEvent('claude-accounts-changed', { detail: { connectionId: scope } }))
+      })
       return
     }
     if (event.type === 'session_title_changed') {

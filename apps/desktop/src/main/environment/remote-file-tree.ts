@@ -70,6 +70,22 @@ export function invalidateRemoteGitStatusCache(key?: string): void {
   else remoteGitStatusCoalescer.clear()
 }
 
+/** Worktree list and @git probes for one remote folder. Held until a git mutation drops them. */
+const remoteWorktreeReads = new AsyncCoalescer<WorktreeInfo | null>(Number.POSITIVE_INFINITY)
+const remoteMentionReads = new AsyncCoalescer<GitMentionCapabilities>(Number.POSITIVE_INFINITY)
+
+/** Drop cached worktree and mention reads for one remote folder, or every folder. */
+export function invalidateRemoteGitReads(folderPath?: string): void {
+  if (folderPath) {
+    remoteWorktreeReads.invalidate(folderPath)
+    remoteMentionReads.invalidate(folderPath)
+  } else {
+    remoteWorktreeReads.clear()
+    remoteMentionReads.clear()
+  }
+  invalidateRemoteGitStatusCache()
+}
+
 const SKIP_NAMES = new Set(['.git', '.DS_Store'])
 /** Match node workspace.writeFile / readFile payload cap. */
 const MAX_TRANSFER_BYTES = 10 * 1024 * 1024
@@ -950,6 +966,16 @@ export async function getRemoteWorktreeInfo(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<WorktreeInfo | null> {
+  const info = await remoteWorktreeReads.get(folderPath, () => loadRemoteWorktreeInfo(host, folderPath))
+  // A missing project or a non-repo is not stable: the next open may have registered it.
+  if (!info) remoteWorktreeReads.invalidate(folderPath)
+  return info
+}
+
+async function loadRemoteWorktreeInfo(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<WorktreeInfo | null> {
   // Only for already-registered projects — never openProject here.
   const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
   if (!ctx) return null
@@ -1092,6 +1118,15 @@ export async function resolvePathsForNativeDrag(
  * `@git` still works there; `gh` on such a node is unknown and stays off.
  */
 export async function getRemoteGitMentionCapabilities(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<GitMentionCapabilities> {
+  const caps = await remoteMentionReads.get(folderPath, () => loadRemoteGitMentionCapabilities(host, folderPath))
+  if (caps.repo === 'unsupported') remoteMentionReads.invalidate(folderPath)
+  return caps
+}
+
+async function loadRemoteGitMentionCapabilities(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<GitMentionCapabilities> {

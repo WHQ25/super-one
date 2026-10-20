@@ -32,6 +32,7 @@ import {
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
 import { PairDesktopDialog } from './PairDesktopDialog'
+import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
 import { DeviceRow, computerKind } from '../DeviceRow'
@@ -126,7 +127,7 @@ export function EnvironmentsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setItems(await window.environment.listItems())
+      setItems(await loadEnvironmentItems())
     } finally {
       setLoading(false)
     }
@@ -134,7 +135,7 @@ export function EnvironmentsPage() {
 
   useEffect(() => {
     void refresh()
-    return window.environment.onStatusEvent(() => void refresh())
+    return subscribeEnvironmentList(() => void refresh())
   }, [refresh])
 
   useEffect(() => {

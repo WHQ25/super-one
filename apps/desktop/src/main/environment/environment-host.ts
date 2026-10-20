@@ -1650,6 +1650,14 @@ export class EnvironmentHost {
     return () => { this.projectListListeners.delete(listener) }
   }
 
+  /** Listeners told a node's provider or Claude account catalog changed. */
+  private readonly catalogListeners = new Set<(connectionId: string) => void>()
+
+  onHostCatalogChanged(listener: (connectionId: string) => void): () => void {
+    this.catalogListeners.add(listener)
+    return () => { this.catalogListeners.delete(listener) }
+  }
+
   onRemoteSessionActivity(listener: (event: SessionActivityEvent) => void): () => void {
     this.sessionActivityListeners.add(listener)
     return () => { this.sessionActivityListeners.delete(listener) }
@@ -1672,6 +1680,11 @@ export class EnvironmentHost {
         this.remoteProjectCache.delete(connectionId)
         this.remoteProjectLoads.delete(connectionId)
         for (const listener of [...this.projectListListeners]) listener(connectionId)
+      },
+      catalogChanged: () => {
+        const known = this.connections.listKnown().find((item) => item.connectionId === connectionId)
+        if (known) this.connections.getGateway(known.environmentId)?.invalidateHostCatalog()
+        for (const listener of [...this.catalogListeners]) listener(connectionId)
       },
       activity: (event) => {
         for (const listener of [...this.sessionActivityListeners]) listener(event)
@@ -2594,7 +2607,13 @@ export class EnvironmentHost {
     for (const known of this.connections.listKnown()) {
       const gateway = this.connections.getGateway(known.environmentId)
       const snapshot = this.connections.getSupervisor(known.connectionId)
-      const descriptor = gateway && options?.includeDescriptors !== false ? await gateway.getDescriptor().catch(() => null) : null
+      // Capabilities come from the descriptor cached at connect. A list must
+      // not dial environment.descriptor per call; an unreachable node stays
+      // listed without those fields.
+      const reachable = snapshot?.state === 'connected' || snapshot?.state === 'synchronizing'
+      const descriptor = gateway && options?.includeDescriptors !== false && reachable
+        ? await gateway.getDescriptor().catch(() => null)
+        : null
       // A connection with no live entry was disconnected or never dialed; the
       // last snapshot is stale in that case, so report it as disconnected.
       const state = snapshot?.state ?? (this.lastStatus.has(known.connectionId) ? 'disconnected' : 'available')
@@ -2648,6 +2667,8 @@ export class EnvironmentHost {
     this.connections.updateKnown(connectionId, { desired: true })
 
     if (this.connections.isConnected(connectionId)) {
+      const gateway = this.connections.getGateway(known.environmentId)
+      if (gateway) return gateway.refreshDescriptor()
       const client = this.connections.getClient(connectionId)
       if (client) return client.getDescriptor()
     }
@@ -2724,11 +2745,13 @@ export class EnvironmentHost {
    */
   private finalizeConnected(connectionId: string): Promise<ExecutionEnvironmentDescriptor> {
     this.startHostActionConsumer(connectionId)
-    const client = this.connections.getClient(connectionId)
-    if (!client) {
+    const known = this.connections.listKnown().find((item) => item.connectionId === connectionId)
+    const gateway = known ? this.connections.getGateway(known.environmentId) : null
+    const read = gateway?.getDescriptor() ?? this.connections.getClient(connectionId)?.getDescriptor()
+    if (!read) {
       return Promise.reject(new Error(`no client for ${connectionId}`))
     }
-    return client.getDescriptor().then((descriptor) => {
+    return read.then((descriptor) => {
       try {
         this.assertDesktopNotOlderThanNode(descriptor.cliVersion)
       } catch (err) {
@@ -3380,6 +3403,13 @@ export class EnvironmentHost {
     } else {
       this.remoteProjectCache.delete(snapshot.connectionId)
       this.remoteProjectLoads.delete(snapshot.connectionId)
+      // Keep the descriptor through connecting/synchronizing: connect just
+      // identity-checked it. Any other drop is a dead socket.
+      if (snapshot.state !== 'connecting' && snapshot.state !== 'synchronizing') {
+        const gateway = this.connections.getGateway(snapshot.environmentId)
+        gateway?.clearDescriptor()
+        gateway?.invalidateHostCatalog()
+      }
     }
     for (const listener of this.statusListeners) listener(snapshot)
   }

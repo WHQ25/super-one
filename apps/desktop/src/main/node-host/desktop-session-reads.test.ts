@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
-import { DesktopSessionReads, pageSessionRows } from './desktop-session-reads'
+import { createDefaultChatCoreSession } from '@superone/chat-core'
+import { attachAcpModelCatalog, DesktopSessionReads, pageSessionRows } from './desktop-session-reads'
 
 function row(sessionId: string, parentSessionId?: string): DesktopSessionRow {
   return {
@@ -33,6 +34,21 @@ const family = [
   row('child-2', 'parent'),
   row('c'),
 ]
+
+describe('attachAcpModelCatalog', () => {
+  it('names a cold ACP session from the host catalog and leaves a replayed catalog alone', () => {
+    const cold = createDefaultChatCoreSession()
+    const named = attachAcpModelCatalog(cold, 'grok-build', () => ({
+      models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+      configId: 'model',
+    }))
+    expect(named.acpModels).toEqual([{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }])
+    expect(named.acpModelsStatus).toBe('ready')
+    const replayed = { ...cold, acpModels: [{ id: 'grok-4.5', name: 'From replay', description: '' }], acpModelsStatus: 'ready' as const }
+    expect(attachAcpModelCatalog(replayed, 'grok-build', () => ({ models: [{ id: 'x', name: 'Other', description: '' }], configId: null })).acpModels[0]?.name).toBe('From replay')
+    expect(attachAcpModelCatalog(cold, null, () => ({ models: [{ id: 'x', name: 'Other', description: '' }], configId: null }))).toBe(cold)
+  })
+})
 
 describe('pageSessionRows', () => {
   it('keeps a spawn family together when the limit falls inside it', () => {

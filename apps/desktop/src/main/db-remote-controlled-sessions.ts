@@ -54,6 +54,8 @@ export interface DesktopSessionRow {
   controller: RemoteControllerRecord | null
   /** Spawn parent on this host. Omitted for roots and mailbox endpoints. */
   parentSessionId?: string | null
+  /** ACP agent this session runs, so a cold snapshot can name its models. */
+  acpAgentId?: string | null
 }
 
 /** A session another device started here through the node surface. */
@@ -87,7 +89,7 @@ const SESSION_COLUMNS = `
   s.id, s.project_id, p.path AS project_path, s.title, s.provider, s.provider_id, s.api_provider_id, s.provider_session_id,
   s.worktree_path, s.is_worktree, s.git_branch, s.context_tokens, s.total_cost_usd,
   s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
-  COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json`
+  COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json, s.acp_agent_id`
 
 /**
  * Spawn grants only. A child that lives on another machine keeps a row here as
@@ -127,6 +129,7 @@ interface Row {
   updated_at: string
   remote_controller_json: string | null
   parent_session_id?: string | null
+  acp_agent_id?: string | null
 }
 
 function toRow(r: Row): DesktopSessionRow {
@@ -152,6 +155,7 @@ function toRow(r: Row): DesktopSessionRow {
     updatedAt: Date.parse(r.updated_at) || 0,
     controller: parseRemoteController(r.remote_controller_json),
     ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
+    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
   }
 }
 

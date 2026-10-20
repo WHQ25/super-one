@@ -4,7 +4,7 @@ import {
   type EnvironmentEventEnvelope,
 } from '@superone/shared/environment'
 import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
-import type { ChatMessage, SandboxInfo } from '@superone/shared/agent-types'
+import type { ChatMessage, ModelOption, SandboxInfo } from '@superone/shared/agent-types'
 import type { SessionRestoreFacts } from '@superone/shared/environment'
 import type { SessionHostPort, TranscriptWindowView } from '@superone/runtime/server'
 import { arrayTranscript } from '@superone/runtime/stream/delivery/transcript-access'
@@ -43,6 +43,29 @@ export interface DesktopSessionReadsDeps<Row extends DesktopSessionRow> {
   sessions: NodeHostSessionManager
   events: EventLog
   rows: DesktopSessionRows<Row>
+  /**
+   * Display names for an ACP agent when the live session has not replayed
+   * `acp_models` (a cold open). The host's own catalog, never the controller's.
+   */
+  acpModelCatalog?(agentId: string): { models: ModelOption[]; configId: string | null } | null
+}
+
+/** Fill ACP model display names from the host catalog when replay did not. */
+export function attachAcpModelCatalog(
+  state: ChatCoreSession,
+  agentId: string | null | undefined,
+  lookup: ((agentId: string) => { models: ModelOption[]; configId: string | null } | null) | undefined,
+): ChatCoreSession {
+  if (!lookup || !agentId || state.acpModels.length > 0) return state
+  const cached = lookup(agentId)
+  if (!cached?.models.length) return state
+  return {
+    ...state,
+    acpModels: cached.models,
+    acpModelsStatus: 'ready',
+    acpModelConfigId: cached.configId,
+    acpModelsError: null,
+  }
 }
 
 /**
@@ -309,6 +332,9 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     if (!includeState) return { live, state: {} as Record<string, unknown>, restore: undefined as SessionRestoreFacts | undefined, cursor }
     state = withTranscriptTodos(state, sources.todos, replay.some((event) => event.type === 'todos_updated'))
     state.pendingAsyncQuestions = pendingCodexAsyncQuestions(sources.questions)
+    if (row.harnessId === 'acp') {
+      state = attachAcpModelCatalog(state, live?.snapshot?.acpAgentId ?? row.acpAgentId, this.reads.acpModelCatalog)
+    }
     const facts = sessionRestoreFacts({ session: live, row, history: sources.history, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
     const { restore, ...current } = facts
     const stored = this.reads.restore?.stored?.(sessionId) ?? null

@@ -22,6 +22,7 @@ import type { HarnessManager } from '@superone/runtime/harness'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import type { NodeAgentSettings } from '@superone/shared/environment'
 import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
+import { getCachedModelsForAgent } from '../acp/acp-model-cache'
 import { DesktopSessionHost, type DesktopSessionEdits, type DesktopSessionHostDeps, type NodeHostSessionManager } from './desktop-session-host'
 import { createDesktopGitPort } from './desktop-git-port'
 import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-catalog-methods'
@@ -185,6 +186,10 @@ export class DesktopDomain {
         restore: deps.restore,
         sessions: deps.sessions,
         rows: deps.rows,
+        acpModelCatalog: (agentId) => {
+          const cached = getCachedModelsForAgent(agentId)
+          return cached?.models.length ? { models: cached.models, configId: cached.configId } : null
+        },
         edits: deps.sessionEdits,
         drafts: deps.drafts,
         sideChats: deps.sideChats,

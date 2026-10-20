@@ -101,6 +101,29 @@ const SNAPSHOT_STATE_KEYS = [
 ] as const satisfies readonly (keyof PerSessionState)[]
 
 /**
+ * Catalogs the node snapshot already reduced (ACP `acp_models`, native
+ * `session_agents`). Empty defaults from a cold reducer must not wipe a
+ * catalog the renderer already holds.
+ */
+function catalogFromRemoteState(state: Partial<PerSessionState>): Partial<PerSessionState> {
+  const patch: Partial<PerSessionState> = {}
+  if (state.acpModels && state.acpModels.length > 0) {
+    patch.acpModels = state.acpModels
+    patch.acpModelsStatus = state.acpModelsStatus && state.acpModelsStatus !== 'idle' ? state.acpModelsStatus : 'ready'
+    if (state.acpModelConfigId !== undefined) patch.acpModelConfigId = state.acpModelConfigId
+    patch.acpModelsError = state.acpModelsError ?? null
+  }
+  if (state.acpModes && state.acpModes.length > 0) {
+    patch.acpModes = state.acpModes
+    patch.acpModesStatus = state.acpModesStatus && state.acpModesStatus !== 'idle' ? state.acpModesStatus : 'ready'
+    if (state.acpModeConfigId !== undefined) patch.acpModeConfigId = state.acpModeConfigId
+    if (state.selectedAcpModeId !== undefined) patch.selectedAcpModeId = state.selectedAcpModeId
+  }
+  if (state.sessionModels && state.sessionModels.length > 0) patch.sessionModels = state.sessionModels
+  return patch
+}
+
+/**
  * Open one remote session: `session.get` for its row and `openRemoteSession`
  * for its state and messages, which main reads as a snapshot while it starts
  * following the session. The snapshot replaces what the chat held: every event
@@ -142,6 +165,7 @@ export async function hydrateRemoteSession(
   ))
   const state = loaded.state as Partial<PerSessionState>
   const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
+  const catalog = catalogFromRemoteState(state)
   const provider = hydrated.sessionProvider || hydrated.preferredProvider
   if ((provider && HARNESS_CAPABILITIES[provider]?.supportsRealtimeVoice) || loaded.restore?.realtimeHasTimeline) {
     const { applySessionLoadRealtimeTimeline } = await import('@/stores/codex-realtime-view')
@@ -156,6 +180,7 @@ export async function hydrateRemoteSession(
     hydrated: {
       ...hydrated,
       ...derived,
+      ...catalog,
       messages,
       _historyHydrated: true,
       transcriptWindow: remoteTranscriptEdges(loaded),

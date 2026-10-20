@@ -55,6 +55,28 @@ describe('hydrateRemoteSession: adopting a node session', () => {
     openRemoteSession.mockReset()
     openRemoteSession.mockResolvedValue({ sessionId: 's', state: {}, messages: [], before: null, cursor: { sequence: '0', epoch: 'e', version: 0 } })
   })
+  it('keeps ACP model display names from the node snapshot', async () => {
+    getSession.mockResolvedValueOnce({ sessionId: 'acp-named', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-4.5' })
+    openRemoteSession.mockResolvedValueOnce({
+      sessionId: 'acp-named',
+      messages: [],
+      before: null,
+      cursor: { sequence: '1', epoch: 'e', version: 1 },
+      state: {
+        status: 'idle',
+        acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
+        acpModelsStatus: 'ready',
+        acpModelConfigId: 'model',
+        sessionModels: [{ id: 'opencode/gpt', name: 'GPT', description: '' }],
+      },
+    })
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-named', null, { adoptSession: true })
+    expect(hydrated.selectedModel).toBe('grok-4.5')
+    expect(hydrated.acpModels).toEqual([{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }])
+    expect(hydrated.acpModelsStatus).toBe('ready')
+    expect(hydrated.sessionModels).toEqual([{ id: 'opencode/gpt', name: 'GPT', description: '' }])
+  })
+
   it('preserves ACP and its agent identity instead of coercing remote sessions to Claude', async () => {
     getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-model', permissionMode: 'auto' })
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-session', null, { adoptSession: true })

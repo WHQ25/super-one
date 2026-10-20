@@ -145,12 +145,16 @@ export async function hydrateRemoteSession(
   if (!remote) {
     return { hydrated: previous ?? createDefaultPerSessionState(), snap: null }
   }
-  // A session the host already owns starts its window read beside the row read.
-  // A first adopt waits for the row, so the follow uses that harness, and a
-  // draft the node has never seen does not open at all.
+  // The window read starts beside the row read for a session this desktop
+  // already follows and for a first adopt. The follow learns the harness from
+  // the window state if the row has not arrived yet. A draft the node has
+  // never seen (not an adopt, not already owned here) does not open.
   const openInput = (providerId: string) => ({ sessionId, projectPath: projectKey, providerId, transcript: true as const })
-  const openPromise = previous?.hostSessionOwned === true
-    ? window.environment.openRemoteSession(remote.connectionId, openInput(previous.sessionProvider || previous.preferredProvider || 'claude'))
+  const openPromise = opts?.adoptSession === true || previous?.hostSessionOwned === true
+    ? window.environment.openRemoteSession(
+        remote.connectionId,
+        openInput(previous?.sessionProvider || previous?.preferredProvider || 'claude'),
+      )
     : null
   // Observed now: if the row read throws first, nothing else awaits this read.
   void openPromise?.catch(() => {})
@@ -159,7 +163,8 @@ export async function hydrateRemoteSession(
     sessionId,
   )) as NodeSessionSnapshot | null
   const hydrated = applyRemoteSessionRow(remote, previous, snap, opts)
-  // Draft session ids only exist in the renderer until first send.
+  // Draft session ids only exist in the renderer until first send. An adopt
+  // that raced the window read abandons it when the node has no such row.
   if (!snap?.sessionId) return { hydrated, snap }
   const loaded = await (openPromise ?? window.environment.openRemoteSession(
     remote.connectionId,

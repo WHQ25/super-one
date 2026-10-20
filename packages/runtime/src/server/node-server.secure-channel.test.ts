@@ -15,7 +15,7 @@ import { openNodeDatabase } from '../db/database'
 import { AuthService } from './auth-service'
 import { loadOrCreateChannelRoot, loadOrCreateIdentity } from './identity'
 import { startNodeServer, type NodeServerHandle } from './node-server'
-import { establishSecureChannel, secureChannelAuthRequest } from './secure-channel-client'
+import { establishSecureChannel, exchangeOnSecureChannel, secureChannelAuthRequest } from './secure-channel-client'
 import { WireDecoder, WireEncoder, WIRE_FRAGMENT_BYTES } from '@superone/shared/environment/wire'
 import { nodeWireCompression } from './wire-compression'
 
@@ -60,7 +60,8 @@ async function openChannel(wsUrl: string, credential: ChannelCredential) {
     ws.once('open', () => resolve())
     ws.once('error', reject)
   })
-  const channel = await establishSecureChannel(ws, credential, 5_000)
+  const { channel, ready } = await establishSecureChannel(ws, credential, 5_000)
+  expect(ready).toMatchObject({ type: 'channel_ready', inlineAuth: true })
   return { ws, channel }
 }
 
@@ -201,6 +202,49 @@ describe('node server encrypted channel', () => {
         ticketed.once('error', reject)
       }),
     ).rejects.toThrow(/401/)
+  })
+
+  it('refreshes, issues a ticket, and attaches on one socket', async () => {
+    const setupResult = await setup()
+    const { wsUrl, pairing, credential, server } = setupResult
+    const health = (await (await fetch(`${server.url}/health`)).json()) as { inlineAuth?: boolean }
+    expect(health.inlineAuth).toBe(true)
+    const device = generateEd25519KeyPair()
+    const paired = await secureChannelAuthRequest({
+      wsUrl,
+      credential,
+      path: '/v1/pair',
+      body: { pairingToken: pairing.token, devicePublicKeyPem: device.publicKeyPem, label: 'peer' },
+      timeoutMs: 5_000,
+    })
+    const pairBody = paired.body as { clientSessionId: string; refreshToken: string }
+    const proofPayload = `refresh:${pairBody.clientSessionId}:${Date.now()}`
+    const { ws, channel } = await openChannel(wsUrl, credential)
+    const refreshed = await exchangeOnSecureChannel(ws, channel, {
+      path: '/v1/token',
+      body: {
+        refreshToken: pairBody.refreshToken,
+        proofPayload,
+        proofSignature: signPayload(device.privateKeyPem, proofPayload),
+        issueTicket: true,
+      },
+      timeoutMs: 5_000,
+    })
+    expect(refreshed.status).toBe(200)
+    const body = refreshed.body as { accessToken: string; refreshToken: string; expiresAt: number; ticket: string; ticketExpiresAt: number }
+    expect(body.accessToken).toEqual(expect.any(String))
+    expect(body.refreshToken).not.toBe(pairBody.refreshToken)
+    expect(body.ticket).toEqual(expect.any(String))
+    expect(body.ticketExpiresAt).toBeLessThan(body.expiresAt)
+    const ticketId = body.ticket.split('.')[0]!
+    ws.send(channel.seal({ type: 'attach', requestId: 'a1', ticket: body.ticket, proof: ticketId, sig: signPayload(device.privateKeyPem, ticketId) }))
+    expect(await nextSealed(ws, channel)).toEqual({ type: 'attach_ok', requestId: 'a1' })
+    ws.send(channel.seal({
+      type: 'handshake',
+      requestId: 'h1',
+      payload: { protocol: { ...PROTOCOL_GENERATION }, databaseSchema: { ...DATABASE_SCHEMA_GENERATION } },
+    }))
+    expect(await nextSealed(ws, channel)).toMatchObject({ type: 'handshake_ok', requestId: 'h1' })
   })
 
   it('closes a socket that sends a tampered frame', async () => {

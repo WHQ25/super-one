@@ -221,17 +221,21 @@ describe('hydrateRemoteSession', () => {
     expect(hydrated.transcriptResyncing).toBe(false)
   })
 
-  it('waits for the row before opening a session it has not seen', async () => {
+  it('starts the window read beside session.get on first adopt', async () => {
     openRemoteSession.mockClear()
+    openRemoteSession.mockResolvedValue({
+      sessionId: 's', messages: [], state: { sessionProvider: 'acp' }, before: null,
+      cursor: { sequence: '1', epoch: 'e', version: 1 },
+    })
     let releaseGet!: (value: unknown) => void
     getSession.mockReturnValue(new Promise((resolve) => { releaseGet = resolve }))
     const pending = hydrateRemoteSession('remote:env-1:/work/app', 's', null, { adoptSession: true })
     await Promise.resolve()
-    expect(openRemoteSession).not.toHaveBeenCalled()
-    releaseGet({ sessionId: 's', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [] })
-    await pending
-    expect(openRemoteSession).toHaveBeenCalledWith('env-1', expect.objectContaining({ transcript: true, providerId: 'acp' }))
+    expect(openRemoteSession).toHaveBeenCalledWith('env-1', expect.objectContaining({ transcript: true, providerId: 'claude' }))
     expect(openRemoteSession.mock.calls[0][1]).not.toHaveProperty('limit')
+    releaseGet({ sessionId: 's', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [] })
+    const { hydrated } = await pending
+    expect(hydrated.sessionProvider).toBe('acp')
   })
 
   it('does not open a draft the node has never seen', async () => {

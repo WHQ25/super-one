@@ -14,6 +14,12 @@ function channelError(message: string): Error {
   return Object.assign(new Error(message), { code: 'unavailable', transport: true })
 }
 
+/** `channel_ready` from a node. `inlineAuth` means this socket accepts auth frames before attach. */
+export interface ChannelReady {
+  type: 'channel_ready'
+  inlineAuth?: boolean
+}
+
 /**
  * Run the channel handshake on a socket that has just opened. Resolves once the
  * node's sealed `channel_ready` arrives; listeners it adds are removed again.
@@ -22,16 +28,17 @@ export function establishSecureChannel(
   ws: NodeSocket,
   credential: ChannelCredential,
   timeoutMs: number,
-): Promise<SecureChannel> {
-  return new Promise<SecureChannel>((resolve, reject) => {
+): Promise<{ channel: SecureChannel; ready: ChannelReady }> {
+  return new Promise((resolve, reject) => {
     const hs = startClientHandshake(credential)
     let channel: SecureChannel | null = null
+    let ready: ChannelReady | null = null
     const done = (err: Error | null) => {
       clearTimeout(timer)
       ws.off('message', onMessage)
       ws.off('close', onClose)
       if (err) reject(err)
-      else resolve(channel!)
+      else resolve({ channel: channel!, ready: ready! })
     }
     const onClose = (code: number, reason: Buffer) => {
       const message = `encrypted channel closed during handshake (${code} ${reason.toString() || 'no reason'})`
@@ -50,8 +57,9 @@ export function establishSecureChannel(
           ws.send(JSON.stringify(proof))
           return
         }
-        const ready = channel.open(data as Buffer) as { type?: string }
-        if (ready?.type !== 'channel_ready') throw channelError('expected channel_ready')
+        const frame = channel.open(data as Buffer) as ChannelReady
+        if (frame?.type !== 'channel_ready') throw channelError('expected channel_ready')
+        ready = frame
         done(null)
       } catch (err) {
         // A wrong secret blocks the connection; anything else is a transport fault.
@@ -89,34 +97,69 @@ export async function secureChannelAuthRequest(input: {
       ws.once('open', () => resolve())
       ws.once('error', (err) => reject(channelError(err.message)))
     })
-    const channel = await establishSecureChannel(ws, input.credential, input.timeoutMs)
-    const requestId = randomUUID()
-    return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(channelError('encrypted auth request timeout')), input.timeoutMs)
-      ws.on('message', (data) => {
-        try {
-          const msg = channel.open(data as Buffer) as { type?: string; requestId?: string; status?: number; body?: unknown }
-          if (msg.type !== 'auth_result' || msg.requestId !== requestId) return
-          clearTimeout(timer)
-          resolve({ status: msg.status ?? 500, body: msg.body })
-        } catch (err) {
-          clearTimeout(timer)
-          reject(err)
-        }
-      })
-      ws.once('close', () => {
-        clearTimeout(timer)
-        reject(channelError('encrypted channel closed before the auth response'))
-      })
-      ws.send(
-        channel.seal({ type: 'auth', requestId, path: input.path, body: input.body, accessToken: input.accessToken }),
-      )
-    })
+    const { channel } = await establishSecureChannel(ws, input.credential, input.timeoutMs)
+    return await exchangeOnSecureChannel(ws, channel, input)
   } finally {
     ws.removeAllListeners()
     ws.on('error', () => {})
     ws.close()
   }
+}
+
+/**
+ * One auth frame on a channel that is already open. The socket stays open:
+ * the caller attaches it or closes it.
+ */
+export function exchangeOnSecureChannel(
+  ws: NodeSocket,
+  channel: SecureChannel,
+  input: {
+    path: string
+    body: Record<string, unknown>
+    accessToken?: string
+    timeoutMs: number
+    /** Rejects the exchange when the caller drops the socket. */
+    signal?: AbortSignal
+  },
+): Promise<{ status: number; body: unknown }> {
+  const requestId = randomUUID()
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const rejectClosed = () => reject(channelError('encrypted channel closed before the auth response'))
+    if (input.signal?.aborted) {
+      rejectClosed()
+      return
+    }
+    const finish = (settle: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      ws.off('message', onMessage)
+      ws.off('close', onClose)
+      input.signal?.removeEventListener('abort', onAbort)
+      settle()
+    }
+    const timer = setTimeout(() => finish(() => reject(channelError('encrypted auth request timeout'))), input.timeoutMs)
+    const onAbort = () => finish(rejectClosed)
+    const onMessage = (data: WebSocket.RawData) => {
+      try {
+        const msg = channel.open(data as Buffer) as { type?: string; requestId?: string; status?: number; body?: unknown }
+        if (msg.type !== 'auth_result' || msg.requestId !== requestId) return
+        finish(() => resolve({ status: msg.status ?? 500, body: msg.body }))
+      } catch (err) {
+        finish(() => reject(err instanceof Error ? err : channelError(String(err))))
+      }
+    }
+    const onClose = () => finish(rejectClosed)
+    input.signal?.addEventListener('abort', onAbort)
+    ws.on('message', onMessage)
+    ws.on('close', onClose)
+    try {
+      ws.send(channel.seal({ type: 'auth', requestId, path: input.path, body: input.body, accessToken: input.accessToken }))
+    } catch (err) {
+      finish(() => reject(err instanceof Error ? err : channelError(String(err))))
+    }
+  })
 }
 export type { ChannelCredential, SecureChannel } from '@superone/relay-client/secure-channel'
 export type { NodeSocket, NodeSocketDialer } from './node-socket'

@@ -334,7 +334,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         // Watching from before the subscribe: a change made while it is in
         // flight is applied once it opens. If it never opens, the next
         // subscribe reads the set again and catches up from the cursor.
-        stopWatch = input.interest?.watch(async (next) => { await (await opening).update(next) })
+        stopWatch = input.interest?.watch(async (next) => {
+          const stream = await opening
+          // `update` sends before it awaits the ack, so the snapshot read can
+          // share that round trip. The ack is still awaited before this resolves.
+          const pending = stream.update(next)
+          input.onUpdateQueued?.(next)
+          await pending
+        })
         stream = await opening
         if (lastTier !== null && tier !== lastTier) input.onRealign?.()
         lastTier = tier

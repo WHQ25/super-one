@@ -28,6 +28,12 @@ export interface NodeDeviceCredential {
   devicePublicKeyPem: string
   /** Current refresh token (rotates). */
   refreshToken: string
+  /**
+   * Bearer access token and its expiry, so a restart inside the token's life
+   * can skip refresh. Stored only inside the encrypted secrets blob.
+   */
+  accessToken?: string
+  accessExpiresAt?: number
   /** Base URL last used successfully (http://127.0.0.1:port or remote). */
   baseUrl: string
   label: string
@@ -188,6 +194,8 @@ export class NodeCredentialStore {
           devicePublicKeyPem: string
           refreshToken: string
           channel?: ChannelCredential
+          accessToken?: string
+          accessExpiresAt?: number
         }
         this.memory.set(entry.connectionId, {
           connectionId: entry.connectionId,
@@ -198,6 +206,9 @@ export class NodeCredentialStore {
           devicePublicKeyPem: secrets.devicePublicKeyPem,
           refreshToken: secrets.refreshToken,
           ...(secrets.channel ? { channel: secrets.channel } : {}),
+          ...(typeof secrets.accessToken === 'string'
+            ? { accessToken: secrets.accessToken, accessExpiresAt: secrets.accessExpiresAt }
+            : {}),
           baseUrl: entry.baseUrl,
           label: entry.label,
           updatedAt: entry.updatedAt,
@@ -224,6 +235,9 @@ export class NodeCredentialStore {
         devicePublicKeyPem: cred.devicePublicKeyPem,
         refreshToken: cred.refreshToken,
         channel: cred.channel,
+        ...(cred.accessToken
+          ? { accessToken: cred.accessToken, accessExpiresAt: cred.accessExpiresAt }
+          : {}),
       })
       const secretsBlob = ENC_PREFIX + safeStorage.encryptString(secretsJson).toString('base64')
       entries.push({

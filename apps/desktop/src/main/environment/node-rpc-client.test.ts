@@ -39,6 +39,14 @@ const { sockets, MockWebSocket } = vi.hoisted(() => {
 
 vi.mock('ws', () => ({ default: MockWebSocket }))
 
+vi.mock('@superone/runtime/server/secure-channel-client', async () => {
+  const actual = await vi.importActual<typeof import('@superone/runtime/server/secure-channel-client')>(
+    '@superone/runtime/server/secure-channel-client',
+  )
+  return { ...actual, establishSecureChannel: vi.fn(actual.establishSecureChannel) }
+})
+
+import { establishSecureChannel, type SecureChannel } from '@superone/runtime/server/secure-channel-client'
 import { NodeRpcClient } from './node-rpc-client'
 
 function lastSocket() {
@@ -142,6 +150,7 @@ describe('NodeRpcClient disconnect signaling', () => {
   afterEach(() => {
     sockets.length = 0
     vi.clearAllMocks()
+    vi.mocked(establishSecureChannel).mockReset()
   })
 
   it('emits onUnexpectedDisconnect once when the promoted socket closes', async () => {
@@ -189,6 +198,81 @@ describe('NodeRpcClient disconnect signaling', () => {
   it('setBaseUrl throws while connected', async () => {
     const { client } = await connectClient({})
     expect(() => client.setBaseUrl('http://127.0.0.1:3333')).toThrow(/setBaseUrl/)
+    client.close()
+  })
+
+  it('does not spend the handshake budget on an old-node ticket fetch', async () => {
+    vi.useFakeTimers()
+    const channel = {
+      seal: (msg: unknown) => Buffer.from(JSON.stringify(msg)),
+      open: (data: Buffer) => JSON.parse(Buffer.from(data).toString()),
+      sealBytes: (data: Uint8Array) => Buffer.from(data),
+      openBytes: (data: Buffer) => data,
+    } as unknown as SecureChannel
+    vi.mocked(establishSecureChannel).mockResolvedValueOnce({ channel, ready: { type: 'channel_ready', inlineAuth: false } })
+    let releaseTicket: ((ticket: string) => void) | undefined
+    let settled = false
+    const client = new NodeRpcClient({
+      baseUrl: 'http://127.0.0.1:7788',
+      devicePrivateKeyPem: generateEd25519Pem(),
+      channel: { keyId: 'k', secretHex: 'ab'.repeat(32) },
+      heartbeatIntervalMs: 0,
+      getWsTicket: () => new Promise((resolve) => { releaseTicket = resolve }),
+      authorizeInline: async () => { throw new Error('old node must not use inline auth') },
+    })
+    try {
+      void client.connect().then(() => { settled = true }, () => { settled = true })
+      for (let i = 0; i < 20 && !releaseTicket; i++) await Promise.resolve()
+      expect(releaseTicket).toBeTypeOf('function')
+      await vi.advanceTimersByTimeAsync(16_000)
+      expect(settled).toBe(false)
+      releaseTicket!('ticket.abc')
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(13_000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(settled).toBe(true)
+    } finally {
+      client.close()
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects a pending inline auth exchange when the connect fails', async () => {
+    const channel = {
+      seal: () => Buffer.from('sealed'),
+      open: () => ({}),
+      sealBytes: (data: Uint8Array) => Buffer.from(data),
+      openBytes: (data: Buffer) => data,
+    } as unknown as SecureChannel
+    vi.mocked(establishSecureChannel).mockResolvedValueOnce({ channel, ready: { type: 'channel_ready', inlineAuth: true } })
+    let exchangeStarted = false
+    let exchangeDone = false
+    const client = new NodeRpcClient({
+      baseUrl: 'http://127.0.0.1:7788',
+      devicePrivateKeyPem: generateEd25519Pem(),
+      channel: { keyId: 'k', secretHex: 'ab'.repeat(32) },
+      heartbeatIntervalMs: 0,
+      getWsTicket: async () => { throw new Error('inline node must not fetch a header ticket') },
+      authorizeInline: async (exchange) => {
+        exchangeStarted = true
+        try {
+          await exchange({ path: '/v1/ws-ticket', body: {} })
+          return 'ticket'
+        } finally {
+          exchangeDone = true
+        }
+      },
+    })
+    const connectPromise = client.connect()
+    const rejection = expect(connectPromise).rejects.toThrow(/socket lost/)
+    for (let i = 0; i < 20 && !exchangeStarted; i++) await Promise.resolve()
+    expect(exchangeStarted).toBe(true)
+    expect(exchangeDone).toBe(false)
+    lastSocket().emit('error', new Error('socket lost'))
+    await rejection
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(exchangeDone).toBe(true)
     client.close()
   })
 

@@ -84,6 +84,12 @@ export interface SubscribeEventsInput {
    * read their snapshot again (`SessionStreamFrame.resnapshot`).
    */
   onResnapshot?: (sessionIds: string[]) => void
+  /**
+   * Local only: the topic update frame is on the wire and its ack has not
+   * arrived. `topics` is the set that was sent. The caller can overlap the
+   * snapshot read with that ack.
+   */
+  onUpdateQueued?: (topics: TopicRef[]) => void
   /** Local observers of the shared native stream, before individual envelopes are yielded. */
   onFrame?: (frame: SessionStreamFrame) => void
   onTerminal?: (event: TerminalStreamMessage['event']) => void

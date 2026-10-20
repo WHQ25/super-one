@@ -480,6 +480,27 @@ describe('ConnectionSupervisor', () => {
     supervisor.dispose()
   })
 
+  it('isCurrent is false after dispose and after the generation moves on', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const supervisor = new ConnectionSupervisor({
+      environmentId: 'env-1',
+      connectionId: 'c-1',
+      stableAfterMs: 0,
+      connect: () => gate,
+    })
+    const startP = supervisor.start()
+    await Promise.resolve()
+    const generation = supervisor.getSnapshot().generation
+    expect(supervisor.isCurrent(generation)).toBe(true)
+    await supervisor.wake('network-offline')
+    expect(supervisor.isCurrent(generation)).toBe(false)
+    release()
+    await startP
+    supervisor.dispose()
+    expect(supervisor.isCurrent(supervisor.getSnapshot().generation)).toBe(false)
+  })
+
   it('offline bumps generation so a late connect success is discarded', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => {

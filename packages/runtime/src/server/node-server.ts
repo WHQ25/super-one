@@ -323,7 +323,9 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
             return
           }
           wire = createConnectionWire(ws, accept.finish(msg))
-          send({ type: 'channel_ready' })
+          // inlineAuth: this socket accepts auth frames before attach. Older
+          // clients ignore the field and keep opening a socket per exchange.
+          send({ type: 'channel_ready', inlineAuth: true })
           return
         }
         if (!isBinary) throw new SecureChannelError('channel_protocol', 'expected a sealed binary frame')
@@ -473,6 +475,9 @@ async function handleHttp(
       environmentId: opts.identity.environmentId,
       nodePublicKeyFingerprint: opts.identity.publicKeyFingerprint,
       identityConflict: opts.identity.identityConflict === true,
+      // Same capability as channel_ready. Absent on nodes that only speak the
+      // separate-socket auth exchanges.
+      ...(opts.secureChannel ? { inlineAuth: true } : {}),
     })
     return
   }
@@ -567,7 +572,12 @@ function handleAuthRequest(
         proofSignature,
         verifyDeviceProof: opts.verifyDeviceProof,
       })
-      return { status: 200, body: result }
+      // One round trip for a client that will attach this same socket. Older
+      // servers ignore the flag; the ticket expiry is separate from the access
+      // token's so it cannot overwrite `expiresAt`.
+      if (body.issueTicket !== true) return { status: 200, body: result }
+      const ticket = opts.auth.createWsTicket(result.accessToken)
+      return { status: 200, body: { ...result, ticket: ticket.ticket, ticketExpiresAt: ticket.expiresAt } }
     } catch (err) {
       return failure(err, 'token refresh failed')
     }

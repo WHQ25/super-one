@@ -27,6 +27,7 @@ import { applyControlHolder, applyRemoteControlChange, externalHolder } from '..
 import { applyWindowRows, todoUpdatesFromWindow } from '../helpers/window-messages'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { subscriptionHost } from '@/lib/provider-host'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
@@ -145,6 +146,21 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       if (event.harnessId === 'codex') {
         void get().refreshCodexModels(true)
       }
+      // A remote catalog notice carries connectionId. Refresh that host's
+      // accounts without a forced local `claudeListAccounts`. A local Codex
+      // change has neither, so it does not touch the remote composer.
+      void import('../../settings').then(({ useSettingsStore }) => {
+        const scope = useSettingsStore.getState().providerScope
+        const open = event.harnessId === 'claude'
+          ? subscriptionHost(get().activeProject, useAppStore.getState().selectedHostConnectionId)
+          : null
+        const host = event.connectionId
+          ?? (event.harnessId === 'claude' && scope !== 'local' ? scope : null)
+          ?? open
+        if (!host) return
+        if (scope === host) void useSettingsStore.getState().fetchProviderData()
+        window.dispatchEvent(new CustomEvent('claude-accounts-changed', { detail: { connectionId: host } }))
+      })
       return
     }
     if (event.type === 'session_title_changed') {

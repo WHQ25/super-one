@@ -2073,7 +2073,7 @@ export type AgentEventBase =
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_mode_change'; mode: PermissionMode }
   | { type: 'agent_setting_change'; selectedModel?: string | null; selectedEffort?: EffortLevel | null; patch?: SessionSettingsPatch }
-  | { type: 'provider_changed'; harnessId: HarnessId; provider: RemoteActiveProvider | null }
+  | { type: 'provider_changed'; harnessId: HarnessId; provider: RemoteActiveProvider | null; connectionId?: string }
   | { type: 'session_init'; session: SessionInfo }
   /** Provider-side session id for harnesses that have no SessionInfo to report (ACP). */
   | { type: 'provider_session_id'; providerSessionId: string }

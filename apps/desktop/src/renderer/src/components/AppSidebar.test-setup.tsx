@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeAll, beforeEach, vi } from 'vitest'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
 import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
@@ -239,6 +240,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetEnvironmentListCache()
   mockWindowApp.onSessionChanged.mockImplementation(() => () => {})
   chatState.switchSession.mockImplementation(async () => {})
   mockEnvironment.listPinnedSessions.mockResolvedValue([])

@@ -32,6 +32,7 @@ import {
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
 import { PairDesktopDialog } from './PairDesktopDialog'
+import { invalidateEnvironmentList, loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
 import { DeviceRow, computerKind } from '../DeviceRow'
@@ -126,15 +127,22 @@ export function EnvironmentsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setItems(await window.environment.listItems())
+      setItems(await loadEnvironmentItems())
     } finally {
       setLoading(false)
     }
   }, [])
 
+  // Status can arrive after this call returns. Drop the list first so a warm
+  // cache cannot paint a host that was just paired or forgotten.
+  const refreshFresh = useCallback(async () => {
+    invalidateEnvironmentList()
+    await refresh()
+  }, [refresh])
+
   useEffect(() => {
     void refresh()
-    return window.environment.onStatusEvent(() => void refresh())
+    return subscribeEnvironmentList(() => void refresh())
   }, [refresh])
 
   useEffect(() => {
@@ -195,7 +203,7 @@ export function EnvironmentsPage() {
     }
     try {
       await action()
-      await refresh()
+      await refreshFresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     } finally {
@@ -219,8 +227,8 @@ export function EnvironmentsPage() {
   const handleDesktopPaired = useCallback((nodeName: string) => {
     setAddDesktopOpen(false)
     toast.success(t('settings.remote.addDesktop.paired', { name: nodeName }))
-    void refresh()
-  }, [refresh, t])
+    void refreshFresh()
+  }, [refreshFresh, t])
 
   function promptManualRepair(item: EnvironmentListItem): void {
     if (item.endpointProfiles.some((p) => p.kind === 'relay' || p.endpointId === NODE_LAN_ENDPOINT_ID)) {
@@ -283,7 +291,7 @@ export function EnvironmentsPage() {
             defaultValue: 'Pairing repaired',
           }),
         )
-        await refresh()
+        await refreshFresh()
       } catch (err) {
         failed = true
         const message = err instanceof Error ? err.message : String(err)
@@ -305,7 +313,7 @@ export function EnvironmentsPage() {
   function handleAdded(warnings: string[]): void {
     toast.success(t('settings.environments.addSuccess'))
     for (const w of warnings) toast.warning(w)
-    void refresh()
+    void refreshFresh()
   }
 
   return (
@@ -323,7 +331,7 @@ export function EnvironmentsPage() {
               anyBusy={anyBusy}
               onBeginBusy={beginBusy}
               onEndBusy={endBusy}
-              onRefreshList={() => void refresh()}
+              onRefreshList={() => void refreshFresh()}
               onConnect={(id) =>
                 void run(id, () => window.environment.connect(id))
               }

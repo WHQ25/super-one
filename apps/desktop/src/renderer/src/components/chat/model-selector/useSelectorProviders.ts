@@ -34,7 +34,11 @@ function useHostClaudeAccounts(connectionId: string | null, enabled: boolean): C
         .catch(() => { if (!cancelled) setRemoteAccounts([]) })
     }
     load()
-    const refresh = () => load(true)
+    const refresh = (event: Event) => {
+      const detailId = event instanceof CustomEvent ? event.detail?.connectionId : undefined
+      if (typeof detailId === 'string' && detailId !== connectionId) return
+      load(true)
+    }
     window.addEventListener('claude-accounts-changed', refresh)
     return () => { cancelled = true; window.removeEventListener('claude-accounts-changed', refresh) }
   }, [connectionId, enabled])

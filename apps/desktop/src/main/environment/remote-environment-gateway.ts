@@ -1,4 +1,5 @@
 import { ARTIFACT_RPC_METHODS, servesMethod, TRANSCRIPT_FOLD_METHOD } from '@superone/shared/environment'
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { randomUUID } from 'node:crypto'
 import type {
   ArtifactDeleteResult,
@@ -101,8 +102,24 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   private readonly draftGateway: DraftGateway
   readonly artifacts: ArtifactGateway
 
-  private descriptorCache: ExecutionEnvironmentDescriptor | null = null
+  /**
+   * B rebuilds harness ids when the descriptor is read and does not push a
+   * capability change. Reuse one descriptor across a burst of session switches,
+   * then read it again. A push from B would retire the timer.
+   */
+  private static readonly DESCRIPTOR_TTL_MS = 60_000
+  private static readonly CLAUDE_ACCOUNTS_TTL_MS = 60_000
+  private static readonly DESCRIPTOR_KEY = 'descriptor'
+  private readonly descriptors = new AsyncCoalescer<ExecutionEnvironmentDescriptor>(RemoteEnvironmentGateway.DESCRIPTOR_TTL_MS)
   private fixedEnvironmentId: string | null = null
+  /**
+   * Host-level provider lists die with the connection, not with a session switch.
+   * Claude accounts expire on the same window B uses: an out-of-band
+   * `claude auth login` never publishes `claude-accounts-changed` from an older node.
+   */
+  private readonly hostCatalog = new AsyncCoalescer<unknown>((key) => (
+    key === 'claude-accounts' ? RemoteEnvironmentGateway.CLAUDE_ACCOUNTS_TTL_MS : Number.POSITIVE_INFINITY
+  ))
 
   constructor(private readonly client: EnvironmentRpcClient) {
     this.sessions = this.createSessionGateway()
@@ -118,7 +135,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * serves none (no `draft.list`).
    */
   get drafts(): DraftGateway | undefined {
-    const capabilities = this.descriptorCache?.capabilities
+    const capabilities = this.cachedDescriptor?.capabilities
     return !capabilities || servesMethod(capabilities, 'draft.list') ? this.draftGateway : undefined
   }
 
@@ -128,7 +145,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * root is compared textually, never resolved here.
    */
   syncZone(): { syncRoot: string; os: ExecutionEnvironmentDescriptor['platform']['os'] } | null {
-    const descriptor = this.descriptorCache
+    const descriptor = this.cachedDescriptor
     if (!servesMethod(descriptor?.capabilities, ARTIFACT_RPC_METHODS.put) || !descriptor?.syncRoot) return null
     return { syncRoot: descriptor.syncRoot, os: descriptor.platform.os }
   }
@@ -236,10 +253,51 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     }
   }
 
-  async getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
-    this.descriptorCache = await this.client.getDescriptor()
-    this.fixedEnvironmentId = this.descriptorCache.environmentId
-    return this.descriptorCache
+  /** Descriptor fetched at connect. Null until then, after the socket drops, and once the TTL passes. */
+  get cachedDescriptor(): ExecutionEnvironmentDescriptor | null {
+    return this.descriptors.peek(RemoteEnvironmentGateway.DESCRIPTOR_KEY) ?? null
+  }
+
+  /** Seed the cache from a descriptor `client.getDescriptor()` already identity-checked. */
+  rememberDescriptor(descriptor: ExecutionEnvironmentDescriptor): void {
+    this.fixedEnvironmentId = descriptor.environmentId
+    this.descriptors.remember(RemoteEnvironmentGateway.DESCRIPTOR_KEY, descriptor)
+  }
+
+  /** Drop the cached descriptor. The environment binding stays so a late call still fails closed. */
+  clearDescriptor(): void {
+    this.descriptors.invalidate(RemoteEnvironmentGateway.DESCRIPTOR_KEY)
+  }
+
+  /**
+   * The descriptor from connect, or one shared fetch when it is missing or stale.
+   * Identity checks stay inside `client.getDescriptor()`; this does not dial again
+   * while the cache is warm.
+   */
+  getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    return this.descriptors.get(RemoteEnvironmentGateway.DESCRIPTOR_KEY, () => this.loadDescriptor())
+  }
+
+  /**
+   * Dial `environment.descriptor` (explicit connect / refresh). A fetch already
+   * in flight is shared; otherwise the warm cache is dropped first.
+   */
+  refreshDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    const key = RemoteEnvironmentGateway.DESCRIPTOR_KEY
+    if (!this.descriptors.isInFlight(key)) this.descriptors.invalidate(key)
+    return this.getDescriptor()
+  }
+
+  private loadDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    return this.client.getDescriptor().then((descriptor) => {
+      this.fixedEnvironmentId = descriptor.environmentId
+      return descriptor
+    })
+  }
+
+  /** Drop cached credential, binding, platform, and Claude account lists. */
+  invalidateHostCatalog(): void {
+    this.hostCatalog.clear()
   }
 
   async listProjects(): Promise<ProjectSnapshot[]> {
@@ -752,12 +810,16 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   // --- Provider credentials (node-local store) ---
 
   async providerListCredentials(): Promise<unknown> {
-    return this.client.rpc('provider.listCredentials', {})
+    return this.hostCatalog.get('credentials', () => this.client.rpc('provider.listCredentials', {}))
   }
 
   /** Claude subscription accounts on this node. They are not the controller's logins. */
   async claudeListAccounts(force = false): Promise<unknown> {
-    return this.client.rpc('claude.listAccounts', force ? { force: true } : {})
+    return this.hostCatalog.get(
+      'claude-accounts',
+      () => this.client.rpc('claude.listAccounts', force ? { force: true } : {}),
+      force ? { force: true } : undefined,
+    )
   }
 
   async providerGetCredentialDecrypted(id: string): Promise<unknown> {
@@ -765,15 +827,21 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   }
 
   async providerCreateCredential(input: Record<string, unknown>): Promise<unknown> {
-    return this.client.rpc('provider.createCredential', input)
+    const result = await this.client.rpc('provider.createCredential', input)
+    this.invalidateHostCatalog()
+    return result
   }
 
   async providerUpdateCredential(input: Record<string, unknown>): Promise<unknown> {
-    return this.client.rpc('provider.updateCredential', input)
+    const result = await this.client.rpc('provider.updateCredential', input)
+    this.invalidateHostCatalog()
+    return result
   }
 
   async providerDeleteCredential(id: string): Promise<unknown> {
-    return this.client.rpc('provider.deleteCredential', { id })
+    const result = await this.client.rpc('provider.deleteCredential', { id })
+    this.invalidateHostCatalog()
+    return result
   }
 
   // --- Skills / MCP resource management (node disk via skills.* / mcp.*) ---
@@ -893,32 +961,40 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   }
 
   async providerListBindings(): Promise<unknown> {
-    return this.client.rpc('provider.listBindings', {})
+    return this.hostCatalog.get('bindings', () => this.client.rpc('provider.listBindings', {}))
   }
 
   async providerSetBinding(binding: Record<string, unknown>): Promise<unknown> {
-    return this.client.rpc('provider.setBinding', binding)
+    const result = await this.client.rpc('provider.setBinding', binding)
+    this.invalidateHostCatalog()
+    return result
   }
 
   async providerClearBinding(consumer: string): Promise<unknown> {
-    return this.client.rpc('provider.clearBinding', { consumer })
+    const result = await this.client.rpc('provider.clearBinding', { consumer })
+    this.invalidateHostCatalog()
+    return result
   }
 
   async providerListCustomPlatforms(): Promise<unknown> {
-    return this.client.rpc('provider.listCustomPlatforms', {})
+    return this.hostCatalog.get('platforms', () => this.client.rpc('provider.listCustomPlatforms', {}))
   }
 
   async providerUpsertCustomPlatform(def: Record<string, unknown>): Promise<unknown> {
-    return this.client.rpc('provider.upsertCustomPlatform', def)
+    const result = await this.client.rpc('provider.upsertCustomPlatform', def)
+    this.invalidateHostCatalog()
+    return result
   }
 
   async providerDeleteCustomPlatform(id: string): Promise<unknown> {
-    return this.client.rpc('provider.deleteCustomPlatform', { id })
+    const result = await this.client.rpc('provider.deleteCustomPlatform', { id })
+    this.invalidateHostCatalog()
+    return result
   }
 
   /** A desktop node keeps its keys: its descriptor leaves `provider.exportBundle` out. */
   async providerExportBundle(): Promise<unknown> {
-    const capabilities = this.descriptorCache?.capabilities
+    const capabilities = this.cachedDescriptor?.capabilities
     if (capabilities && !servesMethod(capabilities, 'provider.exportBundle')) {
       throw Object.assign(new Error('This host does not share its provider keys; pull is unavailable'), { code: 'failed_precondition' })
     }
@@ -929,7 +1005,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     bundle: unknown,
     opts?: { replaceAll?: boolean },
   ): Promise<unknown> {
-    return this.client.rpc('provider.importBundle', { bundle, replaceAll: opts?.replaceAll === true })
+    const result = await this.client.rpc('provider.importBundle', { bundle, replaceAll: opts?.replaceAll === true })
+    this.invalidateHostCatalog()
+    return result
   }
 
   async providerListModels(input: {

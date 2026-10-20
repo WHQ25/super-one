@@ -775,7 +775,10 @@ export class NodeConnectionManager {
               })
             }
             await client.connect()
-            const { environmentAliases = [] } = await client.getDescriptor()
+            // Identity checks run inside getDescriptor. Remember the result so a
+            // later list does not dial environment.descriptor again.
+            const descriptor = await gateway.refreshDescriptor()
+            const { environmentAliases = [] } = descriptor
             if (known && JSON.stringify(known.environmentAliases ?? []) !== JSON.stringify(environmentAliases)) {
               this.updateKnown(known.connectionId, { environmentAliases })
             }

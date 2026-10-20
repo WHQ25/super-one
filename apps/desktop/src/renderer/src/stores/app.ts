@@ -7,6 +7,7 @@ import {
   type SessionContinuationHintSettings,
 } from '@superone/shared/session-continuation'
 import { createHarnessThemeSlice, readHarnessThemeSettings, type HarnessThemeState } from './harness-theme'
+import { loadEnvironmentItems } from '@/lib/environment-list'
 import { resolveProvider } from './chat-store/helpers/provider-routing'
 import type { HarnessCatalogStatus } from '@/lib/harness-visibility'
 import { useFileTreeStore } from './file-tree'
@@ -530,7 +531,7 @@ async function openDefaultProjectForHost(
   }
 
   try {
-    const items = await window.environment.listItems()
+    const items = await loadEnvironmentItems()
     if (generation !== hostSwitchGeneration) return
     const host = items.find((h) => h.connectionId === connectionId)
     // Stay on the empty disconnected sidebar until the user turns the host back on.

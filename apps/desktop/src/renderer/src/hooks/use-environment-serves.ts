@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { servesMethod } from '@superone/shared/environment/capabilities'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 
 /**
  * Whether the machine holding `projectPath` serves `method` (its descriptor's
@@ -13,11 +14,15 @@ export function useEnvironmentServes(projectPath: string | null | undefined, met
   useEffect(() => {
     if (!connectionId) return
     let cancelled = false
-    void window.environment.listItems().then((items) => {
-      const capabilities = items.find((item) => item.connectionId === connectionId)?.capabilities
-      if (!cancelled && capabilities) setServed({ connectionId, method, serves: servesMethod(capabilities, method) })
-    }).catch(() => {})
-    return () => { cancelled = true }
+    const read = () => {
+      void loadEnvironmentItems().then((items) => {
+        const capabilities = items.find((item) => item.connectionId === connectionId)?.capabilities
+        if (!cancelled && capabilities) setServed({ connectionId, method, serves: servesMethod(capabilities, method) })
+      }).catch(() => {})
+    }
+    read()
+    const unsubscribe = subscribeEnvironmentList(read)
+    return () => { cancelled = true; unsubscribe() }
   }, [connectionId, method])
   if (!connectionId) return true
   return served?.connectionId === connectionId && served.method === method ? served.serves : true

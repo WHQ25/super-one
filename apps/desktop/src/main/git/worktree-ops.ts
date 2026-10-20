@@ -1,4 +1,5 @@
 import { rollbackUnusedWorktree } from '@superone/runtime/git/worktree-ops'
+import { cachedLocalWorktreeInfo, invalidateLocalGitReads } from './git-read-cache'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { gitRun } from '../git-run'
@@ -51,7 +52,11 @@ export function gitErrorMessage(err: unknown): string {
 /** Read-only, feeds the status bar — see GIT_READ_OPTS in main/index.ts. */
 const WORKTREE_READ_OPTS = { timeoutMs: 20_000 }
 
-export async function getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null> {
+export function getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null> {
+  return cachedLocalWorktreeInfo(folderPath, () => readWorktreeInfo(folderPath))
+}
+
+async function readWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null> {
   try {
     const raw = await gitRun(folderPath, ['worktree', 'list', '--porcelain'], undefined, WORKTREE_READ_OPTS)
     return worktreeInfoFromPorcelain(raw, folderPath)
@@ -107,6 +112,8 @@ export async function activateWorktree(
     branchName: mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined,
     carryLocalChanges,
   })
+  invalidateLocalGitReads(folderPath)
+  invalidateLocalGitReads(result.path)
   return { ok: true, ...result }
 }
 
@@ -116,13 +123,16 @@ export function getHandoffPreview(worktreePath: string): Promise<GitDirtyStatus 
 
 export async function handoffToLocal(worktreePath: string): Promise<WorktreeHandoffResult> {
   const result = await handoffToMain(git, worktreePath)
+  if (result.ok) invalidateLocalGitReads(worktreePath)
   // The window's copy calls the main checkout "local".
   if (result.ok) return result
   return { ...result, reason: result.reason === 'main-dirty' ? 'local-dirty' : result.reason }
 }
 
-export function assignBranch(worktreePath: string, rawName: string): Promise<WorktreeAssignResult> {
-  return assignBranchAt(git, worktreePath, rawName)
+export async function assignBranch(worktreePath: string, rawName: string): Promise<WorktreeAssignResult> {
+  const result = await assignBranchAt(git, worktreePath, rawName)
+  if (result.ok) invalidateLocalGitReads(worktreePath)
+  return result
 }
 
 /** No turn has been admitted to this freshly created checkout. */

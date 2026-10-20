@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 import { catalogFromHarnessIds, type HarnessCatalogStatus } from '@/lib/harness-visibility'
 import { useChatStore, useSessionScope } from '@/stores/chat'
 
@@ -17,15 +18,15 @@ export function useProjectHarnessCatalog(localCatalog: HarnessCatalogStatus[] | 
     if (!connectionId) return
     let cancelled = false
     const read = () => {
-      void window.environment.listItems().then((items) => {
+      void loadEnvironmentItems().then((items) => {
         const harnessIds = items.find((item) => item.connectionId === connectionId)?.capabilities?.harnessIds
         if (!cancelled && harnessIds) setRemote({ connectionId, catalog: catalogFromHarnessIds(harnessIds) })
       }).catch(() => {})
     }
     read()
-    const unsubscribe = window.environment.onStatusEvent((snapshot) => {
-      if (snapshot.connectionId === connectionId && snapshot.state === 'connected') read()
-    })
+    // Status handling lives in the shared list: this hook must not subscribe
+    // itself, or a one-listener test mock would drop the cache's bridge.
+    const unsubscribe = subscribeEnvironmentList(read)
     return () => {
       cancelled = true
       unsubscribe()

@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useProjectHarnessCatalog } from './use-project-harness-catalog'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
 import { isCatalogHarnessEnabled } from '@/lib/harness-visibility'
 import { useChatStore } from '@/stores/chat'
 
@@ -11,6 +12,7 @@ const LOCAL = [{ id: 'claude', enabled: true, state: 'ready' }]
 const node = (harnessIds: string[]) => [{ connectionId: 'node-1', capabilities: { harnessIds } }]
 
 beforeEach(() => {
+  resetEnvironmentListCache()
   listItems.mockReset()
   statusListener = null
   ;(window as unknown as { environment: unknown }).environment = {

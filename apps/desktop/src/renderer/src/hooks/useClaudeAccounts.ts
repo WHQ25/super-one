@@ -22,7 +22,12 @@ export function claudeAccountsChanged(): void {
   window.dispatchEvent(new Event('claude-accounts-changed'))
 }
 let observers = 0
-const onAccountsChanged = () => { void refreshClaudeAccounts(true).catch(() => {}) }
+const onAccountsChanged = (event: Event) => {
+  const connectionId = event instanceof CustomEvent ? event.detail?.connectionId : undefined
+  // A remote host's catalog change is not a local account list.
+  if (typeof connectionId === 'string' && connectionId !== 'local') return
+  void refreshClaudeAccounts(true).catch(() => {})
+}
 export function useClaudeAccounts(enabled = true): ClaudeAccount[] {
   const accounts = useAccounts((state) => state.accounts)
   useEffect(() => {

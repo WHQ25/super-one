@@ -63,4 +63,100 @@ describe('concurrent git reads', () => {
     expect(compute).toHaveBeenCalledTimes(1)
     expect(await coalescer.get('/repo', compute)).toBe('recovered')
   })
+
+  it('does not cache an in-flight result invalidated before it resolves', async () => {
+    const coalescer = new AsyncCoalescer<string>(Number.POSITIVE_INFINITY)
+    const first = deferred<string>()
+    const compute = vi.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce('after')
+
+    const stale = coalescer.get('/repo', compute)
+    coalescer.invalidate('/repo')
+    const fresh = coalescer.get('/repo', compute)
+    first.resolve('before')
+
+    expect(await stale).toBe('before')
+    expect(await fresh).toBe('after')
+    expect(compute).toHaveBeenCalledTimes(2)
+    expect(await coalescer.get('/repo', compute)).toBe('after')
+    expect(compute).toHaveBeenCalledTimes(2)
+  })
+
+  it('clear drops an in-flight result the same way', async () => {
+    const coalescer = new AsyncCoalescer<string>(Number.POSITIVE_INFINITY)
+    const first = deferred<string>()
+    const compute = vi.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce('after')
+
+    const stale = coalescer.get('/repo', compute)
+    coalescer.clear()
+    const fresh = coalescer.get('/repo', compute)
+    first.resolve('before')
+
+    expect(await stale).toBe('before')
+    expect(await fresh).toBe('after')
+    expect(await coalescer.get('/repo', compute)).toBe('after')
+    expect(compute).toHaveBeenCalledTimes(2)
+  })
+
+  it('a forced read does not join an ordinary in-flight read, and two forces share one', async () => {
+    const coalescer = new AsyncCoalescer<string>(Number.POSITIVE_INFINITY)
+    const ordinary = deferred<string>()
+    const forced = deferred<string>()
+    const compute = vi.fn()
+      .mockImplementationOnce(() => ordinary.promise)
+      .mockImplementationOnce(() => forced.promise)
+
+    const first = coalescer.get('/repo', compute)
+    const second = coalescer.get('/repo', () => compute(), { force: true })
+    const third = coalescer.get('/repo', () => compute(), { force: true })
+    ordinary.resolve('plain')
+    forced.resolve('forced')
+
+    expect(await first).toBe('plain')
+    expect(await second).toBe('forced')
+    expect(await third).toBe('forced')
+    expect(compute).toHaveBeenCalledTimes(2)
+    expect(await coalescer.get('/repo', compute)).toBe('forced')
+    expect(compute).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses a per-key ttl and can refuse to cache a value', async () => {
+    vi.useFakeTimers()
+    try {
+      const coalescer = new AsyncCoalescer<string>((key) => key === 'short' ? 1_000 : Number.POSITIVE_INFINITY)
+      const compute = vi.fn(async (key: string) => key)
+      await coalescer.get('short', () => compute('short'))
+      await coalescer.get('long', () => compute('long'))
+      await coalescer.get('short', () => compute('short-again'))
+      expect(compute).toHaveBeenCalledTimes(2)
+
+      vi.advanceTimersByTime(1_000)
+      expect(await coalescer.get('short', () => compute('short-2'))).toBe('short-2')
+      expect(await coalescer.get('long', () => compute('long-again'))).toBe('long')
+
+      const skipped = vi.fn(async () => 'unstable')
+      expect(await coalescer.get('skip', skipped, { cacheIf: () => false })).toBe('unstable')
+      expect(await coalescer.get('skip', async () => 'stable')).toBe('stable')
+      expect(skipped).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('remember and invalidateMatching address one key', async () => {
+    const coalescer = new AsyncCoalescer<string>(1_000)
+    coalescer.remember('a', 'seed')
+    coalescer.remember('b', 'other')
+    expect(coalescer.peek('a')).toBe('seed')
+    const compute = vi.fn(async () => 'fresh')
+    expect(await coalescer.get('a', compute)).toBe('seed')
+    coalescer.invalidateMatching((key) => key === 'a')
+    expect(coalescer.peek('a')).toBeUndefined()
+    expect(await coalescer.get('a', compute)).toBe('fresh')
+    expect(await coalescer.get('b', compute)).toBe('other')
+    expect(compute).toHaveBeenCalledTimes(1)
+  })
 })

@@ -24,7 +24,10 @@ import {
   getRemoteGitIsRepo,
   getRemoteGitBranches,
   getRemoteWorktreeInfo,
+  getRemoteGitMentionCapabilities,
   invalidateRemoteGitStatusCache,
+  invalidateRemoteGitReads,
+  invalidateRemoteGitReadsForConnection,
   toRemoteRelativePath,
 } from './remote-file-tree'
 import type { WorkspaceEntry } from '@superone/shared/environment'
@@ -279,7 +282,7 @@ describe('getRemoteGitInfo / isRepo / branches', () => {
 
 describe('getRemoteWorktreeInfo', () => {
   beforeEach(() => {
-    invalidateRemoteGitStatusCache()
+    invalidateRemoteGitReads()
   })
 
   it('synthesizes a main worktree entry so WorkDirIndicator can show Local', async () => {
@@ -316,6 +319,90 @@ describe('getRemoteWorktreeInfo', () => {
       getGateway: () => ({ gitStatus }),
     })
     expect(await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')).toBeNull()
+  })
+
+  it('reuses one worktree list until a git read is invalidated', async () => {
+    const gitStatus = vi.fn().mockResolvedValue({ isRepo: true, branch: 'main', porcelain: '' })
+    const gitWorktrees = vi.fn().mockResolvedValue([{ path: '/work/app', branch: 'main', bare: false }])
+    const host = mockHost({ getGateway: () => ({ gitStatus, gitWorktrees }) })
+    await Promise.all([
+      getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app'),
+      getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app'),
+    ])
+    expect(gitWorktrees).toHaveBeenCalledTimes(1)
+    await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+    expect(gitWorktrees).toHaveBeenCalledTimes(1)
+    invalidateRemoteGitReads('remote:conn-1:/work/app')
+    await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+    expect(gitWorktrees).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache a missing repo', async () => {
+    const gitStatus = vi.fn().mockResolvedValue({ isRepo: false })
+    const gitWorktrees = vi.fn().mockResolvedValue([])
+    const host = mockHost({ getGateway: () => ({ gitStatus, gitWorktrees }) })
+    expect(await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')).toBeNull()
+    expect(await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')).toBeNull()
+    expect(gitWorktrees).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops one connection without touching another', async () => {
+    const gitStatus = vi.fn().mockResolvedValue({ isRepo: true, branch: 'main', porcelain: '' })
+    const gitWorktrees = vi.fn().mockResolvedValue([{ path: '/work/app', branch: 'main', bare: false }])
+    const host = mockHost({
+      connections: {
+        listKnown: () => [
+          { connectionId: 'conn-1', environmentId: 'env-1' },
+          { connectionId: 'conn-2', environmentId: 'env-2' },
+        ],
+      },
+      listProjects: vi.fn(async () => [{ projectId: 'proj-1', path: '/work/app', name: 'app' }]),
+      getGateway: () => ({ gitStatus, gitWorktrees }),
+    })
+    await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+    await getRemoteWorktreeInfo(host, 'remote:conn-2:/work/app')
+    invalidateRemoteGitReadsForConnection('conn-1')
+    await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+    await getRemoteWorktreeInfo(host, 'remote:conn-2:/work/app')
+    expect(gitWorktrees).toHaveBeenCalledTimes(3)
+  })
+
+  it('re-reads a worktree list after 30s', async () => {
+    vi.useFakeTimers()
+    try {
+      const gitStatus = vi.fn().mockResolvedValue({ isRepo: true, branch: 'main', porcelain: '' })
+      const gitWorktrees = vi.fn().mockResolvedValue([{ path: '/work/app', branch: 'main', bare: false }])
+      const host = mockHost({ getGateway: () => ({ gitStatus, gitWorktrees }) })
+      await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+      await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+      expect(gitWorktrees).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(30_000)
+      await getRemoteWorktreeInfo(host, 'remote:conn-1:/work/app')
+      expect(gitWorktrees).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('getRemoteGitMentionCapabilities', () => {
+  beforeEach(() => {
+    invalidateRemoteGitReads()
+  })
+
+  it('does not cache not-repo and does cache a ready answer', async () => {
+    const gitMentionCapabilities = vi.fn()
+      .mockResolvedValueOnce({ repo: 'not-repo', github: false })
+      .mockResolvedValueOnce({ repo: 'not-repo', github: false })
+      .mockResolvedValue({ repo: 'ready', github: true })
+    const host = mockHost({
+      getGateway: () => ({ gitStatus: vi.fn(), gitMentionCapabilities }),
+    })
+    expect(await getRemoteGitMentionCapabilities(host, 'remote:conn-1:/work/app')).toEqual({ repo: 'not-repo', github: false })
+    expect(await getRemoteGitMentionCapabilities(host, 'remote:conn-1:/work/app')).toEqual({ repo: 'not-repo', github: false })
+    expect(await getRemoteGitMentionCapabilities(host, 'remote:conn-1:/work/app')).toEqual({ repo: 'ready', github: true })
+    expect(await getRemoteGitMentionCapabilities(host, 'remote:conn-1:/work/app')).toEqual({ repo: 'ready', github: true })
+    expect(gitMentionCapabilities).toHaveBeenCalledTimes(3)
   })
 })
 

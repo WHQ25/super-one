@@ -33,4 +33,24 @@ describe('remoteListObserver', () => {
     expect(after.heard.every((event) => !event.completed)).toBe(true)
     expect([...summaries.keys()]).toEqual(['kept'])
   })
+
+  it('reports a provider change and does not treat an environment snapshot as a session list', () => {
+    let catalogs = 0
+    const observer = remoteListObserver('conn-b', new Map(), {
+      sessionListChanged: () => { throw new Error('session list') },
+      projectsChanged: () => { throw new Error('projects') },
+      activity: () => { throw new Error('activity') },
+      catalogChanged: () => { catalogs += 1 },
+    })
+    observer.notice!({
+      topic: { kind: 'environment', environmentId: 'env-b' },
+      events: [{ type: 'provider_changed', harnessId: 'claude', provider: null }],
+    })
+    observer.notice!({
+      topic: { kind: 'environment', environmentId: 'env-b' },
+      events: [],
+      snapshot: {},
+    })
+    expect(catalogs).toBe(1)
+  })
 })

@@ -56,6 +56,15 @@ describe('onInvalidate callback', () => {
     expect(onInvalidate).toHaveBeenCalledTimes(1)
   })
 
+  it('invalidates when a worktree is added and does not emit a file change', () => {
+    const onInvalidate = vi.fn()
+    startWatching(mockWindow, '/project', onInvalidate)
+    watchCallback('change', '.git/worktrees/feat/HEAD')
+    vi.advanceTimersByTime(500)
+    expect(onInvalidate).toHaveBeenCalledTimes(1)
+    expect(mockSend).not.toHaveBeenCalled()
+  })
+
   it('should not call onInvalidate for ignored files', () => {
     const onInvalidate = vi.fn()
     startWatching(mockWindow, '/project', onInvalidate)

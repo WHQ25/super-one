@@ -28,6 +28,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import { useHostProjects } from '@/hooks/use-host-projects'
+import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 
 import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
@@ -169,14 +170,14 @@ export const AppSidebar = memo(function AppSidebar() {
     }
     let cancelled = false
     const refresh = () => {
-      void window.environment.listItems().then((items) => {
+      void loadEnvironmentItems().then((items) => {
         if (!cancelled) setHostItems(items)
       }).catch(() => {
         if (!cancelled) setHostItems([])
       })
     }
     refresh()
-    const unsub = window.environment.onStatusEvent(() => refresh())
+    const unsub = subscribeEnvironmentList(refresh)
     return () => {
       cancelled = true
       unsub()

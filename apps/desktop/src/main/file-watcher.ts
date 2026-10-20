@@ -13,6 +13,7 @@ let invalidateCache: (() => void) | null = null
 const IGNORED = /(?:^|[/\\])(?:\.git|node_modules|\.DS_Store|\.next|dist|\.cache)(?:[/\\]|$)|\.log$/
 const GIT_HEAD = /(?:^|[/\\])\.git[/\\]HEAD$/
 const GIT_INDEX = /(?:^|[/\\])\.git[/\\]index(?:\.lock)?$/
+const GIT_WORKTREES = /(?:^|[/\\])\.git[/\\]worktrees(?:[/\\]|$)/
 
 function send(): void {
   if (!win || win.isDestroyed() || !currentFolder) return
@@ -36,6 +37,11 @@ function handleChange(_eventType: string, filename: string | null): void {
     invalidateCache?.()
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(send, 300)
+    return
+  }
+  // `.git/` is ignored below. A worktree add/remove still has to drop the list cache.
+  if (GIT_WORKTREES.test(filename)) {
+    invalidateCache?.()
     return
   }
   if (IGNORED.test(filename)) return

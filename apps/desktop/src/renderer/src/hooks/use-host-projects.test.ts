@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useHostProjects } from './use-host-projects'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
 import { useAppStore } from '@/stores/app'
 
 const listItems = vi.fn()
@@ -15,6 +16,7 @@ let statusListener: ((snapshot: {
 let projectsListener: ((connectionId: string) => void) | null = null
 
 beforeEach(() => {
+  resetEnvironmentListCache()
   listItems.mockReset()
   listProjects.mockReset()
   connect.mockReset()

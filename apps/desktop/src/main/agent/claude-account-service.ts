@@ -39,6 +39,22 @@ const LIST_CACHE_TTL_MS = 60_000
 let listGeneration = 0
 let listCache: { accounts: ClaudeAccount[]; at: number } | null = null
 export function invalidateAccountListCache(): void { listCache = null; listGeneration++ }
+
+const accountChangeListeners = new Set<() => void>()
+
+/**
+ * Subscribe to local account mutations. This function does not drop the list
+ * cache; `notifyClaudeAccountsChanged` drops it before these listeners run.
+ */
+export function onClaudeAccountsChanged(listener: () => void): () => void {
+  accountChangeListeners.add(listener)
+  return () => { accountChangeListeners.delete(listener) }
+}
+
+function notifyClaudeAccountsChanged(): void {
+  invalidateAccountListCache()
+  for (const listener of accountChangeListeners) listener()
+}
 export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
   if (!force && listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) return listCache.accounts
   const store = claudeAccountStore()
@@ -91,7 +107,7 @@ export async function signInAccount(dir: string, email?: string | null): Promise
       throw new Error('This profile belongs to another Claude account. Add the other account separately.')
     }
     signedIn = account
-  } finally { if (login === controller) login = null; invalidateAccountListCache() }
+  } finally { if (login === controller) login = null; notifyClaudeAccountsChanged() }
   // One identity keeps one card: signed-out domains this login supersedes are retired.
   const identity = signedIn.identityKey
   if (identity) {
@@ -110,7 +126,7 @@ export async function signOutAccount(dir: string): Promise<void> {
   await runAuth(['logout'], dir, STATUS_TIMEOUT_MS)
   // Keep the domain and last identity so the user can reauthenticate the same card/session.
   await readAccount(dir, true)
-  invalidateAccountListCache()
+  notifyClaudeAccountsChanged()
 }
 /** Revokes the domain's own credentials before deleting it; shared transcripts are only linked in. */
 export async function removeAccount(dir: string): Promise<void> {
@@ -123,13 +139,13 @@ async function deleteAccountDir(dir: string): Promise<void> {
   await runAuth(['logout'], dir, STATUS_TIMEOUT_MS).catch(() => {})
   rmSync(dir, { recursive: true, force: true })
   claudeAccountStore().forget(dir)
-  invalidateAccountListCache()
+  notifyClaudeAccountsChanged()
 }
 export async function setDefaultAccount(dir: string | null): Promise<void> {
   const account = await readAccount(dir)
   if (!account.loggedIn) throw new Error('Sign in before selecting a default Claude account')
   claudeAccountStore().setDefault(dir)
-  invalidateAccountListCache()
+  notifyClaudeAccountsChanged()
 }
 
 /**

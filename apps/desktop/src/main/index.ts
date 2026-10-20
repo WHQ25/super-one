@@ -28,6 +28,7 @@ import { deferredPhoneConnection } from './node-host/deferred-phone-connection'
 import type { PhoneConnection, PhoneLink } from './node-host/phone-endpoint'
 import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
+import { invalidateLocalGitReads, mainCheckoutOfLinkedWorktree } from './git/git-read-cache'
 import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest, PairRemoteInput, RepairPairingInput } from '@superone/shared/environment'
@@ -209,7 +210,7 @@ import {
   type ParsedGitStatus,
 } from './git-status-utils'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
-import { claudeAccountConfig, listAccounts as listClaudeAccounts } from './agent/claude-account-service'
+import { claudeAccountConfig, listAccounts as listClaudeAccounts, onClaudeAccountsChanged } from './agent/claude-account-service'
 import { claudeAccountStore } from './agent/claude-account-store'
 import { registerClaudeAccountIpc } from './agent/claude-account-ipc'
 import { getProviderRateLimits } from './agent/provider-usage-service'
@@ -371,6 +372,7 @@ const GIT_READ_OPTS: GitRunOptions = { timeoutMs: 20_000 }
 const GIT_INFO_SLOW_MS = 3_000
 
 const agentService = new AgentService()
+onClaudeAccountsChanged(() => agentService.publishClaudeAccountsChanged())
 const codexService = new CodexExperimentService()
 const codexPluginsService = new CodexPluginsService(codexService)
 const codexHooksService = new CodexHooksService(codexService)
@@ -1808,6 +1810,16 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   // Sessions and projects another client creates, renames or removes on a machine show up here.
   host.onSessionListChanged((_connectionId, projectKey) => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectKey))
   host.onProjectListChanged((connectionId) => safeSend(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, connectionId))
+  // A node's account or provider catalog changed. connectionId lets the renderer
+  // refresh that host without forcing a local account read.
+  host.onHostCatalogChanged((connectionId) => {
+    safeSend(AgentIpcChannels.EVENT, {
+      type: 'provider_changed',
+      harnessId: 'claude',
+      provider: null,
+      connectionId,
+    })
+  })
   // A machine's sidebar summaries (running, read) of sessions this desktop does not follow.
   host.onRemoteSessionActivity((event) => rendererAgentEventTransport.push(event))
   // A remote session whose missed events are gone: the chat reads its snapshot again.
@@ -3014,6 +3026,7 @@ function registerIpcHandlers(): void {
     if (existsSync(join(folderPath, '.git'))) return { ok: true }
     try {
       await gitRun(folderPath, ['init'])
+      invalidateGitReads(folderPath)
       return { ok: true }
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err)
@@ -3079,9 +3092,12 @@ function registerIpcHandlers(): void {
       if (parseRemoteProjectKey(folderPath)) {
         const { getEnvironmentHost } = await import('./environment')
         const { remoteSwitchBranch } = await import('./environment/remote-worktree')
-        return remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, false)
+        const result = await remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, false)
+        if (result.ok) invalidateGitReads(folderPath)
+        return result
       }
       await gitRun(folderPath, ['checkout', sanitizeGitRef(branch)])
+      invalidateGitReads(folderPath)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: gitErrorMessage(err) }
@@ -3092,7 +3108,9 @@ function registerIpcHandlers(): void {
     if (parseRemoteProjectKey(folderPath)) {
       const { getEnvironmentHost } = await import('./environment')
       const { remoteSwitchBranch } = await import('./environment/remote-worktree')
-      return remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, true)
+      const result = await remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, true)
+      if (result.ok) invalidateGitReads(folderPath)
+      return result
     }
     const safeRef = sanitizeGitRef(branch)
     try {
@@ -3102,6 +3120,7 @@ function registerIpcHandlers(): void {
     }
     try {
       await gitRun(folderPath, ['checkout', '-b', safeRef])
+      invalidateGitReads(folderPath)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: gitErrorMessage(err) }
@@ -3152,14 +3171,18 @@ function registerIpcHandlers(): void {
       if (parseRemoteProjectKey(folderPath)) {
         const { getEnvironmentHost } = await import('./environment')
         const { remoteActivateWorktree } = await import('./environment/remote-worktree')
-        return remoteActivateWorktree(getEnvironmentHost(), folderPath, request)
+        const result = await remoteActivateWorktree(getEnvironmentHost(), folderPath, request)
+        if (result.ok) invalidateGitReads(folderPath)
+        return result
       }
       if (request === null) {
         await agentService.applyWorktreeSelection(folderPath, folderPath, null)
+        invalidateGitReads(folderPath)
         return { ok: true as const, path: folderPath }
       }
       const result = await activateWorktree(folderPath, request)
       await agentService.applyWorktreeSelection(folderPath, result.path, result.recordedBranch)
+      invalidateGitReads(folderPath)
       return { ok: true as const, path: result.path }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
@@ -3190,10 +3213,14 @@ function registerIpcHandlers(): void {
           // folderPath should be the project key; if worktreePath is remote, pass project via folderPath arg.
           const proj =
             folderPath && parseRemoteProjectKey(folderPath) ? folderPath : remoteFolder
-          return remoteHandoffToMain(getEnvironmentHost(), proj, worktreePath)
+          const result = await remoteHandoffToMain(getEnvironmentHost(), proj, worktreePath)
+          if (result.ok) invalidateGitReads(proj)
+          return result
         }
       }
-      return await handoffToLocal(worktreePath)
+      const result = await handoffToLocal(worktreePath)
+      if (result.ok) invalidateGitReads(worktreePath)
+      return result
     } catch (err) {
       log.warn('[handoff] unexpected failure:', err)
       return { ok: false as const, reason: 'error' as const, error: gitErrorMessage(err) }
@@ -3219,10 +3246,15 @@ function registerIpcHandlers(): void {
     if (parseRemoteProjectKey(folderPath)) {
       const { getEnvironmentHost } = await import('./environment')
       const { remoteAssignBranch } = await import('./environment/remote-worktree')
-      return remoteAssignBranch(getEnvironmentHost(), folderPath, worktreePath, name)
+      const result = await remoteAssignBranch(getEnvironmentHost(), folderPath, worktreePath, name)
+      if (result.ok) invalidateGitReads(folderPath)
+      return result
     }
     const result = await assignBranch(worktreePath, name)
-    if (result.ok) await agentService.applyWorktreeSelection(folderPath, worktreePath, result.branch)
+    if (result.ok) {
+      await agentService.applyWorktreeSelection(folderPath, worktreePath, result.branch)
+      invalidateGitReads(folderPath)
+    }
     return result
   })
 
@@ -3456,6 +3488,16 @@ function registerIpcHandlers(): void {
   // watcher also invalidates this on any change (see FILE_WATCH_START).
   const GIT_STATUS_CACHE_TTL_MS = 1500
   const gitStatusSnapshot = new AsyncCoalescer<ParsedGitStatus>(GIT_STATUS_CACHE_TTL_MS)
+
+  /** Worktree and @git reads follow the checkout. Drop them when git or the watcher says it changed. */
+  function invalidateGitReads(folderPath: string): void {
+    gitStatusSnapshot.invalidate(folderPath)
+    invalidateLocalGitReads(folderPath)
+    if (!parseRemoteProjectKey(folderPath)) return
+    void import('./environment/remote-file-tree').then(({ invalidateRemoteGitReads }) => {
+      invalidateRemoteGitReads(folderPath)
+    })
+  }
 
   function getGitStatusMap(folderPath: string) {
     return gitStatusSnapshot.get(folderPath, async () => {
@@ -4165,7 +4207,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
     startWatching(getMainWindow(), folderPath, () => {
-      gitStatusSnapshot.invalidate(folderPath)
+      invalidateGitReads(folderPath)
+      // The watcher follows one folder. A linked worktree's list is also keyed
+      // by the main checkout, which this watch does not cover.
+      const mainCheckout = mainCheckoutOfLinkedWorktree(folderPath)
+      if (mainCheckout) invalidateGitReads(mainCheckout)
     })
   })
 

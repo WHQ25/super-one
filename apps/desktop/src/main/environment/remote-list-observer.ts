@@ -12,6 +12,8 @@ export interface RemoteListHandlers {
   projectsChanged(): void
   /** A session's sidebar summary (running, read). */
   activity(event: SessionActivityEvent): void
+  /** Provider credentials, bindings, or Claude accounts changed on the node. */
+  catalogChanged?(): void
 }
 
 /**
@@ -38,6 +40,10 @@ export function remoteListObserver(connectionId: string, summaries: Map<string, 
     notice: (frame) => {
       if (frame.topic.kind === 'projects') {
         handlers.projectsChanged()
+        return
+      }
+      if (frame.topic.kind === 'environment') {
+        if (frame.events.some((event) => event.type === 'provider_changed')) handlers.catalogChanged?.()
         return
       }
       if (frame.snapshot !== undefined) {

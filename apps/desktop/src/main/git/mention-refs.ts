@@ -18,6 +18,7 @@ import {
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { cachedLocalGitMentionCapabilities } from './git-read-cache'
 
 const GIT_READ_OPTS: GitRunOptions = { timeoutMs: 20_000 }
 /** GitHub round-trips; long enough for a slow API, short enough that a popup never hangs. */
@@ -47,8 +48,10 @@ export async function resolveGitMentionRefs(
  * The `gh` half of a capability probe is a network round-trip (`gh repo view`)
  * that the popup would otherwise repeat on every open. Whether gh is installed,
  * signed in and the remote points at GitHub does not change while the app
- * runs, so the answer is kept per folder for the process lifetime. The repo
- * half stays live: `git init` from the status bar must flip `@git` on at once.
+ * runs, so that half is kept per folder for the process lifetime. The combined
+ * answer is also kept until a git mutation or the file watcher drops it, so a
+ * session switch does not probe again. `git init` invalidates that cache and
+ * the repo half is read again.
  */
 const githubProbeByFolder = new Map<string, Promise<boolean>>()
 
@@ -63,6 +66,11 @@ export async function resolveGitMentionCapabilities(folderPath: string): Promise
     const { getRemoteGitMentionCapabilities } = await import('../environment/remote-file-tree')
     return getRemoteGitMentionCapabilities(getEnvironmentHost(), folderPath)
   }
+  // `unsupported` is not stored. The next popup tries again.
+  return cachedLocalGitMentionCapabilities(folderPath, () => probeLocalGitMentionCapabilities(folderPath))
+}
+
+async function probeLocalGitMentionCapabilities(folderPath: string): Promise<GitMentionCapabilities> {
   try {
     const runners = localRunners(folderPath)
     const { repo } = await probeGitMentionCapabilities({ git: runners.git })

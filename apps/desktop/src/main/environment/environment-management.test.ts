@@ -57,11 +57,16 @@ const dirs: string[] = []
 let sharedRuntime: NodeRuntime | null = null
 let sharedNodeHome: string | null = null
 
-afterEach(() => {
+afterEach(async () => {
   resetEnvironmentHostForTests()
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   electron.store.clear()
   electron.available = true
+  // Connect fires project.list and does not wait for it. This file shares one
+  // node, so the call can land after the sending test returns and be counted
+  // by the next test's spy. Finish that socket turn before the next test.
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
 })
 
 afterAll(async () => {
@@ -570,6 +575,24 @@ describe('forget environment', () => {
     expect(await host.listEnvironments()).toHaveLength(1)
     expect(host.credentials.get(connectionId)).toBeNull()
     expect(host.connections.listKnown()).toHaveLength(0)
+    host.dispose()
+  })
+
+  it('tells listeners the host is gone', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'forgotten-box',
+    })
+    const states: string[] = []
+    host.onStatusChange((snap) => {
+      if (snap.connectionId === connectionId) states.push(snap.state)
+    })
+    host.forget(connectionId)
+    expect(states).toContain('disconnected')
+    expect(await host.listEnvironments()).toHaveLength(1)
     host.dispose()
   })
 

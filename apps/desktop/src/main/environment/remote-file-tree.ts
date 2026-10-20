@@ -48,6 +48,7 @@ import {
   type ParsedGitStatus,
 } from '../git-status-utils'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
+import { createKeyedGitReadCache } from '../git/keyed-git-read-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import { resolveSessionFile, resolverDepsFor } from './session-file-resolver'
@@ -68,6 +69,33 @@ const remoteGitStatusCoalescer = new AsyncCoalescer<{
 export function invalidateRemoteGitStatusCache(key?: string): void {
   if (key) remoteGitStatusCoalescer.invalidate(key)
   else remoteGitStatusCoalescer.clear()
+}
+
+/**
+ * B does not push worktree or `@git` changes. Reuse a burst of session
+ * switches, then read again. `not-repo` and a missing project are not stored:
+ * the next open may have registered the checkout. `unsupported` is a failed
+ * probe, not a stable answer.
+ */
+const REMOTE_GIT_READ_TTL_MS = 30_000
+const remoteGitReads = createKeyedGitReadCache<WorktreeInfo | null, GitMentionCapabilities>({
+  worktreeTtlMs: REMOTE_GIT_READ_TTL_MS,
+  mentionTtlMs: REMOTE_GIT_READ_TTL_MS,
+  unstableWorktree: (value) => value == null,
+  unstableMention: (value) => value.repo === 'unsupported' || value.repo === 'not-repo',
+})
+
+/** Drop cached worktree and mention reads for one remote folder, or every folder. */
+export function invalidateRemoteGitReads(folderPath?: string): void {
+  remoteGitReads.invalidate(folderPath)
+  invalidateRemoteGitStatusCache()
+}
+
+/** Drop cached git reads for one node. Keys are `remote:<connectionId>:<path>` and `<connectionId>:<projectId>:<cwd>`. */
+export function invalidateRemoteGitReadsForConnection(connectionId: string): void {
+  const folderPrefix = `remote:${connectionId}:`
+  remoteGitReads.invalidateMatching((key) => key.startsWith(folderPrefix))
+  remoteGitStatusCoalescer.invalidateMatching((key) => key.startsWith(`${connectionId}:`))
 }
 
 const SKIP_NAMES = new Set(['.git', '.DS_Store'])
@@ -946,7 +974,14 @@ export async function getRemoteGitMentionRefs(
  * local `getWorktreeInfo` returns so WorkDirIndicator can show Monitor/"Local"
  * (or a worktree label when the project path is a linked worktree).
  */
-export async function getRemoteWorktreeInfo(
+export function getRemoteWorktreeInfo(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<WorktreeInfo | null> {
+  return remoteGitReads.worktree(folderPath, () => loadRemoteWorktreeInfo(host, folderPath))
+}
+
+async function loadRemoteWorktreeInfo(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<WorktreeInfo | null> {
@@ -1091,7 +1126,14 @@ export async function resolvePathsForNativeDrag(
  * predates `git.mentionCapabilities` is asked for a branch page instead, so
  * `@git` still works there; `gh` on such a node is unknown and stays off.
  */
-export async function getRemoteGitMentionCapabilities(
+export function getRemoteGitMentionCapabilities(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<GitMentionCapabilities> {
+  return remoteGitReads.mention(folderPath, () => loadRemoteGitMentionCapabilities(host, folderPath))
+}
+
+async function loadRemoteGitMentionCapabilities(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<GitMentionCapabilities> {

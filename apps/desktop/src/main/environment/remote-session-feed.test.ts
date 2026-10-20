@@ -221,7 +221,11 @@ describe('RemoteSessionFeed', () => {
     const notices: TopicNoticeFrame[] = []
     const events: string[] = []
     await feed.observe({ notice: (frame) => notices.push(frame), event: (e) => events.push(e.aggregateId) })
-    expect(source.applied.at(-1)).toEqual([{ kind: 'sessionList', environmentId: 'env' }, { kind: 'projects', environmentId: 'env' }])
+    expect(source.applied.at(-1)).toEqual([
+      { kind: 'sessionList', environmentId: 'env' },
+      { kind: 'projects', environmentId: 'env' },
+      { kind: 'environment', environmentId: 'env' },
+    ])
     source.push(envelope(8, 'before', 'session', 'session.created'))
     await flush()
     const renamed: TopicNoticeFrame = { topic: { kind: 'sessionList', environmentId: 'env' }, cursor: { epoch: 'e', version: 1 }, events: [{ type: 'session_list_changed', projectPath: '/p' }] }
@@ -247,7 +251,7 @@ describe('RemoteSessionFeed', () => {
       return 7
     })
     const unfollowA2 = await feed.follow('a', { event: vi.fn(), end: vi.fn() }, async () => 7)
-    expect(order).toEqual([`barrier with ${JSON.stringify([{ kind: 'sessionList', environmentId: 'env' }, { kind: 'projects', environmentId: 'env' }, { kind: 'session', environmentId: 'env', sessionId: 'a' }])}`])
+    expect(order).toEqual([`barrier with ${JSON.stringify([{ kind: 'sessionList', environmentId: 'env' }, { kind: 'projects', environmentId: 'env' }, { kind: 'environment', environmentId: 'env' }, { kind: 'session', environmentId: 'env', sessionId: 'a' }])}`])
     const applies = source.applied.length
     unfollowA()
     expect(source.applied).toHaveLength(applies)

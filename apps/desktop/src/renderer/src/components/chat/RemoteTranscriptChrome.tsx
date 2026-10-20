@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useTranslation } from 'react-i18next'
 import { EdgeLoader } from '@superone/chat-view/EdgeLoader'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { pageRemoteTranscript } from '@/lib/remote-session-ops'
@@ -13,7 +12,6 @@ export type RemoteTranscriptEdge = 'top' | 'bottom'
 
 export interface RemoteTranscriptChromeViewProps {
   edge?: RemoteTranscriptEdge
-  summarized?: boolean
   loading?: boolean
   hasMore?: boolean
   sentinelRef?: RefObject<HTMLDivElement | null>
@@ -27,14 +25,11 @@ export interface RemoteTranscriptChromeViewProps {
  */
 export function RemoteTranscriptChromeView({
   edge = 'top',
-  summarized = false,
   loading = false,
   hasMore = false,
   sentinelRef,
 }: RemoteTranscriptChromeViewProps) {
-  const { t } = useTranslation()
-  const note = edge === 'top' && summarized && !loading
-  if (!loading && !hasMore && !note) return null
+  if (!loading && !hasMore) return null
   return (
     <div
       ref={sentinelRef}
@@ -42,11 +37,6 @@ export function RemoteTranscriptChromeView({
       className="flex min-h-px flex-col"
     >
       {loading ? <EdgeLoader edge={edge} loading /> : null}
-      {note ? (
-        <p className="px-3 py-1 text-center text-xs text-muted-foreground">
-          {t('chat.transcriptWindow.summarized')}
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -56,7 +46,6 @@ interface RemoteTranscriptEdgeApi {
   bottomRef: RefObject<HTMLDivElement | null>
   loadingTop: boolean
   loadingBottom: boolean
-  summarized: boolean
   hasOlder: boolean
   hasNewer: boolean
 }
@@ -98,7 +87,6 @@ export function RemoteTranscriptEdges({ children }: { children: ReactNode }) {
       sessionId,
       older: anchorKey(window?.older),
       newer: anchorKey(window?.newer),
-      summarized: window?.summarized === true,
       resyncing,
       paging: session?.transcriptPaging === true,
     }
@@ -199,10 +187,9 @@ export function RemoteTranscriptEdges({ children }: { children: ReactNode }) {
     bottomRef,
     loadingTop: pagingEdge === 'top' || model?.resyncing === true,
     loadingBottom: pagingEdge === 'bottom',
-    summarized: model?.summarized === true,
     hasOlder: older != null,
     hasNewer: newer != null,
-  }), [pagingEdge, model?.resyncing, model?.summarized, older, newer])
+  }), [pagingEdge, model?.resyncing, older, newer])
   return <RemoteTranscriptEdgeContext.Provider value={api}>{children}</RemoteTranscriptEdgeContext.Provider>
 }
 
@@ -212,12 +199,10 @@ export function RemoteTranscriptChrome({ edge = 'top' }: { edge?: RemoteTranscri
   if (!api) return null
   const hasMore = edge === 'top' ? api.hasOlder : api.hasNewer
   const loading = edge === 'top' ? api.loadingTop : api.loadingBottom
-  const summarized = edge === 'top' && api.summarized
-  if (!hasMore && !loading && !summarized) return null
+  if (!hasMore && !loading) return null
   return (
     <RemoteTranscriptChromeView
       edge={edge}
-      summarized={summarized}
       loading={loading}
       hasMore={hasMore}
       sentinelRef={edge === 'top' ? api.topRef : api.bottomRef}

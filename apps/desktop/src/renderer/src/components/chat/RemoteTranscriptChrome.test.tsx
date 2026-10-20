@@ -75,15 +75,16 @@ describe('planHistoryEdges', () => {
 })
 
 describe('RemoteTranscriptChromeView', () => {
-  it('keeps the summarized note and no earlier button while history remains', () => {
-    render(<RemoteTranscriptChromeView summarized hasMore />)
-    expect(screen.getByText('Longer messages are summarized until expanded.')).toBeInTheDocument()
+  it('keeps a silent sentinel and no earlier button while history remains', () => {
+    const { container } = render(<RemoteTranscriptChromeView hasMore />)
+    expect(screen.queryByText('Longer messages are summarized until expanded.')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
+    expect(container.querySelector('[data-testid="remote-transcript-chrome-top"]')).not.toBeNull()
   })
 
   it('shows only the phone loader while a page is in flight', () => {
-    render(<RemoteTranscriptChromeView loading hasMore summarized />)
+    render(<RemoteTranscriptChromeView loading hasMore />)
     expect(screen.getByRole('status')).toHaveTextContent('Loading...')
     expect(screen.queryByText('Loading history…')).toBeNull()
     expect(screen.queryByText('Longer messages are summarized until expanded.')).toBeNull()

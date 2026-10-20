@@ -2040,7 +2040,6 @@ export type Messages = {
       foldRetry: string
       loadEarlier: string
       loadNewer: string
-      summarized: string
       paging: string
       resyncing: string
     }
@@ -6695,7 +6694,6 @@ export const en: Messages = {
       foldRetry: 'Retry',
       loadEarlier: 'Load Earlier',
       loadNewer: 'Load Newer',
-      summarized: 'Longer messages are summarized until expanded.',
       paging: 'Loading history…',
       resyncing: 'Refreshing transcript…',
     },

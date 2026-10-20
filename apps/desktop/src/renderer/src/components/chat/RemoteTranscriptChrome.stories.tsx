@@ -7,7 +7,6 @@ const meta = {
   parameters: { layout: 'padded' },
   args: {
     edge: 'top',
-    summarized: false,
     loading: false,
     hasMore: true,
   },
@@ -18,10 +17,6 @@ type Story = StoryObj<typeof meta>
 
 export const IdleEarlier: Story = {}
 
-export const Summarized: Story = {
-  args: { summarized: true, hasMore: true },
-}
-
 export const Paging: Story = {
   args: { loading: true, hasMore: true },
 }
@@ -31,12 +26,12 @@ export const Resyncing: Story = {
 }
 
 export const NarrowDarkChinese: Story = {
-  args: { summarized: true, loading: true, hasMore: true },
+  args: { loading: true, hasMore: true },
   globals: { theme: 'dark', locale: 'zh' },
   render: (args) => (
     <div style={{ width: 280 }}>
       <RemoteTranscriptChromeView {...args} edge="top" />
-      <RemoteTranscriptChromeView {...args} edge="bottom" summarized={false} />
+      <RemoteTranscriptChromeView {...args} edge="bottom" />
     </div>
   ),
 }

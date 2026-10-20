@@ -2147,7 +2147,6 @@ export const zh: Messages = {
       foldRetry: '重试',
       loadEarlier: '加载更早的内容',
       loadNewer: '加载更新的内容',
-      summarized: '较长的消息先显示摘要，展开后加载全文。',
       paging: '正在加载历史记录…',
       resyncing: '正在刷新对话记录…',
     },

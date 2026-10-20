@@ -15,30 +15,57 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Page remote sessions back to their first message. Hosts read only the rows
-  a window needs and report the real total, instead of parsing whole
-  transcripts to show the newest 200 messages; expanding a summarized row
-  reads only that row. **Breaking:** a host no longer sends a session's
-  content events to a controlling desktop that shows it without a transcript
-  window — update controlling desktops together with their hosts.
-
-### Performance
-
-- Switching sessions on the phone shows the newest messages as soon as they
-  are read; stopping and acquiring sessions run alongside the read instead of
-  before it.
+- Fold settled tool process into one row when a transcript window opens. The
+  detail header still counts the calls, files and diff, and expanding reads
+  them a page at a time.
 
 ### Fixed
 
-- The phone no longer shows "channel restarted" when the relay restarts a
-  handshake, and a newer session switch cancels the previous one instead of
-  being rejected while it is still restoring.
-- A relay connection that closes keeps its real error — closed, desktop
-  upgrade, or identity conflict — instead of reporting "connection replaced".
-- The sidebar shows loading on the folder or session icon instead of adding a
-  Loading row that shifted the list.
+- Measure a mod pane's content box, so a mod drawn at full width no longer
+  overflows by a few columns. Plain buttons in a mod sit on the same row as
+  the text beside them.
+- Show slash commands a Claude mod registers at session start, including
+  project commands such as `/ultra-config`.
+- Restart a remote node after an SSH CLI upgrade, so it serves the build just
+  installed instead of the process still in memory.
+- Load earlier pages of a desktop remote transcript while scrolling, and keep
+  the in-chat loading indicator to one loader.
+- Leave raw API error bodies out of the retry banner. A short reason still
+  shows, and the full text stays on the tooltip.
+- Highlight code citations by file extension.
+- Show tool rows inside an expanded Grok subagent card on the phone.
+- Load a desktop-node file preview through the pane's remote key, so the card
+  opens the same file as its header.
+- Keep sidebar loading spinners in front of the hover controls.
 
-## [0.75.2-alpha] - 2026-10-20
+## [0.75.3-alpha] - 2026-10-20
+
+### Added
+
+- Fold settled tool process into one row when a transcript window opens. The
+  detail header still counts the calls, files and diff, and expanding reads
+  them a page at a time.
+
+### Fixed
+
+- Measure a mod pane's content box, so a mod drawn at full width no longer
+  overflows by a few columns. Plain buttons in a mod sit on the same row as
+  the text beside them.
+- Show slash commands a Claude mod registers at session start, including
+  project commands such as `/ultra-config`.
+- Restart a remote node after an SSH CLI upgrade, so it serves the build just
+  installed instead of the process still in memory.
+- Load earlier pages of a desktop remote transcript while scrolling, and keep
+  the in-chat loading indicator to one loader.
+- Leave raw API error bodies out of the retry banner. A short reason still
+  shows, and the full text stays on the tooltip.
+- Highlight code citations by file extension.
+- Show tool rows inside an expanded Grok subagent card on the phone.
+- Load a desktop-node file preview through the pane's remote key, so the card
+  opens the same file as its header.
+- Keep sidebar loading spinners in front of the hover controls.
+
+## [0.75.2] - 2026-10-20
 
 ### Added
 

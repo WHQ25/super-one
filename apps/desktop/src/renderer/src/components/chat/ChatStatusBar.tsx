@@ -5,18 +5,9 @@ import { StatusBarSchedules } from './chat-status-bar/StatusBarSchedules'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Activity, GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
+import { Activity, GitBranch, GitBranchPlus, ChevronDown, Circle, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandItem,
-  CommandEmpty,
-  CommandGroup,
-  CommandSeparator,
-} from '@superone/ui/components/ui/command'
 import {
   Dialog,
   DialogContent,
@@ -33,6 +24,8 @@ import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
 import { WorkDirIndicator } from './WorkDirIndicator'
 import { useComposerLocation } from './composer-location'
+import { GitBranchMenu } from './GitBranchMenu'
+import { EMPTY_BRANCH_LISTS, readBranchLists, trackingCheckoutPlan, type GitBranchLists } from './git-branch-lists'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
@@ -286,7 +279,10 @@ export function ChatStatusBar() {
   const [isGitRepo, setIsGitRepo] = useState<boolean | null>(null)
   const [gitError, setGitError] = useState<string | null>(null)
   const [initing, setIniting] = useState(false)
-  const [branches, setBranches] = useState<string[]>([])
+  const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
+  const [branchesLoading, setBranchesLoading] = useState(false)
+  const [fetchingBranches, setFetchingBranches] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [bashOpen, setBashOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
@@ -390,23 +386,36 @@ export function ChatStatusBar() {
     isGitRepo,
   ])
 
+  const loadBranches = useCallback(() => {
+    if (!gitFolder) return
+    setBranchesLoading(true)
+    window.app.getGitBranches(gitFolder).then((lists) => {
+      setBranchLists(readBranchLists(lists))
+    }).catch(() => {
+      setBranchLists(EMPTY_BRANCH_LISTS)
+    }).finally(() => {
+      setBranchesLoading(false)
+    })
+  }, [gitFolder])
+
   const openPopover = useCallback((open: boolean) => {
     setPopoverOpen(open)
     if (open) {
       setSearch('')
-      if (gitFolder) window.app.getGitBranches(gitFolder).then(setBranches)
+      setFetchError(null)
+      loadBranches()
       // Opening the popup is the one moment the user is looking straight at branch/dirty
       // state, and it can be stale: anything that touched the repo outside SuperOne (an
       // external terminal, another editor) emits no signal we listen for. Refresh here so
       // the current-branch row and the dirty guard match reality before a checkout.
       void refreshGitInfo()
     }
-  }, [gitFolder, refreshGitInfo])
+  }, [loadBranches, refreshGitInfo])
 
-  const handleBranchSelect = useCallback(async (branch: string) => {
-    if (!gitFolder || branch === gitInfo?.branch) return
+  const handleBranchSelect = useCallback(async (branch: string, track?: string) => {
+    if (!gitFolder || (!track && branch === gitInfo?.branch)) return
     setPopoverOpen(false)
-    const result = await window.app.switchGitBranch(gitFolder, branch)
+    const result = await window.app.switchGitBranch(gitFolder, branch, track)
     if (result.ok) {
       await refreshGitInfo()
     } else {
@@ -414,6 +423,31 @@ export function ChatStatusBar() {
       setFailedCheckout({ branch, error: result.error })
     }
   }, [gitFolder, gitInfo?.branch, refreshGitInfo])
+
+  const handleTrackingSelect = useCallback((ref: string) => {
+    const plan = trackingCheckoutPlan(ref, branchLists.local)
+    if (!plan) return
+    void handleBranchSelect(plan.branch, plan.track ?? undefined)
+  }, [branchLists.local, handleBranchSelect])
+
+  const handleFetch = useCallback(async () => {
+    if (!gitFolder || fetchingBranches) return
+    setFetchingBranches(true)
+    setFetchError(null)
+    try {
+      const result = await window.app.gitFetch(gitFolder)
+      if (!result.ok) {
+        setFetchError(result.error || 'git fetch failed')
+        return
+      }
+      loadBranches()
+      await refreshGitInfo()
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'git fetch failed')
+    } finally {
+      setFetchingBranches(false)
+    }
+  }, [gitFolder, fetchingBranches, loadBranches, refreshGitInfo])
 
   const doCommitFirst = useCallback(() => {
     useChatStore.getState().setDraftText('make a commit')
@@ -444,16 +478,6 @@ export function ChatStatusBar() {
       toast.error(t('chat.git.initFailed', { error: result.error ?? '' }))
     }
   }, [gitFolder, initing, refreshGitInfo, t])
-
-  const lowerSearch = search.toLowerCase()
-  const currentMatch = gitInfo?.branch.toLowerCase().includes(lowerSearch)
-  const otherBranches = branches.filter((b) => b !== gitInfo?.branch && b.toLowerCase().includes(lowerSearch))
-  const trimmed = search.trim()
-  const normalizedTrimmed = trimmed.toLowerCase()
-  const currentBranchLower = gitInfo?.branch.toLowerCase()
-  const canCreate = trimmed.length > 0
-    && normalizedTrimmed !== currentBranchLower
-    && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
   const { bashActivities, agentActivities, workflowActivities, monitorActivities } = useMemo(
     () => collectBackgroundActivities(getActiveSessionView(scope).messages, taskProgress, sessionStatus === 'streaming'),
@@ -654,79 +678,31 @@ export function ChatStatusBar() {
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-72 p-0" align="start">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder="Search or create branch…"
-                    value={search}
-                    onValueChange={setSearch}
-                  />
-                  <CommandList>
-                    {!currentMatch && otherBranches.length === 0 && !canCreate && (
-                      <CommandEmpty>No branches found</CommandEmpty>
-                    )}
-                    {currentMatch && (
-                      <CommandGroup>
-                        <CommandItem
-                          value={gitInfo.branch}
-                          onSelect={() => handleBranchSelect(gitInfo.branch)}
-                          className="gap-2 text-xs"
-                        >
-                          <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                          <div className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate">{gitInfo.branch}</span>
-                            {dirty && (
-                              <span className="text-xs text-muted-foreground">
-                                uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
-                                {(dirty.insertions > 0 || dirty.deletions > 0) && (
-                                  <>
-                                    {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
-                                    {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
-                                  </>
-                                )}
-                              </span>
-                            )}
-                          </div>
-                          <Check className="size-3 shrink-0 text-primary" />
-                        </CommandItem>
-                      </CommandGroup>
-                    )}
-                    {otherBranches.length > 0 && (
-                      <>
-                        {currentMatch && <CommandSeparator />}
-                        <CommandGroup>
-                          {otherBranches.map((b) => (
-                            <CommandItem
-                              key={b}
-                              value={b}
-                              onSelect={() => handleBranchSelect(b)}
-                              className="gap-2 text-xs"
-                            >
-                              <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                              <span className="truncate">{b}</span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </>
-                    )}
-                    {canCreate && (
-                      <>
-                        <CommandSeparator />
-                        <CommandGroup>
-                          <CommandItem
-                            value={`__create__${trimmed}`}
-                            onSelect={() => doCreateBranch(trimmed)}
-                            className="gap-2 text-xs"
-                          >
-                            <Plus className="size-3 shrink-0 text-muted-foreground" />
-                            <span>
-                              Create branch: <strong>{trimmed}</strong>
-                            </span>
-                          </CommandItem>
-                        </CommandGroup>
-                      </>
-                    )}
-                  </CommandList>
-                </Command>
+                <GitBranchMenu
+                  current={gitInfo.branch}
+                  currentDetail={dirty ? (
+                    <span className="text-xs text-muted-foreground">
+                      uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
+                      {(dirty.insertions > 0 || dirty.deletions > 0) && (
+                        <>
+                          {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
+                          {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
+                        </>
+                      )}
+                    </span>
+                  ) : null}
+                  local={branchLists.local}
+                  tracking={branchLists.tracking}
+                  search={search}
+                  onSearchChange={setSearch}
+                  loading={branchesLoading}
+                  fetching={fetchingBranches}
+                  fetchError={fetchError}
+                  onSelect={(branch) => { void handleBranchSelect(branch) }}
+                  onSelectTracking={handleTrackingSelect}
+                  onCreate={(name) => { void doCreateBranch(name) }}
+                  onFetch={() => { void handleFetch() }}
+                />
               </PopoverContent>
             </Popover>
           </>

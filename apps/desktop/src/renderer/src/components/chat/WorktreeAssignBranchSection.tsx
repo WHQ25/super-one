@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { GitBranch, Loader2 } from 'lucide-react'
 import type { WorktreeAssignResult } from '@superone/shared/agent-types'
+import { readBranchLists } from './git-branch-lists'
 
 interface WorktreeAssignBranchSectionProps {
   folderPath: string
@@ -31,11 +32,11 @@ export function WorktreeAssignBranchSection({ folderPath, worktreePath, onAssign
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      window.app.getGitBranches(worktreePath).catch(() => [] as string[]),
+      window.app.getGitBranches(worktreePath).catch(() => null),
       window.app.getCheckedOutBranches(worktreePath).catch(() => [] as string[]),
     ]).then(([br, co]) => {
       if (cancelled) return
-      setBranches(new Set(br))
+      setBranches(new Set(readBranchLists(br).local))
       setCheckedOut(new Set(co))
     })
     return () => { cancelled = true }

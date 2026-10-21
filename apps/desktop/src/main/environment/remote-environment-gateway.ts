@@ -698,8 +698,15 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('git.diff', { projectId, ...opts })
   }
 
-  async gitBranches(projectId: string): Promise<unknown> {
-    return this.client.rpc('git.branches', { projectId })
+  async gitBranches(projectId: string, opts?: { cwd?: string }): Promise<unknown> {
+    return this.client.rpc('git.branches', {
+      projectId,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    })
+  }
+
+  async gitInit(projectId: string): Promise<unknown> {
+    return this.client.rpc('git.init', { projectId })
   }
 
   async gitWorktrees(projectId: string): Promise<unknown> {
@@ -730,13 +737,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async gitSwitchBranch(
     projectId: string,
     branch: string,
-    opts?: { create?: boolean; cwd?: string },
+    opts?: { create?: boolean; cwd?: string; startPoint?: string },
   ): Promise<unknown> {
     const method = opts?.create ? 'git.createBranch' : 'git.switchBranch'
     return this.client.rpc(method, {
       projectId,
       branch,
       ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+      ...(opts?.startPoint ? { startPoint: opts.startPoint } : {}),
     })
   }
 

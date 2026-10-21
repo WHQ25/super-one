@@ -23,6 +23,7 @@ import {
   getRemoteGitInfo,
   getRemoteGitIsRepo,
   getRemoteGitBranches,
+  remoteGitFetch,
   getRemoteWorktreeInfo,
   getRemoteGitMentionCapabilities,
   invalidateRemoteGitStatusCache,
@@ -262,21 +263,62 @@ describe('getRemoteGitInfo / isRepo / branches', () => {
     expect(await getRemoteGitIsRepo(host, 'remote:conn-1:/work/app')).toBe(true)
   })
 
-  it('lists remote branches', async () => {
-    const gitStatus = vi.fn().mockResolvedValue({ isRepo: true, branch: 'main', porcelain: '' })
+  it('lists local and tracking refs at the host path', async () => {
     const gitBranches = vi.fn().mockResolvedValue({
       current: 'main',
       branches: ['main', 'feat'],
+      tracking: ['origin/main', 'origin/feat'],
     })
     const host = mockHost({
-      getGateway: () => ({ gitStatus, gitBranches }),
+      getGateway: () => ({ gitStatus: vi.fn(), gitBranches }),
     })
-    expect(await getRemoteGitBranches(host, 'remote:conn-1:/work/app')).toEqual(['main', 'feat'])
+    expect(await getRemoteGitBranches(host, 'remote:conn-1:/work/app')).toEqual({
+      local: ['main', 'feat'],
+      tracking: ['origin/main', 'origin/feat'],
+    })
+    expect(gitBranches).toHaveBeenCalledWith('proj-1', { cwd: '/work/app' })
+  })
+
+  it('lists branches of a worktree that is not its own project', async () => {
+    const gitBranches = vi.fn(async (projectId: string) => {
+      if (projectId !== 'proj-1') throw new Error('not this repo')
+      return { branches: ['main'], tracking: ['origin/feat'] }
+    })
+    const host = mockHost({
+      getGateway: () => ({ gitStatus: vi.fn(), gitBranches }),
+      listProjects: vi.fn().mockResolvedValue([
+        { projectId: 'other', path: '/work/other', name: 'other' },
+        { projectId: 'proj-1', path: '/work/app', name: 'app' },
+      ]),
+    })
+    expect(await getRemoteGitBranches(host, 'remote:conn-1:/work/app/.worktrees/feat')).toEqual({
+      local: ['main'],
+      tracking: ['origin/feat'],
+    })
+    expect(gitBranches).toHaveBeenCalledWith('proj-1', { cwd: '/work/app/.worktrees/feat' })
+  })
+
+  it('fetches origin on the project that owns a worktree path', async () => {
+    const gitBranches = vi.fn(async (projectId: string) => {
+      if (projectId !== 'proj-1') throw new Error('not this repo')
+      return { branches: ['main'], tracking: [] }
+    })
+    const gitFetch = vi.fn().mockResolvedValue({ ok: true })
+    const host = mockHost({
+      getGateway: () => ({ gitStatus: vi.fn(), gitBranches, gitFetch }),
+      listProjects: vi.fn().mockResolvedValue([
+        { projectId: 'other', path: '/work/other', name: 'other' },
+        { projectId: 'proj-1', path: '/work/app', name: 'app' },
+      ]),
+    })
+    expect(await remoteGitFetch(host, 'remote:conn-1:/work/app/.worktrees/feat')).toEqual({ ok: true })
+    expect(gitFetch).toHaveBeenCalledWith('proj-1', 'origin')
   })
 
   it('returns null for local paths', async () => {
     expect(await getRemoteGitInfo(mockHost(), '/local/app')).toBeNull()
     expect(await getRemoteGitIsRepo(mockHost(), '/local/app')).toBeNull()
+    expect(await getRemoteGitBranches(mockHost(), '/local/app')).toBeNull()
   })
 })
 

@@ -1,6 +1,6 @@
 # Multi-host sidebar
 
-Status: in-progress · Updated: 2026-10-22
+Status: implementation complete, unpushed · Updated: 2026-10-22
 Goal: One desktop window lists and starts sessions on every connected environment, and a new session owns its worktree instead of copying the focused session's.
 Proposal: [multi-host-sidebar.md](../proposals/multi-host-sidebar.md)
 Long-term docs affected: [remote-node-service.md](../architecture/remote-node-service.md)
@@ -43,6 +43,12 @@ Open questions from the proposal, settled here.
 
 17. **`clearWorktreeMirror` only resets the file-tree cache.** It does not activate a worktree or mint a session.
 
+18. **Tracking refs stay a separate list.** Selecting `origin/x` checks out local `x`. The local branch is created with `--track origin/x` only when `x` does not already exist. The checkout command is never `git checkout origin/x`. A name with no slash (`origin`) and `origin/HEAD` are dropped. They are the remote's symbolic HEAD, not branches.
+
+19. **Fetch always uses the remote name `origin`.** There is no remote picker. A worktree lists branches with that worktree as `cwd`. Fetch updates the shared object database of the project that owns the path, including when the path is a worktree that is not its own project. Fetch and the tracking list are git features, so they stay visible with only this machine.
+
+20. **`git.init` is a node method.** Desktop `GIT_INIT` on a `remote:` key opens the project if needed and calls it. A folder that is already a repository is a no-op. The phone allowlist does not gain `git.init`. An old node that lacks the method surfaces the existing init-failed toast.
+
 ## Phases
 
 ### 1. Data layer
@@ -71,9 +77,10 @@ Open questions from the proposal, settled here.
 
 ### 4. Branches
 
-- Remote branch listing passes `cwd`.
-- Remote-tracking refs are a separate list. Fetch uses `git.fetch`. Picking `origin/x` checks out local tracking branch `x`.
-- `GIT_INIT` accepts a remote path.
+- Remote branch listing passes `cwd`, including a worktree that is not its own project.
+- Remote-tracking refs are a separate list. Fetch uses `git.fetch` on `origin`. Picking `origin/x` checks out local tracking branch `x` (decision 18).
+- `GIT_INIT` accepts a remote path and calls `git.init` (decision 20).
+- The branch chip uses `GitBranchMenu`. The workdir create-from list shows the same `{ local, tracking }` lists. Selecting a tracking ref there sets the pending base to `origin/x` and does not check the ref out.
 
 ## Progress
 
@@ -84,7 +91,7 @@ Open questions from the proposal, settled here.
 | 1 Data layer | done | `bunx vitest run` from `apps/desktop`: catalog 11, `use-sidebar-sessions` 6, `AppSidebarRefresh` 2, `AppSidebar` 29, all passed. `typecheck:web` and `typecheck:node` still fail on existing errors outside this change (`ChatStatusBar.stories.tsx` `GitDirtyStatus` null, `packages/shared/src/transcript-boundary.ts` TS2532). |
 | 2 Sidebar | done | `bunx vitest run` from `apps/desktop`: catalog 11, session-hover 1, `use-sidebar-sessions` 6, `ProjectSidebarRow` 16, `SessionRow` 3, `AppSidebarRefresh` 2, `AppSidebar` 30, all passed (69). `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
 | 3 Workdir | done | `bunx vitest run` from `apps/desktop`: session-location 4, composer-location 4, work-dir-environment 5, draft-promote 26, draft-promote-live-store 4, reset-session-worktree 2, session-lifecycle 43, session-turn 25, send-message 66, switch-session-worktree-root 1, chat-store-actions reset/worktree 7, all passed. `apps/mobile` `remote-draft-codec` 3 passed. `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
-| 4 Branches | not started | |
+| 4 Branches | done | `bunx vitest run` from `apps/desktop`: git-branch-lists 3, remote-file-tree 36, ReviewPanel 1, all passed. `bunx vitest run` from `packages/runtime`: branch-refs 5, git-branch-service 2, rpc-dispatch 35, all passed. `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. Stories: `GitBranchMenu.stories.tsx` (branches, fetching, fetch error, loading, empty, long names, narrow, dark). |
 
 ## Blockers
 

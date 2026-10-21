@@ -29,7 +29,11 @@ const DIRTY: Record<string, GitDirtyStatus | undefined> = {
 }
 
 mockIpc('app', 'getWorktreeInfo', async () => ENTRIES)
-mockIpc('app', 'getGitBranches', async () => ['main', 'develop', 'release/2.4'])
+mockIpc('app', 'getGitBranches', async () => ({
+  local: ['main', 'develop', 'release/2.4'],
+  tracking: ['origin/main', 'origin/release/2.4'],
+}))
+mockIpc('app', 'gitFetch', async () => ({ ok: true }))
 mockIpc('app', 'getCheckedOutBranches', async () => ['main'])
 mockIpc('app', 'getGitInfo', async (path: unknown) => ({ branch: 'HEAD', dirty: DIRTY[path as string] }))
 

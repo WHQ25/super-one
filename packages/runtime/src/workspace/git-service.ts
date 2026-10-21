@@ -8,6 +8,8 @@ import {
   ghRun,
   gitRun,
   fetchRemoteCommands,
+  localBranchNames,
+  trackingRefNames,
   listGitMentionRefs,
   probeGitMentionCapabilities,
   type GitMentionRunners,
@@ -191,23 +193,26 @@ export class WorkspaceGitService {
   async branches(
     projectId: string,
     absolutePath?: string | null,
-  ): Promise<{ current: string | null; branches: string[] }> {
+  ): Promise<{ current: string | null; branches: string[]; tracking: string[] }> {
     const cwd = absolutePath
       ? await this.assertRepoWorktreePath(projectId, absolutePath)
       : this.root(projectId)
     try {
       const out = await this.read(cwd, ['branch', '--format=%(refname:short)'])
-      const branches = out
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
+      const branches = localBranchNames(out)
+      let tracking: string[] = []
+      try {
+        tracking = trackingRefNames(await this.read(cwd, ['for-each-ref', '--format=%(refname:strip=2)', 'refs/remotes']))
+      } catch {
+        tracking = []
+      }
       let current: string | null = null
       try {
         current = (await this.read(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
       } catch {
         current = null
       }
-      return { current, branches }
+      return { current, branches, tracking }
     } catch (err) {
       throw Object.assign(new Error((err as Error).message || 'git branch failed'), { code: 'internal' })
     }
@@ -217,7 +222,7 @@ export class WorkspaceGitService {
   async switchBranch(
     projectId: string,
     branch: string,
-    opts?: { create?: boolean; absolutePath?: string | null },
+    opts?: { create?: boolean; absolutePath?: string | null; startPoint?: string | null },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
       const cwd = opts?.absolutePath
@@ -234,7 +239,8 @@ export class WorkspaceGitService {
               'Cannot create a new branch before the first commit. Commit once, then create the branch.',
           }
         }
-        await this.write(cwd, ['checkout', '-b', safe])
+        const start = opts.startPoint ? sanitizeGitRef(opts.startPoint) : null
+        await this.write(cwd, start ? ['checkout', '-b', safe, '--track', start] : ['checkout', '-b', safe])
       } else {
         await this.write(cwd, ['checkout', safe])
       }
@@ -268,6 +274,15 @@ export class WorkspaceGitService {
       git: (args) => this.read(cwd, args),
       gh: (args) => this.runGh(cwd, args, GH_TIMEOUT_MS),
     }
+  }
+
+  /** `git init` at the project root. A folder that is already a repository is left as it is. */
+  async init(projectId: string): Promise<{ ok: true }> {
+    const folderPath = this.root(projectId)
+    if (await this.isGitWorktree(folderPath)) return { ok: true }
+    await this.write(folderPath, ['init'])
+    this.projects.touch(projectId)
+    return { ok: true }
   }
 
   async worktrees(projectId: string): Promise<WorktreeListEntry[]> {

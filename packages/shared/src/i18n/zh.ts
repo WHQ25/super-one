@@ -2382,6 +2382,13 @@ export const zh: Messages = {
       initFailed: 'Git 初始化失败：{{error}}',
       unavailable: 'Git 不可用',
       unavailableHint: 'Git 无法读取此文件夹，点击重试。\n{{error}}',
+      fetch: '获取',
+      fetching: '正在获取...',
+      fetchFailed: '获取失败：{{error}}',
+      tracking: '远程跟踪',
+      noBranches: '没有分支',
+      searchBranches: '搜索或创建分支…',
+      createBranch: '创建分支：{{name}}',
     },
     permission: {
       sandboxNetwork: '沙盒网络',

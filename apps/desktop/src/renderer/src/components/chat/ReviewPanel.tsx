@@ -4,6 +4,7 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { X, GitCommitHorizontal, GitBranch, FileDiff, Search, Loader2 } from 'lucide-react'
 import type { GitLogEntry, CodexReviewTarget } from '@superone/shared/agent-types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
+import { readBranchLists } from './git-branch-lists'
 
 type ReviewMode = 'uncommitted' | 'branch' | 'commit'
 
@@ -57,7 +58,7 @@ export function ReviewPanel() {
       window.app.getGitInfo(reviewPath).catch(() => null),
     ]).then(([entries, gitInfo]) => {
       if (cancelled) return
-      setBranches(entries.filter((branch) => branch !== gitInfo?.branch))
+      setBranches(readBranchLists(entries).local.filter((branch) => branch !== gitInfo?.branch))
       setSelectedBranchIndex(0)
       setLoading(false)
     }).catch(() => {

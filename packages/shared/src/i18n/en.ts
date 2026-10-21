@@ -2275,6 +2275,13 @@ export type Messages = {
       initFailed: string
       unavailable: string
       unavailableHint: string
+      fetch: string
+      fetching: string
+      fetchFailed: string
+      tracking: string
+      noBranches: string
+      searchBranches: string
+      createBranch: string
     }
     permission: {
       sandboxNetwork: string
@@ -6976,6 +6983,13 @@ export const en: Messages = {
       initFailed: 'Git init failed: {{error}}',
       unavailable: 'Git Unavailable',
       unavailableHint: 'Git could not read this folder — click to retry.\n{{error}}',
+      fetch: 'Fetch',
+      fetching: 'Fetching...',
+      fetchFailed: 'Fetch failed: {{error}}',
+      tracking: 'Remote-Tracking',
+      noBranches: 'No Branches Found',
+      searchBranches: 'Search or create branch…',
+      createBranch: 'Create branch: {{name}}',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

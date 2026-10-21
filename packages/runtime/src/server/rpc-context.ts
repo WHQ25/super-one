@@ -137,8 +137,10 @@ export interface WorkspaceGitPort {
   switchBranch(
     projectId: string,
     branch: string,
-    opts?: { create?: boolean; absolutePath?: string | null },
+    opts?: { create?: boolean; absolutePath?: string | null; startPoint?: string | null },
   ): Promise<unknown>
+  /** `git init` at the project root. Already a repository: no-op. */
+  init(projectId: string): Promise<unknown>
   worktrees(projectId: string): Promise<unknown>
   checkedOutBranches(projectId: string): Promise<string[]>
   activateWorktree(

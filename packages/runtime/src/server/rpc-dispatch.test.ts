@@ -367,6 +367,37 @@ describe('a partial git port', () => {
     expect(methods).not.toContain('git.worktrees')
   })
 
+  it('inits a repository and creates a branch from a tracking ref', async () => {
+    const init = vi.fn(async () => ({ ok: true }))
+    const switchBranch = vi.fn(async () => ({ ok: true }))
+    const ctx = projectsOnlyHost({
+      client: {
+        clientSessionId: 'c1',
+        scopes: ['environment:read', 'project:read', 'workspace:read', 'workspace:write'],
+        devicePublicKeyFingerprint: 'fp',
+        devicePublicKeyPem: 'pem',
+      } as RpcContext['client'],
+      workspaceGit: {
+        servedMethods: new Set(['git.init', 'git.createBranch']),
+        init,
+        switchBranch,
+      } as unknown as RpcContext['workspaceGit'],
+    })
+    expect(await dispatchRpc('git.init', { projectId: 'p1' }, ctx)).toEqual({ result: { ok: true } })
+    expect(init).toHaveBeenCalledWith('p1')
+    const created = await dispatchRpc('git.createBranch', {
+      projectId: 'p1',
+      branch: 'feature/foo',
+      startPoint: 'origin/feature/foo',
+    }, ctx)
+    expect(created).toEqual({ result: { ok: true } })
+    expect(switchBranch).toHaveBeenCalledWith('p1', 'feature/foo', {
+      create: true,
+      absolutePath: null,
+      startPoint: 'origin/feature/foo',
+    })
+  })
+
   it('refuses and leaves out the methods a host names unserved', async () => {
     const { ctx } = worktreeOnlyHost()
     const host = { ...ctx, unservedMethods: new Set(['git.fetch']) }

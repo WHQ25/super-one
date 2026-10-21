@@ -28,6 +28,7 @@ import {
   type WorkDirEnvironmentOption,
 } from './work-dir-environment'
 import { selectionForNewSession } from '@superone/shared/session-location'
+import { EMPTY_BRANCH_LISTS, readBranchLists, type GitBranchLists } from './git-branch-lists'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
 function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -78,7 +79,9 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const [branches, setBranches] = useState<string[]>([])
+  const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
+  const [fetchingBranches, setFetchingBranches] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [mainDirty, setMainDirty] = useState<GitDirtyStatus | undefined>()
   const [wtMetas, setWtMetas] = useState<Record<string, WtMeta>>({})
@@ -156,7 +159,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
       window.app.getCheckedOutBranches(currentFolder),
     ])
     setWorktreeInfo(info)
-    setBranches(br)
+    setBranchLists(readBranchLists(br))
     setMainDirty(gitInfo?.dirty)
     setCheckedOutBranches(new Set(checkedOut))
 
@@ -323,9 +326,33 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   }, [existingEntries, wtMetas, lowerSearch])
 
   const filteredBranches = useMemo(() => {
-    if (!lowerSearch) return branches
-    return branches.filter((b) => b.toLowerCase().includes(lowerSearch))
-  }, [branches, lowerSearch])
+    if (!lowerSearch) return branchLists.local
+    return branchLists.local.filter((b) => b.toLowerCase().includes(lowerSearch))
+  }, [branchLists.local, lowerSearch])
+
+  const filteredTracking = useMemo(() => {
+    if (!lowerSearch) return branchLists.tracking
+    return branchLists.tracking.filter((ref) => ref.toLowerCase().includes(lowerSearch))
+  }, [branchLists.tracking, lowerSearch])
+
+  const handleFetch = useCallback(async () => {
+    if (!currentFolder || fetchingBranches) return
+    setFetchingBranches(true)
+    setFetchError(null)
+    try {
+      const result = await window.app.gitFetch(currentFolder)
+      if (!result.ok) {
+        setFetchError(result.error || 'git fetch failed')
+        return
+      }
+      const lists = await window.app.getGitBranches(currentFolder).catch(() => EMPTY_BRANCH_LISTS)
+      setBranchLists(readBranchLists(lists))
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'git fetch failed')
+    } finally {
+      setFetchingBranches(false)
+    }
+  }, [currentFolder, fetchingBranches])
 
   if (isGitRepo === false) {
     if (!environmentMenu.visible) {
@@ -425,7 +452,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const pendingBase = pending?.baseBranch ?? ''
   const pendingCarry = pending?.carryLocalChanges ?? false
 
-  const branchExists = pendingMode === 'branch' && pendingBranchName.trim().length > 0 && branches.includes(pendingBranchName.trim())
+  const branchExists = pendingMode === 'branch' && pendingBranchName.trim().length > 0 && branchLists.local.includes(pendingBranchName.trim())
 
   const attachUnavailableReason = (b: string): string | null => {
     if (!worktreeInfo) return null
@@ -577,15 +604,28 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
           onClone={handleCloneEnvironment}
         />
         <div className="flex flex-col">
-          <div className="border-b px-3 py-2">
+          <div className="flex items-center gap-2 border-b px-3 py-2">
             <input
               type="text"
-              className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
               placeholder={t('chat.worktree.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            <button
+              type="button"
+              disabled={fetchingBranches}
+              onClick={() => { void handleFetch() }}
+              className="shrink-0 rounded px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+            >
+              {fetchingBranches ? t('chat.git.fetching') : t('chat.git.fetch')}
+            </button>
           </div>
+          {fetchError && (
+            <div className="truncate border-b px-3 py-1.5 text-xs text-destructive" title={fetchError}>
+              {t('chat.git.fetchFailed', { error: fetchError })}
+            </div>
+          )}
           <div className="max-h-80 overflow-y-auto">
             <button
               type="button"
@@ -647,7 +687,29 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               </>
             )}
 
-            {filteredExisting.length === 0 && filteredBranches.length === 0 && search.trim().length > 0 && (
+            {filteredTracking.length > 0 && (
+              <>
+                <div className="border-t" />
+                <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.git.tracking')}</div>
+                {filteredTracking.map((ref) => {
+                  const isSelected = pendingBase === ref
+                  return (
+                    <button
+                      key={ref}
+                      type="button"
+                      onClick={() => handleSelectBase(ref)}
+                      className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent"
+                    >
+                      <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate text-left">{ref}</span>
+                      {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
+                    </button>
+                  )
+                })}
+              </>
+            )}
+
+            {filteredExisting.length === 0 && filteredBranches.length === 0 && filteredTracking.length === 0 && search.trim().length > 0 && (
               <div className="px-3 py-3 text-center text-xs text-muted-foreground">{t('chat.worktree.noMatches')}</div>
             )}
           </div>

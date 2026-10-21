@@ -290,6 +290,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'git.mentionCapabilities': (payload, ctx) => handleGitMentionCapabilities(payload, ctx),
   'git.worktreeActivate': (payload, ctx) => handleGitWorktreeActivate(payload, ctx),
   'git.fetch': (payload, ctx) => handleGitFetch(payload, ctx),
+  'git.init': (payload, ctx) => handleGitInit(payload, ctx),
   'git.worktreeCheckedOutBranches': (payload, ctx) => handleGitWorktreeCheckedOutBranches(payload, ctx),
   'git.worktreeAssignBranch': (payload, ctx) => handleGitWorktreeAssignBranch(payload, ctx),
   'git.worktreeHandoff': (payload, ctx) => handleGitWorktreeHandoff(payload, ctx),
@@ -1242,6 +1243,7 @@ async function handleGitCreateBranch(payload: unknown, ctx: RpcContext): Promise
       result: await ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
         create: true,
         absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
+        startPoint: typeof p.startPoint === 'string' ? p.startPoint : null,
       }),
     }
   } catch (err) {
@@ -1292,6 +1294,17 @@ async function handleGitWorktrees(payload: unknown, ctx: RpcContext): Promise<Rp
   const p = asRecord(payload)
   try {
     return { result: await ctx.workspaceGit.worktrees(String(p.projectId ?? '')) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitInit(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return { result: await ctx.workspaceGit.init(String(p.projectId ?? '')) }
   } catch (err) {
     return mapThrown(err)
   }

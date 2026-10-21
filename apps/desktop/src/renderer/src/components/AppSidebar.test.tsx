@@ -211,9 +211,10 @@ describe('AppSidebar interactions', () => {
 
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
-    await screen.findByText('remote-app')
+    expect(await screen.findAllByText('remote-app')).not.toHaveLength(0)
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'By Environment' }))
 
-    const power = screen.getByRole('button', { name: 'Disconnect' })
+    const power = await screen.findByRole('button', { name: 'Disconnect' })
     expect(power).toHaveClass('text-success')
     fireEvent.click(power)
 
@@ -235,12 +236,14 @@ describe('AppSidebar interactions', () => {
 
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'By Environment' }))
 
     expect(await screen.findByText('Host offline')).toBeInTheDocument()
     expect(screen.getByText('Use the power button next to the host name to connect.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
     expect(mockEnvironment.connect).not.toHaveBeenCalled()
-    expect(mockEnvironment.listProjects).not.toHaveBeenCalled()
+    expect(mockEnvironment.listProjects).not.toHaveBeenCalledWith('env-remote')
+    expect(mockEnvironment.listProjects).not.toHaveBeenCalledWith('env-remote', expect.anything())
 
     const power = screen.getByRole('button', { name: 'Connect' })
     expect(power).toHaveClass('text-destructive')
@@ -249,6 +252,39 @@ describe('AppSidebar interactions', () => {
     await waitFor(() => {
       expect(mockEnvironment.connect).toHaveBeenCalledWith('env-remote')
     })
+  })
+
+  it('replaces the host filter with group-by tabs when another machine is connected', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'local', environmentId: 'local', kind: 'local', state: 'connected', label: 'This Mac' },
+      {
+        connectionId: 'env-remote',
+        environmentId: 'env-remote',
+        kind: 'remote',
+        state: 'connected',
+        label: 'remote lab',
+        installationProfile: 'nohup',
+      },
+    ])
+    mockEnvironment.listProjects.mockImplementation(async (connectionId?: string) => (
+      connectionId === 'local'
+        ? [{ projectId: 'local-app', path: '/work/app', name: 'app', lastActiveAt: 2, repoIdentity: 'git:https://github.com/acme/app.git' }]
+        : [{ projectId: 'remote-app', path: '/srv/app', name: 'app', lastActiveAt: 1, repoIdentity: 'git:git@github.com:acme/app.git' }]
+    ))
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    expect(await screen.findByRole('tab', { name: 'By Project' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'By Environment' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'This Mac' })).toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: 'app' }))
+    expect(await screen.findByText('remote lab')).toBeInTheDocument()
+    expect(screen.getByText('This Mac')).toBeInTheDocument()
   })
 
   it('hides the host power toggle while this computer is selected', async () => {

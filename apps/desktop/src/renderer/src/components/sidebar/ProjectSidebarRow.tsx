@@ -18,6 +18,7 @@ import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBran
 import { selectSessionTitle } from '@/lib/session-title'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
+import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { ProjectHistoryList } from './ProjectHistoryList'
 
 function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphKey: unknown }) {
@@ -165,6 +166,13 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   onEditProject: (folder: RecentFolder) => void
   onRemoveProject: (folder: RecentFolder) => void
   onNewSession: (folderPath: string) => void
+  /** Dims the checkout and its sessions when that environment is offline. */
+  offline?: boolean
+  /** Hover card fields. The row never fetches them. */
+  sessionPresentation?: (session: SessionHistoryEntry, sessions: SessionHistoryEntry[]) => {
+    hover?: SessionHoverModel | null
+    environmentOffline?: boolean
+  }
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
@@ -184,6 +192,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onRenameSession,
   onDeleteSession,
   onNewSession,
+  offline = false,
+  sessionPresentation,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
   const foregroundSessionId = useChatStore((state) =>
@@ -457,7 +467,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             }}
             className={cn(
               'group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors',
-              folder.missing ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-hover'
+              folder.missing || offline ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-hover',
+              offline && !folder.missing && 'cursor-pointer'
             )}
           >
             <ChevronRight className={cn(
@@ -626,6 +637,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     onHideSession={onHideSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
+                    {...(sessionPresentation?.(parent, allSessions) ?? {})}
+                    environmentOffline={offline || sessionPresentation?.(parent, allSessions)?.environmentOffline}
                   />
                   {childrenToShow.map((child) => (
                     <SessionRow
@@ -639,6 +652,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       onHideSession={onHideSession}
                       onRenameSession={onRenameSession}
                       onDeleteSession={onDeleteSession}
+                      {...(sessionPresentation?.(child, allSessions) ?? {})}
+                      environmentOffline={offline || sessionPresentation?.(child, allSessions)?.environmentOffline}
                     />
                   ))}
                 </div>

@@ -168,6 +168,41 @@ export const Opening: Story = {
   },
 }
 
+export const OfflineEnvironment: Story = {
+  name: 'Offline environment dims the row',
+  render: () => (
+    <div className="w-[240px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <SessionRow
+        session={entry('off', 'Nightly CI failure', { gitBranch: 'main' })}
+        folderPath={FOLDER}
+        environmentOffline
+        {...noop}
+      />
+    </div>
+  ),
+}
+
+export const LongTitleNarrow: Story = {
+  render: () => (
+    <div className="w-[180px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <SessionRow
+        session={entry('long', 'Investigate the nightly failure that only shows up on the remote desktop')}
+        folderPath={FOLDER}
+        {...noop}
+      />
+    </div>
+  ),
+}
+
+export const Dark: Story = {
+  globals: { theme: 'dark' },
+  render: () => (
+    <div className="w-[240px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <SessionRow session={entry('dark', 'Dark sidebar row')} folderPath={FOLDER} {...noop} />
+    </div>
+  ),
+}
+
 export const Selected: Story = {
   render: () => (
     <Preview

@@ -63,12 +63,16 @@ export interface SidebarSettings {
   sort: SidebarSort
   /** `ProjectRef` string keys (`environmentId:projectId`) plus legacy path keys. */
   expandedProjectKeys: string[]
-  expandedEnvironmentIds: string[]
+  /**
+   * Environments the user collapsed. Empty means every environment is open,
+   * which is the default the first time environment mode is shown.
+   */
+  collapsedEnvironmentIds: string[]
 }
 
 export const DEFAULT_SIDEBAR_SETTINGS: SidebarSettings = {
   groupBy: 'project',
   sort: 'recent',
   expandedProjectKeys: [],
-  expandedEnvironmentIds: [],
+  collapsedEnvironmentIds: [],
 }

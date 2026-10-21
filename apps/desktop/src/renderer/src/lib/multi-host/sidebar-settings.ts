@@ -44,7 +44,7 @@ export function parseSidebarSettings(raw: string | null): SidebarSettings {
       groupBy: isGroupBy(parsed.groupBy) ? parsed.groupBy : DEFAULT_SIDEBAR_SETTINGS.groupBy,
       sort: isSort(parsed.sort) ? parsed.sort : DEFAULT_SIDEBAR_SETTINGS.sort,
       expandedProjectKeys: stringList(parsed.expandedProjectKeys),
-      expandedEnvironmentIds: stringList(parsed.expandedEnvironmentIds),
+      collapsedEnvironmentIds: stringList(parsed.collapsedEnvironmentIds),
     }
   } catch {
     return { ...DEFAULT_SIDEBAR_SETTINGS }
@@ -60,6 +60,6 @@ export function writeSidebarSettings(storage: SidebarSettingsStorage, settings: 
     groupBy: settings.groupBy,
     sort: settings.sort,
     expandedProjectKeys: settings.expandedProjectKeys.slice(0, MAX_EXPANDED),
-    expandedEnvironmentIds: settings.expandedEnvironmentIds.slice(0, MAX_EXPANDED),
+    collapsedEnvironmentIds: settings.collapsedEnvironmentIds.slice(0, MAX_EXPANDED),
   }))
 }

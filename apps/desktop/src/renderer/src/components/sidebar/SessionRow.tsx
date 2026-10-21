@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone, Unplug } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
@@ -22,6 +22,8 @@ import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
+import { SessionHoverCard } from './multi-host/SessionHoverCard'
+import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
@@ -76,6 +78,10 @@ interface SessionRowProps extends SessionRowCallbacks {
   hasChildren?: boolean
   childrenCollapsed?: boolean
   onToggleChildren?: () => void
+  /** Built from the session list. Absent on the single-host sidebar. */
+  hover?: SessionHoverModel | null
+  /** The session's environment is offline. Dims the row; no extra request. */
+  environmentOffline?: boolean
 }
 
 export const SessionRow = memo(function SessionRow({
@@ -87,6 +93,8 @@ export const SessionRow = memo(function SessionRow({
   hasChildren = false,
   childrenCollapsed = false,
   onToggleChildren,
+  hover = null,
+  environmentOffline = false,
   onSwitchSession,
   onPinSession,
   onHideSession,
@@ -188,7 +196,7 @@ export const SessionRow = memo(function SessionRow({
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
               isSessionActive ? 'bg-sidebar-accent sidebar-selected' : 'hover:bg-sidebar-hover',
-              session.isHidden && 'opacity-50',
+              (session.isHidden || environmentOffline) && 'opacity-50',
             )}
           >
             {childSession && <CornerDownRight className="size-3 shrink-0 text-sidebar-foreground/45" />}
@@ -229,10 +237,22 @@ export const SessionRow = memo(function SessionRow({
                 }
               </span>
             </div>
-            {animateTitle
-              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
-              : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+            {hover
+              ? (
+                <SessionHoverCard model={hover} liveStatus={status} unseen={isUnseen}>
+                  {animateTitle
+                    ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
+                    : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+                  }
+                </SessionHoverCard>
+              )
+              : animateTitle
+                ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
+                : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
+            {environmentOffline && (
+              <Unplug className="size-3 shrink-0 text-sidebar-foreground/70" aria-label={t('sidebar.sessionOffline')} />
+            )}
             <div className="ml-auto flex shrink-0 items-center">
               {/* Why this row is at the top of the list. Always visible — the
                   hover-revealed pin/expand buttons beside it are actions, this

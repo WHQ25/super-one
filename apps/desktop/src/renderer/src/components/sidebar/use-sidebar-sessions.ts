@@ -22,10 +22,12 @@ function visibleRootCount(sessions: SessionHistoryEntry[]): number {
   return sessions.filter((session) => !session.isHidden && !session.parentSessionId).length
 }
 
-export function useSidebarSessions({ currentFolder, selectedHostConnectionId, hostProjects }: {
+export function useSidebarSessions({ currentFolder, selectedHostConnectionId, hostProjects, pinnedConnectionIds }: {
   currentFolder: string | null
   selectedHostConnectionId: string
   hostProjects: RecentFolder[]
+  /** When set, pins are one flat list across these environments. */
+  pinnedConnectionIds?: string[]
 }) {
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [folderSessionsHaveMore, setFolderSessionsHaveMore] = useState<Record<string, boolean>>({})
@@ -148,19 +150,34 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
    * a request resolves, so a slow node answering after the user switched away
    * cannot paint its rows under another host's label.
    */
-  const pinnedHostRef = useRef(selectedHostConnectionId)
+  const pinnedKey = (pinnedConnectionIds && pinnedConnectionIds.length > 0
+    ? pinnedConnectionIds
+    : [selectedHostConnectionId]
+  ).join('\n')
+  const pinnedHostRef = useRef(pinnedKey)
   const refreshPinned = useCallback(() => {
-    const connectionId = selectedHostConnectionId
-    window.environment
-      .listPinnedSessions(connectionId)
-      .then((rows) => {
-        if (pinnedHostRef.current !== connectionId) return
-        setPinnedSessions(rows)
-      })
-      .catch(() => {
-        if (pinnedHostRef.current === connectionId) setPinnedSessions([])
-      })
-  }, [selectedHostConnectionId])
+    const key = pinnedKey
+    const targets = key.split('\n').filter((id) => id.length > 0)
+    if (targets.length === 1) {
+      const connectionId = targets[0]!
+      window.environment
+        .listPinnedSessions(connectionId)
+        .then((rows) => {
+          if (pinnedHostRef.current !== key) return
+          setPinnedSessions(rows)
+        })
+        .catch(() => {
+          if (pinnedHostRef.current === key) setPinnedSessions([])
+        })
+      return
+    }
+    void Promise.all(targets.map((connectionId) => (
+      window.environment.listPinnedSessions(connectionId).catch(() => [] as PinnedSessionEntry[])
+    ))).then((groups) => {
+      if (pinnedHostRef.current !== key) return
+      setPinnedSessions(groups.flat())
+    })
+  }, [pinnedKey])
 
   const refreshFolderSessions = useCallback((folderPath: string) => {
     loadFolderSessions(folderPath, 'refresh')
@@ -170,10 +187,10 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   // point at projects on a different machine, so leaving them up while the new
   // list loads would offer rows the selected host does not have.
   useEffect(() => {
-    pinnedHostRef.current = selectedHostConnectionId
+    pinnedHostRef.current = pinnedKey
     setPinnedSessions([])
     refreshPinned()
-  }, [selectedHostConnectionId, refreshPinned])
+  }, [pinnedKey, refreshPinned])
 
   const pinnedStatuses = useChatStore(useShallow((s) => {
     const map: Record<string, string> = {}

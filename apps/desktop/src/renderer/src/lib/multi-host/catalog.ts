@@ -71,7 +71,7 @@ function bucketBase(
   item: Pick<EnvironmentListItem, 'environmentId' | 'connectionId' | 'label' | 'kind' | 'installationProfile' | 'state' | 'desired' | 'nodeUpgrade'>,
 ): Omit<EnvironmentBucket, 'projectsStatus' | 'projectsError' | 'checkouts'> {
   return {
-    environmentId: item.environmentId,
+    environmentId: item.environmentId || item.connectionId,
     connectionId: item.connectionId,
     label: item.label,
     kind: environmentKindOf(item),

@@ -25,6 +25,8 @@ Open questions from the proposal, settled here.
 
 8. **The file-tree root may still cache the focused session.** `useAppStore._worktrees` cannot be deleted outright: the app store cannot import the chat store synchronously, and the file tree reads that map. New sessions and drafts never read it. The session's own `{ environmentId, selection }` is the source. The map is updated from the focused session after that session is already active, and it is cleared in the same synchronous turn that a new session becomes active.
 
+9. **A merged repository is a header plus one row per checkout.** `ProjectSidebarRow` binds every session to `folder.path`, so one merged row cannot own several checkouts. The header key is `group:${mergeKey}` and its edit and remove actions are the submenu from decision 1. Each nested row is labeled with the environment name. A repository with one checkout stays a single row. `collapsedEnvironmentIds` is stored instead of an expanded list: empty means every environment starts open, and nothing has been released with the old key.
+
 ## Phases
 
 ### 1. Data layer
@@ -37,10 +39,10 @@ Open questions from the proposal, settled here.
 
 ### 2. Sidebar
 
-- Project mode merges by normalized `repoIdentity`. Environment mode nests environment → project → session.
-- Session hover card from list data only.
-- Offline rows dimmed, with a disconnected icon.
-- Host filter removed. Group-by tabs appear only when multi-host chrome is on.
+- Project mode merges by normalized `repoIdentity` into a header plus one `ProjectSidebarRow` per checkout (decision 9). Environment mode nests environment → project → session.
+- Session hover card from list data only. No RPC on hover.
+- Offline rows dimmed, with a disconnected icon. Power and refresh sit on the environment header.
+- Host filter removed. Group-by tabs appear only when multi-host chrome is on. With the flag off, a selected remote host still has its refresh and power buttons.
 
 ### 3. Workdir picker
 
@@ -64,7 +66,7 @@ Open questions from the proposal, settled here.
 | Proposal copied | done | `9c893f67d` |
 | Plan | done | `75728fd9d` |
 | 1 Data layer | done | `bunx vitest run` from `apps/desktop`: catalog 11, `use-sidebar-sessions` 6, `AppSidebarRefresh` 2, `AppSidebar` 29, all passed. `typecheck:web` and `typecheck:node` still fail on existing errors outside this change (`ChatStatusBar.stories.tsx` `GitDirtyStatus` null, `packages/shared/src/transcript-boundary.ts` TS2532). |
-| 2 Sidebar | not started | |
+| 2 Sidebar | done | `bunx vitest run` from `apps/desktop`: catalog 11, session-hover 1, `use-sidebar-sessions` 6, `ProjectSidebarRow` 16, `SessionRow` 3, `AppSidebarRefresh` 2, `AppSidebar` 30, all passed (69). `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
 | 3 Workdir | not started | |
 | 4 Branches | not started | |
 

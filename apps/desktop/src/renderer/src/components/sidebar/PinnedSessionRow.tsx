@@ -1,6 +1,6 @@
 import { memo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Pin } from 'lucide-react'
+import { Loader2, Pin, Unplug } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
@@ -11,6 +11,8 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
+import { SessionHoverCard } from './multi-host/SessionHoverCard'
+import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 interface PinnedSessionRowProps extends SessionMenuCallbacks {
   session: PinnedSessionEntry
@@ -19,6 +21,8 @@ interface PinnedSessionRowProps extends SessionMenuCallbacks {
   isUnseen: boolean
   /** Replaces the glyph in front of the title while this session is opening. */
   opening?: boolean
+  hover?: SessionHoverModel | null
+  environmentOffline?: boolean
 }
 
 export const PinnedSessionRow = memo(function PinnedSessionRow({
@@ -27,6 +31,8 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   status,
   isUnseen,
   opening = false,
+  hover = null,
+  environmentOffline = false,
   onSwitchSession,
   onPinSession,
   onHideSession,
@@ -81,7 +87,10 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
           ref={rowRef}
           {...dragHandlers}
           onClick={() => onSwitchSession(session.folderPath, session.sessionId)}
-          className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-hover"
+          className={cn(
+            'group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-hover',
+            environmentOffline && 'opacity-50',
+          )}
         >
           {(opening || HarnessIcon) && (
             <span className="flex size-[22px] shrink-0 items-center justify-center">
@@ -91,8 +100,16 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
             </span>
           )}
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <SessionTitleAnimated projectPath={session.folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+            {hover
+              ? (
+                <SessionHoverCard model={hover} liveStatus={status} unseen={isUnseen} triggerClassName="min-w-0">
+                  <SessionTitleAnimated projectPath={session.folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+                </SessionHoverCard>
+              )
+              : <SessionTitleAnimated projectPath={session.folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+            }
             <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{session.folderName}</span>
+            {environmentOffline && <Unplug className="size-3 shrink-0" aria-label={t('sidebar.sessionOffline')} />}
           </div>
           <button
             onClick={(e) => {

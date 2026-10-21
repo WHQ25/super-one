@@ -38,11 +38,11 @@ export const useMultiHostSidebarStore = create<MultiHostSidebarState>((set) => (
       : { settings: { ...state.settings, expandedProjectKeys: keys } }
   )),
   toggleEnvironmentExpanded: (environmentId) => set((state) => {
-    const current = state.settings.expandedEnvironmentIds
-    const expandedEnvironmentIds = current.includes(environmentId)
+    const current = state.settings.collapsedEnvironmentIds
+    const collapsedEnvironmentIds = current.includes(environmentId)
       ? current.filter((id) => id !== environmentId)
       : [...current, environmentId]
-    return { settings: { ...state.settings, expandedEnvironmentIds } }
+    return { settings: { ...state.settings, collapsedEnvironmentIds } }
   }),
   replaceEnvironments: (environments) => set({ environments }),
   beginSessions: (key) => set((state) => ({

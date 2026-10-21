@@ -47,12 +47,12 @@ describe('sidebar settings', () => {
       groupBy: 'environment',
       sort: 'added',
       expandedProjectKeys: ['local:p1', 4],
-      expandedEnvironmentIds: ['env-1'],
+      collapsedEnvironmentIds: ['env-1'],
     }))).toEqual({
       groupBy: 'environment',
       sort: 'added',
       expandedProjectKeys: ['local:p1'],
-      expandedEnvironmentIds: ['env-1'],
+      collapsedEnvironmentIds: ['env-1'],
     })
     expect(parseSidebarSettings('not-json').sort).toBe('recent')
     expect(parseSidebarSettings(JSON.stringify({ sort: 'alphabetical' })).sort).toBe('recent')
@@ -64,7 +64,7 @@ describe('sidebar settings', () => {
       groupBy: 'environment',
       sort: 'added',
       expandedProjectKeys: ['local:p1'],
-      expandedEnvironmentIds: [],
+      collapsedEnvironmentIds: [],
     })
     expect(readSidebarSettings(storage).groupBy).toBe('environment')
     expect(readSidebarSettings(storage).sort).toBe('added')

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, ChevronDown, RotateCw, TriangleAlert } from 'lucide-react'
+import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
@@ -41,7 +41,14 @@ import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { useScheduledSendsSync } from '@/hooks/useScheduledSendsSync'
 import { useDraftsStore } from '@/stores/drafts'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
-import type { SidebarSort } from '@/lib/multi-host/types'
+import type { EnvironmentConnection, SidebarSort } from '@/lib/multi-host/types'
+import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
+import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
+import { buildSessionHover } from '@/lib/multi-host/session-hover'
+import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
+import { SidebarGroupTabs } from '@/components/sidebar/multi-host/SidebarGroupTabs'
+import { MultiHostProjectList } from '@/components/sidebar/multi-host/MultiHostProjectList'
+import { useLoadMultiHostCatalog } from '@/components/sidebar/multi-host/use-load-multi-host-catalog'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
@@ -150,17 +157,38 @@ export const AppSidebar = memo(function AppSidebar() {
    */
   const handledOutdatedHostsRef = useRef<Set<string>>(new Set())
   const [openProjectDialogOpen, setOpenProjectDialogOpen] = useState(false)
+  const [addConnectionId, setAddConnectionId] = useState('local')
   /** Connect or disconnect requested from the host-name power button. */
   const [connectionBusy, setConnectionBusy] = useState<'connect' | 'disconnect' | null>(null)
+  const [connectionBusyId, setConnectionBusyId] = useState<string | null>(null)
+  const [refreshingConnectionId, setRefreshingConnectionId] = useState<string | null>(null)
   const [openingSession, setOpeningSession] = useState<{ folderPath: string; sessionId: string } | null>(null)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const expandedFoldersRef = useRef(expandedFolders)
+  const groupBy = useMultiHostSidebarStore((s) => s.settings.groupBy)
+  const collapsedEnvironmentIds = useMultiHostSidebarStore((s) => s.settings.collapsedEnvironmentIds)
+  const environments = useMultiHostSidebarStore((s) => s.environments)
+  const multiHostChrome = multiHostChromeVisible(experimentalRemoteNodesEnabled, hostItems)
+  useLoadMultiHostCatalog(experimentalRemoteNodesEnabled)
+  const catalogFolders = useMemo(
+    () => environments.flatMap((bucket) => bucket.checkouts.map((checkout) => checkoutToRecentFolder(checkout))),
+    [environments],
+  )
+  const sessionProjects = multiHostChrome && catalogFolders.length > 0 ? catalogFolders : hostProjects
+  const pinnedConnectionIds = multiHostChrome
+    ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
+    : undefined
   const {
     currentActiveSid, folderSessions, folderSessionsHaveMore, loadingFolders, folderSessionsRef,
     pinnedSessions, pinnedStatuses, loadFolderSessions, loadMoreFolderSessions,
     refreshFolderSessions, refreshPinned, handlePinSession, handleHideSession,
     executeDeleteSession,
-  } = useSidebarSessions({ currentFolder, selectedHostConnectionId, hostProjects })
+  } = useSidebarSessions({
+    currentFolder,
+    selectedHostConnectionId,
+    hostProjects: sessionProjects,
+    pinnedConnectionIds,
+  })
   const [skipConfirm, setSkipConfirm] = useState(false)
 
   // Environments for the host switcher (local + paired remotes).
@@ -381,56 +409,54 @@ export const AppSidebar = memo(function AppSidebar() {
     [hostItems, experimentalRemoteNodesEnabled],
   )
 
-  // Host switcher chrome is part of the remote-nodes experiment (even with zero remotes).
-  const showHostSwitcher = experimentalRemoteNodesEnabled
-
   // Keep the node on the desktop's CLI version without asking. Releases are
   // frequent and a stale node breaks model discovery and agent turns outright,
   // so the user is told what is happening rather than asked to approve it.
   useEffect(() => {
-    if (selectedHostConnectionId === 'local') return
-    const host = remoteHosts.find((h) => h.connectionId === selectedHostConnectionId)
-    const upgrade = host?.nodeUpgrade
-    if (!upgrade) return
-    if (handledOutdatedHostsRef.current.has(host!.connectionId)) return
-    handledOutdatedHostsRef.current.add(host!.connectionId)
+    for (const host of remoteHosts) {
+      const upgrade = host.nodeUpgrade
+      if (!upgrade) continue
+      if (handledOutdatedHostsRef.current.has(host.connectionId)) continue
+      handledOutdatedHostsRef.current.add(host.connectionId)
 
-    if (!upgrade.canUpgradeOverSsh) {
-      toast.warning(
-        t('sidebar.hostOutdatedManual', { label: host!.label, ...nodeUpgradeVersions(upgrade, t) }),
-      )
-      return
-    }
-
-    const connectionId = host!.connectionId
-    setUpgradingHostId(connectionId)
-    const toastId = toast.loading(
-      t('sidebar.hostUpgrading', { label: host!.label, ...nodeUpgradeVersions(upgrade, t) }),
-    )
-    void (async () => {
-      try {
-        const result = await window.environment.upgradeNode(connectionId)
-        toast.success(
-          t('sidebar.hostUpgraded', { label: host!.label, version: result.version }),
-          { id: toastId },
+      if (!upgrade.canUpgradeOverSsh) {
+        toast.warning(
+          t('sidebar.hostOutdatedManual', { label: host.label, ...nodeUpgradeVersions(upgrade, t) }),
         )
-        for (const w of result.warnings) toast.warning(w)
-      } catch (err) {
-        handledOutdatedHostsRef.current.delete(connectionId)
-        toast.error(
-          t('sidebar.hostUpgradeFailed', {
-            label: host!.label,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-          { id: toastId },
-        )
-      } finally {
-        setUpgradingHostId((current) => (current === connectionId ? null : current))
-        // Node restarted underneath us — reload its project list on the new socket.
-        refreshHostProjectsRaw({ force: true })
+        continue
       }
-    })()
-  }, [selectedHostConnectionId, remoteHosts, t, refreshHostProjectsRaw])
+
+      const connectionId = host.connectionId
+      setUpgradingHostId(connectionId)
+      const toastId = toast.loading(
+        t('sidebar.hostUpgrading', { label: host.label, ...nodeUpgradeVersions(upgrade, t) }),
+      )
+      void (async () => {
+        try {
+          const result = await window.environment.upgradeNode(connectionId)
+          toast.success(
+            t('sidebar.hostUpgraded', { label: host.label, version: result.version }),
+            { id: toastId },
+          )
+          for (const w of result.warnings) toast.warning(w)
+        } catch (err) {
+          handledOutdatedHostsRef.current.delete(connectionId)
+          toast.error(
+            t('sidebar.hostUpgradeFailed', {
+              label: host.label,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+            { id: toastId },
+          )
+        } finally {
+          setUpgradingHostId((current) => (current === connectionId ? null : current))
+          // Node restarted underneath us — reload its project list on the new socket.
+          refreshHostProjectsRaw({ force: true })
+          void refreshEnvironmentCheckouts(connectionId).catch(() => {})
+        }
+      })()
+    }
+  }, [remoteHosts, t, refreshHostProjectsRaw])
 
   const selectedHostLabel = useMemo(() => {
     if (selectedHostConnectionId === 'local') return localHostLabel
@@ -462,10 +488,11 @@ export const AppSidebar = memo(function AppSidebar() {
     setRemoveBusy(true)
     setRemoveError(null)
     try {
-      if (selectedHostConnectionId === 'local') {
+      const remoteTarget = parseRemoteProjectKey(removeTarget.path)
+      if (!remoteTarget) {
         await removeRecentFolder(removeTarget.path)
       } else {
-        await window.environment.removeProject(selectedHostConnectionId, {
+        await window.environment.removeProject(remoteTarget.connectionId, {
           projectId: removeTarget.id,
           path: removeTarget.path,
         })
@@ -533,7 +560,7 @@ export const AppSidebar = memo(function AppSidebar() {
       // Same lifecycle as local: open project → mint renderer draft only.
       // The host creates the session on its first send (ensureHostSession) with the UI harness.
       void (async () => {
-        const project = hostProjects.find((p) => p.path === folderPath)
+        const project = sessionProjects.find((p) => p.path === folderPath)
         await selectProject(folderPath, {
           connectionId: remote.connectionId,
           projectId: project?.id,
@@ -546,7 +573,50 @@ export const AppSidebar = memo(function AppSidebar() {
       return
     }
     void selectProject(folderPath).then(createNewSession)
-  }, [selectProject, createNewSession, hostProjects])
+  }, [selectProject, createNewSession, sessionProjects])
+
+  const refreshOneEnvironment = useCallback((connectionId: string) => {
+    setRefreshingConnectionId(connectionId)
+    void refreshEnvironmentCheckouts(connectionId).catch((err: unknown) => {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }).finally(() => {
+      setRefreshingConnectionId((current) => (current === connectionId ? null : current))
+    })
+  }, [])
+
+  const toggleEnvironmentConnection = useCallback((connectionId: string, connection: EnvironmentConnection) => {
+    if (connectionBusyId) return
+    const turningOff = connection !== 'offline'
+    setConnectionBusyId(connectionId)
+    const request = turningOff
+      ? window.environment.disconnect(connectionId)
+      : window.environment.connect(connectionId).then(() => undefined)
+    void request.catch((err: unknown) => {
+      toast.error(t(turningOff ? 'sidebar.hostDisconnectFailed' : 'sidebar.hostConnectFailed', {
+        message: err instanceof Error ? err.message : String(err),
+      }))
+    }).finally(() => {
+      setConnectionBusyId((current) => (current === connectionId ? null : current))
+    })
+  }, [connectionBusyId, t])
+
+  const pinHover = (session: (typeof pinnedSessions)[number]) => {
+    if (!multiHostChrome) return null
+    for (const bucket of environments) {
+      const checkout = bucket.checkouts.find((item) => item.pathKey === session.folderPath)
+      if (checkout) return buildSessionHover({ session, checkout, bucket })
+    }
+    return null
+  }
+  const pinOffline = (session: (typeof pinnedSessions)[number]) => (
+    multiHostChrome && environments.some((bucket) => (
+      bucket.connection === 'offline' && bucket.checkouts.some((item) => item.pathKey === session.folderPath)
+    ))
+  )
+
+  const draftConnectionIds = multiHostChrome
+    ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
+    : [selectedHostConnectionId]
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -608,6 +678,8 @@ export const AppSidebar = memo(function AppSidebar() {
                 status={pinStatus}
                 isUnseen={pinUnseenFlag === '1'}
                 opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
+                hover={pinHover(s)}
+                environmentOffline={pinOffline(s)}
                 onSwitchSession={handleSwitchSession}
                 onPinSession={handlePinSession}
                 onHideSession={handleHideSession}
@@ -626,49 +698,13 @@ export const AppSidebar = memo(function AppSidebar() {
       )}
 
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
-      {/* Host switcher — remote hosts only when experimentalRemoteNodesEnabled */}
       <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
         <div className="min-w-0 max-w-[70%]">
-          {showHostSwitcher ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex min-w-0 items-center gap-1 rounded-md px-2.5 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
-                >
-                  <span className="truncate">{selectedHostLabel}</span>
-                  <ChevronDown className="size-3.5 shrink-0 opacity-70" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuItem
-                  className="text-xs"
-                  onClick={() => setSelectedHostConnectionId('local')}
-                >
-                  {localHostLabel}
-                </DropdownMenuItem>
-                {remoteHosts.map((host) => (
-                  <DropdownMenuItem
-                    key={host.connectionId}
-                    className="text-xs"
-                    onClick={() => setSelectedHostConnectionId(host.connectionId)}
-                  >
-                    <span className="truncate">{host.label}</span>
-                    {/* Upgradable nodes fix themselves on select; only flag the
-                        ones that need the user to go run npm on the host. */}
-                    {host.nodeUpgrade && !host.nodeUpgrade.canUpgradeOverSsh && (
-                      <TriangleAlert
-                        className="ml-auto size-3 shrink-0 text-warning"
-                        aria-label={t('sidebar.hostOutdatedManual', {
-                          label: host.label,
-                          ...nodeUpgradeVersions(host.nodeUpgrade, t),
-                        })}
-                      />
-                    )}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {multiHostChrome ? (
+            <SidebarGroupTabs
+              value={groupBy}
+              onChange={(value) => useMultiHostSidebarStore.getState().setGroupBy(value)}
+            />
           ) : (
             <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
               {t('sidebar.projects')}
@@ -679,7 +715,10 @@ export const AppSidebar = memo(function AppSidebar() {
           <IconButton
             size="sm"
             tooltip={t('sidebar.addProject.title')}
-            onClick={() => setOpenProjectDialogOpen(true)}
+            onClick={() => {
+              setAddConnectionId(multiHostChrome ? 'local' : selectedHostConnectionId)
+              setOpenProjectDialogOpen(true)
+            }}
           >
             <Plus />
           </IconButton>
@@ -701,7 +740,7 @@ export const AppSidebar = memo(function AppSidebar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {selectedHostConnectionId !== 'local' && (
+          {!multiHostChrome && selectedHostConnectionId !== 'local' && (
             <>
               <IconButton
                 size="sm"
@@ -722,9 +761,48 @@ export const AppSidebar = memo(function AppSidebar() {
         </div>
       </div>
 
-      {/* Project list + drafts (same level) for the selected host */}
       <div className="min-h-0 flex-1">
-        {selectedHostConnectionId !== 'local' && hostProjectsError && !hostTurnedOff ? (
+        {multiHostChrome ? (
+          environments.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
+              {t('common.loading')}
+            </div>
+          ) : (
+            <ScrollArea className="h-full">
+              <MultiHostProjectList
+                environments={environments}
+                groupBy={groupBy}
+                sort={sortMode}
+                expandedProjectKeys={expandedFolders}
+                collapsedEnvironmentIds={collapsedEnvironmentIds}
+                folderSessions={folderSessions}
+                folderSessionsHaveMore={folderSessionsHaveMore}
+                loadingFolders={loadingFolders}
+                openingSession={openingSession}
+                draftConnectionIds={draftConnectionIds}
+                onToggleProject={toggleExpand}
+                onToggleEnvironment={(environmentId) => useMultiHostSidebarStore.getState().toggleEnvironmentExpanded(environmentId)}
+                onLoadMoreSessions={loadMoreFolderSessions}
+                onSwitchSession={handleSwitchSession}
+                onPinSession={handlePinSession}
+                onHideSession={handleHideSession}
+                onRenameSession={handleRequestRenameSession}
+                onDeleteSession={handleRequestDeleteSession}
+                onEditProject={setEditProjectTarget}
+                onRemoveProject={handleRemoveProject}
+                onNewSession={handleNewSession}
+                onRefreshEnvironment={refreshOneEnvironment}
+                onToggleConnection={toggleEnvironmentConnection}
+                onAddProject={(connectionId) => {
+                  setAddConnectionId(connectionId)
+                  setOpenProjectDialogOpen(true)
+                }}
+                connectionBusyId={connectionBusyId}
+                refreshingConnectionId={refreshingConnectionId}
+              />
+            </ScrollArea>
+          )
+        ) : selectedHostConnectionId !== 'local' && hostProjectsError && !hostTurnedOff ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs text-sidebar-foreground/70">
             <Button
               variant="outline"
@@ -804,10 +882,10 @@ export const AppSidebar = memo(function AppSidebar() {
       <AddProjectDialog
         open={openProjectDialogOpen}
         onOpenChange={setOpenProjectDialogOpen}
-        connectionId={selectedHostConnectionId}
-        hostLabel={selectedHostLabel}
+        connectionId={addConnectionId}
+        hostLabel={addConnectionId === 'local' ? localHostLabel : (remoteHosts.find((host) => host.connectionId === addConnectionId)?.label ?? selectedHostLabel)}
         onOpened={(project) => {
-          if (selectedHostConnectionId === 'local') {
+          if (addConnectionId === 'local') {
             void fetchRecentFolders()
             void selectProject(project.path)
           } else {
@@ -816,8 +894,8 @@ export const AppSidebar = memo(function AppSidebar() {
             void import('@/lib/host-projects-bus').then(({ notifyHostProjectsChanged }) => {
               notifyHostProjectsChanged()
             })
-            void selectProject(remoteProjectKey(selectedHostConnectionId, project.path), {
-              connectionId: selectedHostConnectionId,
+            void selectProject(remoteProjectKey(addConnectionId, project.path), {
+              connectionId: addConnectionId,
               projectId: project.projectId,
             })
           }

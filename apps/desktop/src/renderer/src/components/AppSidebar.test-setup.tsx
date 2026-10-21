@@ -66,12 +66,13 @@ export const mockEnvironment = {
   connect: vi.fn(async () => {}),
   disconnect: vi.fn(async () => {}),
   upgradeNode: vi.fn(async () => ({ version: '0.50.3-alpha', warnings: [] as string[] })),
-  listProjects: vi.fn(async (): Promise<Array<{
+  listProjects: vi.fn(async (_connectionId?: string, _options?: { refresh?: boolean }): Promise<Array<{
     projectId: string
     path: string
     name: string
     lastActiveAt?: number
     missing?: boolean
+    repoIdentity?: string
   }>> => []),
   listSessions: vi.fn(async (
     _connectionId: string,

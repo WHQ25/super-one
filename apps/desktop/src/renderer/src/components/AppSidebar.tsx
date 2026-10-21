@@ -40,6 +40,8 @@ import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { useScheduledSendsSync } from '@/hooks/useScheduledSendsSync'
 import { useDraftsStore } from '@/stores/drafts'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
+import type { SidebarSort } from '@/lib/multi-host/types'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
@@ -58,8 +60,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@super
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 
 const isMac = window.app.platform === 'darwin'
-
-type SortMode = 'recent' | 'added'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 
@@ -116,10 +116,12 @@ export const AppSidebar = memo(function AppSidebar() {
     return () => window.removeEventListener('keydown', handler)
   }, [isMac, setSidebarTab])
 
-  const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [sortMode, setSortMode] = useState<SidebarSort>(() => useMultiHostSidebarStore.getState().settings.sort)
   const [frozenRecentOrder, setFrozenRecentOrder] = useState<string[] | null>(null)
-  const prevSortModeRef = useRef<SortMode>('recent')
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const prevSortModeRef = useRef<SidebarSort>(sortMode)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    () => new Set(useMultiHostSidebarStore.getState().settings.expandedProjectKeys),
+  )
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId } | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{
@@ -233,6 +235,14 @@ export const AppSidebar = memo(function AppSidebar() {
 
   useEffect(() => {
     expandedFoldersRef.current = expandedFolders
+  }, [expandedFolders])
+
+  // Group-by, sort and which rows are open survive a reload. The host filter does not.
+  useEffect(() => {
+    useMultiHostSidebarStore.getState().setSort(sortMode)
+  }, [sortMode])
+  useEffect(() => {
+    useMultiHostSidebarStore.getState().setExpandedProjectKeys([...expandedFolders])
   }, [expandedFolders])
 
   const toggleExpand = useCallback((folderPath: string) => {

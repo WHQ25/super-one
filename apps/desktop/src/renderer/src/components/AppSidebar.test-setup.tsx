@@ -2,6 +2,8 @@
 
 import { beforeAll, beforeEach, vi } from 'vitest'
 import { resetEnvironmentListCache } from '@/lib/environment-list'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
+import { DEFAULT_SIDEBAR_SETTINGS } from '@/lib/multi-host/types'
 import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
@@ -241,6 +243,11 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks()
   resetEnvironmentListCache()
+  useMultiHostSidebarStore.setState({
+    settings: { ...DEFAULT_SIDEBAR_SETTINGS },
+    environments: [],
+    sessionPages: {},
+  })
   mockWindowApp.onSessionChanged.mockImplementation(() => () => {})
   chatState.switchSession.mockImplementation(async () => {})
   mockEnvironment.listPinnedSessions.mockResolvedValue([])

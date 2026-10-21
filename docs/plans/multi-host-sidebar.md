@@ -61,8 +61,9 @@ Open questions from the proposal, settled here.
 
 | Phase | Status | Verification |
 |---|---|---|
-| Proposal copied | done | commit on `feat/multi-host-sidebar` |
-| 1 Data layer | not started | |
+| Proposal copied | done | `9c893f67d` |
+| Plan | done | `75728fd9d` |
+| 1 Data layer | done | `bunx vitest run` from `apps/desktop`: catalog 11, `use-sidebar-sessions` 6, `AppSidebarRefresh` 2, `AppSidebar` 29, all passed. `typecheck:web` and `typecheck:node` still fail on existing errors outside this change (`ChatStatusBar.stories.tsx` `GitDirtyStatus` null, `packages/shared/src/transcript-boundary.ts` TS2532). |
 | 2 Sidebar | not started | |
 | 3 Workdir | not started | |
 | 4 Branches | not started | |

@@ -45,7 +45,7 @@ export function WorkDirEnvironmentMenu({
     return t('sidebar.hover.kindLocal')
   }
   if (!visible) return null
-  if (!loading && options.length < 2) return null
+  if (!loading && options.length === 0) return null
 
   const current = options.find((option) => option.environmentId === selectedId || option.connectionId === selectedId)
     ?? options.find((option) => option.kind === 'current')

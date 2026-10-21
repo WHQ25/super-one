@@ -12,6 +12,8 @@ export interface GitBranchMenuProps {
   loading?: boolean
   fetching?: boolean
   fetchError?: string | null
+  /** Replaces the empty-list sentence while a search is active. */
+  emptyLabel?: string
   onSelect: (branch: string) => void
   onSelectTracking: (ref: string) => void
   onCreate: (name: string) => void
@@ -29,6 +31,7 @@ export function GitBranchMenu({
   loading = false,
   fetching = false,
   fetchError = null,
+  emptyLabel,
   onSelect,
   onSelectTracking,
   onCreate,
@@ -58,7 +61,7 @@ export function GitBranchMenu({
           <div className="px-3 py-2 text-xs text-muted-foreground">{t('common.loading')}</div>
         )}
         {empty && (
-          <div className="px-3 py-2 text-xs text-muted-foreground">{t('chat.git.noBranches')}</div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">{emptyLabel ?? t('chat.git.noBranches')}</div>
         )}
         {localRows.length > 0 && (
           <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">

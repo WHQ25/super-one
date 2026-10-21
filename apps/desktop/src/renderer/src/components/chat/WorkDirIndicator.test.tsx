@@ -171,4 +171,24 @@ describe('merged status chip', () => {
     await waitFor(() => expect(screen.getByTitle('This PC · main')).toBeTruthy())
     expect(checkout.getAttribute('data-state')).toBe('active')
   })
+
+  it('keeps the environment row, search, branch create, and worktree detach', async () => {
+    const getGitBranches = vi.fn(() => Promise.resolve({ local: ['main', 'develop'], tracking: ['origin/main'] }))
+    const getCheckedOutBranches = vi.fn(() => Promise.resolve(['main']))
+    Object.assign(window.app, { getGitBranches, getCheckedOutBranches })
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+
+    expect(await screen.findByText('Environment')).toBeTruthy()
+    const search = screen.getByPlaceholderText('Search worktrees, or search and create a branch…')
+    await user.click(screen.getByRole('tab', { name: 'Worktree' }))
+    await user.click(await screen.findByRole('button', { name: 'develop' }))
+    expect(screen.getByRole('button', { name: 'Detach' })).toBeTruthy()
+    expect(screen.getByText('New branch name')).toBeTruthy()
+
+    await user.type(search, 'feat/new')
+    expect(screen.getByRole('button', { name: 'Create branch: feat/new' })).toBeTruthy()
+  })
 })

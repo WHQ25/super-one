@@ -91,6 +91,27 @@ export const ChildHydration: Story = {
 
 export const NarrowChildHydration: Story = { ...ChildHydration, args: { width: 220 } }
 
+export const SessionsOnly: Story = {
+  render: () => (
+    <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <ProjectSidebarRow
+        {...callbacks}
+        sessionsOnly
+        folder={{ id: 'merged', name: 'super-one', path: '/storybook/merged', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
+        sessions={[parent]}
+        hasMoreSessions={false}
+        isExpanded
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Build the account opening workflow')).toBeInTheDocument()
+    await expect(canvas.queryByText('super-one')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('No sessions')).not.toBeInTheDocument()
+  },
+}
+
 export const LoadingSessions: Story = {
   render: () => (
     <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>

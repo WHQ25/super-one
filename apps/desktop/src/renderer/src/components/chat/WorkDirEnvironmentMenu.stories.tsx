@@ -8,6 +8,7 @@ const local: WorkDirEnvironmentOption = {
   label: 'This Mac',
   kind: 'current',
   needsUpgrade: false,
+  hostKind: 'local',
 }
 
 const office: WorkDirEnvironmentOption = {
@@ -16,6 +17,7 @@ const office: WorkDirEnvironmentOption = {
   label: 'Office',
   kind: 'selectable',
   needsUpgrade: false,
+  hostKind: 'cli-node',
 }
 
 function options(extra: WorkDirEnvironmentOption[]): WorkDirEnvironmentOption[] {

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Folder, Pencil, Trash2 } from 'lucide-react'
+import { ChevronRight, Folder, Pencil, SquarePen, Trash2 } from 'lucide-react'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -43,6 +44,12 @@ interface MultiHostProjectListProps {
   refreshingConnectionId: string | null
 }
 
+function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
+  const local = checkouts.find((checkout) => checkout.connectionId === 'local')
+  if (local) return local
+  return checkouts.reduce((best, checkout) => (checkout.lastOpened > best.lastOpened ? checkout : best))
+}
+
 function presentationFor(checkout: HostCheckout, bucket: EnvironmentBucket) {
   return (session: SessionHistoryEntry, sessions: SessionHistoryEntry[]) => {
     const parent = session.parentSessionId
@@ -68,12 +75,13 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     draftConnectionIds,
   } = props
 
-  const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string) => {
+  const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false) => {
     const folder = checkoutToRecentFolder(checkout, name)
     return (
       <ProjectSidebarRow
         key={checkout.pathKey}
         folder={folder}
+        sessionsOnly={sessionsOnly}
         isExpanded={expandedProjectKeys.has(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
         sessionsLoading={props.loadingFolders[checkout.pathKey] === true}
@@ -165,6 +173,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         }
         const groupKey = `group:${group.key}`
         const open = expandedProjectKeys.has(groupKey)
+        const loadingAny = group.checkouts.some((checkout) => props.loadingFolders[checkout.pathKey] === true)
+        const anySessions = group.checkouts.some((checkout) => (props.folderSessions[checkout.pathKey]?.length ?? 0) > 0)
         return (
           <div key={group.key}>
             <RepoGroupHeader
@@ -172,15 +182,26 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               open={open}
               checkouts={group.checkouts}
               environments={environments}
-              onToggle={() => props.onToggleProject(groupKey)}
+              onToggle={() => {
+                props.onToggleProject(groupKey)
+                if (!open) {
+                  for (const checkout of group.checkouts) {
+                    if (!expandedProjectKeys.has(checkout.pathKey)) props.onToggleProject(checkout.pathKey)
+                  }
+                }
+              }}
+              onNewSession={() => props.onNewSession(preferredCheckout(group.checkouts).pathKey)}
               onEdit={props.onEditProject}
               onRemove={props.onRemoveProject}
             />
             {open && group.checkouts.map((checkout) => {
               const bucket = environments.find((item) => item.environmentId === checkout.environmentId)
               if (!bucket) return null
-              return checkoutRow(checkout, bucket, bucket.label)
+              return checkoutRow(checkout, bucket, undefined, true)
             })}
+            {open && !loadingAny && !anySessions && (
+              <div className="px-6 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
+            )}
           </div>
         )
       })}
@@ -224,13 +245,14 @@ function EnvironmentHeader({
 }
 
 function RepoGroupHeader({
-  name, open, checkouts, environments, onToggle, onEdit, onRemove,
+  name, open, checkouts, environments, onToggle, onNewSession, onEdit, onRemove,
 }: {
   name: string
   open: boolean
   checkouts: HostCheckout[]
   environments: EnvironmentBucket[]
   onToggle: () => void
+  onNewSession: () => void
   onEdit: (folder: RecentFolder) => void
   onRemove: (folder: RecentFolder) => void
 }) {
@@ -268,15 +290,28 @@ function RepoGroupHeader({
   ]
   return (
     <AdaptiveContextMenu items={items} contentClassName="w-56">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="group flex h-9 w-full items-center gap-1 overflow-hidden rounded-md px-2.5 text-left hover:bg-sidebar-hover"
-      >
-        <ChevronRight className={cn('size-4 shrink-0 text-sidebar-foreground/70 transition-transform', open && 'rotate-90')} />
-        <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />
-        <span className="min-w-0 truncate text-md">{name}</span>
-      </button>
+      <div className="group flex h-9 w-full items-center gap-1 overflow-hidden rounded-md px-2.5 hover:bg-sidebar-hover">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        >
+          <ChevronRight className={cn('size-4 shrink-0 text-sidebar-foreground/70 transition-transform', open && 'rotate-90')} />
+          <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />
+          <span className="min-w-0 truncate text-md">{name}</span>
+        </button>
+        <IconButton
+          size="sm"
+          tooltip={t('tooltips.newSession')}
+          className="invisible opacity-0 group-hover:visible group-hover:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation()
+            onNewSession()
+          }}
+        >
+          <SquarePen />
+        </IconButton>
+      </div>
     </AdaptiveContextMenu>
   )
 }

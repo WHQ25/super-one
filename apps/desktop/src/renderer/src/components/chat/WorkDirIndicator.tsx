@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
 import { GitBranch, ChevronDown, Check, Monitor, Server, GitCommit, Circle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
@@ -19,6 +19,7 @@ import {
   useComposerLocation,
   writeFocusedSelection,
 } from './composer-location'
+import { EnvironmentKindIcon } from '@/components/sidebar/multi-host/EnvironmentSectionHeader'
 import { WorkDirEnvironmentMenu } from './WorkDirEnvironmentMenu'
 import {
   checkoutOnEnvironment,
@@ -42,6 +43,11 @@ function sameWorktreePath(a: string | null | undefined, b: string | null | undef
   if (ra) return ra.path.replace(/\/$/, '') === b.replace(/\/$/, '')
   if (rb) return a.replace(/\/$/, '') === rb.path.replace(/\/$/, '')
   return a.replace(/\/$/, '') === b.replace(/\/$/, '')
+}
+
+function displayHostPath(path: string | null | undefined): string {
+  if (!path) return ''
+  return parseRemoteProjectKey(path)?.path ?? path
 }
 
 interface WorkDirIndicatorProps {
@@ -73,6 +79,24 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const location = useComposerLocation()
   const isOldSession = location.readOnly
   const environmentMenu = useWorkDirEnvironmentMenu(currentFolder, isGitRepo)
+  const environmentBucket = environmentMenu.buckets.find((bucket) =>
+    bucket.environmentId === location.environmentId || bucket.connectionId === location.environmentId)
+  const environmentPrefix = environmentBucket?.label
+    ? { label: environmentBucket.label, kind: environmentBucket.kind }
+    : null
+  const renderChip = (body: ReactNode) => (
+    <span className="flex max-w-72 items-center gap-1 truncate">
+      {environmentPrefix && (
+        <>
+          <EnvironmentKindIcon kind={environmentPrefix.kind} className="size-3 shrink-0" />
+          <span className="truncate">{environmentPrefix.label}</span>
+          <span className="text-muted-foreground">·</span>
+        </>
+      )}
+      {body}
+    </span>
+  )
+  const withEnvironment = (title: string) => (environmentPrefix ? `${environmentPrefix.label} · ${title}` : title)
   const [environmentError, setEnvironmentError] = useState<string | null>(null)
   const activeGitBranch = useActiveSession((s) => s._gitBranch)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
@@ -357,14 +381,16 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   if (isGitRepo === false) {
     if (!environmentMenu.visible) {
       return (
-        <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={mainCheckoutLabel}>
+        <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={withEnvironment(mainCheckoutLabel)}>
           {compact ? (
             <MainCheckoutIcon className="size-3" />
           ) : (
-            <span className="flex max-w-72 items-center gap-0.5 truncate">
-              <MainCheckoutIcon className="inline size-3 align-middle" />
-              <span className="ml-1">{mainCheckoutLabel}</span>
-            </span>
+            renderChip(
+              <>
+                <MainCheckoutIcon className="inline size-3 shrink-0 align-middle" />
+                <span className="truncate">{mainCheckoutLabel}</span>
+              </>,
+            )
           )}
         </div>
       )
@@ -372,9 +398,17 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     return (
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-muted" title={mainCheckoutLabel}>
-            <MainCheckoutIcon className="size-3" />
-            {!compact && <span className="max-w-72 truncate">{mainCheckoutLabel}</span>}
+          <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-muted" title={withEnvironment(mainCheckoutLabel)}>
+            {compact ? (
+              <MainCheckoutIcon className="size-3" />
+            ) : (
+              renderChip(
+                <>
+                  <MainCheckoutIcon className="inline size-3 shrink-0 align-middle" />
+                  <span className="truncate">{mainCheckoutLabel}</span>
+                </>,
+              )
+            )}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
@@ -401,14 +435,16 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     const label = compact ? (
       <MainCheckoutIcon className="size-3" />
     ) : (
-      <span className="flex max-w-72 items-center gap-0.5 truncate">
-        <MainCheckoutIcon className="inline size-3 align-middle" />
-        <span className="ml-1">{mainCheckoutLabel}</span>
-      </span>
+      renderChip(
+        <>
+          <MainCheckoutIcon className="inline size-3 shrink-0 align-middle" />
+          <span className="truncate">{mainCheckoutLabel}</span>
+        </>,
+      )
     )
     if (!environmentMenu.visible) {
       return (
-        <div className={triggerClass} title={mainCheckoutLabel}>
+        <div className={triggerClass} title={withEnvironment(mainCheckoutLabel)}>
           {label}
         </div>
       )
@@ -416,7 +452,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     return (
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" className={`${triggerClass} hover:bg-muted`} title={mainCheckoutLabel}>
+          <button type="button" className={`${triggerClass} hover:bg-muted`} title={withEnvironment(mainCheckoutLabel)}>
             {label}
           </button>
         </PopoverTrigger>
@@ -496,12 +532,12 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
         <PopoverTrigger asChild>
           <button
             className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-            title={titleText}
+            title={withEnvironment(titleText)}
           >
             {compact ? (
               <CompactIcon className="size-3" />
             ) : (
-              <span className="flex max-w-72 items-center gap-0.5 truncate">{renderFullLabel()}</span>
+              renderChip(renderFullLabel())
             )}
             {dirtyDot}
           </button>
@@ -544,6 +580,10 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               )}
             </div>
           </div>
+          <div className="border-t px-3 py-2 text-xs">
+            <div className="text-muted-foreground">{isActive ? t('sidebar.hover.worktree') : t('sidebar.hover.checkout')}</div>
+            <div className="truncate font-mono">{displayHostPath(isActive ? activePath : currentFolder)}</div>
+          </div>
 
           {isActive && activePath && activeIsDetached && currentFolder && (
             <WorktreeAssignBranchSection
@@ -582,12 +622,12 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
       <PopoverTrigger asChild>
         <button
           className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-          title={titleText}
+          title={withEnvironment(titleText)}
         >
           {compact ? (
             <CompactIcon className="size-3" />
           ) : (
-            <span className="flex max-w-72 items-center gap-0.5 truncate">{renderFullLabel()}</span>
+            renderChip(renderFullLabel())
           )}
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
         </button>
@@ -604,29 +644,17 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
           onClone={handleCloneEnvironment}
         />
         <div className="flex flex-col">
-          <div className="flex items-center gap-2 border-b px-3 py-2">
+          <div className="border-b px-3 py-2">
             <input
               type="text"
-              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
               placeholder={t('chat.worktree.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button
-              type="button"
-              disabled={fetchingBranches}
-              onClick={() => { void handleFetch() }}
-              className="shrink-0 rounded px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-            >
-              {fetchingBranches ? t('chat.git.fetching') : t('chat.git.fetch')}
-            </button>
           </div>
-          {fetchError && (
-            <div className="truncate border-b px-3 py-1.5 text-xs text-destructive" title={fetchError}>
-              {t('chat.git.fetchFailed', { error: fetchError })}
-            </div>
-          )}
           <div className="max-h-80 overflow-y-auto">
+            <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.checkoutHeading')}</div>
             <button
               type="button"
               onClick={isInWorktree ? handleSwitchToLocal : undefined}
@@ -659,55 +687,60 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
               </>
             )}
 
-            {filteredBranches.length > 0 && (
-              <>
-                <div className="border-t" />
-                <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{headingText}</div>
-                {filteredBranches.map((b) => {
-                  const reason = pendingMode === 'attach' ? attachUnavailableReason(b) : null
-                  const disabled = pendingMode === 'attach' && !!reason
-                  const isSelected = pendingBase === b
-                  return (
-                    <button
-                      key={b}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => !disabled && handleSelectBase(b)}
-                      className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-                    >
-                      <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                      <div className="flex flex-1 flex-col items-start min-w-0">
-                        <span className="truncate">{b}</span>
-                        {reason && <span className="truncate text-xs text-muted-foreground">{reason}</span>}
-                      </div>
-                      {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
-                    </button>
-                  )
-                })}
-              </>
+            <div className="border-t" />
+            <div className="flex items-center gap-2 px-3 pt-2">
+              <span className="min-w-0 flex-1 text-xs uppercase text-muted-foreground">{headingText}</span>
+              <button
+                type="button"
+                disabled={fetchingBranches}
+                onClick={() => { void handleFetch() }}
+                className="shrink-0 rounded px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+              >
+                {fetchingBranches ? t('chat.git.fetching') : t('chat.git.fetch')}
+              </button>
+            </div>
+            {fetchError && (
+              <div className="truncate px-3 py-1 text-xs text-destructive" title={fetchError}>
+                {t('chat.git.fetchFailed', { error: fetchError })}
+              </div>
             )}
-
-            {filteredTracking.length > 0 && (
-              <>
-                <div className="border-t" />
-                <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.git.tracking')}</div>
-                {filteredTracking.map((ref) => {
-                  const isSelected = pendingBase === ref
-                  return (
-                    <button
-                      key={ref}
-                      type="button"
-                      onClick={() => handleSelectBase(ref)}
-                      className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent"
-                    >
-                      <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                      <span className="flex-1 truncate text-left">{ref}</span>
-                      {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
-                    </button>
-                  )
-                })}
-              </>
-            )}
+            {filteredBranches.map((b) => {
+              const reason = pendingMode === 'attach' ? attachUnavailableReason(b) : null
+              const disabled = pendingMode === 'attach' && !!reason
+              const isSelected = pendingBase === b
+              return (
+                <button
+                  key={b}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => !disabled && handleSelectBase(b)}
+                  className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                  <div className="flex flex-1 flex-col items-start min-w-0">
+                    <span className="truncate">{b}</span>
+                    {reason && <span className="truncate text-xs text-muted-foreground">{reason}</span>}
+                  </div>
+                  {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
+                </button>
+              )
+            })}
+            {filteredTracking.map((ref) => {
+              const isSelected = pendingBase === ref
+              return (
+                <button
+                  key={ref}
+                  type="button"
+                  onClick={() => handleSelectBase(ref)}
+                  className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent"
+                >
+                  <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-left text-muted-foreground">{ref}</span>
+                  <span className="shrink-0 text-muted-foreground">{t('chat.git.remoteRef')}</span>
+                  {isSelected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
+                </button>
+              )
+            })}
 
             {filteredExisting.length === 0 && filteredBranches.length === 0 && filteredTracking.length === 0 && search.trim().length > 0 && (
               <div className="px-3 py-3 text-center text-xs text-muted-foreground">{t('chat.worktree.noMatches')}</div>

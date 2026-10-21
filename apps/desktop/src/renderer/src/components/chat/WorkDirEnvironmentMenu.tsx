@@ -7,6 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
+import { EnvironmentKindIcon } from '@/components/sidebar/multi-host/EnvironmentSectionHeader'
+import type { EnvironmentKind } from '@/lib/multi-host/types'
 import type { WorkDirEnvironmentOption } from './work-dir-environment'
 
 export interface WorkDirEnvironmentMenuProps {
@@ -37,6 +39,11 @@ export function WorkDirEnvironmentMenu({
 }: WorkDirEnvironmentMenuProps) {
   const { t } = useTranslation()
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const kindText = (kind: EnvironmentKind | undefined) => {
+    if (kind === 'cli-node') return t('sidebar.hover.kindCliNode')
+    if (kind === 'remote-desktop') return t('sidebar.hover.kindRemoteDesktop')
+    return t('sidebar.hover.kindLocal')
+  }
   if (!visible) return null
   if (!loading && options.length < 2) return null
 
@@ -44,12 +51,17 @@ export function WorkDirEnvironmentMenu({
     ?? options.find((option) => option.kind === 'current')
   const label = current?.label ?? t('chat.worktree.environment')
 
+  const currentKind = kindText(current?.hostKind)
+
   if (readOnly) {
     return (
       <div className="border-b px-3 py-2 text-xs">
-        <div className="text-muted-foreground">{t('chat.worktree.environment')}</div>
-        <div className="truncate">{label}</div>
-        <p className="text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: label })}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <EnvironmentKindIcon kind={current?.hostKind ?? 'local'} className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <span className="shrink-0 text-muted-foreground">{currentKind}</span>
+        </div>
+        <p className="pt-1 text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: label })}</p>
       </div>
     )
   }
@@ -59,8 +71,9 @@ export function WorkDirEnvironmentMenu({
       <DropdownMenu open={open ?? uncontrolledOpen} onOpenChange={open === undefined ? setUncontrolledOpen : undefined}>
         <DropdownMenuTrigger asChild>
           <button type="button" className="flex w-full min-w-0 items-center gap-2 text-left text-xs">
-            <span className="shrink-0 text-muted-foreground">{t('chat.worktree.environment')}</span>
+            <EnvironmentKindIcon kind={current?.hostKind ?? 'local'} className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{loading ? t('common.loading') : label}</span>
+            {!loading && <span className="shrink-0 text-muted-foreground">{currentKind}</span>}
             <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
@@ -84,7 +97,9 @@ export function WorkDirEnvironmentMenu({
                 }}
                 className="gap-2 text-xs"
               >
+                <EnvironmentKindIcon kind={option.hostKind ?? 'local'} className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <span className="shrink-0 text-muted-foreground">{kindText(option.hostKind)}</span>
                 {detail && <span className="shrink-0 text-muted-foreground">{detail}</span>}
                 {option.needsUpgrade && option.kind !== 'offline' && (
                   <span className="shrink-0 text-muted-foreground">{t('chat.worktree.needsUpgrade')}</span>

@@ -2267,6 +2267,7 @@ export type Messages = {
       offline: string
       environmentFixed: string
       notAGitRepo: string
+      checkoutHeading: string
     }
     git: {
       init: string
@@ -2282,6 +2283,9 @@ export type Messages = {
       noBranches: string
       searchBranches: string
       createBranch: string
+      localBranches: string
+      newBranch: string
+      remoteRef: string
     }
     permission: {
       sandboxNetwork: string
@@ -6975,6 +6979,7 @@ export const en: Messages = {
       offline: 'Offline',
       environmentFixed: 'This session stays on {{environment}}.',
       notAGitRepo: 'Not a Git Repository',
+      checkoutHeading: 'Checkout',
     },
     git: {
       init: 'Init Git',
@@ -6990,6 +6995,9 @@ export const en: Messages = {
       noBranches: 'No Branches Found',
       searchBranches: 'Search or create branch…',
       createBranch: 'Create branch: {{name}}',
+      localBranches: '{{environment}} · Local Branches',
+      newBranch: 'New Branch…',
+      remoteRef: 'Remote',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

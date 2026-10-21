@@ -19,6 +19,7 @@ import {
 import { Button } from '@superone/ui/components/ui/button'
 import { useActiveSession, useChatStore, useSessionScope, getActiveSessionView } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
@@ -262,6 +263,12 @@ export function ChatStatusBar() {
   const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const location = useComposerLocation()
+  const environments = useMultiHostSidebarStore((s) => s.environments)
+  const branchEnvironmentLabel = useMemo(() => {
+    const id = location.environmentId
+    return environments.find((bucket) => bucket.environmentId === id || bucket.connectionId === id)?.label
+      ?? t('sidebar.thisPc')
+  }, [environments, location.environmentId, t])
   const gitFolder = location.cwd || currentFolder
   const scope = useSessionScope()
   // Track structural changes plus subagent result arrival without subscribing to text deltas.
@@ -288,7 +295,6 @@ export function ChatStatusBar() {
   const [agentOpen, setAgentOpen] = useState(false)
   const [workflowOpen, setWorkflowOpen] = useState(false)
   const [monitorOpen, setMonitorOpen] = useState(false)
-  const [search, setSearch] = useState('')
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
   const dirty = gitInfo?.dirty
 
@@ -401,7 +407,6 @@ export function ChatStatusBar() {
   const openPopover = useCallback((open: boolean) => {
     setPopoverOpen(open)
     if (open) {
-      setSearch('')
       setFetchError(null)
       loadBranches()
       // Opening the popup is the one moment the user is looking straight at branch/dirty
@@ -693,8 +698,7 @@ export function ChatStatusBar() {
                   ) : null}
                   local={branchLists.local}
                   tracking={branchLists.tracking}
-                  search={search}
-                  onSearchChange={setSearch}
+                  environmentLabel={branchEnvironmentLabel}
                   loading={branchesLoading}
                   fetching={fetchingBranches}
                   fetchError={fetchError}

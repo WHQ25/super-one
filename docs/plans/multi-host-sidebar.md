@@ -1,6 +1,6 @@
 # Multi-host sidebar
 
-Status: implementation complete, unpushed · Updated: 2026-10-22
+Status: implementation complete, structure aligned with the prototype, unpushed · Updated: 2026-10-22
 Goal: One desktop window lists and starts sessions on every connected environment, and a new session owns its worktree instead of copying the focused session's.
 Proposal: [multi-host-sidebar.md](../proposals/multi-host-sidebar.md)
 Long-term docs affected: [remote-node-service.md](../architecture/remote-node-service.md)
@@ -25,7 +25,7 @@ Open questions from the proposal, settled here.
 
 8. **The file-tree root may still cache the focused session.** `useAppStore._worktrees` cannot be deleted outright: the app store cannot import the chat store synchronously, and the file tree reads that map. New sessions and drafts never read it. The session's own `{ environmentId, selection }` is the source. The map is updated from the focused session after that session is already active, and it is cleared in the same synchronous turn that a new session becomes active.
 
-9. **A merged repository is a header plus one row per checkout.** `ProjectSidebarRow` binds every session to `folder.path`, so one merged row cannot own several checkouts. The header key is `group:${mergeKey}` and its edit and remove actions are the submenu from decision 1. Each nested row is labeled with the environment name. A repository with one checkout stays a single row. `collapsedEnvironmentIds` is stored instead of an expanded list: empty means every environment starts open, and nothing has been released with the old key.
+9. **A merged repository is a header plus one row per checkout.** Superseded for project mode by decision 21. `ProjectSidebarRow` still binds every session to `folder.path`, so the merged header does not own the sessions itself. Each checkout keeps its own row component, with the folder header hidden, and the sessions render as one flat list. The header key is `group:${mergeKey}` and its edit and remove actions are the submenu from decision 1. A repository with one checkout stays a single row. `collapsedEnvironmentIds` is stored instead of an expanded list: empty means every environment starts open, and nothing has been released with the old key.
 
 10. **The session owns the checkout.** `worktreeHintForSession` and `snapshotDraftSettings` read `_worktreePath` and `environmentSelection`. They do not copy `_worktrees[project].activePath` onto a session whose path is null. Tests that required that copy now expect null.
 
@@ -49,6 +49,8 @@ Open questions from the proposal, settled here.
 
 20. **`git.init` is a node method.** Desktop `GIT_INIT` on a `remote:` key opens the project if needed and calls it. A folder that is already a repository is a no-op. The phone allowlist does not gain `git.init`. An old node that lacks the method surfaces the existing init-failed toast.
 
+21. **The prototype decides structure. Existing components decide the look.** Group-by is a dropdown beside the Projects label, with a check on the current mode. It is not a tab strip, and it still appears only when multi-host chrome is on. Project mode with several checkouts is one project header and one flat session list. The environment stays on the hover card. The header's new-session action targets the local checkout, or the most recently opened checkout when this machine has none. Opening the header loads each checkout's sessions. Environment mode stays environment, then checkout, then sessions. The workdir chip reads `environment · location` when the catalog has a label for that environment. With the flag off the catalog is empty, so the chip stays today's label. The environment control stays a dropdown and shows the kind icon and kind name. Create-from lists local branches and tracking refs together. Tracking rows are muted and marked Remote. Fetch sits on that section header. Attach, detach, and carry stay. The branch menu uses the same sections: `{environment} · local branches`, then remote-tracking with Fetch on the header, then a New Branch field. It is not a search palette. Picking `origin/x` still checks out local `x`.
+
 ## Phases
 
 ### 1. Data layer
@@ -61,10 +63,10 @@ Open questions from the proposal, settled here.
 
 ### 2. Sidebar
 
-- Project mode merges by normalized `repoIdentity` into a header plus one `ProjectSidebarRow` per checkout (decision 9). Environment mode nests environment → project → session.
+- Project mode merges by normalized `repoIdentity` into one header and a flat session list (decision 21). Environment mode nests environment → project → session.
 - Session hover card from list data only. No RPC on hover.
 - Offline rows dimmed, with a disconnected icon. Power and refresh sit on the environment header.
-- Host filter removed. Group-by tabs appear only when multi-host chrome is on. With the flag off, a selected remote host still has its refresh and power buttons.
+- Host filter removed. Group-by is a menu beside the Projects label and appears only when multi-host chrome is on (decision 21). With the flag off, a selected remote host still has its refresh and power buttons.
 
 ### 3. Workdir picker
 
@@ -92,6 +94,7 @@ Open questions from the proposal, settled here.
 | 2 Sidebar | done | `bunx vitest run` from `apps/desktop`: catalog 11, session-hover 1, `use-sidebar-sessions` 6, `ProjectSidebarRow` 16, `SessionRow` 3, `AppSidebarRefresh` 2, `AppSidebar` 30, all passed (69). `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
 | 3 Workdir | done | `bunx vitest run` from `apps/desktop`: session-location 4, composer-location 4, work-dir-environment 5, draft-promote 26, draft-promote-live-store 4, reset-session-worktree 2, session-lifecycle 43, session-turn 25, send-message 66, switch-session-worktree-root 1, chat-store-actions reset/worktree 7, all passed. `apps/mobile` `remote-draft-codec` 3 passed. `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
 | 4 Branches | done | `bunx vitest run` from `apps/desktop`: git-branch-lists 3, remote-file-tree 36, ReviewPanel 1, all passed. `bunx vitest run` from `packages/runtime`: branch-refs 5, git-branch-service 2, rpc-dispatch 35, all passed. `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. Stories: `GitBranchMenu.stories.tsx` (branches, fetching, fetch error, loading, empty, long names, narrow, dark). |
+| Widget structure | done | `bunx vitest run` from `apps/desktop`: AppSidebar 30, work-dir-environment 5, ProjectSidebarRow 19, all passed. `typecheck:web` still fails only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. Stories: `SidebarGroupMenu` (by project, by environment, narrow, dark), `GitBranchMenu` sections, `ProjectSidebarRow` `SessionsOnly`, `WorkDirEnvironmentMenu` kind icon. |
 
 ## Blockers
 

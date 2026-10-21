@@ -5,10 +5,10 @@ import { cn } from '@superone/ui/lib/utils'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus } from '@/lib/multi-host/types'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 
-function KindIcon({ kind }: { kind: EnvironmentKind }) {
-  if (kind === 'cli-node') return <Server className="size-3.5 shrink-0" aria-hidden />
-  if (kind === 'remote-desktop') return <Laptop className="size-3.5 shrink-0" aria-hidden />
-  return <Monitor className="size-3.5 shrink-0" aria-hidden />
+export function EnvironmentKindIcon({ kind, className = 'size-3.5 shrink-0' }: { kind: EnvironmentKind; className?: string }) {
+  if (kind === 'cli-node') return <Server className={className} aria-hidden />
+  if (kind === 'remote-desktop') return <Laptop className={className} aria-hidden />
+  return <Monitor className={className} aria-hidden />
 }
 
 export function EnvironmentSectionHeader({
@@ -53,7 +53,7 @@ export function EnvironmentSectionHeader({
           aria-expanded={expanded}
         >
           <ChevronRight className={cn('size-3.5 shrink-0 text-sidebar-foreground/70 transition-transform', expanded && 'rotate-90')} />
-          <KindIcon kind={kind} />
+          <EnvironmentKindIcon kind={kind} />
           <span className="truncate">{label}</span>
           {offline && <Unplug className="size-3 shrink-0" aria-label={t('sidebar.hover.offline')} />}
           {connection === 'needs-upgrade' && (

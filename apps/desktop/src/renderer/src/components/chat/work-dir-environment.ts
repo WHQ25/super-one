@@ -2,7 +2,7 @@ import { useAppStore } from '@/stores/app'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
-import type { EnvironmentBucket, HostCheckout } from '@/lib/multi-host/types'
+import type { EnvironmentBucket, EnvironmentKind, HostCheckout } from '@/lib/multi-host/types'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { environmentIdForProjectKey } from '@superone/shared/session-location'
@@ -22,9 +22,13 @@ export interface WorkDirEnvironmentOption {
   label: string
   kind: WorkDirEnvironmentRowKind
   needsUpgrade: boolean
+  /** Local, CLI node, or remote desktop. Omitted by older fixtures. */
+  hostKind?: EnvironmentKind
 }
 
-type EnvironmentSource = Pick<EnvironmentBucket, 'environmentId' | 'connectionId' | 'label' | 'connection' | 'checkouts'>
+type EnvironmentSource = Pick<EnvironmentBucket, 'environmentId' | 'connectionId' | 'label' | 'connection' | 'checkouts'> & {
+  kind?: EnvironmentKind
+}
 
 function isCurrent(bucket: { environmentId: string; connectionId: string }, currentEnvironmentId: string): boolean {
   return bucket.environmentId === currentEnvironmentId || bucket.connectionId === currentEnvironmentId
@@ -57,6 +61,7 @@ export function workDirEnvironmentOptions(input: {
       label: bucket.label,
       kind,
       needsUpgrade,
+      hostKind: bucket.kind,
     }
   })
 }

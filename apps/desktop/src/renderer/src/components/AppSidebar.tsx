@@ -46,7 +46,7 @@ import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { buildSessionHover } from '@/lib/multi-host/session-hover'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
-import { SidebarGroupTabs } from '@/components/sidebar/multi-host/SidebarGroupTabs'
+import { SidebarGroupMenu } from '@/components/sidebar/multi-host/SidebarGroupMenu'
 import { MultiHostProjectList } from '@/components/sidebar/multi-host/MultiHostProjectList'
 import { useLoadMultiHostCatalog } from '@/components/sidebar/multi-host/use-load-multi-host-catalog'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
@@ -275,19 +275,20 @@ export const AppSidebar = memo(function AppSidebar() {
 
   const toggleExpand = useCallback((folderPath: string) => {
     // Expanding a folder only reveals its sessions. Selecting one is a row click.
+    // The ref updates here, not only in the effect: one click can expand a merged
+    // project and each of its checkouts before React runs the state updaters.
     const isExpanded = expandedFoldersRef.current.has(folderPath)
-    let willExpand = false
+    const nextRef = new Set(expandedFoldersRef.current)
+    if (isExpanded) nextRef.delete(folderPath)
+    else nextRef.add(folderPath)
+    expandedFoldersRef.current = nextRef
     setExpandedFolders((prev) => {
       const next = new Set(prev)
-      if (next.has(folderPath)) {
-        next.delete(folderPath)
-      } else {
-        next.add(folderPath)
-        willExpand = true
-      }
+      if (next.has(folderPath)) next.delete(folderPath)
+      else next.add(folderPath)
       return next
     })
-    if (willExpand) {
+    if (!isExpanded) {
       const startedAt = performance.now()
       traceSidebar('project_expand:start', { folderPath, wasExpanded: isExpanded }, folderPath)
       requestAnimationFrame(() => {
@@ -699,16 +700,15 @@ export const AppSidebar = memo(function AppSidebar() {
 
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
-        <div className="min-w-0 max-w-[70%]">
-          {multiHostChrome ? (
-            <SidebarGroupTabs
+        <div className="flex min-w-0 max-w-[70%] items-center">
+          <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
+            {t('sidebar.projects')}
+          </span>
+          {multiHostChrome && (
+            <SidebarGroupMenu
               value={groupBy}
               onChange={(value) => useMultiHostSidebarStore.getState().setGroupBy(value)}
             />
-          ) : (
-            <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
-              {t('sidebar.projects')}
-            </span>
           )}
         </div>
         <div className="flex items-center gap-0.5">

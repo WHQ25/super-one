@@ -2374,6 +2374,7 @@ export const zh: Messages = {
       offline: '离线',
       environmentFixed: '这个会话固定在{{environment}}。',
       notAGitRepo: '不是 Git 仓库',
+      checkoutHeading: '检出',
     },
     git: {
       init: '初始化 Git',
@@ -2389,6 +2390,9 @@ export const zh: Messages = {
       noBranches: '没有分支',
       searchBranches: '搜索或创建分支…',
       createBranch: '创建分支：{{name}}',
+      localBranches: '{{environment}} · 本地分支',
+      newBranch: '新建分支…',
+      remoteRef: '远程',
     },
     permission: {
       sandboxNetwork: '沙盒网络',

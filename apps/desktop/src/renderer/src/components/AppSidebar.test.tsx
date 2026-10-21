@@ -1,7 +1,14 @@
 /** @vitest-environment jsdom */
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
+
+async function chooseGroupBy(name: RegExp) {
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Group By' }))
+  await user.click(await screen.findByRole('menuitem', { name }))
+}
 
 describe('AppSidebar interactions', () => {
   it('keeps project action anchors measurable while the row is not hovered', async () => {
@@ -212,7 +219,7 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
     expect(await screen.findAllByText('remote-app')).not.toHaveLength(0)
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'By Environment' }))
+    await chooseGroupBy(/By Environment/)
 
     const power = await screen.findByRole('button', { name: 'Disconnect' })
     expect(power).toHaveClass('text-success')
@@ -236,7 +243,7 @@ describe('AppSidebar interactions', () => {
 
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'By Environment' }))
+    await chooseGroupBy(/By Environment/)
 
     expect(await screen.findByText('Host offline')).toBeInTheDocument()
     expect(screen.getByText('Use the power button next to the host name to connect.')).toBeInTheDocument()
@@ -254,7 +261,7 @@ describe('AppSidebar interactions', () => {
     })
   })
 
-  it('replaces the host filter with group-by tabs when another machine is connected', async () => {
+  it('replaces the host filter with a group-by menu when another machine is connected', async () => {
     appState.currentFolder = null
     appState.recentFolders = []
     appState.experimentalRemoteNodesEnabled = true
@@ -279,10 +286,17 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
-    expect(await screen.findByRole('tab', { name: 'By Project' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'By Environment' })).toBeInTheDocument()
+    expect(screen.getByText('Projects')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Group By' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'By Project' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'This Mac' })).toBeNull()
     fireEvent.click(await screen.findByRole('button', { name: 'app' }))
+    await waitFor(() => {
+      expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', '/work/app', expect.anything())
+      expect(mockEnvironment.listSessions).toHaveBeenCalledWith('env-remote', 'remote-app', expect.anything())
+    })
+    expect(screen.queryByRole('button', { name: 'remote lab' })).toBeNull()
+    await chooseGroupBy(/By Environment/)
     expect(await screen.findByText('remote lab')).toBeInTheDocument()
     expect(screen.getByText('This Mac')).toBeInTheDocument()
   })

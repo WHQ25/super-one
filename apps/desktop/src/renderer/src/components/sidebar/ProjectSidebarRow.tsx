@@ -173,6 +173,8 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
     hover?: SessionHoverModel | null
     environmentOffline?: boolean
   }
+  /** Merged project: sessions sit under one header, so this checkout draws none. */
+  sessionsOnly?: boolean
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
@@ -194,6 +196,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onNewSession,
   offline = false,
   sessionPresentation,
+  sessionsOnly = false,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
   const foregroundSessionId = useChatStore((state) =>
@@ -458,7 +461,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   return (
     <div>
-      <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
+      {!sessionsOnly && <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
           <div
             onClick={() => {
               if (folder.missing) return
@@ -540,9 +543,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               </div>
             )}
           </div>
-      </AdaptiveContextMenu>
+      </AdaptiveContextMenu>}
 
-      {isExpanded && projectAutomations.length > 0 && (
+      {!sessionsOnly && isExpanded && projectAutomations.length > 0 && (
         <div className="overflow-hidden pl-2.5">
           <button
             onClick={() => setAutomationsExpanded((v) => !v)}
@@ -590,7 +593,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         </div>
       )}
 
-      {isExpanded && (
+      {!sessionsOnly && isExpanded && (
         <MiniAppHostGroup
           hosts={projectHosts}
           onOpen={handleOpenHostApp}
@@ -614,7 +617,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         ) : derived.showSessions ? (
           <div className="flex flex-col py-0.5 pl-2.5">
             {derived.groupsToShow.length === 0 ? (
-              sessionsLoading ? null : (
+              sessionsLoading || sessionsOnly ? null : (
                 <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
               )
             ) : (

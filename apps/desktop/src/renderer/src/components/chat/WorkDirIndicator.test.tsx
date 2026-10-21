@@ -194,7 +194,7 @@ describe('merged status chip', () => {
     expect(screen.getByRole('button', { name: 'Detach' })).toBeTruthy()
     expect(screen.getByText('New branch name')).toBeTruthy()
 
-    const device = screen.getAllByRole('button').find((button) => button.textContent?.includes('This Machine'))
+    const device = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-trigger"]')
     expect(device).toBeTruthy()
     await user.hover(device!)
     expect(await screen.findByRole('menuitem', { name: /This PC/ })).toBeTruthy()

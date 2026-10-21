@@ -8,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { EnvironmentKindIcon } from '@/components/sidebar/multi-host/EnvironmentSectionHeader'
-import type { EnvironmentKind } from '@/lib/multi-host/types'
 import type { WorkDirEnvironmentOption } from './work-dir-environment'
 
 export interface WorkDirEnvironmentMenuProps {
@@ -24,12 +23,6 @@ export interface WorkDirEnvironmentMenuProps {
   picking?: boolean
   onSelect: (option: WorkDirEnvironmentOption) => void
   onClone: (option: WorkDirEnvironmentOption) => void
-}
-
-function kindLabel(kind: EnvironmentKind | undefined, t: (key: string) => string) {
-  if (kind === 'cli-node') return t('sidebar.hover.kindCliNode')
-  if (kind === 'remote-desktop') return t('sidebar.hover.kindRemoteDesktop')
-  return t('sidebar.hover.kindLocal')
 }
 
 export function WorkDirEnvironmentMenu({
@@ -52,7 +45,6 @@ export function WorkDirEnvironmentMenu({
   const current = options.find((option) => option.environmentId === selectedId || option.connectionId === selectedId)
     ?? options.find((option) => option.kind === 'current')
   const label = current?.label ?? ''
-  const currentKind = kindLabel(current?.hostKind, t)
   const open = picking ?? hoverOpen
   const show = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -66,7 +58,6 @@ export function WorkDirEnvironmentMenu({
     <>
       <EnvironmentKindIcon kind={current?.hostKind ?? 'local'} className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{loading ? t('common.loading') : label}</span>
-      {!loading && <span className="shrink-0 text-muted-foreground">{currentKind}</span>}
     </>
   )
 
@@ -112,11 +103,10 @@ export function WorkDirEnvironmentMenu({
                     if (option.kind === 'clone-here') onClone(option)
                     else if (!disabled) onSelect(option)
                   }}
-                  className="gap-2 text-xs"
+                  className="gap-2 py-2.5 text-xs"
                 >
                   <EnvironmentKindIcon kind={option.hostKind ?? 'local'} className="size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  <span className="shrink-0 text-muted-foreground">{kindLabel(option.hostKind, t)}</span>
                   {detail && <span className="shrink-0 text-muted-foreground">{detail}</span>}
                   {option.needsUpgrade && option.kind !== 'offline' && (
                     <span className="shrink-0 text-muted-foreground">{t('chat.worktree.needsUpgrade')}</span>

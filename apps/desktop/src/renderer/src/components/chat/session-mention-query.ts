@@ -1,52 +1,58 @@
 /**
- * The `@session` grammar moved to `@superone/shared/session-mention-query` so
- * the mobile composer can reuse it. What stays here is the desktop's page
- * loader: sessions come through `window.environment`, which a shared module
- * must not know about.
+ * The `@session` grammar lives in `@superone/shared/session-mention-query`.
+ * What stays here is the desktop's host search: rows come through
+ * `window.environment`, which a shared module must not know about.
  */
-import { listSessionsPage, sessionsPageHasMore } from '@/lib/session-list-ops'
-import {
-  loadSessionMentionPage as loadSessionMentionPageWith,
-  type SessionMentionLoadState,
-  type SessionMentionRow,
-  type SessionMentionScope,
-  type ProjectOption,
-} from '@superone/shared/session-mention-query'
+import type { PinnedSessionEntry } from '@superone/shared/agent-types'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import type { ProjectOption } from '@superone/shared/session-mention-query'
+import { buildSessionProjectOptions } from '@superone/shared/session-mention-query'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 
 export {
   SESSION_MENTION_NAV_PREFIX,
   SESSION_MENTION_KEYWORD,
-  SESSION_MENTION_PAGE_SIZE,
+  SESSION_MENTION_SEARCH_LIMIT,
   SESSION_MENTION_ARGUMENT_HINT,
   isSessionMentionQuery,
   mentionQueryAllowsSpaces,
   remainingSessionArgumentHint,
   buildSessionProjectOptions,
   parseSessionMentionQuery,
-  listSessionProjectChoices,
+  listSessionProjectCompletions,
   titleMatches,
   titleMatchIndices,
-  initialSessionMentionLoadState,
-  type SessionMentionScope,
   type SessionMentionPhase,
   type ParsedSessionMentionQuery,
   type ProjectOption,
-  type SessionMentionRow,
-  type SessionMentionLoadState,
 } from '@superone/shared/session-mention-query'
 
-export function loadSessionMentionPage(args: {
-  scope: SessionMentionScope
-  titleQuery: string
-  projects: ProjectOption[]
-  state: SessionMentionLoadState
-  pageSize?: number
-}): Promise<{ rows: SessionMentionRow[]; next: SessionMentionLoadState }> {
-  return loadSessionMentionPageWith({
-    ...args,
-    loadPage: async (projectKey, limit, offset) => {
-      const sessions = await listSessionsPage(projectKey, { limit, offset })
-      return { sessions, hasMore: sessionsPageHasMore(sessions, limit) }
-    },
-  })
+/** Project labels on the same host as the active project. A remote key never scopes a local folder. */
+export function sessionProjectsOnHost(
+  recentFolders: Array<{ path: string; name?: string; missing?: boolean }>,
+  activeProject: string | null | undefined,
+): ProjectOption[] {
+  const connectionId = connectionIdForProjectKey(activeProject || '')
+  return buildSessionProjectOptions(recentFolders, activeProject)
+    .filter((project) => connectionIdForProjectKey(project.projectKey) === connectionId)
+}
+
+/** Host-local folder paths. Remote keys drop `remote:<connectionId>:`. */
+export function hostLocalProjectPaths(projects: readonly ProjectOption[]): string[] {
+  return projects.map((project) => parseRemoteProjectKey(project.projectKey)?.path ?? project.projectKey)
+}
+
+/**
+ * Title search on the host that owns `projectKey`. An empty key is this machine.
+ * `projectPaths` are already host-local. The host's order is kept.
+ */
+export async function searchSessionMentions(
+  projectKey: string,
+  query: string,
+  limit?: number,
+  projectPaths?: string[],
+): Promise<PinnedSessionEntry[]> {
+  const connectionId = connectionIdForProjectKey(projectKey || '')
+  const rows = await window.environment.searchSessionsByTitle(connectionId, query, limit, projectPaths)
+  return Array.isArray(rows) ? rows : []
 }

@@ -403,7 +403,6 @@ export const mobileChinese: Record<string, string> = {
   'remaining': '剩余',
   'Failed': '失败',
   'Todos': '待办',
-  'Scroll for more': '滚动加载更多',
   'AI provider': 'AI 提供商',
   'Default provider': '默认提供商',
   'Fast mode': '快速模式',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import type { SessionListRow } from './session-list-state'
 import {
-  initialSessionMentionLoadState, isSessionMentionQuery, loadSessionMentionPage,
-  parseSessionQuery, sessionEmptyLabel, sessionItems, sessionProjectItems, sessionProjectOptions,
+  isSessionMentionQuery, parseSessionQuery, sessionEmptyLabel, sessionItems, sessionProjectItems, sessionProjectOptions,
 } from './session-mention'
 import { buildMentionRows, groupMentionRows } from './mention-rows'
 
@@ -11,50 +11,53 @@ const options = sessionProjectOptions(projects, '/work/super-one')
 describe('session mention query', () => {
   it('opens on the portal keyword and nothing else', () => {
     expect(isSessionMentionQuery('session')).toBe(true)
-    expect(isSessionMentionQuery('session all fix')).toBe(true)
+    expect(isSessionMentionQuery('session fix login')).toBe(true)
     expect(isSessionMentionQuery('sessions')).toBe(false)
     expect(isSessionMentionQuery('src/session')).toBe(false)
   })
 
-  it('walks the three phases as the user types', () => {
-    expect(parseSessionQuery('session', options, '/work/super-one')?.phase).toBe('pick-project')
-    expect(parseSessionQuery('session all ', options, '/work/super-one')?.phase).toBe('need-title')
-    const search = parseSessionQuery('session super-one align popup', options, '/work/super-one')
-    expect(search?.phase).toBe('search')
-    expect(search?.titleQuery).toBe('align popup')
-    expect(search?.scope).toEqual({ kind: 'project', projectKey: '/work/super-one', label: 'super-one' })
+  it('is recent until a title is typed, and scopes on an exact label', () => {
+    expect(parseSessionQuery('session', options)?.phase).toBe('recent')
+    expect(parseSessionQuery('session ', options)).toMatchObject({ phase: 'recent', projects: null, titleQuery: '' })
+    const scoped = parseSessionQuery('session super-one align popup', options)
+    expect(scoped).toMatchObject({ phase: 'search', titleQuery: 'align popup', projectToken: '', scopeNavPrefix: 'session super-one ' })
+    expect(scoped?.projects?.map((project) => project.projectKey)).toEqual(['/work/super-one'])
+    // The first token is still open, so it is both the title and a completion.
+    expect(parseSessionQuery('session sup', options)).toMatchObject({
+      phase: 'search', projects: null, projectToken: 'sup', titleQuery: 'sup',
+    })
   })
 })
 
-describe('scope choices', () => {
-  it('offers every project plus the cross-project scope, current one first', () => {
-    const items = sessionProjectItems(options, '', '/work/super-one')
-    expect(items.map((item) => item.label)).toEqual(['All Projects', 'super-one', 'relay'])
-  })
-
-  it('navigates rather than mentioning, and says where it goes', () => {
-    const [all] = sessionProjectItems(options, '', '/work/super-one')
-    // `path` is the label, because that is what the row shows and what the
-    // match indices were scored over; the token lives in `navigateTo`.
-    expect(all).toMatchObject({ path: 'All Projects', navigateTo: 'session all ' })
-  })
-
-  it('filters as the scope token is typed', () => {
+describe('project completions', () => {
+  it('prefix-matches and puts the current project first', () => {
+    expect(sessionProjectItems(options, '', '/work/super-one').map((item) => item.label)).toEqual(['super-one', 'relay'])
     expect(sessionProjectItems(options, 'rel', '/work/super-one').map((item) => item.label)).toEqual(['relay'])
+  })
+
+  it('navigates to a scoped query rather than inserting a chip', () => {
+    const [current] = sessionProjectItems(options, 'sup', '/work/super-one')
+    expect(current).toMatchObject({
+      kind: 'session-project', path: 'super-one', navigateTo: 'session super-one ', description: 'current project',
+    })
   })
 })
 
 describe('session rows', () => {
-  const entry = (sessionId: string, title: string) => ({
-    session: { sessionId, title, lastActiveAt: '', messageCount: 0 },
-    projectKey: '/work/super-one',
-    projectLabel: 'super-one',
+  const entry = (sessionId: string, title: string, projectName = 'super-one'): SessionListRow => ({
+    sessionId, title, projectName, provider: 'claude',
   })
 
-  it('shows the title and highlights what matched inside it', () => {
+  it('shows the title, the project, and what matched inside the title', () => {
     const [row] = sessionItems([entry('sess-1', 'Align the mention popup')], 'align')
-    expect(row).toMatchObject({ kind: 'session', path: 'sess-1', label: 'Align the mention popup', description: 'super-one' })
+    expect(row).toMatchObject({
+      kind: 'session', path: 'sess-1', label: 'Align the mention popup', description: 'super-one', badge: 'claude',
+    })
     expect(row?.labelIndices).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it('hides the project once the search is already scoped to it', () => {
+    expect(sessionItems([entry('sess-1', 'Align the mention popup')], 'align', false)[0]).not.toHaveProperty('description')
   })
 
   it('falls back to the id for a session with no title yet', () => {
@@ -62,37 +65,9 @@ describe('session rows', () => {
   })
 })
 
-describe('paging', () => {
-  const page = (count: number, offset: number) => ({
-    sessions: Array.from({ length: count }, (_, index) => ({
-      sessionId: `s${offset + index}`, title: `session ${offset + index}`, lastActiveAt: '', messageCount: 0,
-    })),
-    hasMore: offset + count < 45,
-  })
-
-  it('reports more to come, then stops without a short last page', async () => {
-    const first = await loadSessionMentionPage({
-      scope: { kind: 'project', projectKey: '/work/super-one', label: 'super-one' },
-      titleQuery: '', projects: options, state: initialSessionMentionLoadState(),
-      loadPage: async (_key, limit, offset) => page(Math.min(limit, 45 - offset), offset),
-    })
-    expect(first.rows).toHaveLength(30)
-    expect(first.next.hasMore).toBe(true)
-
-    const second = await loadSessionMentionPage({
-      scope: { kind: 'project', projectKey: '/work/super-one', label: 'super-one' },
-      titleQuery: '', projects: options, state: first.next,
-      loadPage: async (_key, limit, offset) => page(Math.min(limit, 45 - offset), offset),
-    })
-    expect(second.rows).toHaveLength(15)
-    expect(second.next.hasMore).toBe(false)
-  })
-})
-
 describe('empty states', () => {
-  it('says which question came back empty', () => {
-    expect(sessionEmptyLabel('pick-project')).toBe('No matching projects')
-    expect(sessionEmptyLabel('need-title')).toBe('No recent sessions')
+  it('names a recent list and a title search differently', () => {
+    expect(sessionEmptyLabel('recent')).toBe('No recent sessions')
     expect(sessionEmptyLabel('search')).toBe('No matching sessions')
   })
 })
@@ -105,7 +80,7 @@ describe('the portal in the mention list', () => {
     expect(groupMentionRows(rows).find((group) => group.items.includes(portal!))?.key).toBe('capability')
   })
 
-  it('gives scope rows their own group, ahead of the sessions they lead to', () => {
+  it('gives completion rows their own group, ahead of the sessions they lead to', () => {
     const rows = buildMentionRows('', {
       remote: [...sessionProjectItems(options, '', null), { kind: 'session', path: 'sess-1', label: 'Ship it' }],
       agentProfiles: [], scoped: true,

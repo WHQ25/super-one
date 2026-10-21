@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest'
 import {
   enabledGitMentionPortals,
   encodeGitMentionValue,
+  gitMentionSearchKinds,
   gitRefMatchIndices,
   gitRefMatches,
   gitMentionDisplayName,
   isGitMentionQuery,
   listGitRefKindChoices,
+  loadGitMentionRefsForKinds,
   parseGitMentionQuery,
   parseGitMentionValue,
   remainingGitArgumentHint,
+  type GitMentionRefKind,
+  type GitMentionRefsResult,
 } from './git-mention-query'
 import { mentionQueryAllowsSpaces } from './session-mention-query'
 
@@ -50,19 +54,34 @@ describe('isGitMentionQuery', () => {
 })
 
 describe('parseGitMentionQuery phases', () => {
-  it('picks a kind until a known kind is followed by a space', () => {
+  it('picks a kind only when nothing follows the keyword', () => {
     expect(parseGitMentionQuery('git')).toMatchObject({ phase: 'pick-kind', kindToken: '' })
-    expect(parseGitMentionQuery('git bra')).toMatchObject({ phase: 'pick-kind', kindToken: 'bra' })
-    expect(parseGitMentionQuery('git nope ')).toMatchObject({ phase: 'pick-kind', kindToken: 'nope' })
+    expect(parseGitMentionQuery('git ')).toMatchObject({ phase: 'pick-kind', kindToken: '' })
   })
 
-  it('needs a query after the kind, then searches', () => {
+  it('searches every kind when the first token is not a finished kind', () => {
+    expect(parseGitMentionQuery('git bra')).toMatchObject({
+      phase: 'search', refKind: null, refQuery: 'bra', kindToken: 'bra', kindNavPrefix: null,
+    })
+    expect(parseGitMentionQuery('git nope ')).toMatchObject({
+      phase: 'search', refKind: null, refQuery: 'nope', kindToken: '',
+    })
+    expect(parseGitMentionQuery('git fix auth')).toMatchObject({
+      phase: 'search', refKind: null, refQuery: 'fix auth', kindToken: '',
+    })
+    expect(gitMentionSearchKinds(parseGitMentionQuery('git fix auth')!)).toEqual(['branch', 'commit', 'worktree', 'tag'])
+    expect(gitMentionSearchKinds(parseGitMentionQuery('gh 23')!)).toEqual(['issue', 'pr'])
+    expect(gitMentionSearchKinds(parseGitMentionQuery('git')!)).toEqual([])
+  })
+
+  it('needs a query after the kind, then searches that kind only', () => {
     expect(parseGitMentionQuery('git branch ')).toMatchObject({
       phase: 'need-query', refKind: 'branch', refQuery: '', kindNavPrefix: 'git branch ',
     })
     expect(parseGitMentionQuery('git Commit fix auth')).toMatchObject({
       phase: 'search', refKind: 'commit', refQuery: 'fix auth',
     })
+    expect(gitMentionSearchKinds(parseGitMentionQuery('git branch ')!)).toEqual(['branch'])
   })
 
   it('returns null outside the grammar', () => {
@@ -74,30 +93,63 @@ describe('parseGitMentionQuery phases', () => {
       portal: 'gh', phase: 'search', refKind: 'issue', refQuery: '23', kindNavPrefix: 'gh issue ',
     })
     expect(parseGitMentionQuery('gh pr ')).toMatchObject({ portal: 'gh', phase: 'need-query', refKind: 'pr' })
-    // A kind the other portal owns is just an unknown token here.
-    expect(parseGitMentionQuery('gh branch main')).toMatchObject({ portal: 'gh', phase: 'pick-kind', kindToken: 'branch' })
-    expect(parseGitMentionQuery('git issue 1')).toMatchObject({ portal: 'git', phase: 'pick-kind', kindToken: 'issue' })
+    // A kind the other portal owns is a query, not a kind to complete.
+    expect(parseGitMentionQuery('gh branch main')).toMatchObject({
+      portal: 'gh', phase: 'search', refKind: null, refQuery: 'branch main', kindToken: '',
+    })
+    expect(parseGitMentionQuery('git issue 1')).toMatchObject({
+      portal: 'git', phase: 'search', refKind: null, refQuery: 'issue 1', kindToken: '',
+    })
+  })
+})
+
+describe('loadGitMentionRefsForKinds', () => {
+  const ref = (kind: GitMentionRefKind, id: string) => ({ kind, id, label: id, detail: '' })
+  const load = (answers: Record<string, GitMentionRefsResult>) =>
+    async (kind: GitMentionRefKind): Promise<GitMentionRefsResult> => answers[kind] ?? { ok: true, refs: [] }
+
+  it('keeps kind order, caps each kind, and skips a failed kind when another answered', async () => {
+    const result = await loadGitMentionRefsForKinds(
+      ['branch', 'tag', 'worktree'],
+      'x',
+      load({
+        branch: { ok: true, refs: [ref('branch', 'a'), ref('branch', 'b')] },
+        tag: { ok: false, reason: 'error' },
+        worktree: { ok: true, refs: [ref('worktree', 'c')] },
+      }),
+      { perKindLimit: 1 },
+    )
+    expect(result).toEqual({ ok: true, refs: [ref('branch', 'a'), ref('worktree', 'c')] })
+  })
+
+  it('returns the first failure when every kind failed', async () => {
+    const result = await loadGitMentionRefsForKinds(
+      ['branch', 'tag'],
+      '',
+      load({
+        branch: { ok: false, reason: 'not-repo' },
+        tag: { ok: false, reason: 'error' },
+      }),
+    )
+    expect(result).toEqual({ ok: false, reason: 'not-repo' })
   })
 })
 
 describe('kind choices and ghost hint', () => {
-  it('filters kinds by substring with highlight indices', () => {
+  it('filters kinds by prefix with highlight indices', () => {
     expect(listGitRefKindChoices('git', '').map((c) => c.kind)).toEqual(['branch', 'commit', 'worktree', 'tag'])
     expect(listGitRefKindChoices('gh', '').map((c) => c.kind)).toEqual(['issue', 'pr'])
     expect(listGitRefKindChoices('gh', 'p')).toEqual([{ kind: 'pr', matchIndices: [0] }])
-    expect(listGitRefKindChoices('git', 't')).toEqual([
-      { kind: 'commit', matchIndices: [5] },
-      { kind: 'worktree', matchIndices: [4] },
-      { kind: 'tag', matchIndices: [0] },
-    ])
+    expect(listGitRefKindChoices('git', 't')).toEqual([{ kind: 'tag', matchIndices: [0] }])
+    expect(listGitRefKindChoices('git', 'br').map((c) => c.kind)).toEqual(['branch'])
   })
 
   it('shows the remaining grammar per phase', () => {
-    expect(remainingGitArgumentHint('git')).toBe('<branch | commit | worktree | tag> <query>')
+    expect(remainingGitArgumentHint('git')).toBe('[branch | commit | worktree | tag] <query>')
     expect(remainingGitArgumentHint('git tag ')).toBe('<query>')
     expect(remainingGitArgumentHint('git tag v1')).toBeNull()
     expect(remainingGitArgumentHint('files')).toBeNull()
-    expect(remainingGitArgumentHint('gh')).toBe('<issue | pr> <number | query>')
+    expect(remainingGitArgumentHint('gh')).toBe('[issue | pr] <number | query>')
     expect(remainingGitArgumentHint('gh pr ')).toBe('<number | query>')
   })
 })

@@ -4897,6 +4897,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_LIST_SESSIONS: 'environment:listSessions',
   /** Cross-project pinned sessions for one environment (sidebar Pinned section). */
   ENVIRONMENT_LIST_PINNED_SESSIONS: 'environment:listPinnedSessions',
+  /** Cross-project session title search for one environment (`@session`, plain `@`). */
+  ENVIRONMENT_SEARCH_SESSIONS: 'environment:searchSessionsByTitle',
   /** Unsent composer drafts, stored in the environment that owns the project. */
   ENVIRONMENT_LIST_DRAFTS: 'environment:listDrafts',
   ENVIRONMENT_UPSERT_DRAFT: 'environment:upsertDraft',

@@ -1,100 +1,152 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { SessionHistoryEntry } from './agent-types'
+import { describe, expect, it } from 'vitest'
 import {
-  initialSessionMentionLoadState,
-  loadSessionMentionPage,
-  type SessionMentionPageLoader,
+  buildSessionProjectOptions,
+  isSessionMentionQuery,
+  listSessionProjectCompletions,
+  mentionQueryAllowsSpaces,
+  parseSessionMentionQuery,
+  remainingSessionArgumentHint,
+  SESSION_MENTION_ARGUMENT_HINT,
+  SESSION_MENTION_NAV_PREFIX,
+  titleMatches,
+  type ProjectOption,
 } from './session-mention-query'
 
-/**
- * The grammar is covered end-to-end by the desktop popup's own suite, which
- * exercises this module through its shim. What only exists here is the injected
- * loader contract — in particular that paging follows the loader's `hasMore`
- * rather than inferring it from a full-looking page.
- */
-
-const session = (sessionId: string, title: string): SessionHistoryEntry =>
-  ({ sessionId, title, lastActiveAt: '2026-01-01T00:00:00.000Z', messageCount: 1 }) as SessionHistoryEntry
-
-const projects = [
-  { projectKey: '/a', label: 'a' },
-  { projectKey: '/b', label: 'b' },
+const projects: ProjectOption[] = [
+  { projectKey: '/work/super-one', label: 'super-one' },
+  { projectKey: '/work/other', label: 'other' },
+  { projectKey: '/work/app-a', label: 'app' },
+  { projectKey: '/work/app-b', label: 'app' },
 ]
 
-describe('loadSessionMentionPage', () => {
-  it('stops paging a project when the loader says there is no more, even on a full page', async () => {
-    // A backend that knows the total can return exactly `limit` rows and still
-    // report hasMore: false. Inferring from page length would loop forever.
-    const loadPage = vi.fn<SessionMentionPageLoader>(async (projectKey) =>
-      projectKey === '/a'
-        ? { sessions: [session('1', 'one'), session('2', 'two')], hasMore: false }
-        : { sessions: [session('3', 'three')], hasMore: false },
+describe('isSessionMentionQuery', () => {
+  it('matches session and session with a title', () => {
+    expect(isSessionMentionQuery('session')).toBe(true)
+    expect(isSessionMentionQuery('session ')).toBe(true)
+    expect(isSessionMentionQuery('session fix auth')).toBe(true)
+  })
+
+  it('rejects colon form and unrelated', () => {
+    expect(isSessionMentionQuery('session:')).toBe(false)
+    expect(isSessionMentionQuery('sessions')).toBe(false)
+    expect(isSessionMentionQuery('chat')).toBe(false)
+  })
+
+  it('requires the keyword to follow @ directly', () => {
+    expect(isSessionMentionQuery(' session')).toBe(false)
+    expect(mentionQueryAllowsSpaces(' session all')).toBe(false)
+    expect(parseSessionMentionQuery(' session')).toBeNull()
+  })
+})
+
+describe('parseSessionMentionQuery', () => {
+  it('is recent across every project until something is typed', () => {
+    expect(parseSessionMentionQuery('session', { projects })).toEqual({
+      phase: 'recent',
+      projects: null,
+      projectToken: '',
+      titleQuery: '',
+      scopeNavPrefix: null,
+    })
+    expect(parseSessionMentionQuery('session ', { projects }).phase).toBe('recent')
+  })
+
+  it('treats an unfinished first token as a title and a completion token', () => {
+    expect(parseSessionMentionQuery('session sup', { projects })).toMatchObject({
+      phase: 'search',
+      projects: null,
+      projectToken: 'sup',
+      titleQuery: 'sup',
+      scopeNavPrefix: null,
+    })
+  })
+
+  it('scopes to every project with that label once whitespace follows it', () => {
+    const scoped = parseSessionMentionQuery('session app ', { projects })
+    expect(scoped).toMatchObject({
+      phase: 'recent',
+      projectToken: '',
+      titleQuery: '',
+      scopeNavPrefix: 'session app ',
+    })
+    expect(scoped?.projects?.map((project) => project.projectKey)).toEqual(['/work/app-a', '/work/app-b'])
+
+    expect(parseSessionMentionQuery('session Super-One fix login', { projects })).toMatchObject({
+      phase: 'search',
+      titleQuery: 'fix login',
+      projectToken: '',
+      scopeNavPrefix: 'session super-one ',
+    })
+  })
+
+  it('searches the whole rest when the first token is not a project', () => {
+    expect(parseSessionMentionQuery('session fix login', { projects })).toMatchObject({
+      phase: 'search',
+      projects: null,
+      projectToken: '',
+      titleQuery: 'fix login',
+    })
+    expect(parseSessionMentionQuery('session nope ', { projects })).toMatchObject({
+      phase: 'search',
+      projects: null,
+      projectToken: '',
+      titleQuery: 'nope',
+    })
+  })
+
+  it('nav prefix is session with trailing space', () => {
+    expect(SESSION_MENTION_NAV_PREFIX).toBe('session ')
+    expect(isSessionMentionQuery(SESSION_MENTION_NAV_PREFIX)).toBe(true)
+  })
+})
+
+describe('listSessionProjectCompletions', () => {
+  it('prefix-matches, dedupes labels, and puts the current project first', () => {
+    const rows = listSessionProjectCompletions(projects, 'a', '/work/app-b')
+    expect(rows.map((row) => row.label)).toEqual(['app'])
+    expect(rows[0]).toMatchObject({ token: 'app', hint: 'current project', matchIndices: [0] })
+
+    const all = listSessionProjectCompletions(projects, '', '/work/other')
+    expect(all.map((row) => row.label)).toEqual(['other', 'app', 'super-one'])
+    expect(all.map((row) => row.token)).not.toContain('all')
+  })
+})
+
+describe('buildSessionProjectOptions', () => {
+  it('skips missing folders and keeps the active project', () => {
+    const options = buildSessionProjectOptions(
+      [{ path: '/work/super-one', name: 'super-one' }, { path: '/gone', missing: true }],
+      '/work/extra',
     )
-
-    const { rows, next } = await loadSessionMentionPage({
-      scope: { kind: 'all' },
-      titleQuery: '',
-      projects,
-      state: initialSessionMentionLoadState(),
-      loadPage,
-      pageSize: 2,
-    })
-
-    expect(rows.map((r) => r.session.sessionId)).toEqual(['1', '2'])
-    // Page filled on project /a, and /a is exhausted → advance to /b.
-    expect(next).toEqual({ offset: 0, projectIndex: 1, hasMore: true })
-    expect(loadPage).toHaveBeenCalledTimes(1)
+    expect(options.map((option) => option.projectKey)).toEqual(['/work/super-one', '/work/extra'])
+    expect(options[1]?.label).toBe('extra')
   })
+})
 
-  it('keeps scanning across projects until the page is full', async () => {
-    const loadPage: SessionMentionPageLoader = async (projectKey) =>
-      projectKey === '/a'
-        ? { sessions: [session('1', 'one')], hasMore: false }
-        : { sessions: [session('2', 'two')], hasMore: false }
-
-    const { rows, next } = await loadSessionMentionPage({
-      scope: { kind: 'all' },
-      titleQuery: '',
-      projects,
-      state: initialSessionMentionLoadState(),
-      loadPage,
-      pageSize: 5,
-    })
-
-    expect(rows.map((r) => r.projectLabel)).toEqual(['a', 'b'])
-    expect(next.hasMore).toBe(false)
+describe('mentionQueryAllowsSpaces', () => {
+  it('allows spaces only inside the session grammar', () => {
+    expect(mentionQueryAllowsSpaces('session ')).toBe(true)
+    expect(mentionQueryAllowsSpaces('session fix auth')).toBe(true)
+    expect(mentionQueryAllowsSpaces('file name')).toBe(false)
   })
+})
 
-  it('filters by title and reports the project each row came from', async () => {
-    const loadPage: SessionMentionPageLoader = async (projectKey) =>
-      projectKey === '/a'
-        ? { sessions: [session('1', 'align the popup'), session('2', 'unrelated')], hasMore: false }
-        : { sessions: [session('3', 'alignment pass')], hasMore: false }
-
-    const { rows } = await loadSessionMentionPage({
-      scope: { kind: 'all' },
-      titleQuery: 'align',
-      projects,
-      state: initialSessionMentionLoadState(),
-      loadPage,
-    })
-
-    expect(rows.map((r) => [r.session.sessionId, r.projectLabel])).toEqual([['1', 'a'], ['3', 'b']])
+describe('remainingSessionArgumentHint', () => {
+  it('shows the full hint, then <title> after a scope, then nothing', () => {
+    expect(SESSION_MENTION_ARGUMENT_HINT).toBe('[project] <title>')
+    expect(remainingSessionArgumentHint('session', projects)).toBe('[project] <title>')
+    expect(remainingSessionArgumentHint('session ', projects)).toBe('[project] <title>')
+    expect(remainingSessionArgumentHint('session app ', projects)).toBe('<title>')
+    expect(remainingSessionArgumentHint('session app fix', projects)).toBeNull()
+    expect(remainingSessionArgumentHint('session auth', projects)).toBeNull()
+    expect(remainingSessionArgumentHint('files')).toBeNull()
   })
+})
 
-  it('returns nothing when the scope resolves to no projects', async () => {
-    const loadPage = vi.fn<SessionMentionPageLoader>()
-
-    const { rows, next } = await loadSessionMentionPage({
-      scope: { kind: 'all' },
-      titleQuery: '',
-      projects: [],
-      state: initialSessionMentionLoadState(),
-      loadPage,
-    })
-
-    expect(rows).toEqual([])
-    expect(next.hasMore).toBe(false)
-    expect(loadPage).not.toHaveBeenCalled()
+describe('titleMatches', () => {
+  it('fuzzy-matches a title', () => {
+    expect(titleMatches('Fix Auth Middleware', 'auth')).toBe(true)
+    expect(titleMatches('Fix Auth Middleware', 'fam')).toBe(true)
+    expect(titleMatches('Fix Auth Middleware', 'zzz')).toBe(false)
   })
 })

@@ -1,5 +1,10 @@
 import type { RelayClient } from '@superone/relay-client'
 import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
+import { PLAIN_MENTION_GROUP_LIMIT, shouldDirectSearch } from '@superone/shared/mention-direct-search'
+import { sortByMentionMatch } from '@superone/shared/mention-match-tier'
+import { SESSION_MENTION_SEARCH_LIMIT } from '@superone/shared/session-mention-query'
+import { enabledGitMentionPortals, gitMentionSearchKinds, loadGitMentionRefsForKinds, PLAIN_GIT_MENTION_KINDS } from '@superone/shared/git-mention-query'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { requestMentionIcons, requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from '../mention-search'
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
@@ -13,15 +18,14 @@ import { peekMentionCatalog, rememberMentionCatalog, type MentionCatalog } from 
 import { deriveMentionMode, mentionScopeDir } from '../mention-browse-state'
 import { filterBrowseItems, requestDirectory } from '../mention-browse'
 import {
-  initialSessionMentionLoadState, isSessionMentionQuery, loadSessionMentionPage, parseSessionQuery,
-  sessionEmptyLabel, sessionItems, sessionPageLoader, sessionProjectItems, sessionProjectOptions,
-  type SessionMentionLoadState,
+  isSessionMentionQuery, parseSessionQuery,
+  sessionEmptyLabel, sessionItems, sessionProjectItems, sessionProjectOptions,
 } from '../session-mention'
+import { searchSessions } from './workspace-data'
 import {
   gitEmptyLabel, gitKindItems, gitRefItems, isGitMentionQuery, parseGitMentionQuery,
   requestGitMentionRefs,
 } from '../git-mention'
-import { enabledGitMentionPortals } from '@superone/shared/git-mention-query'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
 import { peekSlashCatalog, requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
 import { useMcpMentionSearch } from './use-mcp-mention-search'
@@ -30,8 +34,6 @@ export type MentionSearchState = {
   active: boolean
   loading: boolean
   error?: string
-  /** A further page can be fetched. */
-  hasMore?: boolean
   /** Phase-specific wording for an empty list. */
   emptyLabel?: string
 }
@@ -43,10 +45,13 @@ export { MENTION_SEARCH_DEBOUNCE_MS }
 /** One shape for every producer, so the caller never branches on which ran. */
 type MentionFetch = {
   remote: MentionItem[]
-  /** Another page is available; only the session portal pages today. */
-  hasMore?: boolean
   /** What this producer's "nothing found" means, when it is not just "no matches". */
   emptyLabel?: string
+  /**
+   * The file rows came from a project-wide search after a directory was missing
+   * or a scoped search was empty. Their paths are not relative to that directory.
+   */
+  unscopedFallback?: boolean
 }
 
 /**
@@ -128,11 +133,6 @@ export function useComposerSuggestions(
    */
   const cwd = useRef<string | null>(null)
   /**
-   * Where the session portal's scan has reached, kept per query so that asking
-   * for more continues rather than re-fetching the first page.
-   */
-  const sessionPaging = useRef<{ query: string; state: SessionMentionLoadState; items: MentionItem[] } | null>(null)
-  /**
    * App icons the device already holds, keyed by content id.
    *
    * Shared across every search and every run: the host now answers with ids,
@@ -151,7 +151,6 @@ export function useComposerSuggestions(
   }
   useEffect(() => {
     cwd.current = null
-    sessionPaging.current = null
     clear()
     return () => { generation.current++ }
   }, [contextKey])
@@ -239,38 +238,28 @@ export function useComposerSuggestions(
   const sessionProjects = () => sessionProjectOptions(host.projects ?? [], projectPath ?? null)
 
   /**
-   * The `@session` portal: pick a scope, then search titles inside it.
-   *
-   * Paging is continued rather than restarted when the query is unchanged, so
-   * "load more" adds a page instead of re-fetching the first one. A title
-   * search may skip most of a page, so the scan can cross several.
+   * `@session`: recent or a title, optionally scoped to projects whose label
+   * matched. Completion rows sit above the sessions while the first token is open.
    */
   const sessionLookup = (query: string, client: RelayClient | null): (() => Promise<MentionFetch>) | null => {
     const projects = sessionProjects()
-    const parsed = parseSessionQuery(query, projects, projectPath ?? null)
+    const parsed = parseSessionQuery(query, projects)
     if (!parsed) return null
-    if (parsed.phase === 'pick-project') {
-      return async () => ({
-        remote: sessionProjectItems(projects, parsed.projectToken, projectPath ?? null),
-        emptyLabel: sessionEmptyLabel(parsed.phase),
-      })
-    }
-    const scope = parsed.scope
-    if (!scope || !client) return null
+    const completions = parsed.projectToken
+      ? sessionProjectItems(projects, parsed.projectToken, projectPath ?? null)
+      : []
     return async () => {
-      const previous = sessionPaging.current?.query === query ? sessionPaging.current : null
-      const state = previous?.state ?? initialSessionMentionLoadState()
-      const { rows, next } = await loadSessionMentionPage({
-        scope, titleQuery: parsed.titleQuery, projects, state,
-        loadPage: sessionPageLoader(client, projectPath ?? ''),
-      })
-      const items = [...(previous?.items ?? []), ...sessionItems(rows, parsed.titleQuery)]
-      sessionPaging.current = { query, state: next, items }
-      return { remote: items, hasMore: next.hasMore, emptyLabel: sessionEmptyLabel(parsed.phase) }
+      if (!client) return { remote: completions, emptyLabel: sessionEmptyLabel(parsed.phase) }
+      const paths = parsed.projects?.map((project) => parseRemoteProjectKey(project.projectKey)?.path ?? project.projectKey)
+      const rows = await searchSessions(client, parsed.titleQuery, SESSION_MENTION_SEARCH_LIMIT, paths)
+      return {
+        remote: [...completions, ...sessionItems(rows, parsed.titleQuery, parsed.projects == null)],
+        emptyLabel: sessionEmptyLabel(parsed.phase),
+      }
     }
   }
 
-  /** The `@git` portal: pick a ref kind, then filter that kind's refs on the host. */
+  /** `@git` / `@gh`: a kind is optional. Omitted, every kind of that portal is searched. */
   /** Portals the host said it can serve; a portal that is off does not own the grammar. */
   const gitPortals = () => enabledGitMentionPortals(mentionCatalogRef.current?.gitAvailability)
 
@@ -280,13 +269,66 @@ export function useComposerSuggestions(
     if (parsed.phase === 'pick-kind') {
       return async () => ({ remote: gitKindItems(parsed.portal, parsed.kindToken), emptyLabel: gitEmptyLabel(parsed) })
     }
-    const kind = parsed.refKind
-    if (!kind || !client || !projectPath) return null
-    return async () => {
-      const result = await requestGitMentionRefs(client, projectPath, kind, parsed.refQuery)
-      if (!result.ok) return { remote: [], emptyLabel: gitEmptyLabel(parsed, result) }
-      return { remote: gitRefItems(result.refs, parsed.refQuery), emptyLabel: gitEmptyLabel(parsed) }
+    const kinds = gitMentionSearchKinds(parsed)
+    const kindRows = parsed.phase === 'search' && parsed.refKind == null && parsed.kindToken
+      ? gitKindItems(parsed.portal, parsed.kindToken)
+      : []
+    if (!client || !projectPath || kinds.length === 0) {
+      return async () => ({ remote: kindRows, emptyLabel: gitEmptyLabel(parsed) })
     }
+    return async () => {
+      const result = await loadGitMentionRefsForKinds(
+        kinds,
+        parsed.refQuery,
+        (kind, refQuery) => requestGitMentionRefs(client, projectPath, kind, refQuery),
+      )
+      if (!result.ok) return { remote: kindRows, emptyLabel: gitEmptyLabel(parsed, result) }
+      return { remote: [...kindRows, ...gitRefItems(result.refs, parsed.refQuery)], emptyLabel: gitEmptyLabel(parsed) }
+    }
+  }
+
+  /**
+   * Sessions and git refs that share a plain `@` query with the file list.
+   * A slash stays in the query: branch names contain one.
+   */
+  const plainMentionExtras = async (query: string, client: RelayClient | null): Promise<[MentionItem[], MentionItem[]]> => {
+    if (!client || !shouldDirectSearch(query, gitPortals())) return [[], []]
+    const title = query.trim()
+    const sessions = searchSessions(client, title, PLAIN_MENTION_GROUP_LIMIT)
+      .then((rows) => sessionItems(
+        sortByMentionMatch(rows, title, (row) => row.title || row.sessionId),
+        title,
+        true,
+      ))
+      .catch(() => [] as MentionItem[])
+    const refs = (async () => {
+      const caps = mentionCatalogRef.current?.gitAvailability
+      if (caps?.repo !== 'ready' || !projectPath) return [] as MentionItem[]
+      try {
+        const result = await loadGitMentionRefsForKinds(
+          [...PLAIN_GIT_MENTION_KINDS],
+          title,
+          (kind, refQuery) => requestGitMentionRefs(client, projectPath, kind, refQuery),
+          { perKindLimit: PLAIN_MENTION_GROUP_LIMIT },
+        )
+        return result.ok ? gitRefItems(result.refs, title) : []
+      } catch {
+        return [] as MentionItem[]
+      }
+    })()
+    return Promise.all([sessions, refs])
+  }
+
+  const runMentionSearch = (
+    query: string,
+    runtime: ChatRuntime | null,
+    client: RelayClient | null,
+    scopeDir?: string,
+  ): Promise<MentionSearchResult> => {
+    const scoped = scopeDir ? { scopeDir } : {}
+    if (runtime) return runtime.searchMentions(query, scoped)
+    if (client && projectPath) return requestMentionSearch(client, projectPath, query, { ...searchTarget(), ...scoped })
+    return Promise.resolve({ items: [] })
   }
 
   /**
@@ -294,7 +336,9 @@ export function useComposerSuggestions(
    *
    * A trailing `/` means *browse* — list one directory, which fuzzy search
    * cannot answer: an empty query against a scoped tree returns the first 20
-   * entries of a deep crawl, not the folder's own children.
+   * entries of a deep crawl, not the folder's own children. A missing or empty
+   * directory, and a scoped search that comes back empty, fall back to an
+   * unscoped search of the whole query. Bare `@` does not.
    */
   const mentionLookup = (
     query: string,
@@ -304,10 +348,7 @@ export function useComposerSuggestions(
     if (isSessionMentionQuery(query)) return sessionLookup(query, client)
     if (isGitMentionQuery(query, gitPortals())) return gitLookup(query, client)
     const mode = deriveMentionMode(query)
-    const needle = mode.kind === 'search' ? mode.needle : ''
-    const scoped = mode.kind === 'search' && mode.scopeDir ? { scopeDir: mode.scopeDir } : {}
-    const search = runtime ? () => runtime.searchMentions(needle, scoped)
-      : client && projectPath ? () => requestMentionSearch(client, projectPath, needle, { ...searchTarget(), ...scoped }) : null
+    const canSearch = !!(runtime || (client && projectPath))
     if (mode.kind === 'browse') {
       const root = browseRoot(runtime)
       if (!client || !root || !projectPath) return null
@@ -317,33 +358,79 @@ export function useComposerSuggestions(
         // include deep descendants and duplicate the root's immediate entries.
         const [{ items, error }, catalog] = await Promise.all([
           requestDirectory(client, projectPath, root, mode.dir),
-          !mode.dir && search ? search() : null,
+          !mode.dir && canSearch ? runMentionSearch('', runtime, client) : null,
         ])
-        if (error) throw new Error(error)
-        if (catalog?.error) throw new Error(catalog.error)
-        const fetched = catalog ? absorb(catalog) : { remote: [] }
-        return { ...fetched, remote: [
-          ...fetched.remote.filter((item) => item.kind === 'agent' || item.kind === 'miniapp'),
-          ...items,
-        ] }
+        if (!mode.dir) {
+          if (error) throw new Error(error)
+          if (catalog?.error) throw new Error(catalog.error)
+          const fetched = catalog ? absorb(catalog) : { remote: [] }
+          return { ...fetched, remote: [
+            ...fetched.remote.filter((item) => item.kind === 'agent' || item.kind === 'miniapp'),
+            ...items,
+          ] }
+        }
+        if (!error && items.length > 0) {
+          const [sessions, refs] = await plainMentionExtras(query, client)
+          return { remote: [...sessions, ...refs, ...items] }
+        }
+        const [result, extras] = await Promise.all([
+          runMentionSearch(query, runtime, client),
+          plainMentionExtras(query, client),
+        ])
+        if (result.error) throw new Error(result.error)
+        const fetched = absorb(result)
+        return {
+          ...fetched,
+          remote: [...extras[0], ...extras[1], ...fetched.remote],
+          unscopedFallback: true,
+        }
       }
     }
-    if (!search) return null
+    if (!canSearch) return null
     return async () => {
-      const result = await search()
-      if (result.error) throw new Error(result.error)
+      const extras = plainMentionExtras(query, client)
+      let result: MentionSearchResult
+      try {
+        result = await runMentionSearch(mode.needle, runtime, client, mode.scopeDir || undefined)
+      } catch (err) {
+        result = { error: err instanceof Error ? err.message : 'Could not load mention suggestions' }
+      }
+      const [sessions, refs] = await extras
+      const widen = async (): Promise<MentionFetch> => {
+        const fallback = await runMentionSearch(query, runtime, client)
+        if (fallback.error) throw new Error(fallback.error)
+        const fetched = absorb(fallback)
+        return {
+          ...fetched,
+          remote: [...sessions, ...refs, ...fetched.remote],
+          unscopedFallback: true,
+        }
+      }
+      if (result.error) {
+        if (mode.scopeDir && query.trim()) return widen()
+        throw new Error(result.error)
+      }
       // A host that predates scoped search answered project-wide, and its
       // top-20 may have ranked every in-scope file out. Filtering that answer
       // would show less than the directory actually holds, so list the
-      // directory instead and match inside it.
+      // directory instead and match inside it. An empty listing falls through
+      // to that project-wide answer.
       if (mode.scopeDir && !result.appliedOptions?.scopeDir) {
         const fetched = absorb(result)
         const root = browseRoot(runtime)
-        if (!client || !root || !projectPath) return fetched
-        const { items, error } = await requestDirectory(client, projectPath, root, mode.scopeDir)
-        return error ? fetched : { ...fetched, remote: filterBrowseItems(items, mode.needle) }
+        if (client && root && projectPath) {
+          const listed = await requestDirectory(client, projectPath, root, mode.scopeDir)
+          if (!listed.error) {
+            const filtered = filterBrowseItems(listed.items, mode.needle)
+            if (filtered.length > 0) return { ...fetched, remote: [...sessions, ...refs, ...filtered] }
+          }
+        }
+        return { ...fetched, remote: [...sessions, ...refs, ...fetched.remote], unscopedFallback: true }
       }
-      return absorb(result)
+      const fetched = absorb(result)
+      const hasFile = fetched.remote.some((item) => item.kind === 'file' || item.kind === 'directory' || item.kind === 'dir-entry')
+      if (mode.scopeDir && query.trim() && !hasFile) return widen()
+      return { ...fetched, remote: [...sessions, ...refs, ...fetched.remote] }
     }
   }
 
@@ -406,7 +493,7 @@ export function useComposerSuggestions(
       void Promise.resolve().then(lookup).then((fetched) => {
         if (stale()) return
         setMentionResults(fetched)
-        setMentionSearch({ active: true, loading: false, hasMore: fetched.hasMore, emptyLabel: fetched.emptyLabel })
+        setMentionSearch({ active: true, loading: false, emptyLabel: fetched.emptyLabel })
         fillIcons(fetched.remote, client)
       }).catch((error: unknown) => {
         if (stale()) return
@@ -447,6 +534,10 @@ export function useComposerSuggestions(
     const mode = deriveMentionMode(mentionQuery)
     // A portal grammar (session / git) owns the list: no needle, no file scope.
     const session = isSessionMentionQuery(mentionQuery) || isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionCatalog?.gitAvailability))
+    const anchored = !!mentionScopeDir(mentionQuery)
+    // Fallback hits are project-wide. Slicing them at the typed directory
+    // would cut a path that does not start there.
+    const scopeDir = session || mentionResults.unscopedFallback ? '' : mentionScopeDir(mentionQuery)
     return buildMentionRows(session || mode.kind === 'browse' ? '' : mode.needle, {
       ...mentionResults,
       agentProfiles: mentionCatalog?.agentProfiles ?? [],
@@ -460,10 +551,10 @@ export function useComposerSuggestions(
         return png ? { ...item, iconPng: png } : item
       }),
       // A portal query is anchored the same way a path is: only its own rows apply.
-      scoped: !!mentionScopeDir(mentionQuery) || session,
+      scoped: anchored || session,
       // The desktop shows a path minus the directory already typed, so the two
       // surfaces truncate at the same place.
-      ...(session ? {} : { scopeDir: mentionScopeDir(mentionQuery) }),
+      ...(scopeDir ? { scopeDir } : {}),
       ...(mcpQuery !== null ? { mcp: mcpMentions.sources } : {}),
     })
     // `iconRevision` is what makes a late-arriving icon repaint the rows.
@@ -476,8 +567,8 @@ export function useComposerSuggestions(
    */
   const mentionGroupLabels = useMemo<Partial<Record<string, string>>>(() => {
     if (mentionQuery === null || !isSessionMentionQuery(mentionQuery)) return {}
-    const parsed = parseSessionQuery(mentionQuery, sessionProjects(), projectPath ?? null)
-    return parsed?.phase === 'need-title' ? { session: 'Recent' } : {}
+    const parsed = parseSessionQuery(mentionQuery, sessionProjects())
+    return parsed?.phase === 'recent' ? { session: 'Recent' } : {}
     // `host.projects` is stable per connection; the query is what moves.
   }, [mentionQuery, projectPath])
 
@@ -558,10 +649,5 @@ export function useComposerSuggestions(
     update, updateNative, select, insert, insertSnippet, snippetAtCursor, clear, applyProgrammatic, syncSessionCatalog,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,
-    /** Fetch the next page of an already-open list, keeping what is on screen. */
-    loadMore: () => {
-      inFlightQuery.current = null
-      searchMentions()
-    },
   }
 }

@@ -106,7 +106,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, updateProject, getProjectId, getProjectPathById } from '../recent-folders'
-import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions } from '../db-sessions'
+import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions, searchSessionsByTitle as searchLocalSessionsByTitle } from '../db-sessions'
 import type {
   ClonedProject,
   DraftListEntry,
@@ -587,6 +587,48 @@ export class EnvironmentHost {
       })
       .filter((r) => r.sessionId && r.folderPath)
       .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+  }
+
+  /**
+   * Title search for one environment, cross-project. Keeps the host's order
+   * (contains first, then recency) instead of re-sorting by time.
+   *
+   * A node too old to know `session.searchTitle` answers `not_found`, or omits
+   * the method; an empty list is the honest rendering of "this host cannot
+   * tell us".
+   */
+  async searchSessionsByTitle(
+    connectionId: string,
+    query: string,
+    limit?: number,
+    projectPaths?: string[],
+  ): Promise<PinnedSessionEntry[]> {
+    const paths = projectPaths?.filter((path) => path.length > 0)
+    if (connectionId === 'local') return searchLocalSessionsByTitle(query, limit, paths)
+
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (typeof gateway.sessions.searchTitle !== 'function') return []
+    let rows: unknown[]
+    try {
+      rows = await gateway.sessions.searchTitle(environmentId, query, {
+        ...(limit != null ? { limit } : {}),
+        ...(paths && paths.length > 0 ? { projectPaths: paths } : {}),
+      })
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'not_found') return []
+      throw err
+    }
+    return rows
+      .map((raw) => {
+        const r = (raw ?? {}) as { projectPath?: string; projectName?: string }
+        const projectPath = typeof r.projectPath === 'string' ? r.projectPath : ''
+        return {
+          ...this.mapRemoteSessionEntry(raw),
+          folderPath: projectPath ? remoteProjectKey(connectionId, projectPath) : '',
+          folderName: (typeof r.projectName === 'string' && r.projectName) || basename(projectPath),
+        }
+      })
+      .filter((r) => r.sessionId && r.folderPath)
   }
 
   // --- Drafts (environment-scoped; remote writes go through the local outbox) ---

@@ -4,7 +4,8 @@ import { mapThrown, requireScopes } from '@superone/runtime/server/rpc-helpers'
 import type { AgentService } from '../agent/agent-service'
 import { createPhoneSessionMethods, type PhoneSessionMethodHost } from './phone-session-methods'
 import { createPhoneVoiceMethods, type PhoneVoiceHost } from './phone-voice-methods'
-import { phoneMethodText as text } from './phone-method-input'
+import { parseSessionSearchProjectPaths } from '@superone/shared/session-title-search'
+import { phoneMethodOptionalText, phoneMethodText as text } from './phone-method-input'
 import { phoneMethodScopes } from './phone-method-scopes'
 import { MCP_APP_CONTROL_OPERATIONS } from '@superone/shared/environment/mcp-apps-rpc'
 import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
@@ -120,8 +121,15 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       return readRemoteSessionList({ kind: 'pinned' })
     },
     'sessionList.search': async (p) => {
+      const projectPaths = parseSessionSearchProjectPaths(p.projectPaths)
+      if (projectPaths === null) throw new InvalidArgument('projectPaths must be a short list of paths')
       const { readRemoteSessionList, sessionListPageNumber } = await import('./session-lists')
-      return readRemoteSessionList({ kind: 'search', query: text(p, 'query'), limit: sessionListPageNumber(p.limit, 'limit') })
+      return readRemoteSessionList({
+        kind: 'search',
+        query: phoneMethodOptionalText(p, 'query'),
+        limit: sessionListPageNumber(p.limit, 'limit'),
+        projectPaths,
+      })
     },
     'sessionList.find': async (p) => {
       const { readRemoteSessionList } = await import('./session-lists')

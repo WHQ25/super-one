@@ -96,14 +96,11 @@ export const previewSessionProjects = [
   { path: '/work/一个很长的项目名称', name: '一个很长的项目名称' },
 ]
 
-/** Sessions inside a scope, titled the way real ones are: long, and sometimes not at all. */
+/** Sessions the `@session` portal and a plain `@` can surface. */
 export const previewSessionRows = [
-  { session: { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', lastActiveAt: '', messageCount: 12, provider: 'claude' as const },
-    projectKey: '/work/super-one', projectLabel: 'super-one' },
-  { session: { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', lastActiveAt: '', messageCount: 40, provider: 'codex' as const },
-    projectKey: '/work/super-one', projectLabel: 'super-one' },
-  { session: { sessionId: 'sess-0c4d', title: '', lastActiveAt: '', messageCount: 0, provider: 'claude' as const },
-    projectKey: '/work/relay', projectLabel: 'relay' },
+  { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', provider: 'claude' as const, projectName: 'super-one' },
+  { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', provider: 'codex' as const, projectName: 'super-one' },
+  { sessionId: 'sess-0c4d', title: '', provider: 'claude' as const, projectName: 'relay' },
 ]
 
 /** MCP servers in every state a healthy session never shows all at once. */

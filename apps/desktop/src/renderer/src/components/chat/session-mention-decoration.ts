@@ -1,10 +1,10 @@
 /**
  * Ghost argument-hint for @session mentions.
  *
- * Grammar: @session <project | all> <title>
- * - pick-project → `<project | all> <title>`
- * - need-title   → `<title>`
- * - search       → hide (user typing freeform title)
+ * Grammar: @session [project] <title>
+ * - nothing typed → `[project] <title>`
+ * - project scope, no title → `<title>`
+ * - search → hide (user typing the title)
  */
 
 import {
@@ -33,7 +33,7 @@ export const SessionMentionDecoration = createMentionArgumentHintExtension<Proje
   keyword: SESSION_MENTION_KEYWORD,
   isQuery: (afterAt) => isSessionMentionQuery(afterAt),
   // Pass the same project options the popup uses, so an exact project label
-  // advances to need-title — otherwise the ghost stays on the full grammar.
+  // advances the ghost to `<title>`.
   remainingHint: (afterAt, projects) => remainingSessionArgumentHint(afterAt, projects),
 })
 

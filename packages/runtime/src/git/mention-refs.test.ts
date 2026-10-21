@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gitRun } from './run'
-import { listGitMentionRefs, probeGitMentionCapabilities } from './mention-refs'
+import { listGitMentionRefs, probeGitMentionCapabilities, scanGitMentionRefs } from './mention-refs'
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
@@ -100,6 +100,49 @@ describe('listGitMentionRefs', () => {
     ])
   })
 
+  it('ranks a prefix branch ahead of the checked-out contains match', async () => {
+    const raw = [
+      'myfeat\0\0subject\0date\0*',
+      'fix/feat-x\0\0subject\0date\0',
+      'feat/popup\0\0subject\0date\0',
+    ].join('\n')
+    const run = async (args: string[]) => {
+      expect(args[0]).toBe('for-each-ref')
+      expect(args.join(' ')).not.toContain('feat')
+      return raw
+    }
+    const ranked = await listGitMentionRefs('branch', 'feat', run)
+    expect(ranked.ok && ranked.refs.map((ref) => ref.id)).toEqual(['feat/popup', 'fix/feat-x', 'myfeat'])
+    const tied = await listGitMentionRefs('branch', 'feat', async () => [
+      'feat/popup\0\0subject\0date\0',
+      'feature\0\0subject\0date\0*',
+    ].join('\n'))
+    // `feat/popup` ends on a separator; `feature` continues past the query, so
+    // the finer score leads even though `feature` is the checked-out branch.
+    expect(tied.ok && tied.refs.map((ref) => ref.id)).toEqual(['feat/popup', 'feature'])
+    const scanned = await scanGitMentionRefs('branch', async () => raw)
+    expect(scanned.map((ref) => ref.id)).toEqual(['myfeat', 'fix/feat-x', 'feat/popup'])
+  })
+
+  it('ranks a commit sha prefix ahead of a subject match', async () => {
+    const sha = 'abc1234fffffffffffffffffffffffffffffff'
+    const other = 'ffff0000ffffffffffffffffffffffffffffff'
+    const run = async (args: string[]) => {
+      if (args.includes('-n1')) return `${sha}\0unrelated subject\0Ann\0date`
+      return [
+        `${other}\0refeature the parser\0Ann\0date`,
+        `${sha}\0unrelated subject\0Ann\0date`,
+      ].join('\n')
+    }
+    const result = await listGitMentionRefs('commit', 'abc123', run)
+    expect(result.ok && result.refs.map((ref) => ref.id)).toEqual([sha])
+    const bySubject = await listGitMentionRefs('commit', 'feat', async () => [
+      `${other}\0refeature the parser\0Ann\0date`,
+      '1111111fffffffffffffffffffffffffffffffff\0feat: later\0Ann\0date',
+    ].join('\n'))
+    expect(bySubject.ok && bySubject.refs.map((ref) => ref.detail)).toEqual(['feat: later', 'refeature the parser'])
+  })
+
   it('reports a non-repository folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mention-refs-plain-'))
     try {
@@ -150,6 +193,15 @@ describe('GitHub kinds through gh', () => {
     const searched = await listGitMentionRefs('issue', 'crash', { git: runIn('/'), gh: gh.run })
     expect(searched.ok && searched.refs.map((r) => [r.id, r.state])).toEqual([['23', 'open'], ['7', 'closed']])
     expect(gh.calls[1]).toContain('--search')
+  })
+
+  it('ranks a title prefix ahead of a newer word match', async () => {
+    const gh = fakeGh([
+      { number: 1, title: 'Please crash less', state: 'OPEN', updatedAt: '2026-09-02T00:00:00Z' },
+      { number: 2, title: 'Crash on start', state: 'OPEN', updatedAt: '2026-01-01T00:00:00Z' },
+    ])
+    const result = await listGitMentionRefs('issue', 'cr', { git: runIn('/'), gh: gh.run })
+    expect(result.ok && result.refs.map((ref) => ref.id)).toEqual(['2', '1'])
   })
 
   it('puts the exact number first, with or without #', async () => {

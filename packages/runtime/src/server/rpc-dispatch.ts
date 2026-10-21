@@ -21,6 +21,8 @@ import {
   type RpcErrorCode,
 } from '@superone/shared/environment'
 import { applySessionTagOp, parseSessionTagOp } from '@superone/shared/session-tags'
+import { mentionMatchTier } from '@superone/shared/mention-match-tier'
+import { parseSessionSearchProjectPaths } from '@superone/shared/session-title-search'
 import { cloneRepository, resolveCloneDestination, type CloneRepositoryInput } from '@superone/shared/git-clone'
 import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { isGitRemoteName } from '../git/index'
@@ -300,6 +302,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.get': (payload, ctx) => handleSessionGet(payload, ctx),
   'session.list': (payload, ctx) => handleSessionList(payload, ctx),
   'session.listPinned': (payload, ctx) => handleSessionListPinned(payload, ctx),
+  'session.searchTitle': (payload, ctx) => handleSessionSearchTitle(payload, ctx),
   'session.acquireControl': (payload, ctx) => handleSessionAcquireControl(payload, ctx),
   'session.renewControl': (payload, ctx) => handleSessionRenewControl(payload, ctx),
   'session.releaseControl': (payload, ctx) => handleSessionReleaseControl(payload, ctx),
@@ -1729,6 +1732,53 @@ function handleSessionListPinned(payload: unknown, ctx: RpcContext): RpcResult {
       }
     }),
   }
+}
+
+/**
+ * Cross-project title search for `@session` and plain `@` mentions.
+ * Same `readSession` gate as `session.listPinned`. Recency is the newest-first
+ * order of `sessions.list` (`updatedAt`), which is this node's stand-in for
+ * `last_user_msg_at`. Rows sort by `mentionMatchTier`; equal tiers keep that
+ * recency order.
+ */
+function handleSessionSearchTitle(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  if (p.query !== undefined && typeof p.query !== 'string') {
+    return { error: { code: 'invalid_argument', message: 'query must be a string' } }
+  }
+  const query = typeof p.query === 'string' ? p.query : ''
+  const limit =
+    typeof p.limit === 'number' && Number.isFinite(p.limit)
+      ? Math.min(Math.max(Math.floor(p.limit), 1), 200)
+      : 50
+  const projectPaths = parseSessionSearchProjectPaths(p.projectPaths)
+  if (projectPaths === null) {
+    return { error: { code: 'invalid_argument', message: 'projectPaths must be a short list of paths' } }
+  }
+  const pathSet = projectPaths && projectPaths.length > 0 ? new Set(projectPaths) : null
+  const ranked: Array<{ rank: 0 | 1 | 2 | 3; row: ReturnType<typeof mapSessionRow> & { projectPath: string; projectName: string } }> = []
+  for (const session of ctx.sessions.list(undefined)) {
+    if (session.isHidden === true) continue
+    const project = session.projectId ? ctx.projects.get(session.projectId) : null
+    const projectPath = project?.path ?? session.cwd ?? ''
+    if (pathSet && !pathSet.has(projectPath)) continue
+    const rank = mentionMatchTier(session.title ?? '', query)
+    if (rank == null) continue
+    ranked.push({
+      rank,
+      row: {
+        ...mapSessionRow(session),
+        projectPath,
+        projectName: project?.name ?? '',
+      },
+    })
+  }
+  // `list` is already newest-first, and Array#sort is stable, so equal ranks
+  // keep recency order.
+  ranked.sort((a, b) => a.rank - b.rank)
+  return { result: ranked.slice(0, limit).map((entry) => entry.row) }
 }
 
 function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResult {

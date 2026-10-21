@@ -12,7 +12,7 @@ import type { Session } from '../session/types'
 export type SessionListQuery =
   | { kind: 'page'; projectPath: string; limit?: number; offset?: number }
   | { kind: 'pinned' }
-  | { kind: 'search'; query: string; limit?: number }
+  | { kind: 'search'; query: string; limit?: number; projectPaths?: readonly string[] }
   | { kind: 'find'; sessionId: string }
 
 /** Bounded native sidebar paging, validated before any storage reads. */
@@ -45,7 +45,7 @@ export function readRemoteSessionList(command: SessionListQuery, manager?: { get
   }
   if (command.kind !== 'page') {
     const rows = command.kind === 'search'
-      ? searchSessionsByTitle(command.query, command.limit)
+      ? searchSessionsByTitle(command.query, command.limit, command.projectPaths)
       : listPinnedSessions()
     return { sessions: rows.map(crossProject) }
   }

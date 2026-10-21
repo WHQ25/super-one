@@ -103,7 +103,6 @@ export function ChatScreen(props: {
   requestedCursor?: ComposerCursor
   mentionSearch?: MentionSearchState
   onMentionRetry?: () => void
-  onMentionLoadMore?: () => void
   /** Opens the additional-folders panel — the chip row and `/add-dir` share it. */
   onManageDirectories: () => void
   /**

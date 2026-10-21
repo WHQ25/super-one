@@ -520,6 +520,19 @@ const environmentAPI = {
       AgentIpcChannels.ENVIRONMENT_LIST_PINNED_SESSIONS,
       connectionId,
     ) as Promise<PinnedSessionEntry[]>,
+  searchSessionsByTitle: (
+    connectionId: string,
+    query: string,
+    limit?: number,
+    projectPaths?: string[],
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_SEARCH_SESSIONS,
+      connectionId,
+      query,
+      limit,
+      projectPaths,
+    ) as Promise<PinnedSessionEntry[]>,
   createSession: (
     connectionId: string,
     input: SessionCreateRequest,

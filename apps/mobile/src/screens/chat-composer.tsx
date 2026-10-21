@@ -136,7 +136,6 @@ export type ChatComposerProps = {
   requestedCursor?: ComposerCursor
   mentionSearch?: MentionSearchState
   onMentionRetry?: () => void
-  onMentionLoadMore?: () => void
   /** The raw `@` query, so the overlay can show where in the tree it points. */
   mentionQuery?: string | null
   mentionGroupLabels?: Partial<Record<string, string>>
@@ -279,7 +278,8 @@ export function ChatComposer(props: ChatComposerProps) {
         : null}
       <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
       <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
-        onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels} mcp={props.mcpMentions}
+        onRetry={props.onMentionRetry} groupLabels={props.mentionGroupLabels} mcp={props.mcpMentions}
+        query={props.mentionQuery ?? ''}
         // A session title may contain a slash; only a path query has a trail.
         breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery) && !isGitMentionQuery(props.mentionQuery)
           ? mentionBreadcrumbs(props.mentionQuery) : []} />

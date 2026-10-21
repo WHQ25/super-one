@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   cachedLocalGitMentionCapabilities,
+  cachedLocalGitMentionRefScan,
   cachedLocalWorktreeInfo,
   invalidateLocalGitReads,
   mainCheckoutOfLinkedWorktree,
@@ -51,6 +52,30 @@ describe('local git read cache', () => {
       await cachedLocalGitMentionCapabilities('/ttl', mention)
       await cachedLocalGitMentionCapabilities('/ttl', mention)
       expect(mention).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+      invalidateLocalGitReads()
+    }
+  })
+
+  it('reuses a ref scan per folder and kind until invalidation or 15s', async () => {
+    vi.useFakeTimers()
+    try {
+      const branches = vi.fn(async () => [{ kind: 'branch' as const, id: 'main', label: 'main', detail: '' }])
+      const tags = vi.fn(async () => [{ kind: 'tag' as const, id: 'v1', label: 'v1', detail: '' }])
+      await cachedLocalGitMentionRefScan('/refs', 'branch', branches)
+      await cachedLocalGitMentionRefScan('/refs', 'branch', branches)
+      await cachedLocalGitMentionRefScan('/refs', 'tag', tags)
+      expect(branches).toHaveBeenCalledTimes(1)
+      expect(tags).toHaveBeenCalledTimes(1)
+
+      invalidateLocalGitReads('/refs')
+      await cachedLocalGitMentionRefScan('/refs', 'branch', branches)
+      expect(branches).toHaveBeenCalledTimes(2)
+
+      vi.advanceTimersByTime(15_000)
+      await cachedLocalGitMentionRefScan('/refs', 'branch', branches)
+      expect(branches).toHaveBeenCalledTimes(3)
     } finally {
       vi.useRealTimers()
       invalidateLocalGitReads()

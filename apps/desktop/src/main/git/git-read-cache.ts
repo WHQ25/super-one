@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { WorktreeInfo } from '@superone/shared/agent-types'
-import type { GitMentionCapabilities } from '@superone/shared/git-mention-query'
+import type { GitMentionCapabilities, GitMentionRef } from '@superone/shared/git-mention-query'
+import type { GitMentionScanKind } from '@superone/runtime/git'
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { createKeyedGitReadCache } from './keyed-git-read-cache'
 
 /**
@@ -12,11 +14,18 @@ import { createKeyedGitReadCache } from './keyed-git-read-cache'
  * window still reuses the list.
  */
 const LOCAL_WORKTREE_TTL_MS = 30_000
+/** Safety net for a branch/tag/worktree scan the watcher did not see change. */
+const LOCAL_MENTION_REF_TTL_MS = 15_000
 const reads = createKeyedGitReadCache<WorktreeInfo | null, GitMentionCapabilities>({
   worktreeTtlMs: LOCAL_WORKTREE_TTL_MS,
   mentionTtlMs: Number.POSITIVE_INFINITY,
   unstableMention: (value) => value.repo === 'unsupported',
 })
+const mentionRefScans = new AsyncCoalescer<GitMentionRef[]>(LOCAL_MENTION_REF_TTL_MS)
+
+function mentionRefScanKey(folderPath: string, kind: GitMentionScanKind): string {
+  return `${folderPath}\0${kind}`
+}
 
 export function cachedLocalWorktreeInfo(
   folderPath: string,
@@ -32,9 +41,27 @@ export function cachedLocalGitMentionCapabilities(
   return reads.mention(folderPath, compute)
 }
 
-/** Drop cached local worktree and mention reads for one folder, or every folder. */
+/**
+ * Needle-independent branch, tag, or worktree scan for one folder.
+ * Dropped with the other local git reads, and after {@link LOCAL_MENTION_REF_TTL_MS}.
+ */
+export function cachedLocalGitMentionRefScan(
+  folderPath: string,
+  kind: GitMentionScanKind,
+  compute: () => Promise<GitMentionRef[]>,
+): Promise<GitMentionRef[]> {
+  return mentionRefScans.get(mentionRefScanKey(folderPath, kind), compute)
+}
+
+/** Drop cached local worktree, mention, and ref-scan reads for one folder, or every folder. */
 export function invalidateLocalGitReads(folderPath?: string): void {
   reads.invalidate(folderPath)
+  if (folderPath) {
+    const prefix = `${folderPath}\0`
+    mentionRefScans.invalidateMatching((key) => key.startsWith(prefix))
+    return
+  }
+  mentionRefScans.clear()
 }
 
 /**

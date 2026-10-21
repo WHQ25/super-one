@@ -24,13 +24,21 @@ export async function readPinnedSessions(client: RelayClient): Promise<SessionLi
   return crossProjectSessions(client, 'sessionList.pinned')
 }
 
-/** Host-side title search across every project; `query` must already be trimmed. */
+/**
+ * Host-side title search. An empty query is the recent list.
+ * `projectPaths` are host folder paths; omit them to span every project.
+ */
 export async function searchSessions(
   client: RelayClient,
   query: string,
   limit = 50,
+  projectPaths?: readonly string[],
 ): Promise<SessionListRow[]> {
-  return crossProjectSessions(client, 'sessionList.search', { query, limit })
+  return crossProjectSessions(client, 'sessionList.search', {
+    query,
+    limit,
+    ...(projectPaths && projectPaths.length > 0 ? { projectPaths } : {}),
+  })
 }
 
 /** One session by id from any project; null when the host has no such row. */

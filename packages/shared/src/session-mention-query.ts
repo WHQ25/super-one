@@ -1,24 +1,27 @@
 /**
- * `@session` mention grammar (both project scope and title query required for search):
+ * `@session` mention grammar:
  *   session
- *   session <partial project|all>
- *   session <project|all> <title query>
+ *   session <title query>
+ *   session <project> <title query>
+ *
+ * The project step is optional. A first token followed by whitespace scopes
+ * the search only when it equals a project label (case-insensitive); every
+ * project with that label is in scope, so duplicate leaf names are not
+ * ambiguous. Anything else is a title across every project on the host.
  *
  * Phases:
- *   pick-project — choose `all` or a project (Tab-completable)
- *   need-title   — scope chosen; show recent sessions until a title is typed
- *   search       — scope + title → filter sessions (title fuzzy match)
+ *   recent — nothing to match yet (bare `@session`, or a scope with no title)
+ *   search — a title, scoped or not
+ *
+ * While the first token is still being typed, `projectToken` feeds prefix
+ * completion rows. Bare `@session` does not list projects.
  *
  * Internal mention kind is `session` (chip + send-message payload). The
  * user-facing portal keyword is also `session`.
  *
- * Everything here is pure. Paging is driven through an injected
- * `SessionMentionPageLoader` because the two apps fetch differently — the
- * desktop goes through `window.environment`, a remote client through the
- * `list_sessions` RPC — while the scan/filter algorithm is the same.
+ * Everything here is pure. Listing sessions is host work.
  */
 
-import type { SessionHistoryEntry } from './agent-types'
 import { fuzzyMatch } from './fuzzy-match'
 import { isGitMentionQuery, type GitMentionPortal } from './git-mention-query'
 
@@ -28,34 +31,35 @@ export const SESSION_MENTION_NAV_PREFIX = 'session '
 /** Portal keyword after `@` that enters session-archive mention mode. */
 export const SESSION_MENTION_KEYWORD = 'session'
 
-export const SESSION_MENTION_PAGE_SIZE = 30
+/** How many sessions the `@session` portal asks the host for. */
+export const SESSION_MENTION_SEARCH_LIMIT = 50
 
-/** Title search may skip most of a page, so it over-fetches. */
-const TITLE_SCAN_PAGE = 50
-
-export type SessionMentionScope =
-  | { kind: 'all' }
-  | { kind: 'project'; projectKey: string; label: string }
-
-export type SessionMentionPhase = 'pick-project' | 'need-title' | 'search'
-
-export interface ParsedSessionMentionQuery {
-  phase: SessionMentionPhase
-  /** Set once project/all is fully chosen. */
-  scope: SessionMentionScope | null
-  /** Partial first token while picking a project (may be empty). */
-  projectToken: string
-  titleQuery: string
-  /**
-   * Prefix to navigate when completing a project scope, e.g. `session all `
-   * or `session super-one `.
-   */
-  scopeNavPrefix: string | null
-}
+export type SessionMentionPhase = 'recent' | 'search'
 
 export interface ProjectOption {
   projectKey: string
   label: string
+}
+
+export interface ParsedSessionMentionQuery {
+  phase: SessionMentionPhase
+  /**
+   * Every project whose label matched the scope token, or null when the
+   * query is not scoped.
+   */
+  projects: ProjectOption[] | null
+  /**
+   * Partial first token while it can still complete to a project.
+   * Empty once whitespace is typed, whether or not that token was a project.
+   */
+  projectToken: string
+  /** Title after an optional scope. The whole rest when unscoped. */
+  titleQuery: string
+  /**
+   * Prefix to navigate when completing a project scope, e.g. `session app `.
+   * Null while unscoped.
+   */
+  scopeNavPrefix: string | null
 }
 
 /**
@@ -78,28 +82,22 @@ export function mentionQueryAllowsSpaces(
   return isSessionMentionQuery(queryAfterAt) || isGitMentionQuery(queryAfterAt, opts?.gitPortals)
 }
 
-/** Argument grammar shown as ghost text (same style as a slash `argumentHint`). */
-export const SESSION_MENTION_ARGUMENT_HINT = '<project | all> <title>'
+/** Argument grammar shown as ghost text. `[project]` is optional. */
+export const SESSION_MENTION_ARGUMENT_HINT = '[project] <title>'
 
 /**
  * Remaining ghost argument hint for `@session …` (without leading space).
- * Returns null when there is nothing left to show (search phase / fully filled).
- *
- * Pass the same project options the popup uses, so an exact project label
- * advances to need-title — otherwise the ghost stays on the full grammar.
+ * Full hint while nothing is typed, `<title>` once a project scope is chosen
+ * and the title is still empty, otherwise null.
  */
 export function remainingSessionArgumentHint(
   queryAfterAt: string,
   projects: ProjectOption[] = [],
 ): string | null {
-  const parsed = parseSessionMentionQuery(queryAfterAt, {
-    currentProjectKey: null,
-    projects,
-  })
+  const parsed = parseSessionMentionQuery(queryAfterAt, { projects })
   if (!parsed) return null
-  if (parsed.phase === 'pick-project') return SESSION_MENTION_ARGUMENT_HINT
-  if (parsed.phase === 'need-title') return '<title>'
-  // search: the user is already typing the freeform title
+  if (parsed.projects && !parsed.titleQuery) return '<title>'
+  if (!parsed.titleQuery && !parsed.projectToken) return SESSION_MENTION_ARGUMENT_HINT
   return null
 }
 
@@ -123,145 +121,95 @@ export function buildSessionProjectOptions(
   return [...map.values()]
 }
 
+function projectsWithLabel(projects: ProjectOption[], token: string): ProjectOption[] {
+  const needle = token.toLowerCase()
+  return projects.filter((project) => project.label.toLowerCase() === needle)
+}
+
 export function parseSessionMentionQuery(
   query: string,
-  opts: {
-    currentProjectKey: string | null
-    projects: ProjectOption[]
-  },
+  opts: { projects?: ProjectOption[] } = {},
 ): ParsedSessionMentionQuery | null {
   if (!isSessionMentionQuery(query)) return null
-
-  const afterTrimStart = query
+  const projects = opts.projects ?? []
+  const afterKeyword = query
     .replace(new RegExp(`^${SESSION_MENTION_KEYWORD}\\b`, 'i'), '')
     .trimStart()
 
-  if (!afterTrimStart) {
-    return {
-      phase: 'pick-project',
-      scope: null,
-      projectToken: '',
-      titleQuery: '',
-      scopeNavPrefix: null,
+  if (!afterKeyword.trim()) {
+    return { phase: 'recent', projects: null, projectToken: '', titleQuery: '', scopeNavPrefix: null }
+  }
+
+  const sp = afterKeyword.search(/\s/)
+  const first = (sp < 0 ? afterKeyword : afterKeyword.slice(0, sp)).trim()
+  const rest = (sp < 0 ? '' : afterKeyword.slice(sp + 1)).trim()
+
+  // A scope counts only once whitespace follows a label. `session app` is
+  // still a title search, so Tab can complete the project.
+  if (sp >= 0) {
+    const matched = projectsWithLabel(projects, first)
+    if (matched.length > 0) {
+      const label = matched[0]!.label
+      return {
+        phase: rest ? 'search' : 'recent',
+        projects: matched,
+        projectToken: '',
+        titleQuery: rest,
+        scopeNavPrefix: `${SESSION_MENTION_KEYWORD} ${label} `,
+      }
     }
   }
 
-  const sp = afterTrimStart.search(/\s/)
-  const first = (sp < 0 ? afterTrimStart : afterTrimStart.slice(0, sp)).trim()
-  const hasSpaceAfterFirst = sp >= 0
-  const rest = (sp < 0 ? '' : afterTrimStart.slice(sp + 1)).trim()
-
-  // Still typing the project token (no space after the first word) → picker.
-  if (!hasSpaceAfterFirst) {
-    return {
-      phase: 'pick-project',
-      scope: null,
-      projectToken: first,
-      titleQuery: '',
-      scopeNavPrefix: null,
-    }
-  }
-
-  // Space after the first token → it must be `all` or an exact project label.
-  if (first.toLowerCase() === 'all') {
-    return {
-      phase: rest ? 'search' : 'need-title',
-      scope: { kind: 'all' },
-      projectToken: 'all',
-      titleQuery: rest,
-      scopeNavPrefix: `${SESSION_MENTION_KEYWORD} all `,
-    }
-  }
-
-  const exact = matchProjectTokenExact(first, opts.projects)
-  if (exact) {
-    return {
-      phase: rest ? 'search' : 'need-title',
-      scope: { kind: 'project', projectKey: exact.projectKey, label: exact.label },
-      projectToken: exact.label,
-      titleQuery: rest,
-      scopeNavPrefix: `${SESSION_MENTION_KEYWORD} ${exact.label} `,
-    }
-  }
-
-  // Unknown project token after a space — keep filtering projects by it.
   return {
-    phase: 'pick-project',
-    scope: null,
-    projectToken: first,
-    titleQuery: '',
+    phase: 'search',
+    projects: null,
+    projectToken: sp < 0 ? first : '',
+    titleQuery: afterKeyword.trim(),
     scopeNavPrefix: null,
   }
 }
 
-/** Projects (+ the synthetic `all`) to show while picking scope. */
-export function listSessionProjectChoices(
+/**
+ * Project labels the user can Tab-complete while the first token is open.
+ * Prefix only, current project first, one row per label.
+ */
+export function listSessionProjectCompletions(
   projects: ProjectOption[],
   projectToken: string,
   currentProjectKey: string | null,
 ): Array<{ token: string; label: string; hint: string; matchIndices: number[] }> {
   const token = projectToken.trim().toLowerCase()
-  const choices: Array<{ token: string; label: string; hint: string; matchIndices: number[] }> = []
-
-  // Match on the token "all" or the display phrase "All Projects".
-  const allIndices =
-    token
-      ? (fuzzyIndices('all', token) ?? fuzzyIndices('all projects', token))
-      : []
-  if (!token || allIndices) {
-    choices.push({
-      token: 'all',
-      label: 'All Projects',
-      hint: 'all projects',
-      matchIndices: allIndices ?? [],
-    })
+  const byLabel = new Map<string, ProjectOption[]>()
+  for (const project of projects) {
+    const key = project.label.toLowerCase()
+    if (token && !key.startsWith(token)) continue
+    const group = byLabel.get(key)
+    if (group) group.push(project)
+    else byLabel.set(key, [project])
   }
 
-  const sorted = [...projects].sort((a, b) => {
-    if (a.projectKey === currentProjectKey) return -1
-    if (b.projectKey === currentProjectKey) return 1
+  const rows = [...byLabel.values()].map((group) => {
+    const current = group.find((project) => project.projectKey === currentProjectKey)
+    const label = (current ?? group[0]!).label
+    const hint = group.length === 1
+      ? (group[0]!.projectKey === currentProjectKey ? 'current project' : group[0]!.projectKey)
+      : (current ? 'current project' : '')
+    return {
+      token: label,
+      label,
+      hint,
+      matchIndices: token ? Array.from({ length: token.length }, (_, i) => i) : [],
+      current: Boolean(current),
+    }
+  })
+  rows.sort((a, b) => {
+    if (a.current !== b.current) return a.current ? -1 : 1
     return a.label.localeCompare(b.label)
   })
-
-  for (const p of sorted) {
-    const indices = token ? fuzzyIndices(p.label, token) : []
-    if (token && !indices) continue
-    choices.push({
-      token: p.label,
-      label: p.label,
-      hint: p.projectKey === currentProjectKey ? 'current project' : p.projectKey,
-      matchIndices: indices ?? [],
-    })
-  }
-  return choices
+  return rows.map(({ current: _current, ...row }) => row)
 }
 
-function fuzzyIndices(text: string, query: string): number[] | null {
-  if (!query) return []
-  const tLow = text.toLowerCase()
-  const qLow = query.toLowerCase()
-  const idx = tLow.indexOf(qLow)
-  if (idx < 0) return null
-  const indices: number[] = []
-  for (let i = 0; i < qLow.length; i++) indices.push(idx + i)
-  return indices
-}
-
-/**
- * The scope token is resolved by **display label**, so the grammar is ambiguous
- * for two projects whose leaf directory name matches, for a label containing a
- * space (the parser splits on the first one), and for a project literally named
- * `all`. Behaviour is pinned by tests rather than fixed: the fix is a stable
- * `projectKey` selection state or quoting, and it belongs with the popup that
- * would offer the disambiguation, not here.
- */
-function matchProjectTokenExact(token: string, projects: ProjectOption[]): ProjectOption | null {
-  const t = token.toLowerCase()
-  if (!t) return null
-  return projects.find((p) => p.label.toLowerCase() === t) ?? null
-}
-
-/** Title-only match for `@session` search (same engine as file/agent mentions). */
+/** Title-only match for highlighting (same engine as file/agent mentions). */
 export function titleMatches(title: string, query: string): boolean {
   if (!query.trim()) return true
   return fuzzyMatch(query.trim(), title || '').match
@@ -272,124 +220,4 @@ export function titleMatchIndices(title: string, query: string): number[] {
   if (!q) return []
   const r = fuzzyMatch(q, title || '')
   return r.match ? r.indices : []
-}
-
-export interface SessionMentionRow {
-  session: SessionHistoryEntry
-  projectKey: string
-  projectLabel: string
-}
-
-export interface SessionMentionLoadState {
-  offset: number
-  projectIndex: number
-  hasMore: boolean
-}
-
-export function initialSessionMentionLoadState(): SessionMentionLoadState {
-  return { offset: 0, projectIndex: 0, hasMore: true }
-}
-
-/**
- * Fetch one page for one project.
- *
- * `hasMore` is reported by the loader rather than inferred from
- * `sessions.length >= limit`, so a backend that knows the total does not have
- * to fake a full page to say "keep going".
- */
-export type SessionMentionPageLoader = (
-  projectKey: string,
-  limit: number,
-  offset: number,
-) => Promise<{ sessions: SessionHistoryEntry[]; hasMore: boolean }>
-
-function scopeProjectKeys(
-  scope: SessionMentionScope,
-  allProjects: ProjectOption[],
-): ProjectOption[] {
-  if (scope.kind === 'all') return allProjects.length > 0 ? allProjects : []
-  return [{ projectKey: scope.projectKey, label: scope.label }]
-}
-
-/**
- * Load the next page of sessions for the mention popup.
- *
- * - Empty titleQuery → recency order, no filter (the need-title "Recent" list).
- * - Non-empty titleQuery → keep only title fuzzy matches, which means scanning
- *   past rows that do not match and possibly crossing several pages.
- */
-export async function loadSessionMentionPage(args: {
-  scope: SessionMentionScope
-  titleQuery: string
-  projects: ProjectOption[]
-  state: SessionMentionLoadState
-  loadPage: SessionMentionPageLoader
-  pageSize?: number
-}): Promise<{ rows: SessionMentionRow[]; next: SessionMentionLoadState }> {
-  const pageSize = args.pageSize ?? SESSION_MENTION_PAGE_SIZE
-  const projectList = scopeProjectKeys(args.scope, args.projects)
-  if (projectList.length === 0) {
-    return { rows: [], next: { offset: 0, projectIndex: 0, hasMore: false } }
-  }
-
-  const titleQ = args.titleQuery.trim()
-  const fetchLimit = titleQ ? TITLE_SCAN_PAGE : pageSize
-
-  let { offset, projectIndex } = args.state
-  const rows: SessionMentionRow[] = []
-
-  while (projectIndex < projectList.length && rows.length < pageSize) {
-    const proj = projectList[projectIndex]!
-    const { sessions: page, hasMore: moreInProject } = await args.loadPage(
-      proj.projectKey,
-      fetchLimit,
-      offset,
-    )
-
-    if (page.length === 0) {
-      projectIndex += 1
-      offset = 0
-      continue
-    }
-
-    for (let i = 0; i < page.length; i++) {
-      const session = page[i]!
-      // Empty titleQ → titleMatches is always true (recent dump).
-      if (!titleMatches(session.title || '', titleQ)) continue
-      rows.push({ session, projectKey: proj.projectKey, projectLabel: proj.label })
-      if (rows.length >= pageSize) {
-        const nextOffset = offset + i + 1
-        const moreInPage = i + 1 < page.length
-        if (moreInPage || moreInProject) {
-          return {
-            rows,
-            next: { offset: nextOffset, projectIndex, hasMore: true },
-          }
-        }
-        return {
-          rows,
-          next: {
-            offset: 0,
-            projectIndex: projectIndex + 1,
-            hasMore: projectIndex + 1 < projectList.length,
-          },
-        }
-      }
-    }
-
-    offset += page.length
-    if (!moreInProject) {
-      projectIndex += 1
-      offset = 0
-    }
-  }
-
-  return {
-    rows,
-    next: {
-      offset,
-      projectIndex,
-      hasMore: projectIndex < projectList.length,
-    },
-  }
 }

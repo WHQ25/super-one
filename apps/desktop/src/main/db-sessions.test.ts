@@ -22,7 +22,8 @@ vi.mock('./logger', () => ({
   },
 }))
 
-import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
+import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
+import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState, searchSessionsByTitle } from './db-sessions'
 import { watchSessionDeletes } from './session-list-watch'
 
 describe('db-sessions session query + mapping', () => {
@@ -207,6 +208,48 @@ describe('db-sessions session query + mapping', () => {
     expect(sessions).toHaveLength(1)
     expect(sessions[0]?.provider).toBe('acp')
     expect(sessions[0]?.acpAgentId).toBe('grok-build')
+  })
+
+  it('searchSessionsByTitle orders by match tier, and lists recent rows when empty', () => {
+    const calls: { sql: string; args: unknown[] }[] = []
+    getDbMock.mockReturnValue({
+      prepare: (sql: string) => ({
+        all: (...args: unknown[]) => {
+          calls.push({ sql, args })
+          return []
+        },
+      }),
+    })
+
+    const escaped = sessionTitleLikePatterns('a%b')
+    searchSessionsByTitle('a%b', 10)
+    expect(calls[0]?.sql).toContain('ORDER BY CASE')
+    expect(calls[0]?.sql).toContain('last_user_msg_at DESC')
+    expect(calls[0]?.args).toEqual([
+      escaped.subsequence,
+      escaped.prefix,
+      ...escaped.wordPrefix,
+      escaped.contains,
+      10,
+    ])
+
+    searchSessionsByTitle('  ')
+    expect(calls[1]?.sql).not.toContain('LIKE')
+    expect(calls[1]?.sql).toContain('ORDER BY last_user_msg_at DESC')
+    expect(calls[1]?.args).toEqual([50])
+
+    const plain = sessionTitleLikePatterns('a')
+    searchSessionsByTitle('a', 5, ['/work/a', '/work/b'])
+    expect(calls[2]?.sql).toContain('p.path IN (?,?)')
+    expect(calls[2]?.args).toEqual([
+      plain.subsequence,
+      '/work/a',
+      '/work/b',
+      plain.prefix,
+      ...plain.wordPrefix,
+      plain.contains,
+      5,
+    ])
   })
 })
 

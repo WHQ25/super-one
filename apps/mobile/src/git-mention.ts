@@ -106,6 +106,9 @@ export function gitEmptyLabel(parsed: ParsedGitMentionQuery, unavailable?: GitMe
     return 'Could not read git refs'
   }
   if (parsed.phase === 'pick-kind') return 'No matching ref type'
-  const kind = parsed.refKind ?? (parsed.portal === 'gh' ? 'issue' : 'branch')
+  if (parsed.refKind == null) {
+    return parsed.portal === 'gh' ? 'No matching issues or pull requests' : 'No matching refs'
+  }
+  const kind = parsed.refKind
   return `No matching ${kind === 'branch' ? 'branches' : kind === 'pr' ? 'pull requests' : `${kind}s`}`
 }

@@ -28,7 +28,17 @@ export {
   type HandoffPreview,
 } from './worktree-ops'
 export { fetchRemoteCommands, isGitRemoteName } from './fetch'
-export { listGitMentionRefs, probeGitMentionCapabilities, type GitMentionRunner, type GitMentionRunners } from './mention-refs'
+export {
+  filterRankGitMentionRefs,
+  gitMentionRefsFailure,
+  listGitMentionRefs,
+  probeGitMentionCapabilities,
+  rankGitMentionRefs,
+  scanGitMentionRefs,
+  type GitMentionRunner,
+  type GitMentionRunners,
+  type GitMentionScanKind,
+} from './mention-refs'
 export { ghRun, isGhMissingError } from './gh-run'
 export {
   resolveMainDirFromCommonDir,

@@ -16,6 +16,7 @@ import {
   GH_MENTION_KEYWORD,
   GIT_MENTION_KEYWORD,
   isGitHubRefKind,
+  listGitRefKindChoices,
   type GitMentionPortal,
   type GitMentionRef,
   type GitMentionRefKind,
@@ -109,7 +110,6 @@ const PORTAL_LABEL_KEY: Record<GitMentionPortal, string> = {
   gh: 'chat.mentionPopup.capabilityGh',
 }
 /** The kind an empty portal query is about, for copy that needs one. */
-const PORTAL_DEFAULT_KIND: Record<GitMentionPortal, GitMentionRefKind> = { git: 'branch', gh: 'issue' }
 
 /** The mark for a portal as a whole: the branch glyph for `@git`, GitHub's own for `@gh`. */
 function portalIcon(portal: GitMentionPortal, className: string) {
@@ -368,19 +368,24 @@ export function GitMentionHeader({
         >
           {t(PORTAL_LABEL_KEY[parsed.portal])}
         </button>
-        <span className="shrink-0 text-muted-foreground/50">/</span>
         {parsed.refKind ? (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onNavigate(parsed.kindNavPrefix ?? `${parsed.portal} `)}
-            className="shrink-0 font-medium text-foreground/90 hover:underline"
-          >
-            {t(KIND_LABEL_KEY[parsed.refKind])}
-          </button>
-        ) : (
-          <span className="truncate text-muted-foreground">{t('chat.mentionPopup.gitPickKind')}</span>
-        )}
+          <>
+            <span className="shrink-0 text-muted-foreground/50">/</span>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onNavigate(parsed.kindNavPrefix ?? `${parsed.portal} `)}
+              className="shrink-0 font-medium text-foreground/90 hover:underline"
+            >
+              {t(KIND_LABEL_KEY[parsed.refKind])}
+            </button>
+          </>
+        ) : parsed.phase === 'pick-kind' ? (
+          <>
+            <span className="shrink-0 text-muted-foreground/50">/</span>
+            <span className="truncate text-muted-foreground">{t('chat.mentionPopup.gitPickKind')}</span>
+          </>
+        ) : null}
         {parsed.phase === 'need-query' ? (
           <>
             <span className="shrink-0 text-muted-foreground/50">/</span>
@@ -424,7 +429,9 @@ export function GitMentionEmpty({
       ? t(disabledHintKey(unavailable))
       : unavailable
         ? t('chat.mentionPopup.gitLoadError')
-        : t(EMPTY_KEY[parsed.refKind ?? PORTAL_DEFAULT_KIND[parsed.portal]])
+        : parsed.refKind
+          ? t(EMPTY_KEY[parsed.refKind])
+          : t(parsed.portal === 'gh' ? 'chat.mentionPopup.noGhItems' : 'chat.mentionPopup.noGitRefs')
   return (
     <div className="space-y-1 px-2 py-3 text-xs text-muted-foreground">
       <div className="font-medium text-foreground/80">{message}</div>
@@ -440,12 +447,17 @@ export function GitMentionEmpty({
 
 export function GitMentionFooter({ parsed }: { parsed: ParsedGitMentionQuery }) {
   const { t } = useTranslation()
-  if (parsed.phase === 'pick-kind') {
+  const kindRows = parsed.phase === 'search' && parsed.refKind == null && parsed.kindToken
+    ? listGitRefKindChoices(parsed.portal, parsed.kindToken)
+    : []
+  if (parsed.phase === 'pick-kind' || kindRows.length > 0) {
     return (
       <>
         <Kbd>tab</Kbd> {t('chat.mentionPopup.hintCompleteGitKind')}
         <span className="mx-1.5">&middot;</span>
-        <Kbd>↑↓</Kbd> navigate
+        {kindRows.length > 0
+          ? <><Kbd>↵</Kbd> {t('chat.mentionPopup.hintSelectGitRef')}</>
+          : <><Kbd>↑↓</Kbd> navigate</>}
         <span className="mx-1.5">&middot;</span>
         <Kbd>esc</Kbd> close
       </>

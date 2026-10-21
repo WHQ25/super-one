@@ -1,4 +1,6 @@
 import { BUILTIN_CAPABILITIES, isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { orderDirectSearchGroups, shouldDirectSearch, type DirectSearchRankedGroup } from '@superone/shared/mention-direct-search'
+import { compareMentionMatchKeys, fileMentionMatchKey, gitMentionRefMatchKey, mentionMatchKey, type MentionMatchKey } from '@superone/shared/mention-match-tier'
 import { compareBuiltinMentionMatches, matchBuiltinMention } from '@superone/shared/mention-capability-match'
 import { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
 import { SESSION_MENTION_KEYWORD, SESSION_MENTION_NAV_PREFIX } from '@superone/shared/session-mention-query'
@@ -151,7 +153,7 @@ export interface MentionRowInput {
   capabilityIds?: unknown
   /**
    * The query is anchored — to a directory (`@src/app`) or to the session
-   * portal (`@session all …`) — so only the producer's own rows apply. A
+   * portal (`@session …`) — so only the producer's own rows apply. A
    * capability that happens to match the last segment would be answering a
    * question the user did not ask.
    */
@@ -375,8 +377,7 @@ function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
       ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
   }
   if (item.kind === 'session-project' || item.kind === 'git-kind') {
-    // `all projects` / `current project` / the path: the desktop shows it
-    // inline, not underneath.
+    // `current project` / the path: the desktop shows it inline, not underneath.
     return { ...row, ...(item.description ? { inline: item.description } : {}) }
   }
   if (item.kind === 'git-ref') {
@@ -417,7 +418,36 @@ export function mentionRowKey(item: MentionItem): string {
   return `${item.kind}:${item.rootPath ? `${item.rootPath}\0` : ''}${item.path}`
 }
 
-export function groupMentionRows(rows: MentionRow[]): PopupGroup<MentionRow>[] {
+function directSearchGroupKeys(
+  rows: readonly MentionRow[],
+  query: string,
+): Partial<Record<DirectSearchRankedGroup, MentionMatchKey | null>> {
+  const best: Partial<Record<DirectSearchRankedGroup, MentionMatchKey>> = {}
+  const consider = (key: DirectSearchRankedGroup, match: MentionMatchKey | null) => {
+    if (match == null) return
+    const prev = best[key]
+    if (prev == null || compareMentionMatchKeys(match, prev) < 0) best[key] = match
+  }
+  for (const row of rows) {
+    const key = mentionGroupKey(row.item)
+    if (key === 'file') consider('file', fileMentionMatchKey(row.item.path, query))
+    else if (key === 'session') consider('session', mentionMatchKey(row.label, query))
+    else if (key === 'git-branch' || key === 'git-worktree' || key === 'git-tag') {
+      const parsed = parseGitMentionValue(row.item.path)
+      consider(key, gitMentionRefMatchKey({
+        kind: parsed?.kind ?? key.slice('git-'.length),
+        id: parsed?.id ?? row.label,
+        label: row.label,
+        detail: row.item.description,
+      }, query))
+    }
+  }
+  return best
+}
+
+export function groupMentionRows(rows: MentionRow[], query = ''): PopupGroup<MentionRow>[] {
   const mcp = [...new Set(rows.flatMap((row) => row.item.mcpGroup ? [row.item.mcpGroup] : []))]
-  return groupItems(rows, (row) => mentionGroupKey(row.item), MENTION_GROUP_ORDER.flatMap((key) => key === 'file' ? [...mcp, key] : [key]))
+  const base = MENTION_GROUP_ORDER.flatMap((key) => key === 'file' ? [...mcp, key] : [key])
+  const order = shouldDirectSearch(query) ? orderDirectSearchGroups(base, directSearchGroupKeys(rows, query)) : base
+  return groupItems(rows, (row) => mentionGroupKey(row.item), order)
 }

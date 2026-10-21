@@ -5,20 +5,25 @@
  * through this so the two surfaces cannot drift.
  */
 import {
+  filterRankGitMentionRefs,
+  gitMentionRefsFailure,
   listGitMentionRefs,
   probeGitMentionCapabilities,
+  scanGitMentionRefs,
   type GitMentionRunners,
+  type GitMentionScanKind,
   type GitRunOptions,
 } from '@superone/runtime/git'
 import { ghRun, gitRun } from '../git-run'
 import {
   GIT_MENTION_CAPABILITIES_UNKNOWN,
+  GIT_MENTION_REF_LIMIT,
   type GitMentionCapabilities,
   type GitMentionRefKind,
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
-import { cachedLocalGitMentionCapabilities } from './git-read-cache'
+import { cachedLocalGitMentionCapabilities, cachedLocalGitMentionRefScan } from './git-read-cache'
 
 const GIT_READ_OPTS: GitRunOptions = { timeoutMs: 20_000 }
 /** GitHub round-trips; long enough for a slow API, short enough that a popup never hangs. */
@@ -31,6 +36,10 @@ function localRunners(folderPath: string): GitMentionRunners {
   }
 }
 
+function isScanKind(kind: GitMentionRefKind): kind is GitMentionScanKind {
+  return kind === 'branch' || kind === 'tag' || kind === 'worktree'
+}
+
 export async function resolveGitMentionRefs(
   folderPath: string,
   kind: GitMentionRefKind,
@@ -40,6 +49,16 @@ export async function resolveGitMentionRefs(
     const { getEnvironmentHost } = await import('../environment')
     const { getRemoteGitMentionRefs } = await import('../environment/remote-file-tree')
     return getRemoteGitMentionRefs(getEnvironmentHost(), folderPath, kind, query)
+  }
+  // Branch, tag, and worktree lists do not depend on the needle. Cache the
+  // scan and rank in memory. Commits and GitHub kinds stay a fresh read.
+  if (isScanKind(kind)) {
+    try {
+      const scanned = await cachedLocalGitMentionRefScan(folderPath, kind, () => scanGitMentionRefs(kind, localRunners(folderPath)))
+      return { ok: true, refs: filterRankGitMentionRefs(scanned, query, GIT_MENTION_REF_LIMIT) }
+    } catch (err) {
+      return gitMentionRefsFailure(err)
+    }
   }
   return listGitMentionRefs(kind, query, localRunners(folderPath))
 }

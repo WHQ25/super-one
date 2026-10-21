@@ -103,7 +103,7 @@ import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { GoalIndicator } from './GoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
+import { mentionQueryAllowsSpaces, sessionProjectsOnHost } from './session-mention-query'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 import { prepareComposerSession } from '@/lib/prepare-composer-session'
@@ -135,7 +135,7 @@ export function ChatInput({
     const activeProject = useChatStore((s) => s.activeProject)
     const recentFolders = useAppStore((s) => s.recentFolders)
     const sessionProjectOptions = useMemo(
-      () => buildSessionProjectOptions(recentFolders, activeProject),
+      () => sessionProjectsOnHost(recentFolders, activeProject),
       [recentFolders, activeProject],
     )
     const fileRoot = useEffectiveProjectRoot()

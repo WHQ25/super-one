@@ -1,18 +1,20 @@
 /**
- * `@git` and `@gh` mention grammar (mirrors `@session`):
+ * `@git` and `@gh` mention grammar:
  *   git                          gh
- *   git <branch|commit|worktree|tag>   gh <issue|pr>
- *   git <kind> <query>           gh <kind> <number | query>
+ *   git <query>                  gh <number | query>
+ *   git <branch|commit|worktree|tag> <query>
+ *   gh <issue|pr> <number | query>
  *
  * Two portals, one grammar: `@git` browses the repository, `@gh` asks GitHub
  * through the `gh` CLI. Both produce the same `git` mention kind, so chips,
  * tags and the phone pipeline are shared; only the entry row and the host
- * lookup differ.
+ * lookup differ. The kind is optional: text that is not a kind of this portal
+ * followed by whitespace searches every kind the portal has.
  *
  * Phases:
- *   pick-kind  — choose which ref kind to browse (Tab-completable)
- *   need-query — kind chosen; show the default list until a query is typed
- *   search     — kind + query → host-side filter
+ *   pick-kind  — nothing after the keyword; choose a ref kind (Tab-completable)
+ *   need-query — a kind of this portal, then whitespace, and no query yet
+ *   search     — that kind plus a query, or every kind when the kind was omitted
  *
  * Internal mention kind is `git`; the chip value encodes the ref kind with the
  * exact identifier (`branch:main`, `commit:<full sha>`, `worktree:<path>`,
@@ -87,6 +89,9 @@ export function parseGitMentionCapabilities(raw: unknown): GitMentionCapabilitie
 /** Rows per kind the host returns; a query narrows within the same cap. */
 export const GIT_MENTION_REF_LIMIT = 50
 
+/** Kinds a plain `@foo` (no portal) mixes in. Commits and GitHub items stay behind `@git` / `@gh`. */
+export const PLAIN_GIT_MENTION_KINDS = ['branch', 'tag', 'worktree'] as const satisfies readonly GitMentionRefKind[]
+
 export const SHORT_SHA_LENGTH = 7
 
 export type GitMentionPhase = 'pick-kind' | 'need-query' | 'search'
@@ -97,7 +102,11 @@ export interface ParsedGitMentionQuery {
   phase: GitMentionPhase
   /** Set once a ref kind is fully chosen. */
   refKind: GitMentionRefKind | null
-  /** Partial first token while picking a kind (may be empty). */
+  /**
+   * Partial first token while picking a kind, or while a mixed search has not
+   * typed a space yet (so Tab can still complete a kind). Empty once a space
+   * has been typed without choosing a kind.
+   */
   kindToken: string
   refQuery: string
   /** Prefix to navigate when completing a kind, e.g. `git branch `. */
@@ -170,7 +179,8 @@ export function isGitMentionQuery(query: string, portals?: readonly GitMentionPo
 /** Argument grammar shown as ghost text (same style as a slash `argumentHint`). */
 export function gitMentionArgumentHint(portal: GitMentionPortal): string {
   const kinds = GIT_MENTION_PORTALS[portal]
-  return portal === 'gh' ? `<${kinds.join(' | ')}> <number | query>` : `<${kinds.join(' | ')}> <query>`
+  // Square brackets mark the kind as optional; the query stays required.
+  return portal === 'gh' ? `[${kinds.join(' | ')}] <number | query>` : `[${kinds.join(' | ')}] <query>`
 }
 
 /**
@@ -206,29 +216,75 @@ export function parseGitMentionQuery(
   const sp = afterKeyword.search(/\s/)
   const first = (sp < 0 ? afterKeyword : afterKeyword.slice(0, sp)).trim()
   const rest = (sp < 0 ? '' : afterKeyword.slice(sp + 1)).trim()
-
-  // Still typing the kind token (no space after the first word) → picker.
-  if (sp < 0) {
-    return { portal, phase: 'pick-kind', refKind: null, kindToken: first, refQuery: '', kindNavPrefix: null }
-  }
-
   const refKind = first.toLowerCase()
-  if (!isGitMentionRefKind(refKind) || gitMentionPortalOf(refKind) !== portal) {
-    // Unknown kind (or one the other portal owns) after a space — keep filtering kinds by it.
-    return { portal, phase: 'pick-kind', refKind: null, kindToken: first, refQuery: '', kindNavPrefix: null }
+  // A kind of this portal counts only once whitespace follows it. `git branch`
+  // is still a mixed search, so Tab can complete the kind.
+  if (sp >= 0 && isGitMentionRefKind(refKind) && gitMentionPortalOf(refKind) === portal) {
+    return {
+      portal,
+      phase: rest ? 'search' : 'need-query',
+      refKind,
+      kindToken: refKind,
+      refQuery: rest,
+      kindNavPrefix: `${portal} ${refKind} `,
+    }
   }
 
   return {
     portal,
-    phase: rest ? 'search' : 'need-query',
-    refKind,
-    kindToken: refKind,
-    refQuery: rest,
-    kindNavPrefix: `${portal} ${refKind} `,
+    phase: 'search',
+    refKind: null,
+    refQuery: afterKeyword.trim(),
+    kindToken: sp < 0 ? first : '',
+    kindNavPrefix: null,
   }
 }
 
-/** Ref kinds to show while picking, filtered by the partial token. */
+/**
+ * Kinds the host should list for this parse.
+ * Empty while picking a kind, or in need-query before a kind exists.
+ * A search with no kind covers every kind of the portal.
+ */
+export function gitMentionSearchKinds(parsed: ParsedGitMentionQuery): GitMentionRefKind[] {
+  if (parsed.phase === 'pick-kind') return []
+  if (parsed.phase === 'need-query') return parsed.refKind ? [parsed.refKind] : []
+  if (parsed.refKind) return [parsed.refKind]
+  return [...GIT_MENTION_PORTALS[parsed.portal]]
+}
+
+/**
+ * Ask the host for several kinds and concatenate the ones that answered,
+ * in the order of `kinds`. A per-kind cap keeps a mixed list from one kind
+ * crowding the others out. When every kind failed, the first failure is the
+ * answer; one success is enough to show a list.
+ */
+export async function loadGitMentionRefsForKinds(
+  kinds: readonly GitMentionRefKind[],
+  query: string,
+  load: (kind: GitMentionRefKind, query: string) => Promise<GitMentionRefsResult>,
+  options?: { perKindLimit?: number },
+): Promise<GitMentionRefsResult> {
+  if (kinds.length === 0) return { ok: true, refs: [] }
+  const results = await Promise.all(kinds.map(async (kind) => {
+    try {
+      return await load(kind, query)
+    } catch (err) {
+      return { ok: false as const, reason: 'error' as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  }))
+  const failures = results.filter((result) => !result.ok)
+  if (failures.length === results.length) return failures[0]!
+  const cap = options?.perKindLimit
+  return {
+    ok: true,
+    refs: results.flatMap((result) => {
+      if (!result.ok) return []
+      return cap != null ? result.refs.slice(0, cap) : result.refs
+    }),
+  }
+}
+
+/** Ref kinds to show while picking, or while a mixed search can still complete one. Prefix only. */
 export function listGitRefKindChoices(
   portal: GitMentionPortal,
   kindToken: string,
@@ -236,11 +292,10 @@ export function listGitRefKindChoices(
   const token = kindToken.trim().toLowerCase()
   const choices: Array<{ kind: GitMentionRefKind; matchIndices: number[] }> = []
   for (const kind of GIT_MENTION_PORTALS[portal]) {
-    const idx = token ? kind.indexOf(token) : 0
-    if (idx < 0) continue
+    if (token && !kind.startsWith(token)) continue
     choices.push({
       kind,
-      matchIndices: token ? Array.from({ length: token.length }, (_, i) => idx + i) : [],
+      matchIndices: token ? Array.from({ length: token.length }, (_, i) => i) : [],
     })
   }
   return choices

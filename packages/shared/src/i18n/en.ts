@@ -3462,17 +3462,10 @@ export type Messages = {
       groupRecentSessions: string
       noSessions: string
       noRecentSessions: string
-      noProjects: string
-      sessionNeedTitle: string
-      sessionNeedTitleShort: string
-      sessionPickProject: string
-      sessionAllProjects: string
-      sessionAllProjectsHint: string
       hintSelectSession: string
       hintCompleteProject: string
       hintTypeTitle: string
       loadingSessions: string
-      scrollForMore: string
       capabilityGit: string
       capabilityGh: string
       groupGitKinds: string
@@ -3507,6 +3500,8 @@ export type Messages = {
       ghUnavailableHint: string
       gitLoadError: string
       noGitKinds: string
+      noGitRefs: string
+      noGhItems: string
       noGitBranches: string
       noGitCommits: string
       noGitWorktrees: string
@@ -8088,17 +8083,10 @@ export const en: Messages = {
       groupRecentSessions: 'Recent',
       noSessions: 'No matching sessions',
       noRecentSessions: 'No recent sessions',
-      noProjects: 'No matching projects',
-      sessionNeedTitle: 'Type a title query to search sessions',
-      sessionNeedTitleShort: 'type title…',
-      sessionPickProject: 'choose project',
-      sessionAllProjects: 'All Projects',
-      sessionAllProjectsHint: 'Type all · search every project',
       hintSelectSession: 'select session',
       hintCompleteProject: 'complete project',
       hintTypeTitle: 'type title to search',
       loadingSessions: 'Loading…',
-      scrollForMore: 'Scroll for more',
       capabilityGit: 'Git',
       capabilityGh: 'GitHub',
       groupGitKinds: 'Ref type',
@@ -8133,6 +8121,8 @@ export const en: Messages = {
       ghUnavailableHint: 'Needs the gh CLI signed in and a GitHub remote',
       gitLoadError: 'Could not read git refs',
       noGitKinds: 'No matching ref type',
+      noGitRefs: 'No matching refs',
+      noGhItems: 'No matching issues or pull requests',
       noGitBranches: 'No matching branches',
       noGitCommits: 'No matching commits',
       noGitWorktrees: 'No matching worktrees',

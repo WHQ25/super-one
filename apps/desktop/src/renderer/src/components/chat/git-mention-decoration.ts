@@ -1,8 +1,8 @@
 /**
  * Ghost argument-hint for @git mentions.
  *
- * Grammar: @git <branch | commit | worktree | tag> <query>
- * - pick-kind  → `<branch | commit | worktree | tag> <query>`
+ * Grammar: @git [branch | commit | worktree | tag] <query>
+ * - pick-kind  → `[branch | commit | worktree | tag] <query>`
  * - need-query → `<query>`
  * - search     → hide (user typing the filter)
  */

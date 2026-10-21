@@ -408,7 +408,6 @@ export const mobileEnglish: Record<string, string> = {
   'remaining': 'remaining',
   'Failed': 'Failed',
   'Todos': 'Todos',
-  'Scroll for more': 'Scroll for more',
   'AI provider': 'AI Provider',
   'Default provider': 'Default Provider',
   'Fast mode': 'Fast Mode',

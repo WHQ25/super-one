@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef, useState } from 'react'
+import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRef, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { McpMentionSearchResult, McpMentionSource } from '@superone/shared/mcp-app-mentions'
+import { compareMentionMatchKeys, gitMentionRefMatchKey, mentionMatchTier } from '@superone/shared/mention-match-tier'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -15,6 +17,7 @@ const REFS: Record<GitMentionRef['kind'], GitMentionRef[]> = {
   branch: [
     { kind: 'branch', id: 'main', label: 'main', detail: 'fix(computer-use): keep overlay hide and host-exit handlers alive', date: hoursAgo(3), current: true },
     { kind: 'branch', id: 'feat/git-mention', label: 'feat/git-mention', detail: 'feat(chat): add @git mention', date: hoursAgo(30) },
+    { kind: 'branch', id: 'browser-capture', label: 'browser-capture', detail: 'fix(browser): capture scale', date: hoursAgo(12) },
     { kind: 'branch', id: 'fix/overlay-race', label: 'fix/overlay-race', detail: 'fix(overlay): first paint race', date: hoursAgo(80) },
   ],
   commit: [
@@ -44,21 +47,66 @@ const REFS: Record<GitMentionRef['kind'], GitMentionRef[]> = {
 
 /** Per-story git answers; the popup asks on mount and on every kind/query change. */
 let capabilities: GitMentionCapabilities = { repo: 'ready', github: true }
+type RefsAnswer = (kind: GitMentionRef['kind'], query: string) => GitMentionRefsResult | Promise<GitMentionRefsResult>
 const defaultRefs = (kind: GitMentionRef['kind'], query: string): GitMentionRefsResult => {
   const needle = query.trim().toLowerCase().replace(/^#/, '')
   // GitHub kinds: open only until a query is typed, like `gh issue list` does.
   const pool = (kind === 'issue' || kind === 'pr') && !needle ? REFS[kind].filter((r) => r.state === 'open' || r.state === 'draft') : REFS[kind]
-  return { ok: true, refs: pool.filter((r) => !needle || r.id.toLowerCase().startsWith(needle) || r.label.toLowerCase().includes(needle) || r.detail.toLowerCase().includes(needle)) }
+  const matched = pool.filter((r) => !needle || r.id.toLowerCase().startsWith(needle) || r.label.toLowerCase().includes(needle) || r.detail.toLowerCase().includes(needle))
+  return { ok: true, refs: rankStoryRefs(matched, needle) }
 }
-let refsResult = defaultRefs
+let refsResult: RefsAnswer = defaultRefs
+
+function rankStoryRefs(refs: GitMentionRef[], needle: string): GitMentionRef[] {
+  if (!needle) return refs
+  return refs
+    .map((ref, index) => ({ ref, index, key: gitMentionRefMatchKey(ref, needle) }))
+    .sort((a, b) => compareMentionMatchKeys(a.key, b.key) || Number(b.ref.current === true) - Number(a.ref.current === true) || a.index - b.index)
+    .map((item) => item.ref)
+}
+
+const SESSIONS: PinnedSessionEntry[] = [
+  { sessionId: 'sess-1', title: 'Align the mention popup', lastActiveAt: hoursAgo(1), messageCount: 4, provider: 'claude', folderPath: PROJECT, folderName: 'super-one' },
+  { sessionId: 'sess-2', title: 'Close the slash-command loop', lastActiveAt: hoursAgo(5), messageCount: 2, provider: 'codex', folderPath: '/storybook/relay', folderName: 'relay' },
+  { sessionId: 'sess-3', title: 'App checkout flow', lastActiveAt: hoursAgo(8), messageCount: 1, provider: 'claude', folderPath: '/storybook/app-a', folderName: 'app' },
+  { sessionId: 'sess-4', title: 'Support the mention popup', lastActiveAt: hoursAgo(2), messageCount: 3, provider: 'codex', folderPath: PROJECT, folderName: 'super-one' },
+  { sessionId: 'sess-5', title: 'Refeature the popup', lastActiveAt: hoursAgo(4), messageCount: 2, provider: 'claude', folderPath: PROJECT, folderName: 'super-one' },
+]
+
+function sessionsFor(query: string, limit?: number, projectPaths?: string[]): PinnedSessionEntry[] {
+  const ranked = SESSIONS.flatMap((entry) => {
+    const rank = mentionMatchTier(entry.title, query)
+    if (rank == null) return []
+    if (projectPaths?.length && !projectPaths.includes(entry.folderPath)) return []
+    return [{ entry, rank }]
+  })
+  ranked.sort((a, b) => a.rank - b.rank)
+  return ranked.slice(0, limit ?? SESSIONS.length).map((item) => item.entry)
+}
+
+const APP_FOLDERS = [
+  { path: PROJECT, name: 'super-one' },
+  { path: '/storybook/app-a', name: 'app' },
+  { path: '/storybook/app-b', name: 'app' },
+]
 
 mockIpc('app', 'getAppSettings', async () => ({ computerUseEnabled: false, cdpEnabled: false }))
 mockIpc('app', 'onAppSettingsChange', () => () => {})
 mockIpc('app', 'getGitMentionCapabilities', async () => capabilities)
 mockIpc('app', 'listGitMentionRefs', async (_root: unknown, kind: unknown, query: unknown) =>
   refsResult(kind as GitMentionRef['kind'], String(query ?? '')))
-mockIpc('agent', 'listDirectory', async () => [])
-mockIpc('agent', 'searchMentions', async () => [])
+mockIpc('environment', 'listDirectory', async () => [])
+type StoryFile = { kind: 'file'; path: string; isDirectory: boolean; matchIndices: number[]; score: number }
+type FilesAnswer = (query: string) => StoryFile[]
+const defaultFiles: FilesAnswer = (query) => {
+  if (!query) return []
+  const file = { kind: 'file' as const, path: 'src/mention-popup.tsx', isDirectory: false, matchIndices: [4, 5, 6], score: 0 }
+  return file.path.includes(query) ? [file] : []
+}
+let filesFor: FilesAnswer = defaultFiles
+mockIpc('environment', 'searchMentions', async (_root: unknown, needle: unknown) => filesFor(String(needle ?? '').toLowerCase()))
+mockIpc('environment', 'searchSessionsByTitle', async (_connection: unknown, query: unknown, limit: unknown, projectPaths: unknown) =>
+  sessionsFor(String(query ?? ''), typeof limit === 'number' ? limit : undefined, Array.isArray(projectPaths) ? projectPaths.filter((path) => typeof path === 'string') : undefined))
 mockIpc('app', 'listComputerUseInstalledApps', async () => [])
 
 /** Bits & Bolts' real icon: one hard-coded dark stroke, tinted to the theme. */
@@ -86,7 +134,7 @@ type McpAnswer = (query: string) => Promise<{ ok: true; value: McpMentionSearchR
 const answerWith = (value: McpMentionSearchResult): McpAnswer => async () => ({ ok: true, value })
 let mcpSession = 0
 
-function Preview({ query, repo = true, github = true, refs, width = 560, mcp, typeAfter }: { query: string; repo?: boolean; github?: boolean; refs?: typeof refsResult; width?: number; mcp?: McpAnswer; typeAfter?: string }) {
+function Preview({ query, repo = true, github = true, refs, files, width = 560, mcp, typeAfter, folders }: { query: string; repo?: boolean; github?: boolean; refs?: RefsAnswer; files?: FilesAnswer; width?: number; mcp?: McpAnswer; typeAfter?: string; folders?: { path: string; name: string }[] }) {
   // A fresh session per render keeps the hook's known-sections cache from leaking between stories.
   const [mcpRoute] = useState(() => mcp ? { projectPath: PROJECT, sessionId: `story-mcp-${++mcpSession}` } : null)
   if (mcp) {
@@ -101,18 +149,19 @@ function Preview({ query, repo = true, github = true, refs, width = 560, mcp, ty
   useEffect(() => {
     capabilities = { repo: repo ? 'ready' : 'not-repo', github: repo && github }
     refsResult = refs ?? defaultRefs
+    filesFor = files ?? defaultFiles
     const prevApp = useAppStore.getState()
     const prevChat = useChatStore.getState()
     useChatStore.getState().ensureSession(PROJECT)
     useChatStore.setState({ activeProject: PROJECT })
-    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {}, recentFolders: [{ path: PROJECT, name: 'super-one' }] as never })
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {}, recentFolders: (folders ?? [{ path: PROJECT, name: 'super-one' }]) as never })
     setCurrent(query)
     setReady(true)
     return () => {
       useAppStore.setState({ currentFolder: prevApp.currentFolder, _worktrees: prevApp._worktrees, recentFolders: prevApp.recentFolders })
       useChatStore.setState(prevChat)
     }
-  }, [query, repo, github, refs])
+  }, [query, repo, github, refs, files, folders])
   useEffect(() => {
     if (typeAfter === undefined) return
     const timer = setTimeout(() => setCurrent(typeAfter), 800)
@@ -220,6 +269,64 @@ export const GitTags: Story = { args: { query: 'git tag ' } }
 
 /** A filter that matches nothing names the kind that came back empty. */
 export const GitNoMatches: Story = { args: { query: 'git tag v9' } }
+
+/** `@session`: newest sessions across every project on this host. */
+export const SessionRecent: Story = { args: { query: 'session ' } }
+
+/** `@session align`: a title, with no project step in front of it. */
+export const SessionTitle: Story = { args: { query: 'session align' } }
+
+/** A title that matches nothing stays open and says so. */
+export const SessionNoMatches: Story = { args: { query: 'session zzzz' } }
+
+/** `@session app `: an exact label scopes every project with that name. Rows hide the project. */
+export const SessionScoped: Story = { args: { query: 'session app ', folders: APP_FOLDERS } }
+
+/** `@session sup` still offers the project as a completion above the title hits. */
+export const SessionProjectCompletion: Story = { args: { query: 'session sup', folders: APP_FOLDERS } }
+
+const featuresFile: FilesAnswer = () => [
+  { kind: 'file', path: 'docs/features/', isDirectory: true, matchIndices: [5, 6, 7, 8], score: 0 },
+]
+
+/** Plain `@feat`: `feat/…` branches lead `docs/features/`, which only starts with the query. */
+export const PlainMixed: Story = { args: { query: 'feat', files: featuresFile } }
+
+/** The same mix in a narrow composer. */
+export const PlainMixedNarrow: Story = { args: { query: 'feat', width: 340, files: featuresFile } }
+
+/**
+ * `feat-flag.ts` is a whole segment and shorter than `feat/git-mention`, so
+ * the file group still leads that pair. An equal key would put the branch first.
+ */
+export const PlainFileLeads: Story = {
+  args: {
+    query: 'feat',
+    files: () => [{ kind: 'file', path: 'feat-flag.ts', isDirectory: false, matchIndices: [0, 1, 2, 3], score: 0 }],
+  },
+}
+
+/** `@feat/` is not a directory here, so branches and an unscoped file search share the list. */
+export const PlainSlashBranch: Story = {
+  args: {
+    query: 'feat/',
+    files: (query) => query.startsWith('feat')
+      ? [{ kind: 'file', path: 'docs/features/composer.md', isDirectory: false, matchIndices: [5, 6, 7, 8], score: 0 }]
+      : [],
+  },
+}
+
+/** `@git fix`: no kind, so branch, tag, worktree, and commit are searched together. */
+export const GitMixedKinds: Story = { args: { query: 'git fix' } }
+
+/** `@git br`: the Branch completion sits above the refs the mixed search already found. */
+export const GitKindCompletion: Story = { args: { query: 'git br' } }
+
+/** Refs that never arrive keep the loading line instead of an empty list. */
+export const GitLoading: Story = { args: { query: 'git branch ', refs: () => new Promise<GitMentionRefsResult>(() => {}) } }
+
+/** Entering `@git` outside a repository explains why, instead of listing kinds. */
+export const GitInsideNotARepo: Story = { args: { query: 'git ', repo: false } }
 
 /** The host could not answer — e.g. an older remote node — so the list explains instead of staying blank. */
 export const GitUnsupportedNode: Story = {

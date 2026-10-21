@@ -312,6 +312,59 @@ test.each([
   ])
 })
 
+test('falls back to an unscoped file search when the directory is missing', async () => {
+  const client = {
+    resolveProject,
+    rpc: jest.fn(async (method: string, payload: { path?: string; query?: string } = {}) => {
+      if (method === 'workspace.searchMentions') {
+        if (payload.query === 'feat/') return { items: [{ kind: 'file', path: 'docs/features/composer.md' }] }
+        return mentionCatalog
+      }
+      if (method === 'files.listDir') {
+        if (payload.path?.endsWith('/feat')) return { items: [], error: 'ENOENT' }
+        return { items: [{ name: 'src', isDirectory: true }, { name: 'README.md', isDirectory: false }] }
+      }
+      return {}
+    }),
+  }
+  const { result } = await mount(client)
+  await act(async () => { result.current.update('@feat/') })
+  await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
+  const searches = client.rpc.mock.calls.filter(([method]) => method === 'workspace.searchMentions')
+  expect(searches.map(([, payload]) => payload)).toEqual([
+    expect.objectContaining({ query: '' }),
+    expect.objectContaining({ query: 'feat/' }),
+  ])
+  expect((searches[1]?.[1] as { scopeDir?: string }).scopeDir).toBeUndefined()
+  expect(result.current.mentionRows.map((row) => row.item.path)).toContain('docs/features/composer.md')
+  expect(result.current.mentionSearch.error).toBeUndefined()
+})
+
+test('falls back to an unscoped search when a scoped query matches nothing', async () => {
+  const client = {
+    resolveProject,
+    rpc: jest.fn(async (method: string, payload: { query?: string; scopeDir?: string } = {}) => {
+      if (method === 'workspace.searchMentions') {
+        if (payload.query === 'src/nope') return { items: [{ kind: 'file', path: 'src/nope-found.ts' }] }
+        if (payload.scopeDir) return { items: [], appliedOptions: { scopeDir: true } }
+        return mentionCatalog
+      }
+      return {}
+    }),
+  }
+  const { result } = await mount(client)
+  await act(async () => { result.current.update('@src/nope') })
+  await waitFor(() => expect(result.current.mentionRows.some((row) => row.item.path === 'src/nope-found.ts')).toBe(true))
+  const searches = client.rpc.mock.calls.filter(([method]) => method === 'workspace.searchMentions')
+  expect(searches.map(([, payload]) => payload)).toEqual([
+    expect.objectContaining({ query: '' }),
+    expect.objectContaining({ query: 'nope', scopeDir: 'src/' }),
+    expect.objectContaining({ query: 'src/nope' }),
+  ])
+  expect((searches[2]?.[1] as { scopeDir?: string }).scopeDir).toBeUndefined()
+  expect(result.current.mentionRows.find((row) => row.item.path === 'src/nope-found.ts')?.label).toBe('src/nope-found.ts')
+})
+
 test('browses a nested directory without loading unrelated mention targets', async () => {
   const client = mentionClient()
   const { result } = await mount(client)

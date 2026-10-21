@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMentionRows, groupMentionRows, mentionDisplayName, mentionGroupKey, MENTION_GROUP_ORDER, shiftIndices } from './mention-rows'
+import { buildMentionRows, groupMentionRows, mentionDisplayName, mentionGroupKey, MENTION_GROUP_ORDER, shiftIndices, type MentionRow } from './mention-rows'
 import type { MentionItem } from './mentions'
 
 const file = (path: string, matchIndices?: number[]): MentionItem => ({ kind: 'file', path, matchIndices })
@@ -139,6 +139,46 @@ describe('buildMentionRows', () => {
     })
     expect(groupMentionRows(rows).map((group) => group.key))
       .toEqual(['capability', 'agent-profile', 'agent', 'miniapp', 'file'])
+  })
+
+  it('ranks a plain query by match key and puts a whole-segment branch ahead of a prefix file', () => {
+    const mention = (item: MentionItem): MentionRow => ({
+      item, label: item.label ?? item.path, labelIndices: [], inlineIndices: [],
+    })
+    const rows = [
+      mention({ kind: 'session', path: 's1', label: 'Refeature the popup' }),
+      mention({ kind: 'git-ref', path: 'branch:feat/popup', label: 'feat/popup' }),
+      mention({ kind: 'git-ref', path: 'worktree:/wt', label: 'feat/popup' }),
+      mention({ kind: 'file', path: 'src/refeature.ts', label: 'src/refeature.ts' }),
+      mention({ kind: 'agent', path: 'reviewer', label: 'reviewer' }),
+    ]
+    expect(groupMentionRows(rows, 'feat').map((group) => group.key)).toEqual([
+      'agent', 'git-branch', 'git-worktree', 'file', 'session',
+    ])
+    const leadingFile = [
+      mention({ kind: 'file', path: 'feat-flag.ts', label: 'feat-flag.ts' }),
+      mention({ kind: 'git-ref', path: 'branch:feat/popup', label: 'feat/popup' }),
+      mention({ kind: 'session', path: 's1', label: 'Refeature the popup' }),
+    ]
+    expect(groupMentionRows(leadingFile, 'feat').map((group) => group.key)).toEqual([
+      'git-branch', 'file', 'session',
+    ])
+    const features = [
+      mention({ kind: 'file', path: 'docs/features/', label: 'features' }),
+      mention({ kind: 'git-ref', path: 'branch:feat/popup', label: 'feat/popup' }),
+      mention({ kind: 'session', path: 's1', label: 'Refeature the popup' }),
+    ]
+    expect(groupMentionRows(features, 'feat').map((group) => group.key)).toEqual([
+      'git-branch', 'file', 'session',
+    ])
+    const listing = [
+      mention({ kind: 'dir-entry', path: 'src/components', label: 'components' }),
+      mention({ kind: 'session', path: 's2', label: 'src/components old notes' }),
+    ]
+    expect(groupMentionRows(listing, 'src/').map((group) => group.key)[0]).toBe('file')
+    expect(groupMentionRows(leadingFile).map((group) => group.key)).toEqual([
+      'session', 'git-branch', 'file',
+    ])
   })
 })
 

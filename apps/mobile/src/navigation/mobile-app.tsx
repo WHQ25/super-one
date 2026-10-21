@@ -2925,7 +2925,6 @@ export function MobileApp() {
           requestedCursor={suggestions.requestedCursor}
           mentionSearch={suggestions.mentionSearch}
           onMentionRetry={suggestions.retry}
-          onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
           mentionGroupLabels={suggestions.mentionGroupLabels}
           mcpMentions={suggestions.mcpMentions}

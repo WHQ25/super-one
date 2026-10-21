@@ -407,3 +407,51 @@ have no host-owned deadline; generic Host Action and mini-app tool deadlines
 remain unchanged. Pinned Codex uses a 24-hour MCP tool limit; the stdio bridge
 omits its former short timer for tool calls. Claude SDK and Grok/ACP client
 timeout behavior has not been verified with live provider calls.
+
+## Mentions
+
+Desktop and phone composers share one `@` grammar.
+
+A plain `@foo` (at least two characters, and not a portal query) also lists
+fuzzy session titles and git branch, tag, and worktree refs, at most three
+of each. A `/` stays in that query: branch names contain one, and `@feat/`
+still searches sessions and refs. Browsing a directory that exists is
+unchanged. A missing directory, or a scoped file search that comes back
+empty, falls back to an unscoped file search of the whole query. Bare `@`
+does not. Those groups and files form one block after capabilities,
+collaborators, desktop apps, agents, mini apps, and MCP sections. The block
+is ordered by the best match in each group. After the tier, a run that ends
+at the end of the text or just before a separator beats one that continues
+inside the same segment, then a shorter segment wins, then a shorter text.
+An equal score keeps branches, then worktrees, then tags, then sessions,
+then files. Session titles are searched on the host that owns the active
+project, across every project on that host. Commits, issues, and pull
+requests stay out of that plain list.
+
+`@session` lists recent sessions across those projects. `@session <title>`
+searches titles the same way. An optional project argument remains:
+`@session <project> <title>` and `@session <project> ` scope the list when the
+first token is an exact project label, compared case-insensitively and followed
+by whitespace. Every project with that label is in scope. Otherwise the whole
+rest is the title. While that first token is still being typed, prefix
+completions for project labels sit above the sessions; choosing one rewrites
+the query to `session <label> `. Bare `@session` does not list projects.
+Unscoped rows show the project label. Scoped rows hide it.
+
+`@git` and `@gh` still open on a kind picker. `@git <query>` searches branch,
+tag, worktree, and commit together. `@gh <query>` searches issues and pull
+requests together. `@git <kind> <query>` and `@gh <kind> <query>` stay on that
+kind. A kind counts only after whitespace follows it, so `@git br` can still
+complete to `git branch ` while the mixed search runs.
+
+A title, file name, or ref name matches in four tiers, case-insensitively:
+it starts with the query, the query starts right after a space, `/`, `-`,
+`_`, or `.`, it contains the query, or the query is only a subsequence.
+Within a tier, a match that ends on a segment boundary wins, then a shorter
+segment, then a shorter text. Sessions then keep the host's recency order.
+Git refs then put the checked-out ref first, then recency. Files keep the
+fuzzy search order. An empty query is the recent list. The host's SQL and
+title scan still order by the four tiers; the composer re-sorts the rows it
+shows. Branch, tag, and worktree scans are cached per folder for a few
+seconds and dropped when that folder's git reads are invalidated. Commits
+and GitHub searches are not cached.

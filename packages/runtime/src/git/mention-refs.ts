@@ -18,6 +18,7 @@ import {
   type GitMentionRefKind,
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
+import { compareMentionMatchKeys, gitMentionRefMatchKey } from '@superone/shared/mention-match-tier'
 import { isGhMissingError } from './gh-run'
 import { isNotGitRepoError } from './sanitize-ref'
 import { parseWorktreePorcelain } from './worktree-porcelain'
@@ -46,6 +47,65 @@ const ISSUE_NUMBER_RE = /^#?(\d+)$/
 const GH_ITEM_FIELDS = 'number,title,state,author,updatedAt'
 const GH_PR_FIELDS = `${GH_ITEM_FIELDS},isDraft`
 
+/** Kinds whose full list does not depend on the typed query. */
+export type GitMentionScanKind = 'branch' | 'tag' | 'worktree'
+
+export function gitMentionRefsFailure(err: unknown): GitMentionRefsResult {
+  if (isNotGitRepoError(err)) return { ok: false, reason: 'not-repo' }
+  return { ok: false, reason: 'error', error: (err as Error).message }
+}
+
+/**
+ * Full branch, tag, or worktree list in git's recency order, with no name
+ * filter. Callers cache this and then {@link filterRankGitMentionRefs}.
+ */
+export async function scanGitMentionRefs(
+  kind: GitMentionScanKind,
+  runners: GitMentionRunner | GitMentionRunners,
+): Promise<GitMentionRef[]> {
+  const { git } = typeof runners === 'function' ? { git: runners } : runners
+  switch (kind) {
+    case 'branch':
+      return scanBranches(git)
+    case 'tag':
+      return scanTags(git)
+    case 'worktree':
+      return scanWorktrees(git)
+  }
+}
+
+/**
+ * Keep refs whose name matches `needle`, then stable-sort by match key.
+ * The checked-out ref leads only a tie. An empty needle keeps recency and
+ * still puts the checked-out ref first. The slice happens after the sort.
+ */
+export function filterRankGitMentionRefs(
+  refs: readonly GitMentionRef[],
+  needle: string,
+  limit = GIT_MENTION_REF_LIMIT,
+): GitMentionRef[] {
+  const trimmed = needle.trim()
+  const filtered = trimmed ? refs.filter((ref) => gitRefMatches(ref, trimmed)) : refs
+  return rankGitMentionRefs(filtered, trimmed).slice(0, limit)
+}
+
+/** Stable key sort. Does not filter. An empty needle only lifts `current`. */
+export function rankGitMentionRefs(refs: readonly GitMentionRef[], needle: string): GitMentionRef[] {
+  const trimmed = needle.trim()
+  return refs
+    .map((ref, index) => ({ ref, index, key: trimmed ? gitMentionRefMatchKey(ref, trimmed) : null }))
+    .sort((a, b) => {
+      if (trimmed) {
+        const cmp = compareMentionMatchKeys(a.key, b.key)
+        if (cmp !== 0) return cmp
+      }
+      const current = Number(b.ref.current === true) - Number(a.ref.current === true)
+      if (current) return current
+      return a.index - b.index
+    })
+    .map((entry) => entry.ref)
+}
+
 export async function listGitMentionRefs(
   kind: GitMentionRefKind,
   query: string,
@@ -57,18 +117,22 @@ export async function listGitMentionRefs(
   if (isGitHubRefKind(kind)) {
     if (!gh) return { ok: false, reason: 'gh-unavailable' }
     try {
-      return { ok: true, refs: (await listGitHubItems(kind, needle, gh)).slice(0, limit) }
+      const refs = rankGitMentionRefs(await listGitHubItems(kind, needle, gh), needle)
+      return { ok: true, refs: refs.slice(0, limit) }
     } catch (err) {
       if (isGhMissingError(err)) return { ok: false, reason: 'gh-unavailable' }
       return { ok: false, reason: 'error', error: ghErrorMessage(err) }
     }
   }
   try {
-    const refs = await listRefs(kind, needle, git)
-    return { ok: true, refs: refs.slice(0, limit) }
+    if (kind === 'commit') {
+      const refs = rankGitMentionRefs(await listCommits(needle, git), needle)
+      return { ok: true, refs: refs.slice(0, limit) }
+    }
+    const refs = await scanGitMentionRefs(kind, git)
+    return { ok: true, refs: filterRankGitMentionRefs(refs, needle, limit) }
   } catch (err) {
-    if (isNotGitRepoError(err)) return { ok: false, reason: 'not-repo' }
-    return { ok: false, reason: 'error', error: (err as Error).message }
+    return gitMentionRefsFailure(err)
   }
 }
 
@@ -97,26 +161,6 @@ function ghErrorMessage(err: unknown): string {
   const e = err as { stderr?: string; message?: string }
   const stderr = e.stderr?.trim()
   return stderr ? stderr.split('\n')[0]! : e.message ?? 'gh failed'
-}
-
-async function listRefs(
-  kind: GitMentionRefKind,
-  needle: string,
-  run: GitMentionRunner,
-): Promise<GitMentionRef[]> {
-  switch (kind) {
-    case 'branch':
-      return listBranches(needle, run)
-    case 'tag':
-      return listTags(needle, run)
-    case 'commit':
-      return listCommits(needle, run)
-    case 'worktree':
-      return listWorktrees(needle, run)
-    case 'issue':
-    case 'pr':
-      throw new Error(`${kind} is a GitHub kind`)
-  }
 }
 
 interface GhItem {
@@ -173,7 +217,7 @@ async function listGitHubItems(kind: GitHubRefKind, needle: string, gh: GitMenti
   return [...exact, ...searched.filter((r) => !seen.has(r.id))]
 }
 
-async function listBranches(needle: string, run: GitMentionRunner): Promise<GitMentionRef[]> {
+async function scanBranches(run: GitMentionRunner): Promise<GitMentionRef[]> {
   const raw = await run([
     'for-each-ref', 'refs/heads', '--sort=-committerdate', `--count=${REF_SCAN_LIMIT}`, `--format=${REF_FORMAT}`,
   ])
@@ -181,15 +225,12 @@ async function listBranches(needle: string, run: GitMentionRunner): Promise<GitM
   for (const line of raw.split('\n')) {
     if (!line) continue
     const [name = '', , subject = '', date = '', head = ''] = line.split('\0')
-    const ref: GitMentionRef = { kind: 'branch', id: name, label: name, detail: subject, date, current: head === '*' }
-    if (gitRefMatches(ref, needle)) refs.push(ref)
+    refs.push({ kind: 'branch', id: name, label: name, detail: subject, date, current: head === '*' })
   }
-  // The checked-out branch leads regardless of when it was last committed to.
-  refs.sort((a, b) => Number(b.current === true) - Number(a.current === true))
   return refs
 }
 
-async function listTags(needle: string, run: GitMentionRunner): Promise<GitMentionRef[]> {
+async function scanTags(run: GitMentionRunner): Promise<GitMentionRef[]> {
   const raw = await run([
     'for-each-ref', 'refs/tags', '--sort=-creatordate', `--count=${REF_SCAN_LIMIT}`, `--format=${TAG_FORMAT}`,
   ])
@@ -197,8 +238,7 @@ async function listTags(needle: string, run: GitMentionRunner): Promise<GitMenti
   for (const line of raw.split('\n')) {
     if (!line) continue
     const [name = '', , subject = '', date = ''] = line.split('\0')
-    const ref: GitMentionRef = { kind: 'tag', id: name, label: name, detail: subject, date }
-    if (gitRefMatches(ref, needle)) refs.push(ref)
+    refs.push({ kind: 'tag', id: name, label: name, detail: subject, date })
   }
   return refs
 }
@@ -222,7 +262,7 @@ async function listCommits(needle: string, run: GitMentionRunner): Promise<GitMe
   // prefix: that commit leads, then subject matches — "abcd" can be in a
   // subject too.
   const recent = parseLog(await run(['log', `-n${COMMIT_SCAN_LIMIT}`, `--format=${LOG_FORMAT}`]))
-  const byMessage = recent.filter((r) => gitRefMatches(r, needle)).slice(0, GIT_MENTION_REF_LIMIT)
+  const byMessage = recent.filter((r) => gitRefMatches(r, needle))
   if (!HEX_PREFIX_RE.test(needle)) return byMessage
 
   let bySha: GitMentionRef[] = []
@@ -235,7 +275,7 @@ async function listCommits(needle: string, run: GitMentionRunner): Promise<GitMe
   return [...bySha, ...byMessage.filter((r) => !seen.has(r.id))]
 }
 
-async function listWorktrees(needle: string, run: GitMentionRunner): Promise<GitMentionRef[]> {
+async function scanWorktrees(run: GitMentionRunner): Promise<GitMentionRef[]> {
   const [raw, toplevel] = await Promise.all([
     run(['worktree', 'list', '--porcelain']),
     run(['rev-parse', '--show-toplevel']).catch(() => ''),
@@ -245,15 +285,13 @@ async function listWorktrees(needle: string, run: GitMentionRunner): Promise<Git
   for (const wt of parseWorktreePorcelain(raw)) {
     if (wt.bare) continue
     const label = wt.branch ?? (wt.head ? `detached @ ${wt.head.slice(0, 7)}` : wt.path)
-    const ref: GitMentionRef = {
+    refs.push({
       kind: 'worktree',
       id: wt.path,
       label,
       detail: wt.path,
       current: !!here && wt.path.replace(/[\\/]+$/, '') === here,
-    }
-    if (gitRefMatches(ref, needle)) refs.push(ref)
+    })
   }
-  refs.sort((a, b) => Number(b.current === true) - Number(a.current === true))
   return refs
 }

@@ -2087,6 +2087,19 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_SEARCH_SESSIONS,
+    async (
+      _e,
+      connectionId: string,
+      query: string,
+      limit?: number,
+      projectPaths?: string[],
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().searchSessionsByTitle(connectionId, query, limit, projectPaths)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_LIST_DRAFTS,
     async (_e, connectionId: string, projectPath?: string) => {
       const { getEnvironmentHost } = await import('./environment')

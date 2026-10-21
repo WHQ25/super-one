@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
-import { Bot, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
+import { Bot, Folder, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -16,8 +16,11 @@ import type {
   AgentMentionTarget,
   ListDirEntry,
   MentionSearchItem,
+  PinnedSessionEntry,
   SessionHistoryEntry,
 } from '@superone/shared/agent-types'
+import { PLAIN_MENTION_GROUP_LIMIT, orderDirectSearchGroups, shouldDirectSearch, type DirectSearchRankedGroup } from '@superone/shared/mention-direct-search'
+import { compareMentionMatchKeys, fileMentionMatchKey, gitMentionRefMatchKey, mentionMatchKey, sortByMentionMatch, type MentionMatchKey } from '@superone/shared/mention-match-tier'
 import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { listAgentMentionTargets } from '@/lib/agent-mention-targets'
 import { resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
@@ -25,14 +28,13 @@ import { groupItems, PopupSectionHeader } from './popup-groups'
 import {
   SESSION_MENTION_NAV_PREFIX,
   SESSION_MENTION_KEYWORD,
+  SESSION_MENTION_SEARCH_LIMIT,
   parseSessionMentionQuery,
-  listSessionProjectChoices,
-  buildSessionProjectOptions,
+  listSessionProjectCompletions,
+  sessionProjectsOnHost,
+  hostLocalProjectPaths,
+  searchSessionMentions,
   titleMatchIndices,
-  loadSessionMentionPage,
-  initialSessionMentionLoadState,
-  type SessionMentionLoadState,
-  type SessionMentionRow,
 } from './session-mention-query'
 import {
   compareBuiltinMentionMatches,
@@ -130,7 +132,7 @@ type FlatItem =
       matchRank: BuiltinMentionMatchRank
     }
   | {
-      /** Project / all scope choice — Tab completes into query. */
+      /** Project label completion — Tab navigates to `session <label> `. */
       kind: 'session-project'
       token: string
       label: string
@@ -210,6 +212,30 @@ function getSelectPath(item: FlatItem): string {
 
 export const MENTION_GROUP_ORDER = ['capability', 'agent-profile', 'session-project', 'session', ...GIT_MENTION_GROUP_ORDER, 'desktop-app', 'agent', 'miniapp', 'file'] as const
 
+function directSearchGroupKeys(
+  items: readonly FlatItem[],
+  query: string,
+): Partial<Record<DirectSearchRankedGroup, MentionMatchKey | null>> {
+  const best: Partial<Record<DirectSearchRankedGroup, MentionMatchKey>> = {}
+  const consider = (key: DirectSearchRankedGroup, match: MentionMatchKey | null) => {
+    if (match == null) return
+    const prev = best[key]
+    if (prev == null || compareMentionMatchKeys(match, prev) < 0) best[key] = match
+  }
+  for (const item of items) {
+    if (item.kind === 'dir-entry') consider('file', fileMentionMatchKey(item.prefix + item.entry.name, query))
+    else if (item.kind === 'file') consider('file', fileMentionMatchKey(item.path, query))
+    else if (item.kind === 'session') consider('session', mentionMatchKey(item.title, query))
+    else if (item.kind === 'git-ref') {
+      const key = `git-${item.ref.kind}`
+      if (key === 'git-branch' || key === 'git-worktree' || key === 'git-tag') {
+        consider(key, gitMentionRefMatchKey(item.ref, query))
+      }
+    }
+  }
+  return best
+}
+
 function mentionGroupKey(item: FlatItem): string {
   if (isGitFlatItem(item)) return gitMentionGroupKey(item)
   if (item.kind === 'agent-profile') return 'agent-profile'
@@ -286,6 +312,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
     const [searchResults, setSearchResults] = useState<MentionSearchItem[]>([])
+    // True only after a missing directory or an empty scoped search was replaced
+    // by an unscoped search of the whole query. Display paths stay unsliced then.
+    const [fileFallback, setFileFallback] = useState(false)
     // Only true when results were produced for `completedQuery` (guards empty-suppression races).
     const [searchCompleted, setSearchCompleted] = useState(false)
     const [completedQuery, setCompletedQuery] = useState<string | null>(null)
@@ -303,29 +332,25 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     )
 
     const projectOptions = useMemo(
-      () => buildSessionProjectOptions(recentFolders, activeProject),
+      () => sessionProjectsOnHost(recentFolders, activeProject),
       [recentFolders, activeProject],
     )
 
     const parsedSessionQuery = useMemo(
-      () =>
-        parseSessionMentionQuery(query, {
-          currentProjectKey: activeProject,
-          projects: projectOptions,
-        }),
-      [query, activeProject, projectOptions],
+      () => parseSessionMentionQuery(query, { projects: projectOptions }),
+      [query, projectOptions],
     )
     const isSessionMode = parsedSessionQuery !== null
     const git = useGitMention(query, fileRoot)
     const isGitMode = git.isGitMode
     // A portal grammar (`@session …`, `@git …`) owns the popup: no files, no capabilities.
     const isPortalMode = isSessionMode || isGitMode
+    const directSearch = !isPortalMode && shouldDirectSearch(query, git.portals)
 
-    const [sessionRows, setSessionRows] = useState<SessionMentionRow[]>([])
-    const [sessionLoadState, setSessionLoadState] = useState<SessionMentionLoadState>(
-      initialSessionMentionLoadState,
-    )
+    const [sessionRows, setSessionRows] = useState<PinnedSessionEntry[]>([])
     const [sessionLoading, setSessionLoading] = useState(false)
+    const [sessionSettledFor, setSessionSettledFor] = useState<string | null>(null)
+    const directPending = directSearch && (sessionSettledFor !== query || !git.settled)
 
     const isBrowseMode = !isPortalMode && (!query || query.endsWith('/'))
     // Server items sit beside capabilities: on `@` and plain queries, not inside a portal or a folder.
@@ -336,114 +361,48 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const lastSlash = query.lastIndexOf('/')
     const scopeDir = !isPortalMode && !isBrowseMode && lastSlash >= 0 ? query.slice(0, lastSlash + 1) : undefined
 
-    // Session list: need-title → recent (no filter); search → title fuzzy filter.
-    // Debounce + keep previous rows while loading to avoid list flash.
+    // `@session` (recent or a title, optional project scope) and plain `@foo`
+    // share one search. A title waits for typing to settle; recent does not.
     useEffect(() => {
-      const phase = parsedSessionQuery?.phase
-      const scope = parsedSessionQuery?.scope
-      // Inlined rather than held in a `canLoadSessions` const so the compiler
-      // carries the non-null `scope` through to the load call below.
-      if (!parsedSessionQuery || !scope || (phase !== 'need-title' && phase !== 'search')) {
-        if (!parsedSessionQuery || phase === 'pick-project') {
-          setSessionRows([])
-          setSessionLoadState(initialSessionMentionLoadState())
-        }
-        if (parsedSessionQuery) {
-          setCompletedQuery(query)
-          setSearchCompleted(true)
-        }
+      const portal = parsedSessionQuery
+      const plain = !portal && directSearch
+      const gen = ++sessionLoadGenRef.current
+      if (!portal && !plain) {
+        setSessionRows([])
+        setSessionLoading(false)
+        setSessionSettledFor(query)
         return
       }
-      const titleQuery = parsedSessionQuery.titleQuery
-      const gen = ++sessionLoadGenRef.current
+      const titleQuery = portal ? portal.titleQuery : query.trim()
+      const limit = portal ? SESSION_MENTION_SEARCH_LIMIT : PLAIN_MENTION_GROUP_LIMIT
+      const paths = portal?.projects ? hostLocalProjectPaths(portal.projects) : undefined
+      // Keep the previous rows until this request answers. Clearing them
+      // emptied the session group on every keystroke.
       setSessionLoading(true)
-      setSearchCompleted(false)
-      // Recent list can load immediately; title search waits for typing to settle.
-      const delay = phase === 'need-title' ? 0 : MENTION_SEARCH_DEBOUNCE_MS
+      setSessionSettledFor(null)
       const timer = setTimeout(() => {
-        void loadSessionMentionPage({
-          scope,
-          titleQuery,
-          projects: projectOptions,
-          state: initialSessionMentionLoadState(),
-        })
-          .then(({ rows, next }) => {
+        void searchSessionMentions(activeProject || '', titleQuery, limit, paths)
+          .then((rows) => {
             if (gen !== sessionLoadGenRef.current) return
             setSessionRows(rows)
-            setSessionLoadState(next)
-            setCompletedQuery(query)
-            setSearchCompleted(true)
             setSessionLoading(false)
+            setSessionSettledFor(query)
           })
           .catch(() => {
             if (gen !== sessionLoadGenRef.current) return
             setSessionRows([])
-            setSessionLoadState({ offset: 0, projectIndex: 0, hasMore: false })
-            setCompletedQuery(query)
-            setSearchCompleted(true)
             setSessionLoading(false)
+            setSessionSettledFor(query)
           })
-      }, delay)
+      }, titleQuery ? MENTION_SEARCH_DEBOUNCE_MS : 0)
       return () => clearTimeout(timer)
-    }, [parsedSessionQuery, projectOptions, query])
-
-    const loadMoreSessions = useCallback(() => {
-      const phase = parsedSessionQuery?.phase
-      if (
-        !parsedSessionQuery
-        || (phase !== 'search' && phase !== 'need-title')
-        || !parsedSessionQuery.scope
-        || sessionLoading
-        || !sessionLoadState.hasMore
-      ) {
-        return
-      }
-      const gen = sessionLoadGenRef.current
-      const scope = parsedSessionQuery.scope
-      const titleQuery = parsedSessionQuery.titleQuery
-      setSessionLoading(true)
-      void loadSessionMentionPage({
-        scope,
-        titleQuery,
-        projects: projectOptions,
-        state: sessionLoadState,
-      })
-        .then(({ rows, next }) => {
-          if (gen !== sessionLoadGenRef.current) return
-          setSessionRows((prev) => {
-            const seen = new Set(prev.map((r) => r.session.sessionId))
-            const merged = [...prev]
-            for (const r of rows) {
-              if (seen.has(r.session.sessionId)) continue
-              seen.add(r.session.sessionId)
-              merged.push(r)
-            }
-            return merged
-          })
-          setSessionLoadState(next)
-          setSessionLoading(false)
-        })
-        .catch(() => {
-          if (gen !== sessionLoadGenRef.current) return
-          setSessionLoading(false)
-        })
-    }, [parsedSessionQuery, projectOptions, sessionLoadState, sessionLoading])
-
-    const onSessionListScroll = useCallback(
-      (e: UIEvent<HTMLDivElement>) => {
-        if (!isSessionMode) return
-        const el = e.currentTarget
-        if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
-          loadMoreSessions()
-        }
-      },
-      [isSessionMode, loadMoreSessions],
-    )
+    }, [parsedSessionQuery, directSearch, query, activeProject])
 
     useEffect(() => {
       const requestId = ++requestIdRef.current
       setSearchCompleted(false)
       setCompletedQuery(null)
+      setFileFallback(false)
       if (debounceRef.current) clearTimeout(debounceRef.current)
 
       const finish = (forQuery: string, apply: () => void) => {
@@ -452,24 +411,66 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         setCompletedQuery(forQuery)
         setSearchCompleted(true)
       }
+      const stale = () => requestId !== requestIdRef.current
 
-      // Portal modes (session / git) load via their own effects.
+      // Portal modes (session / git) load via their own effects. Mark the file
+      // search finished so the empty gate does not wait on a request we skipped.
       if (isPortalMode) {
         setDirEntries([])
         setSearchResults([])
+        finish(query, () => {})
         return
       }
 
+      // A new keystroke must not keep the previous directory or scoped hits.
+      // Session and git rows stay put until their own requests answer.
+      setDirEntries([])
+      setSearchResults([])
+
+      const searchUnscoped = (needle: string) => {
+        if (!fileRoot) return Promise.resolve([] as MentionSearchItem[])
+        return window.environment.searchMentions(fileRoot, needle, agentEntries, additionalDirs)
+      }
+      const finishFallback = (forQuery: string, results: MentionSearchItem[]) => {
+        finish(forQuery, () => {
+          setDirEntries([])
+          setSearchResults(results)
+          setFileFallback(true)
+        })
+      }
+
       if (isBrowseMode) {
-        setSearchResults([])
         if (!fileRoot) {
-          finish(query, () => setDirEntries([]))
+          finish(query, () => {})
+          return
+        }
+        // Bare `@` lists the root. An empty listing there is the catalog, not
+        // a missing folder, so it does not widen into a project-wide search.
+        if (!query) {
+          window.environment.listDirectory(fileRoot, query)
+            .then((entries) => { if (!stale()) finish(query, () => setDirEntries(entries)) })
+            .catch(() => { if (!stale()) finish(query, () => setDirEntries([])) })
           return
         }
         const browseQuery = query
+        const fallback = () => {
+          searchUnscoped(browseQuery)
+            .then((results) => { if (!stale()) finishFallback(browseQuery, results) })
+            .catch(() => { if (!stale()) finishFallback(browseQuery, []) })
+        }
         window.environment.listDirectory(fileRoot, browseQuery)
-          .then((entries) => { finish(browseQuery, () => setDirEntries(entries)) })
-          .catch(() => { finish(browseQuery, () => setDirEntries([])) })
+          .then((entries) => {
+            if (stale()) return
+            if (entries.length > 0) {
+              finish(browseQuery, () => {
+                setDirEntries(entries)
+                setSearchResults([])
+              })
+              return
+            }
+            fallback()
+          })
+          .catch(() => { if (!stale()) fallback() })
         return
       }
 
@@ -477,14 +478,36 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       const searchScope = scopeDir
       const searchNeedle = scopeDir ? query.slice(scopeDir.length) : query
       debounceRef.current = setTimeout(() => {
-        if (requestId !== requestIdRef.current) return
+        if (stale()) return
         if (!fileRoot) {
           finish(searchForQuery, () => setSearchResults([]))
           return
         }
+        const fallback = () => {
+          searchUnscoped(searchForQuery)
+            .then((results) => { if (!stale()) finishFallback(searchForQuery, results) })
+            .catch(() => { if (!stale()) finishFallback(searchForQuery, []) })
+        }
         window.environment.searchMentions(fileRoot, searchNeedle, agentEntries, additionalDirs, searchScope)
-          .then((results) => { finish(searchForQuery, () => setSearchResults(results)) })
-          .catch(() => { finish(searchForQuery, () => setSearchResults([])) })
+          .then((results) => {
+            if (stale()) return
+            if (results.length === 0 && searchScope && searchForQuery.trim()) {
+              fallback()
+              return
+            }
+            finish(searchForQuery, () => {
+              setSearchResults(results)
+              setDirEntries([])
+            })
+          })
+          .catch(() => {
+            if (stale()) return
+            if (searchScope && searchForQuery.trim()) {
+              fallback()
+              return
+            }
+            finish(searchForQuery, () => setSearchResults([]))
+          })
       }, MENTION_SEARCH_DEBOUNCE_MS)
       return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     }, [query, fileRoot, additionalDirs, agentEntries, isBrowseMode, scopeDir, isPortalMode])
@@ -746,44 +769,46 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return matches
     }, [capabilityLabel, sessionPortalLabel, query, isBrowseMode, isPortalMode, capabilityEnabled, git.availability, git.githubAvailable, t])
 
-    const matchedSessionProjects = useMemo<FlatItem[]>(() => {
-      if (!isSessionMode || !parsedSessionQuery) return []
-      if (parsedSessionQuery.phase !== 'pick-project') return []
-      return listSessionProjectChoices(
-        projectOptions,
-        parsedSessionQuery.projectToken,
-        activeProject,
-      ).map((c) => ({
-        kind: 'session-project' as const,
-        token: c.token,
-        label: c.token === 'all' ? t('chat.mentionPopup.sessionAllProjects') : c.label,
-        hint: c.token === 'all' ? t('chat.mentionPopup.sessionAllProjectsHint') : c.hint,
-        matchIndices: c.matchIndices,
-      }))
-    }, [isSessionMode, parsedSessionQuery, projectOptions, activeProject, t])
-
-    const matchedSessions = useMemo<FlatItem[]>(() => {
-      if (!isSessionMode || !parsedSessionQuery) return []
-      if (
-        (parsedSessionQuery.phase !== 'search' && parsedSessionQuery.phase !== 'need-title')
-        || !parsedSessionQuery.scope
-      ) {
-        return []
-      }
-      const titleQ = parsedSessionQuery.titleQuery
-      const showProject = parsedSessionQuery.scope.kind === 'all'
-      return sessionRows.map((row) => {
-        const title = (row.session.title || 'Untitled').trim() || 'Untitled'
+    const sessionFlatItems = useCallback((rows: PinnedSessionEntry[], titleQ: string, showProject: boolean): FlatItem[] => {
+      return rows.map((row) => {
+        const title = (row.title || 'Untitled').trim() || 'Untitled'
         return {
           kind: 'session' as const,
-          sessionId: row.session.sessionId,
+          sessionId: row.sessionId,
           title,
-          harness: harnessLabel(row.session),
-          projectLabel: showProject ? row.projectLabel : '',
+          harness: harnessLabel(row),
+          projectLabel: showProject ? row.folderName : '',
           matchIndices: titleQ ? titleMatchIndices(title, titleQ) : [],
         }
       })
-    }, [isSessionMode, parsedSessionQuery, sessionRows])
+    }, [])
+
+    const matchedSessionProjects = useMemo<FlatItem[]>(() => {
+      if (!parsedSessionQuery?.projectToken) return []
+      return listSessionProjectCompletions(
+        projectOptions,
+        parsedSessionQuery.projectToken,
+        activeProject,
+      ).map((choice) => ({
+        kind: 'session-project' as const,
+        token: choice.token,
+        label: choice.label,
+        hint: choice.hint,
+        matchIndices: choice.matchIndices,
+      }))
+    }, [parsedSessionQuery, projectOptions, activeProject])
+
+    const matchedSessions = useMemo<FlatItem[]>(() => {
+      if (!parsedSessionQuery) return []
+      return sessionFlatItems(sessionRows, parsedSessionQuery.titleQuery, parsedSessionQuery.projects == null)
+    }, [parsedSessionQuery, sessionRows, sessionFlatItems])
+
+    const plainSessions = useMemo<FlatItem[]>(() => {
+      if (!directSearch) return []
+      const titleQ = query.trim()
+      const ranked = sortByMentionMatch(sessionRows, titleQ, (row) => (row.title || 'Untitled').trim() || 'Untitled')
+      return sessionFlatItems(ranked, titleQ, true)
+    }, [directSearch, sessionRows, query, sessionFlatItems])
 
     // Why the portal the user typed into cannot be used here, if known. Typing
     // `@gh` enters the grammar before the row could be greyed out, so the
@@ -796,23 +821,34 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return null
     }, [git.parsed, git.availability, git.githubAvailable])
 
+    const gitRefItems = useCallback((refs: typeof git.refs, refQuery: string): FlatItem[] => {
+      return refs.map((ref) => {
+        const indices = gitRefMatchIndices(ref, refQuery)
+        return { kind: 'git-ref' as const, ref, matchIndices: indices.label, detailMatchIndices: indices.detail }
+      })
+    }, [])
+
     const matchedGitItems = useMemo<FlatItem[]>(() => {
       const parsed = git.parsed
       if (!parsed) return []
       if (gitPortalUnavailable) return []
-      if (parsed.phase === 'pick-kind') {
-        return listGitRefKindChoices(parsed.portal, parsed.kindToken).map((c) => ({
+      const kindRows: FlatItem[] = parsed.phase === 'pick-kind'
+        || (parsed.phase === 'search' && parsed.refKind == null && parsed.kindToken)
+        ? listGitRefKindChoices(parsed.portal, parsed.kindToken).map((choice) => ({
           kind: 'git-kind' as const,
           portal: parsed.portal,
-          refKind: c.kind,
-          matchIndices: c.matchIndices,
+          refKind: choice.kind,
+          matchIndices: choice.matchIndices,
         }))
-      }
-      return git.refs.map((ref) => {
-        const indices = gitRefMatchIndices(ref, parsed.refQuery)
-        return { kind: 'git-ref' as const, ref, matchIndices: indices.label, detailMatchIndices: indices.detail }
-      })
-    }, [git.parsed, git.refs, gitPortalUnavailable])
+        : []
+      if (parsed.phase === 'pick-kind') return kindRows
+      return [...kindRows, ...gitRefItems(git.refs, parsed.refQuery)]
+    }, [git.parsed, git.refs, gitPortalUnavailable, gitRefItems])
+
+    const plainGitItems = useMemo<FlatItem[]>(() => {
+      if (!directSearch) return []
+      return gitRefItems(git.refs, query.trim())
+    }, [directSearch, git.refs, query, gitRefItems])
 
     const matchedDesktopApps = useMemo<FlatItem[]>(() => {
       // Only when Computer Use is enabled.
@@ -845,15 +881,16 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
     const flatItems: FlatItem[] = useMemo(() => {
       if (isGitMode) return matchedGitItems
-      if (isSessionMode) {
-        if (parsedSessionQuery?.phase === 'pick-project') return matchedSessionProjects
-        // need-title → recent sessions; search → title matches
-        return matchedSessions
-      }
-      if (isBrowseMode) {
+      if (isSessionMode) return [...matchedSessionProjects, ...matchedSessions]
+      // A real directory listing (or bare `@`) stays a listing. Sessions and
+      // git refs for a plain query sit with it. A missing folder has no
+      // entries, and its fallback files render on the search path below.
+      if (isBrowseMode && (dirEntries.length > 0 || !query)) {
         const items: FlatItem[] = [
           ...matchedAgentTargets,
           ...matchedCapabilities,
+          ...(directSearch ? plainSessions : []),
+          ...(directSearch ? plainGitItems : []),
           ...matchedDesktopApps,
           ...matchedMiniApps,
           ...mcpItems,
@@ -867,10 +904,15 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         return items
       }
 
-      const prefixLen = scopeDir?.length ?? 0
+      // Fell back from a missing directory or an empty scoped search: the
+      // hits are project-wide, so the typed directory is not a display prefix.
+      const displayScope = fileFallback ? undefined : scopeDir
+      const prefixLen = displayScope?.length ?? 0
       const items: FlatItem[] = [
         ...matchedAgentTargets,
         ...matchedCapabilities,
+        ...plainSessions,
+        ...plainGitItems,
         ...matchedDesktopApps,
         ...matchedMiniApps,
         ...mcpItems,
@@ -879,20 +921,21 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         if (item.kind === 'agent') {
           items.push({ kind: 'agent', name: item.name, model: item.model, matchIndices: item.matchIndices })
         } else {
-          const displayPath = scopeDir ? item.path.slice(prefixLen) : item.path
-          const displayIndices = scopeDir ? item.matchIndices.map((i) => i - prefixLen).filter((i) => i >= 0) : item.matchIndices
+          const displayPath = displayScope ? item.path.slice(prefixLen) : item.path
+          const displayIndices = displayScope ? item.matchIndices.map((i) => i - prefixLen).filter((i) => i >= 0) : item.matchIndices
           items.push({ kind: 'file', path: item.path, displayPath, isDirectory: item.isDirectory, matchIndices: displayIndices })
         }
       }
       return items
-    }, [isGitMode, matchedGitItems, isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets, mcpItems])
+    }, [isGitMode, matchedGitItems, isSessionMode, matchedSessionProjects, matchedSessions, plainSessions, plainGitItems, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, fileFallback, directSearch, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets, mcpItems])
 
     // Server sections are dynamic; they go right before files, which can run long.
     const mcpGroupKeys = useMemo(() => mcp.sources.map(mcpMentionGroupKey), [mcp.sources])
-    const mentionGroups = useMemo(
-      () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER.flatMap((key) => key === 'file' ? [...mcpGroupKeys, key] : [key])),
-      [flatItems, mcpGroupKeys]
-    )
+    const mentionGroups = useMemo(() => {
+      const base = MENTION_GROUP_ORDER.flatMap((key) => key === 'file' ? [...mcpGroupKeys, key] : [key])
+      const order = shouldDirectSearch(query) ? orderDirectSearchGroups(base, directSearchGroupKeys(flatItems, query)) : base
+      return groupItems(flatItems, mentionGroupKey, order)
+    }, [flatItems, mcpGroupKeys, query])
     const orderedItems = useMemo(() => mentionGroups.flatMap((g) => g.items), [mentionGroups])
 
     // Clamp selected index when a portal list grows/shrinks
@@ -913,6 +956,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         onResultState?.(query, false)
         return
       }
+      // Plain `@foo` still has session and git rows in flight. Reporting empty
+      // now would lock the popup shut before they arrive.
+      if (directPending) return
       // Async installed-app catalog must finish before we can say "no matches".
       // Otherwise file-search empties first, ChatInput locks the @ prefix, and
       // desktop apps that arrive a moment later never surface.
@@ -920,7 +966,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // Same for server items, which can take seconds while a harness starts.
       if (mcp.loading) return
       onResultState?.(query, orderedItems.length === 0 && !mcpShowsStatus)
-    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode, mcp.loading, mcpShowsStatus])
+    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode, directPending, mcp.loading, mcpShowsStatus])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
@@ -1021,7 +1067,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (key === 'capability') return t('chat.mentionPopup.groupCapabilities')
       if (key === 'session-project') return t('chat.mentionPopup.groupSessionProjects')
       if (key === 'session') {
-        return parsedSessionQuery?.phase === 'need-title'
+        return parsedSessionQuery?.phase === 'recent'
           ? t('chat.mentionPopup.groupRecentSessions')
           : t('chat.mentionPopup.groupSessions')
       }
@@ -1131,11 +1177,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            {item.token === 'all' ? (
-              <Folders className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
-            ) : (
-              <Folder className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
-            )}
+            <Folder className="size-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
             <span className="min-w-0 flex-1 truncate">
               <span className="font-medium">
                 <HighlightedPath path={item.label} indices={item.matchIndices} />
@@ -1355,18 +1397,14 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }
 
     // Session mode always stays open (empty state). Other modes hide when truly empty.
-    if (!isPortalMode && searchCompleted && completedQuery === query && orderedItems.length === 0 && !mcpShowsStatus) {
+    if (!isPortalMode && !directPending && searchCompleted && completedQuery === query && orderedItems.length === 0 && !mcpShowsStatus) {
       return null
     }
     // Status-only server sections take their place in the order, before files.
     const mcpStatus = isPortalMode ? null : <McpMentionStatus state={mcp} />
     const fileGroupIndex = mentionGroups.findIndex((group) => group.key === 'file')
 
-    const sessionScopeLabel = (() => {
-      if (!parsedSessionQuery?.scope) return ''
-      if (parsedSessionQuery.scope.kind === 'all') return t('chat.mentionPopup.sessionAllProjects')
-      return parsedSessionQuery.scope.label
-    })()
+    const sessionScopeLabel = parsedSessionQuery?.projects?.[0]?.label ?? ''
     const sessionTitleQ = parsedSessionQuery?.titleQuery ?? ''
     const sessionPhase = parsedSessionQuery?.phase
 
@@ -1382,7 +1420,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           ref={listScrollRef}
           // The container the stacked rows (`mention-row-layout`) measure.
           className="@container overflow-y-auto p-1 flex-1 min-h-0"
-          onScroll={onSessionListScroll}
         >
           {git.parsed ? (
             <GitMentionHeader parsed={git.parsed} onNavigate={(prefix) => onSelect(prefix, 'navigate')} />
@@ -1404,33 +1441,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        if (parsedSessionQuery?.scopeNavPrefix) {
-                          onSelect(parsedSessionQuery.scopeNavPrefix, 'navigate')
-                        } else {
-                          onSelect(SESSION_MENTION_NAV_PREFIX, 'navigate')
-                        }
-                      }}
+                      onClick={() => onSelect(SESSION_MENTION_NAV_PREFIX, 'navigate')}
                       className="min-w-0 max-w-40 truncate font-medium text-foreground/90 hover:underline"
                       title={sessionScopeLabel}
                     >
                       {sessionScopeLabel}
                     </button>
-                  </>
-                ) : sessionPhase === 'pick-project' ? (
-                  <>
-                    <span className="shrink-0 text-muted-foreground/50">/</span>
-                    <span className="truncate text-muted-foreground">
-                      {t('chat.mentionPopup.sessionPickProject')}
-                    </span>
-                  </>
-                ) : null}
-                {sessionPhase === 'need-title' ? (
-                  <>
-                    <span className="shrink-0 text-muted-foreground/50">/</span>
-                    <span className="truncate text-muted-foreground">
-                      {t('chat.mentionPopup.sessionNeedTitleShort')}
-                    </span>
                   </>
                 ) : null}
                 {sessionTitleQ ? (
@@ -1474,25 +1490,13 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               loading={git.loading && !gitPortalUnavailable}
               unavailable={gitPortalUnavailable ?? git.unavailable}
             />
-          ) : isSessionMode && sessionPhase === 'pick-project' && orderedItems.length === 0 ? (
+          ) : isSessionMode && orderedItems.length === 0 && !sessionLoading ? (
             <div className="px-2 py-3 text-xs text-muted-foreground">
-              {t('chat.mentionPopup.noProjects')}
-            </div>
-          ) : isSessionMode
-            && (sessionPhase === 'search' || sessionPhase === 'need-title')
-            && orderedItems.length === 0
-            && !sessionLoading ? (
-            <div className="space-y-1 px-2 py-3 text-xs text-muted-foreground">
               <div className="font-medium text-foreground/80">
-                {sessionPhase === 'need-title'
+                {sessionPhase === 'recent'
                   ? t('chat.mentionPopup.noRecentSessions')
                   : t('chat.mentionPopup.noSessions')}
               </div>
-              {sessionPhase === 'need-title' ? (
-                <div className="font-mono text-xs text-muted-foreground">
-                  @{SESSION_MENTION_KEYWORD} {sessionScopeLabel || '<project|all>'} &lt;title&gt;
-                </div>
-              ) : null}
             </div>
           ) : (
             <>
@@ -1518,29 +1522,20 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               {t('chat.mentionPopup.loadingGitRefs')}
             </div>
           ) : null}
-          {isSessionMode
-            && (sessionPhase === 'search' || sessionPhase === 'need-title')
-            && !sessionLoading
-            && sessionLoadState.hasMore
-            && orderedItems.length > 0 ? (
-            <div className="px-2 py-1 text-2xs text-muted-foreground/70">
-              {t('chat.mentionPopup.scrollForMore')}
-            </div>
-          ) : null}
         </div>
 
         <div className="border-t border-border px-2 py-1 text-xs text-muted-foreground shrink-0">
           {git.parsed ? (
             <GitMentionFooter parsed={git.parsed} />
-          ) : isSessionMode && sessionPhase === 'pick-project' ? (
+          ) : isSessionMode && parsedSessionQuery?.projectToken ? (
             <>
               <Kbd>tab</Kbd> {t('chat.mentionPopup.hintCompleteProject')}
               <span className="mx-1.5">&middot;</span>
-              <Kbd>↑↓</Kbd> navigate
+              <Kbd>↵</Kbd> {t('chat.mentionPopup.hintSelectSession')}
               <span className="mx-1.5">&middot;</span>
               <Kbd>esc</Kbd> close
             </>
-          ) : isSessionMode && sessionPhase === 'need-title' ? (
+          ) : isSessionMode && sessionPhase === 'recent' ? (
             <>
               <Kbd>↵</Kbd> {t('chat.mentionPopup.hintSelectSession')}
               <span className="mx-1.5">&middot;</span>

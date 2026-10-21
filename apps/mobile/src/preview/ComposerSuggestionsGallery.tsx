@@ -183,10 +183,22 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · @session scope" note="Phase one: pick a project or all of them. The hint sits beside the name, as on the desktop.">
+    <Section title="Mention · @session recent" note="Nothing after the keyword: newest sessions across projects. The project name sits beside the title.">
+      <MentionSuggestions
+        rows={buildMentionRows('', { remote: sessionItems(previewSessionRows, ''), agentProfiles: [], scoped: true })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false, emptyLabel: 'No recent sessions' }}
+        groupLabels={{ session: 'Recent' }}
+      />
+    </Section>
+
+    <Section title="Mention · @session title" note="A title searches every project. While the first token is open, a matching project can still be completed.">
       <MentionSuggestions
         rows={buildMentionRows('', {
-          remote: sessionProjectItems(sessionProjectOptions(previewSessionProjects, '/work/super-one'), '', '/work/super-one'),
+          remote: [
+            ...sessionProjectItems(sessionProjectOptions(previewSessionProjects, '/work/super-one'), 'sup', '/work/super-one'),
+            ...sessionItems(previewSessionRows.slice(0, 1), 'align'),
+          ],
           agentProfiles: [],
           scoped: true,
         })}
@@ -195,12 +207,36 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · @session recent" note="Scope chosen, nothing typed: project and harness ride at the end of the title line. More pages arrive by scrolling.">
+    <Section title="Mention · plain @feat" note="A branch that starts with feat sits above a session that only contains it.">
       <MentionSuggestions
-        rows={buildMentionRows('', { remote: sessionItems(previewSessionRows, ''), agentProfiles: [], scoped: true })}
+        query="feat"
+        rows={buildMentionRows('feat', {
+          remote: [
+            ...sessionItems([{ sessionId: 'sess-feat', title: 'Refeature the mention popup', provider: 'claude', projectName: 'super-one' }], 'feat'),
+            ...gitRefItems(previewGitRefs.filter((ref) => ref.kind === 'branch' && ref.label.startsWith('feat')), 'feat'),
+          ],
+          agentProfiles: [],
+          scoped: true,
+        })}
         onSelect={() => {}}
-        onLoadMore={() => {}}
-        search={{ active: true, loading: false, hasMore: true }}
+        search={{ active: true, loading: false }}
+      />
+    </Section>
+
+    <Section title="Mention · plain @feat file" note="feat/popup and feat-flag.ts both end on a separator. The shorter branch name leads; an equal score would still put the branch first.">
+      <MentionSuggestions
+        query="feat"
+        rows={buildMentionRows('feat', {
+          remote: [
+            { kind: 'file', path: 'feat-flag.ts', matchIndices: [0, 1, 2, 3] },
+            ...sessionItems([{ sessionId: 'sess-feat', title: 'Refeature the mention popup', provider: 'claude', projectName: 'super-one' }], 'feat'),
+            ...gitRefItems([{ kind: 'branch', id: 'feat/popup', label: 'feat/popup', detail: 'mention popup' }], 'feat'),
+          ],
+          agentProfiles: [],
+          scoped: true,
+        })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
       />
     </Section>
 

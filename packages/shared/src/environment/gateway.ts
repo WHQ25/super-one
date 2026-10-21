@@ -146,6 +146,17 @@ export interface SessionGateway {
    * Optional: older nodes have no such RPC and the caller renders nothing.
    */
   listPinned?(environmentId: string, options?: { limit?: number }): Promise<unknown[]>
+  /**
+   * Title search across every project in one environment. Empty `query` is the
+   * recent list. `projectPaths` are host-local folder paths; omit them to span
+   * the environment. Optional: older nodes have no such RPC and the caller
+   * renders nothing.
+   */
+  searchTitle?(
+    environmentId: string,
+    query: string,
+    options?: { limit?: number; projectPaths?: string[] },
+  ): Promise<unknown[]>
   send(input: SendMessageInput): Promise<void>
   /**
    * Persist turn defaults so subsequent send() calls need not re-send full options.

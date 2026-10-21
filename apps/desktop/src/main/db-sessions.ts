@@ -4,6 +4,7 @@ import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelec
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
+import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
 import { notifySessionList, notifySessionsDeleted } from './session-list-watch'
 import { remoteControllerInfo } from './db-remote-controlled-sessions'
 
@@ -573,22 +574,61 @@ export function listPinnedSessions(): PinnedSessionEntry[] {
   return rows.map(mapCrossProjectSession)
 }
 
+function clampSessionSearchLimit(limit: number | undefined): number {
+  const n = typeof limit === 'number' && Number.isFinite(limit) ? Math.floor(limit) : 50
+  return Math.max(1, Math.min(n, 200))
+}
+
 /**
- * Title search across every project, most recent first.
+ * Title search across projects on this machine.
  *
- * Titles only, matching what the sidebar's history filter searches — the
- * transcript-wide search with snippets is `session_search`, a different product
- * surface with a different result shape.
+ * A title matches when the query is a case-insensitive subsequence. Order is
+ * `mentionMatchTier`: prefix, then a word separator, then a substring, then
+ * subsequence-only. Recency breaks ties. An empty query is the recent list,
+ * with no pattern. `projectPaths` (host folder paths) limits the search to
+ * those projects; omit it to span every project.
+ *
+ * Titles only — the transcript-wide search with snippets is `session_search`.
  */
-export function searchSessionsByTitle(query: string, limit = 50): PinnedSessionEntry[] {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return []
+export function searchSessionsByTitle(
+  query: string,
+  limit = 50,
+  projectPaths?: readonly string[],
+): PinnedSessionEntry[] {
+  const cap = clampSessionSearchLimit(limit)
+  const paths = (projectPaths ?? []).filter((path) => path.length > 0)
+  const pathClause = paths.length > 0 ? ` AND p.path IN (${paths.map(() => '?').join(',')})` : ''
+  const needle = query.trim()
+  if (!needle) {
+    const rows = getDb().prepare(`
+      ${CROSS_PROJECT_SESSION_SELECT}
+      WHERE COALESCE(s.is_hidden, 0) = 0${pathClause}
+      ORDER BY last_user_msg_at DESC
+      LIMIT ?
+    `).all(...paths, cap) as CrossProjectSessionRow[]
+    return rows.map(mapCrossProjectSession)
+  }
+  const patterns = sessionTitleLikePatterns(needle)
+  const titleLike = `LOWER(COALESCE(s.title, '')) LIKE ? ESCAPE '\\'`
+  const wordLike = patterns.wordPrefix.map(() => titleLike).join(' OR ')
   const rows = getDb().prepare(`
     ${CROSS_PROJECT_SESSION_SELECT}
     WHERE COALESCE(s.is_hidden, 0) = 0
-      AND LOWER(COALESCE(s.title, '')) LIKE ? ESCAPE '\\'
-    ORDER BY last_user_msg_at DESC
+      AND ${titleLike}${pathClause}
+    ORDER BY CASE
+      WHEN ${titleLike} THEN 0
+      WHEN ${wordLike} THEN 1
+      WHEN ${titleLike} THEN 2
+      ELSE 3
+    END, last_user_msg_at DESC
     LIMIT ?
-  `).all(`%${needle.replace(/[\\%_]/g, '\\$&')}%`, Math.max(1, Math.min(limit, 200))) as CrossProjectSessionRow[]
+  `).all(
+    patterns.subsequence,
+    ...paths,
+    patterns.prefix,
+    ...patterns.wordPrefix,
+    patterns.contains,
+    cap,
+  ) as CrossProjectSessionRow[]
   return rows.map(mapCrossProjectSession)
 }

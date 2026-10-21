@@ -1424,6 +1424,17 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         })
         return Array.isArray(rows) ? rows : []
       },
+      searchTitle: async (environmentId, query, options) => {
+        this.assertEnv(environmentId)
+        const rows = await this.client.rpc<unknown[]>('session.searchTitle', {
+          query,
+          ...(options?.limit != null ? { limit: options.limit } : {}),
+          ...(options?.projectPaths && options.projectPaths.length > 0
+            ? { projectPaths: options.projectPaths }
+            : {}),
+        })
+        return Array.isArray(rows) ? rows : []
+      },
       listMessages: async (input) => {
         this.assertEnv(input.session.environmentId)
         return this.client.rpc<SessionMessagesListResult>('session.messages.list', {

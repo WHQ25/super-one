@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from 'react'
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import { AtSign, Bot, AppWindow, Box, ChevronRight, FolderRoot, FolderTree, Wrench, X } from 'lucide-react-native'
+import { AtSign, Bot, AppWindow, Box, ChevronRight, FolderRoot, Wrench, X } from 'lucide-react-native'
 import { groupItems } from '@superone/shared/popup-groups'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
@@ -149,14 +149,9 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
   }
   // An MCP item is grouped by its server only in a list; on its own it must not read as a file.
   if (item.kind !== 'mcp-resource' && mentionGroupKey(item) === 'file') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
-  // The portal is a way into the session archive and a scope row is a folder,
-  // so they borrow those glyphs rather than falling through to the generic one.
-  // `all` gets the stacked-folders glyph the desktop gives it, because it is
-  // every project rather than one.
+  // The portal is a way into the session archive and a project completion is a folder.
   if (item.kind === 'session-project') {
-    return item.navigateTo === 'session all '
-      ? <FolderTree size={size} color={colors.foreground} />
-      : <FileTypeIcon name={item.path} directory size={size} />
+    return <FileTypeIcon name={item.path} directory size={size} />
   }
   const glyphKind = item.kind === 'builtin' ? item.path
     : item.kind === 'desktop-app' ? 'computer'
@@ -223,15 +218,15 @@ function McpMentionStatus({ state }: { state: McpMentionSearchState }) {
   </>
 }
 
-export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore, breadcrumbs, groupLabels, mcp }: {
+export function MentionSuggestions({ rows, onSelect, search, onRetry, breadcrumbs, groupLabels, mcp, query = '' }: {
   rows: MentionRow[]
+  /** Plain `@` query. Group order follows match tier only while direct search is on. */
+  query?: string
   /** Per-group overrides; the sessions group is *Recent* before a title query. */
   groupLabels?: Partial<Record<string, string>>
   onSelect: (item: MentionItem) => void
   search?: MentionSearchState
   onRetry?: () => void
-  /** Fetch the next page; only offered while `search.hasMore`. */
-  onLoadMore?: () => void
   /** Directory trail of the open query; empty at the project root. */
   breadcrumbs?: { label: string; query: string }[]
   /** The session's MCP servers; their items are already in `rows`. */
@@ -245,7 +240,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
   const mcpStatus = mcp && !(mcp.failed && !mcp.sources.length) && mcpMentionHasStatus(mcp) ? <McpMentionStatus state={mcp} /> : null
   if (!rows.length && !search?.active && !mcpStatus) return null
   // Status-only server sections take their place in the order, before files.
-  const groups = groupMentionRows(rows)
+  const groups = groupMentionRows(rows, query)
   const fileGroupIndex = groups.findIndex((group) => group.key === 'file')
   // A server's section is titled by the server, as on the desktop.
   const groupTitle = (key: string) => groupLabels?.[key]
@@ -253,15 +248,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
     ?? MENTION_GROUP_LABELS[key as MentionGroupKey]
   return <View testID="mention-suggestions" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, overflow: 'hidden' }}>
     {breadcrumbs?.length ? <MentionBreadcrumbs trail={breadcrumbs} onSelect={onSelect} /> : null}
-    <ScrollView testID="mention-list" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}
-      // The next page arrives by scrolling, as on the desktop
-      // (`MentionPopup.tsx:400`), rather than by tapping a 44 pt row inside a
-      // 256 px list. `loading` is the guard: momentum fires this many times.
-      scrollEventThrottle={16}
-      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-        if (!search?.hasMore || search.loading || !onLoadMore) return
-        if (contentSize.height - contentOffset.y - layoutMeasurement.height < 48) onLoadMore()
-      }}>
+    <ScrollView testID="mention-list" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}>
       {groups.map((group, groupIndex) => <Fragment key={group.key}>
         {groupIndex === fileGroupIndex ? mcpStatus : null}
         <View>
@@ -319,11 +306,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
           <Text style={{ color: colors.primary, fontSize: 12 }}>{t('Retry')}</Text>
         </Pressable> : null}
       </View> : !rows.length && !mcpStatus ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>
-        {/* What "nothing" means depends on what was asked: no projects match,
-            no recent sessions, or no matches at all. */}
         {t(search?.emptyLabel ?? 'No matches')}
-      </Text> : search?.hasMore ? <Text style={{ paddingHorizontal: 8, paddingVertical: 4, color: colors.mutedForeground, fontSize: 11 }}>
-        {t('Scroll for more')}
       </Text> : null}
     </ScrollView>
   </View>

@@ -17,10 +17,11 @@ describe('git mention query', () => {
     expect(extractMentionQuery('see @ git', 'see @ git'.length)).toBeNull()
   })
 
-  it('walks the three phases as the user types', () => {
+  it('walks the phases as the user types, and searches every kind when none is chosen', () => {
     expect(parseGitMentionQuery('git')?.phase).toBe('pick-kind')
     expect(parseGitMentionQuery('git tag ')?.phase).toBe('need-query')
     expect(parseGitMentionQuery('git commit fix auth')).toMatchObject({ phase: 'search', refKind: 'commit', refQuery: 'fix auth' })
+    expect(parseGitMentionQuery('git foo')).toMatchObject({ phase: 'search', refKind: null, refQuery: 'foo', kindToken: 'foo' })
   })
 })
 
@@ -111,6 +112,8 @@ describe('host request and empty copy', () => {
 
   it('names the phase, or the reason the host could not answer', () => {
     expect(gitEmptyLabel(parseGitMentionQuery('git')!)).toBe('No matching ref type')
+    expect(gitEmptyLabel(parseGitMentionQuery('git foo')!)).toBe('No matching refs')
+    expect(gitEmptyLabel(parseGitMentionQuery('gh 23')!)).toBe('No matching issues or pull requests')
     expect(gitEmptyLabel(parseGitMentionQuery('git branch x')!)).toBe('No matching branches')
     expect(gitEmptyLabel(parseGitMentionQuery('git tag x')!)).toBe('No matching tags')
     expect(gitEmptyLabel(parseGitMentionQuery('git tag x')!, { ok: false, reason: 'not-repo' })).toBe('Not a git repository')

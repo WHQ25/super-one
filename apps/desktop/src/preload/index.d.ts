@@ -1105,6 +1105,17 @@ export interface EnvironmentAPI extends MediaComposerAPI {
    * the renderer's project key (`remote:<connectionId>:<path>` for remotes).
    */
   listPinnedSessions(connectionId: string): Promise<PinnedSessionEntry[]>
+  /**
+   * Session titles on one environment. Empty `query` is the recent list.
+   * `projectPaths` are host-local folder paths; omit them to span the host.
+   * Order is the host's: contains matches, then subsequence, then recency.
+   */
+  searchSessionsByTitle(
+    connectionId: string,
+    query: string,
+    limit?: number,
+    projectPaths?: string[],
+  ): Promise<PinnedSessionEntry[]>
   /** Create a session on its host environment. */
   createSession(
     connectionId: string,

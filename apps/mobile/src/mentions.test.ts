@@ -5,8 +5,9 @@ describe('extractMentionQuery', () => {
   it('keeps the portal query open across the spaces its grammar needs', () => {
     // `@session <project> <title>` is three tokens by design; closing at the
     // first space would make the portal unreachable.
-    expect(extractMentionQuery('@session all mention popup', 26))
-      .toEqual({ atPosition: 0, query: 'session all mention popup' })
+    const portal = '@session super-one align popup'
+    expect(extractMentionQuery(portal, portal.length))
+      .toEqual({ atPosition: 0, query: 'session super-one align popup' })
     expect(extractMentionQuery('look at @session super-one align', 32))
       .toEqual({ atPosition: 8, query: 'session super-one align' })
   })
@@ -16,7 +17,8 @@ describe('extractMentionQuery', () => {
   })
 
   it('does not let a portal query span a line break', () => {
-    expect(extractMentionQuery('@session all\nnext line', 22)).toBeNull()
+    const broken = '@session super-one\nnext line'
+    expect(extractMentionQuery(broken, broken.length)).toBeNull()
   })
 
   it('returns the token after a leading or spaced @', () => {
@@ -36,8 +38,8 @@ describe('extractMentionQuery', () => {
 
   it('leaves a waypoint query open so browsing can continue', () => {
     expect(insertMention('@sr', { atPosition: 0, query: 'sr' }, directoryNavigationItem('src'))).toBe('@src/')
-    expect(insertMention('@ses', { atPosition: 0, query: 'ses' }, { kind: 'session-project', path: 'all', navigateTo: 'session all ' }))
-      .toBe('@session all ')
+    expect(insertMention('@ses', { atPosition: 0, query: 'ses' }, { kind: 'session-project', path: 'super-one', navigateTo: 'session super-one ' }))
+      .toBe('@session super-one ')
   })
 
   it('writes a bare @ for the project root, never an absolute path', () => {

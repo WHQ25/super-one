@@ -44,10 +44,10 @@ describe('native suggestion selection to desktop message', () => {
     expect(selectNativeMention(draft, directoryNavigationItem('src/'), 1)).toMatchObject({ text: '@src/', tokens: [] })
     // The project root is a bare `@`; `@/` would traverse to the filesystem root.
     expect(selectNativeMention(draft, directoryNavigationItem(''), 1)).toMatchObject({ text: '@', tokens: [] })
-    // The same rule carries the `@session` scope, so the two editors cannot
-    // disagree about what a waypoint is.
-    expect(selectNativeMention(draft, { kind: 'session-project', path: 'all', navigateTo: 'session all ' }, 1))
-      .toMatchObject({ text: '@session all ', tokens: [] })
+    // The same rule carries a `@session` project completion, so the two editors
+    // cannot disagree about what a waypoint is.
+    expect(selectNativeMention(draft, { kind: 'session-project', path: 'super-one', navigateTo: 'session super-one ' }, 1))
+      .toMatchObject({ text: '@session super-one ', tokens: [] })
     expect(selectNativeMention(draft, { kind: 'future', path: 'thing' }, 1)).toBeUndefined()
     expect(selectNativeMention({ ...draft, composing: true }, { kind: 'file', path: 'src/a.ts' }, 1)).toBeUndefined()
     expect(selectNativeMention({ ...draft, start: 0 }, { kind: 'file', path: 'src/a.ts' }, 1)).toBeUndefined()

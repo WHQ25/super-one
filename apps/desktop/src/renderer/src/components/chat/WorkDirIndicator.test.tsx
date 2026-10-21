@@ -194,10 +194,8 @@ describe('merged status chip', () => {
     expect(screen.getByRole('button', { name: 'Detach' })).toBeTruthy()
     expect(screen.getByText('New branch name')).toBeTruthy()
 
-    const device = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-trigger"]')
-    expect(device).toBeTruthy()
-    await user.hover(device!)
-    expect(await screen.findByRole('menuitem', { name: /This PC/ })).toBeTruthy()
+    expect(document.querySelector('[data-slot="dropdown-menu-trigger"]')).toBeNull()
+    expect(screen.queryByRole('menuitem')).toBeNull()
     expect(screen.getByRole('tab', { name: 'Local' })).toBeTruthy()
   })
 })

@@ -60,17 +60,18 @@ export function WorkDirEnvironmentMenu({
       <span className="min-w-0 flex-1 truncate">{loading ? t('common.loading') : label}</span>
     </>
   )
+  const canPick = !readOnly && options.length > 1
 
   return (
     <div className="border-b">
-      {readOnly ? (
-        <div className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs">{header}</div>
+      {!canPick ? (
+        <div className="flex min-w-0 items-center gap-2 px-3 py-3 text-xs">{header}</div>
       ) : (
         <DropdownMenu open={open} onOpenChange={picking === undefined ? setHoverOpen : undefined} modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent"
+              className="flex w-full min-w-0 items-center gap-2 px-3 py-3 text-left text-xs hover:bg-accent"
               onMouseEnter={show}
               onMouseLeave={hide}
             >
@@ -103,7 +104,7 @@ export function WorkDirEnvironmentMenu({
                     if (option.kind === 'clone-here') onClone(option)
                     else if (!disabled) onSelect(option)
                   }}
-                  className="gap-2 py-2.5 text-xs"
+                  className="gap-2 text-xs"
                 >
                   <EnvironmentKindIcon kind={option.hostKind ?? 'local'} className="size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{option.label}</span>

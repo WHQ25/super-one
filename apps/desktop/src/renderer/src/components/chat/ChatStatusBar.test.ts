@@ -126,6 +126,45 @@ describe('collectBackgroundActivities', () => {
     })
   })
 
+  describe('monitor filtering', () => {
+    it('shows a monitor while taskProgress is incomplete', () => {
+      const messages = [msg(
+        toolUse('mon', 'Monitor', { command: 'tail -f build.log', description: 'watch the build' }, 'complete'),
+        toolResult('mon', { summary: 'started' }),
+      )]
+      const progress = { mon: { description: 'watch the build', taskId: 'task-mon', completed: false } }
+      const { monitorActivities, bashActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(monitorActivities).toHaveLength(1)
+      expect(monitorActivities[0]?.title).toBe('watch the build')
+      expect(bashActivities).toHaveLength(0)
+    })
+
+    it('hides a monitor after taskProgress completes', () => {
+      const messages = [msg(
+        toolUse('mon', 'Monitor', { command: 'tail -f build.log', description: 'watch the build' }, 'complete'),
+      )]
+      const progress = { mon: { description: 'watch the build', taskId: 'task-mon', completed: true } }
+      const { monitorActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(monitorActivities).toHaveLength(0)
+    })
+
+    it('hides a reloaded monitor that already has a result and no taskProgress', () => {
+      const messages = [msg(
+        toolUse('mon', 'Monitor', { command: 'tail -f build.log', description: 'watch the build' }, 'complete'),
+        toolResult('mon', { summary: 'started' }),
+      )]
+      const { monitorActivities } = collectBackgroundActivities(messages, {}, false)
+      expect(monitorActivities).toHaveLength(0)
+    })
+
+    it('shows a streaming monitor before task_started arrives', () => {
+      const messages = [msg(toolUse('mon', 'Monitor', { command: 'tail -f build.log', description: 'watch the build' }))]
+      const { monitorActivities } = collectBackgroundActivities(messages, {}, true)
+      expect(monitorActivities).toHaveLength(1)
+      expect(monitorActivities[0]?.title).toBe('watch the build')
+    })
+  })
+
   describe('worktree indicator gate', () => {
     const noWt = { pendingBaseBranch: null, activePath: null }
 

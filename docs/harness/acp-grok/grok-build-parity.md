@@ -54,6 +54,13 @@ not create empty assistant bubbles. Slash-launched workflows can synthesize a
 card through `packages/chat-core/src/host-workflow-card.ts` even without a launch
 tool call in the transcript.
 
+A live Grok monitor keeps the session status at `background` after the turn that
+started it ends, until the last monitor reports a terminal `task_notification`.
+Current monitors are classified from `monitor_description`; older ones from a
+`[monitor] ` command prefix. The chat status bar lists a running Monitor next to
+the bash, agent, and workflow chips. Bash, workflow, and goal tasks do not use
+this status hold.
+
 ## CLI/node boundary
 
 The node uses shared ACP event/permission/elicitation helpers, advertises ask and

@@ -995,6 +995,13 @@ function mapSubagentFinished(u: Record<string, unknown>, state: XaiCorrelationSt
 
 // ── Background tasks / monitor ──────────────────────────────────────────────
 
+/** Current monitors send `monitor_description`. Older ones prefix the command. */
+function backgroundTaskType(u: Record<string, unknown>, command: string): 'monitor' | 'bash' {
+  if (strField(u, 'monitor_description', 'monitorDescription')) return 'monitor'
+  if (command.startsWith('[monitor] ')) return 'monitor'
+  return 'bash'
+}
+
 function mapTaskBackgrounded(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const taskId = strField(u, 'task_id', 'taskId')
   if (!taskId) return []
@@ -1026,7 +1033,7 @@ function mapTaskBackgrounded(u: Record<string, unknown>, state: XaiCorrelationSt
     taskId,
     ...(toolCallId ? { toolUseId: toolCallId } : {}),
     description,
-    taskType: strField(u, 'monitor_description', 'monitorDescription') ? 'monitor' : 'bash',
+    taskType: backgroundTaskType(u, command),
   }]
 }
 

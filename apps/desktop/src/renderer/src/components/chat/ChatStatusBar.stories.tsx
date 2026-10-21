@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState } from 'react'
-import type { GitInfoResult } from '@superone/shared/agent-types'
+import type { ChatMessage, GitInfoResult } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { ChatStatusBar } from './ChatStatusBar'
@@ -14,6 +14,74 @@ const XCODE_LICENSE_ERROR =
 /** Per-story git answer; the component reads it once on mount and again when the chip is clicked. */
 let gitResult: GitInfoResult = null
 
+interface MonitorSeed {
+  description: string
+  command: string
+  count?: number
+}
+
+function monitorMessage(seed: MonitorSeed): ChatMessage {
+  const count = seed.count ?? 1
+  return {
+    id: 'a1',
+    role: 'assistant',
+    status: 'complete',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    providerId: 'grok-build',
+    content: Array.from({ length: count }, (_, index) => {
+      const id = index === 0 ? 'mon' : `mon-${index + 1}`
+      const description = index === 0 ? seed.description : 'watch the test log'
+      const command = index === 0 ? seed.command : 'bun test --watch'
+      return {
+        type: 'tool_use' as const,
+        toolName: 'Monitor',
+        toolUseId: id,
+        input: JSON.stringify({ description, command }),
+        status: 'complete' as const,
+        parentToolUseId: null,
+      }
+    }),
+  }
+}
+
+function seedMonitor(seed: MonitorSeed | undefined): void {
+  const store = useChatStore.getState()
+  const project = store.projectSessions[PROJECT]
+  const sid = project?._activeSessionId
+  const session = sid ? project?._sessions[sid] : undefined
+  if (!project || !sid || !session || !seed) return
+  const count = seed.count ?? 1
+  const taskProgress = Object.fromEntries(Array.from({ length: count }, (_, index) => {
+    const id = index === 0 ? 'mon' : `mon-${index + 1}`
+    return [id, {
+      description: index === 0 ? seed.description : 'watch the test log',
+      taskId: `task-${id}`,
+      completed: false,
+      totalTokens: 0,
+      toolUses: 0,
+      durationMs: 0,
+      toolHistory: [],
+    }]
+  }))
+  useChatStore.setState({
+    projectSessions: {
+      ...store.projectSessions,
+      [PROJECT]: {
+        ...project,
+        _sessions: {
+          ...project._sessions,
+          [sid]: {
+            ...session,
+            status: 'background',
+            messages: [monitorMessage(seed)],
+            taskProgress,
+          },
+        },
+      },
+    },
+  })
+}
+
 mockIpc('app', 'getMediaServerPort', async () => 6006)
 mockIpc('app', 'getGitInfo', async () => gitResult)
 mockIpc('app', 'getGitBranches', async () => ['main', 'develop'])
@@ -22,7 +90,7 @@ mockIpc('app', 'getWorktreeInfo', async () => ({ isWorktree: false, currentBranc
 mockIpc('app', 'collaborationMailbox', Object.assign(() => {}, { list: async () => [], onChanged: () => () => {} }))
 for (const method of ['listPlatforms', 'listCredentials', 'listBindings', 'claudeListAccounts']) mockIpc('app', method, async () => [])
 
-function Preview({ git, narrow = false }: { git: GitInfoResult; narrow?: boolean }) {
+function Preview({ git, narrow = false, monitor }: { git: GitInfoResult; narrow?: boolean; monitor?: MonitorSeed }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     gitResult = git
@@ -30,13 +98,14 @@ function Preview({ git, narrow = false }: { git: GitInfoResult; narrow?: boolean
     const prevChat = useChatStore.getState()
     useChatStore.getState().ensureSession(PROJECT)
     useChatStore.setState({ activeProject: PROJECT })
+    seedMonitor(monitor)
     useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
     setReady(true)
     return () => {
       useAppStore.setState({ currentFolder: prevApp.currentFolder, _worktrees: prevApp._worktrees })
       useChatStore.setState(prevChat)
     }
-  }, [git])
+  }, [git, monitor])
   if (!ready) return null
   return (
     <div className="@container rounded-lg border border-border bg-background py-2" style={{ width: narrow ? 300 : 640, maxWidth: '100%' }}>
@@ -69,3 +138,47 @@ export const GitUnavailable: Story = { args: { git: { branch: null, error: XCODE
 
 /** Compact width collapses the chip to its icon; the tooltip still explains. */
 export const GitUnavailableNarrow: Story = { args: { git: { branch: null, error: XCODE_LICENSE_ERROR }, narrow: true } }
+
+const runningMonitor = {
+  description: 'watch the build log',
+  command: 'tail -f build.log',
+}
+
+/** A live Grok monitor stays on the status bar after the turn goes idle. */
+export const RunningMonitor: Story = {
+  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor },
+}
+
+/** Two watches share one chip. */
+export const RunningMonitors: Story = {
+  args: { git: { branch: 'main', dirty: null }, monitor: { ...runningMonitor, count: 2 } },
+}
+
+/** Narrow width keeps the activity icon and drops the label. */
+export const RunningMonitorNarrow: Story = {
+  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor, narrow: true },
+}
+
+/** A long description stays on one line in the chip. */
+export const RunningMonitorLongTitle: Story = {
+  args: {
+    git: { branch: 'main', dirty: null },
+    monitor: {
+      description: 'watch the production deploy log for the desktop release workflow',
+      command: 'tail -f /var/log/superone-release.log',
+    },
+  },
+}
+
+export const RunningMonitorDark: Story = {
+  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor },
+  globals: { theme: 'dark' },
+}
+
+/** Opening the chip shows the live Monitor tool, including its stop control when the host allows it. */
+export const RunningMonitorExpanded: Story = {
+  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor },
+  play: async ({ canvasElement }) => {
+    canvasElement.querySelector<HTMLButtonElement>('button[title="Monitor"]')?.click()
+  },
+}

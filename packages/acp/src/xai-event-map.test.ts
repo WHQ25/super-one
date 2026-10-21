@@ -343,6 +343,33 @@ describe('ACP xAI AgentEvent mapping', () => {
     }])
   })
 
+  it('classifies a background task as a monitor from description or the command prefix', () => {
+    expect(mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, {
+      tool_call_id: 'mon-tool',
+      task_id: 'mon-1',
+      command: 'tail -f build.log',
+      monitor_description: 'watch the build',
+    }, createXaiCorrelationState())).toEqual([{
+      type: 'task_started',
+      taskId: 'mon-1',
+      toolUseId: 'mon-tool',
+      description: 'watch the build',
+      taskType: 'monitor',
+    }])
+
+    expect(mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, {
+      tool_call_id: 'mon-tool',
+      task_id: 'mon-2',
+      command: '[monitor] tail -f build.log',
+    }, createXaiCorrelationState())).toEqual([{
+      type: 'task_started',
+      taskId: 'mon-2',
+      toolUseId: 'mon-tool',
+      description: '[monitor] tail -f build.log',
+      taskType: 'monitor',
+    }])
+  })
+
   it('accumulates response_started/completed into mid-turn message_usage', () => {
     const state = createXaiCorrelationState()
     state.lastUsage = {

@@ -1,4 +1,5 @@
 import { acpTodoItems, todosUpdatedEvent, todosUpdatedFromAcpTool } from '@superone/shared/acp-todos'
+import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import type { AgentErrorInfo, AgentEvent, SlashCommandInfo } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk'
@@ -391,9 +392,16 @@ export function createAcpAgentEventMapper(
   let currentMessageId = options.messageId
   let started = false
   let terminal = false
+  const monitorHold = new MonitorSessionHold()
+  const emitHeld = (event: AgentEvent) => {
+    monitorHold.note(event)
+    options.emit(monitorHold.adjust(event))
+    const follow = monitorHold.followUp()
+    if (follow) options.emit(follow)
+  }
 
   const emitMessageStart = (messageId: string) => {
-    options.emit({
+    emitHeld({
       type: 'message_start',
       message: {
         id: messageId,
@@ -410,17 +418,17 @@ export function createAcpAgentEventMapper(
     if (terminal) return
     terminal = true
     if (interrupted) {
-      for (const event of cancelOpenAcpTools(currentMessageId, openTools)) options.emit(event)
+      for (const event of cancelOpenAcpTools(currentMessageId, openTools)) emitHeld(event)
     }
     // The caller supplies structure when it has it (JSON-RPC code, HTTP status);
     // otherwise fall back to reading the agent's prose.
     const info = interrupted ? undefined : errorInfo ?? buildAgentErrorInfo(error)
     for (const messageId of localMessageIds) {
-      options.emit(interrupted
+      emitHeld(interrupted
         ? { type: 'message_interrupted', messageId }
         : { type: 'message_error', messageId, error, errorInfo: info })
     }
-    options.emit({ type: 'status_change', status: interrupted ? 'idle' : 'error' })
+    emitHeld({ type: 'status_change', status: interrupted ? 'idle' : 'error' })
   }
 
   return {
@@ -429,9 +437,9 @@ export function createAcpAgentEventMapper(
       started = true
       if (providerSessionId) xaiCorrelation.parentSessionId = providerSessionId
       emitMessageStart(options.messageId)
-      options.emit({ type: 'status_change', status: 'streaming' })
+      emitHeld({ type: 'status_change', status: 'streaming' })
       if (providerSessionId) {
-        options.emit({ type: 'provider_session_id', providerSessionId })
+        emitHeld({ type: 'provider_session_id', providerSessionId })
       }
     },
     apply(update, notificationMeta) {
@@ -483,9 +491,9 @@ export function createAcpAgentEventMapper(
         ) {
           textDelta += event.delta.text
         }
-        options.emit(event)
+        emitHeld(event)
       }
-      for (const event of migrate) options.emit(event)
+      for (const event of migrate) emitHeld(event)
       return { textDelta: textDelta || null }
     },
     applyXaiNotification(method, params) {
@@ -497,8 +505,8 @@ export function createAcpAgentEventMapper(
       )
       trackOpenAcpTools(openTools, events)
       const migrate = noteToolCorrelationFromAgentEvents(events, xaiCorrelation)
-      for (const event of events) options.emit(event)
-      for (const event of migrate) options.emit(event)
+      for (const event of events) emitHeld(event)
+      for (const event of migrate) emitHeld(event)
     },
     complete(stopReason = 'end_turn') {
       if (terminal) return
@@ -509,9 +517,9 @@ export function createAcpAgentEventMapper(
       }
       terminal = true
       for (const messageId of localMessageIds) {
-        options.emit({ type: 'message_complete', messageId })
+        emitHeld({ type: 'message_complete', messageId })
       }
-      options.emit({ type: 'status_change', status: 'idle' })
+      emitHeld({ type: 'status_change', status: 'idle' })
     },
     fail,
   }

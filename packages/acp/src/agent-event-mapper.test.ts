@@ -5,7 +5,7 @@ import {
   createAcpAgentEventMapper,
   mapSessionUpdate,
 } from './agent-event-mapper'
-import { XAI_SESSION_NOTIFICATION } from './xai-state'
+import { XAI_SESSION_NOTIFICATION, XAI_TASK_BACKGROUNDED, XAI_TASK_COMPLETED } from './xai-state'
 
 function update(value: Record<string, unknown>): SessionUpdate {
   return value as unknown as SessionUpdate
@@ -237,5 +237,32 @@ describe('ACP AgentEvent mapper', () => {
       taskId: 'workflow-1',
       toolUseId: 'workflow-tool',
     }))
+  })
+
+  it('holds background after the turn while a monitor is live', () => {
+    const events: AgentEvent[] = []
+    const mapper = createAcpAgentEventMapper({
+      messageId: 'message-1',
+      emit: (event) => events.push(event),
+    })
+
+    mapper.start('acp-session-1')
+    mapper.applyXaiNotification(XAI_TASK_BACKGROUNDED, {
+      tool_call_id: 'mon-tool',
+      task_id: 'mon-1',
+      command: 'tail -f build.log',
+      monitor_description: 'watch the build',
+    })
+    mapper.complete('end_turn')
+    expect(events.at(-1)).toEqual({ type: 'status_change', status: 'background' })
+
+    mapper.applyXaiNotification(XAI_TASK_COMPLETED, {
+      task_snapshot: {
+        task_id: 'mon-1',
+        completed: true,
+        exit_code: 0,
+      },
+    })
+    expect(events.at(-1)).toEqual({ type: 'status_change', status: 'idle' })
   })
 })

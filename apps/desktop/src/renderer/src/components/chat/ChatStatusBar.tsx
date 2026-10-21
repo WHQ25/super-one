@@ -5,7 +5,7 @@ import { StatusBarSchedules } from './chat-status-bar/StatusBarSchedules'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
+import { Activity, GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import {
@@ -87,6 +87,13 @@ export type BackgroundActivityItem =
       toolBlock: ContentBlock & { type: 'tool_use' }
       resultBlock?: ContentBlock & { type: 'tool_result' }
     }
+  | {
+      id: string
+      kind: 'monitor'
+      title: string
+      toolUse: ContentBlock & { type: 'tool_use' }
+      result?: ContentBlock & { type: 'tool_result' }
+    }
 
 type TaskProgress = Record<string, {
   description: string
@@ -117,11 +124,13 @@ export function collectBackgroundActivities(
   bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[]
   agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[]
   workflowActivities: Extract<BackgroundActivityItem, { kind: 'workflow' }>[]
+  monitorActivities: Extract<BackgroundActivityItem, { kind: 'monitor' }>[]
 } {
   const results = new Map<string, ContentBlock & { type: 'tool_result' }>()
   const bashActivities: Extract<BackgroundActivityItem, { kind: 'bash' }>[] = []
   const agentActivities: Extract<BackgroundActivityItem, { kind: 'agent' }>[] = []
   const workflowActivities: Extract<BackgroundActivityItem, { kind: 'workflow' }>[] = []
+  const monitorActivities: Extract<BackgroundActivityItem, { kind: 'monitor' }>[] = []
 
   for (const message of messages) {
     for (const block of message.content) {
@@ -134,6 +143,28 @@ export function collectBackgroundActivities(
   for (const message of messages) {
     for (const block of message.content) {
       if (block.type !== 'tool_use') continue
+
+      if (block.toolName === 'Monitor') {
+        const params = parseToolInput(block.input, block.toolName)
+        const result = results.get(block.toolUseId)
+        const progress = taskProgress[block.toolUseId]
+        // taskProgress is authoritative after task_started. A result without it
+        // is a reloaded historical monitor, not a live watch.
+        const isRunning = progress
+          ? progress.completed !== true
+          : !result && (block.status === 'streaming' || isStreaming)
+        if (!isRunning) continue
+        const description = typeof params.description === 'string' ? params.description.trim() : ''
+        const command = typeof params.command === 'string' ? params.command.trim() : ''
+        monitorActivities.push({
+          id: block.toolUseId,
+          kind: 'monitor',
+          title: description || command || 'Monitor',
+          toolUse: block,
+          result,
+        })
+        continue
+      }
 
       if (block.toolName === 'Bash') {
         const params = parseToolInput(block.input, block.toolName)
@@ -228,7 +259,7 @@ export function collectBackgroundActivities(
     }
   }
 
-  return { bashActivities, agentActivities, workflowActivities }
+  return { bashActivities, agentActivities, workflowActivities, monitorActivities }
 }
 
 export function ChatStatusBar() {
@@ -258,6 +289,7 @@ export function ChatStatusBar() {
   const [bashOpen, setBashOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [workflowOpen, setWorkflowOpen] = useState(false)
+  const [monitorOpen, setMonitorOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
   const dirty = gitInfo?.dirty
@@ -422,7 +454,7 @@ export function ChatStatusBar() {
     && normalizedTrimmed !== currentBranchLower
     && !branches.some((b) => b.toLowerCase() === normalizedTrimmed)
 
-  const { bashActivities, agentActivities, workflowActivities } = useMemo(
+  const { bashActivities, agentActivities, workflowActivities, monitorActivities } = useMemo(
     () => collectBackgroundActivities(getActiveSessionView(scope).messages, taskProgress, sessionStatus === 'streaming'),
     // messages is read non-reactively; recompute is driven by the cheap signature + task/status.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -452,9 +484,12 @@ export function ChatStatusBar() {
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const workflowLabel = workflowActivities.length > 1 ? `${workflowActivities.length} Workflows` : 'Workflow'
+  const monitorLabel = monitorActivities.length > 1 ? `${monitorActivities.length} Monitors` : 'Monitor'
   const bashPanelTitle = `Background ${bashActivities.length > 1 ? 'Bashes' : 'Bash'}`
   const agentPanelTitle = `Running ${agentActivities.length > 1 ? 'Agents' : 'Agent'}`
   const workflowPanelTitle = `Running ${workflowActivities.length > 1 ? 'Workflows' : 'Workflow'}`
+  const monitorPanelTitle = `Background ${monitorActivities.length > 1 ? 'Monitors' : 'Monitor'}`
+  const hasBackgroundWork = bashActivities.length > 0 || agentActivities.length > 0 || workflowActivities.length > 0 || monitorActivities.length > 0
 
   useEffect(() => {
     if (bashActivities.length === 0) setBashOpen(false)
@@ -467,6 +502,10 @@ export function ChatStatusBar() {
   useEffect(() => {
     if (workflowActivities.length === 0) setWorkflowOpen(false)
   }, [workflowActivities.length])
+
+  useEffect(() => {
+    if (monitorActivities.length === 0) setMonitorOpen(false)
+  }, [monitorActivities.length])
 
   return (
     <>
@@ -557,6 +596,40 @@ export function ChatStatusBar() {
                       />
                     </div>
                   ))}
+                </div>
+              </motion.div>
+            )}
+            {monitorOpen && monitorActivities.length > 0 && (
+              <motion.div
+                key="monitor-panel"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="pointer-events-auto overflow-hidden rounded-lg border border-border bg-popover shadow-md"
+              >
+                <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-foreground">{monitorPanelTitle}</div>
+                <div className="activity-panel max-h-[50vh] divide-y divide-border overflow-y-auto p-1.5">
+                  {monitorActivities.map((item, i) => {
+                    const taskId = taskProgress[item.id]?.taskId
+                    return (
+                      <div key={item.id}>
+                        <ToolBlock
+                          toolName="Monitor"
+                          toolUseId={item.toolUse.toolUseId}
+                          input={item.toolUse.input}
+                          status={item.toolUse.status}
+                          elapsedSeconds={item.toolUse.elapsedSeconds}
+                          result={item.result?.summary}
+                          isTimedOut={item.result?.isTimedOut}
+                          resultOutputPath={item.result?.outputPath}
+                          autoExpand={i === 0}
+                          backgroundActivity
+                          trailingAction={taskId ? renderStopButton(taskId) : undefined}
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
               </motion.div>
             )}
@@ -735,12 +808,27 @@ export function ChatStatusBar() {
           </>
         )}
 
+        {monitorActivities.length > 0 && (
+          <>
+            {(bashActivities.length > 0 || agentActivities.length > 0 || workflowActivities.length > 0) && <div className="h-3 w-px bg-border" />}
+            <button
+              onClick={() => setMonitorOpen((o) => !o)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+              title={monitorLabel}
+            >
+              <Activity className="size-3 animate-pulse" />
+              {!compactIndicators && <span>{monitorLabel}</span>}
+              {!compactIndicators && <ChevronDown className={`size-3 transition-transform duration-200 ${monitorOpen ? 'rotate-180' : ''}`} />}
+            </button>
+          </>
+        )}
+
         <StatusBarMailbox sessionId={activeSessionId} />
         <StatusBarSchedules schedules={sessionSchedules} />
 
         {hiddenPipTarget && (
           <>
-            {(bashActivities.length > 0 || agentActivities.length > 0 || workflowActivities.length > 0) && (
+            {hasBackgroundWork && (
               <div className="h-3 w-px bg-border" />
             )}
             <StatusBarPip target={hiddenPipTarget} />
@@ -750,12 +838,7 @@ export function ChatStatusBar() {
         <StatusBarSandbox
           activeProvider={activeProvider}
           compactIndicators={compactIndicators}
-          showDivider={
-            bashActivities.length > 0
-            || agentActivities.length > 0
-            || workflowActivities.length > 0
-            || hiddenPipTarget != null
-          }
+          showDivider={hasBackgroundWork || hiddenPipTarget != null}
         />
       </div>
 

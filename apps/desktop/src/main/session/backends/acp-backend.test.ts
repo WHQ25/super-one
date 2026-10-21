@@ -468,6 +468,138 @@ describe('AcpBackend', () => {
     expect(backend.hasActiveRuntime()).toBe(false)
   })
 
+  it('keeps the session background while a Grok monitor is live', async () => {
+    const events: AgentEvent[] = []
+    let sessionEvent: AcpRuntimeOptions['onSessionEvent']
+    setAcpRuntimeFactory(async (opts) => {
+      sessionEvent = opts.onSessionEvent
+      return mockRuntime({
+        prompt: async (_text, messageId, onEvent) => {
+          onEvent({
+            type: 'task_started',
+            taskId: 'mon-1',
+            description: 'watch the build',
+            taskType: 'monitor',
+          })
+          expect(events.some((event) => event.type === 'status_change' && event.status === 'background')).toBe(false)
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'watch', assistantMessageId: 'a1' })
+
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'background',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(true)
+
+    sessionEvent?.({
+      type: 'task_notification',
+      taskId: 'mon-1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'exit 0',
+    })
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'idle',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(false)
+    await backend.close()
+  })
+
+  it('still settles idle when only a bash background task is live', async () => {
+    const events: AgentEvent[] = []
+    setAcpRuntimeFactory(async () => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        onEvent({
+          type: 'task_started',
+          taskId: 'bash-1',
+          description: 'sleep',
+          taskType: 'bash',
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+    const backend = new AcpBackend()
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'sleep', assistantMessageId: 'a1' })
+
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'idle',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(true)
+    await backend.close()
+  })
+
+  it('marks the session background when a monitor starts after the turn is idle', async () => {
+    const events: AgentEvent[] = []
+    let sessionEvent: AcpRuntimeOptions['onSessionEvent']
+    setAcpRuntimeFactory(async (opts) => {
+      sessionEvent = opts.onSessionEvent
+      return mockRuntime({
+        prompt: async (_text, messageId, onEvent) => {
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'watch', assistantMessageId: 'a1' })
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'idle',
+    })
+
+    sessionEvent?.({
+      type: 'task_started',
+      taskId: 'mon-1',
+      description: 'tail log',
+      taskType: 'monitor',
+    })
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'background',
+    })
+    await backend.close()
+  })
+
+  it('leaves an error status visible while a monitor is still live', async () => {
+    const events: AgentEvent[] = []
+    setAcpRuntimeFactory(async () => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        onEvent({
+          type: 'task_started',
+          taskId: 'mon-1',
+          description: 'watch',
+          taskType: 'monitor',
+        })
+        onEvent({ type: 'message_error', messageId, error: 'boom' })
+        onEvent({ type: 'status_change', status: 'error' })
+      },
+    }))
+    const backend = new AcpBackend()
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'watch', assistantMessageId: 'a1' })
+
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'error',
+    })
+    await backend.close()
+  })
+
   it('treats a workflow launch tool_result as live work before ExtNotification arrives', async () => {
     let captured: AcpRuntimeOptions | undefined
     setAcpRuntimeFactory(async (opts) => {

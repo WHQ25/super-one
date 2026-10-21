@@ -833,6 +833,7 @@ function PortableFold({ fold }: TurnFoldPresenterProps) {
 
 const TURN_RUNTIME: TurnBodyPresenterRuntime = {
   isBackgroundTool(block) {
+    if (block.toolName === 'Monitor') return true
     const params = parseRecord(block.input)
     return block.toolName === 'Bash' && (params.run_in_background === true || params.background === true)
   },

@@ -9,6 +9,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
@@ -243,6 +244,8 @@ export class AcpBackend implements SessionBackend {
   private cronTaskIds = new Set<string>()
   /** Live Grok background work (workflow / subagent / monitor / scheduled / bash). */
   private liveBackgroundTaskIds = new Set<string>()
+  /** Keeps sidebar status on `background` for the whole life of a Grok monitor. */
+  private readonly monitorHold = new MonitorSessionHold()
   /** Client-minted ids so the `x.ai/session/interjection` echo is not painted twice. */
   private readonly selfInterjectionIds = new Set<string>()
   /** True while a host `/compact` RPC is in flight (Grok may also emit auto_compact_*). */
@@ -1526,6 +1529,7 @@ export class AcpBackend implements SessionBackend {
     this.rejectPendingFolderTrust()
     this.cronTaskIds.clear()
     this.liveBackgroundTaskIds.clear()
+    this.monitorHold.reset()
     this.grokWorkflowTaskIds.clear()
     this.grokWorkflowTokensSeen.clear()
     this.grokWorkflowTokensBilled.clear()
@@ -2049,6 +2053,13 @@ export class AcpBackend implements SessionBackend {
 
   private emit(event: AgentEvent): void {
     this.noteBackgroundTaskLifecycle(event)
+    this.monitorHold.note(event)
+    this.publish(this.monitorHold.adjust(event))
+    const follow = this.monitorHold.followUp()
+    if (follow) this.publish(follow)
+  }
+
+  private publish(event: AgentEvent): void {
     for (const cb of this.eventListeners) {
       try {
         cb(event)

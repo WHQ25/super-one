@@ -854,6 +854,35 @@ describe('mapXaiStandaloneNotification', () => {
     }])
   })
 
+  it('classifies a background task as a monitor from description or the command prefix', () => {
+    const described = mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, {
+      tool_call_id: 'mon-tool',
+      task_id: 'mon-1',
+      command: 'tail -f build.log',
+      monitor_description: 'watch the build',
+    }, createXaiCorrelationState())
+    expect(described).toEqual([{
+      type: 'task_started',
+      taskId: 'mon-1',
+      toolUseId: 'mon-tool',
+      description: 'watch the build',
+      taskType: 'monitor',
+    }])
+
+    const prefixed = mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, {
+      tool_call_id: 'mon-tool',
+      task_id: 'mon-2',
+      command: '[monitor] tail -f build.log',
+    }, createXaiCorrelationState())
+    expect(prefixed).toEqual([{
+      type: 'task_started',
+      taskId: 'mon-2',
+      toolUseId: 'mon-tool',
+      description: '[monitor] tail -f build.log',
+      taskType: 'monitor',
+    }])
+  })
+
   it('maps goal_updated progress and complete', () => {
     const state = createXaiCorrelationState()
     const mid = mapXaiStandaloneNotification(XAI_SESSION_NOTIFICATION, {

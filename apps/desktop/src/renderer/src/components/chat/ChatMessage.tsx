@@ -121,6 +121,7 @@ const LONG_CONTENT_BLOCK_TURN_PARTS: TurnBodyPresenterParts = {
 
 const TURN_RUNTIME: TurnBodyPresenterRuntime = {
   isBackgroundTool(block) {
+    if (block.toolName === 'Monitor') return true
     if (block.toolName !== 'Bash') return false
     const params = parseToolInput(block.input, block.toolName)
     return params.run_in_background === true || params.background === true

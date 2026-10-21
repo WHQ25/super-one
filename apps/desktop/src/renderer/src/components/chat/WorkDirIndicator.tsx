@@ -31,7 +31,7 @@ import {
 } from './composer-location'
 import { EnvironmentKindIcon } from '@/components/sidebar/multi-host/EnvironmentSectionHeader'
 import type { EnvironmentKind } from '@/lib/multi-host/types'
-import { WorkDirEnvironmentList, WorkDirEnvironmentMenu } from './WorkDirEnvironmentMenu'
+import { WorkDirEnvironmentMenu } from './WorkDirEnvironmentMenu'
 import {
   checkoutOnEnvironment,
   cloneAndOpenCheckout,
@@ -387,7 +387,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [mode, setMode] = useState<LocationMode>('checkout')
   const [search, setSearch] = useState('')
-  const [pickingEnvironment, setPickingEnvironment] = useState(false)
   const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [mainBranch, setMainBranch] = useState<string | null>(null)
@@ -540,10 +539,8 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
       })
     }
     setPopoverOpen(open)
-    if (!open) setPickingEnvironment(false)
     if (open) {
       setSearch('')
-      setPickingEnvironment(false)
       setMode(isGitRepo !== false && location.selection.kind !== 'local' ? 'worktree' : 'checkout')
       void loadPopoverData()
     }
@@ -802,8 +799,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
       readOnly={isOldSession}
       options={environmentOptions}
       selectedId={location.environmentId}
-      picking={pickingEnvironment}
-      onPickingChange={setPickingEnvironment}
       onSelect={handleSelectEnvironment}
       onClone={handleCloneEnvironment}
     />
@@ -827,20 +822,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
           {environmentMenuNode}
-          {pickingEnvironment ? (
-            <WorkDirEnvironmentList
-              options={environmentOptions}
-              onSelect={(option) => {
-                setPickingEnvironment(false)
-                handleSelectEnvironment(option)
-              }}
-              onBack={() => setPickingEnvironment(false)}
-              onClone={(option) => {
-                setPickingEnvironment(false)
-                handleCloneEnvironment(option)
-              }}
-            />
-          ) : startedWorktree ? (
+          {startedWorktree ? (
             <>
               <div className="flex items-center gap-2 px-3 py-2 text-xs">
                 <GitFork className="size-3 shrink-0 text-muted-foreground" />
@@ -874,9 +856,9 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
               )}
               <Tabs value={modeValue} onValueChange={selectMode}>
                 <div className="px-3 pt-2">
-                  <TabsList className="w-full">
-                    <TabsTrigger value="checkout">{localCheckoutLabel}</TabsTrigger>
-                    <TabsTrigger value="worktree" disabled={isGitRepo === false}>{t('sidebar.hover.worktree')}</TabsTrigger>
+                  <TabsList className="h-9 w-full">
+                    <TabsTrigger value="checkout" className="py-1.5">{t('chat.worktree.modeLocal')}</TabsTrigger>
+                    <TabsTrigger value="worktree" className="py-1.5" disabled={isGitRepo === false}>{t('sidebar.hover.worktree')}</TabsTrigger>
                   </TabsList>
                 </div>
                 <form className="border-b px-3 py-2" onSubmit={submitSearch}>

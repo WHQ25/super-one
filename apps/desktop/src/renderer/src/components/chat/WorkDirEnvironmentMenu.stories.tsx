@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { WorkDirEnvironmentList, WorkDirEnvironmentMenu, type WorkDirEnvironmentMenuProps } from './WorkDirEnvironmentMenu'
+import { WorkDirEnvironmentMenu, type WorkDirEnvironmentMenuProps } from './WorkDirEnvironmentMenu'
 import type { WorkDirEnvironmentOption } from './work-dir-environment'
 
 const local: WorkDirEnvironmentOption = {
@@ -28,9 +28,6 @@ function Frame({ width = 320, picking = true, ...props }: WorkDirEnvironmentMenu
   return (
     <div className="rounded-lg border bg-popover text-popover-foreground" style={{ width }}>
       <WorkDirEnvironmentMenu {...props} picking={picking} />
-      {picking && !props.readOnly && (
-        <WorkDirEnvironmentList options={props.options} onSelect={props.onSelect} onClone={props.onClone} />
-      )}
     </div>
   )
 }

@@ -2269,6 +2269,7 @@ export type Messages = {
       notAGitRepo: string
       checkoutHeading: string
       localCheckout: string
+      modeLocal: string
       newWorktreeFrom: string
       noneYet: string
     }
@@ -6986,6 +6987,7 @@ export const en: Messages = {
       notAGitRepo: 'Not a Git Repository',
       checkoutHeading: 'Checkout',
       localCheckout: 'Local Checkout',
+      modeLocal: 'Local',
       newWorktreeFrom: 'New Worktree ← {{base}}',
       noneYet: 'None Yet',
     },

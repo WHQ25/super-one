@@ -163,7 +163,7 @@ describe('merged status chip', () => {
     await waitFor(() => expect(screen.getByTitle('This PC · New Worktree ← origin/release/1.8')).toBeTruthy())
 
     await user.click(screen.getByRole('button'))
-    const checkout = await screen.findByRole('tab', { name: 'Local Checkout' })
+    const checkout = await screen.findByRole('tab', { name: 'Local' })
     expect(screen.getByRole('tab', { name: 'Worktree' })).toBeTruthy()
     expect(checkout.getAttribute('data-state')).toBe('inactive')
 
@@ -196,9 +196,8 @@ describe('merged status chip', () => {
 
     const device = screen.getAllByRole('button').find((button) => button.textContent?.includes('This Machine'))
     expect(device).toBeTruthy()
-    await user.click(device!)
-    expect(screen.queryByRole('tab', { name: 'Local Checkout' })).toBeNull()
-    await user.click(device!)
-    expect(screen.getByRole('tab', { name: 'Worktree' })).toBeTruthy()
+    await user.hover(device!)
+    expect(await screen.findByRole('menuitem', { name: /This PC/ })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Local' })).toBeTruthy()
   })
 })

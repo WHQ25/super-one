@@ -38,6 +38,7 @@ import type {
   SubagentRetryInfo,
   TodoItem,
 } from '@superone/shared/agent-types'
+import type { SessionEnvironmentSelection } from '@superone/shared/session-location'
 import type { SchemaFormValue } from '@superone/shared/schema-form'
 import type { SessionControlHolder } from '@superone/shared/environment'
 import type { StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -281,6 +282,12 @@ export interface PerSessionState extends ChatCoreSession {
   rateLimitInfo: { status: 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean } | null
   _gitBranch: string | null
   _worktreePath: string | null
+  /**
+   * Machine and checkout this session will use. Null on rows created before
+   * the field existed; those still restore from `_worktreePath`. A new session
+   * sets `{ kind: 'local' }` so it does not inherit another session's checkout.
+   */
+  environmentSelection?: SessionEnvironmentSelection | null
   _worktreeRemoved: boolean
   /**
    * Sandbox this ONE session's runtime is actually under, when it differs from

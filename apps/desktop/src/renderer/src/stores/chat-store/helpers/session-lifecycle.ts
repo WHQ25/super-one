@@ -38,6 +38,8 @@ import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { isUnsentSession } from './session-liveness'
+import { environmentIdForProjectKey, selectionForNewSession } from '@superone/shared/session-location'
+import type { SessionEnvironmentSelection } from '@superone/shared/session-location'
 import { interruptSession } from '@/lib/session-client'
 import { stopBashOutputLive } from './bash-output-live'
 
@@ -477,6 +479,26 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
   }))
 }
 
+function selectionForWorktreeSwitch(
+  projectPath: string,
+  previous: PerSessionState | undefined,
+  opts?: { wtPath?: string; gitBranch?: string | null },
+): SessionEnvironmentSelection {
+  const environmentId = previous?.environmentSelection?.environmentId
+    ?? environmentIdForProjectKey(projectPath)
+  if (opts?.wtPath) {
+    return {
+      environmentId,
+      selection: {
+        kind: 'existing',
+        path: opts.wtPath,
+        ...(opts.gitBranch ? { branch: opts.gitBranch } : {}),
+      },
+    }
+  }
+  return selectionForNewSession(environmentId)
+}
+
 export function resetSessionForWorktreeSwitchImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
@@ -490,6 +512,7 @@ export function resetSessionForWorktreeSwitchImpl(
   const unsent = !!previousSession
     && previousSession.messages.length === 0
     && !_isLiveSession(previousSession)
+  const environmentSelection = selectionForWorktreeSwitch(projectPath, previousSession, opts)
   if (unsent && previousSid) {
     logWorktreeWrite('resetSessionForWorktreeSwitch.unsent', {
       projectPath,
@@ -509,6 +532,7 @@ export function resetSessionForWorktreeSwitchImpl(
       cwd: opts?.wtPath ?? projectPath,
       _worktreePath: opts?.wtPath ?? null,
       _gitBranch: opts?.gitBranch ?? null,
+      environmentSelection,
     })))
     return
   }
@@ -529,6 +553,7 @@ export function resetSessionForWorktreeSwitchImpl(
     newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
     newSession._gitBranch = opts?.gitBranch ?? null
+    newSession.environmentSelection = environmentSelection
     seedNewSession(newSession, nextProvider, {
       state: s, project: proj, claudeModels: projectClaudeModels(s, projectPath), previousSession,
     })
@@ -589,7 +614,13 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   // up in the sidebar's draft list instead of being stranded in _sessions.
   await promoteDraftIfUnsent(get(), activeProject, currentSid)
 
+  // Clear the file-tree cache before the new session becomes active. The host
+  // reset below awaits, and a draft saved in that window must not copy the
+  // previous session's checkout onto the new one.
+  useAppStore.getState().clearWorktreeMirror(activeProject)
+
   const newSessionId = createSessionId()
+  const freshSelection = selectionForNewSession(environmentIdForProjectKey(activeProject))
   window.app.trace?.('session.lifecycle', 'resetSession', {
     activeProject,
     oldSid: currentSid,
@@ -605,6 +636,9 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const proj = getProject(s, activeProject)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = activeProject
+    newSession._worktreePath = null
+    newSession._gitBranch = null
+    newSession.environmentSelection = freshSelection
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
     // The outgoing session (captured before set()) is what a harness carries picks over from.

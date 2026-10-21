@@ -1,17 +1,8 @@
 import type { WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import type { NewSessionWorktreeSelection } from '@superone/shared/session-location'
 
-export type NewSessionWorktreeSelection =
-  | { kind: 'local' }
-  | { kind: 'existing'; path: string; branch?: string }
-  | {
-      kind: 'create'
-      baseBranch: string
-      mode: WorktreeMode
-      branchName: string
-      carryLocalChanges: boolean
-    }
-
-export const LOCAL_WORKTREE_SELECTION: NewSessionWorktreeSelection = { kind: 'local' }
+export type { NewSessionWorktreeSelection, SessionEnvironmentSelection } from '@superone/shared/session-location'
+export { LOCAL_WORKTREE_SELECTION, selectionForNewSession } from '@superone/shared/session-location'
 
 export type WorktreeCreateOptions = {
   gitBranch?: string

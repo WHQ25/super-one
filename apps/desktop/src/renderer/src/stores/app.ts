@@ -294,6 +294,8 @@ interface AppState extends HarnessThemeState {
   setActiveWorktree: (projectPath: string, path: string | null) => void
   switchToExistingWorktree: (projectPath: string, wtPath: string, gitBranch: string | null) => Promise<{ ok: true } | { ok: false; error: string }>
   clearWorktree: (projectPath: string) => Promise<void>
+  /** Drop the file-tree cache only. Does not change the active session. */
+  clearWorktreeMirror: (projectPath: string) => void
   clearPendingWorktree: (projectPath: string) => void
   getWorktreeState: (projectPath: string) => WorktreeState
 }
@@ -1148,6 +1150,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  clearWorktreeMirror: (projectPath) => {
+    set((s) => ({
+      _worktrees: {
+        ...s._worktrees,
+        [projectPath]: { ...defaultWorktreeState },
+      },
+    }))
+  },
+
   clearWorktree: async (projectPath) => {
     await window.app.activateWorktree(projectPath, null)
     const { useChatStore } = await import('./chat')
@@ -1160,18 +1171,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       after: null,
       unsent: meta.unsent,
     })
-    set((s) => ({
-      _worktrees: {
-        ...s._worktrees,
-        [projectPath]: {
-          pendingBaseBranch: null,
-          pendingMode: 'branch',
-          pendingBranchName: '',
-          pendingCarryLocalChanges: false,
-          activePath: null,
-        },
-      },
-    }))
+    get().clearWorktreeMirror(projectPath)
   },
 
   getWorktreeState: (projectPath) => {

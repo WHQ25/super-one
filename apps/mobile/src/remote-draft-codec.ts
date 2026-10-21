@@ -54,6 +54,7 @@ export function remoteDraftFromComposer(id: string, projectPath: string, compose
 }
 
 export function worktreeFromDraft(settings: DraftSessionSettings): NewSessionWorktreeSelection {
+  if (settings.worktreeSelection) return settings.worktreeSelection
   if (settings.worktreePath) return { kind: 'existing', path: settings.worktreePath, ...(settings.gitBranch ? { branch: settings.gitBranch } : {}) }
   if (settings.pendingBaseBranch) return { kind: 'create', baseBranch: settings.pendingBaseBranch,
     mode: settings.pendingWorktreeMode === 'attach' || settings.pendingWorktreeMode === 'detach' ? settings.pendingWorktreeMode : 'branch',
@@ -62,7 +63,7 @@ export function worktreeFromDraft(settings: DraftSessionSettings): NewSessionWor
 }
 
 export function draftWorktreeSettings(selection: NewSessionWorktreeSelection): Partial<DraftSessionSettings> {
-  return { worktreePath: selection.kind === 'existing' ? selection.path : null,
+  return { worktreeSelection: selection, worktreePath: selection.kind === 'existing' ? selection.path : null,
     gitBranch: selection.kind === 'existing' ? selection.branch ?? null : null,
     pendingBaseBranch: selection.kind === 'create' ? selection.baseBranch : null,
     pendingWorktreeMode: selection.kind === 'create' ? selection.mode : null,

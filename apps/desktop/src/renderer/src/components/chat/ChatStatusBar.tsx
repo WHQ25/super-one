@@ -32,6 +32,7 @@ import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
 import { WorkDirIndicator } from './WorkDirIndicator'
+import { useComposerLocation } from './composer-location'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
@@ -267,7 +268,8 @@ export function ChatStatusBar() {
   const barRef = useRef<HTMLDivElement>(null)
   const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const worktrees = useAppStore((s) => s._worktrees)
+  const location = useComposerLocation()
+  const gitFolder = location.cwd || currentFolder
   const scope = useSessionScope()
   // Track structural changes plus subagent result arrival without subscribing to text deltas.
   const activitySignature = useActiveSession((s) => computeBackgroundActivitySignature(s.messages))
@@ -295,8 +297,7 @@ export function ChatStatusBar() {
   const dirty = gitInfo?.dirty
 
   const sessionGitBranch = useActiveSession((s) => s._gitBranch)
-  const wtState = currentFolder ? worktrees[currentFolder] : undefined
-  const isInWorktree = computeIsInWorktree(wtState)
+  const isInWorktree = location.pendingCreate || location.selection.kind === 'existing'
 
   // One RPC path: getGitInfo implies isRepo; skip separate getGitIsRepo (was 2× remote status).
   // `null` = not a repo (offer init); `branch: null` = git itself failed, so the
@@ -313,20 +314,20 @@ export function ChatStatusBar() {
   }, [])
 
   const refreshGitInfo = useCallback(async () => {
-    if (!currentFolder) return
-    applyGitInfo(await window.app.getGitInfo(currentFolder))
-  }, [currentFolder, applyGitInfo])
+    if (!gitFolder) return
+    applyGitInfo(await window.app.getGitInfo(gitFolder))
+  }, [gitFolder, applyGitInfo])
 
   // Initial read for the project. Everything after this is event-driven — git
   // state only changes when someone acts on the repo, and every actor that can
   // do so already gives us a signal.
   useEffect(() => {
-    if (!currentFolder) { setGitInfo(null); setIsGitRepo(null); setGitError(null); return }
+    if (!gitFolder) { setGitInfo(null); setIsGitRepo(null); setGitError(null); return }
 
     let cancelled = false
     // Optimistic: assume git repo until proven otherwise so Local chip paints immediately.
     setIsGitRepo(true)
-    window.app.getGitInfo(currentFolder).then((info) => {
+    window.app.getGitInfo(gitFolder).then((info) => {
       if (cancelled) return
       if (info?.branch == null) setGitInfo(null)
       applyGitInfo(info)
@@ -334,7 +335,7 @@ export function ChatStatusBar() {
       if (!cancelled) setIsGitRepo(false)
     })
     return () => { cancelled = true }
-  }, [currentFolder, applyGitInfo])
+  }, [gitFolder, applyGitInfo])
 
   useOnTurnCompleted(refreshGitInfo)
 
@@ -384,8 +385,8 @@ export function ChatStatusBar() {
     dirty?.deletions,
     activeProvider,
     sessionGitBranch,
-    wtState?.pendingBaseBranch,
-    wtState?.activePath,
+    location.pendingCreate,
+    location.selection.kind,
     isGitRepo,
   ])
 
@@ -393,26 +394,26 @@ export function ChatStatusBar() {
     setPopoverOpen(open)
     if (open) {
       setSearch('')
-      if (currentFolder) window.app.getGitBranches(currentFolder).then(setBranches)
+      if (gitFolder) window.app.getGitBranches(gitFolder).then(setBranches)
       // Opening the popup is the one moment the user is looking straight at branch/dirty
       // state, and it can be stale: anything that touched the repo outside SuperOne (an
       // external terminal, another editor) emits no signal we listen for. Refresh here so
       // the current-branch row and the dirty guard match reality before a checkout.
       void refreshGitInfo()
     }
-  }, [currentFolder, refreshGitInfo])
+  }, [gitFolder, refreshGitInfo])
 
   const handleBranchSelect = useCallback(async (branch: string) => {
-    if (!currentFolder || branch === gitInfo?.branch) return
+    if (!gitFolder || branch === gitInfo?.branch) return
     setPopoverOpen(false)
-    const result = await window.app.switchGitBranch(currentFolder, branch)
+    const result = await window.app.switchGitBranch(gitFolder, branch)
     if (result.ok) {
       await refreshGitInfo()
     } else {
       await refreshGitInfo()
       setFailedCheckout({ branch, error: result.error })
     }
-  }, [currentFolder, gitInfo?.branch, refreshGitInfo])
+  }, [gitFolder, gitInfo?.branch, refreshGitInfo])
 
   const doCommitFirst = useCallback(() => {
     useChatStore.getState().setDraftText('make a commit')
@@ -420,20 +421,20 @@ export function ChatStatusBar() {
   }, [])
 
   const doCreateBranch = useCallback(async (name: string) => {
-    if (!currentFolder) return
+    if (!gitFolder) return
     setPopoverOpen(false)
-    const result = await window.app.createBranch(currentFolder, name)
+    const result = await window.app.createBranch(gitFolder, name)
     if (result.ok) {
       await refreshGitInfo()
     } else {
       setFailedCheckout({ branch: name, error: result.error })
     }
-  }, [currentFolder, refreshGitInfo])
+  }, [gitFolder, refreshGitInfo])
 
   const handleGitInit = useCallback(async () => {
-    if (!currentFolder || initing) return
+    if (!gitFolder || initing) return
     setIniting(true)
-    const result = await window.app.gitInit(currentFolder)
+    const result = await window.app.gitInit(gitFolder)
     setIniting(false)
     if (result.ok) {
       toast.success(t('chat.git.initSuccess'))
@@ -442,7 +443,7 @@ export function ChatStatusBar() {
     } else {
       toast.error(t('chat.git.initFailed', { error: result.error ?? '' }))
     }
-  }, [currentFolder, initing, refreshGitInfo, t])
+  }, [gitFolder, initing, refreshGitInfo, t])
 
   const lowerSearch = search.toLowerCase()
   const currentMatch = gitInfo?.branch.toLowerCase().includes(lowerSearch)

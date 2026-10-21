@@ -401,9 +401,18 @@ describe('snapshotDraftSettings worktree', () => {
     expect(settings.pendingCarryLocalChanges).toBe(true)
   })
 
-  it('falls back to the app-store worktree hint when the session has none', () => {
+  it('does not inherit a hint path when the session has none', () => {
     const settings = snapshotDraftSettings(session(), null, { path: '/repo/.wt/hint' })
-    expect(settings.worktreePath).toBe('/repo/.wt/hint')
+    expect(settings.worktreePath).toBeNull()
+  })
+
+  it('keeps a local selection from copying a pending create in the hint', () => {
+    const settings = snapshotDraftSettings(session({
+      environmentSelection: { environmentId: 'local', selection: { kind: 'local' } },
+    }), null, { path: '/repo/.wt/hint', pendingBaseBranch: 'main' })
+    expect(settings.worktreePath).toBeNull()
+    expect(settings.pendingBaseBranch).toBeNull()
+    expect(settings.worktreeSelection).toEqual({ kind: 'local' })
   })
 })
 

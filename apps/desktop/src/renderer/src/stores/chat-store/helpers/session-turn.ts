@@ -4,7 +4,7 @@
  * the session's selections, deliver it through `window.environment`.
  */
 import { toast } from 'sonner'
-import type { ChatMessage, ImageAttachment, SandboxMode, ScheduledSendRemoteTurn } from '@superone/shared/agent-types'
+import type { ChatMessage, ImageAttachment, SandboxMode, ScheduledSendRemoteTurn, WorktreeMode } from '@superone/shared/agent-types'
 import type { SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { sandboxModeFromInfo } from '@superone/shared/harness/harness-sandbox'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
@@ -25,19 +25,48 @@ import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { deliverUserSend, type UserSendDelivery } from './send-replay'
 import type { SendWriteScope } from './send-write-scope'
 import { getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
+import { environmentIdForProjectKey } from '@superone/shared/session-location'
+import type { SessionEnvironmentSelection } from '@superone/shared/session-location'
 
 /**
  * Activate the worktree the composer has pending (branch, attach or detach)
  * before the turn that runs in it. False when it could not be activated; the
  * user has been told.
  */
+function pendingCreateOf(
+  owned: SessionEnvironmentSelection | null,
+  mirror: {
+    pendingBaseBranch: string | null
+    pendingMode?: string
+    pendingBranchName?: string
+    pendingCarryLocalChanges?: boolean
+  },
+): { baseBranch: string; mode: WorktreeMode | string; branchName: string; carryLocalChanges: boolean } | null {
+  if (owned?.selection.kind === 'local' || owned?.selection.kind === 'existing') return null
+  if (owned?.selection.kind === 'create') return owned.selection
+  if (!mirror.pendingBaseBranch) return null
+  return {
+    baseBranch: mirror.pendingBaseBranch,
+    mode: mirror.pendingMode ?? 'branch',
+    branchName: mirror.pendingBranchName ?? '',
+    carryLocalChanges: !!mirror.pendingCarryLocalChanges,
+  }
+}
+
 export async function applyPendingWorktree(projectPath: string, writeScope: SendWriteScope): Promise<boolean> {
   const { useAppStore } = await import('../../app')
-  const wtState = useAppStore.getState().getWorktreeState(projectPath)
-  if (!wtState.pendingBaseBranch) return true
-  const baseBranch = wtState.pendingBaseBranch
-  const mode = wtState.pendingMode
-  const branchName = wtState.pendingBranchName.trim()
+  const { useChatStore } = await import('../index')
+  const state = useChatStore.getState()
+  const sessionId = writeScope.sessionId()
+  const session = sessionId ? state.projectSessions[projectPath]?._sessions[sessionId] : undefined
+  const owned = session?.environmentSelection ?? null
+  // A session that already chose the project root must not pick up a pending
+  // create left in the file-tree cache by the session that was focused before.
+  if (owned?.selection.kind === 'local' || owned?.selection.kind === 'existing') return true
+  const pending = pendingCreateOf(owned, useAppStore.getState().getWorktreeState(projectPath))
+  if (!pending) return true
+  const { baseBranch, mode } = pending
+  const branchName = pending.branchName.trim()
   const fail = (message: string) => {
     toast.error(message)
     return false
@@ -45,16 +74,11 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
   if (mode === 'branch' && !branchName) return fail('Branch mode requires a branch name')
   const result = await window.app.activateWorktree(projectPath, {
     baseBranch,
-    mode,
+    mode: mode as WorktreeMode,
     branchName: mode === 'branch' ? branchName : undefined,
-    carryLocalChanges: wtState.pendingCarryLocalChanges,
+    carryLocalChanges: pending.carryLocalChanges,
   })
   if (!result.ok) return fail(result.error || 'Failed to activate the worktree')
-  const { useChatStore } = await import('../index')
-  const sessionId = writeScope.sessionId()
-  const session = sessionId
-    ? useChatStore.getState().projectSessions[projectPath]?._sessions[sessionId]
-    : undefined
   logWorktreeWrite('applyPendingWorktree', {
     projectPath,
     sessionId,
@@ -62,6 +86,7 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
     after: result.path,
     unsent: isUnsentSession(session),
   })
+  const branch = mode === 'branch' ? branchName : baseBranch
   useAppStore.getState().setActiveWorktree(projectPath, result.path)
   writeScope.patch(() => ({
     cwd: result.path,
@@ -70,8 +95,12 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
     contextTokens: 0,
     session: null,
     sessionProvider: null,
-    _gitBranch: mode === 'branch' ? branchName : baseBranch,
+    _gitBranch: branch,
     _worktreePath: result.path,
+    environmentSelection: {
+      environmentId: owned?.environmentId ?? environmentIdForProjectKey(projectPath),
+      selection: { kind: 'existing', path: result.path, branch },
+    },
     todos: {},
     _nextTodoId: 1,
     showTodos: false,

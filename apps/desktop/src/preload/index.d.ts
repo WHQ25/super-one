@@ -1248,7 +1248,13 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /** Clone a repository onto a host and register the clone as a project. */
   cloneRepository(
     connectionId: string,
-    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
+    input: {
+      remoteUrl: string
+      parentPath: string
+      directoryName?: string
+      shallow?: boolean
+      ifExists?: 'reuse-or-rename'
+    },
   ): Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number }>
   connect(connectionId: string): Promise<unknown>
   disconnect(connectionId: string): Promise<void>

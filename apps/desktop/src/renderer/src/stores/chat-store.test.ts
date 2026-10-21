@@ -37,6 +37,7 @@ vi.mock('./app', () => ({
       getWorktreeState: () => ({}),
       setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: mockClearWorktree,
+      clearWorktreeMirror: vi.fn(),
       sandboxCapability: mockAppStoreState.sandboxCapability,
       sandboxProbe: mockAppStoreState.sandboxProbe,
       probeSandbox: mockAppStoreState.probeSandbox,

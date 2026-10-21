@@ -16,6 +16,7 @@ vi.mock('./app', () => ({
       getWorktreeState: () => ({}),
       setActiveWorktree: vi.fn(),
       clearWorktree: vi.fn().mockResolvedValue(undefined),
+      clearWorktreeMirror: vi.fn(),
     }),
   },
 }))

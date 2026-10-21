@@ -6,7 +6,7 @@ import type { SessionControlHolder } from '@superone/shared/environment'
 import { sessionControlLeaseFixture } from './chat-store/session-control.test-fixtures'
 
 vi.mock('./app', () => ({
-  useAppStore: { getState: () => ({ getWorktreeState: () => ({}), setActiveWorktree: vi.fn(), clearWorktree: vi.fn().mockResolvedValue(undefined) }) },
+  useAppStore: { getState: () => ({ getWorktreeState: () => ({}), setActiveWorktree: vi.fn(), clearWorktree: vi.fn().mockResolvedValue(undefined), clearWorktreeMirror: vi.fn() }) },
 }))
 vi.mock('@/lib/session-client', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/session-client')>(),

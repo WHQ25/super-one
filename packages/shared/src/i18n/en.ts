@@ -2261,6 +2261,12 @@ export type Messages = {
       assignErrorExists: string
       assignErrorCheckedOut: string
       assignErrorGeneric: string
+      environment: string
+      cloneHere: string
+      needsUpgrade: string
+      offline: string
+      environmentFixed: string
+      notAGitRepo: string
     }
     git: {
       init: string
@@ -6956,6 +6962,12 @@ export const en: Messages = {
       assignErrorExists: 'Branch {{name}} already exists',
       assignErrorCheckedOut: 'Branch {{name}} is checked out in another worktree',
       assignErrorGeneric: 'Could not assign branch',
+      environment: 'Environment',
+      cloneHere: 'Clone Here',
+      needsUpgrade: 'Needs Upgrade',
+      offline: 'Offline',
+      environmentFixed: 'This session stays on {{environment}}.',
+      notAGitRepo: 'Not a Git Repository',
     },
     git: {
       init: 'Init Git',

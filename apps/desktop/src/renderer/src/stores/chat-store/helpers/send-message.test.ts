@@ -25,6 +25,7 @@ vi.mock('@/stores/app', () => ({
       getWorktreeState: () => mockWorktreeState,
       setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: vi.fn().mockResolvedValue(undefined),
+      clearWorktreeMirror: vi.fn(),
       sandboxCapability: null,
       currentProjectId: 'remote-project-1',
     }),

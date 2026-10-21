@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { selectionForNewSession } from '@superone/shared/session-location'
 
 const worktreeState = vi.hoisted(() => ({ pendingBaseBranch: null as string | null, pendingMode: 'branch', pendingBranchName: 'voice', pendingCarryLocalChanges: false }))
 
@@ -368,6 +369,33 @@ describe('composer preparation for voice and scheduling', () => {
     await prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })
     expect(activateWorktree).toHaveBeenCalledWith(LOCAL, expect.objectContaining({ baseBranch: 'main', mode: 'branch', branchName: 'voice' }))
     expect(createSession).toHaveBeenCalledWith('local', expect.objectContaining({ cwd: '/proj/.wt/new-voice' }))
+  })
+
+  it('does not activate a stale project mirror when the session chose the project root', async () => {
+    seed(LOCAL, 'voice', { preferredProvider: 'codex', environmentSelection: selectionForNewSession('local') })
+    worktreeState.pendingBaseBranch = 'main'
+    const activateWorktree = vi.fn(async () => ({ ok: true, path: '/proj/.wt/leak' }))
+    Object.assign(window.app, { activateWorktree })
+    await prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })
+    expect(activateWorktree).not.toHaveBeenCalled()
+  })
+
+  it('activates the session pending create instead of the project mirror', async () => {
+    seed(LOCAL, 'voice', {
+      preferredProvider: 'codex',
+      environmentSelection: {
+        environmentId: 'local',
+        selection: { kind: 'create', baseBranch: 'develop', mode: 'branch', branchName: 'from-session', carryLocalChanges: false },
+      },
+    })
+    worktreeState.pendingBaseBranch = 'main'
+    worktreeState.pendingBranchName = 'from-mirror'
+    const activateWorktree = vi.fn(async () => ({ ok: true, path: '/proj/.wt/session' }))
+    Object.assign(window.app, { activateWorktree })
+    await prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })
+    expect(activateWorktree).toHaveBeenCalledWith(LOCAL, expect.objectContaining({
+      baseBranch: 'develop', branchName: 'from-session',
+    }))
   })
 
   it('does not fall back to the project root after worktree activation fails', async () => {

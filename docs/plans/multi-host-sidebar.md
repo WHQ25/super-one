@@ -27,6 +27,22 @@ Open questions from the proposal, settled here.
 
 9. **A merged repository is a header plus one row per checkout.** `ProjectSidebarRow` binds every session to `folder.path`, so one merged row cannot own several checkouts. The header key is `group:${mergeKey}` and its edit and remove actions are the submenu from decision 1. Each nested row is labeled with the environment name. A repository with one checkout stays a single row. `collapsedEnvironmentIds` is stored instead of an expanded list: empty means every environment starts open, and nothing has been released with the old key.
 
+10. **The session owns the checkout.** `worktreeHintForSession` and `snapshotDraftSettings` read `_worktreePath` and `environmentSelection`. They do not copy `_worktrees[project].activePath` onto a session whose path is null. Tests that required that copy now expect null.
+
+11. **`environmentSelection` stays optional.** Existing session literals and reloaded rows have no column for it. `createDefaultPerSessionState` leaves it null, and a null selection still falls through to the file-tree cache so in-flight sessions keep working. New Session stamps `selectionForNewSession` with the connection id on the project route (`local`, or the remote connection id). After the user picks an environment, the stored id is the catalog environment id. A reloaded session with a null selection plus `_worktreePath` is treated as an existing checkout.
+
+12. **Clear the mirror after the outgoing draft is saved, and before the active session changes.** `resetSessionImpl` awaits `promoteDraftIfUnsent`, then calls `clearWorktreeMirror`, then switches `_activeSessionId`. The later `await clearWorktree` stays. Clearing first would drop the outgoing draft's checkout. Waiting only on the async clear leaves a window where the next draft copies the previous worktree.
+
+13. **`applyPendingWorktree` reads the session first.** `local` and `existing` return immediately and do not read the mirror. `create` uses the session's fields. A null selection still falls through to the mirror, and an unknown mirror mode is passed through: `in-place` must not be rewritten as `branch`. After a successful create, the selection becomes `{ kind: 'existing' }`.
+
+14. **Workdir actions write the session beside the mirror setters.** There is no subscriber that copies the mirror onto the focused session. The file-tree cache still follows the focused session after that session is already active (decision 8).
+
+15. **Both chips read `useComposerLocation()`.** `readOnly` is the existing started-session signal: a host session, or any message. The branch chip treats `pendingCreate` or an `existing` selection as a worktree, so it stays hidden while a create is pending. Git IPC uses `location.cwd`.
+
+16. **The environment control is a dropdown.** It is hidden unless multi-host chrome is on and at least two environments are listed. Offline wins. A project that is not a git repo, or a checkout with no origin, disables the other rows with the not-a-git-repo label: a checkout with no origin cannot be cloned. A missing checkout of the same origin is Clone Here. Needs-upgrade stays selectable and shows a badge. Choosing an environment focuses that checkout's project root and sets `{ kind: 'local' }`. Clone uses `git.clone` with `ifExists: 'reuse-or-rename'`. The local parent is `defaultClonePaths[connectionId]` or `~/SuperOne/Projects`. A remote clone passes an empty parent so the node uses its projects directory.
+
+17. **`clearWorktreeMirror` only resets the file-tree cache.** It does not activate a worktree or mint a session.
+
 ## Phases
 
 ### 1. Data layer
@@ -67,7 +83,7 @@ Open questions from the proposal, settled here.
 | Plan | done | `75728fd9d` |
 | 1 Data layer | done | `bunx vitest run` from `apps/desktop`: catalog 11, `use-sidebar-sessions` 6, `AppSidebarRefresh` 2, `AppSidebar` 29, all passed. `typecheck:web` and `typecheck:node` still fail on existing errors outside this change (`ChatStatusBar.stories.tsx` `GitDirtyStatus` null, `packages/shared/src/transcript-boundary.ts` TS2532). |
 | 2 Sidebar | done | `bunx vitest run` from `apps/desktop`: catalog 11, session-hover 1, `use-sidebar-sessions` 6, `ProjectSidebarRow` 16, `SessionRow` 3, `AppSidebarRefresh` 2, `AppSidebar` 30, all passed (69). `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
-| 3 Workdir | not started | |
+| 3 Workdir | done | `bunx vitest run` from `apps/desktop`: session-location 4, composer-location 4, work-dir-environment 5, draft-promote 26, draft-promote-live-store 4, reset-session-worktree 2, session-lifecycle 43, session-turn 25, send-message 66, switch-session-worktree-root 1, chat-store-actions reset/worktree 7, all passed. `apps/mobile` `remote-draft-codec` 3 passed. `typecheck:web` and `typecheck:node` still fail only on the existing `ChatStatusBar.stories.tsx` `GitDirtyStatus` null errors and `packages/shared/src/transcript-boundary.ts` TS2532. |
 | 4 Branches | not started | |
 
 ## Blockers

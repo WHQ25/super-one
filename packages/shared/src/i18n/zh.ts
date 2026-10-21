@@ -2368,6 +2368,12 @@ export const zh: Messages = {
       assignErrorExists: '分支 {{name}} 已存在',
       assignErrorCheckedOut: '分支 {{name}} 已被另一个 worktree 占用',
       assignErrorGeneric: '分配分支失败',
+      environment: '环境',
+      cloneHere: '克隆到这里',
+      needsUpgrade: '需要升级',
+      offline: '离线',
+      environmentFixed: '这个会话固定在{{environment}}。',
+      notAGitRepo: '不是 Git 仓库',
     },
     git: {
       init: '初始化 Git',

@@ -13,6 +13,21 @@ import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
 import { WorktreeEntryRow } from './WorktreeEntryRow'
 import { DiffStat, sameDirty } from './DiffStat'
+import {
+  patchFocusedCreate,
+  switchComposerToCheckout,
+  useComposerLocation,
+  writeFocusedSelection,
+} from './composer-location'
+import { WorkDirEnvironmentMenu } from './WorkDirEnvironmentMenu'
+import {
+  checkoutOnEnvironment,
+  cloneAndOpenCheckout,
+  projectDirectoryName,
+  useWorkDirEnvironmentMenu,
+  type WorkDirEnvironmentOption,
+} from './work-dir-environment'
+import { selectionForNewSession } from '@superone/shared/session-location'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
 function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -54,11 +69,10 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const { t } = useTranslation()
   const scope = useSessionScope()
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const worktrees = useAppStore((s) => s._worktrees)
-  const wtState = currentFolder ? worktrees[currentFolder] : undefined
-  const sdkSession = useActiveSession((s) => s.session)
-  const messageCount = useActiveSession((s) => s.messages.length)
-  const isOldSession = sdkSession !== null || messageCount > 0
+  const location = useComposerLocation()
+  const isOldSession = location.readOnly
+  const environmentMenu = useWorkDirEnvironmentMenu(currentFolder, isGitRepo)
+  const [environmentError, setEnvironmentError] = useState<string | null>(null)
   const activeGitBranch = useActiveSession((s) => s._gitBranch)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
 
@@ -71,7 +85,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const [checkedOutBranches, setCheckedOutBranches] = useState<Set<string>>(new Set())
   const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
 
-  const activePath = wtState?.activePath ?? null
+  const activePath = location.selection.kind === 'existing' ? location.selection.path : null
   /** Remote node project: same “Local” label, Server icon (vs Monitor on this machine). */
   const isRemoteProject = Boolean(currentFolder && parseRemoteProjectKey(currentFolder))
   const mainCheckoutState: WorkDirState = {
@@ -177,65 +191,121 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   }, [currentFolder])
 
   const openPopover = useCallback((open: boolean) => {
-    if (!open && currentFolder) {
-      const wt = useAppStore.getState()._worktrees[currentFolder]
-      if (wt && wt.pendingBaseBranch && wt.pendingMode === 'branch' && !wt.pendingBranchName.trim()) {
-        useAppStore.getState().clearPendingWorktree(currentFolder)
-      }
+    if (!open && currentFolder && location.selection.kind === 'create'
+      && location.selection.mode === 'branch' && !location.selection.branchName.trim()) {
+      useAppStore.getState().clearPendingWorktree(currentFolder)
+      writeFocusedSelection(currentFolder, selectionForNewSession(location.environmentId), {
+        cwd: currentFolder,
+        worktreePath: null,
+        gitBranch: null,
+      })
     }
     setPopoverOpen(open)
     if (open) {
       setSearch('')
       void loadPopoverData()
     }
-  }, [loadPopoverData, currentFolder])
+  }, [loadPopoverData, currentFolder, location.selection, location.environmentId])
+
+  const handleSelectEnvironment = useCallback((option: WorkDirEnvironmentOption) => {
+    const checkout = checkoutOnEnvironment(environmentMenu.buckets, option.environmentId, environmentMenu.repoIdentity)
+    if (!checkout) return
+    setPopoverOpen(false)
+    void switchComposerToCheckout({
+      pathKey: checkout.pathKey,
+      connectionId: checkout.connectionId,
+      projectId: checkout.projectId,
+      environmentId: checkout.environmentId,
+    })
+  }, [environmentMenu.buckets, environmentMenu.repoIdentity])
+
+  const handleCloneEnvironment = useCallback((option: WorkDirEnvironmentOption) => {
+    if (!environmentMenu.repoIdentity) return
+    setEnvironmentError(null)
+    void cloneAndOpenCheckout({
+      connectionId: option.connectionId,
+      environmentId: option.environmentId,
+      repoIdentity: environmentMenu.repoIdentity,
+      directoryName: projectDirectoryName(currentFolder),
+    }).catch((err: unknown) => {
+      setEnvironmentError(err instanceof Error ? err.message : String(err))
+    })
+  }, [currentFolder, environmentMenu.repoIdentity])
 
   const handleSelectBase = useCallback((baseBranch: string) => {
     if (!currentFolder) return
     useAppStore.getState().setPendingWorktree(currentFolder, baseBranch)
+    patchFocusedCreate(currentFolder, {
+      baseBranch,
+      mode: 'branch',
+      branchName: '',
+      carryLocalChanges: false,
+    })
   }, [currentFolder])
 
   const handleSwitchToLocal = useCallback(() => {
     if (!currentFolder) return
     setPopoverOpen(false)
+    writeFocusedSelection(currentFolder, selectionForNewSession(location.environmentId), {
+      cwd: currentFolder,
+      worktreePath: null,
+      gitBranch: null,
+    })
     void useAppStore.getState().clearWorktree(currentFolder)
-  }, [currentFolder])
+  }, [currentFolder, location.environmentId])
 
   const handleSwitchToExisting = useCallback((entry: WorktreeEntry) => {
     if (!currentFolder) return
     setPopoverOpen(false)
+    const environmentId = location.environmentId
+    writeFocusedSelection(currentFolder, {
+      environmentId,
+      selection: { kind: 'existing', path: entry.path, ...(entry.branch ? { branch: entry.branch } : {}) },
+    }, {
+      cwd: entry.path,
+      worktreePath: entry.path,
+      gitBranch: entry.branch || null,
+    })
     void useAppStore.getState().switchToExistingWorktree(currentFolder, entry.path, entry.branch || null)
-  }, [currentFolder])
+  }, [currentFolder, location.environmentId])
 
   const handleSetMode = useCallback((mode: WorktreeMode) => {
     if (!currentFolder) return
     useAppStore.getState().setPendingMode(currentFolder, mode)
+    patchFocusedCreate(currentFolder, { mode })
   }, [currentFolder])
 
   const handleSetBranchName = useCallback((name: string) => {
     if (!currentFolder) return
     useAppStore.getState().setPendingBranchName(currentFolder, name)
+    patchFocusedCreate(currentFolder, { branchName: name })
   }, [currentFolder])
 
   const handleToggleCarry = useCallback(() => {
-    if (!currentFolder || !wtState) return
-    useAppStore.getState().setPendingCarryLocalChanges(currentFolder, !wtState.pendingCarryLocalChanges)
-  }, [currentFolder, wtState])
+    if (!currentFolder || location.selection.kind !== 'create') return
+    const next = !location.selection.carryLocalChanges
+    useAppStore.getState().setPendingCarryLocalChanges(currentFolder, next)
+    patchFocusedCreate(currentFolder, { carryLocalChanges: next })
+  }, [currentFolder, location.selection])
+
+  const createMode = location.selection.kind === 'create' ? location.selection.mode : null
+  const createBase = location.selection.kind === 'create' ? location.selection.baseBranch : null
+  const createCarry = location.selection.kind === 'create' && location.selection.carryLocalChanges
 
   useEffect(() => {
-    if (!currentFolder || !wtState?.pendingBaseBranch) return
-    if (wtState.pendingMode !== 'attach') return
+    if (!currentFolder || createMode !== 'attach' || !createBase) return
     if (!worktreeInfo) return
-    const base = wtState.pendingBaseBranch
-    if (!checkedOutBranches.has(base)) return
+    if (!checkedOutBranches.has(createBase)) return
     useAppStore.getState().setPendingMode(currentFolder, 'branch')
-  }, [currentFolder, wtState?.pendingBaseBranch, wtState?.pendingMode, worktreeInfo, checkedOutBranches])
+    patchFocusedCreate(currentFolder, { mode: 'branch' })
+  }, [currentFolder, createMode, createBase, worktreeInfo, checkedOutBranches])
 
   useEffect(() => {
-    if (!currentFolder || !wtState?.pendingCarryLocalChanges) return
+    if (!currentFolder || !createCarry) return
     if (mainDirty && mainDirty.files > 0) return
     useAppStore.getState().setPendingCarryLocalChanges(currentFolder, false)
-  }, [currentFolder, wtState?.pendingCarryLocalChanges, mainDirty])
+    patchFocusedCreate(currentFolder, { carryLocalChanges: false })
+  }, [currentFolder, createCarry, mainDirty])
 
   const existingEntries = useMemo(() => {
     if (!worktreeInfo) return []
@@ -258,51 +328,102 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   }, [branches, lowerSearch])
 
   if (isGitRepo === false) {
+    if (!environmentMenu.visible) {
+      return (
+        <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={mainCheckoutLabel}>
+          {compact ? (
+            <MainCheckoutIcon className="size-3" />
+          ) : (
+            <span className="flex max-w-72 items-center gap-0.5 truncate">
+              <MainCheckoutIcon className="inline size-3 align-middle" />
+              <span className="ml-1">{mainCheckoutLabel}</span>
+            </span>
+          )}
+        </div>
+      )
+    }
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={mainCheckoutLabel}>
-        {compact ? (
-          <MainCheckoutIcon className="size-3" />
-        ) : (
-          <span className="flex max-w-72 items-center gap-0.5 truncate">
-            <MainCheckoutIcon className="inline size-3 align-middle" />
-            <span className="ml-1">{mainCheckoutLabel}</span>
-          </span>
-        )}
-      </div>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-muted" title={mainCheckoutLabel}>
+            <MainCheckoutIcon className="size-3" />
+            {!compact && <span className="max-w-72 truncate">{mainCheckoutLabel}</span>}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-0" align="start">
+          <WorkDirEnvironmentMenu
+            visible
+            error={environmentError}
+            readOnly={isOldSession}
+            options={environmentMenu.options}
+            selectedId={location.environmentId}
+            onSelect={handleSelectEnvironment}
+            onClone={handleCloneEnvironment}
+          />
+          <p className="px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.notAGitRepo')}</p>
+        </PopoverContent>
+      </Popover>
     )
   }
 
   // Don't hide the chip while worktree RPC is in flight — show Local optimistically.
   // Remote getWorktreeInfo was blocking the whole status-bar host icon for seconds.
+  // The environment menu still has to open before that RPC returns.
   if (!worktreeInfo) {
+    const triggerClass = 'flex items-center gap-1 rounded-lg px-2 py-1'
+    const label = compact ? (
+      <MainCheckoutIcon className="size-3" />
+    ) : (
+      <span className="flex max-w-72 items-center gap-0.5 truncate">
+        <MainCheckoutIcon className="inline size-3 align-middle" />
+        <span className="ml-1">{mainCheckoutLabel}</span>
+      </span>
+    )
+    if (!environmentMenu.visible) {
+      return (
+        <div className={triggerClass} title={mainCheckoutLabel}>
+          {label}
+        </div>
+      )
+    }
     return (
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={mainCheckoutLabel}>
-        {compact ? (
-          <MainCheckoutIcon className="size-3" />
-        ) : (
-          <span className="flex max-w-72 items-center gap-0.5 truncate">
-            <MainCheckoutIcon className="inline size-3 align-middle" />
-            <span className="ml-1">{mainCheckoutLabel}</span>
-          </span>
-        )}
-      </div>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className={`${triggerClass} hover:bg-muted`} title={mainCheckoutLabel}>
+            {label}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-0" align="start">
+          <WorkDirEnvironmentMenu
+            visible
+            loading={environmentMenu.loading}
+            error={environmentError}
+            readOnly={isOldSession}
+            options={environmentMenu.options}
+            selectedId={location.environmentId}
+            onSelect={handleSelectEnvironment}
+            onClone={handleCloneEnvironment}
+          />
+        </PopoverContent>
+      </Popover>
     )
   }
 
-  const isPending = !!wtState?.pendingBaseBranch
-  const isActive = !!wtState?.activePath
+  const pending = location.selection.kind === 'create' ? location.selection : null
+  const isPending = !!pending
+  const isActive = location.selection.kind === 'existing'
   const isInWorktree = isPending || isActive
 
   const activeEntry = isActive
-    ? existingEntries.find((e) => sameWorktreePath(e.path, wtState!.activePath))
+    ? existingEntries.find((e) => sameWorktreePath(e.path, activePath))
     : undefined
   const activeIsDetached = activeEntry ? !activeEntry.branch : false
   const activeShortHead = activeEntry?.head ? activeEntry.head.slice(0, 7) : ''
 
-  const pendingMode = wtState?.pendingMode ?? 'branch'
-  const pendingBranchName = wtState?.pendingBranchName ?? ''
-  const pendingBase = wtState?.pendingBaseBranch ?? ''
-  const pendingCarry = wtState?.pendingCarryLocalChanges ?? false
+  const pendingMode = pending?.mode ?? 'branch'
+  const pendingBranchName = pending?.branchName ?? ''
+  const pendingBase = pending?.baseBranch ?? ''
+  const pendingCarry = pending?.carryLocalChanges ?? false
 
   const branchExists = pendingMode === 'branch' && pendingBranchName.trim().length > 0 && branches.includes(pendingBranchName.trim())
 
@@ -359,6 +480,16 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
+          <WorkDirEnvironmentMenu
+            visible={environmentMenu.visible}
+            loading={environmentMenu.loading}
+            error={environmentError}
+            readOnly
+            options={environmentMenu.options}
+            selectedId={location.environmentId}
+            onSelect={handleSelectEnvironment}
+            onClone={handleCloneEnvironment}
+          />
           <div className="flex items-center gap-2 px-3 py-2 text-xs">
             {!isActive ? (
               <MainCheckoutIcon className="size-3 shrink-0 text-muted-foreground" />
@@ -435,6 +566,16 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="start">
+        <WorkDirEnvironmentMenu
+          visible={environmentMenu.visible}
+          loading={environmentMenu.loading}
+          error={environmentError}
+          readOnly={false}
+          options={environmentMenu.options}
+          selectedId={location.environmentId}
+          onSelect={handleSelectEnvironment}
+          onClone={handleCloneEnvironment}
+        />
         <div className="flex flex-col">
           <div className="border-b px-3 py-2">
             <input
@@ -470,7 +611,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                       label={detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : e.branch!}
                       detached={detached}
                       dirty={meta?.dirty}
-                      isCurrent={sameWorktreePath(e.path, wtState?.activePath)}
+                      isCurrent={sameWorktreePath(e.path, activePath)}
                       onClick={() => handleSwitchToExisting(e)}
                     />
                   )
@@ -485,7 +626,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                 {filteredBranches.map((b) => {
                   const reason = pendingMode === 'attach' ? attachUnavailableReason(b) : null
                   const disabled = pendingMode === 'attach' && !!reason
-                  const isSelected = wtState?.pendingBaseBranch === b
+                  const isSelected = pendingBase === b
                   return (
                     <button
                       key={b}

@@ -39,6 +39,7 @@ vi.mock('@/stores/app', () => ({
       getWorktreeState: () => ({ pendingBaseBranch: null }),
       setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: mockClearWorktree,
+      clearWorktreeMirror: vi.fn(),
       sandboxCapability: { supportLevel: 'always', platform: 'darwin', defaultMode: 'on' },
       sandboxProbe: null,
       probeSandbox: vi.fn(async () => ({ ok: true as const })),

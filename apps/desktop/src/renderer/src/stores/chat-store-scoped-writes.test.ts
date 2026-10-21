@@ -34,6 +34,7 @@ vi.mock('./app', () => ({
       getWorktreeState: () => ({}),
       setActiveWorktree: vi.fn(),
       clearWorktree: vi.fn().mockResolvedValue(undefined),
+      clearWorktreeMirror: vi.fn(),
       sandboxCapability: { supportLevel: 'always', platform: 'darwin', defaultMode: 'on' },
       sandboxProbe: null,
       probeSandbox: vi.fn(async () => ({ ok: true as const })),

@@ -40,6 +40,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     mentions: [],
     _gitBranch: null,
     _worktreePath: null,
+    environmentSelection: null,
     additionalDirs: [],
     additionalDirsDirty: false,
     activeCodexMessageId: null,

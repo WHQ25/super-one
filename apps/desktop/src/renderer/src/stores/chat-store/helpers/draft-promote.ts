@@ -22,6 +22,8 @@ import type {
   PermissionMode,
 } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
+import { environmentIdForProjectKey, selectionFromDraftFields } from '@superone/shared/session-location'
+import type { NewSessionWorktreeSelection } from '@superone/shared/session-location'
 import { useAppStore } from '../../app'
 import { useDraftsStore } from '../../drafts'
 import type { ChatProvider, ChatStore, PerSessionState, ProjectState } from '../types'
@@ -130,8 +132,9 @@ export interface WorktreeHint {
 
 /**
  * Snapshot everything the new-session UI holds for park/resume.
- * Worktree may live on the app store before it is mirrored onto the session —
- * pass `worktree` so we do not drop it.
+ * The path comes from the session. A hint may still carry a pending create
+ * when the session has not recorded one. It never supplies a path: the
+ * per-project cache follows whichever session is focused.
  */
 export function snapshotDraftSettings(
   session: PerSessionState,
@@ -143,8 +146,15 @@ export function snapshotDraftSettings(
   const effort = session.selectedEffort ?? null
   const codexModel = session.selectedCodexModel || null
   const codexEffort = session.selectedCodexReasoningEffort ?? null
-  const worktreePath = session._worktreePath ?? worktree?.path ?? null
-  const gitBranch = session._gitBranch ?? worktree?.branch ?? null
+  const owned = session.environmentSelection ?? null
+  const worktreePath = session._worktreePath ?? null
+  const gitBranch = session._gitBranch ?? null
+  const create = owned?.selection.kind === 'create' ? owned.selection : null
+  const pendingFromHint = !owned
+  const worktreeSelection: NewSessionWorktreeSelection | null = owned?.selection
+    ?? (worktreePath
+      ? { kind: 'existing', path: worktreePath, ...(gitBranch ? { branch: gitBranch } : {}) }
+      : null)
 
   return {
     harness,
@@ -169,10 +179,14 @@ export function snapshotDraftSettings(
     apiProviderId: session.apiProviderId,
     worktreePath,
     gitBranch,
-    pendingBaseBranch: worktree?.pendingBaseBranch ?? null,
-    pendingWorktreeMode: worktree?.pendingMode ?? null,
-    pendingBranchName: worktree?.pendingBranchName ?? null,
-    pendingCarryLocalChanges: worktree?.pendingCarryLocalChanges ?? false,
+    environmentId: owned?.environmentId ?? null,
+    worktreeSelection,
+    pendingBaseBranch: create ? create.baseBranch : pendingFromHint ? (worktree?.pendingBaseBranch ?? null) : null,
+    pendingWorktreeMode: create ? create.mode : pendingFromHint ? (worktree?.pendingMode ?? null) : null,
+    pendingBranchName: create ? create.branchName : pendingFromHint ? (worktree?.pendingBranchName ?? null) : null,
+    pendingCarryLocalChanges: create
+      ? create.carryLocalChanges
+      : pendingFromHint ? !!worktree?.pendingCarryLocalChanges : false,
     sandboxEnabled: project?.sandboxInfo?.enabled,
     sandboxAutoAllowBash: project?.sandboxInfo?.autoAllowBash,
     additionalDirs: session.additionalDirs?.length ? [...session.additionalDirs] : [],
@@ -237,6 +251,8 @@ export function sessionFieldsFromSettings(
     })
   }
   if (settings.gitBranch !== undefined) patch._gitBranch = settings.gitBranch
+  const owned = selectionFromDraftFields(settings)
+  if (owned) patch.environmentSelection = owned
   if (settings.additionalDirs) {
     patch.additionalDirs = [...settings.additionalDirs]
     patch.additionalDirsDirty = settings.additionalDirs.length > 0
@@ -293,25 +309,36 @@ export interface OpenDraftCarry {
   settings: DraftSessionSettings
 }
 
-function readAppWorktree(projectPath: string): WorktreeHint | null {
-  const wt = useAppStore.getState()._worktrees[projectPath]
-  if (!wt) return null
-  return {
-    path: wt.activePath,
-    branch: null,
-    pendingBaseBranch: wt.pendingBaseBranch,
-    pendingMode: wt.pendingMode,
-    pendingBranchName: wt.pendingBranchName,
-    pendingCarryLocalChanges: wt.pendingCarryLocalChanges,
-  }
-}
-
 /**
- * Session id → worktree UI last seen while that session was focused. The app
- * store's `_worktrees[project]` follows the focused session only, so reading it
- * for a background draft copies another session's workdir into that draft.
+ * Session id → worktree UI last seen while that session was focused.
+ * Built from the session itself. The per-project cache follows whichever
+ * session is focused, so reading it here would copy another session's checkout.
  */
 const worktreeHintBySession = new Map<string, WorktreeHint | null>()
+
+function hintFromSession(session: PerSessionState): WorktreeHint | null {
+  const owned = session.environmentSelection
+  if (owned?.selection.kind === 'create') {
+    return {
+      path: session._worktreePath ?? null,
+      branch: session._gitBranch ?? null,
+      pendingBaseBranch: owned.selection.baseBranch,
+      pendingMode: owned.selection.mode,
+      pendingBranchName: owned.selection.branchName,
+      pendingCarryLocalChanges: owned.selection.carryLocalChanges,
+    }
+  }
+  if (owned?.selection.kind === 'existing') {
+    return {
+      path: session._worktreePath ?? owned.selection.path,
+      branch: session._gitBranch ?? owned.selection.branch ?? null,
+    }
+  }
+  if (session._worktreePath || session._gitBranch) {
+    return { path: session._worktreePath ?? null, branch: session._gitBranch ?? null }
+  }
+  return null
+}
 
 function savedDraftWorktreeHint(projectPath: string, draftId: string | null | undefined): WorktreeHint | null {
   if (!draftId) return null
@@ -335,19 +362,13 @@ function worktreeHintForSession(
   project: ProjectState | undefined,
 ): WorktreeHint | null {
   if (project?._activeSessionId === sessionId) {
-    const hint = readAppWorktree(projectPath)
-    logWorktreeWrite('worktreeHintForSession', {
-      projectPath,
-      sessionId,
-      before: session._worktreePath,
-      after: hint?.path ?? null,
-      unsent: isUnsentSession(session),
-    })
+    const hint = hintFromSession(session)
     worktreeHintBySession.set(sessionId, hint)
     return hint
   }
   return worktreeHintBySession.get(sessionId)
     ?? savedDraftWorktreeHint(projectPath, draftIdBySession.get(sessionId) ?? session.draftId)
+    ?? hintFromSession(session)
 }
 
 /**
@@ -372,7 +393,11 @@ export function captureOpenDraft(
     text: session.draftText,
     docJson: session.draftJson,
     attachments: session.attachments.map((a) => ({ ...a })),
-    settings: snapshotDraftSettings(session, project, readAppWorktree(projectPath)),
+    settings: snapshotDraftSettings(
+      session,
+      project,
+      worktreeHintForSession(projectPath, sessionId, session, project),
+    ),
   }
 }
 
@@ -380,14 +405,30 @@ function emptyDraftFields(): Pick<PerSessionState, 'draftText' | 'draftJson' | '
   return { draftText: '', draftJson: null, attachments: [], draftId: null, draftRemoteDeviceId: null }
 }
 
+/** A worktree path belongs to one checkout. A carried draft starts at the destination root. */
+function carriedSettings(
+  settings: DraftSessionSettings,
+  crossProject: boolean,
+  toProject: string,
+): DraftSessionSettings {
+  if (!crossProject) return settings
+  return {
+    ...settings,
+    worktreePath: null,
+    pendingBaseBranch: null,
+    pendingWorktreeMode: null,
+    pendingBranchName: null,
+    pendingCarryLocalChanges: false,
+    environmentId: environmentIdForProjectKey(toProject),
+    worktreeSelection: { kind: 'local' },
+  }
+}
+
 function contentAndSettingsFields(
   carried: OpenDraftCarry,
-  /** When carrying onto another project, drop project-scoped worktree paths. */
-  crossProject: boolean,
+  toProject: string,
 ): Partial<PerSessionState> {
-  const settings = crossProject
-    ? { ...carried.settings, worktreePath: null, gitBranch: carried.settings.gitBranch ?? null }
-    : carried.settings
+  const settings = carriedSettings(carried.settings, carried.fromProject !== toProject, toProject)
   return {
     draftText: carried.text,
     draftJson: carried.docJson,
@@ -417,11 +458,7 @@ export function applyCarriedDraft(
   carried: OpenDraftCarry,
 ): string {
   let toSessionId = ''
-  const crossProject = carried.fromProject !== toProject
-  // Worktree paths are project-scoped; do not transplant them across projects.
-  const settingsForDest = crossProject
-    ? { ...carried.settings, worktreePath: null }
-    : carried.settings
+  const settingsForDest = carriedSettings(carried.settings, carried.fromProject !== toProject, toProject)
   const sandbox = projectSandboxFromSettings(settingsForDest)
 
   set((s) => {
@@ -447,7 +484,7 @@ export function applyCarriedDraft(
     const active = activeSid ? dest._sessions[activeSid] : undefined
     const fields = contentAndSettingsFields(
       { ...carried, settings: settingsForDest },
-      crossProject,
+      toProject,
     )
     const destWithSandbox = sandbox
       ? { ...dest, sandboxInfo: sandbox }

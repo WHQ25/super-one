@@ -40,12 +40,38 @@ describe('promoting through the live chat store', () => {
     expect(useChatStore.getState().projectSessions['/repo']._sessions.focused.draftId).toBe(draftId)
   })
 
-  it('records the focused worktree only on the focused draft', async () => {
-    useAppStore.getState().setActiveWorktree('/repo', '/repo/.wt/feat')
+  it('records the focused session worktree only on the focused draft', async () => {
+    useAppStore.getState().setActiveWorktree('/repo', '/repo/.wt/other')
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        '/repo': {
+          ...s.projectSessions['/repo']!,
+          _sessions: {
+            ...s.projectSessions['/repo']!._sessions,
+            focused: {
+              ...s.projectSessions['/repo']!._sessions.focused!,
+              _worktreePath: '/repo/.wt/feat',
+              environmentSelection: {
+                environmentId: 'local',
+                selection: { kind: 'existing', path: '/repo/.wt/feat', branch: 'feat' },
+              },
+            },
+          },
+        },
+      },
+    }))
     await promoteAllUnsentDrafts(useChatStore.getState())
     const saved = Object.fromEntries(vi.mocked(window.environment.upsertDraft).mock.calls
       .map(([, input]) => [input.originSessionId, input.settings?.worktreePath]))
     expect(saved).toEqual({ focused: '/repo/.wt/feat', background: null })
+  })
+
+  it('does not copy the project mirror onto a session that has no worktree', async () => {
+    useAppStore.getState().setActiveWorktree('/repo', '/repo/.wt/feat')
+    await promoteAllUnsentDrafts(useChatStore.getState())
+    const saved = Object.fromEntries(vi.mocked(window.environment.upsertDraft).mock.calls
+      .map(([, input]) => [input.originSessionId, input.settings?.worktreePath]))
+    expect(saved).toEqual({ focused: null, background: null })
   })
 })
 

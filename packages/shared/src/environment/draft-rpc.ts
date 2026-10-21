@@ -15,6 +15,7 @@
  */
 
 import type { HarnessId } from '../session-types'
+import type { NewSessionWorktreeSelection } from '../session-location'
 
 /**
  * Attachments ride inline as base64 (same shape the composer already holds).
@@ -66,6 +67,10 @@ export interface DraftSessionSettings {
   apiProviderId?: string | null
   worktreePath?: string | null
   gitBranch?: string | null
+  /** Machine this draft will run on. Absent on rows written before environment selection. */
+  environmentId?: string | null
+  /** Checkout the draft will use. Absent on older rows; pending* fields still restore those. */
+  worktreeSelection?: NewSessionWorktreeSelection | null
   pendingBaseBranch?: string | null
   pendingWorktreeMode?: string | null
   pendingBranchName?: string | null

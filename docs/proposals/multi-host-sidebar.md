@@ -1,7 +1,7 @@
 # Multi-host sidebar, workdir and branch pickers
 
 Status: accepted · Updated: 2026-10-22
-Plan: not yet written
+Plan: [multi-host-sidebar.md](../plans/multi-host-sidebar.md)
 
 Scope: let one desktop window see and start sessions on every connected
 environment (this machine, CLI remote nodes, remote desktops) without switching

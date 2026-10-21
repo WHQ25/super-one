@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { GitBranchMenu, type GitBranchMenuProps } from './GitBranchMenu'
 
 const local = ['main', 'feat/login']
-const tracking = ['origin/main', 'origin/feat/login', 'origin/release/2026']
 
 function Frame({ width = 288, ...props }: GitBranchMenuProps & { width?: number }) {
   return (
@@ -18,12 +17,8 @@ const meta = {
   args: {
     current: 'main',
     local,
-    tracking,
-    environmentLabel: 'This PC',
     onSelect: () => {},
-    onSelectTracking: () => {},
     onCreate: () => {},
-    onFetch: () => {},
   },
 } satisfies Meta<typeof Frame>
 
@@ -32,25 +27,18 @@ type Story = StoryObj<typeof meta>
 
 export const Branches: Story = {}
 
-export const Fetching: Story = { args: { fetching: true } }
-
-export const FetchError: Story = {
-  args: { fetchError: 'Office did not answer.' },
-}
-
 export const Loading: Story = {
-  args: { loading: true, current: null, local: [], tracking: [] },
+  args: { loading: true, current: null, local: [] },
 }
 
 export const Empty: Story = {
-  args: { current: null, local: [], tracking: [] },
+  args: { current: null, local: [] },
 }
 
 export const LongNames: Story = {
   args: {
     current: 'feature/a-very-long-branch-name-that-should-truncate-in-the-row',
     local: ['feature/a-very-long-branch-name-that-should-truncate-in-the-row', 'main'],
-    tracking: ['origin/feature/a-very-long-branch-name-that-should-truncate-in-the-row'],
     currentDetail: 'uncommitted: 12 files +400 -20',
   },
 }

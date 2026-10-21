@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { WorkDirEnvironmentMenu, type WorkDirEnvironmentMenuProps } from './WorkDirEnvironmentMenu'
+import { WorkDirEnvironmentList, WorkDirEnvironmentMenu, type WorkDirEnvironmentMenuProps } from './WorkDirEnvironmentMenu'
 import type { WorkDirEnvironmentOption } from './work-dir-environment'
 
 const local: WorkDirEnvironmentOption = {
@@ -24,10 +24,13 @@ function options(extra: WorkDirEnvironmentOption[]): WorkDirEnvironmentOption[] 
   return [local, ...extra]
 }
 
-function Frame({ width = 320, ...props }: WorkDirEnvironmentMenuProps & { width?: number }) {
+function Frame({ width = 320, picking = true, ...props }: WorkDirEnvironmentMenuProps & { width?: number }) {
   return (
     <div className="rounded-lg border bg-popover text-popover-foreground" style={{ width }}>
-      <WorkDirEnvironmentMenu {...props} />
+      <WorkDirEnvironmentMenu {...props} picking={picking} />
+      {picking && !props.readOnly && (
+        <WorkDirEnvironmentList options={props.options} onSelect={props.onSelect} onClone={props.onClone} />
+      )}
     </div>
   )
 }
@@ -39,7 +42,7 @@ const meta = {
     visible: true,
     options: options([office]),
     selectedId: 'local-env',
-    open: true,
+    picking: true,
     onSelect: () => {},
     onClone: () => {},
   },
@@ -80,20 +83,20 @@ export const NotAGitRepo: Story = {
 }
 
 export const ReadOnly: Story = {
-  render: (args) => <Frame {...args} readOnly open={false} />,
+  render: (args) => <Frame {...args} readOnly picking={false} />,
 }
 
 export const Loading: Story = {
-  render: (args) => <Frame {...args} loading options={[]} open={false} />,
+  render: (args) => <Frame {...args} loading options={[]} picking={false} />,
 }
 
 export const ErrorState: Story = {
-  render: (args) => <Frame {...args} error="Office did not answer." open={false} />,
+  render: (args) => <Frame {...args} error="Office did not answer." picking={false} />,
 }
 
 export const Empty: Story = {
   name: 'Only this machine',
-  render: (args) => <Frame {...args} options={[local]} open={false} />,
+  render: (args) => <Frame {...args} options={[local]} picking={false} />,
 }
 
 export const LongLabel: Story = {

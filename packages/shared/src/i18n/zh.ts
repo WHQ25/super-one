@@ -2315,7 +2315,7 @@ export const zh: Messages = {
       paramReferenceImages: '参考图',
     },
     worktree: {
-      searchPlaceholder: '搜索 worktree，或搜索并创建分支…',
+      searchPlaceholder: '搜索 worktree…',
       existingHeading: '已有 worktree',
       createFromHeading: '从分支新建 worktree',
       attachToHeading: '附加到',

@@ -6925,7 +6925,7 @@ export const en: Messages = {
       paramReferenceImages: 'Reference images',
     },
     worktree: {
-      searchPlaceholder: 'Search worktrees, or search and create a branch…',
+      searchPlaceholder: 'Search worktrees…',
       existingHeading: 'Existing worktrees',
       createFromHeading: 'Create new worktree from',
       attachToHeading: 'Attach to',

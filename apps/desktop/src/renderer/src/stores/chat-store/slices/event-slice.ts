@@ -27,6 +27,8 @@ import { applyControlHolder, applyRemoteControlChange, externalHolder } from '..
 import { applyWindowRows, todoUpdatesFromWindow } from '../helpers/window-messages'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
+import { isUnsentSession } from '../helpers/session-liveness'
 import { subscriptionHost } from '@/lib/provider-host'
 import { claudeAccountRefreshHost } from '../harness/claude-handler'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
@@ -127,6 +129,15 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
         const previous = project._sessions[sessionId]
         const base = previous ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }
+        if (event.worktreePath !== undefined) {
+          logWorktreeWrite('session_control_changed', {
+            projectPath,
+            sessionId,
+            before: previous?._worktreePath ?? null,
+            after: event.worktreePath,
+            unsent: isUnsentSession(previous),
+          })
+        }
         return {
           remoteSessions: external ? addRemoteSession(s.remoteSessions, projectPath, sessionId)
             : removeRemoteSession(s.remoteSessions, projectPath, sessionId),
@@ -456,12 +467,35 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const updatedProject = { ...project, _sessions: updatedSessions }
 
       if (event.type === 'working_directory_changed' && event.worktreePath !== undefined) {
+        logWorktreeWrite('working_directory_changed', {
+          projectPath,
+          sessionId: targetSid,
+          before: targetSession._worktreePath,
+          after: event.worktreePath,
+          unsent: isUnsentSession(targetSession),
+        })
+        if (event.cwd !== targetSession.cwd) {
+          logWorktreeWrite('working_directory_changed.cwd', {
+            projectPath,
+            sessionId: targetSid,
+            before: targetSession.cwd,
+            after: event.cwd,
+            unsent: isUnsentSession(targetSession),
+          })
+        }
         updatedSession._worktreePath = event.worktreePath
         updatedSession._gitBranch = event.gitBranch ?? null
       }
 
       if (event.type === 'init_ready') {
         if (event.sessionId) updatedSession.hostSessionOwned = true
+        logWorktreeWrite('init_ready.cwd', {
+          projectPath,
+          sessionId: targetSid,
+          before: targetSession.cwd,
+          after: event.cwd,
+          unsent: isUnsentSession(targetSession),
+        })
         updatedSession.cwd = event.cwd
         updatedSession.sandboxInfo = event.sandboxInfo
         updatedProject.homedir = event.homedir
@@ -802,6 +836,14 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       && projectPath === get().activeProject
       && eventSessionId === get().projectSessions[projectPath]?._activeSessionId
     ) {
+      const active = get().projectSessions[projectPath]?._sessions[eventSessionId]
+      logWorktreeWrite('working_directory_changed.activePath', {
+        projectPath,
+        sessionId: eventSessionId,
+        before: useAppStore.getState().getWorktreeState(projectPath).activePath,
+        after: event.worktreePath,
+        unsent: isUnsentSession(active),
+      })
       useAppStore.getState().setActiveWorktree(projectPath, event.worktreePath)
     }
     // Like the CLI's notification bar, a plugin's toast belongs to the session on
@@ -861,6 +903,21 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         })
         const fromUi = live?.fromUi ?? uiPatch
         const newerSelection = live?.newer
+        const mergedWorktree = entry.snapshot.worktreePath ?? prevSession._worktreePath
+        logWorktreeWrite('syncLiveSnapshots', {
+          projectPath: entry.projectPath,
+          sessionId: entry.sid,
+          before: prevSession._worktreePath,
+          after: mergedWorktree ?? null,
+          unsent: isUnsentSession(prevSession),
+        })
+        logWorktreeWrite('syncLiveSnapshots.cwd', {
+          projectPath: entry.projectPath,
+          sessionId: entry.sid,
+          before: prevSession.cwd,
+          after: entry.snapshot.cwd,
+          unsent: isUnsentSession(prevSession),
+        })
         const mergedSession: PerSessionState = {
           ...prevSession,
           // Live hydration skips the DB load, so restore its title here too.
@@ -890,7 +947,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           controlHolder,
           permissionMode: fromUi.permissionMode ?? entry.permissionMode ?? prevSession.permissionMode,
           lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
-          _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
+          _worktreePath: mergedWorktree,
           _gitBranch: entry.snapshot.gitBranch ?? prevSession._gitBranch,
           _worktreeRemoved: entry.snapshot.worktreeMissing,
           apiProviderId: fromUi.apiProviderId

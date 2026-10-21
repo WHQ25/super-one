@@ -20,7 +20,8 @@ import { freshSubagentColorPool } from '../defaults'
 import type { ChatStoreSet } from './lifecycle'
 import { _getSessionCwd } from './persistence'
 import { resolveProvider } from './provider-routing'
-import { sessionDirectoryHint } from './session-liveness'
+import { isUnsentSession, sessionDirectoryHint } from './session-liveness'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { deliverUserSend, type UserSendDelivery } from './send-replay'
 import type { SendWriteScope } from './send-write-scope'
 import { getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
@@ -49,6 +50,18 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
     carryLocalChanges: wtState.pendingCarryLocalChanges,
   })
   if (!result.ok) return fail(result.error || 'Failed to activate the worktree')
+  const { useChatStore } = await import('../index')
+  const sessionId = writeScope.sessionId()
+  const session = sessionId
+    ? useChatStore.getState().projectSessions[projectPath]?._sessions[sessionId]
+    : undefined
+  logWorktreeWrite('applyPendingWorktree', {
+    projectPath,
+    sessionId,
+    before: session?._worktreePath ?? null,
+    after: result.path,
+    unsent: isUnsentSession(session),
+  })
   useAppStore.getState().setActiveWorktree(projectPath, result.path)
   writeScope.patch(() => ({
     cwd: result.path,

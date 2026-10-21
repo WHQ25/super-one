@@ -244,6 +244,7 @@ import { publishScheduledSendNotice } from './session/scheduled-send-notice'
 import { createPowerManagementService, resolveLegacyRemotePowerMode } from './power-management-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation, getAutomation as dbGetAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
+import { forwardSessionWorktreeTrace, logWorktreeWrite, setSessionWorktreeLogEmitter } from '@superone/shared/session-worktree-log'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { onAppSettingsSaved, readAppSettings, saveAppSettings } from './app-settings-service'
@@ -281,6 +282,7 @@ import { migrateRendererLocalStorage } from './renderer-storage-migration'
 
 // ESM hoists every import above, so this lands once the main bundle has evaluated.
 markStartup('main-evaluated')
+setSessionWorktreeLogEmitter((line) => log.debug(line))
 
 
 process.on('uncaughtException', (err: Error & { code?: string }) => {
@@ -2572,6 +2574,8 @@ function registerIpcHandlers(): void {
   agentService.setup()
 
   ipcMain.on(AgentIpcChannels.TRACE, (_e, source: string, type: string, data: unknown, tag?: string) => {
+    const worktreeLine = forwardSessionWorktreeTrace(source, data)
+    if (worktreeLine) log.debug(worktreeLine)
     trace(source, type, data, tag)
   })
 
@@ -3160,10 +3164,24 @@ function registerIpcHandlers(): void {
         // Remote: no local SessionManager cwd. Renderer stores activePath; next
         // sendSessionMessage applies session.setCwd via cwdHostPath. Existence is on node.
         void gitBranch
+        logWorktreeWrite('GIT_SWITCH_WORKTREE', {
+          projectPath: folderPath,
+          sessionId: null,
+          before: null,
+          after: wtPath,
+          unsent: false,
+        })
         return { ok: true as const }
       }
       if (!existsSync(wtPath)) return { ok: false as const, error: 'Worktree path not found' }
       await agentService.applyWorktreeSelection(folderPath, wtPath, gitBranch)
+      logWorktreeWrite('GIT_SWITCH_WORKTREE', {
+        projectPath: folderPath,
+        sessionId: null,
+        before: null,
+        after: wtPath,
+        unsent: false,
+      })
       return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
@@ -3185,17 +3203,40 @@ function registerIpcHandlers(): void {
         const { getEnvironmentHost } = await import('./environment')
         const { remoteActivateWorktree } = await import('./environment/remote-worktree')
         const result = await remoteActivateWorktree(getEnvironmentHost(), folderPath, request)
-        if (result.ok) invalidateGitReads(folderPath)
+        if (result.ok) {
+          invalidateGitReads(folderPath)
+          logWorktreeWrite('GIT_ACTIVATE_WORKTREE', {
+            projectPath: folderPath,
+            sessionId: null,
+            before: null,
+            after: result.path,
+            unsent: false,
+          })
+        }
         return result
       }
       if (request === null) {
         await agentService.applyWorktreeSelection(folderPath, folderPath, null)
         invalidateGitReads(folderPath)
+        logWorktreeWrite('GIT_ACTIVATE_WORKTREE', {
+          projectPath: folderPath,
+          sessionId: null,
+          before: null,
+          after: folderPath,
+          unsent: false,
+        })
         return { ok: true as const, path: folderPath }
       }
       const result = await activateWorktree(folderPath, request)
       await agentService.applyWorktreeSelection(folderPath, result.path, result.recordedBranch)
       invalidateGitReads(folderPath)
+      logWorktreeWrite('GIT_ACTIVATE_WORKTREE', {
+        projectPath: folderPath,
+        sessionId: null,
+        before: null,
+        after: result.path,
+        unsent: false,
+      })
       return { ok: true as const, path: result.path }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }

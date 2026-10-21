@@ -3,6 +3,7 @@ import { useChatStore } from '@/stores/chat-store'
 import { useDraftsStore } from '@/stores/drafts'
 import { useAppStore } from '@/stores/app'
 import { buildUpsertFromSession, claimDraftForSession, discardDeletedDraft, getDraftIdForSession, hasDraftContent, isUnsentSession, projectSandboxFromSettings, resolveDraftTarget, sessionFieldsFromSettings } from '@/stores/chat-store/helpers/draft-promote'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 
 const pendingWrites = new Map<string, () => Promise<void>>()
 const inFlightWrites = new Map<string, Promise<void>>()
@@ -42,6 +43,15 @@ export function applyDraftChange(event: DraftChangedEvent): void {
       for (const [sid, session] of Object.entries(sessions)) {
         if (!isUnsentSession(session) || (session.draftId !== draftId && sid !== draft.originSessionId)) continue
         claimDraftForSession(sid, draftId)
+        if (draft.settings?.worktreePath !== undefined) {
+          logWorktreeWrite('draft-sync.session', {
+            projectPath: path,
+            sessionId: sid,
+            before: session._worktreePath,
+            after: draft.settings.worktreePath,
+            unsent: true,
+          })
+        }
         sessions = { ...sessions, [sid]: { ...session,
           ...sessionFieldsFromSettings(draft.settings), draftId,
           draftRemoteDeviceId: draft.controllerDeviceId ?? null,
@@ -59,6 +69,13 @@ export function applyDraftChange(event: DraftChangedEvent): void {
     const project = useChatStore.getState().projectSessions[draft.projectPath]
     if (project?._activeSessionId && project._sessions[project._activeSessionId]?.draftId === draft.id) {
       const settings = draft.settings
+      logWorktreeWrite('draft-sync.activePath', {
+        projectPath: draft.projectPath,
+        sessionId: project._activeSessionId,
+        before: useAppStore.getState()._worktrees[draft.projectPath]?.activePath ?? null,
+        after: settings.worktreePath ?? null,
+        unsent: true,
+      })
       useAppStore.setState((s) => ({ _worktrees: { ...s._worktrees, [draft.projectPath!]: {
         pendingBaseBranch: settings.pendingBaseBranch ?? null,
         pendingMode: settings.pendingWorktreeMode === 'attach' || settings.pendingWorktreeMode === 'detach' ? settings.pendingWorktreeMode : 'branch',

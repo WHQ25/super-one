@@ -27,6 +27,7 @@ import { useDraftsStore } from '../../drafts'
 import type { ChatProvider, ChatStore, PerSessionState, ProjectState } from '../types'
 import { useChatStore } from '../index'
 import { _isLiveSession, isUnsentSession } from './session-liveness'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 
 /**
  * Renderer session id → draft id. Keeps repeated switches away from the same
@@ -225,7 +226,16 @@ export function sessionFieldsFromSettings(
     patch.selectedAcpModeId = settings.selectedAcpModeId
   }
   if (settings.apiProviderId !== undefined) patch.apiProviderId = settings.apiProviderId
-  if (settings.worktreePath !== undefined) patch._worktreePath = settings.worktreePath
+  if (settings.worktreePath !== undefined) {
+    patch._worktreePath = settings.worktreePath
+    logWorktreeWrite('sessionFieldsFromSettings', {
+      projectPath: null,
+      sessionId: null,
+      before: null,
+      after: settings.worktreePath,
+      unsent: true,
+    })
+  }
   if (settings.gitBranch !== undefined) patch._gitBranch = settings.gitBranch
   if (settings.additionalDirs) {
     patch.additionalDirs = [...settings.additionalDirs]
@@ -240,6 +250,14 @@ export function applyDraftWorktreeUi(
   projectPath: string,
   settings: DraftSessionSettings | null | undefined,
 ): void {
+  const nextPath = settings?.worktreePath ?? null
+  logWorktreeWrite('applyDraftWorktreeUi', {
+    projectPath,
+    sessionId: useChatStore.getState().projectSessions[projectPath]?._activeSessionId ?? null,
+    before: useAppStore.getState()._worktrees[projectPath]?.activePath ?? null,
+    after: nextPath,
+    unsent: true,
+  })
   useAppStore.setState({
     _worktrees: {
       ...useAppStore.getState()._worktrees,
@@ -248,7 +266,7 @@ export function applyDraftWorktreeUi(
         pendingMode: (settings?.pendingWorktreeMode as 'branch' | 'attach' | 'detach' | undefined) ?? 'branch',
         pendingBranchName: settings?.pendingBranchName ?? '',
         pendingCarryLocalChanges: !!settings?.pendingCarryLocalChanges,
-        activePath: settings?.worktreePath ?? null,
+        activePath: nextPath,
       },
     },
   })
@@ -318,6 +336,13 @@ function worktreeHintForSession(
 ): WorktreeHint | null {
   if (project?._activeSessionId === sessionId) {
     const hint = readAppWorktree(projectPath)
+    logWorktreeWrite('worktreeHintForSession', {
+      projectPath,
+      sessionId,
+      before: session._worktreePath,
+      after: hint?.path ?? null,
+      unsent: isUnsentSession(session),
+    })
     worktreeHintBySession.set(sessionId, hint)
     return hint
   }
@@ -572,13 +597,21 @@ export async function promoteDraftIfUnsent(
   } catch {
     /* drafts store mocked without this seam in some tests */
   }
+  const parkedWorktree = draft.settings?.worktreePath ?? session._worktreePath
+  logWorktreeWrite('promoteDraft.hydrate', {
+    projectPath,
+    sessionId,
+    before: session._worktreePath,
+    after: parkedWorktree ?? null,
+    unsent: true,
+  })
   if (hasDraftContent(session)) parkDraftSnapshot({
     draftId: draft.id,
     projectPath,
     sessionId,
     session: {
       ...session,
-      _worktreePath: draft.settings?.worktreePath ?? session._worktreePath,
+      _worktreePath: parkedWorktree,
       _gitBranch: draft.settings?.gitBranch ?? session._gitBranch,
     },
     sandboxInfo: project?.sandboxInfo ?? null,

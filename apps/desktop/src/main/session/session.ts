@@ -50,6 +50,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { lastCompletedMessageId } from '@superone/shared/session-activity'
 import log from '../logger'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { trace } from '../agent/event-trace'
 import { getSandboxCapability } from '../sandbox-platform'
 import {
@@ -2194,7 +2195,15 @@ export class Session implements SessionContract {
     if (!checkout || isSameDirectory(checkout, this._cwd)) return null
     const atRoot = checkout === this.projectPath
     const cwd = checkout
+    const previousWorktree = this._cwd === this.projectPath ? null : this._cwd
     log.info('[Session] sid=%s agent moved cwd %s -> %s', this.id, this._cwd, cwd)
+    logWorktreeWrite('Session.adoptAgentCwd', {
+      projectPath: this.projectPath,
+      sessionId: this.id,
+      before: previousWorktree,
+      after: atRoot ? null : cwd,
+      unsent: this._messages.length === 0,
+    })
     this._cwd = cwd
     this._gitBranch = atRoot ? null : gitBranch ?? null
     this.emitInitReady()

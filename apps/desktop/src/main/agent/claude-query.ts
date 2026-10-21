@@ -17,6 +17,7 @@ import {
 import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-apps'
 import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
 import { worktreeCwdChange } from '@superone/claude/worktree-cwd'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { artifactResultTitle } from '@superone/claude/artifact-result'
 import { CLAUDE_SCHEDULING_TOOLS, sessionCronsStopHook } from '@superone/claude/session-crons'
 import { ModSurface, withModDevFoldersEnv, type ModSurfaceQuery } from '@superone/claude/mod-surface'
@@ -570,7 +571,16 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const cwdChange = !parentToolUseId && !isReplay && !isError
                 ? worktreeCwdChange(toolName, userMsg.tool_use_result)
                 : null
-              if (cwdChange) emit({ type: 'working_directory_changed', ...cwdChange })
+              if (cwdChange) {
+                logWorktreeWrite('claude-query.working_directory_changed', {
+                  projectPath: null,
+                  sessionId: opts.superoneSessionId,
+                  before: null,
+                  after: cwdChange.cwd,
+                  unsent: false,
+                })
+                emit({ type: 'working_directory_changed', ...cwdChange })
+              }
             }
           }
           if (hasToolResult && !parentToolUseId) onStepBoundary?.()

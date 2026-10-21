@@ -34,6 +34,8 @@ import { extractPartialToolInput } from './event-reducer/partial-tool-input'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { DEFAULT_PROVIDER } from './event-reducer/transformers'
+import { logWorktreeWrite, registerWorktreeSessionReader } from '@superone/shared/session-worktree-log'
+import { isUnsentSession } from './helpers/session-liveness'
 
 import type {
   ActiveSessionView,
@@ -690,10 +692,15 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
           },
         }
       })
-      useAppStore.getState().setActiveWorktree(
-        activeProject,
-        cached ? _getSessionWorktreePath(cached) : null,
-      )
+      const remoteCachedWorktree = cached ? _getSessionWorktreePath(cached) : null
+      logWorktreeWrite('switchSession.remoteCached', {
+        projectPath: activeProject,
+        sessionId,
+        before: useAppStore.getState().getWorktreeState(activeProject).activePath,
+        after: remoteCachedWorktree,
+        unsent: isUnsentSession(cached ?? undefined),
+      })
+      useAppStore.getState().setActiveWorktree(activeProject, remoteCachedWorktree)
       const { hydrateRemoteSession, followRemoteSessionEvents, keepRendererOwnedState } = await import('@/lib/remote-session-ops')
       const { hydrated, snap } = await hydrateRemoteSession(
         activeProject,
@@ -722,7 +729,15 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         }
       })
       if (!stillActive) return
-      useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(applied))
+      const remoteWorktree = _getSessionWorktreePath(applied)
+      logWorktreeWrite('switchSession.remoteHydrated', {
+        projectPath: activeProject,
+        sessionId,
+        before: useAppStore.getState().getWorktreeState(activeProject).activePath,
+        after: remoteWorktree,
+        unsent: isUnsentSession(applied),
+      })
+      useAppStore.getState().setActiveWorktree(activeProject, remoteWorktree)
       // Local parity: open a live session → keep agent:event flowing (Session resume).
       // Pass the node snapshot: a turn (or pending permission) that started while
       // this tab was closed is only visible there, not in the merged state.
@@ -820,7 +835,15 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         _gitBranch: targetSession._gitBranch,
         _worktreeRemoved: targetSession._worktreeRemoved,
       })
-      useAppStore.getState().setActiveWorktree(activeProject, _getSessionWorktreePath(targetSession))
+      const caseWorktree = _getSessionWorktreePath(targetSession)
+      logWorktreeWrite('switchSession.caseA', {
+        projectPath: activeProject,
+        sessionId,
+        before: useAppStore.getState().getWorktreeState(activeProject).activePath,
+        after: caseWorktree,
+        unsent: isUnsentSession(targetSession),
+      })
+      useAppStore.getState().setActiveWorktree(activeProject, caseWorktree)
 
       // Unsent drafts already carry the user's harness/model/effort. Re-applying
       // catalog defaults here is what made "open draft" look like a fresh session
@@ -951,6 +974,13 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       savedWorktreePath,
       savedGitBranch,
     })
+    logWorktreeWrite('switchSession.savedWorktreePath', {
+      projectPath: activeProject,
+      sessionId,
+      before: useAppStore.getState().getWorktreeState(activeProject).activePath,
+      after: savedWorktreePath ?? null,
+      unsent: savedMessages.length === 0,
+    })
     if (savedWorktreePath) {
       useAppStore.getState().setActiveWorktree(activeProject, savedWorktreePath)
     } else {
@@ -1079,6 +1109,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     get().sendMessage(command)
   },
 }))
+
+registerWorktreeSessionReader(() => useChatStore.getState())
 
 export {
   useActiveSession,

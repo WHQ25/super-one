@@ -4,7 +4,8 @@ import { createDefaultPerSessionState, createDefaultProjectState } from '../defa
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
-import { sessionDirectoryHint } from './session-liveness'
+import { isUnsentSession, sessionDirectoryHint } from './session-liveness'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
@@ -60,6 +61,13 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
     sessionId: project._activeSessionId ?? undefined,
     worktreePath: sessionDirectoryHint(session, key),
   }
+  logWorktreeWrite('triggerPrewarm', {
+    projectPath: key,
+    sessionId: project._activeSessionId,
+    before: session._worktreePath,
+    after: hint.worktreePath ?? null,
+    unsent: isUnsentSession(session),
+  })
   void window.agent.prewarm(key, hint).catch(() => {})
 }
 

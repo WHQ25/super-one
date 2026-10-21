@@ -32,6 +32,7 @@ import type { RemoteControlService } from '../remote-control-service'
 import type { McpChange } from '@superone/runtime/server/rpc-resources'
 import { trace } from './event-trace'
 import { applySessionDirectoryHint, sessionCreationCwd } from './session-directory'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { getProjectExtraDirs, updateProject } from '../recent-folders';
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, readdirSync, readFileSync } from 'fs';
@@ -1107,6 +1108,13 @@ export class AgentService {
       if (parseRemoteProjectKey(projectPath)) return
       if (this.isRemoteLockedSession(projectPath)) return
       const session = await this.getOrCreatePrewarmSession(projectPath, hint)
+      logWorktreeWrite('main.prewarm', {
+        projectPath,
+        sessionId: hint?.sessionId ?? session?.id ?? null,
+        before: hint?.worktreePath ?? null,
+        after: session?.cwd ?? null,
+        unsent: !session || session.snapshot.messages.length === 0,
+      })
       if (!session) return
       log.debug('[agent-service] prewarm sid=%s harness=%s', session.id, session.snapshot.harnessId)
       try { session.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }

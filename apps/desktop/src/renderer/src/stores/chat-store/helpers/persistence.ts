@@ -10,6 +10,8 @@ import { findLatestCodexUsage } from './codex-usage'
 import { resolveActiveSessionId } from './store-helpers'
 import { withCodexContents } from '@superone/shared/codex-content'
 import { loadStoredSession } from '@/lib/session-client'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
+import { isUnsentSession } from './session-liveness'
 
 /** Where a restored provider keeps its pick; an unknown provider uses the neutral fields. */
 function selectionFor(provider: PerSessionState['sessionProvider']): SelectionAccess {
@@ -84,6 +86,14 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
   // Derived Codex fields are not persisted as columns — rebuild from messages.
   // A live snapshot outranks the rebuild: it can be newer than the last save.
   const restoredCodexUsage = session.codexUsageSnapshot ?? findLatestCodexUsage(mergedMessages)
+  const mergedWorktree = session._worktreePath ?? saved.worktreePath
+  logWorktreeWrite('mergePersistedSessionState', {
+    projectPath: null,
+    sessionId: null,
+    before: session._worktreePath,
+    after: mergedWorktree ?? null,
+    unsent: isUnsentSession(session),
+  })
   return {
     ...session,
     // Stored by its host, so settings changes go there rather than waiting for a first send.
@@ -100,7 +110,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     _parentSessionId: saved.parentSessionId ?? null,
     _continuedIn: saved.continuedIn ?? session._continuedIn ?? null,
     _gitBranch: session._gitBranch ?? saved.gitBranch,
-    _worktreePath: session._worktreePath ?? saved.worktreePath,
+    _worktreePath: mergedWorktree,
     lastAssistantMessageId:
       mergedMessages.findLast((message) => message.role === 'assistant' && message.providerId !== 'system')?.id
       ?? session.lastAssistantMessageId,
@@ -153,6 +163,14 @@ export function _mergeHydratedSessionState(
   ].map(q => [q.item.id, q])).values()]
   const restoredProvider = session.sessionProvider ?? hydrated.sessionProvider
   const hydratedPick = selectionFor(restoredProvider).read(hydrated)
+  const mergedWorktree = session._worktreePath ?? hydrated._worktreePath
+  logWorktreeWrite('mergeHydratedSessionState', {
+    projectPath: null,
+    sessionId: null,
+    before: session._worktreePath,
+    after: mergedWorktree ?? null,
+    unsent: isUnsentSession(session),
+  })
   return {
     ...session,
     _title: session._title ?? hydrated._title,
@@ -169,7 +187,7 @@ export function _mergeHydratedSessionState(
     _parentSessionId: hydrated._parentSessionId === undefined ? session._parentSessionId : hydrated._parentSessionId,
     _continuedIn: hydrated._continuedIn ?? session._continuedIn,
     _gitBranch: session._gitBranch ?? hydrated._gitBranch,
-    _worktreePath: session._worktreePath ?? hydrated._worktreePath,
+    _worktreePath: mergedWorktree,
     lastAssistantMessageId:
       mergedMessages.findLast((message) => message.role === 'assistant' && message.providerId !== 'system')?.id
       ?? session.lastAssistantMessageId,

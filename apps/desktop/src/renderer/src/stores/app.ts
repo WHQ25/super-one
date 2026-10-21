@@ -20,6 +20,22 @@ import {
   remoteActiveFileRoot,
   remoteProjectKey,
 } from '@/lib/remote-project-key'
+import { logWorktreeWrite, readWorktreeSessionReader } from '@superone/shared/session-worktree-log'
+import { isUnsentSession } from './chat-store/helpers/session-liveness'
+import type { PerSessionState } from './chat-store/types'
+
+function activeWorktreeSession(projectPath: string): { sessionId: string | null; unsent: boolean } {
+  const snap = readWorktreeSessionReader<{
+    projectSessions: Record<string, {
+      _activeSessionId: string | null
+      _sessions: Record<string, PerSessionState>
+    }>
+  }>()
+  const project = snap?.projectSessions[projectPath]
+  const sessionId = project?._activeSessionId ?? null
+  const session = sessionId ? project?._sessions[sessionId] : undefined
+  return { sessionId, unsent: isUnsentSession(session) }
+}
 
 export {
   parseRemoteProjectKey,
@@ -991,6 +1007,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Worktree management
   setPendingWorktree: (projectPath, baseBranch) => {
+    const meta = activeWorktreeSession(projectPath)
+    logWorktreeWrite('app.setPendingWorktree', {
+      projectPath,
+      sessionId: meta.sessionId,
+      before: get()._worktrees[projectPath]?.activePath ?? null,
+      after: null,
+      unsent: meta.unsent,
+    })
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
@@ -1046,6 +1070,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     // file tree read this machine's disk and come back empty.
     const rooted = remoteActiveFileRoot(projectPath, path)
     const activePath = rooted === projectPath ? null : rooted
+    const meta = activeWorktreeSession(projectPath)
+    logWorktreeWrite('app.setActiveWorktree', {
+      projectPath,
+      sessionId: meta.sessionId,
+      before: get()._worktrees[projectPath]?.activePath ?? null,
+      after: activePath,
+      unsent: meta.unsent,
+    })
     set((s) => ({
       _worktrees: {
         ...s._worktrees,
@@ -1074,6 +1106,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     useChatStore.getState().resetSessionForWorktreeSwitch(projectPath, {
       wtPath: uiWtPath,
       gitBranch,
+    })
+    const meta = activeWorktreeSession(projectPath)
+    logWorktreeWrite('app.switchToExistingWorktree', {
+      projectPath,
+      sessionId: meta.sessionId,
+      before: get()._worktrees[projectPath]?.activePath ?? null,
+      after: uiWtPath,
+      unsent: meta.unsent,
     })
     set((s) => ({
       _worktrees: {
@@ -1112,6 +1152,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     await window.app.activateWorktree(projectPath, null)
     const { useChatStore } = await import('./chat')
     useChatStore.getState().resetSessionForWorktreeSwitch(projectPath)
+    const meta = activeWorktreeSession(projectPath)
+    logWorktreeWrite('app.clearWorktree', {
+      projectPath,
+      sessionId: meta.sessionId,
+      before: get()._worktrees[projectPath]?.activePath ?? null,
+      after: null,
+      unsent: meta.unsent,
+    })
     set((s) => ({
       _worktrees: {
         ...s._worktrees,

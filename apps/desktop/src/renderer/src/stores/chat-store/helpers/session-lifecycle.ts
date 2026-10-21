@@ -36,6 +36,8 @@ import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
+import { isUnsentSession } from './session-liveness'
 import { interruptSession } from '@/lib/session-client'
 import { stopBashOutputLive } from './bash-output-live'
 
@@ -111,6 +113,15 @@ export async function focusProjectImpl(
     if (project) {
       let { unseenCompletedSessions } = project
       const nextSession = targetSid ? project._sessions[targetSid] : undefined
+      if (nextSession && isUnsentSession(nextSession)) {
+        logWorktreeWrite('focusProject.cwd', {
+          projectPath,
+          sessionId: targetSid,
+          before: nextSession.cwd,
+          after: _getSessionCwd(projectPath, nextSession),
+          unsent: true,
+        })
+      }
       const nextSessions = targetSid && nextSession
         ? {
             ...project._sessions,
@@ -146,7 +157,15 @@ export async function focusProjectImpl(
   // Read AFTER carry — the pre-focus targetSid is the dest's previous conversation.
   const focusedSid = get().projectSessions[projectPath]?._activeSessionId
   const focusedSession = focusedSid ? get().projectSessions[projectPath]?._sessions[focusedSid] : null
-  useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
+  const focusedWorktree = _getSessionWorktreePath(focusedSession)
+  logWorktreeWrite('focusProject.setActiveWorktree', {
+    projectPath,
+    sessionId: focusedSid ?? null,
+    before: useAppStore.getState().getWorktreeState(projectPath).activePath,
+    after: focusedWorktree,
+    unsent: isUnsentSession(focusedSession ?? undefined),
+  })
+  useAppStore.getState().setActiveWorktree(projectPath, focusedWorktree)
   // The focused session comes up: a node session gets its follower (a draft the
   // node has not seen yet has nothing to follow), a local one its runtime. Each
   // call does nothing for the other kind of environment.
@@ -472,6 +491,20 @@ export function resetSessionForWorktreeSwitchImpl(
     && previousSession.messages.length === 0
     && !_isLiveSession(previousSession)
   if (unsent && previousSid) {
+    logWorktreeWrite('resetSessionForWorktreeSwitch.unsent', {
+      projectPath,
+      sessionId: previousSid,
+      before: previousSession?._worktreePath ?? null,
+      after: opts?.wtPath ?? null,
+      unsent: true,
+    })
+    logWorktreeWrite('resetSessionForWorktreeSwitch.unsent.cwd', {
+      projectPath,
+      sessionId: previousSid,
+      before: previousSession?.cwd ?? null,
+      after: opts?.wtPath ?? projectPath,
+      unsent: true,
+    })
     set((s) => updatePerSession(s, projectPath, previousSid, () => ({
       cwd: opts?.wtPath ?? projectPath,
       _worktreePath: opts?.wtPath ?? null,
@@ -481,6 +514,13 @@ export function resetSessionForWorktreeSwitchImpl(
   }
   const nextProvider = previousSession?.sessionProvider ?? previousSession?.preferredProvider ?? 'claude'
   const newSid = createSessionId()
+  logWorktreeWrite('resetSessionForWorktreeSwitch.newSession', {
+    projectPath,
+    sessionId: newSid,
+    before: null,
+    after: opts?.wtPath ?? null,
+    unsent: true,
+  })
   set((s) => {
     const proj = getProject(s, projectPath)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
@@ -587,6 +627,20 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
       },
     }
   })
+  logWorktreeWrite('resetSession.activeSession', {
+    projectPath: activeProject,
+    sessionId: newSessionId,
+    before: activeSession._worktreePath,
+    after: null,
+    unsent: true,
+  })
+  logWorktreeWrite('resetSession.cwd', {
+    projectPath: activeProject,
+    sessionId: newSessionId,
+    before: activeSession.cwd,
+    after: activeProject,
+    unsent: true,
+  })
   // Fresh session starts with an empty activity view (no dock layout inherit).
   // See resetSessionForWorktreeSwitchImpl — shared terminal/browser panel ids
   // are not safe to fork across sessions.
@@ -611,6 +665,13 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     }
 
     await useAppStore.getState().clearWorktree(activeProject)
+    logWorktreeWrite('resetSession.clearWorktree', {
+      projectPath: activeProject,
+      sessionId: newSessionId,
+      before: activeSession._worktreePath,
+      after: useAppStore.getState().getWorktreeState(activeProject).activePath,
+      unsent: true,
+    })
   } finally {
     resetLock.current = null
     unlock()

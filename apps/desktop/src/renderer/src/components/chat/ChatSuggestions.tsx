@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, useIsRemoteLocked, useSessionScope, type ChatProvider } from '@/stores/chat'
 import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
+import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
 import { loadEnvironmentItems } from '@/lib/environment-list'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
@@ -624,18 +625,9 @@ function ActiveProviderHint() {
   const bindings = useSettingsStore((s) => s.bindings)
   const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
-  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
 
-  useEffect(() => {
-    const next =
-      selectedHostConnectionId && selectedHostConnectionId !== 'local'
-        ? selectedHostConnectionId
-        : 'local'
-    if (next !== providerScope) {
-      useSettingsStore.getState().setProviderScope(next)
-    }
-  }, [selectedHostConnectionId, providerScope])
+  useProviderScopeSync()
 
   useEffect(() => {
     void fetchProviderData()

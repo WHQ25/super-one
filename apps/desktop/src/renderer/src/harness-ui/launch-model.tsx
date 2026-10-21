@@ -4,6 +4,7 @@ import type { EffortLevel, HarnessId, ModelOption, SessionAgentProfile } from '@
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
+import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
 import {
   consumerForHarness,
   credentialsForConsumer,
@@ -143,19 +144,13 @@ export function useLaunchProviders(args: {
   const bindings = useSettingsStore((s) => s.bindings) ?? EMPTY_BINDINGS
   const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
-  const setProviderScope = useSettingsStore((s) => s.setProviderScope)
-  const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const onChangeRef = useRef(args.onChange)
   onChangeRef.current = args.onChange
 
-  useEffect(() => {
-    if (typeof setProviderScope !== 'function') return
-    const next = selectedHostConnectionId && selectedHostConnectionId !== 'local' ? selectedHostConnectionId : 'local'
-    if (next !== providerScope) setProviderScope(next)
-  }, [selectedHostConnectionId, providerScope, setProviderScope])
+  useProviderScopeSync()
 
   useEffect(() => {
     if (profileOnly || typeof fetchProviderData !== 'function') return

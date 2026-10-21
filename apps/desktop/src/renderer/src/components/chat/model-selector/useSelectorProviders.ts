@@ -11,6 +11,7 @@ import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
 import { subscriptionHost } from '@/lib/provider-host'
+import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
 import { apiKeyDefaultFor } from '@/harness-ui/api-key-defaults'
 import type { SelectorProviderOption } from './GroupedModelEffortSelector'
 
@@ -99,12 +100,7 @@ export function useSelectorProviders(harness: HarnessId) {
 
   // Credentials follow the machine this chat runs on, which is the open project
   // when there is one and the sidebar host only before a project is chosen.
-  useEffect(() => {
-    const next = accountHost ?? 'local'
-    if (next !== providerScope) {
-      useSettingsStore.getState().setProviderScope(next)
-    }
-  }, [accountHost, providerScope])
+  useProviderScopeSync()
 
   useEffect(() => {
     void fetchProviderData()

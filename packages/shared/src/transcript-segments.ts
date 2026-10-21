@@ -1,5 +1,5 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
-import { blockText, contentKeys, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
+import { blockText, contentKeys, expandBoundaryCursor, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
 import { isDismissedCodexAsyncAnswer } from './codex-async-question'
 import { isLegacyCodexMessage, withCodexContent } from './codex-content'
@@ -162,7 +162,14 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
       rows.push(...cached.rows)
       continue
     }
-    const cursors = cuts.length ? resolveTranscriptBoundaries(cuts, transcriptLengths(source)) : []
+    // A window cursor names the cut with one edge. Expand it for the slice only;
+    // the drawn compact row keeps the cursor it was sent with.
+    const opened = cuts.map(cut => {
+      const boundary = cut.metadata?.transcriptBoundary
+      if (!boundary?.cursor) return cut
+      return { ...cut, metadata: { ...cut.metadata, transcriptBoundary: expandBoundaryCursor(boundary, source) } }
+    })
+    const cursors = opened.length ? resolveTranscriptBoundaries(opened, transcriptLengths(source)) : []
     // A legacy Codex turn's boundaries index its items, and each segment
     // draws the content its own items derive.
     const legacy = isLegacyCodexMessage(source)

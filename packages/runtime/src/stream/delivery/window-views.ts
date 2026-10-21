@@ -9,6 +9,7 @@ import type {
   TranscriptWindowPatch,
   TranscriptWindowRequest,
 } from '@superone/shared/environment/transcript-window'
+import { boundaryCursor } from '@superone/shared/transcript-boundary'
 import { contentDigest, utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { foldMessageFragments, foldRevision, selectFoldPage, type FoldedFragments } from '@superone/shared/transcript-window/folds'
 import { fragmentDigest, MessageFragmenter, textBody, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
@@ -62,14 +63,42 @@ interface FoldedView { fragments: FoldedFragments; plan: ProcessFoldPlan }
 class SessionFragments {
   /** Times a message was fragmented and planned. A reparsed copy of the same content does not count. */
   plans = 0
+  /** Transcript the current serve or patch is reading, so a boundary can find the message it cuts. */
+  private transcript: TranscriptAccess | null = null
   private readonly fragmenter = new MessageFragmenter()
   private readonly cache = new WeakMap<ChatMessage, { projected: ChatMessage; fragments: MessageFragments }>()
   private readonly foldedCache = new WeakMap<ChatMessage, { cutKey: string; view: FoldedView }>()
   /** Last plan for a message id, so a newly parsed row does not plan the message again. */
   private readonly bySignature = new Map<string, { contentKey: string; cutKey: string; view: FoldedView }>()
 
+  bind(transcript: TranscriptAccess): void {
+    this.transcript = transcript
+  }
+
   of(message: ChatMessage, folds = false, cuts?: readonly ChatMessage[]): MessageFragments {
+    const prepared = this.cursorMessage(message)
+    // The compact row is not a process fold. Its cursor is read again on every
+    // pass: the row's object stays put while the turn it cuts keeps growing,
+    // and a cached edge would leave the marker at the end of the reply.
+    if (prepared !== message) return this.fragmenter.fragment(projectWindowMessage(prepared))
     return folds ? this.folded(message, cuts).fragments : this.entry(message).fragments
+  }
+
+  /** Wire copy of a boundary row. The stored message, and the cuts fold planning reads, stay the full map. */
+  private cursorMessage(message: ChatMessage): ChatMessage {
+    const boundary = message.metadata?.transcriptBoundary
+    if (!boundary || boundary.cursor || !this.transcript) return message
+    const index = this.transcript.indexOf(boundary.messageId)
+    if (index < 0) return message
+    let source: ChatMessage
+    try {
+      source = this.transcript.messageAt(index)
+    } catch {
+      return message
+    }
+    const cursor = boundaryCursor(boundary, source)
+    if (cursor === boundary) return message
+    return { ...message, metadata: { ...message.metadata, transcriptBoundary: cursor } }
   }
 
   /**
@@ -176,6 +205,7 @@ export class WindowViews {
     if (!transcript) throw new Error('transcript window needs messages')
     const folds = input.request.folds === true
     const session = this.session(input.sessionId)
+    session.fragments.bind(transcript)
     const cuts = boundaryCuts(input.messages ?? transcript.boundaryMessages?.() ?? [])
     const selected = selectTranscriptWindow(session.fragments.source(transcript, folds, cuts), input.request, input.budget)
     const extend = input.request.anchor && input.request.direction !== 'around' ? input.request.direction ?? 'before' : null
@@ -212,6 +242,7 @@ export class WindowViews {
   patches(sessionId: string, messages: readonly ChatMessage[]): Array<{ holder: string; patch: TranscriptWindowPatch }> {
     const session = this.sessions.get(sessionId)
     if (!session) return []
+    session.fragments.bind(arrayTranscript(messages))
     const cuts = boundaryCuts(messages)
     const out: Array<{ holder: string; patch: TranscriptWindowPatch }> = []
     for (const [holder, held] of session.holders) {
@@ -400,7 +431,8 @@ function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments:
   let start = 0
   for (let r = range.length - 1; r >= 0; r--) {
     const source = messages[range[r]]
-    if (held.seen.get(source.id) === source && held.messages.has(source.id)) continue
+    // The compact row keeps its object while the turn it cuts keeps growing, so its edge is read again.
+    if (held.seen.get(source.id) === source && held.messages.has(source.id) && !source.metadata?.transcriptBoundary) continue
     const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source, held.folds, cuts.get(source.id)), range[r], Math.max(0, Math.min(LIVE_MESSAGE_BUDGET.maxBytes, remaining)))
     const bytes = message ? patchBytes(message) : 0
     if (bytes > remaining && changed.length) { start = r + 1; break }

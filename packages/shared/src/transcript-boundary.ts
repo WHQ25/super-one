@@ -2,12 +2,24 @@ import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
 import { codexAsyncQuestionItems, isCodexAsyncAnswer } from './codex-async-question'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
 
-/** A durable cursor into a provider message, whose identity never changes. */
+/**
+ * A durable cursor into a provider message, whose identity never changes.
+ * A window ships the slim form (`cursor`): `content` and `items` are empty,
+ * and the cut is the first block that was not fully before it. An empty map
+ * without `cursor` still means the cut is at the start.
+ */
 export interface TranscriptBoundary {
   messageId: string
   order: number
   content: Record<string, number>
   items: Record<string, number>
+  cursor?: boolean
+  /** First content key not fully before the cut. Absent when the cut is past every current block. */
+  at?: string
+  /** Characters of `at` before the cut. Only text and thinking use it; `0` means `at` is entirely after. */
+  offset?: number
+  atItem?: string
+  itemOffset?: number
 }
 
 // Reserve an ordinal before an async steering RPC. A compaction can arrive
@@ -62,6 +74,86 @@ export function transcriptLengths(message: ChatMessage): Pick<TranscriptBoundary
     content: Object.fromEntries(message.content.map((block, index) => [keys[index], blockText(block)?.length ?? -1])),
     items: Object.fromEntries((message.metadata?.codex?.items ?? []).map(item => [item.id, itemText(item)?.length ?? -1])),
   }
+}
+
+/**
+ * The boundary as a transcript window can carry it. A prefix cut collapses to
+ * one edge. A map that is not a prefix — an earlier block grew after a later
+ * one was captured — is returned unchanged, because one edge would move those
+ * later blocks. An already slim cursor is returned as-is: its empty map would
+ * otherwise look like a cut at the first block.
+ */
+export function boundaryCursor(boundary: TranscriptBoundary, source: ChatMessage): TranscriptBoundary {
+  if (boundary.cursor) return boundary
+  const items = source.metadata?.codex?.items ?? []
+  const contentEdge = prefixEdge(boundary.content ?? {}, contentKeys(source.content), source.content.map(blockText))
+  const itemEdge = prefixEdge(boundary.items ?? {}, items.map(item => item.id), items.map(itemText))
+  if (contentEdge === null || itemEdge === null) return boundary
+  return {
+    messageId: boundary.messageId,
+    order: boundary.order,
+    content: {},
+    items: {},
+    cursor: true,
+    ...(contentEdge === 'end' ? {} : { at: contentEdge.key, offset: contentEdge.offset }),
+    ...(itemEdge === 'end' ? {} : { atItem: itemEdge.key, itemOffset: itemEdge.offset }),
+  }
+}
+
+/** The content map a window cursor names, read against the message the client is drawing. */
+export function expandBoundaryCursor(boundary: TranscriptBoundary, source: ChatMessage): TranscriptBoundary {
+  if (!boundary.cursor) return boundary
+  const items = source.metadata?.codex?.items ?? []
+  return {
+    ...boundary,
+    content: edgeMap(contentKeys(source.content), source.content.map(blockText), boundary.at, boundary.offset ?? 0),
+    items: edgeMap(items.map(item => item.id), items.map(itemText), boundary.atItem, boundary.itemOffset ?? 0),
+    cursor: false,
+  }
+}
+
+/** `end`: the cut is past every current block. `null`: one edge cannot say where the cut is. */
+function prefixEdge(
+  map: Record<string, number>,
+  keys: readonly string[],
+  texts: readonly (string | undefined)[],
+): { key: string; offset: number } | 'end' | null {
+  let partial: { key: string; offset: number } | null = null
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index]
+    const saved = map[key]
+    const text = texts[index]
+    if (saved === undefined) {
+      const edge = partial ?? { key, offset: 0 }
+      const edgeAt = partial ? keys.indexOf(partial.key) : index
+      for (let later = edgeAt + 1; later < keys.length; later++) {
+        if (map[keys[later]] !== undefined) return null
+      }
+      return edge
+    }
+    if (text !== undefined && saved < text.length) {
+      if (partial || saved < 0) return null
+      partial = { key, offset: saved }
+      continue
+    }
+    if (partial) return null
+  }
+  return partial ?? 'end'
+}
+
+function edgeMap(keys: readonly string[], texts: readonly (string | undefined)[], at: string | undefined, offset: number): Record<string, number> {
+  const map: Record<string, number> = {}
+  if (at === undefined) {
+    for (let index = 0; index < keys.length; index++) map[keys[index]] = texts[index] === undefined ? -1 : texts[index].length
+    return map
+  }
+  const atIndex = keys.indexOf(at)
+  if (atIndex < 0) return map
+  for (let index = 0; index < atIndex; index++) map[keys[index]] = texts[index] === undefined ? -1 : texts[index].length
+  const text = texts[atIndex]
+  // A fold notice or a tool has no character offset. A positive offset would pull the whole block above the cut.
+  if (text !== undefined && offset > 0) map[keys[atIndex]] = offset
+  return map
 }
 
 /** Resolve saved async-answer cursors to whole block edges, including their later streaming deltas. */

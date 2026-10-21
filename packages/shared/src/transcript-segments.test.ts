@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from './agent-types'
 import { buildCompactBoundaryMessage } from './compact-boundary'
-import { anchorAsyncAnswer } from './transcript-boundary'
+import { anchorAsyncAnswer, boundaryCursor } from './transcript-boundary'
 import { transcriptSegments, transcriptView } from './transcript-segments'
 import { extractTurnOutline } from './turn-outline'
 import { extendHistoryIndex } from './session-history-index'
@@ -198,5 +198,96 @@ describe('transcript segmentation at live boundaries', () => {
     expect(transcriptSegments([unanswered]).at(-1)?.message.content.at(-1)).toEqual(source.content[0])
     const empty = { ...message('failed', ''), content: [], status: 'error' as const }
     expect(transcriptSegments([empty])).toMatchObject([{ id: 'failed', final: true, message: { status: 'error' } }])
+  })
+
+  it('places a window cursor where the full compaction boundary sat', () => {
+    const source = message('turn', 'Before')
+    source.content.push({ type: 'tool_use', toolName: 'Read', toolUseId: 't', input: '{}', status: 'complete' },
+      { type: 'tool_result', toolUseId: 't', summary: 'ok' })
+    const marker = compact('c1', source)
+    source.content = [...source.content, { type: 'text', text: 'After' }]
+    source.status = 'complete'
+    const boundary = marker.metadata!.transcriptBoundary!
+    const cursor = boundaryCursor(boundary, source)
+    expect(cursor).toMatchObject({ cursor: true, at: 'text::1', offset: 0, content: {}, items: {} })
+    expect(boundaryCursor(cursor, source)).toBe(cursor)
+    const slim = { ...marker, metadata: { ...marker.metadata, transcriptBoundary: cursor } }
+    expect(texts([slim, source])).toEqual(texts([marker, source]))
+    expect(texts([marker, source])).toEqual(['Before', '__compact__:auto:100::', 'After'])
+    const { rows } = transcriptView([slim, source])
+    expect(rows.map(row => row.id)).toEqual(['turn', 'c1', 'turn:after:c1'])
+    expect(rows[0].first).toBe(true)
+    expect(rows[1].first).toBeUndefined()
+  })
+
+  it('splits a growing text block at the captured offset', () => {
+    const source = message('turn', 'Before')
+    const marker = compact('c1', source)
+    source.content = [{ type: 'text', text: 'BeforeAfter' }]
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, source)
+    expect(cursor).toMatchObject({ cursor: true, at: 'text::0', offset: 'Before'.length })
+    const slim = { ...marker, metadata: { transcriptBoundary: cursor } }
+    expect(texts([slim, source])).toEqual(['Before', '__compact__:auto:100::', 'After'])
+  })
+
+  it('keeps the full map when an earlier block grew after a later one was captured', () => {
+    const source = message('turn', 'Hi')
+    source.content.push({ type: 'tool_use', toolName: 'Read', toolUseId: 't', input: '{}', status: 'complete' })
+    const marker = compact('c1', source)
+    source.content = [{ type: 'text', text: 'Hi there' }, source.content[1]]
+    const boundary = marker.metadata!.transcriptBoundary!
+    expect(boundaryCursor(boundary, source)).toBe(boundary)
+  })
+
+  it('places a Codex item cursor on the first item past the cut', () => {
+    const source: ChatMessage = { ...message('codex-turn', ''), providerId: 'codex', content: [], metadata: { codex: { threadId: 'thread', usage: null,
+      items: [{ id: 'before', type: 'agent_message', text: 'Before' }] } } }
+    const marker = compact('c1', source)
+    const grown: ChatMessage = { ...source, metadata: { codex: { ...source.metadata!.codex!, items: [...source.metadata!.codex!.items,
+      { id: 'after', type: 'agent_message', text: 'After' }] } } }
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, grown)
+    expect(cursor).toMatchObject({ cursor: true, atItem: 'after', itemOffset: 0, content: {}, items: {} })
+    const slim = { ...marker, metadata: { transcriptBoundary: cursor } }
+    expect(texts([slim, grown])).toEqual(texts([marker, grown]))
+    expect(transcriptView([slim, grown]).rows.map(row => row.id)).toEqual(['codex-turn', 'c1', 'codex-turn:after:c1'])
+  })
+
+  it('keeps a folded process below the compaction cursor, even with a character offset', () => {
+    const source = message('turn', 'Before')
+    const marker = compact('c1', source)
+    source.content = [...source.content,
+      { type: 'tool_use', toolName: 'Read', toolUseId: 't', input: '{}', status: 'complete' },
+      { type: 'tool_result', toolUseId: 't', summary: 'ok' },
+      { type: 'text', text: 'After' }]
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, source)
+    expect(cursor.at).toBe('tool:t')
+    const folded: ChatMessage = { ...source, content: [
+      { type: 'text', text: 'Before' },
+      { type: 'notice', id: 'fold', level: 'info', kind: 'fold', text: '', fold: {
+        fragments: 2, segments: 1, toolCalls: 1, files: [], added: 0, removed: 0,
+        contentKey: 'tool:t', messageId: 'turn', key: 'fold:tool:t', revision: '1',
+      } },
+      { type: 'text', text: 'After' },
+    ] }
+    const slim = { ...marker, metadata: { transcriptBoundary: { ...cursor, offset: 40 } } }
+    const { rows } = transcriptView([slim, folded])
+    expect(rows.map(row => row.id)).toEqual(['turn', 'c1', 'turn:after:c1'])
+    expect(rows[0].first).toBe(true)
+    expect(rows[0].message.content.map(block => block.type)).toEqual(['text'])
+    expect(rows[2].message.content.map(block => block.type)).toEqual(['notice', 'text'])
+  })
+
+  it('keeps a cleared thinking shell above the compaction cursor', () => {
+    const source = message('turn', '')
+    source.content = [{ type: 'thinking', thinking: 'Before' }]
+    const marker = compact('c1', source)
+    const raw: ChatMessage = { ...source, content: [{ type: 'thinking', thinking: 'BeforeAfter' }, { type: 'text', text: 'Next' }] }
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, raw)
+    expect(cursor).toMatchObject({ at: 'thinking::0', offset: 'Before'.length })
+    const projected: ChatMessage = { ...raw, content: [{ type: 'thinking', thinking: '', remoteDetail: 'think' }, { type: 'text', text: 'Next' }] }
+    const { rows } = transcriptView([{ ...marker, metadata: { transcriptBoundary: cursor } }, projected])
+    expect(rows.map(row => row.id)).toEqual(['turn', 'c1', 'turn:after:c1'])
+    expect(rows[0].message.content[0]).toMatchObject({ type: 'thinking', remoteDetail: 'think' })
+    expect(rows[2].message.content).toEqual([{ type: 'text', text: 'Next' }])
   })
 })

@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react'
+import { COMPLETED_TODO_CLEAR_MS, todosAllCompleted } from '@superone/chat-core'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -29,7 +30,7 @@ export function TodoPopup() {
   }, [showTodos, handleKeyDown])
 
   const sessionTodoList = Object.values(todos)
-  const allDone = sessionTodoList.length > 0 && sessionTodoList.every((t) => t.status === 'completed')
+  const allDone = todosAllCompleted(sessionTodoList)
   useEffect(() => {
     if (!allDone) return
     const timer = setTimeout(() => {
@@ -56,7 +57,7 @@ export function TodoPopup() {
           }
         }
       }
-    }, 3000)
+    }, COMPLETED_TODO_CLEAR_MS)
     return () => clearTimeout(timer)
   }, [allDone])
 

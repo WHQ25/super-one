@@ -2847,6 +2847,7 @@ export function MobileApp() {
           canSteer={queuedSteerCapabilities.now}
           canSteerSoon={queuedSteerCapabilities.soon}
           todos={todos}
+          onAllTodosCompleted={() => runtimeRef.current?.clearCompletedTodos()}
           collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan }, promptCollapse.collapsed)}
           onExpandPrompt={promptCollapse.expand}
           draft={draft}

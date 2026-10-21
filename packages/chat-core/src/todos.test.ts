@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { createDefaultChatCoreSession } from './defaults'
-import { restoredTodos, withTranscriptTodos } from './todos'
+import { restoredTodos, todosAllCompleted, withTranscriptTodos } from './todos'
 
 const turn = (...content: ContentBlock[]): ChatMessage => ({ id: 'm', role: 'assistant', status: 'complete', content, createdAt: '', providerId: 'claude' })
 const todoWrite = (...statuses: string[]): ContentBlock => ({
   type: 'tool_use', toolUseId: 't', toolName: 'TodoWrite', status: 'complete',
   input: JSON.stringify({ todos: statuses.map((status, index) => ({ content: `step ${index + 1}`, status })) }),
+})
+
+describe('todosAllCompleted', () => {
+  it('is true only when every row is done', () => {
+    expect(todosAllCompleted([])).toBe(false)
+    expect(todosAllCompleted([{ status: 'completed' }, { status: 'in_progress' }])).toBe(false)
+    expect(todosAllCompleted([{ status: 'completed' }, { status: 'completed' }])).toBe(true)
+  })
 })
 
 describe('restoredTodos', () => {

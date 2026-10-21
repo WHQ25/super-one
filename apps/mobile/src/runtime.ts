@@ -25,7 +25,7 @@ import type {
   SaveWidgetTemplateRequest,
   SandboxMode,
 } from '@superone/shared/agent-types'
-import { applyEventToSession, createDefaultChatCoreSession, failedMessageResend, pendingSlashCommandFrom, withoutSendFailure } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession, failedMessageResend, pendingSlashCommandFrom, todosAllCompleted, withoutSendFailure } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
@@ -1157,6 +1157,17 @@ export class ChatRuntime {
   clearSlashCommandOutput(): void {
     if (!this.session.slashCommandOutput) return
     this.session = { ...this.session, slashCommandOutput: null }
+    this.dirty = true
+    this.flush()
+  }
+
+  /**
+   * Drop a list only after every row is done. A newer plan that arrived during
+   * the pause must stay; an empty list is already gone.
+   */
+  clearCompletedTodos(): void {
+    if (!todosAllCompleted(Object.values(this.session.todos))) return
+    this.session = { ...this.session, todos: {}, _nextTodoId: 1, showTodos: false, _todosUserDismissed: false }
     this.dirty = true
     this.flush()
   }

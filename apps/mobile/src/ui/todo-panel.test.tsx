@@ -1,6 +1,7 @@
-import { expect, test } from '@jest/globals'
+import { expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
 import type { Locale, TodoItem } from '@superone/shared/agent-types'
+import { COMPLETED_TODO_CLEAR_MS } from '@superone/chat-core'
 import { renderWithTheme } from '../test-render'
 import { TodoPanel } from './todo-panel'
 
@@ -12,8 +13,8 @@ function map(...items: TodoItem[]): Record<string, TodoItem> {
   return Object.fromEntries(items.map((item) => [item.id, item]))
 }
 
-function mount(todos: Record<string, TodoItem>, tablet = false, locale: Locale = 'en') {
-  return renderWithTheme(<TodoPanel todos={todos} tablet={tablet} />, 'dark', locale)
+function mount(todos: Record<string, TodoItem>, tablet = false, locale: Locale = 'en', onAllTodosCompleted?: () => void) {
+  return renderWithTheme(<TodoPanel todos={todos} tablet={tablet} onAllTodosCompleted={onAllTodosCompleted} />, 'dark', locale)
 }
 
 /**
@@ -97,6 +98,25 @@ test('a completed gate stops being a blocker', async () => {
   ))
   await press(screen.getByLabelText('Todos (1/2)'))
   expect(screen.getAllByText('#1')).toHaveLength(1)
+})
+
+test('a finished list asks to clear after the desktop pause', async () => {
+  jest.useFakeTimers()
+  const onAllTodosCompleted = jest.fn()
+  try {
+    const view = await mount(map(todo({ id: '1', status: 'completed' })), false, 'en', onAllTodosCompleted)
+    expect(screen.getByTestId('todo-panel')).toBeTruthy()
+    await act(() => { jest.advanceTimersByTime(COMPLETED_TODO_CLEAR_MS - 1) })
+    expect(onAllTodosCompleted).not.toHaveBeenCalled()
+    await act(() => { jest.advanceTimersByTime(1) })
+    expect(onAllTodosCompleted).toHaveBeenCalledTimes(1)
+
+    await view.rerender(<TodoPanel todos={map(todo({ id: '1', status: 'completed' }), todo({ id: '2', status: 'pending' }))} onAllTodosCompleted={onAllTodosCompleted} />)
+    await act(() => { jest.advanceTimersByTime(COMPLETED_TODO_CLEAR_MS) })
+    expect(onAllTodosCompleted).toHaveBeenCalledTimes(1)
+  } finally {
+    jest.useRealTimers()
+  }
 })
 
 test('translates the header', async () => {

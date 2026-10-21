@@ -92,6 +92,8 @@ export function ChatScreen(props: {
   projectDirs: string[]
   sessionDirs: string[]
   todos: Record<string, TodoItem>
+  /** Clears a list once every row has been completed. See `TodoPanel`. */
+  onAllTodosCompleted?: () => void
   /** Pins the composer's phone action bar; see `ChatComposer`. */
   focused?: boolean
   /** Prompts put away with an outside tap; each waits as a strip above the todos. */
@@ -257,7 +259,7 @@ export function ChatScreen(props: {
           unmounting it mid-send would restore the draft on the way back. */}
       <View testID="chat-composer-stack" style={props.composerHidden ? { display: 'none' } : undefined}>
         {props.worktreeRemoved ? <WorktreeRemovedBanner /> : <>
-          {!props.loadingConversation && !props.voiceComposer ? <TodoPanel todos={props.todos} /> : null}
+          {!props.loadingConversation && !props.voiceComposer ? <TodoPanel todos={props.todos} onAllTodosCompleted={props.onAllTodosCompleted} /> : null}
           {props.questionDocked ? null : props.inputComposer ?? props.voiceComposer}
         </>}
         <View testID="chat-text-composer" style={props.worktreeRemoved || props.inputComposer || props.voiceComposer || props.questionDocked ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>

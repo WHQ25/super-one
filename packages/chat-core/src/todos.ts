@@ -3,6 +3,19 @@ import type { ChatCoreSession } from './types'
 
 type TodosUpdatedEvent = Extract<AgentEvent, { type: 'todos_updated' }>
 
+/** How long a fully completed list stays readable before a client clears it. */
+export const COMPLETED_TODO_CLEAR_MS = 3_000
+
+/** True when the list has rows and every one is done. An empty list is not finished. */
+export function todosAllCompleted(todos: Iterable<{ status: string }>): boolean {
+  let count = 0
+  for (const todo of todos) {
+    count += 1
+    if (todo.status !== 'completed') return false
+  }
+  return count > 0
+}
+
 export function reduceTodosUpdated(session: ChatCoreSession, event: TodosUpdatedEvent): Partial<ChatCoreSession> {
   const todos = Object.fromEntries(event.todos.map((todo): [string, TodoItem] => [todo.id, todo]))
   return {

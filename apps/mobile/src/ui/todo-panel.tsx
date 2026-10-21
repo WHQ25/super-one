@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { Bot, CheckCircle2, ChevronRight, Circle, CircleDashed, ListTodo, Lock } from 'lucide-react-native'
 import type { TodoItem } from '@superone/shared/agent-types'
+import { COMPLETED_TODO_CLEAR_MS, todosAllCompleted } from '@superone/chat-core'
 import { buildTodoPanelRows, todoPanelSummary, type TodoPanelRow } from '../todo-panel-state'
 import { shouldUseTabletComposer } from '../layout-state'
 import { useMobileTheme } from '../theme/context'
@@ -32,6 +33,12 @@ export function TodoPanel(props: {
   todos: Record<string, TodoItem>
   /** Pin the chrome for stories and tests; width and height decide otherwise. */
   tablet?: boolean
+  /**
+   * Fired once a finished list has stayed readable for `COMPLETED_TODO_CLEAR_MS`.
+   * The session owner clears `runtime.session.todos`; stories omit this so the
+   * finished strip can be inspected.
+   */
+  onAllTodosCompleted?: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const { t } = useMobileLocale()
@@ -43,6 +50,17 @@ export function TodoPanel(props: {
 
   const rows = buildTodoPanelRows(props.todos)
   const { completed, total, hasInProgress } = todoPanelSummary(rows)
+  // Desktop's TodoPopup drops a finished list after the same pause. The callback
+  // identity changes every parent render, so the timer keys off whether one exists.
+  const onAllTodosCompleted = useRef(props.onAllTodosCompleted)
+  onAllTodosCompleted.current = props.onAllTodosCompleted
+  const settle = Boolean(props.onAllTodosCompleted)
+  const allDone = todosAllCompleted(rows)
+  useEffect(() => {
+    if (!allDone || !settle) return
+    const timer = setTimeout(() => onAllTodosCompleted.current?.(), COMPLETED_TODO_CLEAR_MS)
+    return () => clearTimeout(timer)
+  }, [allDone, settle])
   // Keep the running row in view as the agent walks the list; the strip is far
   // too short to hold a long plan, so without this it scrolls out from under you.
   // Every row reports its offset, not just the running one: handing `onLayout` to

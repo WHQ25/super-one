@@ -159,7 +159,10 @@ the conversation actually loads (`loadingConversation`).
 
 **The session's todos have exactly one surface**: `ui/todo-panel.tsx`, a strip
 between the transcript and the composer, matching the desktop's
-`TodoPopup`. The chat WebView used to paint a second copy at the top of the
+`TodoPopup`. When every row is completed the strip stays for 3 seconds, then
+the phone clears `runtime.session.todos` the way desktop clears its store, so
+a finished plan leaves on its own and a later one can open the strip again.
+The chat WebView used to paint a second copy at the top of the
 transcript; it was removed along with the `todos` field on `ReductionProjection`,
 because the same `runtime.session.todos` fed both and a six-item plan was drawn
 twice on a phone screen. Collapsed it is one line — `Todos (n/m)` beside a glyph

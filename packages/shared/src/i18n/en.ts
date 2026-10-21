@@ -2268,6 +2268,9 @@ export type Messages = {
       environmentFixed: string
       notAGitRepo: string
       checkoutHeading: string
+      localCheckout: string
+      newWorktreeFrom: string
+      noneYet: string
     }
     git: {
       init: string
@@ -2286,6 +2289,8 @@ export type Messages = {
       localBranches: string
       newBranch: string
       remoteRef: string
+      uninitialized: string
+      initOn: string
     }
     permission: {
       sandboxNetwork: string
@@ -6980,6 +6985,9 @@ export const en: Messages = {
       environmentFixed: 'This session stays on {{environment}}.',
       notAGitRepo: 'Not a Git Repository',
       checkoutHeading: 'Checkout',
+      localCheckout: 'Local Checkout',
+      newWorktreeFrom: 'New Worktree ← {{base}}',
+      noneYet: 'None Yet',
     },
     git: {
       init: 'Init Git',
@@ -6998,6 +7006,8 @@ export const en: Messages = {
       localBranches: '{{environment}} · Local Branches',
       newBranch: 'New Branch…',
       remoteRef: 'Remote',
+      uninitialized: 'Git Not Initialized',
+      initOn: 'Initialize Git on {{environment}}',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

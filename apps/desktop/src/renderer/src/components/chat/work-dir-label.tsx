@@ -5,11 +5,11 @@ import { Trans, useTranslation } from 'react-i18next'
 /**
  * Every way SuperOne can describe where a session runs. `active*` is a worktree that already
  * exists; the rest are worktrees that will be created when the session starts. This is the
- * single source for the status-bar chip (`WorkDirIndicator`) and for prompts that preview a
- * session before it exists (`SessionAgentsConfirmPrompt`) — keep them speaking one language.
+ * single source for prompts that preview a session before it exists
+ * (`SessionAgentsConfirmPrompt`). The status-bar chip uses the short
+ * environment · location label instead of these sentences.
  *
- * `local` = primary checkout (not a SuperOne worktree). Label is always “Local”;
- * host kind is distinguished only by icon (Monitor = this machine, Server = remote node).
+ * `local` = primary checkout (not a SuperOne worktree).
  */
 export type WorkDirState =
   | { kind: 'local'; host?: 'machine' | 'remote' }

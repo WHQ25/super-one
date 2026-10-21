@@ -82,6 +82,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         key={checkout.pathKey}
         folder={folder}
         sessionsOnly={sessionsOnly}
+        plain
         isExpanded={expandedProjectKeys.has(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
         sessionsLoading={props.loadingFolders[checkout.pathKey] === true}
@@ -303,7 +304,6 @@ function RepoGroupHeader({
         <IconButton
           size="sm"
           tooltip={t('tooltips.newSession')}
-          className="invisible opacity-0 group-hover:visible group-hover:opacity-100"
           onClick={(event) => {
             event.stopPropagation()
             onNewSession()

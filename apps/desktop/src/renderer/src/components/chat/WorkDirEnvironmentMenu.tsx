@@ -61,7 +61,6 @@ export function WorkDirEnvironmentMenu({
           <span className="min-w-0 flex-1 truncate">{label}</span>
           <span className="shrink-0 text-muted-foreground">{currentKind}</span>
         </div>
-        <p className="pt-1 text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: label })}</p>
       </div>
     )
   }
@@ -71,6 +70,7 @@ export function WorkDirEnvironmentMenu({
       <DropdownMenu open={open ?? uncontrolledOpen} onOpenChange={open === undefined ? setUncontrolledOpen : undefined}>
         <DropdownMenuTrigger asChild>
           <button type="button" className="flex w-full min-w-0 items-center gap-2 text-left text-xs">
+            <span className="shrink-0 text-muted-foreground">{t('chat.worktree.environment')}</span>
             <EnvironmentKindIcon kind={current?.hostKind ?? 'local'} className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{loading ? t('common.loading') : label}</span>
             {!loading && <span className="shrink-0 text-muted-foreground">{currentKind}</span>}

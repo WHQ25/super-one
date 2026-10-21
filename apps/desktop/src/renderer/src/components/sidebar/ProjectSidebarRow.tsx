@@ -175,6 +175,8 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   }
   /** Merged project: sessions sit under one header, so this checkout draws none. */
   sessionsOnly?: boolean
+  /** Widget project row: chevron, folder, name, and a new-session button that stays visible. */
+  plain?: boolean
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
@@ -197,6 +199,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   offline = false,
   sessionPresentation,
   sessionsOnly = false,
+  plain = false,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
   const foregroundSessionId = useChatStore((state) =>
@@ -461,7 +464,47 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   return (
     <div>
-      {!sessionsOnly && <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
+      {!sessionsOnly && plain && (
+        <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
+          <div className={cn(
+            'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-2.5',
+            folder.missing || offline ? 'opacity-60' : 'hover:bg-sidebar-hover',
+          )}>
+            <button
+              type="button"
+              onClick={() => {
+                if (folder.missing) return
+                if (historyMode) setHistoryMode(false)
+                onToggleExpand(folder.path)
+              }}
+              className="flex min-w-0 flex-1 items-center gap-1 text-left"
+            >
+              {sessionsLoading ? (
+                <Loader2 aria-label={t('common.loading')} className="size-4 shrink-0 animate-spin text-sidebar-foreground/70" />
+              ) : (
+                <ChevronRight className={cn('size-4 shrink-0 text-sidebar-foreground/70 transition-transform', isExpanded && 'rotate-90')} />
+              )}
+              {folder.missing
+                ? <FolderX className="size-4 shrink-0 text-destructive" />
+                : <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />}
+              <span className={cn('min-w-0 truncate text-md', folder.missing && 'text-sidebar-foreground/50 line-through')}>{folder.name}</span>
+            </button>
+            {!folder.missing && (
+              <IconButton
+                size="sm"
+                tooltip={t('tooltips.newSession')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onNewSession(folder.path)
+                }}
+              >
+                <SquarePen />
+              </IconButton>
+            )}
+          </div>
+        </AdaptiveContextMenu>
+      )}
+      {!sessionsOnly && !plain && <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
           <div
             onClick={() => {
               if (folder.missing) return
@@ -545,7 +588,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           </div>
       </AdaptiveContextMenu>}
 
-      {!sessionsOnly && isExpanded && projectAutomations.length > 0 && (
+      {!sessionsOnly && !plain && isExpanded && projectAutomations.length > 0 && (
         <div className="overflow-hidden pl-2.5">
           <button
             onClick={() => setAutomationsExpanded((v) => !v)}
@@ -593,7 +636,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         </div>
       )}
 
-      {!sessionsOnly && isExpanded && (
+      {!sessionsOnly && !plain && isExpanded && (
         <MiniAppHostGroup
           hosts={projectHosts}
           onOpen={handleOpenHostApp}

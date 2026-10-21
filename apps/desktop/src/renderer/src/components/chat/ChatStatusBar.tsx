@@ -5,7 +5,7 @@ import { StatusBarSchedules } from './chat-status-bar/StatusBarSchedules'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Activity, GitBranch, GitBranchPlus, ChevronDown, Circle, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
+import { Activity, GitBranch, ChevronDown, Circle, Plus, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import {
@@ -267,7 +267,7 @@ export function ChatStatusBar() {
   const branchEnvironmentLabel = useMemo(() => {
     const id = location.environmentId
     return environments.find((bucket) => bucket.environmentId === id || bucket.connectionId === id)?.label
-      ?? t('sidebar.thisPc')
+      ?? (typeof window !== 'undefined' && window.app.platform === 'darwin' ? t('sidebar.thisMac') : t('sidebar.thisPc'))
   }, [environments, location.environmentId, t])
   const gitFolder = location.cwd || currentFolder
   const scope = useSessionScope()
@@ -297,9 +297,6 @@ export function ChatStatusBar() {
   const [monitorOpen, setMonitorOpen] = useState(false)
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
   const dirty = gitInfo?.dirty
-
-  const sessionGitBranch = useActiveSession((s) => s._gitBranch)
-  const isInWorktree = location.pendingCreate || location.selection.kind === 'existing'
 
   // One RPC path: getGitInfo implies isRepo; skip separate getGitIsRepo (was 2× remote status).
   // `null` = not a repo (offer init); `branch: null` = git itself failed, so the
@@ -386,7 +383,6 @@ export function ChatStatusBar() {
     dirty?.insertions,
     dirty?.deletions,
     activeProvider,
-    sessionGitBranch,
     location.pendingCreate,
     location.selection.kind,
     isGitRepo,
@@ -667,7 +663,7 @@ export function ChatStatusBar() {
         </div>
         {currentFolder && <WorkDirIndicator compact={compactIndicators} isGitRepo={isGitRepo} />}
 
-        {gitInfo && !isInWorktree && !sessionGitBranch && (
+        {gitInfo && !location.pendingCreate && (
           <>
             <div className="h-3 w-px bg-border" />
             <Popover open={popoverOpen} onOpenChange={openPopover}>
@@ -712,22 +708,37 @@ export function ChatStatusBar() {
           </>
         )}
 
-        {isGitRepo === false && !isInWorktree && !sessionGitBranch && (
+        {isGitRepo === false && !location.pendingCreate && (
           <>
             <div className="h-3 w-px bg-border" />
-            <button
-              onClick={handleGitInit}
-              disabled={initing}
-              className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              title={t('chat.git.initHint')}
-            >
-              <GitBranchPlus className="size-3" />
-              {!compactIndicators && <span>{t('chat.git.init')}</span>}
-            </button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title={t('chat.git.uninitialized')}
+                >
+                  <GitBranch className="size-3" />
+                  {!compactIndicators && <span>{t('chat.git.uninitialized')}</span>}
+                  {!compactIndicators && <ChevronDown className="size-3" />}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-0" align="start">
+                <button
+                  type="button"
+                  onClick={() => { void handleGitInit() }}
+                  disabled={initing}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50"
+                >
+                  <Plus className="size-3 shrink-0 text-muted-foreground" />
+                  <span>{t('chat.git.initOn', { environment: branchEnvironmentLabel })}</span>
+                </button>
+              </PopoverContent>
+            </Popover>
           </>
         )}
 
-        {gitError && !isInWorktree && !sessionGitBranch && (
+        {gitError && !location.pendingCreate && (
           <>
             <div className="h-3 w-px bg-border" />
             <button

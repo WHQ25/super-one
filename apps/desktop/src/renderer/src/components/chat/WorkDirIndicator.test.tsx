@@ -81,13 +81,13 @@ describe('WorkDirIndicator turn-boundary refresh', () => {
       .mockResolvedValue(worktreeInfo('feat/x'))
 
     render(<WorkDirIndicator isGitRepo />)
-    await waitFor(() => expect(screen.getByTitle('Worktree abc1234')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTitle('This PC · abc1234')).toBeTruthy())
     expect(getWorktreeInfo).toHaveBeenCalledTimes(1)
 
     act(() => setSessionStatus('streaming'))
     act(() => setSessionStatus('idle'))
 
-    await waitFor(() => expect(screen.getByTitle('Worktree feat/x')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTitle('This PC · feat/x')).toBeTruthy())
     expect(getWorktreeInfo).toHaveBeenCalledTimes(2)
     expect(getWorktreeInfo).toHaveBeenLastCalledWith(PROJECT)
   })
@@ -95,7 +95,7 @@ describe('WorkDirIndicator turn-boundary refresh', () => {
   it('does not re-read entries while the turn is still streaming', async () => {
     getWorktreeInfo.mockResolvedValue(worktreeInfo(''))
     render(<WorkDirIndicator isGitRepo />)
-    await waitFor(() => expect(screen.getByTitle('Worktree abc1234')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTitle('This PC · abc1234')).toBeTruthy())
 
     act(() => setSessionStatus('streaming'))
 

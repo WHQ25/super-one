@@ -36,6 +36,7 @@ export function GitBranchMenu({
 }: GitBranchMenuProps) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState('')
+  const [naming, setNaming] = useState(false)
   const localRows = [
     ...(current ? [current] : []),
     ...local.filter((branch) => branch !== current),
@@ -97,15 +98,25 @@ export function GitBranchMenu({
           </button>
         ))}
       </div>
-      <form className="flex items-center gap-2 border-t px-3 py-2" onSubmit={submitDraft}>
-        <Plus className="size-3 shrink-0 text-muted-foreground" />
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={t('chat.git.newBranch')}
-          className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-        />
-      </form>
+      <div className="border-t">
+        {naming ? (
+          <form className="flex items-center gap-2 px-3 py-1.5" onSubmit={submitDraft}>
+            <Plus className="size-3 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={t('chat.git.newBranch')}
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+            />
+          </form>
+        ) : (
+          <button type="button" className={rowClass} onClick={() => setNaming(true)}>
+            <Plus className="size-3 shrink-0 text-muted-foreground" />
+            <span>{t('chat.git.newBranch')}</span>
+          </button>
+        )}
+      </div>
     </div>
   )
 }

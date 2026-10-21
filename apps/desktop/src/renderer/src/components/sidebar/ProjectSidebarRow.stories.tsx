@@ -112,6 +112,28 @@ export const SessionsOnly: Story = {
   },
 }
 
+export const PlainHeader: Story = {
+  render: () => (
+    <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <ProjectSidebarRow
+        {...callbacks}
+        plain
+        folder={{ id: 'plain', name: 'super-one', path: '/storybook/plain', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
+        sessions={[parent]}
+        hasMoreSessions={false}
+        isExpanded
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('super-one')).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'New Session' })).toBeInTheDocument()
+    await expect(canvas.getByText('Build the account opening workflow')).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Search Sessions' })).not.toBeInTheDocument()
+  },
+}
+
 export const LoadingSessions: Story = {
   render: () => (
     <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>

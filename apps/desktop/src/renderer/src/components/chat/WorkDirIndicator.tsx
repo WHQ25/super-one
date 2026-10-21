@@ -1,8 +1,19 @@
-import { useEffect, useState, useCallback, useMemo, type ComponentType } from 'react'
+import { useEffect, useState, useCallback, useMemo, type ComponentType, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { GitBranch, GitFork, ChevronDown, Check, Folder, Circle } from 'lucide-react'
+import { toast } from 'sonner'
+import { GitBranch, GitFork, ChevronDown, Check, Folder, Circle, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { useActiveSession, useSessionScope } from '@/stores/chat'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@superone/ui/components/ui/dialog'
+import { Button } from '@superone/ui/components/ui/button'
+import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import type { GitDirtyStatus, GitInfoResult, WorktreeEntry, WorktreeInfo } from '@superone/shared/agent-types'
@@ -29,7 +40,8 @@ import {
   type WorkDirEnvironmentOption,
 } from './work-dir-environment'
 import { selectionForNewSession } from '@superone/shared/session-location'
-import { EMPTY_BRANCH_LISTS, readBranchLists, type GitBranchLists } from './git-branch-lists'
+import { EMPTY_BRANCH_LISTS, readBranchLists, trackingCheckoutPlan, type GitBranchLists } from './git-branch-lists'
+import { GitBranchMenu } from './GitBranchMenu'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
 function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -50,7 +62,7 @@ function displayHostPath(path: string | null | undefined): string {
   return parseRemoteProjectKey(path)?.path ?? path
 }
 
-/** Status-bar chip: environment kind and name, then the checkout or worktree label. */
+/** Status-bar chip: environment, then the branch or worktree label. */
 function LocationChip({
   kind,
   environment,
@@ -73,9 +85,13 @@ function LocationChip({
   )
 }
 
+type LocationMode = 'checkout' | 'worktree'
+
 interface WorkDirIndicatorProps {
   compact?: boolean
   isGitRepo?: boolean | null
+  /** Parent refreshes its repo flag after a successful git init. */
+  onRepositoryReady?: () => void
 }
 
 interface WtMeta {
@@ -85,7 +101,12 @@ interface WtMeta {
   isDetached: boolean
 }
 
-const CLEAN: GitDirtyStatus = { files: 0, insertions: 0, deletions: 0 }
+interface FailedCheckout {
+  branch: string
+  error: string
+}
+
+const fmt = (n: number) => n.toLocaleString()
 
 /**
  * GIT_INFO omits `dirty` for a clean checkout, but this popover distinguishes
@@ -93,9 +114,227 @@ const CLEAN: GitDirtyStatus = { files: 0, insertions: 0, deletions: 0 }
  * a successful read with no changes is clean; a failed read stays undefined.
  */
 const knownDirty = (info: GitInfoResult | null | undefined): GitDirtyStatus | undefined =>
-  info && info.branch !== null ? (info.dirty ?? CLEAN) : undefined
+  info && info.branch !== null ? (info.dirty ?? { files: 0, insertions: 0, deletions: 0 }) : undefined
 
-export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicatorProps) {
+function branchDirtyDetail(dirty: GitDirtyStatus | undefined): ReactNode {
+  if (!dirty || dirty.files <= 0) return null
+  return (
+    <span className="text-xs text-muted-foreground">
+      uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
+      {(dirty.insertions > 0 || dirty.deletions > 0) && (
+        <>
+          {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
+          {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
+        </>
+      )}
+    </span>
+  )
+}
+
+function CheckoutPanel({
+  path,
+  current,
+  isGitRepo,
+  environment,
+  branch,
+  dirty,
+  lists,
+  loading,
+  fetching,
+  fetchError,
+  initing,
+  onInit,
+  onSelect,
+  onSelectTracking,
+  onCreate,
+  onFetch,
+}: {
+  path: string
+  current: boolean
+  isGitRepo?: boolean | null
+  environment: string
+  branch: string | null
+  dirty: GitDirtyStatus | undefined
+  lists: GitBranchLists
+  loading: boolean
+  fetching: boolean
+  fetchError: string | null
+  initing: boolean
+  onInit: () => void
+  onSelect: (branch: string) => void
+  onSelectTracking: (ref: string) => void
+  onCreate: (name: string) => void
+  onFetch: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.checkoutHeading')}</div>
+      <div className="flex w-full items-center gap-2 px-3 py-1.5 text-xs">
+        <Folder className="size-3 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">{path}</span>
+        {current && <Check className="size-3 shrink-0 text-primary" />}
+      </div>
+      {isGitRepo === false ? (
+        <>
+          <p className="px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.notAGitRepo')}</p>
+          <button
+            type="button"
+            onClick={onInit}
+            disabled={initing}
+            className="flex w-full items-center gap-2 border-t px-3 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50"
+          >
+            <Plus className="size-3 shrink-0 text-muted-foreground" />
+            <span>{t('chat.git.initOn', { environment })}</span>
+          </button>
+        </>
+      ) : (
+        <GitBranchMenu
+          current={branch}
+          currentDetail={branchDirtyDetail(dirty)}
+          local={lists.local}
+          tracking={lists.tracking}
+          environmentLabel={environment}
+          loading={loading}
+          fetching={fetching}
+          fetchError={fetchError}
+          onSelect={onSelect}
+          onSelectTracking={onSelectTracking}
+          onCreate={onCreate}
+          onFetch={onFetch}
+        />
+      )}
+    </div>
+  )
+}
+
+function WorktreeDraftPanel({
+  entries,
+  metas,
+  activePath,
+  local,
+  tracking,
+  pendingBase,
+  pending,
+  pendingCarry,
+  loading,
+  fetching,
+  fetchError,
+  onSelectExisting,
+  onSelectBase,
+  onToggleCarry,
+  onFetch,
+}: {
+  entries: WorktreeEntry[]
+  metas: Record<string, WtMeta>
+  activePath: string | null
+  local: string[]
+  tracking: string[]
+  pendingBase: string
+  pending: boolean
+  pendingCarry: boolean
+  loading: boolean
+  fetching: boolean
+  fetchError: string | null
+  onSelectExisting: (entry: WorktreeEntry) => void
+  onSelectBase: (base: string) => void
+  onToggleCarry: () => void
+  onFetch: () => void
+}) {
+  const { t } = useTranslation()
+  const noBranches = local.length === 0 && tracking.length === 0
+  return (
+    <div className="flex flex-col">
+      <div className="max-h-80 overflow-y-auto">
+        <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.existingHeading')}</div>
+        {entries.length > 0 ? entries.map((entry) => {
+          const meta = metas[entry.path]
+          const detached = !entry.branch
+          return (
+            <WorktreeEntryRow
+              key={entry.path}
+              label={detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : entry.branch!}
+              detached={detached}
+              dirty={meta?.dirty}
+              isCurrent={sameWorktreePath(entry.path, activePath)}
+              onClick={() => onSelectExisting(entry)}
+            />
+          )
+        }) : (
+          <div className="px-3 py-1 text-xs text-muted-foreground">{t('chat.worktree.noneYet')}</div>
+        )}
+
+        <div className="flex items-center gap-2 px-3 pt-2">
+          <span className="min-w-0 flex-1 text-xs uppercase text-muted-foreground">{t('chat.worktree.createFromHeading')}</span>
+          <button
+            type="button"
+            disabled={fetching}
+            onClick={onFetch}
+            className="shrink-0 rounded px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+          >
+            {fetching ? t('chat.git.fetching') : t('chat.git.fetch')}
+          </button>
+        </div>
+        {fetchError && (
+          <div className="truncate px-3 py-1 text-xs text-destructive" title={fetchError}>
+            {t('chat.git.fetchFailed', { error: fetchError })}
+          </div>
+        )}
+        {loading && (
+          <div className="px-3 py-1 text-xs text-muted-foreground">{t('common.loading')}</div>
+        )}
+        {noBranches && !loading && (
+          <div className="px-3 py-1 text-xs text-muted-foreground">{t('chat.git.noBranches')}</div>
+        )}
+        {local.map((branch) => {
+          const selected = pending && pendingBase === branch
+          return (
+            <button
+              key={branch}
+              type="button"
+              onClick={() => onSelectBase(branch)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent"
+            >
+              <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-left">{branch}</span>
+              {selected && <Check className="size-3 shrink-0 text-primary" />}
+            </button>
+          )
+        })}
+        {tracking.map((ref) => {
+          const selected = pending && pendingBase === ref
+          return (
+            <button
+              key={ref}
+              type="button"
+              onClick={() => onSelectBase(ref)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent"
+            >
+              <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-left text-muted-foreground">{ref}</span>
+              <span className="shrink-0 text-muted-foreground">{t('chat.git.remoteRef')}</span>
+              {selected && <Check className="size-3 shrink-0 text-primary" />}
+            </button>
+          )
+        })}
+      </div>
+      {pending && (
+        <button
+          type="button"
+          onClick={onToggleCarry}
+          className="flex w-full items-center gap-2 border-t px-3 py-2 text-xs hover:bg-accent"
+        >
+          <div className={`flex size-3.5 items-center justify-center rounded-sm border ${pendingCarry ? 'border-foreground bg-foreground' : 'border-muted-foreground'}`}>
+            {pendingCarry && <Check className="size-2.5 text-background" />}
+          </div>
+          <span>{t('chat.worktree.carryLocalChanges')}</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady }: WorkDirIndicatorProps) {
   const { t } = useTranslation()
   const scope = useSessionScope()
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -110,14 +349,18 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
 
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [mode, setMode] = useState<LocationMode>('checkout')
   const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
+  const [branchesLoading, setBranchesLoading] = useState(false)
   const [fetchingBranches, setFetchingBranches] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
+  const [mainBranch, setMainBranch] = useState<string | null>(null)
   const [mainDirty, setMainDirty] = useState<GitDirtyStatus | undefined>()
   const [wtMetas, setWtMetas] = useState<Record<string, WtMeta>>({})
   const [checkedOutBranches, setCheckedOutBranches] = useState<Set<string>>(new Set())
   const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
+  const [initing, setIniting] = useState(false)
+  const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
 
   const activePath = location.selection.kind === 'existing' ? location.selection.path : null
   const isRemoteProject = Boolean(currentFolder && parseRemoteProjectKey(currentFolder))
@@ -127,10 +370,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const environmentName = environmentBucket?.label || fallbackEnvironment
   const environmentKind: EnvironmentKind = environmentBucket?.kind ?? (isRemoteProject ? 'cli-node' : 'local')
   const localCheckoutLabel = t('chat.worktree.localCheckout')
-  const chipTitle = (label: string) => `${environmentName} · ${label}`
-  const localChip = compact
-    ? <Folder className="size-3" />
-    : <LocationChip kind={environmentKind} environment={environmentName} location={localCheckoutLabel} icon={Folder} />
 
   const refreshWorktreeInfo = useCallback(() => {
     if (!currentFolder || isGitRepo === false) return
@@ -144,9 +383,30 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     let cancelled = false
     window.app.getWorktreeInfo(currentFolder).then((info) => {
       if (!cancelled) setWorktreeInfo(info)
-    })
+    }).catch(() => {})
     return () => { cancelled = true }
   }, [currentFolder, isGitRepo, activePath])
+
+  // The chip names the shared checkout's branch before the popover opens.
+  useEffect(() => {
+    if (!currentFolder || isGitRepo === false) {
+      setMainBranch(null)
+      return
+    }
+    let cancelled = false
+    const read = () => {
+      window.app.getGitInfo(currentFolder).then((info) => {
+        if (cancelled) return
+        setMainBranch(info?.branch ?? null)
+        setMainDirty(info?.dirty)
+      }).catch(() => {})
+    }
+    read()
+    const unsub = window.app.onGitHeadChange((evt) => {
+      if (!evt.folderPath || evt.folderPath === currentFolder) read()
+    })
+    return () => { cancelled = true; unsub() }
+  }, [currentFolder, isGitRepo])
 
   const refreshActiveDirty = useCallback(() => {
     if (!activePath) return
@@ -166,8 +426,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     refreshWorktreeInfo()
   }, [activePath, refreshActiveDirty, refreshWorktreeInfo])
 
-  // Event-driven, like the branch chip: read once for the worktree, then only
-  // when a turn ends or the repo's HEAD moves.
   useEffect(() => {
     if (!activePath) { setActiveDirty(undefined); return }
     let cancelled = false
@@ -185,47 +443,55 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   useOnTurnCompleted(refreshActiveWorktree)
 
   const loadPopoverData = useCallback(async () => {
-    if (!currentFolder) return
-    const [info, br, gitInfo, checkedOut] = await Promise.all([
-      window.app.getWorktreeInfo(currentFolder),
-      window.app.getGitBranches(currentFolder),
-      window.app.getGitInfo(currentFolder),
-      window.app.getCheckedOutBranches(currentFolder),
-    ])
-    setWorktreeInfo(info)
-    setBranchLists(readBranchLists(br))
-    setMainDirty(gitInfo?.dirty)
-    setCheckedOutBranches(new Set(checkedOut))
+    if (!currentFolder || isGitRepo === false) return
+    setBranchesLoading(true)
+    try {
+      const [info, br, gitInfo, checkedOut] = await Promise.all([
+        window.app.getWorktreeInfo(currentFolder),
+        window.app.getGitBranches(currentFolder),
+        window.app.getGitInfo(currentFolder),
+        window.app.getCheckedOutBranches(currentFolder),
+      ])
+      setWorktreeInfo(info)
+      setBranchLists(readBranchLists(br))
+      setMainBranch(gitInfo?.branch ?? null)
+      setMainDirty(gitInfo?.dirty)
+      setCheckedOutBranches(new Set(checkedOut))
 
-    if (info?.entries?.length) {
-      const nonMain = info.entries.filter((e) => !e.isMain)
-      const metas: Record<string, WtMeta> = {}
-      const remote = currentFolder ? parseRemoteProjectKey(currentFolder) : null
-      // Remote: do NOT getGitInfo(worktree host path) — that used to openProject each
-      // worktree path and leave ghost rows in project.list / ChatSuggestions.
-      if (remote) {
-        for (const e of nonMain) {
-          metas[e.path] = {
-            dirty: undefined,
-            shortHead: e.head ? e.head.slice(0, 7) : '',
-            isDetached: !e.branch,
+      if (info?.entries?.length) {
+        const nonMain = info.entries.filter((e) => !e.isMain)
+        const metas: Record<string, WtMeta> = {}
+        const remote = currentFolder ? parseRemoteProjectKey(currentFolder) : null
+        // Remote: do NOT getGitInfo(worktree host path) — that used to openProject each
+        // worktree path and leave ghost rows in project.list / ChatSuggestions.
+        if (remote) {
+          for (const e of nonMain) {
+            metas[e.path] = {
+              dirty: undefined,
+              shortHead: e.head ? e.head.slice(0, 7) : '',
+              isDetached: !e.branch,
+            }
           }
+        } else {
+          await Promise.all(nonMain.map(async (e) => {
+            const wtInfo = await window.app.getGitInfo(e.path).catch(() => null)
+            metas[e.path] = {
+              dirty: knownDirty(wtInfo),
+              shortHead: e.head ? e.head.slice(0, 7) : '',
+              isDetached: !e.branch,
+            }
+          }))
         }
+        setWtMetas(metas)
       } else {
-        await Promise.all(nonMain.map(async (e) => {
-          const wtInfo = await window.app.getGitInfo(e.path).catch(() => null)
-          metas[e.path] = {
-            dirty: knownDirty(wtInfo),
-            shortHead: e.head ? e.head.slice(0, 7) : '',
-            isDetached: !e.branch,
-          }
-        }))
+        setWtMetas({})
       }
-      setWtMetas(metas)
-    } else {
-      setWtMetas({})
+    } catch {
+      // Keep the last lists. The checkout tab shows its own empty state.
+    } finally {
+      setBranchesLoading(false)
     }
-  }, [currentFolder])
+  }, [currentFolder, isGitRepo])
 
   const openPopover = useCallback((open: boolean) => {
     if (!open && currentFolder && location.selection.kind === 'create'
@@ -239,10 +505,31 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     }
     setPopoverOpen(open)
     if (open) {
-      setSearch('')
+      setFetchError(null)
+      setMode(isGitRepo !== false && location.selection.kind !== 'local' ? 'worktree' : 'checkout')
       void loadPopoverData()
     }
-  }, [loadPopoverData, currentFolder, location.selection, location.environmentId])
+  }, [loadPopoverData, currentFolder, location.selection, location.environmentId, isGitRepo])
+
+  const resetToCheckout = useCallback(() => {
+    if (!currentFolder || location.selection.kind === 'local') return
+    writeFocusedSelection(currentFolder, selectionForNewSession(location.environmentId), {
+      cwd: currentFolder,
+      worktreePath: null,
+      gitBranch: null,
+    })
+    void useAppStore.getState().clearWorktree(currentFolder)
+  }, [currentFolder, location.environmentId, location.selection.kind])
+
+  const selectMode = useCallback((next: string) => {
+    if (next === 'worktree') {
+      if (isGitRepo === false) return
+      setMode('worktree')
+      return
+    }
+    setMode('checkout')
+    resetToCheckout()
+  }, [isGitRepo, resetToCheckout])
 
   const handleSelectEnvironment = useCallback((option: WorkDirEnvironmentOption) => {
     const checkout = checkoutOnEnvironment(environmentMenu.buckets, option.environmentId, environmentMenu.repoIdentity)
@@ -286,17 +573,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     })
   }, [currentFolder, location.selection])
 
-  const handleSwitchToLocal = useCallback(() => {
-    if (!currentFolder) return
-    setPopoverOpen(false)
-    writeFocusedSelection(currentFolder, selectionForNewSession(location.environmentId), {
-      cwd: currentFolder,
-      worktreePath: null,
-      gitBranch: null,
-    })
-    void useAppStore.getState().clearWorktree(currentFolder)
-  }, [currentFolder, location.environmentId])
-
   const handleSwitchToExisting = useCallback((entry: WorktreeEntry) => {
     if (!currentFolder) return
     setPopoverOpen(false)
@@ -318,6 +594,75 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     useAppStore.getState().setPendingCarryLocalChanges(currentFolder, next)
     patchFocusedCreate(currentFolder, { carryLocalChanges: next })
   }, [currentFolder, location.selection])
+
+  const handleBranchSelect = useCallback(async (branch: string, track?: string) => {
+    // The checkout tab switches the shared project checkout, never a worktree path.
+    if (!currentFolder || (!track && branch === mainBranch)) return
+    setPopoverOpen(false)
+    const result = await window.app.switchGitBranch(currentFolder, branch, track)
+    const info = await window.app.getGitInfo(currentFolder).catch(() => null)
+    setMainBranch(info?.branch ?? null)
+    setMainDirty(info?.dirty)
+    if (!result.ok) setFailedCheckout({ branch, error: result.error ?? '' })
+  }, [currentFolder, mainBranch])
+
+  const handleTrackingSelect = useCallback((ref: string) => {
+    const plan = trackingCheckoutPlan(ref, branchLists.local)
+    if (!plan) return
+    void handleBranchSelect(plan.branch, plan.track ?? undefined)
+  }, [branchLists.local, handleBranchSelect])
+
+  const handleFetch = useCallback(async () => {
+    if (!currentFolder || fetchingBranches) return
+    setFetchingBranches(true)
+    setFetchError(null)
+    try {
+      const result = await window.app.gitFetch(currentFolder)
+      if (!result.ok) {
+        setFetchError(result.error || 'git fetch failed')
+        return
+      }
+      const lists = await window.app.getGitBranches(currentFolder).catch(() => EMPTY_BRANCH_LISTS)
+      setBranchLists(readBranchLists(lists))
+      const info = await window.app.getGitInfo(currentFolder).catch(() => null)
+      setMainBranch(info?.branch ?? null)
+      setMainDirty(info?.dirty)
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'git fetch failed')
+    } finally {
+      setFetchingBranches(false)
+    }
+  }, [currentFolder, fetchingBranches])
+
+  const handleCreateBranch = useCallback(async (name: string) => {
+    if (!currentFolder) return
+    setPopoverOpen(false)
+    const result = await window.app.createBranch(currentFolder, name)
+    if (result.ok) {
+      const info = await window.app.getGitInfo(currentFolder).catch(() => null)
+      setMainBranch(info?.branch ?? name)
+      setMainDirty(info?.dirty)
+    } else {
+      setFailedCheckout({ branch: name, error: result.error ?? '' })
+    }
+  }, [currentFolder])
+
+  const handleGitInit = useCallback(async () => {
+    if (!currentFolder || initing) return
+    setIniting(true)
+    try {
+      const result = await window.app.gitInit(currentFolder)
+      if (result.ok) {
+        toast.success(t('chat.git.initSuccess'))
+        onRepositoryReady?.()
+        void loadPopoverData()
+      } else {
+        toast.error(t('chat.git.initFailed', { error: result.error ?? '' }))
+      }
+    } finally {
+      setIniting(false)
+    }
+  }, [currentFolder, initing, loadPopoverData, onRepositoryReady, t])
 
   const createMode = location.selection.kind === 'create' ? location.selection.mode : null
   const createBase = location.selection.kind === 'create' ? location.selection.baseBranch : null
@@ -343,344 +688,200 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     return worktreeInfo.entries.filter((e) => !e.isMain)
   }, [worktreeInfo])
 
-  const lowerSearch = search.trim().toLowerCase()
-  const filteredExisting = useMemo(() => {
-    if (!lowerSearch) return existingEntries
-    return existingEntries.filter((e) => {
-      const meta = wtMetas[e.path]
-      const hay = [e.branch, meta?.shortHead, e.path].filter(Boolean).join(' ').toLowerCase()
-      return hay.includes(lowerSearch)
-    })
-  }, [existingEntries, wtMetas, lowerSearch])
-
-  const filteredBranches = useMemo(() => {
-    if (!lowerSearch) return branchLists.local
-    return branchLists.local.filter((b) => b.toLowerCase().includes(lowerSearch))
-  }, [branchLists.local, lowerSearch])
-
-  const filteredTracking = useMemo(() => {
-    if (!lowerSearch) return branchLists.tracking
-    return branchLists.tracking.filter((ref) => ref.toLowerCase().includes(lowerSearch))
-  }, [branchLists.tracking, lowerSearch])
-
-  const handleFetch = useCallback(async () => {
-    if (!currentFolder || fetchingBranches) return
-    setFetchingBranches(true)
-    setFetchError(null)
-    try {
-      const result = await window.app.gitFetch(currentFolder)
-      if (!result.ok) {
-        setFetchError(result.error || 'git fetch failed')
-        return
-      }
-      const lists = await window.app.getGitBranches(currentFolder).catch(() => EMPTY_BRANCH_LISTS)
-      setBranchLists(readBranchLists(lists))
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'git fetch failed')
-    } finally {
-      setFetchingBranches(false)
-    }
-  }, [currentFolder, fetchingBranches])
-
-  if (isGitRepo === false) {
-    if (!environmentMenu.visible) {
-      return (
-        <div className="flex items-center gap-1 rounded-lg px-2 py-1" title={chipTitle(localCheckoutLabel)}>
-          {localChip}
-        </div>
-      )
-    }
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-muted" title={chipTitle(localCheckoutLabel)}>
-            {localChip}
-            {!compact && <ChevronDown className="size-3 text-muted-foreground" />}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="start">
-          <WorkDirEnvironmentMenu
-            visible
-            error={environmentError}
-            readOnly={isOldSession}
-            options={environmentMenu.options}
-            selectedId={location.environmentId}
-            onSelect={handleSelectEnvironment}
-            onClone={handleCloneEnvironment}
-          />
-          <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.checkoutHeading')}</div>
-          <div className="flex w-full items-center gap-2 px-3 py-1.5 text-xs">
-            <Folder className="size-3 shrink-0 text-muted-foreground" />
-            <span className="shrink-0">{localCheckoutLabel}</span>
-            <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">{displayHostPath(currentFolder)}</span>
-            <Check className="size-3 shrink-0 text-primary" />
-          </div>
-          <p className="px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.notAGitRepo')}</p>
-        </PopoverContent>
-      </Popover>
-    )
-  }
-
-  // Don't hide the chip while worktree RPC is in flight — show the checkout label
-  // optimistically. Remote getWorktreeInfo was blocking the whole status-bar chip.
-  // The environment menu still has to open before that RPC returns.
-  if (!worktreeInfo) {
-    const triggerClass = 'flex items-center gap-1 rounded-lg px-2 py-1'
-    if (!environmentMenu.visible) {
-      return (
-        <div className={triggerClass} title={chipTitle(localCheckoutLabel)}>
-          {localChip}
-        </div>
-      )
-    }
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <button type="button" className={`${triggerClass} hover:bg-muted`} title={chipTitle(localCheckoutLabel)}>
-            {localChip}
-            {!compact && <ChevronDown className="size-3 text-muted-foreground" />}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="start">
-          <WorkDirEnvironmentMenu
-            visible
-            loading={environmentMenu.loading}
-            error={environmentError}
-            readOnly={isOldSession}
-            options={environmentMenu.options}
-            selectedId={location.environmentId}
-            onSelect={handleSelectEnvironment}
-            onClone={handleCloneEnvironment}
-          />
-        </PopoverContent>
-      </Popover>
-    )
-  }
-
   const pending = location.selection.kind === 'create' ? location.selection : null
   const isPending = !!pending
   const isActive = location.selection.kind === 'existing'
-  const isInWorktree = isPending || isActive
+  const startedWorktree = isOldSession && location.selection.kind !== 'local'
+  const modeValue: LocationMode = isGitRepo === false ? 'checkout' : mode
 
   const activeEntry = isActive
     ? existingEntries.find((e) => sameWorktreePath(e.path, activePath))
     : undefined
   const activeIsDetached = activeEntry ? !activeEntry.branch : false
   const activeShortHead = activeEntry?.head ? activeEntry.head.slice(0, 7) : ''
-
   const pendingBase = pending?.baseBranch ?? ''
   const pendingCarry = pending?.carryLocalChanges ?? false
-  const locationLabel = isPending
-    ? t('chat.worktree.newWorktreeFrom', { base: pendingBase })
-    : isActive
-      ? (activeIsDetached
-          ? (activeShortHead || t('chat.worktree.detachedLabel'))
-          : (activeEntry?.branch || activeGitBranch || t('sidebar.hover.worktree')))
-      : localCheckoutLabel
-  const LocationIcon = isPending || isActive ? GitFork : Folder
-  const fullChip = compact
-    ? <LocationIcon className="size-3" />
-    : <LocationChip kind={environmentKind} environment={environmentName} location={locationLabel} icon={LocationIcon} />
-  const showDirty = isActive && !!activeDirty
-  const dirtyDot = showDirty ? (
-    <Circle className={`size-1.5 ${activeDirty!.files > 0 ? 'fill-amber-500 text-amber-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
-  ) : null
-  const checkoutHay = `${localCheckoutLabel} ${displayHostPath(currentFolder)}`.toLowerCase()
-  const showCheckout = !lowerSearch || checkoutHay.includes(lowerSearch)
+  const locationLabel = isGitRepo === false
+    ? t('chat.git.uninitialized')
+    : isPending
+      ? t('chat.worktree.newWorktreeFrom', { base: pendingBase })
+      : isActive
+        ? (activeIsDetached
+            ? (activeShortHead || t('chat.worktree.detachedLabel'))
+            : (activeEntry?.branch || activeGitBranch || t('sidebar.hover.worktree')))
+        : (mainBranch || localCheckoutLabel)
+  const LocationIcon = isGitRepo !== false && (isPending || isActive) ? GitFork : GitBranch
+  const showActiveDirty = isActive && !!activeDirty
+  const dirtyDot = isGitRepo === false || isPending
+    ? null
+    : showActiveDirty
+      ? (
+        <Circle className={`size-1.5 ${activeDirty!.files > 0 ? 'fill-amber-500 text-amber-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
+      )
+      : (!isActive && mainDirty && mainDirty.files > 0
+        ? <Circle className="size-1.5 fill-amber-500 text-amber-500" />
+        : null)
+  const chipTitle = `${environmentName} · ${locationLabel}`
 
-  if (isOldSession) {
-    return (
-      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+  const environmentMenuNode = (
+    <WorkDirEnvironmentMenu
+      visible={environmentMenu.visible}
+      loading={environmentMenu.loading}
+      error={environmentError}
+      readOnly={isOldSession}
+      options={environmentMenu.options}
+      selectedId={location.environmentId}
+      onSelect={handleSelectEnvironment}
+      onClone={handleCloneEnvironment}
+    />
+  )
+
+  return (
+    <>
+      <Popover open={popoverOpen} onOpenChange={openPopover}>
         <PopoverTrigger asChild>
           <button
+            type="button"
             className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-            title={chipTitle(locationLabel)}
+            title={chipTitle}
           >
-            {fullChip}
+            {compact
+              ? <LocationIcon className="size-3" />
+              : <LocationChip kind={environmentKind} environment={environmentName} location={locationLabel} icon={LocationIcon} />}
             {dirtyDot}
+            {!compact && <ChevronDown className={`size-3 text-muted-foreground transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
-          <WorkDirEnvironmentMenu
-            visible={environmentMenu.visible}
-            loading={environmentMenu.loading}
-            error={environmentError}
-            readOnly
-            options={environmentMenu.options}
-            selectedId={location.environmentId}
-            onSelect={handleSelectEnvironment}
-            onClone={handleCloneEnvironment}
-          />
-          <div className="flex items-center gap-2 px-3 py-2 text-xs">
-            <LocationIcon className="size-3 shrink-0 text-muted-foreground" />
-            <span>{isActive ? t('sidebar.hover.worktree') : localCheckoutLabel}</span>
-          </div>
-          <div className="truncate px-3 pb-2 font-mono text-xs text-muted-foreground">{displayHostPath(isActive ? activePath : currentFolder)}</div>
-          <p className="border-t px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: environmentName })}</p>
-
-          {isActive && activePath && activeIsDetached && currentFolder && (
-            <WorktreeAssignBranchSection
-              folderPath={currentFolder}
-              worktreePath={activePath}
-              onAssigned={() => {
-                void window.app.getWorktreeInfo(currentFolder).then(setWorktreeInfo)
-                setPopoverOpen(false)
-              }}
-            />
-          )}
-
-          {isActive && activePath && (
-            <WorktreeHandoffSection
-              worktreePath={activePath}
-              folderPath={currentFolder ?? undefined}
-              dirty={activeDirty}
-              onDone={() => setPopoverOpen(false)}
-            />
-          )}
-
-          {!isActive && activeSessionId && currentFolder && (
-            <WorktreeForkSection
-              sessionId={activeSessionId}
-              cwd={currentFolder}
-              onForked={() => setPopoverOpen(false)}
-            />
+          {environmentMenuNode}
+          {startedWorktree ? (
+            <>
+              <div className="flex items-center gap-2 px-3 py-2 text-xs">
+                <GitFork className="size-3 shrink-0 text-muted-foreground" />
+                <span>{t('sidebar.hover.worktree')}</span>
+              </div>
+              <div className="truncate px-3 pb-2 font-mono text-xs text-muted-foreground">{displayHostPath(activePath)}</div>
+              <p className="border-t px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: environmentName })}</p>
+              {isActive && activePath && activeIsDetached && currentFolder && (
+                <WorktreeAssignBranchSection
+                  folderPath={currentFolder}
+                  worktreePath={activePath}
+                  onAssigned={() => {
+                    void window.app.getWorktreeInfo(currentFolder).then(setWorktreeInfo)
+                    setPopoverOpen(false)
+                  }}
+                />
+              )}
+              {isActive && activePath && (
+                <WorktreeHandoffSection
+                  worktreePath={activePath}
+                  folderPath={currentFolder ?? undefined}
+                  dirty={activeDirty}
+                  onDone={() => setPopoverOpen(false)}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              {isOldSession && (
+                <p className="px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: environmentName })}</p>
+              )}
+              <Tabs value={modeValue} onValueChange={selectMode}>
+                <div className="px-3 pt-2">
+                  <TabsList className="w-full">
+                    <TabsTrigger value="checkout">{localCheckoutLabel}</TabsTrigger>
+                    <TabsTrigger value="worktree" disabled={isGitRepo === false}>{t('sidebar.hover.worktree')}</TabsTrigger>
+                  </TabsList>
+                </div>
+                <TabsContent value="checkout">
+                  <CheckoutPanel
+                    path={displayHostPath(currentFolder)}
+                    current={location.selection.kind === 'local'}
+                    isGitRepo={isGitRepo}
+                    environment={environmentName}
+                    branch={mainBranch}
+                    dirty={mainDirty}
+                    lists={branchLists}
+                    loading={branchesLoading}
+                    fetching={fetchingBranches}
+                    fetchError={fetchError}
+                    initing={initing}
+                    onInit={() => { void handleGitInit() }}
+                    onSelect={(branch) => { void handleBranchSelect(branch) }}
+                    onSelectTracking={handleTrackingSelect}
+                    onCreate={(name) => { void handleCreateBranch(name) }}
+                    onFetch={() => { void handleFetch() }}
+                  />
+                </TabsContent>
+                <TabsContent value="worktree">
+                  {isOldSession ? (
+                    activeSessionId && currentFolder ? (
+                      <WorktreeForkSection
+                        sessionId={activeSessionId}
+                        cwd={currentFolder}
+                        onForked={() => setPopoverOpen(false)}
+                      />
+                    ) : null
+                  ) : (
+                    <WorktreeDraftPanel
+                      entries={existingEntries}
+                      metas={wtMetas}
+                      activePath={activePath}
+                      local={branchLists.local}
+                      tracking={branchLists.tracking}
+                      pendingBase={pendingBase}
+                      pending={isPending}
+                      pendingCarry={pendingCarry}
+                      loading={branchesLoading}
+                      fetching={fetchingBranches}
+                      fetchError={fetchError}
+                      onSelectExisting={handleSwitchToExisting}
+                      onSelectBase={handleSelectBase}
+                      onToggleCarry={handleToggleCarry}
+                      onFetch={() => { void handleFetch() }}
+                    />
+                  )}
+                </TabsContent>
+              </Tabs>
+            </>
           )}
         </PopoverContent>
       </Popover>
-    )
-  }
-
-  return (
-    <Popover open={popoverOpen} onOpenChange={openPopover}>
-      <PopoverTrigger asChild>
-        <button
-          className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-          title={chipTitle(locationLabel)}
-        >
-          {fullChip}
-          {!compact && <ChevronDown className={`size-3 text-muted-foreground transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
-        <WorkDirEnvironmentMenu
-          visible={environmentMenu.visible}
-          loading={environmentMenu.loading}
-          error={environmentError}
-          readOnly={false}
-          options={environmentMenu.options}
-          selectedId={location.environmentId}
-          onSelect={handleSelectEnvironment}
-          onClone={handleCloneEnvironment}
-        />
-        <div className="flex flex-col">
-          <div className="border-b px-3 py-2">
-            <input
-              type="text"
-              className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-              placeholder={t('chat.worktree.searchPlaceholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.checkoutHeading')}</div>
-            {showCheckout && (
-              <button
-                type="button"
-                onClick={isInWorktree ? handleSwitchToLocal : undefined}
-                disabled={!isInWorktree}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
-              >
-                <Folder className="size-3 shrink-0 text-muted-foreground" />
-                <span className="shrink-0">{localCheckoutLabel}</span>
-                <span className="min-w-0 flex-1 truncate text-left font-mono text-muted-foreground">{displayHostPath(currentFolder)}</span>
-                {!isInWorktree && <Check className="size-3 shrink-0 text-primary" />}
-              </button>
-            )}
-
-            <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.existingHeading')}</div>
-            {filteredExisting.length > 0 ? filteredExisting.map((e) => {
-              const meta = wtMetas[e.path]
-              const detached = !e.branch
-              return (
-                <WorktreeEntryRow
-                  key={e.path}
-                  label={detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : e.branch!}
-                  detached={detached}
-                  dirty={meta?.dirty}
-                  isCurrent={sameWorktreePath(e.path, activePath)}
-                  onClick={() => handleSwitchToExisting(e)}
-                />
-              )
-            }) : (
-              <div className="px-3 py-1 text-xs text-muted-foreground">
-                {lowerSearch && existingEntries.length > 0 ? t('chat.worktree.noMatches') : t('chat.worktree.noneYet')}
+      <Dialog open={!!failedCheckout} onOpenChange={(open) => { if (!open) setFailedCheckout(null) }}>
+        <DialogContent className="sm:max-w-md overflow-hidden">
+          <DialogHeader className="min-w-0">
+            <DialogTitle>Checkout Failed</DialogTitle>
+            <DialogDescription asChild>
+              <div className="min-w-0 space-y-3 pt-1">
+                <p>
+                  Failed to switch to <strong>{failedCheckout?.branch}</strong>.
+                </p>
+                <pre className="min-w-0 max-w-full whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                  {failedCheckout?.error}
+                </pre>
+                {mainDirty && mainDirty.files > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Tip: Commit your changes first, then switch branches.
+                  </p>
+                )}
               </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setFailedCheckout(null)}>
+              Cancel
+            </Button>
+            {mainDirty && mainDirty.files > 0 && (
+              <Button onClick={() => {
+                useChatStore.getState().setDraftText('make a commit')
+                setFailedCheckout(null)
+              }}>
+                Commit
+              </Button>
             )}
-
-            <div className="flex items-center gap-2 px-3 pt-2">
-              <span className="min-w-0 flex-1 text-xs uppercase text-muted-foreground">{t('chat.worktree.createFromHeading')}</span>
-              <button
-                type="button"
-                disabled={fetchingBranches}
-                onClick={() => { void handleFetch() }}
-                className="shrink-0 rounded px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
-              >
-                {fetchingBranches ? t('chat.git.fetching') : t('chat.git.fetch')}
-              </button>
-            </div>
-            {fetchError && (
-              <div className="truncate px-3 py-1 text-xs text-destructive" title={fetchError}>
-                {t('chat.git.fetchFailed', { error: fetchError })}
-              </div>
-            )}
-            {filteredBranches.map((b) => {
-              const isSelected = isPending && pendingBase === b
-              return (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => handleSelectBase(b)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent"
-                >
-                  <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-left">{b}</span>
-                  {isSelected && <Check className="size-3 shrink-0 text-primary" />}
-                </button>
-              )
-            })}
-            {filteredTracking.map((ref) => {
-              const isSelected = isPending && pendingBase === ref
-              return (
-                <button
-                  key={ref}
-                  type="button"
-                  onClick={() => handleSelectBase(ref)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent"
-                >
-                  <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-left text-muted-foreground">{ref}</span>
-                  <span className="shrink-0 text-muted-foreground">{t('chat.git.remoteRef')}</span>
-                  {isSelected && <Check className="size-3 shrink-0 text-primary" />}
-                </button>
-              )
-            })}
-          </div>
-
-          {isPending && (
-            <button
-              type="button"
-              onClick={handleToggleCarry}
-              className="flex w-full items-center gap-2 border-t px-3 py-2 text-xs hover:bg-accent"
-            >
-              <div className={`flex size-3.5 items-center justify-center rounded-sm border ${pendingCarry ? 'border-foreground bg-foreground' : 'border-muted-foreground'}`}>
-                {pendingCarry && <Check className="size-2.5 text-background" />}
-              </div>
-              <span>{t('chat.worktree.carryLocalChanges')}</span>
-            </button>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

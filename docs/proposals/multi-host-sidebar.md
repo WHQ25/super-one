@@ -64,12 +64,17 @@ It is the reference for the layout and the interaction states described here.
 
 ### Workdir indicator
 
-1. **The chip reads "environment · checkout".** For example `本机 · 本地 checkout`
-   or `dev-server · feat/remote-build`.
+1. **One status-bar chip.** It reads `environment · branch` on the local
+   checkout (`本机 · ⎇ main`), `environment · worktree branch` on an existing
+   worktree, `environment · New Worktree ← base` while a create is pending, and
+   `environment · Git Not Initialized` when the folder is not a repository.
+   The popover is environment, then mode tabs (local checkout by default, or
+   worktree), then that mode's content. Returning to the checkout tab clears a
+   pending create. The plan's decision 5 records this merge.
 2. **An environment dropdown sits at the top of the popover.** It defaults to
-   this machine. Picking an environment swaps all data below it. The
-   checkout / existing worktree / create-from-branch structure stays as it is
-   today. Each environment in the dropdown is in one of four states:
+   this machine. Picking an environment swaps all data below it. Below that,
+   tabs split local checkout (path and branches) from worktree (existing
+   worktrees and create-from). Each environment in the dropdown is in one of four states:
    - selectable
    - selectable, needs upgrade
    - *clone here* (has a `repoIdentity` but no checkout on that environment;
@@ -79,26 +84,30 @@ It is the reference for the layout and the interaction states described here.
    mobile's `NewSessionWorktreeSelection` (`local` | `existing` | `create`), and
    this becomes the shared contract. The renderer's pending worktree state is
    keyed by project *and* environment, not by `projectPath`.
-4. **The environment is fixed once a session has started.** The popover
-   becomes read-only: environment, location, and the existing in-environment
-   handoff/fork actions. Worktrees never cross environments.
+4. **The environment is fixed once a session has started.** A session on the
+   local checkout can still switch branches from the same popover. A session on
+   a worktree shows its path plus the existing in-environment handoff, fork, and
+   assign actions. Worktrees never cross environments.
 
-### Branch indicator
+### Branches inside the chip
 
 1. Branches come from the selected environment and cwd, not from the global
    host. `getRemoteGitBranches` must pass `cwd`.
-2. Remote-tracking refs (`refs/remotes/*`) are listed separately, with a fetch
-   action backed by `git.fetch`. Picking `origin/x` checks out a local tracking
-   branch `x`. The create-worktree branch list includes the same refs.
-3. `GIT_INIT` gains a remote path.
-4. While a worktree creation is pending, the indicator stays hidden, as it is
-   today.
+2. Remote-tracking refs (`refs/remotes/*`) are listed on the checkout tab, with
+   a fetch action backed by `git.fetch`. Picking `origin/x` checks out a local
+   tracking branch `x`. The worktree tab's create-from list includes the same
+   refs and does not check them out.
+3. `GIT_INIT` gains a remote path. A folder that is not a repository shows that
+   action on the checkout tab.
+4. A pending worktree create is the same chip's worktree label. It does not
+   hide a second indicator.
 
 ### Shared selector
 
-Both chips read one selector that resolves `(environment, cwd, branch)` from
-either the active session or the pending new-session selection. Neither
-component derives its context from `currentFolder` on its own.
+The chip reads one selector that resolves `(environment, cwd, branch)` from
+either the active session or the pending new-session selection. It does not
+derive that context from `currentFolder` on its own. Branch switching on the
+checkout tab still targets the project checkout.
 
 ## Phases
 

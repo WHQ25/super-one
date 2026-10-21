@@ -5,28 +5,15 @@ import { StatusBarSchedules } from './chat-status-bar/StatusBarSchedules'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Activity, GitBranch, ChevronDown, Circle, Plus, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
+import { Activity, ChevronDown, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@superone/ui/components/ui/dialog'
-import { Button } from '@superone/ui/components/ui/button'
 import { useActiveSession, useChatStore, useSessionScope, getActiveSessionView } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
 import { WorkDirIndicator } from './WorkDirIndicator'
 import { useComposerLocation } from './composer-location'
-import { GitBranchMenu } from './GitBranchMenu'
-import { EMPTY_BRANCH_LISTS, readBranchLists, trackingCheckoutPlan, type GitBranchLists } from './git-branch-lists'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
 import { ToolBlock } from './ToolBlock'
@@ -50,13 +37,6 @@ interface WorktreeStateLike {
 
 export function computeIsInWorktree(wtState: WorktreeStateLike | undefined): boolean {
   return !!(wtState?.pendingBaseBranch || wtState?.activePath)
-}
-
-const fmt = (n: number) => n.toLocaleString()
-
-interface FailedCheckout {
-  branch: string
-  error: string
 }
 
 export type BackgroundActivityItem =
@@ -263,12 +243,6 @@ export function ChatStatusBar() {
   const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const location = useComposerLocation()
-  const environments = useMultiHostSidebarStore((s) => s.environments)
-  const branchEnvironmentLabel = useMemo(() => {
-    const id = location.environmentId
-    return environments.find((bucket) => bucket.environmentId === id || bucket.connectionId === id)?.label
-      ?? (typeof window !== 'undefined' && window.app.platform === 'darwin' ? t('sidebar.thisMac') : t('sidebar.thisPc'))
-  }, [environments, location.environmentId, t])
   const gitFolder = location.cwd || currentFolder
   const scope = useSessionScope()
   // Track structural changes plus subagent result arrival without subscribing to text deltas.
@@ -285,18 +259,10 @@ export function ChatStatusBar() {
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [isGitRepo, setIsGitRepo] = useState<boolean | null>(null)
   const [gitError, setGitError] = useState<string | null>(null)
-  const [initing, setIniting] = useState(false)
-  const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
-  const [branchesLoading, setBranchesLoading] = useState(false)
-  const [fetchingBranches, setFetchingBranches] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  const [popoverOpen, setPopoverOpen] = useState(false)
   const [bashOpen, setBashOpen] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [workflowOpen, setWorkflowOpen] = useState(false)
   const [monitorOpen, setMonitorOpen] = useState(false)
-  const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
-  const dirty = gitInfo?.dirty
 
   // One RPC path: getGitInfo implies isRepo; skip separate getGitIsRepo (was 2× remote status).
   // `null` = not a repo (offer init); `branch: null` = git itself failed, so the
@@ -379,106 +345,11 @@ export function ChatStatusBar() {
   }, [
     updateCompactState,
     gitInfo?.branch,
-    dirty?.files,
-    dirty?.insertions,
-    dirty?.deletions,
     activeProvider,
-    location.pendingCreate,
+    location.cwd,
     location.selection.kind,
     isGitRepo,
   ])
-
-  const loadBranches = useCallback(() => {
-    if (!gitFolder) return
-    setBranchesLoading(true)
-    window.app.getGitBranches(gitFolder).then((lists) => {
-      setBranchLists(readBranchLists(lists))
-    }).catch(() => {
-      setBranchLists(EMPTY_BRANCH_LISTS)
-    }).finally(() => {
-      setBranchesLoading(false)
-    })
-  }, [gitFolder])
-
-  const openPopover = useCallback((open: boolean) => {
-    setPopoverOpen(open)
-    if (open) {
-      setFetchError(null)
-      loadBranches()
-      // Opening the popup is the one moment the user is looking straight at branch/dirty
-      // state, and it can be stale: anything that touched the repo outside SuperOne (an
-      // external terminal, another editor) emits no signal we listen for. Refresh here so
-      // the current-branch row and the dirty guard match reality before a checkout.
-      void refreshGitInfo()
-    }
-  }, [loadBranches, refreshGitInfo])
-
-  const handleBranchSelect = useCallback(async (branch: string, track?: string) => {
-    if (!gitFolder || (!track && branch === gitInfo?.branch)) return
-    setPopoverOpen(false)
-    const result = await window.app.switchGitBranch(gitFolder, branch, track)
-    if (result.ok) {
-      await refreshGitInfo()
-    } else {
-      await refreshGitInfo()
-      setFailedCheckout({ branch, error: result.error })
-    }
-  }, [gitFolder, gitInfo?.branch, refreshGitInfo])
-
-  const handleTrackingSelect = useCallback((ref: string) => {
-    const plan = trackingCheckoutPlan(ref, branchLists.local)
-    if (!plan) return
-    void handleBranchSelect(plan.branch, plan.track ?? undefined)
-  }, [branchLists.local, handleBranchSelect])
-
-  const handleFetch = useCallback(async () => {
-    if (!gitFolder || fetchingBranches) return
-    setFetchingBranches(true)
-    setFetchError(null)
-    try {
-      const result = await window.app.gitFetch(gitFolder)
-      if (!result.ok) {
-        setFetchError(result.error || 'git fetch failed')
-        return
-      }
-      loadBranches()
-      await refreshGitInfo()
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'git fetch failed')
-    } finally {
-      setFetchingBranches(false)
-    }
-  }, [gitFolder, fetchingBranches, loadBranches, refreshGitInfo])
-
-  const doCommitFirst = useCallback(() => {
-    useChatStore.getState().setDraftText('make a commit')
-    setFailedCheckout(null)
-  }, [])
-
-  const doCreateBranch = useCallback(async (name: string) => {
-    if (!gitFolder) return
-    setPopoverOpen(false)
-    const result = await window.app.createBranch(gitFolder, name)
-    if (result.ok) {
-      await refreshGitInfo()
-    } else {
-      setFailedCheckout({ branch: name, error: result.error })
-    }
-  }, [gitFolder, refreshGitInfo])
-
-  const handleGitInit = useCallback(async () => {
-    if (!gitFolder || initing) return
-    setIniting(true)
-    const result = await window.app.gitInit(gitFolder)
-    setIniting(false)
-    if (result.ok) {
-      toast.success(t('chat.git.initSuccess'))
-      setIsGitRepo(true)
-      await refreshGitInfo()
-    } else {
-      toast.error(t('chat.git.initFailed', { error: result.error ?? '' }))
-    }
-  }, [gitFolder, initing, refreshGitInfo, t])
 
   const { bashActivities, agentActivities, workflowActivities, monitorActivities } = useMemo(
     () => collectBackgroundActivities(getActiveSessionView(scope).messages, taskProgress, sessionStatus === 'streaming'),
@@ -534,7 +405,6 @@ export function ChatStatusBar() {
   }, [monitorActivities.length])
 
   return (
-    <>
       <div ref={barRef} className="relative flex items-center gap-2 whitespace-nowrap px-3 pb-0.5 @lg:px-7 text-xs text-muted-foreground">
         <div className="pointer-events-none absolute bottom-full left-3 right-3 z-10 flex flex-col gap-1 pb-1">
           <AnimatePresence>
@@ -661,84 +531,18 @@ export function ChatStatusBar() {
             )}
           </AnimatePresence>
         </div>
-        {currentFolder && <WorkDirIndicator compact={compactIndicators} isGitRepo={isGitRepo} />}
-
-        {gitInfo && !location.pendingCreate && (
-          <>
-            <div className="h-3 w-px bg-border" />
-            <Popover open={popoverOpen} onOpenChange={openPopover}>
-              <PopoverTrigger asChild>
-                <button
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-                  title={gitInfo.branch}
-                >
-                  <GitBranch className="size-3" />
-                  {!compactIndicators && <span>{gitInfo.branch}</span>}
-                  {dirty && <Circle className="size-1.5 fill-amber-500 text-amber-500" />}
-                  {!compactIndicators && <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-0" align="start">
-                <GitBranchMenu
-                  current={gitInfo.branch}
-                  currentDetail={dirty ? (
-                    <span className="text-xs text-muted-foreground">
-                      uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
-                      {(dirty.insertions > 0 || dirty.deletions > 0) && (
-                        <>
-                          {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
-                          {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
-                        </>
-                      )}
-                    </span>
-                  ) : null}
-                  local={branchLists.local}
-                  tracking={branchLists.tracking}
-                  environmentLabel={branchEnvironmentLabel}
-                  loading={branchesLoading}
-                  fetching={fetchingBranches}
-                  fetchError={fetchError}
-                  onSelect={(branch) => { void handleBranchSelect(branch) }}
-                  onSelectTracking={handleTrackingSelect}
-                  onCreate={(name) => { void doCreateBranch(name) }}
-                  onFetch={() => { void handleFetch() }}
-                />
-              </PopoverContent>
-            </Popover>
-          </>
+        {currentFolder && (
+          <WorkDirIndicator
+            compact={compactIndicators}
+            isGitRepo={isGitRepo}
+            onRepositoryReady={() => {
+              setIsGitRepo(true)
+              void refreshGitInfo()
+            }}
+          />
         )}
 
-        {isGitRepo === false && !location.pendingCreate && (
-          <>
-            <div className="h-3 w-px bg-border" />
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title={t('chat.git.uninitialized')}
-                >
-                  <GitBranch className="size-3" />
-                  {!compactIndicators && <span>{t('chat.git.uninitialized')}</span>}
-                  {!compactIndicators && <ChevronDown className="size-3" />}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-0" align="start">
-                <button
-                  type="button"
-                  onClick={() => { void handleGitInit() }}
-                  disabled={initing}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50"
-                >
-                  <Plus className="size-3 shrink-0 text-muted-foreground" />
-                  <span>{t('chat.git.initOn', { environment: branchEnvironmentLabel })}</span>
-                </button>
-              </PopoverContent>
-            </Popover>
-          </>
-        )}
-
-        {gitError && !location.pendingCreate && (
+        {gitError && (
           <>
             <div className="h-3 w-px bg-border" />
             <button
@@ -833,39 +637,5 @@ export function ChatStatusBar() {
           showDivider={hasBackgroundWork || hiddenPipTarget != null}
         />
       </div>
-
-      <Dialog open={!!failedCheckout} onOpenChange={(open) => { if (!open) setFailedCheckout(null) }}>
-        <DialogContent className="sm:max-w-md overflow-hidden">
-          <DialogHeader className="min-w-0">
-            <DialogTitle>Checkout Failed</DialogTitle>
-            <DialogDescription asChild>
-              <div className="min-w-0 space-y-3 pt-1">
-                <p>
-                  Failed to switch to <strong>{failedCheckout?.branch}</strong>.
-                </p>
-                <pre className="min-w-0 max-w-full whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs text-muted-foreground">
-                  {failedCheckout?.error}
-                </pre>
-                {dirty && (
-                  <p className="text-xs text-muted-foreground">
-                    Tip: Commit your changes first, then switch branches.
-                  </p>
-                )}
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setFailedCheckout(null)}>
-              Cancel
-            </Button>
-            {dirty && (
-              <Button onClick={doCommitFirst}>
-                Commit
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   )
 }

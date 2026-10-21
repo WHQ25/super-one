@@ -36,7 +36,7 @@ type LocationSession = {
   messages?: { length: number }
 } | null
 
-/** One reading of where the composer runs, shared by the workdir and branch chips. */
+/** One reading of where the composer runs, shared by the status-bar location chip. */
 export function composerLocationOf(input: {
   projectPath: string | null
   session: LocationSession

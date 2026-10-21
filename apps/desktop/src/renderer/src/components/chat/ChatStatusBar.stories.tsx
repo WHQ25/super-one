@@ -123,10 +123,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Folder is a repo: branch chip with the dirty summary. */
+/** Folder is a repo: the one chip shows the branch and the dirty dot. */
 export const Repo: Story = { args: { git: { branch: 'main', dirty: { files: 3, insertions: 41, deletions: 7 } } } }
 
-/** Folder is not a repo (`null`): the branch chip says Git is not initialized. */
+/** Folder is not a repo (`null`): the one chip says Git is not initialized. */
 export const NotARepo: Story = { args: { git: null } }
 
 /**

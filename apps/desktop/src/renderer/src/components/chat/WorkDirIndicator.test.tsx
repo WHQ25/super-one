@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { AgentStatus, WorktreeInfo } from '@superone/shared/agent-types'
 
 import { WorkDirIndicator } from './WorkDirIndicator'
@@ -100,5 +101,74 @@ describe('WorkDirIndicator turn-boundary refresh', () => {
     act(() => setSessionStatus('streaming'))
 
     expect(getWorktreeInfo).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('merged status chip', () => {
+  const localMirror = {
+    pendingBaseBranch: null,
+    pendingMode: 'branch' as const,
+    pendingBranchName: '',
+    pendingCarryLocalChanges: false,
+    activePath: null,
+  }
+
+  beforeEach(() => {
+    getWorktreeInfo.mockResolvedValue({
+      isWorktree: false,
+      currentBranch: 'main',
+      entries: [{ path: PROJECT, branch: 'main', head: HEAD, isMain: true, isCurrent: true }],
+    })
+    useAppStore.setState({
+      currentFolder: PROJECT,
+      _worktrees: { [PROJECT]: localMirror },
+    })
+  })
+
+  it('names the checkout branch on the only chip', async () => {
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    render(<WorkDirIndicator isGitRepo />)
+    await waitFor(() => expect(screen.getByTitle('This PC · main')).toBeTruthy())
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('names a pending worktree on that same chip', async () => {
+    useAppStore.setState({
+      currentFolder: PROJECT,
+      _worktrees: {
+        [PROJECT]: { ...localMirror, pendingBaseBranch: 'origin/release/1.8', pendingMode: 'detach' },
+      },
+    })
+    render(<WorkDirIndicator isGitRepo />)
+    await waitFor(() => expect(screen.getByTitle('This PC · New Worktree ← origin/release/1.8')).toBeTruthy())
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('says git is not initialized when the folder is not a repository', () => {
+    render(<WorkDirIndicator isGitRepo={false} />)
+    expect(screen.getByTitle('This PC · Git Not Initialized')).toBeTruthy()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('opens on checkout and worktree tabs, and checkout clears a pending worktree', async () => {
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    useAppStore.setState({
+      currentFolder: PROJECT,
+      _worktrees: {
+        [PROJECT]: { ...localMirror, pendingBaseBranch: 'origin/release/1.8', pendingMode: 'detach' },
+      },
+    })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await waitFor(() => expect(screen.getByTitle('This PC · New Worktree ← origin/release/1.8')).toBeTruthy())
+
+    await user.click(screen.getByRole('button'))
+    const checkout = await screen.findByRole('tab', { name: 'Local Checkout' })
+    expect(screen.getByRole('tab', { name: 'Worktree' })).toBeTruthy()
+    expect(checkout.getAttribute('data-state')).toBe('inactive')
+
+    await user.click(checkout)
+    await waitFor(() => expect(screen.getByTitle('This PC · main')).toBeTruthy())
+    expect(checkout.getAttribute('data-state')).toBe('active')
   })
 })

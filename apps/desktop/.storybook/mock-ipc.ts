@@ -30,7 +30,12 @@ const offNoop = () => {}
 const values: Record<string, Record<string, unknown>> = {
   app: { platform: 'darwin', supportsLiquidGlass: true,
     collaborationMailbox: { list: async () => [], onChanged: () => offNoop },
+    // Every expanded project row lists its automations.
+    listAutomations: async () => [],
   },
+  // The mini-app store reads this at module init, before any story mock runs,
+  // and stores the result as its `hosts` array.
+  miniapp: { hostList: async () => [] },
 }
 
 const proxyFor = (ns: string): Record<string, AnyFn> => {

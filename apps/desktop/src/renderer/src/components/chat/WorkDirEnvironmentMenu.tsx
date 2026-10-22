@@ -53,7 +53,12 @@ export function WorkDirEnvironmentMenu({
   }
   const header = (
     <>
-      <EnvironmentKindIcon kind={current?.hostKind ?? 'local'} className="size-3.5 shrink-0 text-muted-foreground" />
+      <EnvironmentKindIcon
+        kind={current?.hostKind ?? 'local'}
+        connection={current?.kind === 'offline' ? 'offline' : undefined}
+        path={current?.path}
+        className="size-3.5 shrink-0 text-muted-foreground"
+      />
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </>
   )
@@ -105,7 +110,12 @@ export function WorkDirEnvironmentMenu({
                   }}
                   className="gap-2 text-xs"
                 >
-                  <EnvironmentKindIcon kind={option.hostKind ?? 'local'} className="size-3.5 shrink-0" />
+                  <EnvironmentKindIcon
+                    kind={option.hostKind ?? 'local'}
+                    connection={option.kind === 'offline' ? 'offline' : undefined}
+                    path={option.path}
+                    className="size-3.5 shrink-0"
+                  />
                   <span className="min-w-0 flex-1 truncate">{option.label}</span>
                   {detail && <span className="shrink-0 text-muted-foreground">{detail}</span>}
                   {option.needsUpgrade && option.kind !== 'offline' && (

@@ -2,6 +2,7 @@ import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
 import type { EnvironmentBucket, EnvironmentKind, HostCheckout } from '@/lib/multi-host/types'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
+import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { environmentIdForProjectKey } from '@superone/shared/session-location'
 import { switchComposerToCheckout } from './composer-location'
@@ -23,10 +24,13 @@ export interface WorkDirEnvironmentOption {
   needsUpgrade: boolean
   /** Local, CLI node, or remote desktop. Omitted by older fixtures. */
   hostKind?: EnvironmentKind
+  /** How a connected remote is reached, for its icon. */
+  path?: NodeLinkPath
 }
 
 type EnvironmentSource = Pick<EnvironmentBucket, 'environmentId' | 'connectionId' | 'label' | 'connection' | 'checkouts'> & {
   kind?: EnvironmentKind
+  path?: NodeLinkPath
 }
 
 function isCurrent(bucket: { environmentId: string; connectionId: string }, currentEnvironmentId: string): boolean {
@@ -78,6 +82,7 @@ export function workDirEnvironmentOptions(input: {
       kind,
       needsUpgrade,
       hostKind: bucket.kind,
+      ...(bucket.path ? { path: bucket.path } : {}),
     }
   })
 }

@@ -1,4 +1,5 @@
 import type { ProjectRef } from '@superone/shared/environment'
+import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 
 /** How the sidebar splits projects. Project mode is the single-host default. */
 export type SidebarGroupBy = 'project' | 'environment'
@@ -45,6 +46,8 @@ export interface EnvironmentBucket {
   label: string
   kind: EnvironmentKind
   connection: EnvironmentConnection
+  /** How a connected remote is reached right now. Absent for local and while not connected. */
+  path?: NodeLinkPath
   projectsStatus: LoadStatus
   projectsError: string | null
   checkouts: HostCheckout[]

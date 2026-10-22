@@ -268,6 +268,7 @@ function EnvironmentHeader({
       label={bucket.label}
       kind={bucket.kind}
       connection={bucket.connection}
+      path={bucket.path}
       expanded={expanded}
       projectsStatus={bucket.projectsStatus}
       projectsError={bucket.projectsError}

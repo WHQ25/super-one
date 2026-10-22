@@ -17,7 +17,7 @@ export function SessionHoverBody({ model }: { model: SessionHoverModel }) {
         {age && <span className="shrink-0 tabular-nums text-muted-foreground">{age}</span>}
       </div>
       <div className="flex flex-col gap-1 text-muted-foreground">
-        <HoverLine icon={<EnvironmentKindIcon kind={model.kind} className="size-3" />}>
+        <HoverLine icon={<EnvironmentKindIcon kind={model.kind} connection={model.connection} path={model.path} className="size-3" />}>
           <span className="block truncate">{model.environmentLabel}</span>
         </HoverLine>
         {model.worktreeName && (

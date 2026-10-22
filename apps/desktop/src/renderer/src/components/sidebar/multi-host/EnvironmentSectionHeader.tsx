@@ -1,20 +1,38 @@
-import { ChevronRight, Laptop, Loader2, Monitor, Plus, RotateCw, Server, TriangleAlert, Unplug } from 'lucide-react'
+import { ChevronRight, Cloud, Loader2, Monitor, Plus, RotateCw, TriangleAlert, Unplug, Wifi } from 'lucide-react'
+import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus } from '@/lib/multi-host/types'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 
-export function EnvironmentKindIcon({ kind, className = 'size-3.5 shrink-0' }: { kind: EnvironmentKind; className?: string }) {
-  if (kind === 'cli-node') return <Server className={className} aria-hidden />
-  if (kind === 'remote-desktop') return <Laptop className={className} aria-hidden />
-  return <Monitor className={className} aria-hidden />
+/**
+ * This machine is a monitor. A remote node or desktop shows how it is reached:
+ * Wi-Fi on the LAN, a cloud through relay, SSH or Tailscale, and a red cloud
+ * while it is offline.
+ */
+export function EnvironmentKindIcon({
+  kind,
+  connection,
+  path,
+  className = 'size-3.5 shrink-0',
+}: {
+  kind: EnvironmentKind
+  connection?: EnvironmentConnection
+  path?: NodeLinkPath
+  className?: string
+}) {
+  if (kind === 'local') return <Monitor className={className} aria-hidden />
+  if (connection === 'offline') return <Cloud className={cn(className, 'text-error')} aria-hidden />
+  if (path === 'lan') return <Wifi className={className} aria-hidden />
+  return <Cloud className={className} aria-hidden />
 }
 
 export function EnvironmentSectionHeader({
   label,
   kind,
   connection,
+  path,
   expanded,
   projectsStatus,
   projectsError,
@@ -28,6 +46,7 @@ export function EnvironmentSectionHeader({
   label: string
   kind: EnvironmentKind
   connection: EnvironmentConnection
+  path?: NodeLinkPath
   expanded: boolean
   projectsStatus: LoadStatus
   projectsError: string | null
@@ -53,7 +72,7 @@ export function EnvironmentSectionHeader({
           aria-expanded={expanded}
         >
           <ChevronRight className={cn('size-3.5 shrink-0 text-sidebar-foreground/70 transition-transform', expanded && 'rotate-90')} />
-          <EnvironmentKindIcon kind={kind} />
+          <EnvironmentKindIcon kind={kind} connection={connection} path={path} />
           <span className="truncate">{label}</span>
           {offline && <Unplug className="size-3 shrink-0" aria-label={t('sidebar.hover.offline')} />}
           {connection === 'needs-upgrade' && (

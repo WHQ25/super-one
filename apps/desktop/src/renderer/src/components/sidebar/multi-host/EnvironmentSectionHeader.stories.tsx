@@ -41,6 +41,18 @@ export const RemoteDesktop: Story = {
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
 }
 
+/** Reached on the LAN: Wi-Fi instead of the cloud. */
+export const ConnectedOverLan: Story = {
+  args: { label: 'MacBook-B', kind: 'remote-desktop', path: 'lan' },
+  render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+}
+
+/** Relay, SSH and Tailscale all show the cloud. */
+export const ConnectedOverRelay: Story = {
+  args: { path: 'relay' },
+  render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+}
+
 export const Local: Story = {
   args: { label: 'This Mac', kind: 'local', onRefresh: undefined, onToggleConnection: undefined },
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,

@@ -129,7 +129,7 @@ export function checkoutsFromRecent(folders: RecentFolderLike[], environmentId: 
 }
 
 function bucketBase(
-  item: Pick<EnvironmentListItem, 'environmentId' | 'connectionId' | 'label' | 'kind' | 'installationProfile' | 'state' | 'desired' | 'nodeUpgrade'>,
+  item: Pick<EnvironmentListItem, 'environmentId' | 'connectionId' | 'label' | 'kind' | 'installationProfile' | 'state' | 'desired' | 'nodeUpgrade' | 'activePath'>,
 ): Omit<EnvironmentBucket, 'projectsStatus' | 'projectsError' | 'checkouts'> {
   return {
     environmentId: item.environmentId || item.connectionId,
@@ -137,6 +137,7 @@ function bucketBase(
     label: item.label,
     kind: environmentKindOf(item),
     connection: item.connectionId === 'local' ? 'connected' : connectionOf(item),
+    ...(item.connectionId !== 'local' && item.activePath ? { path: item.activePath } : {}),
   }
 }
 

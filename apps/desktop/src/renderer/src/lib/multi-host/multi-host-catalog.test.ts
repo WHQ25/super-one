@@ -221,6 +221,21 @@ describe('loadEnvironmentCatalog', () => {
     expect(buckets[1]?.checkouts[0]?.pathKey).toBe('remote:cli-1:/srv/app')
   })
 
+  it('carries the live link path of a connected remote for its icon', async () => {
+    const buckets = await loadEnvironmentCatalog({
+      remoteEnabled: true,
+      localLabel: 'This Mac',
+      localFolders: [],
+      listItems: async () => [
+        item({ connectionId: 'local', environmentId: 'desktop', label: 'This Mac', kind: 'local', installationProfile: 'local-electron' }),
+        item({ connectionId: 'cli-1', environmentId: 'node-1', label: 'build', kind: 'remote', installationProfile: 'systemd-user', activePath: 'lan' }),
+        item({ connectionId: 'cli-2', environmentId: 'node-2', label: 'gpu', kind: 'remote', installationProfile: 'systemd-user', state: 'offline' }),
+      ],
+      listProjects: async () => [],
+    })
+    expect(buckets.map((bucket) => bucket.path)).toEqual([undefined, 'lan', undefined])
+  })
+
   it('keeps a per-environment error and falls back to recent folders for this machine', async () => {
     const buckets = await loadEnvironmentCatalog({
       remoteEnabled: true,

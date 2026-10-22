@@ -31,7 +31,8 @@ import {
   writeFocusedSelection,
 } from './composer-location'
 import { EnvironmentKindIcon } from '@/components/sidebar/multi-host/EnvironmentSectionHeader'
-import type { EnvironmentKind } from '@/lib/multi-host/types'
+import type { EnvironmentConnection, EnvironmentKind } from '@/lib/multi-host/types'
+import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { WorkDirEnvironmentMenu } from './WorkDirEnvironmentMenu'
 import {
   checkoutOnEnvironment,
@@ -63,12 +64,16 @@ function sameWorktreePath(a: string | null | undefined, b: string | null | undef
 /** Status-bar chip: environment, then the branch or worktree label. */
 function LocationChip({
   kind,
+  connection,
+  path,
   environment,
   location,
   icon: Icon,
   tag,
 }: {
   kind: EnvironmentKind
+  connection?: EnvironmentConnection
+  path?: NodeLinkPath
   environment: string
   location: string
   icon: ComponentType<{ className?: string }>
@@ -77,7 +82,7 @@ function LocationChip({
 }) {
   return (
     <span className="flex max-w-72 items-center gap-1 truncate">
-      <EnvironmentKindIcon kind={kind} className="size-3 shrink-0" />
+      <EnvironmentKindIcon kind={kind} connection={connection} path={path} className="size-3 shrink-0" />
       <span className="truncate">{environment}</span>
       <span className="text-muted-foreground">·</span>
       <Icon className="size-3 shrink-0 text-muted-foreground" />
@@ -770,6 +775,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
         kind: 'current',
         needsUpgrade: false,
         hostKind: environmentKind,
+        ...(environmentBucket?.path ? { path: environmentBucket.path } : {}),
       }]
   // A pending create shows only a name; the worktree icon tells it apart from
   // a checkout, and the tooltip keeps the full sentence.
@@ -827,6 +833,8 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
               : (
                 <LocationChip
                   kind={environmentKind}
+                  connection={environmentBucket?.connection}
+                  path={environmentBucket?.path}
                   environment={environmentName}
                   location={locationLabel}
                   icon={LocationIcon}

@@ -13,6 +13,34 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ## [Unreleased]
 
+### Added
+
+- A plain `@` mention finds session titles across projects, and branches, tags, and worktrees, on desktop and phone. `@session` and `@git` stay available as filters.
+- On the phone, a suggested task opens through the same model menu as the composer: model, that model's effort, Fast, provider, permission, and sandbox. A Claude credential that remaps models hides effort.
+
+### Fixed
+
+- Opening a paired desktop no longer aborts the composer.
+- A finished todo list on the phone clears after three seconds.
+- A compaction marker stays inside the phone reply when the transcript boundary is large.
+- The sidebar stays busy until the last Grok monitor finishes. Bash, workflow, and goal tasks still go idle with the turn.
+
+## [0.75.5-alpha] - 2026-10-23
+
+### Added
+
+- Match a plain `@` mention to session titles across projects, and to branches, tags, and worktrees, on desktop and phone. Git refs stay cached per folder. The `@session` and `@git` prefixes remain optional filters.
+- On the phone, open a suggested task through the composer model menu: model, that model's effort, Fast, provider, permission, and sandbox. A Claude credential that remaps models hides effort. Choices stay on the phone until Launch.
+
+### Fixed
+
+- Share one provider scope, so opening a paired desktop no longer aborts the composer (React #185).
+- Clear a finished todo list on the phone after three seconds, the same pause as desktop.
+- Keep a compaction marker inside the mobile reply when the content map exceeds 16 KB.
+- Keep the sidebar in the background until the last Grok monitor finishes. Bash, workflow, and goal tasks still go idle with the turn.
+
+## [0.75.4] - 2026-10-21
+
 ### Performance
 
 - Connect on one channel when the node advertises inline auth: refresh or mint the ticket on the RPC socket, and keep a still-valid access token so a restart can skip refresh. A failed connect aborts that exchange. Older nodes keep separate channels.
@@ -36,36 +64,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Changed
 
 - Remove the "longer messages are summarized until expanded" note from remote transcripts. Paging and on-demand detail are unchanged.
-
-## [0.75.4-alpha] - 2026-10-21
-
-### Performance
-
-- Connect on one channel when the node advertises inline auth: refresh or mint the ticket on the RPC socket, and keep a still-valid access token so a restart can skip refresh. A failed connect aborts that exchange. Older nodes keep separate channels.
-- Open the first remote session's transcript beside the session row, and release the follow barrier only for that topic.
-- Cache host accounts, providers, git mentions, and worktrees across session switches. Drop them when the host or checkout changes, and discard cached reads that started before the drop.
-- Race LAN discovery with the relay. A discovered LAN address connects immediately; SSH stays last.
-
-### Fixed
-
-- Approve a permission prompt with Enter, Space, or a digit once the card has risen.
-- Keep a preferred SSH route ahead of relay, so a live relay does not skip it.
-- Drop an access token a node rejects with 401, instead of presenting it again on the next launch. A revoked family stays stored.
-- Keep ticket fetches for older nodes outside the 15-second handshake timer, so a cold relay does not time out before attach.
-- Keep the default Claude account on a profile that can still run. A missing domain directory is created again, and a signed-out default whose identity is signed in on another card moves to that card.
-- Read Claude and ChatGPT accounts from the desktop being controlled. A fetch started on this machine does not replace the remote store after a host switch.
-- Show a remote session's harness icon and ACP model name from the host. Cursor and DeepSeek keep their own icons, a Grok session uses its own icon, and a custom ACP agent stays unnamed until the row carries its own id.
-- Hide a dismissed session handoff immediately.
-- Open a remote draft with a control lease so the host composer flushes, and release the lease when leaving.
-- Drop a Codex loopback llm-proxy URL after the idle sweep instead of reusing it. Later turns take a fresh proxy URL (Fixes #82). Codex keeps that URL for the app-server lifetime.
-
-### Changed
-
-- Remove the "longer messages are summarized until expanded" note from remote transcripts. Paging and on-demand detail are unchanged.
-
-### Tests
-
-- Drain the shared node between environment tests.
 
 ## [0.75.3] - 2026-10-20
 

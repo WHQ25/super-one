@@ -541,6 +541,21 @@ function sentText(): string | undefined {
   return calls.at(-1)?.[0] as string | undefined
 }
 
+/**
+ * Send stays disabled until the queued-send read resolves. A click in that
+ * window hits `handleSend` while `canSend` is still false, so the handler
+ * returns and `sendMessage` is never called. Waiting only for the IPC call to
+ * start passes on a fast machine and fails when CI is slower.
+ */
+async function clickSend(): Promise<void> {
+  const send = await waitFor(() => {
+    const button = screen.getByRole('button', { name: /^send$/i })
+    expect(button).toBeEnabled()
+    return button
+  })
+  fireEvent.click(send)
+}
+
 describe('ChatInput', () => {
   it('does not access a destroyed editor while Activity restores effects', () => {
     editorState.destroyed = true
@@ -627,13 +642,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal'
 
     const { rerender } = render(<ChatInput />)
-    // The composer will not send until it knows whether this session has a
-    // queued send; in the app that is one IPC round trip.
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-
-    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
-    expect(send).toBeTruthy()
-    fireEvent.click(send!)
+    await clickSend()
 
     // Nothing was posted; the chip announces the mode instead of a dialog.
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
@@ -644,7 +653,7 @@ describe('ChatInput', () => {
     typeInEditor('Ship login')
     // The store mock is not reactive; the app re-renders on the draft write.
     rerender(<ChatInput />)
-    fireEvent.click(send!)
+    await clickSend()
 
     expect(sentText()).toBe('/goal Ship login')
     // Mode ends with the send; with no live goal there is nothing left to show.
@@ -659,10 +668,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal Ship login'
 
     render(<ChatInput />)
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-
-    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
-    fireEvent.click(send!)
+    await clickSend()
 
     expect(sentText()).toBe('/goal Ship login')
     expect(screen.queryByTestId('goal-indicator')).toBeNull()
@@ -676,8 +682,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal'
 
     render(<ChatInput />)
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-    fireEvent.click(document.querySelector('button .lucide-arrow-up')!.closest('button')!)
+    await clickSend()
     expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
 
     typeInEditor('half a thought')
@@ -797,10 +802,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal all tests pass'
 
     render(<ChatInput />)
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-
-    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
-    fireEvent.click(send!)
+    await clickSend()
 
     expect(sentText()).toBe('/goal all tests pass')
     expect(screen.queryByTestId('goal-indicator')).toBeNull()
@@ -813,10 +815,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal clear'
 
     render(<ChatInput />)
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-
-    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
-    fireEvent.click(send!)
+    await clickSend()
 
     expect(sentText()).toBe('/goal clear')
     expect(screen.queryByTestId('goal-indicator')).toBeNull()
@@ -828,14 +827,7 @@ describe('ChatInput', () => {
     editorState.text = 'hello from tile'
 
     render(<ChatInput />)
-    // The composer will not send until it knows whether this session has a
-    // queued send; in the app that is one IPC round trip.
-    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
-
-    // Footer send control is the ArrowUp icon button (last icon-button in the composer).
-    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
-    expect(send).toBeTruthy()
-    fireEvent.click(send!)
+    await clickSend()
 
     expect(chatActions.sendMessage).toHaveBeenCalledWith(
       'hello from tile',
@@ -1552,8 +1544,7 @@ describe('ChatInput scheduled send', () => {
     await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
     typeInEditor('ship it')
     rerender(<ChatInput />)
-
-    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    await clickSend()
 
     expect(chatActions.sendMessage).toHaveBeenCalled()
     expect(scheduledSend.set).not.toHaveBeenCalled()

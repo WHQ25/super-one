@@ -66,11 +66,12 @@ function rankStoryRefs(refs: GitMentionRef[], needle: string): GitMentionRef[] {
 }
 
 const SESSIONS: PinnedSessionEntry[] = [
-  { sessionId: 'sess-1', title: 'Align the mention popup', lastActiveAt: hoursAgo(1), messageCount: 4, provider: 'claude', folderPath: PROJECT, folderName: 'super-one' },
+  { sessionId: 'sess-1', title: 'Align the mention popup', lastActiveAt: hoursAgo(12 / 60), messageCount: 4, provider: 'claude', folderPath: PROJECT, folderName: 'super-one' },
   { sessionId: 'sess-2', title: 'Close the slash-command loop', lastActiveAt: hoursAgo(5), messageCount: 2, provider: 'codex', folderPath: '/storybook/relay', folderName: 'relay' },
-  { sessionId: 'sess-3', title: 'App checkout flow', lastActiveAt: hoursAgo(8), messageCount: 1, provider: 'claude', folderPath: '/storybook/app-a', folderName: 'app' },
-  { sessionId: 'sess-4', title: 'Support the mention popup', lastActiveAt: hoursAgo(2), messageCount: 3, provider: 'codex', folderPath: PROJECT, folderName: 'super-one' },
-  { sessionId: 'sess-5', title: 'Refeature the popup', lastActiveAt: hoursAgo(4), messageCount: 2, provider: 'claude', folderPath: PROJECT, folderName: 'super-one' },
+  { sessionId: 'sess-3', title: 'App checkout flow', lastActiveAt: hoursAgo(24 * 3), messageCount: 1, provider: 'claude', folderPath: '/storybook/app-a', folderName: 'app' },
+  { sessionId: 'sess-4', title: 'Support the mention popup', lastActiveAt: hoursAgo(24 * 10), messageCount: 3, provider: 'codex', folderPath: PROJECT, folderName: 'super-one' },
+  { sessionId: 'sess-5', title: 'Refeature the popup', lastActiveAt: hoursAgo(24 * 330), messageCount: 2, provider: 'claude', folderPath: PROJECT, folderName: 'super-one' },
+  { sessionId: 'sess-6', title: 'Probe OpenCode mentions', lastActiveAt: hoursAgo(24 * 800), messageCount: 2, provider: 'opencode', folderPath: '/storybook/app-b', folderName: 'app-checkout' },
 ]
 
 function sessionsFor(query: string, limit?: number, projectPaths?: string[]): PinnedSessionEntry[] {
@@ -270,8 +271,11 @@ export const GitTags: Story = { args: { query: 'git tag ' } }
 /** A filter that matches nothing names the kind that came back empty. */
 export const GitNoMatches: Story = { args: { query: 'git tag v9' } }
 
-/** `@session`: newest sessions across every project on this host. */
+/** `@session`: newest sessions. Wide enough, the project and age sit together on the right. */
 export const SessionRecent: Story = { args: { query: 'session ' } }
+
+/** The same list in a narrow composer: project and age sit together on the second line. */
+export const SessionRecentNarrow: Story = { args: { query: 'session ', width: 340 } }
 
 /** `@session align`: a title, with no project step in front of it. */
 export const SessionTitle: Story = { args: { query: 'session align' } }

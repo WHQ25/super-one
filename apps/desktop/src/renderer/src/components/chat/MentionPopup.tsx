@@ -17,8 +17,8 @@ import type {
   ListDirEntry,
   MentionSearchItem,
   PinnedSessionEntry,
-  SessionHistoryEntry,
 } from '@superone/shared/agent-types'
+import { formatCompactAge } from '@superone/shared/relative-time'
 import { PLAIN_MENTION_GROUP_LIMIT, orderDirectSearchGroups, shouldDirectSearch, type DirectSearchRankedGroup } from '@superone/shared/mention-direct-search'
 import { compareMentionMatchKeys, fileMentionMatchKey, gitMentionRefMatchKey, mentionMatchKey, sortByMentionMatch, type MentionMatchKey } from '@superone/shared/mention-match-tier'
 import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -66,7 +66,7 @@ import {
   isGitFlatItem,
   type GitFlatItem,
 } from './GitMentionRows'
-import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
+import { SESSION_META_CLASS, STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
 import { encodeMcpMentionValue, mcpMentionGroupKey, mcpMentionHasStatus } from '@superone/shared/mcp-app-mentions'
 import { useMcpMentionSearch } from '@/components/mcp-apps/mention-search'
 import type { McpAppRoute } from '@/components/mcp-apps/desktop-executor'
@@ -143,7 +143,8 @@ type FlatItem =
       kind: 'session'
       sessionId: string
       title: string
-      harness: string
+      /** When the session was last active. Empty when the host omitted it. */
+      lastActiveAt: string
       projectLabel: string
       matchIndices: number[]
     }
@@ -247,15 +248,6 @@ function mentionGroupKey(item: FlatItem): string {
   if (item.kind === 'miniapp') return 'miniapp'
   if (item.kind === 'mcp-resource') return mcpMentionGroupKey(item)
   return 'file'
-}
-
-function harnessLabel(entry: SessionHistoryEntry): string {
-  if (entry.provider === 'codex') return 'Codex'
-  if (entry.provider === 'acp') {
-    return entry.acpAgentId?.toLowerCase().includes('grok') ? 'Grok' : 'ACP'
-  }
-  if (entry.provider === 'opencode') return 'OpenCode'
-  return 'Claude'
 }
 
 function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: boolean) {
@@ -776,7 +768,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           kind: 'session' as const,
           sessionId: row.sessionId,
           title,
-          harness: harnessLabel(row),
+          lastActiveAt: row.lastActiveAt,
           projectLabel: showProject ? row.folderName : '',
           matchIndices: titleQ ? titleMatchIndices(title, titleQ) : [],
         }
@@ -1193,6 +1185,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         )
       }
       if (item.kind === 'session') {
+        const age = formatCompactAge(item.lastActiveAt)
         return (
           <button
             key={`sess-${item.sessionId}`}
@@ -1208,14 +1201,14 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               <span className="min-w-0 truncate font-medium @md:flex-1">
                 <HighlightedPath path={item.title} indices={item.matchIndices} />
               </span>
-              {item.projectLabel ? (
-                <span className={cn(STACKED_DETAIL_CLASS, '@md:max-w-20 @md:shrink-0')}>
-                  {item.projectLabel}
+              {item.projectLabel || age ? (
+                <span className={cn(SESSION_META_CLASS, !item.projectLabel && '@md:shrink-0')}>
+                  {item.projectLabel ? (
+                    <span className={cn(STACKED_DETAIL_CLASS, !age && '@md:max-w-20 @md:shrink-0')}>{item.projectLabel}</span>
+                  ) : null}
+                  {age ? <span className={cn(STACKED_DETAIL_CLASS, 'shrink-0')}>{age}</span> : null}
                 </span>
               ) : null}
-            </span>
-            <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-2xs text-muted-foreground">
-              {item.harness}
             </span>
           </button>
         )

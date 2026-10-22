@@ -39,6 +39,13 @@ function MatchRuns({ text, indices = [] }: { text: string; indices?: number[] })
  * and a long note gives way first. Two shrinking siblings would share the
  * shortfall and clip the name instead.
  */
+/** Quiet mention text. Project and harness on a session row share this. */
+const MENTION_META_TYPE = { fontSize: 12, fontWeight: '400' as const }
+
+function mentionMutedStyle(color: string) {
+  return { color, ...MENTION_META_TYPE }
+}
+
 function MatchText({ text, indices, muted, note }: {
   text: string
   indices?: number[]
@@ -46,7 +53,7 @@ function MatchText({ text, indices, muted, note }: {
   note?: { text: string; indices: number[] }
 }) {
   const { tokens: { colors } } = useMobileTheme()
-  const mutedStyle = { color: colors.mutedForeground, fontSize: 12, fontWeight: '400' } as const
+  const mutedStyle = mentionMutedStyle(colors.mutedForeground)
   // `flexShrink` because RN's default is 0: in a row, a long name would
   // otherwise overflow its line and paint over whatever sits beside it.
   return <Text numberOfLines={1} style={muted
@@ -254,7 +261,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, breadcrumb
         <View>
         <SectionTitle title={groupTitle(group.key)} count={group.items.length} />
         {group.items.map((row) => {
-          const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, hintIndices, disabled } = row
+          const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, hintIndices, hintTrailing, disabled } = row
           // Match desktop handles: include the typed @ only when the keyword
           // matched, leaving display-name-only and alias matches unhighlighted.
           const inlineMatchIndices = inline?.startsWith('@') && inlineIndices.length > 0
@@ -274,12 +281,22 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, breadcrumb
               style={({ pressed }) => ({ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
               <MentionIdentity item={item} />
               {/* One line, as on the desktop: name, a quiet note beside it, and
-                  what distinguishes it pushed to the end. Only a switched-off
-                  capability or a commit adds a second line. */}
+                  what distinguishes it pushed to the end. A second line is the
+                  switched-off hint, a commit's sha, or a session's project and
+                  age sharing one type. */}
               <View style={{ flex: 1, gap: 2 }}>
                 <MatchText text={label} indices={labelIndices}
                   note={inline ? { text: inline, indices: inlineMatchIndices } : undefined} />
-                {hint ? <MatchText text={hint} indices={hintIndices} muted /> : null}
+                {hintTrailing ? (
+                  <View testID="mention-meta" style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                    {hint ? (
+                      <View style={{ flexShrink: 1, minWidth: 0 }}>
+                        <MatchText text={hint} indices={hintIndices} muted />
+                      </View>
+                    ) : null}
+                    <Text numberOfLines={1} style={mentionMutedStyle(colors.mutedForeground)}>{hintTrailing}</Text>
+                  </View>
+                ) : hint ? <MatchText text={hint} indices={hintIndices} muted /> : null}
               </View>
               {trailing ? <Text numberOfLines={1} style={{ maxWidth: 96, color: colors.mutedForeground, fontSize: 11 }}>{trailing}</Text> : null}
               {badge ? <Text numberOfLines={1} style={{ fontSize: 11, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4,

@@ -6,6 +6,7 @@ import {
   type ParsedSessionMentionQuery,
   type ProjectOption,
 } from '@superone/shared/session-mention-query'
+import { formatCompactAge } from '@superone/shared/relative-time'
 import type { SessionListRow } from './session-list-state'
 import type { MentionItem } from './mentions'
 
@@ -46,14 +47,17 @@ export function sessionProjectItems(
 }
 
 export function sessionItems(rows: readonly SessionListRow[], titleQuery: string, showProject = true): MentionItem[] {
-  return rows.map((row) => ({
-    kind: 'session',
-    path: row.sessionId,
-    label: row.title || row.sessionId,
-    ...(showProject && row.projectName ? { description: row.projectName } : {}),
-    ...(row.provider ? { badge: row.provider } : {}),
-    labelIndices: titleMatchIndices(row.title || '', titleQuery),
-  }))
+  return rows.map((row) => {
+    const age = formatCompactAge(row.lastActiveAt ?? '')
+    return {
+      kind: 'session' as const,
+      path: row.sessionId,
+      label: row.title || row.sessionId,
+      ...(showProject && row.projectName ? { description: row.projectName } : {}),
+      ...(age ? { badge: age } : {}),
+      labelIndices: titleMatchIndices(row.title || '', titleQuery),
+    }
+  })
 }
 
 /** What "nothing here" means — recent archive, or a title that matched nothing. */

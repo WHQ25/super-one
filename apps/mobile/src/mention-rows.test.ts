@@ -212,10 +212,18 @@ describe('what each kind puts on its one line', () => {
   const only = (item: MentionItem, query = '') =>
     buildMentionRows(query, { remote: [item], agentProfiles: [], scoped: true })[0]!
 
-  it('keeps a session title with its harness and puts the project under it', () => {
-    const row = only({ kind: 'session', path: 'sess-1', label: 'Ship it', description: 'super-one', badge: 'claude' })
-    expect(row).toMatchObject({ label: 'Ship it', hint: 'super-one', badge: { text: 'claude', tone: 'muted' } })
+  it('puts a session project and age together on the second line', () => {
+    const row = only({ kind: 'session', path: 'sess-1', label: 'Ship it', description: 'super-one', badge: '3h' })
+    expect(row).toMatchObject({ label: 'Ship it', hint: 'super-one', hintTrailing: '3h' })
+    expect(row.badge).toBeUndefined()
     expect(row.trailing).toBeUndefined()
+  })
+
+  it('keeps the age on the second line when the project is hidden', () => {
+    const row = only({ kind: 'session', path: 'sess-1', label: 'Ship it', badge: '2d' })
+    expect(row.hint).toBeUndefined()
+    expect(row.hintTrailing).toBe('2d')
+    expect(row.badge).toBeUndefined()
   })
 
   it('shows a scope choice with its hint beside the name, not under it', () => {

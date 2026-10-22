@@ -13,6 +13,14 @@ export const STACKED_BODY_CLASS = 'flex min-w-0 flex-1 flex-col gap-0.5 @md:flex
 /** The quiet second line: small, muted, and truncated on its own. */
 export const STACKED_DETAIL_CLASS = 'min-w-0 truncate text-2xs font-normal text-muted-foreground'
 
+/**
+ * A session's project and age share {@link STACKED_DETAIL_CLASS} and sit next
+ * to each other. Below `@md` that pair is the second line. From `@md` up the
+ * title takes the spare width, so the pair stays together at the right. A long
+ * project truncates; the age does not.
+ */
+export const SESSION_META_CLASS = 'flex min-w-0 items-baseline gap-1'
+
 /** Every selectable popup row; `selected` is the keyboard / hover position. */
 export function mentionRowClass(selected: boolean): string {
   return cn(

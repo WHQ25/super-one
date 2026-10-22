@@ -1,5 +1,5 @@
 import { expect, test } from '@jest/globals'
-import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
 import { directoryNavigationItem, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
@@ -69,6 +69,23 @@ test('passes the whole item to onSelect, not just its path', async () => {
   await renderWithTheme(<MentionSuggestions rows={[row(file)]} onSelect={(item) => selected.push(item)} />)
   fireEvent.press(screen.getByText('src/app.ts'))
   expect(selected).toEqual([file])
+})
+
+test('puts a session age on the second line with the project, in the same type', async () => {
+  const rows = buildMentionRows('', {
+    remote: [{ kind: 'session', path: 'sess-1', label: 'Ship it', description: 'super-one', badge: '3h' }],
+    agentProfiles: [],
+    scoped: true,
+  })
+  await renderWithTheme(<MentionSuggestions rows={rows} onSelect={() => {}} />)
+  const meta = within(screen.getByTestId('mention-meta'))
+  const project = meta.getByText('super-one')
+  const age = meta.getByText('3h')
+  expect(age).toHaveStyle({ fontSize: 12, fontWeight: '400' })
+  expect(age.props.style?.width).toBeUndefined()
+  expect(screen.getByTestId('mention-meta')).toHaveStyle({ flexDirection: 'row', gap: 4 })
+  const projectStyle = project.props.style ?? project.parent?.props.style
+  expect(projectStyle).toMatchObject({ fontSize: 12, fontWeight: '400' })
 })
 
 test('shows a switched-off capability without letting it be selected', async () => {

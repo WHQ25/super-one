@@ -97,10 +97,12 @@ export const previewSessionProjects = [
 ]
 
 /** Sessions the `@session` portal and a plain `@` can surface. */
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString()
+
 export const previewSessionRows = [
-  { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', provider: 'claude' as const, projectName: 'super-one' },
-  { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', provider: 'codex' as const, projectName: 'super-one' },
-  { sessionId: 'sess-0c4d', title: '', provider: 'claude' as const, projectName: 'relay' },
+  { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', provider: 'claude' as const, projectName: 'super-one', lastActiveAt: hoursAgo(2) },
+  { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', provider: 'codex' as const, projectName: 'super-one', lastActiveAt: hoursAgo(24 * 10) },
+  { sessionId: 'sess-0c4d', title: '', provider: 'claude' as const, projectName: 'relay', lastActiveAt: hoursAgo(24 * 40) },
 ]
 
 /** MCP servers in every state a healthy session never shows all at once. */

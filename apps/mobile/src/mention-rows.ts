@@ -64,13 +64,14 @@ export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
 /**
  * One mention row, in the desktop popup's shape.
  *
- * Every row there is a **single line** (`MentionPopup.tsx:919` —
+ * Every row there is a **single line** (`mentionRowClass` —
  * `flex items-center`): an icon, the name, a quiet inline note beside it, and
  * at most a small badge at the end. The exceptions get a second line: a
  * switched-off capability says where to switch it on, and rows whose name
- * shares its line with a description — a session's project, a git ref's subject,
- * sha or author — put that description underneath, as the desktop does once its
- * popup is narrow (`mention-row-layout.ts`). A phone is always that narrow.
+ * shares its line with a description — a session's project and age, a git
+ * ref's subject, sha or author — put that description underneath, as the
+ * desktop does once its popup is narrow (`mention-row-layout.ts`). A phone is
+ * always that narrow.
  *
  * Mobile used to give every row a second line — the path under a filename, the
  * project under a session title, prose under a capability. That is a different
@@ -92,11 +93,16 @@ export interface MentionRow {
   inlineIndices: number[]
   /** Quiet text pushed to the end of the row — the project a session is in. */
   trailing?: string
-  /** A small pill at the end: a model, a harness, or `Off`. */
+  /** A small pill at the end of the first line: a model, `current`, or `Off`. */
   badge?: { text: string; tone: 'muted' | 'accent' }
   /** The quiet second line: where to switch a capability back on, or what describes the name. */
   hint?: string
   hintIndices?: number[]
+  /**
+   * The other half of the second line, in the same type as `hint`, kept in a
+   * fixed column so it lines up across rows. A session's age (`3h`, `2w`).
+   */
+  hintTrailing?: string
   /** Visible but not selectable. */
   disabled?: boolean
 }
@@ -372,9 +378,10 @@ function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
   const labelIndices = item.labelIndices ?? shiftIndices(item.matchIndices ?? [], offset, label.length)
   const row: MentionRow = { item, label, labelIndices, inlineIndices: [] }
   if (item.kind === 'session') {
-    // The title keeps the line with the harness pill; the project goes under it.
+    // Project and age share the second line. A phone is always as narrow as
+    // the desktop popup when it drops that pair under the title.
     return { ...row, ...(item.description ? { hint: item.description } : {}),
-      ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
+      ...(item.badge ? { hintTrailing: item.badge } : {}) }
   }
   if (item.kind === 'session-project' || item.kind === 'git-kind') {
     // `current project` / the path: the desktop shows it inline, not underneath.

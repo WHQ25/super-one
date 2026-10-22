@@ -46,14 +46,19 @@ describe('project completions', () => {
 describe('session rows', () => {
   const entry = (sessionId: string, title: string, projectName = 'super-one'): SessionListRow => ({
     sessionId, title, projectName, provider: 'claude',
+    lastActiveAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
   })
 
-  it('shows the title, the project, and what matched inside the title', () => {
+  it('shows the title, the project, the age, and what matched inside the title', () => {
     const [row] = sessionItems([entry('sess-1', 'Align the mention popup')], 'align')
     expect(row).toMatchObject({
-      kind: 'session', path: 'sess-1', label: 'Align the mention popup', description: 'super-one', badge: 'claude',
+      kind: 'session', path: 'sess-1', label: 'Align the mention popup', description: 'super-one', badge: '2h',
     })
     expect(row?.labelIndices).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it('omits the age when the host did not say when the session was active', () => {
+    expect(sessionItems([{ sessionId: 'sess-3', title: 'Ship it' }], '')[0]).not.toHaveProperty('badge')
   })
 
   it('hides the project once the search is already scoped to it', () => {

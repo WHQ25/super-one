@@ -183,7 +183,7 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · @session recent" note="Nothing after the keyword: newest sessions across projects. The project name sits beside the title.">
+    <Section title="Mention · @session recent" note="Nothing after the keyword: newest sessions across projects. The project and age sit together on the second line.">
       <MentionSuggestions
         rows={buildMentionRows('', { remote: sessionItems(previewSessionRows, ''), agentProfiles: [], scoped: true })}
         onSelect={() => {}}

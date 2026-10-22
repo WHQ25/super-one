@@ -436,7 +436,9 @@ by whitespace. Every project with that label is in scope. Otherwise the whole
 rest is the title. While that first token is still being typed, prefix
 completions for project labels sit above the sessions; choosing one rewrites
 the query to `session <label> `. Bare `@session` does not list projects.
-Unscoped rows show the project label. Scoped rows hide it.
+Unscoped rows show the project label. Scoped rows hide it. A session active
+at least a minute ago shows that age beside the project, as `12m`, `3h`, `2d`,
+`1w`, `4mo`, or `2y`. Anything newer omits the age.
 
 `@git` and `@gh` still open on a kind picker. `@git <query>` searches branch,
 tag, worktree, and commit together. `@gh <query>` searches issues and pull

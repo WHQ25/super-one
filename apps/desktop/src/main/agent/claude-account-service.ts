@@ -73,8 +73,11 @@ export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
  */
 export function listKnownAccounts(): ClaudeAccount[] {
   const store = claudeAccountStore()
-  const accounts = [null, ...store.dirs()].flatMap((dir) => store.get(dir)?.account ?? [])
-  return dedupeAccounts(accounts).filter((account) => account.loggedIn).map((account) => ({ ...account, isDefault: store.isDefault(account.credentialDir) }))
+  const accounts = [null, ...store.dirs()].flatMap((dir) => {
+    const account = store.get(dir)?.account
+    return account ? [{ ...account, isDefault: store.isDefault(dir) }] : []
+  })
+  return dedupeAccounts(accounts).filter((account) => account.loggedIn)
 }
 export function createAccountDir(): string {
   const dir = join(accountsRoot(), randomUUID())

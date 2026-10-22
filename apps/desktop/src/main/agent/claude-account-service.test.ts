@@ -15,7 +15,7 @@ vi.mock('node:child_process', () => ({
     done(null)
   },
 }))
-import { addAccount, authEnv, claudeAccountConfig, createAccountDir, invalidateAccountListCache, listAccounts, readAccount, removeAccount, setDefaultAccount, signInAccount, signOutAccount } from './claude-account-service'
+import { addAccount, authEnv, claudeAccountConfig, createAccountDir, invalidateAccountListCache, listAccounts, listKnownAccounts, readAccount, removeAccount, setDefaultAccount, signInAccount, signOutAccount } from './claude-account-service'
 import { claudeAccountStore } from './claude-account-store'
 
 function credentials(dir: string, token: string) {
@@ -137,6 +137,12 @@ describe('Claude managed account lifecycle', () => {
     await signInAccount(fresh)
     expect(existsSync(old)).toBe(false)
     expect((await listAccounts(true)).map((row) => [row.credentialDir, row.loggedIn, row.isDefault])).toEqual([[fresh, true, true]])
+  })
+  it('lists the chosen default, not the CLI login, when both hold the same identity', async () => {
+    credentials(join(fixture.home, 'shared'), 'a')
+    const managed = createAccountDir(); credentials(managed, 'a')
+    await listAccounts(true); await setDefaultAccount(managed)
+    expect(listKnownAccounts().map((row) => [row.credentialDir, row.isDefault])).toEqual([[managed, true]])
   })
   it('leaves no card behind when adding an account does not complete', async () => {
     await expect(addAccount()).rejects.toThrow(/did not complete/)

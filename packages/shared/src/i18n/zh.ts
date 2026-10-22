@@ -408,7 +408,6 @@ export const zh: Messages = {
       worktree: '工作树',
       offline: '离线',
       needsUpgrade: '需要升级',
-      connecting: '连接中',
     },
     environmentSection: {
       empty: '此环境上没有项目。',

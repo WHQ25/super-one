@@ -1,4 +1,4 @@
-import { ChevronRight, Cloud, Loader2, Monitor, Plus, RotateCw, TriangleAlert, Unplug, Wifi } from 'lucide-react'
+import { ChevronRight, Cloud, Monitor, Plus, RotateCw, TriangleAlert, Unplug, Wifi } from 'lucide-react'
 import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -59,7 +59,6 @@ export function EnvironmentSectionHeader({
 }) {
   const { t } = useTranslation()
   const offline = connection === 'offline'
-  const connecting = connection === 'connecting' || projectsStatus === 'loading'
   const remote = kind !== 'local'
 
   return (
@@ -78,7 +77,6 @@ export function EnvironmentSectionHeader({
           {connection === 'needs-upgrade' && (
             <TriangleAlert className="size-3 shrink-0 text-warning" aria-label={t('sidebar.hover.needsUpgrade')} />
           )}
-          {connecting && !offline && <Loader2 className="size-3 shrink-0 animate-spin" aria-label={t('sidebar.hover.connecting')} />}
         </button>
         <div className="flex shrink-0 items-center gap-0.5">
           {onAddProject && (

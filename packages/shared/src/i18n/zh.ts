@@ -2351,7 +2351,6 @@ export const zh: Messages = {
       checkoutHeading: '检出',
       localCheckout: '本地检出',
       modeLocal: '本地',
-      newWorktreeFrom: '新 Worktree ← {{base}}',
       noneYet: '暂无',
     },
     git: {

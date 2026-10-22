@@ -2244,7 +2244,6 @@ export type Messages = {
       checkoutHeading: string
       localCheckout: string
       modeLocal: string
-      newWorktreeFrom: string
       noneYet: string
     }
     git: {
@@ -6936,7 +6935,6 @@ export const en: Messages = {
       checkoutHeading: 'Checkout',
       localCheckout: 'Local Checkout',
       modeLocal: 'Local',
-      newWorktreeFrom: 'New Worktree ← {{base}}',
       noneYet: 'None Yet',
     },
     git: {

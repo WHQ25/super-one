@@ -163,7 +163,7 @@ describe('merged status chip', () => {
       },
     })
     render(<WorkDirIndicator isGitRepo />)
-    await waitFor(() => expect(screen.getByTitle('This PC · New Worktree ← origin/release/1.8')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTitle('This PC · Create worktree from origin/release/1.8')).toBeTruthy())
     expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 
@@ -183,7 +183,7 @@ describe('merged status chip', () => {
     })
     const user = userEvent.setup()
     render(<WorkDirIndicator isGitRepo />)
-    await waitFor(() => expect(screen.getByTitle('This PC · New Worktree ← origin/release/1.8')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTitle('This PC · Create worktree from origin/release/1.8')).toBeTruthy())
 
     await user.click(screen.getByRole('button'))
     const checkout = await screen.findByRole('tab', { name: 'Local' })

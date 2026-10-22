@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
+import { Badge } from '@superone/ui/components/ui/badge'
 import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
@@ -43,6 +44,7 @@ import { selectionForNewSession } from '@superone/shared/session-location'
 import { EMPTY_BRANCH_LISTS, readBranchLists, type GitBranchLists } from './git-branch-lists'
 import { GitBranchMenu } from './GitBranchMenu'
 import { WorkDirIndicatorClassic } from './WorkDirIndicatorClassic'
+import { workDirTitle, type WorkDirState } from './work-dir-label'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
 function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -69,11 +71,14 @@ function LocationChip({
   environment,
   location,
   icon: Icon,
+  tag,
 }: {
   kind: EnvironmentKind
   environment: string
   location: string
   icon: ComponentType<{ className?: string }>
+  /** Short badge after the location, e.g. a worktree that will be detached. */
+  tag?: string
 }) {
   return (
     <span className="flex max-w-72 items-center gap-1 truncate">
@@ -82,6 +87,7 @@ function LocationChip({
       <span className="text-muted-foreground">·</span>
       <Icon className="size-3 shrink-0 text-muted-foreground" />
       <span className="truncate text-muted-foreground">{location}</span>
+      {tag && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{tag}</Badge>}
     </span>
   )
 }
@@ -782,10 +788,19 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
         needsUpgrade: false,
         hostKind: environmentKind,
       }]
+  // A pending create shows only a name; the worktree icon tells it apart from
+  // a checkout, and the tooltip keeps the full sentence.
+  const pendingState: WorkDirState | null = isGitRepo === false || !isPending
+    ? null
+    : pendingMode === 'detach'
+      ? { kind: 'createFrom', base: pendingBase }
+      : pendingMode === 'attach'
+        ? { kind: 'attachTo', base: pendingBase }
+        : { kind: 'createBranch', name: pendingBranchName }
   const locationLabel = isGitRepo === false
     ? t('chat.git.uninitialized')
-    : isPending
-      ? t('chat.worktree.newWorktreeFrom', { base: pendingBase })
+    : pendingState
+      ? (pendingState.kind === 'createBranch' && pendingBranchName.trim() ? pendingBranchName.trim() : pendingBase)
       : isActive
         ? (activeIsDetached
             ? (activeShortHead || t('chat.worktree.detachedLabel'))
@@ -802,7 +817,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
       : (!isActive && mainDirty && mainDirty.files > 0
         ? <Circle className="size-1.5 fill-amber-500 text-amber-500" />
         : null)
-  const chipTitle = `${environmentName} · ${locationLabel}`
+  const chipTitle = `${environmentName} · ${pendingState ? workDirTitle(pendingState, t) : locationLabel}`
 
   const environmentMenuNode = (
     <WorkDirEnvironmentMenu
@@ -826,7 +841,15 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
           >
             {compact
               ? <LocationIcon className="size-3" />
-              : <LocationChip kind={environmentKind} environment={environmentName} location={locationLabel} icon={LocationIcon} />}
+              : (
+                <LocationChip
+                  kind={environmentKind}
+                  environment={environmentName}
+                  location={locationLabel}
+                  icon={LocationIcon}
+                  tag={pendingState?.kind === 'createFrom' ? t('chat.worktree.detachedLabel') : undefined}
+                />
+              )}
             {dirtyDot}
             {!compact && <ChevronDown className={`size-3 text-muted-foreground transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
           </button>

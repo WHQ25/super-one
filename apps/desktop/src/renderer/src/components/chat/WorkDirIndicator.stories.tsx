@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState } from 'react'
-import type { GitDirtyStatus, WorktreeInfo } from '@superone/shared/agent-types'
+import type { GitDirtyStatus, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { WorkDirIndicator } from './WorkDirIndicator'
@@ -44,6 +44,7 @@ function Preview({
   isGitRepo = true,
   empty = false,
   pendingBase = null,
+  pendingMode = 'branch',
   started = false,
   narrow = false,
   experiment = true,
@@ -52,6 +53,7 @@ function Preview({
   isGitRepo?: boolean
   empty?: boolean
   pendingBase?: string | null
+  pendingMode?: WorktreeMode
   started?: boolean
   narrow?: boolean
   /** Remote-nodes experiment. Off shows the pre-branch worktree chip. */
@@ -104,7 +106,7 @@ function Preview({
       experimentalRemoteNodesEnabled: experiment,
       currentFolder: PROJECT,
       _worktrees: {
-        [PROJECT]: { pendingBaseBranch: pendingBase, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
+        [PROJECT]: { pendingBaseBranch: pendingBase, pendingMode, pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
       },
     })
     setReady(true)
@@ -116,7 +118,7 @@ function Preview({
       })
       useChatStore.setState(prevChat)
     }
-  }, [activePath, empty, experiment, pendingBase, started])
+  }, [activePath, empty, experiment, pendingBase, pendingMode, started])
   if (!ready) return null
   return (
     <div className={narrow ? 'w-36 p-2 text-xs text-muted-foreground' : 'flex h-96 items-start p-2 text-xs text-muted-foreground'}>
@@ -172,6 +174,12 @@ export const ClassicChip: Story = { args: { experiment: false, activePath: WT('d
 
 /** Chip names the pending worktree before any files exist. */
 export const PendingCreateChip: Story = { args: { pendingBase: 'main' } }
+
+/** Attach shows the branch the worktree will check out. */
+export const PendingAttachChip: Story = { args: { pendingBase: 'develop', pendingMode: 'attach' } }
+
+/** Detach shows the base branch with a Detached tag. */
+export const PendingDetachChip: Story = { args: { pendingBase: 'release/2.4', pendingMode: 'detach' } }
 
 /** A session that already has messages stays on its worktree. */
 export const StartedWorktreeChip: Story = { args: { activePath: WT('dirty'), started: true }, play: openPopover }

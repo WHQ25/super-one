@@ -23,10 +23,8 @@ import {
 import { applySessionTagOp, parseSessionTagOp } from '@superone/shared/session-tags'
 import { mentionMatchTier } from '@superone/shared/mention-match-tier'
 import { parseSessionSearchProjectPaths } from '@superone/shared/session-title-search'
-import { cloneRepository, resolveCloneDestination, type CloneRepositoryInput } from '@superone/shared/git-clone'
-import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
+import { cloneRepository, type CloneRepositoryInput } from '@superone/shared/git-clone'
 import { isGitRemoteName } from '../git/index'
-import { detectRepoIdentity } from '../workspace/index'
 import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
@@ -1243,7 +1241,6 @@ async function handleGitCreateBranch(payload: unknown, ctx: RpcContext): Promise
       result: await ctx.workspaceGit.switchBranch(String(p.projectId ?? ''), String(p.branch ?? ''), {
         create: true,
         absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
-        startPoint: typeof p.startPoint === 'string' ? p.startPoint : null,
       }),
     }
   } catch (err) {
@@ -1614,26 +1611,9 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
 /**
  * Clone a remote repository onto this host and register it as a project, so
  * the desktop add-project dialog gets back a ready-to-open ProjectSnapshot.
+ * `ifExists: 'reuse-or-rename'` is handled by the shared clone function, the
+ * same path the local desktop uses.
  */
-/**
- * A clone whose folder already exists: reuse it when it is a checkout of the
- * same origin (a clone that was never registered or was removed from the
- * list), otherwise clone beside it under the first free `<name>-<n>`.
- */
-function existingCloneTarget(input: CloneRepositoryInput): {
-  reuse?: { path: string; name: string }
-  directoryName?: string
-} {
-  const destination = resolveCloneDestination(input)
-  if (!existsSync(destination.path)) return { directoryName: input.directoryName }
-  const wanted = normalizeGitRemoteUrl(input.remoteUrl)
-  if (wanted && repoIdentityRemote(detectRepoIdentity(destination.path)) === wanted) return { reuse: destination }
-  for (let n = 2; ; n++) {
-    const directoryName = `${destination.name}-${n}`
-    if (!existsSync(pathJoin(configDirname(destination.path), directoryName))) return { directoryName }
-  }
-}
-
 async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.manageProject)
   if (denied) return denied
@@ -1643,20 +1623,17 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
     const parentPath = typeof p.parentPath === 'string' && p.parentPath.trim()
       ? p.parentPath
       : nodeProjectsDir(hostAgentSettings(ctx))
-    const input = {
+    const input: CloneRepositoryInput = {
       remoteUrl: String(p.remoteUrl ?? ''),
       parentPath: expandHostPath(parentPath),
       directoryName: typeof p.directoryName === 'string' ? p.directoryName : undefined,
       shallow: p.shallow === true,
-    }
-    if (p.ifExists === 'reuse-or-rename') {
-      const existing = existingCloneTarget(input)
-      // `reused`: the checkout predates this call, so it may lack recent commits.
-      if (existing.reuse) return { result: { ...ctx.projects.open(existing.reuse.path, existing.reuse.name), reused: true } }
-      input.directoryName = existing.directoryName
+      ...(p.ifExists === 'reuse-or-rename' ? { ifExists: 'reuse-or-rename' as const } : {}),
     }
     const cloned = await cloneRepository(input)
-    return { result: ctx.projects.open(cloned.path, cloned.name) }
+    const opened = ctx.projects.open(cloned.path, cloned.name)
+    // `reused`: the checkout predates this call, so it may lack recent commits.
+    return { result: cloned.reused ? { ...opened, reused: true } : opened }
   } catch (err) {
     return mapThrown(err)
   }

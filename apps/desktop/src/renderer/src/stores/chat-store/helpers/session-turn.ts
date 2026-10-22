@@ -59,7 +59,10 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
   const state = useChatStore.getState()
   const sessionId = writeScope.sessionId()
   const session = sessionId ? state.projectSessions[projectPath]?._sessions[sessionId] : undefined
-  const owned = session?.environmentSelection ?? null
+  const app = useAppStore.getState()
+  // Session ownership is the remote-nodes experiment. Off, the file-tree
+  // cache is the pending create, including when an older selection is still stored.
+  const owned = app.experimentalRemoteNodesEnabled ? (session?.environmentSelection ?? null) : null
   // A session that already chose the project root must not pick up a pending
   // create left in the file-tree cache by the session that was focused before.
   if (owned?.selection.kind === 'local' || owned?.selection.kind === 'existing') return true

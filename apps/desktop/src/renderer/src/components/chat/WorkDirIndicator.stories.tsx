@@ -33,15 +33,30 @@ const DIRTY: Record<string, GitDirtyStatus | undefined> = {
 mockIpc('app', 'getWorktreeInfo', async () => worktreeResult)
 mockIpc('app', 'getGitBranches', async () => ({
   local: ['main', 'develop', 'release/2.4'],
-  tracking: ['origin/main', 'origin/release/2.4'],
 }))
-mockIpc('app', 'gitFetch', async () => ({ ok: true }))
 mockIpc('app', 'getCheckedOutBranches', async () => ['main'])
 mockIpc('app', 'getGitInfo', async (path: unknown) => (
   path === PROJECT ? { branch: 'main', dirty: { files: 2, insertions: 10, deletions: 1 } } : { branch: 'HEAD', dirty: DIRTY[path as string] }
 ))
 
-function Preview({ activePath = null, isGitRepo = true, empty = false }: { activePath?: string | null; isGitRepo?: boolean; empty?: boolean }) {
+function Preview({
+  activePath = null,
+  isGitRepo = true,
+  empty = false,
+  pendingBase = null,
+  started = false,
+  narrow = false,
+  experiment = true,
+}: {
+  activePath?: string | null
+  isGitRepo?: boolean
+  empty?: boolean
+  pendingBase?: string | null
+  started?: boolean
+  narrow?: boolean
+  /** Remote-nodes experiment. Off shows the pre-branch worktree chip. */
+  experiment?: boolean
+}) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     worktreeResult = empty
@@ -51,22 +66,61 @@ function Preview({ activePath = null, isGitRepo = true, empty = false }: { activ
     const prevChat = useChatStore.getState()
     useChatStore.getState().ensureSession(PROJECT)
     useChatStore.setState({ activeProject: PROJECT })
+    if (started) {
+      const sid = useChatStore.getState().projectSessions[PROJECT]?._activeSessionId
+      if (sid) {
+        useChatStore.setState((state) => {
+          const project = state.projectSessions[PROJECT]
+          const session = project?._sessions[sid]
+          if (!project || !session) return {}
+          return {
+            projectSessions: {
+              ...state.projectSessions,
+              [PROJECT]: {
+                ...project,
+                _sessions: {
+                  ...project._sessions,
+                  [sid]: {
+                    ...session,
+                    _worktreePath: activePath,
+                    _gitBranch: 'feat/mobile-live-activity',
+                    messages: [{
+                      id: 'started',
+                      role: 'user',
+                      status: 'complete',
+                      content: [{ type: 'text', text: 'Continue on this worktree' }],
+                      createdAt: '2026-10-09T00:00:00.000Z',
+                      providerId: 'claude',
+                    }],
+                  },
+                },
+              },
+            },
+          }
+        })
+      }
+    }
     useAppStore.setState({
+      experimentalRemoteNodesEnabled: experiment,
       currentFolder: PROJECT,
       _worktrees: {
-        [PROJECT]: { pendingBaseBranch: null, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
+        [PROJECT]: { pendingBaseBranch: pendingBase, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
       },
     })
     setReady(true)
     return () => {
-      useAppStore.setState({ currentFolder: prevApp.currentFolder, _worktrees: prevApp._worktrees })
+      useAppStore.setState({
+        experimentalRemoteNodesEnabled: prevApp.experimentalRemoteNodesEnabled,
+        currentFolder: prevApp.currentFolder,
+        _worktrees: prevApp._worktrees,
+      })
       useChatStore.setState(prevChat)
     }
-  }, [activePath, empty])
+  }, [activePath, empty, experiment, pendingBase, started])
   if (!ready) return null
   return (
-    <div className="flex h-96 items-start p-2 text-xs text-muted-foreground">
-      <WorkDirIndicator isGitRepo={isGitRepo} />
+    <div className={narrow ? 'w-36 p-2 text-xs text-muted-foreground' : 'flex h-96 items-start p-2 text-xs text-muted-foreground'}>
+      <WorkDirIndicator compact={narrow} isGitRepo={isGitRepo} />
     </div>
   )
 }
@@ -92,7 +146,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Checkout tab: path, local branches, remote-tracking refs, and New Branch. */
+/** Checkout tab: local branches and New Branch. */
 export const CheckoutBranches: Story = { play: openPopover }
 
 /** Same checkout tab in dark. */
@@ -112,3 +166,15 @@ export const ActiveLongBranch: Story = { args: { activePath: WT('long') }, play:
 
 /** Closed chip only — environment, then the worktree branch. */
 export const Chip: Story = { args: { activePath: WT('dirty') } }
+
+/** Flag off: the pre-branch worktree chip, with no environment row. */
+export const ClassicChip: Story = { args: { experiment: false, activePath: WT('dirty') } }
+
+/** Chip names the pending worktree before any files exist. */
+export const PendingCreateChip: Story = { args: { pendingBase: 'main' } }
+
+/** A session that already has messages stays on its worktree. */
+export const StartedWorktreeChip: Story = { args: { activePath: WT('dirty'), started: true }, play: openPopover }
+
+/** The closed chip in a narrow composer. */
+export const Narrow: Story = { args: { narrow: true, activePath: WT('long') } }

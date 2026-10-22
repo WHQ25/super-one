@@ -7,10 +7,11 @@
  * rather than being written twice.
  */
 
-import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { repoNameFromGitUrl, validateCloneRemoteUrl } from './git-remote'
+import { normalizeGitRemoteUrl } from './git-remote-url'
 
 /** A clone of a large repo over a slow link still has to finish. */
 const CLONE_TIMEOUT_MS = 15 * 60 * 1000
@@ -39,6 +40,12 @@ export interface CloneRepositoryInput {
    * Omitted / false keeps a full clone (older clients and explicit opt-out).
    */
   shallow?: boolean
+  /**
+   * When the destination folder exists: reuse it if it is already a checkout
+   * of this origin, otherwise clone beside it as `<name>-2`, `<name>-3`, ….
+   * Omitted: a folder that already exists is a conflict.
+   */
+  ifExists?: 'reuse-or-rename'
 }
 
 /** `git clone` argv after the binary name. Exported so tests can lock the flag order. */
@@ -55,6 +62,70 @@ export interface CloneRepositoryResult {
   /** Absolute path of the cloned working tree. */
   path: string
   name: string
+  /** The folder was already a checkout of this origin, so git clone did not run. */
+  reused?: boolean
+}
+
+function gitText(abs: string, args: string[]): string | null {
+  try {
+    const text = execFileSync('git', ['-C', abs, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return text || null
+  } catch {
+    return null
+  }
+}
+
+function sameDirectory(left: string, right: string): boolean {
+  try {
+    return realpathSync(left) === realpathSync(right)
+  } catch {
+    return resolve(left) === resolve(right)
+  }
+}
+
+/**
+ * Origin of a checkout at exactly `abs`. `git config` walks to an enclosing
+ * repository, so a plain folder inside one must not count as that checkout.
+ */
+function originUrl(abs: string): string | null {
+  const top = gitText(abs, ['rev-parse', '--show-toplevel'])
+  if (!top || !sameDirectory(abs, top)) return null
+  return gitText(abs, ['config', '--get', 'remote.origin.url'])
+}
+
+function reuseCheckout(path: string, name: string, wanted: string | null): CloneRepositoryResult | null {
+  if (!wanted || !existsSync(path)) return null
+  const have = normalizeGitRemoteUrl(originUrl(path))
+  if (have !== wanted) return null
+  return { path, name }
+}
+
+/**
+ * Where `ifExists: 'reuse-or-rename'` should put the clone. Other callers keep
+ * the requested folder name and let `cloneRepository` reject a collision.
+ */
+export function planCloneTarget(input: CloneRepositoryInput): {
+  reuse?: CloneRepositoryResult
+  directoryName?: string
+} {
+  const destination = resolveCloneDestination(input)
+  if (input.ifExists !== 'reuse-or-rename' || !existsSync(destination.path)) {
+    return { directoryName: input.directoryName }
+  }
+  const wanted = normalizeGitRemoteUrl(input.remoteUrl)
+  const direct = reuseCheckout(destination.path, destination.name, wanted)
+  if (direct) return { reuse: direct }
+  const parent = dirname(destination.path)
+  for (let n = 2; ; n++) {
+    const directoryName = `${destination.name}-${n}`
+    const candidate = join(parent, directoryName)
+    const numbered = reuseCheckout(candidate, directoryName, wanted)
+    if (numbered) return { reuse: numbered }
+    if (!existsSync(candidate)) return { directoryName }
+  }
 }
 
 function invalid(message: string): Error {
@@ -92,7 +163,12 @@ export async function cloneRepository(
   input: CloneRepositoryInput,
   onProgress?: (percent: number) => void,
 ): Promise<CloneRepositoryResult> {
-  const destination = resolveCloneDestination(input)
+  const plan = planCloneTarget(input)
+  if (plan.reuse) return { ...plan.reuse, reused: true }
+  const destination = resolveCloneDestination({
+    ...input,
+    directoryName: plan.directoryName ?? input.directoryName,
+  })
 
   if (existsSync(destination.path)) {
     throw Object.assign(new Error(`destination already exists: ${destination.path}`), {

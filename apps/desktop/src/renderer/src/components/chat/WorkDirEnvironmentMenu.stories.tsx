@@ -36,7 +36,6 @@ const meta = {
   title: 'Chat/WorkDirEnvironmentMenu',
   component: WorkDirEnvironmentMenu,
   args: {
-    visible: true,
     options: options([office]),
     selectedId: 'local-env',
     picking: true,
@@ -83,8 +82,9 @@ export const ReadOnly: Story = {
   render: (args) => <Frame {...args} readOnly picking={false} />,
 }
 
-export const Loading: Story = {
-  render: (args) => <Frame {...args} loading options={[]} picking={false} />,
+export const CatalogEmpty: Story = {
+  name: 'Catalog empty',
+  render: (args) => <Frame {...args} options={[]} picking={false} />,
 }
 
 export const ErrorState: Story = {

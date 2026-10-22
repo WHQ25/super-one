@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { Clock, PencilLine, Trash2 } from 'lucide-react'
+import { Clock, PencilLine, Trash2, Unplug } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { DraftListEntry } from '@superone/shared/environment'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -16,6 +16,8 @@ import { toast } from 'sonner'
 interface DraftsSectionProps {
   /** Environment whose drafts are shown — drafts follow the sidebar's host. */
   connectionId: string
+  /** Dim the rows when that environment is offline. Resume still goes through the same path. */
+  offline?: boolean
 }
 
 /**
@@ -47,12 +49,14 @@ const DraftRow = memo(function DraftRow({
   connectionId,
   slotY,
   onResume,
+  offline = false,
 }: {
   draft: DraftListEntry
   connectionId: string
   /** Where this row sits, so a resume can leave a copy flying out of that slot. */
   slotY?: number
   onResume?: (draft: DraftListEntry, slotY: number) => void
+  offline?: boolean
 }) {
   const { t } = useTranslation()
   const discardDraft = useDraftsStore((s) => s.discardDraft)
@@ -76,9 +80,11 @@ const DraftRow = memo(function DraftRow({
         }
       }}
       style={{ height: DRAFT_ROW_HEIGHT }}
-      className="group/draft flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 transition-colors hover:bg-sidebar-hover"
+      className={`group/draft flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 transition-colors hover:bg-sidebar-hover${offline ? ' opacity-50' : ''}`}
     >
-      {scheduled ? (
+      {offline ? (
+        <Unplug className="size-3.5 shrink-0" aria-label={t('sidebar.sessionOffline')} />
+      ) : scheduled ? (
         <Clock
           className="size-3.5 shrink-0 text-warning"
           aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
@@ -122,6 +128,7 @@ const DraftRow = memo(function DraftRow({
  */
 export const DraftsSection = memo(function DraftsSection({
   connectionId,
+  offline = false,
 }: DraftsSectionProps) {
   // Select the stored array (or undefined). Do not coerce to `[]` inside the
   // selector — a fresh empty array every snapshot loops useSyncExternalStore.
@@ -213,6 +220,7 @@ export const DraftsSection = memo(function DraftsSection({
               connectionId={connectionId}
               slotY={slotY}
               onResume={handleResume}
+              offline={offline}
             />
           </motion.div>
         )
@@ -226,7 +234,7 @@ export const DraftsSection = memo(function DraftsSection({
           transition={SLIDE_OUT_TRANSITION}
           onAnimationComplete={() => setFlyOut(null)}
         >
-          <DraftRow draft={flyOut.draft} connectionId={connectionId} />
+          <DraftRow draft={flyOut.draft} connectionId={connectionId} offline={offline} />
         </motion.div>
       )}
     </motion.div>

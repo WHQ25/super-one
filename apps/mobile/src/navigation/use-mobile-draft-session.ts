@@ -13,6 +13,8 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
   projects: Project[]
   selection: ReturnType<typeof useHarnessSelection>
   worktree: NewSessionWorktreeSelection
+  /** Routed host. Omitted when the phone is on the paired desktop, so the draft stays local. */
+  environmentId?: string | null
   sandbox: SandboxInfo | null
   sessionDirs: string[]
   /** The session this draft continues, which its first send hands to the host. */
@@ -44,7 +46,7 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
       permissionMode: s.permissionMode, acpAgentId: s.selectedAcpAgentId,
       openCodeAgentId: s.selectedAgentId, selectedAcpModeId: s.selectedModeId, apiProviderId: s.selectedProviderId,
       sandboxEnabled: opts.sandbox?.enabled, sandboxAutoAllowBash: opts.sandbox?.autoAllowBash,
-      additionalDirs: opts.sessionDirs, ...draftWorktreeSettings(opts.worktree),
+      additionalDirs: opts.sessionDirs, ...draftWorktreeSettings(opts.worktree, opts.environmentId),
       ...(opts.continuesFrom ? { continuesFrom: opts.continuesFrom } : {}),
     },
     apply: async (row) => {

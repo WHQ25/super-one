@@ -453,7 +453,7 @@ export function MobileApp() {
   const { slashHits, mentionRows } = suggestions
   const remoteDrafts = useMobileDraftSession({
     kv, pairingId: activePairingId, clientRef: workspaceClientRef, composer: composerDraft, attachments, sessionId,
-    project, projects, selection: harnessSelection, worktree: worktreeSelection, sandbox: composerSandboxInfo,
+    project, projects, selection: harnessSelection, worktree: worktreeSelection, environmentId: routedEnvironmentId, sandbox: composerSandboxInfo,
     sessionDirs: additionalDirs.sessionDirs, restoreSessionDirs: additionalDirs.restoreSessionDirs,
     continuesFrom, setContinuesFrom,
     setWorktree: setWorktreeSelection, setSandbox: setPendingSandboxMode, setAttachments, setHarness,

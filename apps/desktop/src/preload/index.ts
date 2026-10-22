@@ -2124,10 +2124,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_INIT, folderPath),
   getGitBranches: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_LIST_BRANCHES, folderPath),
-  gitFetch: (folderPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_FETCH, folderPath),
-  switchGitBranch: (folderPath: string, branch: string, track?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_BRANCH, folderPath, branch, track),
+  switchGitBranch: (folderPath: string, branch: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_BRANCH, folderPath, branch),
   createBranch: (folderPath: string, branch: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_CREATE_BRANCH, folderPath, branch),
   /** Is the session's recorded worktree still a usable checkout? See main/git/worktree-alive. */

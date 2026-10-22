@@ -1098,13 +1098,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = await window.app.switchToExistingWorktree(projectPath, wtPath, gitBranch)
     if (!result.ok) return result
     const { useChatStore } = await import('./chat')
-    // Remote: store activePath as remote:<conn>:<hostWt> so git status IPC stays remote.
-    let uiWtPath = wtPath
-    const remoteProj = parseRemoteProjectKey(projectPath)
-    if (remoteProj && !parseRemoteProjectKey(wtPath)) {
-      const { remoteProjectKey } = await import('@/lib/remote-project-key')
-      uiWtPath = remoteProjectKey(remoteProj.connectionId, wtPath)
-    }
+    // A bare host path would make git IPC read this machine. Wrapping twice is the same key.
+    const uiWtPath = remoteActiveFileRoot(projectPath, wtPath)
     useChatStore.getState().resetSessionForWorktreeSwitch(projectPath, {
       wtPath: uiWtPath,
       gitBranch,

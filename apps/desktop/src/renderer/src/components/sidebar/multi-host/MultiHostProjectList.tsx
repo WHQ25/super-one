@@ -15,6 +15,12 @@ import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 
+const presentationCache = new WeakMap<SessionHistoryEntry, {
+  checkout: HostCheckout
+  bucket: EnvironmentBucket
+  value: { hover: ReturnType<typeof buildSessionHover>; environmentOffline: boolean }
+}>()
+
 interface MultiHostProjectListProps {
   environments: EnvironmentBucket[]
   groupBy: SidebarGroupBy
@@ -52,11 +58,40 @@ function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
 
 function presentationFor(checkout: HostCheckout, bucket: EnvironmentBucket) {
   return (session: SessionHistoryEntry) => {
-    return {
+    const hit = presentationCache.get(session)
+    if (hit && hit.checkout === checkout && hit.bucket === bucket) return hit.value
+    const value = {
       hover: buildSessionHover({ session, checkout, bucket }),
       environmentOffline: bucket.connection === 'offline',
     }
+    presentationCache.set(session, { checkout, bucket, value })
+    return value
   }
+}
+
+function ProjectLoadError({
+  bucket,
+  className,
+  showLabel = false,
+  onRetry,
+}: {
+  bucket: EnvironmentBucket
+  className: string
+  showLabel?: boolean
+  onRetry: (connectionId: string) => void
+}) {
+  const { t } = useTranslation()
+  const retry = t('sidebar.environmentSection.loadFailed')
+  return (
+    <button
+      type="button"
+      className={className}
+      title={bucket.projectsError ?? undefined}
+      onClick={() => onRetry(bucket.connectionId)}
+    >
+      {showLabel ? `${bucket.label}: ${retry}` : retry}
+    </button>
+  )
 }
 
 export function MultiHostProjectList(props: MultiHostProjectListProps) {
@@ -96,7 +131,11 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   }
 
   const drafts = draftConnectionIds.map((connectionId) => (
-    <DraftsSection key={connectionId} connectionId={connectionId} />
+    <DraftsSection
+      key={connectionId}
+      connectionId={connectionId}
+      offline={environments.some((bucket) => bucket.connectionId === connectionId && bucket.connection === 'offline')}
+    />
   ))
 
   if (groupBy === 'environment') {
@@ -127,6 +166,13 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               {expanded && bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
                 <div className="px-6 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
               )}
+              {expanded && bucket.projectsStatus === 'error' && checkouts.length === 0 && (
+                <ProjectLoadError
+                  bucket={bucket}
+                  className="px-6 py-2 text-left text-xs text-sidebar-foreground/70"
+                  onRetry={props.onRefreshEnvironment}
+                />
+              )}
               {expanded && bucket.projectsStatus === 'ready' && checkouts.length === 0 && bucket.connection !== 'offline' && (
                 <div className="px-6 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
               )}
@@ -147,14 +193,13 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
       {drafts}
       {errors.map((bucket) => (
-        <button
+        <ProjectLoadError
           key={bucket.environmentId}
-          type="button"
+          bucket={bucket}
           className="px-2 py-1 text-left text-[11px] text-sidebar-foreground/70"
-          onClick={() => props.onRefreshEnvironment(bucket.connectionId)}
-        >
-          {bucket.label}: {bucket.projectsError || t('common.retry')}
-        </button>
+          showLabel
+          onRetry={props.onRefreshEnvironment}
+        />
       ))}
       {groups.map((group) => {
         if (group.checkouts.length === 1) {

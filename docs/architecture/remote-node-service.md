@@ -1367,7 +1367,21 @@ Worktree paths never cross environments. `git.clone` without a parent directory
 clones into the node's `agent.projectsDir` setting (default
 `~/SuperOne/Projects`), which is where a remote collaboration launch puts a
 repository the node lacks; matching uses the normalized origin URL of
-`ProjectSnapshot.repoIdentity`.
+`ProjectSnapshot.repoIdentity`. `ifExists: 'reuse-or-rename'` is the same on
+the local host and the node. A directory is reused only when it is itself the
+git toplevel and its normalized origin matches, including a numbered sibling
+such as `name-2`. Otherwise the clone goes to the first free `name`, `name-2`,
+`name-3`. The local host returns `reused` on that result, the same field the
+node returns.
+
+A session stores `{ environmentId, selection }` (`local`, `existing`, or
+`create`). A remote worktree path stays `remote:<connectionId>:<hostPath>`.
+The desktop branch picker lists local branches only. A failed read is
+`{ local: [], error }` rather than an empty repository. The node's `git.fetch`
+stays for collaboration; the desktop picker does not fetch or create a branch
+from a remote-tracking ref. The sidebar loads project lists only for
+environments that are connected or need an upgrade, in parallel, and leaves
+offline, disconnected, and connecting buckets empty.
 
 ### 14.4 Session artifacts
 

@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentListItem, ProjectSnapshot } from '@superone/shared/environment'
-import { loadEnvironmentCatalog } from './catalog'
+import { applyCatalogBucket, createCatalogGeneration, loadEnvironmentCatalog, shareProjectLoad } from './catalog'
+import type { EnvironmentBucket } from './types'
 import { connectionOf, environmentKindOf, multiHostChromeVisible } from './environment-kind'
 import { checkoutMergeKey, groupCheckoutsByRepo, sortProjectGroups } from './group-projects'
-import { beginSessionLoad, commitSessionPage, failSessionPage, mergeRowsById } from './session-pages'
 import { parseSidebarSettings, readSidebarSettings, writeSidebarSettings, type SidebarSettingsStorage } from './sidebar-settings'
 import type { HostCheckout } from './types'
 
@@ -68,6 +68,19 @@ describe('sidebar settings', () => {
     })
     expect(readSidebarSettings(storage).groupBy).toBe('environment')
     expect(readSidebarSettings(storage).sort).toBe('added')
+  })
+
+  it('keeps the newest expansion keys when the list is over the cap', () => {
+    const keys = Array.from({ length: 205 }, (_, index) => `k${index}`)
+    const parsed = parseSidebarSettings(JSON.stringify({ expandedProjectKeys: keys }))
+    expect(parsed.expandedProjectKeys).toHaveLength(200)
+    expect(parsed.expandedProjectKeys[0]).toBe('k5')
+    expect(parsed.expandedProjectKeys.at(-1)).toBe('k204')
+    const storage = memory()
+    writeSidebarSettings(storage, { ...parsed, expandedProjectKeys: keys, collapsedEnvironmentIds: keys })
+    const saved = readSidebarSettings(storage)
+    expect(saved.expandedProjectKeys[0]).toBe('k5')
+    expect(saved.collapsedEnvironmentIds.at(-1)).toBe('k204')
   })
 })
 
@@ -147,18 +160,22 @@ describe('project grouping', () => {
   })
 })
 
-describe('session pages', () => {
-  it('appends a later page without duplicating ids and keeps rows when a refresh fails', () => {
-    const started = beginSessionLoad(undefined)
-    expect(started.status).toBe('loading')
-    const first = commitSessionPage(started, [{ sessionId: 'a' }, { sessionId: 'b' }], true, false)
-    const more = commitSessionPage(beginSessionLoad(first), [{ sessionId: 'b' }, { sessionId: 'c' }], false, true)
-    expect(more.sessions.map((row) => row.sessionId)).toEqual(['a', 'b', 'c'])
-    expect(more.hasMore).toBe(false)
-    const failed = failSessionPage(more, 'offline')
-    expect(failed.sessions).toHaveLength(3)
-    expect(failed.error).toBe('offline')
-    expect(mergeRowsById([{ sessionId: 'a' }], [])).toEqual([{ sessionId: 'a' }])
+describe('catalog generation', () => {
+  it('marks an older load stale once a newer one starts', () => {
+    const loads = createCatalogGeneration()
+    const first = loads.next()
+    const second = loads.next()
+    expect(first.current()).toBe(false)
+    expect(second.current()).toBe(true)
+    expect(first.id).toBeLessThan(second.id)
+  })
+
+  it('marks a watch stale once a newer load starts', () => {
+    const loads = createCatalogGeneration()
+    const seen = loads.watch()
+    expect(seen.current()).toBe(true)
+    loads.next()
+    expect(seen.current()).toBe(false)
   })
 })
 
@@ -235,5 +252,148 @@ describe('loadEnvironmentCatalog', () => {
     })
     expect(buckets).toHaveLength(1)
     expect(buckets[0]?.connectionId).toBe('local')
+  })
+
+  it('dials a host that needs an upgrade and skips one that is still connecting', async () => {
+    const calls: string[] = []
+    const buckets = await loadEnvironmentCatalog({
+      remoteEnabled: true,
+      localLabel: 'This Mac',
+      localFolders: [],
+      listItems: async () => [
+        item({ connectionId: 'local', environmentId: 'desktop', kind: 'local' }),
+        item({
+          connectionId: 'cli-1',
+          environmentId: 'node-1',
+          kind: 'remote',
+          state: 'connected',
+          nodeUpgrade: { remoteVersion: '1', targetVersion: '2', canUpgradeOverSsh: true },
+        }),
+        item({ connectionId: 'cli-2', environmentId: 'node-2', kind: 'remote', state: 'connecting' }),
+        item({ connectionId: 'cli-3', environmentId: 'node-3', kind: 'remote', state: 'disconnected' }),
+      ],
+      listProjects: async (connectionId) => {
+        calls.push(connectionId)
+        return connectionId === 'local' ? [localProject] : [remoteProject]
+      },
+    })
+    expect(calls).toEqual(['local', 'cli-1'])
+    expect(buckets.find((bucket) => bucket.connectionId === 'cli-1')?.connection).toBe('needs-upgrade')
+    expect(buckets.find((bucket) => bucket.connectionId === 'cli-1')?.projectsStatus).toBe('ready')
+    expect(buckets.find((bucket) => bucket.connectionId === 'cli-2')).toMatchObject({ connection: 'connecting', projectsStatus: 'idle', checkouts: [] })
+    expect(buckets.find((bucket) => bucket.connectionId === 'cli-3')).toMatchObject({ connection: 'offline', projectsStatus: 'idle', checkouts: [] })
+  })
+
+  it('loads remotes together and publishes each bucket as it settles', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const started: string[] = []
+    const events: string[] = []
+    const pending = loadEnvironmentCatalog({
+      remoteEnabled: true,
+      localLabel: 'This Mac',
+      localFolders: [],
+      timeoutMs: 1000,
+      listItems: async () => [
+        item({ connectionId: 'local', environmentId: 'desktop', kind: 'local' }),
+        item({ connectionId: 'cli-1', environmentId: 'node-1', kind: 'remote' }),
+        item({ connectionId: 'cli-2', environmentId: 'node-2', kind: 'remote' }),
+      ],
+      listProjects: async (connectionId) => {
+        started.push(connectionId)
+        if (connectionId !== 'local') await gate
+        return []
+      },
+      onBucket: (bucket) => { events.push(`${bucket.connectionId}:${bucket.projectsStatus}`) },
+    })
+    await vi.waitFor(() => expect(started).toEqual(['local', 'cli-1', 'cli-2']))
+    release()
+    const buckets = await pending
+    expect(buckets.map((bucket) => bucket.connectionId)).toEqual(['local', 'cli-1', 'cli-2'])
+    expect(events).toContain('local:loading')
+    expect(events).toContain('cli-1:loading')
+    expect(events).toContain('cli-1:ready')
+    expect(events).toContain('cli-2:ready')
+  })
+
+  it('times out one environment without dropping the others', async () => {
+    const buckets = await loadEnvironmentCatalog({
+      remoteEnabled: true,
+      localLabel: 'This Mac',
+      localFolders: [],
+      timeoutMs: 20,
+      listItems: async () => [
+        item({ connectionId: 'local', environmentId: 'desktop', kind: 'local' }),
+        item({ connectionId: 'cli-1', environmentId: 'node-1', kind: 'remote' }),
+        item({ connectionId: 'cli-slow', environmentId: 'node-slow', kind: 'remote' }),
+      ],
+      listProjects: async (connectionId) => {
+        if (connectionId === 'cli-slow') return new Promise(() => {})
+        return connectionId === 'local' ? [localProject] : [remoteProject]
+      },
+    })
+    expect(buckets.find((bucket) => bucket.connectionId === 'cli-1')?.projectsStatus).toBe('ready')
+    expect(buckets.find((bucket) => bucket.connectionId === 'cli-slow')).toMatchObject({
+      projectsStatus: 'error',
+      projectsError: 'timed out',
+      checkouts: [],
+    })
+  })
+
+  it('times out the environment list and still returns the local bucket', async () => {
+    const buckets = await loadEnvironmentCatalog({
+      remoteEnabled: true,
+      localLabel: 'This Mac',
+      localFolders: [],
+      timeoutMs: 20,
+      listItems: () => new Promise(() => {}),
+      listProjects: async () => [localProject],
+    })
+    expect(buckets).toHaveLength(1)
+    expect(buckets[0]?.connectionId).toBe('local')
+    expect(buckets[0]?.projectsStatus).toBe('ready')
+  })
+})
+
+describe('catalog bucket writes', () => {
+  it('keeps the previous checkouts while a reload is loading', () => {
+    const kept = checkout({ environmentId: 'local', projectId: 'old', name: 'app' })
+    const previous: EnvironmentBucket[] = [{
+      environmentId: 'local',
+      connectionId: 'local',
+      label: 'This Mac',
+      kind: 'local',
+      connection: 'connected',
+      projectsStatus: 'ready',
+      projectsError: null,
+      checkouts: [kept],
+    }]
+    const loading = applyCatalogBucket(previous, { ...previous[0]!, projectsStatus: 'loading', checkouts: [] })
+    expect(loading[0]?.projectsStatus).toBe('loading')
+    expect(loading[0]?.checkouts).toEqual([kept])
+    const ready = applyCatalogBucket(loading, { ...previous[0]!, projectsStatus: 'ready', checkouts: [] })
+    expect(ready[0]?.checkouts).toEqual([])
+  })
+
+  it('shares one listProjects call until it settles', async () => {
+    let calls = 0
+    let release: (projects: ProjectSnapshot[]) => void = () => {}
+    const first = shareProjectLoad('share-test', () => {
+      calls += 1
+      return new Promise((resolve) => { release = resolve })
+    })
+    const second = shareProjectLoad('share-test', async () => {
+      calls += 1
+      return []
+    })
+    expect(calls).toBe(1)
+    expect(second).toBe(first)
+    release([{ projectId: 'p', path: '/p', name: 'p' }])
+    await first
+    await shareProjectLoad('share-test', async () => {
+      calls += 1
+      return []
+    })
+    expect(calls).toBe(2)
   })
 })

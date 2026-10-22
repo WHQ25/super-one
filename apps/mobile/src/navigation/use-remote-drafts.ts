@@ -7,6 +7,24 @@ import { RemoteDraftLibrary } from '../remote-draft-library'
 import { remoteDraftFromComposer } from '../remote-draft-codec'
 import { randomId } from '../ids'
 
+/**
+ * An opened draft stays on the machine it was saved for. The phone's current
+ * route is merged in for harness and checkout edits, but it must not retarget
+ * that draft. A draft with no environment was saved for the paired desktop;
+ * adopting the route would make `local` mean the node the phone is on now.
+ * A new draft still records the current route.
+ */
+export function settingsKeepingSavedEnvironment(
+  saved: DraftSessionSettings | undefined,
+  incoming: DraftSessionSettings,
+): DraftSessionSettings {
+  if (!saved) return incoming
+  const merged: DraftSessionSettings = { ...saved, ...incoming }
+  if (saved.environmentId) merged.environmentId = saved.environmentId
+  else delete merged.environmentId
+  return merged
+}
+
 export function useRemoteDrafts(opts: {
   kv: Kv; pairingId: string | null; clientRef: RefObject<RelayClient | null>
   composer: ReturnType<typeof useComposerDraft>; attachments: ImageAttachment[]
@@ -49,7 +67,7 @@ export function useRemoteDrafts(opts: {
     if (!active.current && !snapshot.text.trim() && !snapshot.attachments.length) return null
     const id = active.current ?? randomId()
     if (!active.current) { active.current = id; setActiveId(id) }
-    const input = remoteDraftFromComposer(id, o.projectPath, snapshot, { ...saved.current?.settings, ...o.settings }, saved.current?.originSessionId)
+    const input = remoteDraftFromComposer(id, o.projectPath, snapshot, settingsKeepingSavedEnvironment(saved.current?.settings, o.settings), saved.current?.originSessionId)
     if (saved.current) input.createdAt = saved.current.createdAt
     const signature = JSON.stringify(input)
     if (lastSignature.current !== signature) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composerFromRemoteDraft, remoteDraftFromComposer, worktreeFromDraft } from './remote-draft-codec'
+import { composerFromRemoteDraft, draftWorktreeSettings, remoteDraftFromComposer, worktreeFromDraft } from './remote-draft-codec'
 import { serializeMentionDocument } from './mention-document'
 
 describe('desktop draft restored on a phone', () => {
@@ -29,5 +29,10 @@ describe('desktop draft restored on a phone', () => {
     expect(worktreeFromDraft({ worktreePath: '/repo/wt', gitBranch: 'feature' })).toEqual({ kind: 'existing', path: '/repo/wt', branch: 'feature' })
     expect(worktreeFromDraft({ pendingBaseBranch: 'main', pendingWorktreeMode: 'branch', pendingBranchName: 'fix', pendingCarryLocalChanges: true }))
       .toEqual({ kind: 'create', baseBranch: 'main', mode: 'branch', branchName: 'fix', carryLocalChanges: true })
+  })
+  it('stores a routed environment and omits it on the paired desktop', () => {
+    expect(draftWorktreeSettings({ kind: 'local' }, 'env-1').environmentId).toBe('env-1')
+    expect(draftWorktreeSettings({ kind: 'local' }, null)).not.toHaveProperty('environmentId')
+    expect(draftWorktreeSettings({ kind: 'local' })).not.toHaveProperty('environmentId')
   })
 })

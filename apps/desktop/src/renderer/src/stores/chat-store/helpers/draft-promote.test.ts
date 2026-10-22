@@ -15,6 +15,7 @@ vi.mock('../../drafts', () => ({
 }))
 
 import type { ChatStore, PerSessionState } from '../types'
+import { useAppStore } from '../../app'
 import {
   _resetDraftSessionMap,
   applyCarriedDraft,
@@ -402,11 +403,23 @@ describe('snapshotDraftSettings worktree', () => {
   })
 
   it('does not inherit a hint path when the session has none', () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: true })
     const settings = snapshotDraftSettings(session(), null, { path: '/repo/.wt/hint' })
     expect(settings.worktreePath).toBeNull()
   })
 
+  it('inherits a hint path when remote nodes are off', () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: false })
+    const settings = snapshotDraftSettings(session(), null, {
+      path: '/repo/.wt/hint',
+      pendingBaseBranch: 'main',
+    })
+    expect(settings.worktreePath).toBe('/repo/.wt/hint')
+    expect(settings.pendingBaseBranch).toBe('main')
+  })
+
   it('keeps a local selection from copying a pending create in the hint', () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: true })
     const settings = snapshotDraftSettings(session({
       environmentSelection: { environmentId: 'local', selection: { kind: 'local' } },
     }), null, { path: '/repo/.wt/hint', pendingBaseBranch: 'main' })

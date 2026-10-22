@@ -28,8 +28,8 @@ export {
   type HandoffPreview,
 } from './worktree-ops'
 export { fetchRemoteCommands, isGitRemoteName } from './fetch'
-export { localBranchNames, trackingRefNames, trackingCheckoutPlan } from './branch-refs'
-export type { GitBranchLists } from './branch-refs'
+export { checkoutExistingBranch, localBranchList, localBranchNames, readLocalBranchNames } from './branch-refs'
+export type { LocalBranchList } from './branch-refs'
 export {
   filterRankGitMentionRefs,
   gitMentionRefsFailure,

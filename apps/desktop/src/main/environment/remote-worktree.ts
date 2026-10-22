@@ -165,7 +165,6 @@ export async function remoteSwitchBranch(
   folderPath: string,
   branch: string,
   create = false,
-  startPoint?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await resolveRemoteProjectContext(host, folderPath)
   if (!ctx) return { ok: false, error: 'not a remote project' }
@@ -182,9 +181,8 @@ export async function remoteSwitchBranch(
     const pathPart = hostPathOf(folderPath)
     const atWorktree = pathPart.replace(/\/$/, '') !== ctx.hostPath.replace(/\/$/, '')
     const result = (await gw.gitSwitchBranch(ctx.projectId, safeBranch, {
-      create: create || !!startPoint,
+      create,
       ...(atWorktree ? { cwd: pathPart } : {}),
-      ...(startPoint ? { startPoint: sanitizeGitRef(startPoint) } : {}),
     })) as { ok?: boolean; error?: string }
     if (result && result.ok === false) {
       return { ok: false, error: result.error || 'branch operation failed' }

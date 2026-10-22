@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { buildCloneArgs, parseCloneProgress } from './git-clone'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { buildCloneArgs, cloneRepository, parseCloneProgress, planCloneTarget } from './git-clone'
 
 const dest = '/tmp/parent/repo'
 
@@ -42,5 +46,82 @@ describe('parseCloneProgress', () => {
     expect(parseCloneProgress('remote: Counting objects:  50% (10/20)')).toBeNull()
     expect(parseCloneProgress("Cloning into 'repo'...")).toBeNull()
     expect(parseCloneProgress('fatal: repository not found')).toBeNull()
+  })
+})
+
+const dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+function tempParent(): string {
+  const parent = mkdtempSync(join(tmpdir(), 'clone-plan-'))
+  dirs.push(parent)
+  return parent
+}
+
+describe('cloneRepository reuse-or-rename', () => {
+  it('reuses a folder whose origin is the same repository', async () => {
+    const parent = tempParent()
+    const existing = join(parent, 'app')
+    execFileSync('git', ['init', '-q', existing])
+    execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'git@github.com:acme/app.git'])
+    const result = await cloneRepository({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+      ifExists: 'reuse-or-rename',
+    })
+    expect(result).toEqual({ path: existing, name: 'app', reused: true })
+  })
+
+  it('plans the next free name when the folder is a different origin', () => {
+    const parent = tempParent()
+    const existing = join(parent, 'app')
+    execFileSync('git', ['init', '-q', existing])
+    execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'https://github.com/other/app.git'])
+    expect(planCloneTarget({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+      ifExists: 'reuse-or-rename',
+    })).toEqual({ directoryName: 'app-2' })
+  })
+
+  it('reuses a numbered clone whose origin matches', async () => {
+    const parent = tempParent()
+    execFileSync('git', ['init', '-q', join(parent, 'app')])
+    execFileSync('git', ['-C', join(parent, 'app'), 'remote', 'add', 'origin', 'https://github.com/other/app.git'])
+    const numbered = join(parent, 'app-2')
+    execFileSync('git', ['init', '-q', numbered])
+    execFileSync('git', ['-C', numbered, 'remote', 'add', 'origin', 'git@github.com:acme/app.git'])
+    const result = await cloneRepository({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+      ifExists: 'reuse-or-rename',
+    })
+    expect(result).toEqual({ path: numbered, name: 'app-2', reused: true })
+  })
+
+  it('does not reuse a plain folder inside a repository with the same origin', () => {
+    const parent = tempParent()
+    const repo = join(parent, 'outer')
+    execFileSync('git', ['init', '-q', repo])
+    execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/acme/app.git'])
+    mkdirSync(join(repo, 'app'))
+    expect(planCloneTarget({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: repo,
+      directoryName: 'app',
+      ifExists: 'reuse-or-rename',
+    })).toEqual({ directoryName: 'app-2' })
+  })
+
+  it('still rejects an existing folder when reuse is not requested', async () => {
+    const parent = tempParent()
+    execFileSync('git', ['init', '-q', join(parent, 'app')])
+    await expect(cloneRepository({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+    })).rejects.toMatchObject({ code: 'conflict' })
   })
 })

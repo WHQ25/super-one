@@ -18,6 +18,7 @@ import {
 } from './draft-promote'
 
 beforeEach(() => {
+  useAppStore.setState({ experimentalRemoteNodesEnabled: true })
   _resetDraftSessionMap()
   useDraftsStore.setState({ byConnection: {}, discardedIds: {} })
   window.environment.upsertDraft = vi.fn().mockImplementation(async (_connectionId, input) => ({
@@ -72,6 +73,15 @@ describe('promoting through the live chat store', () => {
     const saved = Object.fromEntries(vi.mocked(window.environment.upsertDraft).mock.calls
       .map(([, input]) => [input.originSessionId, input.settings?.worktreePath]))
     expect(saved).toEqual({ focused: null, background: null })
+  })
+
+  it('copies the project mirror onto the focused draft when remote nodes are off', async () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: false })
+    useAppStore.getState().setActiveWorktree('/repo', '/repo/.wt/feat')
+    await promoteAllUnsentDrafts(useChatStore.getState())
+    const saved = Object.fromEntries(vi.mocked(window.environment.upsertDraft).mock.calls
+      .map(([, input]) => [input.originSessionId, input.settings?.worktreePath]))
+    expect(saved).toEqual({ focused: '/repo/.wt/feat', background: null })
   })
 })
 

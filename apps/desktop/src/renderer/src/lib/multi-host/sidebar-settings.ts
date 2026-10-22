@@ -33,7 +33,7 @@ function isSort(value: unknown): value is SidebarSort {
 
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, MAX_EXPANDED)
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(-MAX_EXPANDED)
 }
 
 export function parseSidebarSettings(raw: string | null): SidebarSettings {
@@ -59,7 +59,7 @@ export function writeSidebarSettings(storage: SidebarSettingsStorage, settings: 
   storage.setItem(STORAGE_KEY, JSON.stringify({
     groupBy: settings.groupBy,
     sort: settings.sort,
-    expandedProjectKeys: settings.expandedProjectKeys.slice(0, MAX_EXPANDED),
-    collapsedEnvironmentIds: settings.collapsedEnvironmentIds.slice(0, MAX_EXPANDED),
+    expandedProjectKeys: settings.expandedProjectKeys.slice(-MAX_EXPANDED),
+    collapsedEnvironmentIds: settings.collapsedEnvironmentIds.slice(-MAX_EXPANDED),
   }))
 }

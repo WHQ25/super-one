@@ -137,7 +137,7 @@ export interface WorkspaceGitPort {
   switchBranch(
     projectId: string,
     branch: string,
-    opts?: { create?: boolean; absolutePath?: string | null; startPoint?: string | null },
+    opts?: { create?: boolean; absolutePath?: string | null },
   ): Promise<unknown>
   /** `git init` at the project root. Already a repository: no-op. */
   init(projectId: string): Promise<unknown>

@@ -80,3 +80,24 @@ export const Empty: Story = { render: () => <Preview empty /> }
 export const ClearDraft: Story = { render: () => <Preview editable /> }
 export const Cleared: Story = { render: () => <Preview cleared /> }
 export const TemporarySideChat: Story = { render: () => <SideChatDraftPreview /> }
+
+function OfflinePreview() {
+  useLayoutEffect(() => {
+    const previous = useDraftsStore.getState()
+    const environment = window.environment
+    window.environment = { ...environment, listDrafts: async () => rows, deleteDraft: async () => {} }
+    useDraftsStore.setState({ byConnection: { local: rows }, discardedIds: {} })
+    return () => {
+      window.environment = environment
+      useDraftsStore.setState(previous)
+    }
+  }, [])
+  return (
+    <div className="w-72 bg-sidebar p-2">
+      <DraftsSection connectionId="local" offline />
+    </div>
+  )
+}
+
+/** Same dim and disconnected icon as an offline pinned row. */
+export const Offline: Story = { render: () => <OfflinePreview /> }

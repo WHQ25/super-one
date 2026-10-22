@@ -48,6 +48,7 @@ import {
   type ParsedGitStatus,
 } from '../git-status-utils'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
+import { localBranchList, type LocalBranchList } from '@superone/runtime/git'
 import { createKeyedGitReadCache } from '../git/keyed-git-read-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
@@ -85,10 +86,15 @@ const remoteGitReads = createKeyedGitReadCache<WorktreeInfo | null, GitMentionCa
   unstableMention: (value) => value.repo === 'unsupported' || value.repo === 'not-repo',
 })
 
+/** Host path → project that owns it. A worktree is not its own project, so the first successful probe is reused. */
+const branchOwnerByPath = new Map<string, string>()
+
 /** Drop cached worktree and mention reads for one remote folder, or every folder. */
 export function invalidateRemoteGitReads(folderPath?: string): void {
   remoteGitReads.invalidate(folderPath)
   invalidateRemoteGitStatusCache()
+  if (folderPath) branchOwnerByPath.delete(folderPath)
+  else branchOwnerByPath.clear()
 }
 
 /** Drop cached git reads for one node. Keys are `remote:<connectionId>:<path>` and `<connectionId>:<projectId>:<cwd>`. */
@@ -96,6 +102,9 @@ export function invalidateRemoteGitReadsForConnection(connectionId: string): voi
   const folderPrefix = `remote:${connectionId}:`
   remoteGitReads.invalidateMatching((key) => key.startsWith(folderPrefix))
   remoteGitStatusCoalescer.invalidateMatching((key) => key.startsWith(`${connectionId}:`))
+  for (const key of branchOwnerByPath.keys()) {
+    if (key.startsWith(folderPrefix)) branchOwnerByPath.delete(key)
+  }
 }
 
 const SKIP_NAMES = new Set(['.git', '.DS_Store'])
@@ -799,7 +808,6 @@ export async function saveRemoteProjectFile(
 type RemoteGitGateway = {
   gitStatus: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
   gitBranches?: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
-  gitFetch?: (projectId: string, remote?: string) => Promise<unknown>
   gitInit?: (projectId: string) => Promise<unknown>
   gitWorktrees?: (projectId: string) => Promise<unknown>
   gitMentionRefs?: (
@@ -906,103 +914,82 @@ export async function getRemoteGitIsRepo(
   return false
 }
 
-function branchListsOf(value: unknown): { local: string[]; tracking: string[] } {
-  const result = value as { branches?: unknown; tracking?: unknown } | null
-  const names = (list: unknown) => Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : []
-  return { local: names(result?.branches), tracking: names(result?.tracking) }
+function gitError(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : 'git branch failed'
 }
 
 async function branchesAt(
   gw: RemoteGitGateway,
   projectId: string,
   cwd: string,
-): Promise<{ local: string[]; tracking: string[] } | null> {
+): Promise<LocalBranchList | null> {
   if (!gw.gitBranches) return null
   const result = await gw.gitBranches(projectId, { cwd })
-  return branchListsOf(result)
+  return localBranchList(result)
 }
 
 /**
- * Local branches and remote-tracking refs for a remote checkout.
- * `cwd` is the host path, including a worktree that is not its own project.
+ * Local branches for a remote checkout. `cwd` is the host path, including a
+ * worktree that is not its own project. A failed read returns `error` instead
+ * of an empty list.
  */
 export async function getRemoteGitBranches(
   host: EnvironmentHost,
   folderPath: string,
-): Promise<{ local: string[]; tracking: string[] } | null> {
+): Promise<LocalBranchList | null> {
   const remote = parseRemoteProjectKey(folderPath)
   if (!remote) return null
   try {
     const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
-    if (ctx) {
-      const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
-      if (!gw) return null
-      return (await branchesAt(gw, ctx.projectId, remote.path)) ?? { local: [], tracking: [] }
+    const known = ctx
+      ? null
+      : host.connections.listKnown().find((item) => item.connectionId === remote.connectionId)
+    const environmentId = ctx?.environmentId ?? known?.environmentId
+    if (!environmentId) return null
+    const gw = asRemoteGitGateway(host.getGateway(environmentId))
+    if (!gw) return { local: [], error: 'environment is not connected' }
+    if (!gw.gitBranches) return { local: [], error: 'branches are not available' }
+
+    const read = async (projectId: string): Promise<LocalBranchList> => {
+      const lists = await branchesAt(gw, projectId, remote.path)
+      if (!lists) return { local: [], error: 'branches are not available' }
+      branchOwnerByPath.set(folderPath, projectId)
+      return lists
     }
-    const known = host.connections.listKnown().find((item) => item.connectionId === remote.connectionId)
-    if (!known) return null
-    const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
-    if (!gw) return null
-    const projects = await host.listProjects(remote.connectionId)
-    for (const project of projects) {
+
+    if (ctx) return await read(ctx.projectId)
+
+    const cached = branchOwnerByPath.get(folderPath)
+    if (cached) {
       try {
-        const lists = await branchesAt(gw, project.projectId, remote.path)
-        if (lists) return lists
+        return await read(cached)
       } catch {
-        /* this project does not own the checkout */
+        branchOwnerByPath.delete(folderPath)
       }
     }
-    return null
-  } catch {
-    return { local: [], tracking: [] }
-  }
-}
 
-/**
- * The registered project for this host path, or the project whose repo owns a
- * worktree path. Fetch updates the shared object database, so it runs on that
- * project rather than registering the worktree as its own project.
- */
-async function owningGitProject(
-  host: EnvironmentHost,
-  folderPath: string,
-): Promise<{ projectId: string; gateway: RemoteGitGateway } | null> {
-  const remote = parseRemoteProjectKey(folderPath)
-  if (!remote) return null
-  const registered = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
-  if (registered) {
-    const gateway = asRemoteGitGateway(host.getGateway(registered.environmentId))
-    return gateway ? { projectId: registered.projectId, gateway } : null
-  }
-  const known = host.connections.listKnown().find((item) => item.connectionId === remote.connectionId)
-  if (!known) return null
-  const gateway = asRemoteGitGateway(host.getGateway(known.environmentId))
-  if (!gateway?.gitBranches) return null
-  const projects = await host.listProjects(remote.connectionId)
-  for (const project of projects) {
-    try {
-      await gateway.gitBranches(project.projectId, { cwd: remote.path })
-      return { projectId: project.projectId, gateway }
-    } catch {
-      /* this project does not own the checkout */
+    const projects = await host.listProjects(remote.connectionId)
+    type Probe = { projectId: string; lists: LocalBranchList } | { projectId: string; error: string }
+    const probed = await Promise.all(projects.map(async (project): Promise<Probe> => {
+      try {
+        const lists = await branchesAt(gw, project.projectId, remote.path)
+        return {
+          projectId: project.projectId,
+          lists: lists ?? { local: [], error: 'branches are not available' },
+        }
+      } catch (err) {
+        return { projectId: project.projectId, error: gitError(err) }
+      }
+    }))
+    const hit = probed.find((item): item is Extract<Probe, { lists: LocalBranchList }> => 'lists' in item)
+    if (hit) {
+      branchOwnerByPath.set(folderPath, hit.projectId)
+      return hit.lists
     }
-  }
-  return null
-}
-
-export async function remoteGitFetch(
-  host: EnvironmentHost,
-  folderPath: string,
-  remoteName = 'origin',
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const owned = await owningGitProject(host, folderPath)
-    if (!owned) return { ok: false, error: 'not a remote project' }
-    if (!owned.gateway.gitFetch) return { ok: false, error: 'fetch is not available' }
-    await owned.gateway.gitFetch(owned.projectId, remoteName)
-    return { ok: true }
+    const failed = probed.find((item): item is Extract<Probe, { error: string }> => 'error' in item)
+    return failed ? { local: [], error: failed.error } : null
   } catch (err) {
-    return { ok: false, error: (err as Error).message || 'git fetch failed' }
+    return { local: [], error: gitError(err) }
   }
 }
 

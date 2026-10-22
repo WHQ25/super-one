@@ -61,6 +61,7 @@ function expectNewSessionAtProjectRoot(): void {
 }
 
 beforeEach(() => {
+  useAppStore.setState({ experimentalRemoteNodesEnabled: true })
   _resetDraftSessionMap()
   useDraftsStore.setState({ byConnection: {}, discardedIds: {} })
   window.environment.upsertDraft = vi.fn().mockImplementation(async (_connectionId, input) => ({
@@ -82,6 +83,123 @@ describe('resetSession worktree ownership', () => {
   it('starts at the project root while the focused session is in a worktree', async () => {
     await useChatStore.getState().resetSession()
     expectNewSessionAtProjectRoot()
+    expect(window.app.activateWorktree).toHaveBeenCalledWith(PROJECT, null)
+  })
+
+  it('does not keep a pending create on a pristine session', async () => {
+    useAppStore.getState().setPendingWorktree(PROJECT, 'main')
+    useChatStore.setState({
+      activeProject: PROJECT,
+      projectSessions: {
+        [PROJECT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'fresh',
+          _sessions: {
+            fresh: {
+              ...createDefaultPerSessionState(),
+              cwd: PROJECT,
+              environmentSelection: {
+                environmentId: 'local',
+                selection: { kind: 'create', baseBranch: 'main', mode: 'branch', branchName: '', carryLocalChanges: false },
+              },
+            },
+          },
+        },
+      },
+    })
+    await useChatStore.getState().resetSession()
+    const project = useChatStore.getState().projectSessions[PROJECT]!
+    expect(project._activeSessionId).toBe('fresh')
+    expect(Object.keys(project._sessions)).toEqual(['fresh'])
+    expect(project._sessions.fresh?.environmentSelection).toEqual({
+      environmentId: 'local',
+      selection: { kind: 'local' },
+    })
+    expect(useAppStore.getState()._worktrees[PROJECT]?.pendingBaseBranch ?? null).toBeNull()
+  })
+
+  it('starts a new session when the pending create already has composer text', async () => {
+    useChatStore.setState({
+      activeProject: PROJECT,
+      projectSessions: {
+        [PROJECT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'fresh',
+          _sessions: {
+            fresh: {
+              ...createDefaultPerSessionState(),
+              cwd: PROJECT,
+              draftText: 'keep this',
+              environmentSelection: {
+                environmentId: 'local',
+                selection: { kind: 'create', baseBranch: 'main', mode: 'branch', branchName: '', carryLocalChanges: false },
+              },
+            },
+          },
+        },
+      },
+    })
+    await useChatStore.getState().resetSession()
+    const project = useChatStore.getState().projectSessions[PROJECT]!
+    expect(project._activeSessionId).not.toBe('fresh')
+    expect(project._sessions.fresh).toBeTruthy()
+    expect(project._sessions[project._activeSessionId!]?.environmentSelection?.selection.kind).toBe('local')
+  })
+
+  it('clears a pending base branch when the selection is still local', async () => {
+    useChatStore.setState({
+      activeProject: PROJECT,
+      projectSessions: {
+        [PROJECT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'fresh',
+          _sessions: {
+            fresh: {
+              ...createDefaultPerSessionState(),
+              cwd: PROJECT,
+              environmentSelection: { environmentId: 'local', selection: { kind: 'local' } },
+            },
+          },
+        },
+      },
+    })
+    useAppStore.getState().setPendingWorktree(PROJECT, 'develop')
+    await useChatStore.getState().resetSession()
+    const project = useChatStore.getState().projectSessions[PROJECT]!
+    expect(project._activeSessionId).toBe('fresh')
+    expect(Object.keys(project._sessions)).toEqual(['fresh'])
+    expect(useAppStore.getState()._worktrees[PROJECT]?.pendingBaseBranch ?? null).toBeNull()
+  })
+
+  it('keeps a mirror pending create on a pristine session when remote nodes are off', async () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: false })
+    useAppStore.getState().setPendingWorktree(PROJECT, 'main')
+    useChatStore.setState({
+      activeProject: PROJECT,
+      projectSessions: {
+        [PROJECT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'fresh',
+          _sessions: {
+            fresh: { ...createDefaultPerSessionState(), cwd: PROJECT },
+          },
+        },
+      },
+    })
+    await useChatStore.getState().resetSession()
+    const project = useChatStore.getState().projectSessions[PROJECT]!
+    expect(project._activeSessionId).toBe('fresh')
+    expect(useAppStore.getState()._worktrees[PROJECT]?.pendingBaseBranch).toBe('main')
+    expect(project._sessions.fresh?.environmentSelection ?? null).toBeNull()
+  })
+
+  it('does not stamp a checkout when remote nodes are off', async () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: false })
+    await useChatStore.getState().resetSession()
+    const project = useChatStore.getState().projectSessions[PROJECT]!
+    const session = project._sessions[project._activeSessionId!]!
+    expect(project._activeSessionId).not.toBe('focused')
+    expect(session.environmentSelection ?? null).toBeNull()
     expect(window.app.activateWorktree).toHaveBeenCalledWith(PROJECT, null)
   })
 

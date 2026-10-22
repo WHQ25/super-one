@@ -22,7 +22,7 @@ import { cpus, homedir, hostname, release as osRelease } from 'os'
 import { resolveRealPath, isPathWithinAllowed, isPathAtOrWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
 import { gitRun, isNotGitRepoError, type GitRunOptions } from './git-run'
-import { fetchRemoteCommands, localBranchNames, trackingRefNames } from '@superone/runtime/git'
+import { checkoutExistingBranch, localBranchList, readLocalBranchNames } from '@superone/runtime/git'
 import { logGitFailure, logSlowGit } from './git-diagnostics'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { deferredPhoneConnection } from './node-host/deferred-phone-connection'
@@ -3061,46 +3061,16 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_LIST_BRANCHES, async (_event, folderPath: string) => {
-    const empty = { local: [] as string[], tracking: [] as string[] }
     try {
       if (parseRemoteProjectKey(folderPath)) {
         const { getEnvironmentHost } = await import('./environment')
         const { getRemoteGitBranches } = await import('./environment/remote-file-tree')
-        return (await getRemoteGitBranches(getEnvironmentHost(), folderPath)) ?? empty
+        return localBranchList((await getRemoteGitBranches(getEnvironmentHost(), folderPath)) ?? { error: 'not a remote project' })
       }
-      const local = localBranchNames(await gitRun(folderPath, ['branch', '--format=%(refname:short)']))
-      let tracking: string[] = []
-      try {
-        tracking = trackingRefNames(await gitRun(folderPath, ['for-each-ref', '--format=%(refname:strip=2)', 'refs/remotes']))
-      } catch {
-        tracking = []
-      }
-      return { local, tracking }
-    } catch {
-      return empty
-    }
-  })
-
-  ipcMain.handle(AgentIpcChannels.GIT_FETCH, async (_event, folderPath: string) => {
-    if (parseRemoteProjectKey(folderPath)) {
-      const { getEnvironmentHost } = await import('./environment')
-      const { remoteGitFetch } = await import('./environment/remote-file-tree')
-      const result = await remoteGitFetch(getEnvironmentHost(), folderPath)
-      if (result.ok) invalidateGitReads(folderPath)
-      return result
-    }
-    try {
-      const commands = fetchRemoteCommands('origin')
-      await gitRun(folderPath, commands.fetch)
-      try {
-        await gitRun(folderPath, commands.setHead)
-      } catch {
-        /* the remote may have no default branch */
-      }
-      invalidateGitReads(folderPath)
-      return { ok: true }
+      const local = await readLocalBranchNames((args) => gitRun(folderPath, args))
+      return { local }
     } catch (err) {
-      return { ok: false, error: gitErrorMessage(err) }
+      return { local: [] as string[], error: gitErrorMessage(err) }
     }
   })
 
@@ -3142,21 +3112,16 @@ function registerIpcHandlers(): void {
     return resolveGitMentionCapabilities(folderPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string, track?: string) => {
+  ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {
     try {
       if (parseRemoteProjectKey(folderPath)) {
         const { getEnvironmentHost } = await import('./environment')
         const { remoteSwitchBranch } = await import('./environment/remote-worktree')
-        const result = await remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, false, track)
+        const result = await remoteSwitchBranch(getEnvironmentHost(), folderPath, branch, false)
         if (result.ok) invalidateGitReads(folderPath)
         return result
       }
-      const safe = sanitizeGitRef(branch)
-      if (track) {
-        await gitRun(folderPath, ['checkout', '-b', safe, '--track', sanitizeGitRef(track)])
-      } else {
-        await gitRun(folderPath, ['checkout', safe])
-      }
+      await checkoutExistingBranch((args) => gitRun(folderPath, args), branch)
       invalidateGitReads(folderPath)
       return { ok: true }
     } catch (err) {

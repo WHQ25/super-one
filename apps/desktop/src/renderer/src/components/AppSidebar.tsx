@@ -289,6 +289,8 @@ export const AppSidebar = memo(function AppSidebar() {
       return next
     })
     if (!isExpanded) {
+      // A merged header is `group:<mergeKey>`. Its checkouts load on their own path keys.
+      if (folderPath.startsWith('group:')) return
       const startedAt = performance.now()
       traceSidebar('project_expand:start', { folderPath, wasExpanded: isExpanded }, folderPath)
       requestAnimationFrame(() => {
@@ -609,11 +611,12 @@ export const AppSidebar = memo(function AppSidebar() {
     }
     return null
   }
-  const pinOffline = (session: (typeof pinnedSessions)[number]) => (
-    multiHostChrome && environments.some((bucket) => (
-      bucket.connection === 'offline' && bucket.checkouts.some((item) => item.pathKey === session.folderPath)
-    ))
-  )
+  const pinOffline = (session: (typeof pinnedSessions)[number]) => {
+    if (!multiHostChrome) return false
+    const remote = parseRemoteProjectKey(session.folderPath)
+    if (!remote) return false
+    return environments.some((bucket) => bucket.connection === 'offline' && bucket.connectionId === remote.connectionId)
+  }
 
   const draftConnectionIds = multiHostChrome
     ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
@@ -822,7 +825,7 @@ export const AppSidebar = memo(function AppSidebar() {
           <ScrollArea className="h-full">
             <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
               {/* Drafts are environment-scoped peers of projects — no section header. */}
-              <DraftsSection connectionId={selectedHostConnectionId} />
+              <DraftsSection connectionId={selectedHostConnectionId} offline={hostTurnedOff} />
               {hostTurnedOff ? (
                 <div className="flex flex-col items-center justify-center gap-1 p-4 text-center text-xs text-sidebar-foreground/70">
                   <span>{t('sidebar.hostDisconnected')}</span>

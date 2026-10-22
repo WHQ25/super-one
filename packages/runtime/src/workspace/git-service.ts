@@ -8,8 +8,8 @@ import {
   ghRun,
   gitRun,
   fetchRemoteCommands,
-  localBranchNames,
-  trackingRefNames,
+  checkoutExistingBranch,
+  readLocalBranchNames,
   listGitMentionRefs,
   probeGitMentionCapabilities,
   type GitMentionRunners,
@@ -193,26 +193,19 @@ export class WorkspaceGitService {
   async branches(
     projectId: string,
     absolutePath?: string | null,
-  ): Promise<{ current: string | null; branches: string[]; tracking: string[] }> {
+  ): Promise<{ current: string | null; branches: string[] }> {
     const cwd = absolutePath
       ? await this.assertRepoWorktreePath(projectId, absolutePath)
       : this.root(projectId)
     try {
-      const out = await this.read(cwd, ['branch', '--format=%(refname:short)'])
-      const branches = localBranchNames(out)
-      let tracking: string[] = []
-      try {
-        tracking = trackingRefNames(await this.read(cwd, ['for-each-ref', '--format=%(refname:strip=2)', 'refs/remotes']))
-      } catch {
-        tracking = []
-      }
+      const branches = await readLocalBranchNames((args) => this.read(cwd, args))
       let current: string | null = null
       try {
         current = (await this.read(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
       } catch {
         current = null
       }
-      return { current, branches, tracking }
+      return { current, branches }
     } catch (err) {
       throw Object.assign(new Error((err as Error).message || 'git branch failed'), { code: 'internal' })
     }
@@ -222,7 +215,7 @@ export class WorkspaceGitService {
   async switchBranch(
     projectId: string,
     branch: string,
-    opts?: { create?: boolean; absolutePath?: string | null; startPoint?: string | null },
+    opts?: { create?: boolean; absolutePath?: string | null },
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
       const cwd = opts?.absolutePath
@@ -239,10 +232,9 @@ export class WorkspaceGitService {
               'Cannot create a new branch before the first commit. Commit once, then create the branch.',
           }
         }
-        const start = opts.startPoint ? sanitizeGitRef(opts.startPoint) : null
-        await this.write(cwd, start ? ['checkout', '-b', safe, '--track', start] : ['checkout', '-b', safe])
+        await this.write(cwd, ['checkout', '-b', safe])
       } else {
-        await this.write(cwd, ['checkout', safe])
+        await checkoutExistingBranch((args) => this.write(cwd, args), branch)
       }
       this.projects.touch(projectId)
       return { ok: true }

@@ -413,6 +413,7 @@ export const zh: Messages = {
     environmentSection: {
       empty: '此环境上没有项目。',
       noSessions: '暂无会话',
+      loadFailed: '无法加载项目，重试',
     },
     sessionOffline: '环境离线',
     actionTarget: '{{environment}} · {{path}}',
@@ -2345,6 +2346,8 @@ export const zh: Messages = {
       offline: '离线',
       environmentFixed: '这个会话固定在{{environment}}。',
       notAGitRepo: '不是 Git 仓库',
+      noOrigin: '没有远程仓库',
+      checkoutMissing: '这个环境上没有这份仓库的检出。',
       checkoutHeading: '检出',
       localCheckout: '本地检出',
       modeLocal: '本地',

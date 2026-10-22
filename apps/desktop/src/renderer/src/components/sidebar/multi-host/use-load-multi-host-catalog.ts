@@ -2,25 +2,35 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 import { onHostProjectsChanged } from '@/lib/host-projects-bus'
-import { loadEnvironmentCatalog } from '@/lib/multi-host/catalog'
+import { applyCatalogBucket, catalogLoads, loadEnvironmentCatalog, shareProjectLoad } from '@/lib/multi-host/catalog'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
 import { useAppStore } from '@/stores/app'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 
-function keepOfflineCheckouts(previous: EnvironmentBucket[], next: EnvironmentBucket[]): EnvironmentBucket[] {
-  return next.map((bucket) => {
-    if (bucket.connection !== 'offline' || bucket.checkouts.length > 0) return bucket
-    const prior = previous.find((item) => item.environmentId === bucket.environmentId)
-    if (!prior?.checkouts.length) return bucket
-    return { ...bucket, checkouts: prior.checkouts, projectsStatus: 'ready' as const, projectsError: null }
-  })
+function upsertBucket(bucket: EnvironmentBucket): void {
+  const store = useMultiHostSidebarStore.getState()
+  store.replaceEnvironments(applyCatalogBucket(store.environments, bucket))
+}
+
+function localErrorBucket(label: string, message: string): EnvironmentBucket {
+  return {
+    environmentId: 'local',
+    connectionId: 'local',
+    label,
+    kind: 'local',
+    connection: 'connected',
+    projectsStatus: 'error',
+    projectsError: message,
+    checkouts: [],
+  }
 }
 
 /**
  * Fills the multi-host catalog while the remote-nodes flag is on.
- * Offline and explicitly disconnected nodes are not dialed.
+ * Offline, disconnected, and connecting nodes are not dialed. A newer load
+ * ignores buckets from an older one. The list is not cleared at the start.
  */
-export function useLoadMultiHostCatalog(enabled: boolean): () => void {
+export function useLoadMultiHostCatalog(enabled: boolean): void {
   const { t } = useTranslation()
   const recentFolders = useAppStore((state) => state.recentFolders)
   const localLabel = window.app.platform === 'darwin' ? t('sidebar.thisMac') : t('sidebar.thisPc')
@@ -32,18 +42,29 @@ export function useLoadMultiHostCatalog(enabled: boolean): () => void {
     }
     let cancelled = false
     const load = () => {
+      const ticket = catalogLoads.next()
       void loadEnvironmentCatalog({
         remoteEnabled: true,
         localLabel,
         localFolders: recentFolders,
         listItems: () => loadEnvironmentItems(),
-        listProjects: (connectionId, options) => window.environment.listProjects(connectionId, options),
+        listProjects: (connectionId, options) => shareProjectLoad(
+          connectionId,
+          () => window.environment.listProjects(connectionId, options),
+        ),
+        onBucket: (bucket) => {
+          if (cancelled || !ticket.current()) return
+          upsertBucket(bucket)
+        },
       }).then((buckets) => {
-        if (cancelled) return
+        if (cancelled || !ticket.current()) return
+        useMultiHostSidebarStore.getState().replaceEnvironments(buckets)
+      }).catch((err: unknown) => {
+        if (cancelled || !ticket.current()) return
         const previous = useMultiHostSidebarStore.getState().environments
-        useMultiHostSidebarStore.getState().replaceEnvironments(keepOfflineCheckouts(previous, buckets))
-      }).catch(() => {
-        if (!cancelled) useMultiHostSidebarStore.getState().replaceEnvironments([])
+        if (previous.length > 0) return
+        const message = err instanceof Error ? err.message : String(err)
+        useMultiHostSidebarStore.getState().replaceEnvironments([localErrorBucket(localLabel, message)])
       })
     }
     load()
@@ -55,18 +76,4 @@ export function useLoadMultiHostCatalog(enabled: boolean): () => void {
       unsubProjects()
     }
   }, [enabled, localLabel, recentFolders])
-
-  return () => {
-    if (!enabled) return
-    void loadEnvironmentCatalog({
-      remoteEnabled: true,
-      localLabel,
-      localFolders: useAppStore.getState().recentFolders,
-      listItems: () => loadEnvironmentItems(),
-      listProjects: (connectionId, options) => window.environment.listProjects(connectionId, options),
-    }).then((buckets) => {
-      const previous = useMultiHostSidebarStore.getState().environments
-      useMultiHostSidebarStore.getState().replaceEnvironments(keepOfflineCheckouts(previous, buckets))
-    })
-  }
 }

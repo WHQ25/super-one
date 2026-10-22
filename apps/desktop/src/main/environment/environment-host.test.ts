@@ -30,6 +30,7 @@ vi.mock('electron', () => ({
   },
   app: {
     getPath: () => electron.userData || mkdtempSync(join(tmpdir(), 'eh-ud-')),
+    getVersion: () => '0.0.0-test',
   },
 }))
 
@@ -236,4 +237,32 @@ describe('EnvironmentHost product path', () => {
 
     host.dispose()
   }, 60_000)
+})
+
+describe('EnvironmentHost local clone', () => {
+  it('returns reused when the checkout already existed', async () => {
+    const ud = mkdtempSync(join(tmpdir(), 'eh-clone-'))
+    const projectDir = mkdtempSync(join(tmpdir(), 'eh-clone-proj-'))
+    electron.setUserData(ud)
+    dirs.push(ud, projectDir)
+    const gitClone = await import('@superone/shared/git-clone')
+    const spy = vi.spyOn(gitClone, 'cloneRepository').mockResolvedValue({
+      path: projectDir,
+      name: 'app',
+      reused: true,
+    })
+    try {
+      const host = new EnvironmentHost(ud)
+      const project = await host.cloneRepository('local', {
+        remoteUrl: 'https://github.com/acme/app.git',
+        parentPath: tmpdir(),
+        ifExists: 'reuse-or-rename',
+      })
+      expect(project.path).toBe(projectDir)
+      expect(project.reused).toBe(true)
+      host.dispose()
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })

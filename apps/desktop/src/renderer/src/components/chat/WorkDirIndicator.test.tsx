@@ -13,9 +13,17 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AgentStatus, WorktreeInfo } from '@superone/shared/agent-types'
 
+import { projectRef } from '@superone/shared/environment'
 import { WorkDirIndicator } from './WorkDirIndicator'
+import { switchComposerToCheckout } from './composer-location'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
+
+vi.mock('./composer-location', async () => {
+  const actual = await vi.importActual<typeof import('./composer-location')>('./composer-location')
+  return { ...actual, switchComposerToCheckout: vi.fn(actual.switchComposerToCheckout) }
+})
 
 const PROJECT = '/proj'
 const WT_PATH = '/home/me/.worktrees/proj/1700000000-abc'
@@ -57,6 +65,7 @@ beforeEach(() => {
   useChatStore.getState().ensureSession(PROJECT)
   useChatStore.setState({ activeProject: PROJECT })
   useAppStore.setState({
+    experimentalRemoteNodesEnabled: true,
     currentFolder: PROJECT,
     _worktrees: {
       [PROJECT]: {
@@ -72,6 +81,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  useMultiHostSidebarStore.setState({ environments: [] })
 })
 
 describe('WorkDirIndicator turn-boundary refresh', () => {
@@ -104,6 +114,18 @@ describe('WorkDirIndicator turn-boundary refresh', () => {
   })
 })
 
+describe('classic chip while remote nodes are off', () => {
+  it('names the worktree without the environment row or Local and Worktree tabs', async () => {
+    useAppStore.setState({ experimentalRemoteNodesEnabled: false })
+    getWorktreeInfo.mockResolvedValue(worktreeInfo('feat/x'))
+    render(<WorkDirIndicator isGitRepo />)
+    await waitFor(() => expect(screen.getByTitle('Worktree feat/x')).toBeTruthy())
+    expect(screen.queryByTitle(/This PC/)).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Local' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Worktree' })).toBeNull()
+  })
+})
+
 describe('merged status chip', () => {
   const localMirror = {
     pendingBaseBranch: null,
@@ -120,6 +142,7 @@ describe('merged status chip', () => {
       entries: [{ path: PROJECT, branch: 'main', head: HEAD, isMain: true, isCurrent: true }],
     })
     useAppStore.setState({
+      experimentalRemoteNodesEnabled: true,
       currentFolder: PROJECT,
       _worktrees: { [PROJECT]: localMirror },
     })
@@ -197,5 +220,59 @@ describe('merged status chip', () => {
     expect(document.querySelector('[data-slot="dropdown-menu-trigger"]')).toBeNull()
     expect(screen.queryByRole('menuitem')).toBeNull()
     expect(screen.getByRole('tab', { name: 'Local' })).toBeTruthy()
+  })
+
+  it('keeps the popover open when the environment switch fails', async () => {
+    vi.mocked(switchComposerToCheckout).mockRejectedValueOnce(new Error('node refused'))
+    const origin = 'git:https://github.com/acme/app.git'
+    const checkout = (environmentId: string, connectionId: string, projectId: string, pathKey: string, hostPath: string) => ({
+      ref: projectRef(environmentId, projectId),
+      environmentId,
+      connectionId,
+      projectId,
+      name: 'proj',
+      pathKey,
+      hostPath,
+      repoIdentity: origin,
+      addedAt: 1,
+      lastOpened: 2,
+    })
+    useMultiHostSidebarStore.setState({
+      environments: [
+        {
+          environmentId: 'local-env',
+          connectionId: 'local',
+          label: 'This PC',
+          kind: 'local',
+          connection: 'connected',
+          projectsStatus: 'ready',
+          projectsError: null,
+          checkouts: [checkout('local-env', 'local', 'p1', PROJECT, PROJECT)],
+        },
+        {
+          environmentId: 'office',
+          connectionId: 'office',
+          label: 'Office',
+          kind: 'cli-node',
+          connection: 'connected',
+          projectsStatus: 'ready',
+          projectsError: null,
+          checkouts: [checkout('office', 'office', 'p2', 'remote:office:/srv/proj', '/srv/proj')],
+        },
+      ],
+    })
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    await user.hover(screen.getByRole('button', { name: 'This PC' }))
+    await user.click(await screen.findByRole('menuitem', { name: /Office/ }))
+    expect(await screen.findByText('node refused')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Local' })).toBeTruthy()
+
+    const chip = screen.getByTitle(/This PC ·/)
+    await user.click(chip)
+    await user.click(chip)
+    expect(screen.queryByText('node refused')).toBeNull()
   })
 })

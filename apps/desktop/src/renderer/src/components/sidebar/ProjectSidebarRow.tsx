@@ -669,6 +669,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
                 const childrenCollapsed = hasChildren && !childrenExpanded
                 const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isVisibleWhenCollapsed)
+                const parentPresentation = sessionPresentation?.(parent)
                 return (
                 <div key={parent.sessionId}>
                   <SessionRow
@@ -683,10 +684,12 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     onHideSession={onHideSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
-                    {...(sessionPresentation?.(parent) ?? {})}
-                    environmentOffline={offline || sessionPresentation?.(parent)?.environmentOffline}
+                    {...(parentPresentation ?? {})}
+                    environmentOffline={offline || parentPresentation?.environmentOffline}
                   />
-                  {childrenToShow.map((child) => (
+                  {childrenToShow.map((child) => {
+                    const childPresentation = sessionPresentation?.(child)
+                    return (
                     <SessionRow
                       key={child.sessionId}
                       session={child}
@@ -698,10 +701,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       onHideSession={onHideSession}
                       onRenameSession={onRenameSession}
                       onDeleteSession={onDeleteSession}
-                      {...(sessionPresentation?.(child) ?? {})}
-                      environmentOffline={offline || sessionPresentation?.(child)?.environmentOffline}
+                      {...(childPresentation ?? {})}
+                      environmentOffline={offline || childPresentation?.environmentOffline}
                     />
-                  ))}
+                    )
+                  })}
                 </div>
                 )
               })

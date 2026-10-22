@@ -2547,7 +2547,8 @@ export class EnvironmentHost {
       ...input,
       parentPath: this.expandLocalPath(input.parentPath),
     }, onProgress)
-    return this.registerLocalProject(cloned.path)
+    const project = this.registerLocalProject(cloned.path)
+    return cloned.reused ? { ...project, reused: true } : project
   }
 
   /**

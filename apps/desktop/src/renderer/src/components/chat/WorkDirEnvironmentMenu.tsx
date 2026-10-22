@@ -8,12 +8,9 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { EnvironmentKindIcon } from '@/components/sidebar/multi-host/EnvironmentSectionHeader'
-import type { WorkDirEnvironmentOption } from './work-dir-environment'
+import { environmentRowsOrLocal, type WorkDirEnvironmentOption } from './work-dir-environment'
 
 export interface WorkDirEnvironmentMenuProps {
-  /** Hidden until another machine is connected. */
-  visible: boolean
-  loading?: boolean
   error?: string | null
   /** A started session can show its environment and cannot switch it. */
   readOnly?: boolean
@@ -26,8 +23,6 @@ export interface WorkDirEnvironmentMenuProps {
 }
 
 export function WorkDirEnvironmentMenu({
-  visible,
-  loading = false,
   error = null,
   readOnly = false,
   options,
@@ -39,12 +34,14 @@ export function WorkDirEnvironmentMenu({
   const { t } = useTranslation()
   const [hoverOpen, setHoverOpen] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  if (!visible) return null
-  if (!loading && options.length === 0) return null
+  const localLabel = typeof window !== 'undefined' && window.app?.platform === 'darwin'
+    ? t('sidebar.thisMac')
+    : t('sidebar.thisPc')
+  const rows = environmentRowsOrLocal(options, localLabel)
 
-  const current = options.find((option) => option.environmentId === selectedId || option.connectionId === selectedId)
-    ?? options.find((option) => option.kind === 'current')
-  const label = current?.label ?? ''
+  const current = rows.find((option) => option.environmentId === selectedId || option.connectionId === selectedId)
+    ?? rows.find((option) => option.kind === 'current')
+  const label = current?.label ?? localLabel
   const open = picking ?? hoverOpen
   const show = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -57,10 +54,10 @@ export function WorkDirEnvironmentMenu({
   const header = (
     <>
       <EnvironmentKindIcon kind={current?.hostKind ?? 'local'} className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{loading ? t('common.loading') : label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </>
   )
-  const canPick = !readOnly && options.length > 1
+  const canPick = !readOnly && rows.length > 1
 
   return (
     <div className="border-b">
@@ -86,15 +83,17 @@ export function WorkDirEnvironmentMenu({
             onMouseEnter={show}
             onMouseLeave={hide}
           >
-            {options.map((option) => {
-              const disabled = option.kind === 'offline' || option.kind === 'not-a-git-repo'
+            {rows.map((option) => {
+              const disabled = option.kind === 'offline' || option.kind === 'not-a-git-repo' || option.kind === 'no-origin'
               const detail = option.kind === 'offline'
                 ? t('chat.worktree.offline')
                 : option.kind === 'not-a-git-repo'
                   ? t('chat.worktree.notAGitRepo')
-                  : option.kind === 'clone-here'
-                    ? t('chat.worktree.cloneHere')
-                    : null
+                  : option.kind === 'no-origin'
+                    ? t('chat.worktree.noOrigin')
+                    : option.kind === 'clone-here'
+                      ? t('chat.worktree.cloneHere')
+                      : null
               return (
                 <DropdownMenuItem
                   key={option.environmentId}

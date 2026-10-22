@@ -62,8 +62,11 @@ export function worktreeFromDraft(settings: DraftSessionSettings): NewSessionWor
   return { kind: 'local' }
 }
 
-export function draftWorktreeSettings(selection: NewSessionWorktreeSelection): Partial<DraftSessionSettings> {
-  return { worktreeSelection: selection, worktreePath: selection.kind === 'existing' ? selection.path : null,
+export function draftWorktreeSettings(
+  selection: NewSessionWorktreeSelection,
+  environmentId?: string | null,
+): Partial<DraftSessionSettings> {
+  return { ...(environmentId ? { environmentId } : {}), worktreeSelection: selection, worktreePath: selection.kind === 'existing' ? selection.path : null,
     gitBranch: selection.kind === 'existing' ? selection.branch ?? null : null,
     pendingBaseBranch: selection.kind === 'create' ? selection.baseBranch : null,
     pendingWorktreeMode: selection.kind === 'create' ? selection.mode : null,

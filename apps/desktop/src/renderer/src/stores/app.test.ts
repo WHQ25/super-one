@@ -96,6 +96,7 @@ const mockWindowApp = {
   removeRecentFolder: vi.fn(),
   openFolder: vi.fn().mockResolvedValue(true),
   activateWorktree: vi.fn().mockResolvedValue({ ok: true, path: '/proj' }),
+  switchToExistingWorktree: vi.fn().mockResolvedValue({ ok: true }),
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getProjectId: vi.fn().mockResolvedValue(null),
@@ -754,6 +755,21 @@ describe('clearWorktree', () => {
     await useAppStore.getState().clearWorktree('/proj')
 
     expect(mockWindowApp.activateWorktree).toHaveBeenCalledWith('/proj', null)
+  })
+})
+
+describe('switchToExistingWorktree', () => {
+  it('stores a remote worktree as a remote key when the entry path is a bare host path', async () => {
+    const project = 'remote:conn-1:/work/app'
+    const hostWt = '/work/app/.worktrees/feat'
+    mockWindowApp.switchToExistingWorktree.mockResolvedValue({ ok: true })
+    const result = await useAppStore.getState().switchToExistingWorktree(project, hostWt, 'feat')
+    expect(result).toEqual({ ok: true })
+    expect(useAppStore.getState()._worktrees[project]?.activePath).toBe('remote:conn-1:/work/app/.worktrees/feat')
+    expect(useChatStore.getState().resetSessionForWorktreeSwitch).toHaveBeenCalledWith(project, {
+      wtPath: 'remote:conn-1:/work/app/.worktrees/feat',
+      gitBranch: 'feat',
+    })
   })
 })
 

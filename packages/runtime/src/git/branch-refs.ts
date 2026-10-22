@@ -1,7 +1,9 @@
-/** Local branch names and remote-tracking refs for one checkout. */
-export interface GitBranchLists {
+import { sanitizeGitRef } from './sanitize-ref'
+
+/** Local branch names for one checkout. `error` is set when the list could not be read. */
+export interface LocalBranchList {
   local: string[]
-  tracking: string[]
+  error?: string
 }
 
 export function localBranchNames(raw: string): string[] {
@@ -9,35 +11,30 @@ export function localBranchNames(raw: string): string[] {
 }
 
 /**
- * `git for-each-ref --format=%(refname:strip=2) refs/remotes`.
- * Drops the symbolic `HEAD` ref (`origin` and `origin/HEAD`).
+ * Local names from a `git branch` string list, an IPC `{ local }` payload, or
+ * a node `{ branches }` payload. An `error` string is kept so a failed read is
+ * not shown as an empty repository.
  */
-export function trackingRefNames(raw: string): string[] {
-  const seen = new Set<string>()
-  const names: string[] = []
-  for (const line of raw.split('\n')) {
-    const name = line.trim()
-    // `origin` is the remote's symbolic HEAD, not a branch. `origin/HEAD` is the same ref.
-    if (!name || !name.includes('/') || name.endsWith('/HEAD') || seen.has(name)) continue
-    seen.add(name)
-    names.push(name)
+export function localBranchList(value: unknown): LocalBranchList {
+  if (Array.isArray(value)) {
+    return { local: value.filter((item): item is string => typeof item === 'string') }
   }
-  return names
+  if (!value || typeof value !== 'object') return { local: [] }
+  const record = value as { local?: unknown; branches?: unknown; error?: unknown }
+  const names = (list: unknown) => Array.isArray(list)
+    ? list.filter((item): item is string => typeof item === 'string')
+    : []
+  const local = Array.isArray(record.local) ? names(record.local) : names(record.branches)
+  const error = typeof record.error === 'string' && record.error ? record.error : undefined
+  return error ? { local, error } : { local }
 }
 
-/**
- * Checking out `origin/x` must become local branch `x`.
- * `track` is set only when that local branch does not exist yet.
- * The returned branch is never the remote-tracking ref itself.
- */
-export function trackingCheckoutPlan(
-  ref: string,
-  localBranches: readonly string[],
-): { branch: string; track: string | null } | null {
-  const slash = ref.indexOf('/')
-  if (slash <= 0 || slash === ref.length - 1) return null
-  const branch = ref.slice(slash + 1)
-  if (!branch || branch === 'HEAD' || branch.endsWith('/HEAD')) return null
-  const exists = localBranches.includes(branch)
-  return { branch, track: exists ? null : ref }
+/** `git branch` names through a caller-supplied runner. Desktop IPC and the node share this. */
+export async function readLocalBranchNames(git: (args: string[]) => Promise<string>): Promise<string[]> {
+  return localBranchNames(await git(['branch', '--format=%(refname:short)']))
+}
+
+/** Checkout an existing local branch. The ref is sanitized before it reaches git. */
+export async function checkoutExistingBranch(git: (args: string[]) => Promise<string>, branch: string): Promise<void> {
+  await git(['checkout', sanitizeGitRef(branch)])
 }

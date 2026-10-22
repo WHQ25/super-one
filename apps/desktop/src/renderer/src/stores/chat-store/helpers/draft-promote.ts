@@ -147,11 +147,18 @@ export function snapshotDraftSettings(
   const codexModel = session.selectedCodexModel || null
   const codexEffort = session.selectedCodexReasoningEffort ?? null
   const owned = session.environmentSelection ?? null
-  const worktreePath = session._worktreePath ?? null
-  const gitBranch = session._gitBranch ?? null
-  const create = owned?.selection.kind === 'create' ? owned.selection : null
-  const pendingFromHint = !owned
-  const worktreeSelection: NewSessionWorktreeSelection | null = owned?.selection
+  // The experiment keeps a session from copying the project file-tree cache.
+  // With it off, a hint may still hold the cache the classic chip wrote.
+  const experiment = useAppStore.getState().experimentalRemoteNodesEnabled === true
+  const worktreePath = experiment
+    ? (session._worktreePath ?? null)
+    : (session._worktreePath ?? worktree?.path ?? null)
+  const gitBranch = experiment
+    ? (session._gitBranch ?? null)
+    : (session._gitBranch ?? worktree?.branch ?? null)
+  const create = experiment && owned?.selection.kind === 'create' ? owned.selection : null
+  const pendingFromHint = !experiment || !owned
+  const worktreeSelection: NewSessionWorktreeSelection | null = (experiment ? owned?.selection : null)
     ?? (worktreePath
       ? { kind: 'existing', path: worktreePath, ...(gitBranch ? { branch: gitBranch } : {}) }
       : null)
@@ -316,6 +323,19 @@ export interface OpenDraftCarry {
  */
 const worktreeHintBySession = new Map<string, WorktreeHint | null>()
 
+function readAppWorktree(projectPath: string): WorktreeHint | null {
+  const wt = useAppStore.getState()._worktrees[projectPath]
+  if (!wt) return null
+  return {
+    path: wt.activePath,
+    branch: null,
+    pendingBaseBranch: wt.pendingBaseBranch,
+    pendingMode: wt.pendingMode,
+    pendingBranchName: wt.pendingBranchName,
+    pendingCarryLocalChanges: wt.pendingCarryLocalChanges,
+  }
+}
+
 function hintFromSession(session: PerSessionState): WorktreeHint | null {
   const owned = session.environmentSelection
   if (owned?.selection.kind === 'create') {
@@ -362,7 +382,9 @@ function worktreeHintForSession(
   project: ProjectState | undefined,
 ): WorktreeHint | null {
   if (project?._activeSessionId === sessionId) {
-    const hint = hintFromSession(session)
+    const hint = useAppStore.getState().experimentalRemoteNodesEnabled
+      ? hintFromSession(session)
+      : readAppWorktree(projectPath)
     worktreeHintBySession.set(sessionId, hint)
     return hint
   }

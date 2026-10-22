@@ -50,18 +50,10 @@ export interface EnvironmentBucket {
   checkouts: HostCheckout[]
 }
 
-/** Lazy session page for one `ProjectRef`. */
-export interface SessionPageState {
-  status: LoadStatus
-  error: string | null
-  sessions: Array<{ sessionId: string }>
-  hasMore: boolean
-}
-
 export interface SidebarSettings {
   groupBy: SidebarGroupBy
   sort: SidebarSort
-  /** `ProjectRef` string keys (`environmentId:projectId`) plus legacy path keys. */
+  /** Path keys and merged `group:` keys the user left open. */
   expandedProjectKeys: string[]
   /**
    * Environments the user collapsed. Empty means every environment is open,

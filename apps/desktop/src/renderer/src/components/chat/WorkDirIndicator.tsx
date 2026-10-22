@@ -17,7 +17,7 @@ import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import type { GitDirtyStatus, GitInfoResult, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { parseRemoteProjectKey, remoteActiveFileRoot } from '@/lib/remote-project-key'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
@@ -42,6 +42,7 @@ import {
 import { selectionForNewSession } from '@superone/shared/session-location'
 import { EMPTY_BRANCH_LISTS, readBranchLists, type GitBranchLists } from './git-branch-lists'
 import { GitBranchMenu } from './GitBranchMenu'
+import { WorkDirIndicatorClassic } from './WorkDirIndicatorClassic'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
 function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -370,7 +371,7 @@ function WorktreeCreatePanel({
   )
 }
 
-export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady }: WorkDirIndicatorProps) {
+function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryReady }: WorkDirIndicatorProps) {
   const { t } = useTranslation()
   const scope = useSessionScope()
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -380,6 +381,9 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
   const environmentBucket = environmentMenu.buckets.find((bucket) =>
     bucket.environmentId === location.environmentId || bucket.connectionId === location.environmentId)
   const [environmentError, setEnvironmentError] = useState<string | null>(null)
+  useEffect(() => {
+    setEnvironmentError(null)
+  }, [location.environmentId])
   const activeGitBranch = useActiveSession((s) => s._gitBranch)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
 
@@ -540,6 +544,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
     }
     setPopoverOpen(open)
     if (open) {
+      setEnvironmentError(null)
       setSearch('')
       setMode(isGitRepo !== false && location.selection.kind !== 'local' ? 'worktree' : 'checkout')
       void loadPopoverData()
@@ -568,16 +573,23 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
   }, [isGitRepo, resetToCheckout])
 
   const handleSelectEnvironment = useCallback((option: WorkDirEnvironmentOption) => {
+    setEnvironmentError(null)
     const checkout = checkoutOnEnvironment(environmentMenu.buckets, option.environmentId, environmentMenu.repoIdentity)
-    if (!checkout) return
-    setPopoverOpen(false)
+    if (!checkout) {
+      setEnvironmentError(t('chat.worktree.checkoutMissing'))
+      return
+    }
     void switchComposerToCheckout({
       pathKey: checkout.pathKey,
       connectionId: checkout.connectionId,
       projectId: checkout.projectId,
       environmentId: checkout.environmentId,
+    }).then(() => {
+      setPopoverOpen(false)
+    }, (err: unknown) => {
+      setEnvironmentError(err instanceof Error ? err.message : String(err))
     })
-  }, [environmentMenu.buckets, environmentMenu.repoIdentity])
+  }, [environmentMenu.buckets, environmentMenu.repoIdentity, t])
 
   const handleCloneEnvironment = useCallback((option: WorkDirEnvironmentOption) => {
     if (!environmentMenu.repoIdentity) return
@@ -624,15 +636,16 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
     if (!currentFolder) return
     setPopoverOpen(false)
     const environmentId = location.environmentId
+    const path = remoteActiveFileRoot(currentFolder, entry.path)
     writeFocusedSelection(currentFolder, {
       environmentId,
-      selection: { kind: 'existing', path: entry.path, ...(entry.branch ? { branch: entry.branch } : {}) },
+      selection: { kind: 'existing', path, ...(entry.branch ? { branch: entry.branch } : {}) },
     }, {
-      cwd: entry.path,
-      worktreePath: entry.path,
+      cwd: path,
+      worktreePath: path,
       gitBranch: entry.branch || null,
     })
-    void useAppStore.getState().switchToExistingWorktree(currentFolder, entry.path, entry.branch || null)
+    void useAppStore.getState().switchToExistingWorktree(currentFolder, path, entry.branch || null)
   }, [currentFolder, location.environmentId])
 
   const handleToggleCarry = useCallback(() => {
@@ -642,11 +655,11 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
     patchFocusedCreate(currentFolder, { carryLocalChanges: next })
   }, [currentFolder, location.selection])
 
-  const handleBranchSelect = useCallback(async (branch: string, track?: string) => {
+  const handleBranchSelect = useCallback(async (branch: string) => {
     // The checkout tab switches the shared project checkout, never a worktree path.
-    if (!currentFolder || (!track && branch === mainBranch)) return
+    if (!currentFolder || branch === mainBranch) return
     setPopoverOpen(false)
-    const result = await window.app.switchGitBranch(currentFolder, branch, track)
+    const result = await window.app.switchGitBranch(currentFolder, branch)
     const info = await window.app.getGitInfo(currentFolder).catch(() => null)
     setMainBranch(info?.branch ?? null)
     setMainDirty(info?.dirty)
@@ -793,8 +806,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
 
   const environmentMenuNode = (
     <WorkDirEnvironmentMenu
-      visible
-      loading={environmentMenu.loading}
       error={environmentError}
       readOnly={isOldSession}
       options={environmentOptions}
@@ -888,7 +899,11 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
                     dirty={mainDirty}
                     local={filteredLocal}
                     loading={branchesLoading}
-                    emptyLabel={query && modeValue === 'checkout' ? t('chat.worktree.noMatches') : undefined}
+                    emptyLabel={query && modeValue === 'checkout'
+                      ? t('chat.worktree.noMatches')
+                      : !query && branchLists.error
+                        ? branchLists.error
+                        : undefined}
                     initing={initing}
                     onInit={() => { void handleGitInit() }}
                     onSelect={(branch) => { void handleBranchSelect(branch) }}
@@ -915,7 +930,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
                         pending={isPending}
                         loading={branchesLoading}
                         emptyEntriesLabel={modeValue === 'worktree' && query && existingEntries.length > 0 ? t('chat.worktree.noMatches') : t('chat.worktree.noneYet')}
-                        emptyBranchesLabel={t('chat.git.noBranches')}
+                        emptyBranchesLabel={!query && branchLists.error ? branchLists.error : t('chat.git.noBranches')}
                         attachReason={(branch) => pendingMode === 'attach' ? checkedOutReason(branch) : null}
                         onSelectExisting={handleSwitchToExisting}
                         onSelectBase={handleSelectBase}
@@ -980,4 +995,13 @@ export function WorkDirIndicator({ compact = false, isGitRepo, onRepositoryReady
       </Dialog>
     </>
   )
+}
+
+/** The merged location chip is part of the remote-nodes experiment. */
+export function WorkDirIndicator(props: WorkDirIndicatorProps) {
+  const enabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
+  if (!enabled) {
+    return <WorkDirIndicatorClassic compact={props.compact} isGitRepo={props.isGitRepo} />
+  }
+  return <WorkDirIndicatorExperiment {...props} />
 }

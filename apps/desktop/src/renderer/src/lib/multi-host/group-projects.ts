@@ -1,4 +1,4 @@
-import { projectKey, type ProjectRef } from '@superone/shared/environment'
+import { projectKey } from '@superone/shared/environment'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
 import type { EnvironmentBucket, HostCheckout, SidebarSort } from './types'
 
@@ -83,8 +83,4 @@ export function environmentSections(buckets: EnvironmentBucket[], sort: SidebarS
     bucket,
     checkouts: sortCheckouts(bucket.checkouts, sort),
   }))
-}
-
-export function projectRefKey(ref: ProjectRef): string {
-  return projectKey(ref)
 }

@@ -367,7 +367,7 @@ describe('a partial git port', () => {
     expect(methods).not.toContain('git.worktrees')
   })
 
-  it('inits a repository and creates a branch from a tracking ref', async () => {
+  it('inits a repository and creates a branch', async () => {
     const init = vi.fn(async () => ({ ok: true }))
     const switchBranch = vi.fn(async () => ({ ok: true }))
     const ctx = projectsOnlyHost({
@@ -388,13 +388,11 @@ describe('a partial git port', () => {
     const created = await dispatchRpc('git.createBranch', {
       projectId: 'p1',
       branch: 'feature/foo',
-      startPoint: 'origin/feature/foo',
     }, ctx)
     expect(created).toEqual({ result: { ok: true } })
     expect(switchBranch).toHaveBeenCalledWith('p1', 'feature/foo', {
       create: true,
       absolutePath: null,
-      startPoint: 'origin/feature/foo',
     })
   })
 

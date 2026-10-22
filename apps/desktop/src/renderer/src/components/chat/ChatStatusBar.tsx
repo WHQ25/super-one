@@ -13,6 +13,7 @@ import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
 import { WorkDirIndicator } from './WorkDirIndicator'
+import { ClassicBranchChip } from './ClassicBranchChip'
 import { useComposerLocation } from './composer-location'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { parseToolInput } from './tool-display'
@@ -242,8 +243,14 @@ export function ChatStatusBar() {
   const barRef = useRef<HTMLDivElement>(null)
   const fullModeRequiredWidthRef = useRef(0)
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
+  const worktrees = useAppStore((s) => s._worktrees)
   const location = useComposerLocation()
-  const gitFolder = location.cwd || currentFolder
+  // The experiment follows the session checkout. Otherwise git status stays on
+  // the open project folder, which is what the separate branch chip reads.
+  const gitFolder = experimentalRemoteNodesEnabled ? (location.cwd || currentFolder) : currentFolder
+  const sessionGitBranch = useActiveSession((s) => s._gitBranch)
+  const isInWorktree = computeIsInWorktree(currentFolder ? worktrees[currentFolder] : undefined)
   const scope = useSessionScope()
   // Track structural changes plus subagent result arrival without subscribing to text deltas.
   const activitySignature = useActiveSession((s) => computeBackgroundActivitySignature(s.messages))
@@ -349,6 +356,8 @@ export function ChatStatusBar() {
     location.cwd,
     location.selection.kind,
     isGitRepo,
+    sessionGitBranch,
+    isInWorktree,
   ])
 
   const { bashActivities, agentActivities, workflowActivities, monitorActivities } = useMemo(
@@ -541,8 +550,21 @@ export function ChatStatusBar() {
             }}
           />
         )}
+        {currentFolder && !experimentalRemoteNodesEnabled && (
+          <ClassicBranchChip
+            currentFolder={currentFolder}
+            compact={compactIndicators}
+            gitInfo={gitInfo}
+            isGitRepo={isGitRepo}
+            gitError={gitError}
+            isInWorktree={isInWorktree}
+            sessionGitBranch={sessionGitBranch}
+            refreshGitInfo={refreshGitInfo}
+            onInitialized={() => setIsGitRepo(true)}
+          />
+        )}
 
-        {gitError && (
+        {experimentalRemoteNodesEnabled && gitError && (
           <>
             <div className="h-3 w-px bg-border" />
             <button

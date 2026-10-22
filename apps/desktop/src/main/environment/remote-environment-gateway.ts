@@ -737,14 +737,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async gitSwitchBranch(
     projectId: string,
     branch: string,
-    opts?: { create?: boolean; cwd?: string; startPoint?: string },
+    opts?: { create?: boolean; cwd?: string },
   ): Promise<unknown> {
     const method = opts?.create ? 'git.createBranch' : 'git.switchBranch'
     return this.client.rpc(method, {
       projectId,
       branch,
       ...(opts?.cwd ? { cwd: opts.cwd } : {}),
-      ...(opts?.startPoint ? { startPoint: opts.startPoint } : {}),
     })
   }
 

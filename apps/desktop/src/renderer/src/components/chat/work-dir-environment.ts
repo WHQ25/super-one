@@ -1,6 +1,4 @@
-import { useAppStore } from '@/stores/app'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
-import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
 import type { EnvironmentBucket, EnvironmentKind, HostCheckout } from '@/lib/multi-host/types'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
@@ -15,6 +13,7 @@ export type WorkDirEnvironmentRowKind =
   | 'clone-here'
   | 'offline'
   | 'not-a-git-repo'
+  | 'no-origin'
 
 export interface WorkDirEnvironmentOption {
   environmentId: string
@@ -35,10 +34,26 @@ function isCurrent(bucket: { environmentId: string; connectionId: string }, curr
 }
 
 /**
- * Rows for the environment dropdown. Offline wins. A project that is not a git
- * repo cannot move. A missing checkout of the same origin is Clone Here.
- * A checkout with no origin cannot be cloned, so other machines stay disabled.
+ * Rows for the environment dropdown. Offline wins, including over the current
+ * row. A project that is not a git repo cannot move. A checkout with no origin
+ * cannot be cloned. A missing checkout of the same origin is Clone Here.
  */
+/** One local row when the catalog has not loaded, so the chip still names this machine. */
+export function environmentRowsOrLocal(
+  options: WorkDirEnvironmentOption[],
+  localLabel: string,
+): WorkDirEnvironmentOption[] {
+  if (options.length > 0) return options
+  return [{
+    environmentId: 'local',
+    connectionId: 'local',
+    label: localLabel,
+    kind: 'current',
+    needsUpgrade: false,
+    hostKind: 'local',
+  }]
+}
+
 export function workDirEnvironmentOptions(input: {
   buckets: EnvironmentSource[]
   currentEnvironmentId: string
@@ -50,10 +65,11 @@ export function workDirEnvironmentOptions(input: {
     const needsUpgrade = bucket.connection === 'needs-upgrade'
     const hasCheckout = !!remote && bucket.checkouts.some((checkout) => repoIdentityRemote(checkout.repoIdentity) === remote)
     let kind: WorkDirEnvironmentRowKind = 'selectable'
-    if (isCurrent(bucket, input.currentEnvironmentId)) kind = 'current'
-    else if (bucket.connection === 'offline') kind = 'offline'
-    else if (!input.isGitRepo || (!remote && !hasCheckout)) kind = 'not-a-git-repo'
-    else if (remote && !hasCheckout) kind = 'clone-here'
+    if (bucket.connection === 'offline') kind = 'offline'
+    else if (isCurrent(bucket, input.currentEnvironmentId)) kind = 'current'
+    else if (!input.isGitRepo) kind = 'not-a-git-repo'
+    else if (!remote) kind = 'no-origin'
+    else if (!hasCheckout) kind = 'clone-here'
     else if (needsUpgrade) kind = 'needs-upgrade'
     return {
       environmentId: bucket.environmentId,
@@ -67,17 +83,13 @@ export function workDirEnvironmentOptions(input: {
 }
 
 export function useWorkDirEnvironmentMenu(projectPath: string | null, isGitRepo: boolean | null | undefined) {
-  const enabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const buckets = useMultiHostSidebarStore((s) => s.environments)
-  const visible = multiHostChromeVisible(enabled, buckets)
   const checkout = projectPath
     ? buckets.flatMap((bucket) => bucket.checkouts).find((item) => item.pathKey === projectPath) ?? null
     : null
   const currentEnvironmentId = checkout?.environmentId ?? environmentIdForProjectKey(projectPath)
   const repoIdentity = checkout?.repoIdentity ?? null
   return {
-    visible,
-    loading: false,
     buckets,
     repoIdentity,
     currentEnvironmentId,

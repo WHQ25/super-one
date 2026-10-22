@@ -512,7 +512,11 @@ export function resetSessionForWorktreeSwitchImpl(
   const unsent = !!previousSession
     && previousSession.messages.length === 0
     && !_isLiveSession(previousSession)
-  const environmentSelection = selectionForWorktreeSwitch(projectPath, previousSession, opts)
+  // The session-owned checkout is the remote-nodes experiment. With it off,
+  // the file-tree mirror stays the worktree the classic chip and send read.
+  const environmentSelection = useAppStore.getState().experimentalRemoteNodesEnabled
+    ? selectionForWorktreeSwitch(projectPath, previousSession, opts)
+    : null
   if (unsent && previousSid) {
     logWorktreeWrite('resetSessionForWorktreeSwitch.unsent', {
       projectPath,
@@ -532,7 +536,7 @@ export function resetSessionForWorktreeSwitchImpl(
       cwd: opts?.wtPath ?? projectPath,
       _worktreePath: opts?.wtPath ?? null,
       _gitBranch: opts?.gitBranch ?? null,
-      environmentSelection,
+      ...(environmentSelection ? { environmentSelection } : {}),
     })))
     return
   }
@@ -553,7 +557,7 @@ export function resetSessionForWorktreeSwitchImpl(
     newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
     newSession._gitBranch = opts?.gitBranch ?? null
-    newSession.environmentSelection = environmentSelection
+    if (environmentSelection) newSession.environmentSelection = environmentSelection
     seedNewSession(newSession, nextProvider, {
       state: s, project: proj, claudeModels: projectClaudeModels(s, projectPath), previousSession,
     })
@@ -592,21 +596,59 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   // mints a renderer UUID. Node `session.create` happens on first send via
   // ensureHostSession (no early create, no forced codex default).
   const isRemoteProject = !!parseRemoteProjectKey(activeProject)
+  const remoteNodes = useAppStore.getState().experimentalRemoteNodesEnabled === true
+  const pendingCreate = remoteNodes && (
+    activeSession.environmentSelection?.selection.kind === 'create'
+    || !!useAppStore.getState()._worktrees[activeProject]?.pendingBaseBranch
+  )
 
   // Idempotent: a pristine current session (no messages, idle, not a live node
   // session, no worktree) is already "a fresh session". Creating another one
   // just stacks empty drafts in _sessions (duplicate "New session" in Ctrl+Tab).
   // A composer with unsent content is NOT pristine — the user wants a clean
   // session *and* their text kept, so fall through and park it as a draft.
-  if (
-    activeSession.messages.length === 0 &&
-    !hasRealtimeTimeline &&
-    !hasDraftContent(activeSession) &&
-    !_isLiveSession(activeSession) &&
-    !activeSession._worktreePath &&
-    !isRemoteSession(get(), activeProject, currentSid)
-  ) {
+  // A pending create on an otherwise pristine session is reused: clear the
+  // mirror and put the selection back to local, instead of leaving the empty
+  // session behind.
+  const otherwisePristine = activeSession.messages.length === 0
+    && !hasRealtimeTimeline
+    && !hasDraftContent(activeSession)
+    && !_isLiveSession(activeSession)
+    && !activeSession._worktreePath
+    && !isRemoteSession(get(), activeProject, currentSid)
+  if (otherwisePristine && !pendingCreate) {
     window.app.trace?.('session.lifecycle', 'resetSession:skip-pristine', { activeProject, currentSid })
+    return
+  }
+  if (otherwisePristine && pendingCreate) {
+    useAppStore.getState().clearWorktreeMirror(activeProject)
+    const environmentId = activeSession.environmentSelection?.environmentId
+      ?? environmentIdForProjectKey(activeProject)
+    window.app.trace?.('session.lifecycle', 'resetSession:clear-pending-create', { activeProject, currentSid })
+    set((s) => {
+      const proj = getProject(s, activeProject)
+      const sid = resolveActiveSessionId(proj)
+      const session = sid ? proj._sessions[sid] : undefined
+      if (!sid || !session) return {}
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [activeProject]: {
+            ...proj,
+            _sessions: {
+              ...proj._sessions,
+              [sid]: {
+                ...session,
+                cwd: activeProject,
+                _worktreePath: null,
+                _gitBranch: null,
+                environmentSelection: selectionForNewSession(environmentId),
+              },
+            },
+          },
+        },
+      }
+    })
     return
   }
 
@@ -614,13 +656,16 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   // up in the sidebar's draft list instead of being stranded in _sessions.
   await promoteDraftIfUnsent(get(), activeProject, currentSid)
 
-  // Clear the file-tree cache before the new session becomes active. The host
-  // reset below awaits, and a draft saved in that window must not copy the
-  // previous session's checkout onto the new one.
-  useAppStore.getState().clearWorktreeMirror(activeProject)
+  // With the experiment on, clear the file-tree cache before the new session
+  // becomes active. The host reset below awaits, and a draft saved in that
+  // window must not copy the previous session's checkout onto the new one.
+  // With it off, the mirror stays until clearWorktree, as it did before.
+  if (remoteNodes) useAppStore.getState().clearWorktreeMirror(activeProject)
 
   const newSessionId = createSessionId()
-  const freshSelection = selectionForNewSession(environmentIdForProjectKey(activeProject))
+  const freshSelection = remoteNodes
+    ? selectionForNewSession(environmentIdForProjectKey(activeProject))
+    : null
   window.app.trace?.('session.lifecycle', 'resetSession', {
     activeProject,
     oldSid: currentSid,
@@ -636,9 +681,11 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const proj = getProject(s, activeProject)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = activeProject
-    newSession._worktreePath = null
-    newSession._gitBranch = null
-    newSession.environmentSelection = freshSelection
+    if (freshSelection) {
+      newSession._worktreePath = null
+      newSession._gitBranch = null
+      newSession.environmentSelection = freshSelection
+    }
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
     // The outgoing session (captured before set()) is what a harness carries picks over from.

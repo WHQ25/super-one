@@ -4,10 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { selectionForNewSession } from '@superone/shared/session-location'
 
 const worktreeState = vi.hoisted(() => ({ pendingBaseBranch: null as string | null, pendingMode: 'branch', pendingBranchName: 'voice', pendingCarryLocalChanges: false }))
+const remoteNodes = vi.hoisted(() => ({ enabled: true }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: {
     getState: () => ({
+      experimentalRemoteNodesEnabled: remoteNodes.enabled,
       getWorktreeState: () => worktreeState,
       setActiveWorktree: vi.fn(),
       sandboxCapability: null,
@@ -378,6 +380,20 @@ describe('composer preparation for voice and scheduling', () => {
     Object.assign(window.app, { activateWorktree })
     await prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })
     expect(activateWorktree).not.toHaveBeenCalled()
+  })
+
+  it('follows the project mirror when remote nodes are off, even if the session chose the root', async () => {
+    remoteNodes.enabled = false
+    try {
+      seed(LOCAL, 'voice', { preferredProvider: 'codex', environmentSelection: selectionForNewSession('local') })
+      worktreeState.pendingBaseBranch = 'main'
+      const activateWorktree = vi.fn(async () => ({ ok: true, path: '/proj/.wt/from-mirror' }))
+      Object.assign(window.app, { activateWorktree })
+      await prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })
+      expect(activateWorktree).toHaveBeenCalledWith(LOCAL, expect.objectContaining({ baseBranch: 'main', branchName: 'voice' }))
+    } finally {
+      remoteNodes.enabled = true
+    }
   })
 
   it('activates the session pending create instead of the project mirror', async () => {

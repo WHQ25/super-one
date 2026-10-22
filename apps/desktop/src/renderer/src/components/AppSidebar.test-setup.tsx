@@ -247,7 +247,6 @@ beforeEach(() => {
   useMultiHostSidebarStore.setState({
     settings: { ...DEFAULT_SIDEBAR_SETTINGS },
     environments: [],
-    sessionPages: {},
   })
   mockWindowApp.onSessionChanged.mockImplementation(() => () => {})
   chatState.switchSession.mockImplementation(async () => {})

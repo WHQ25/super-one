@@ -380,6 +380,7 @@ export type Messages = {
     environmentSection: {
       empty: string
       noSessions: string
+      loadFailed: string
     }
     sessionOffline: string
     actionTarget: string
@@ -2238,6 +2239,8 @@ export type Messages = {
       offline: string
       environmentFixed: string
       notAGitRepo: string
+      noOrigin: string
+      checkoutMissing: string
       checkoutHeading: string
       localCheckout: string
       modeLocal: string
@@ -4978,6 +4981,7 @@ export const en: Messages = {
     environmentSection: {
       empty: 'No projects on this environment.',
       noSessions: 'No sessions',
+      loadFailed: 'Could not load projects. Retry',
     },
     sessionOffline: 'Environment Offline',
     actionTarget: '{{environment}} · {{path}}',
@@ -6927,6 +6931,8 @@ export const en: Messages = {
       offline: 'Offline',
       environmentFixed: 'This session stays on {{environment}}.',
       notAGitRepo: 'Not a Git Repository',
+      noOrigin: 'No Origin',
+      checkoutMissing: 'This environment has no checkout of this repository.',
       checkoutHeading: 'Checkout',
       localCheckout: 'Local Checkout',
       modeLocal: 'Local',

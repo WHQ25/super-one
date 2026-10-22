@@ -705,10 +705,8 @@ interface AppAPI extends WindowLayoutAPI {
   getGitInfo(folderPath: string): Promise<GitInfoResult>
   getGitIsRepo(folderPath: string): Promise<boolean>
   gitInit(folderPath: string): Promise<GitResult>
-  getGitBranches(folderPath: string): Promise<{ local: string[]; tracking: string[] }>
-  /** Fetch `origin`. `track` creates `branch` from that remote-tracking ref instead of checking the ref out. */
-  gitFetch(folderPath: string): Promise<GitResult>
-  switchGitBranch(folderPath: string, branch: string, track?: string): Promise<GitResult>
+  getGitBranches(folderPath: string): Promise<{ local: string[]; error?: string }>
+  switchGitBranch(folderPath: string, branch: string): Promise<GitResult>
   createBranch(folderPath: string, branch: string): Promise<GitResult>
   worktreeExists(worktreePath: string, projectPath: string): Promise<boolean>
   getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null>

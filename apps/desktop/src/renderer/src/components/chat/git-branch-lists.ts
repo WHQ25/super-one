@@ -1,19 +1,10 @@
-import { trackingCheckoutPlan, type GitBranchLists } from '@superone/runtime/git/branch-refs'
+import { localBranchList, type LocalBranchList } from '@superone/runtime/git/branch-refs'
 
-export type { GitBranchLists }
-export { trackingCheckoutPlan }
+export type GitBranchLists = LocalBranchList
 
-export const EMPTY_BRANCH_LISTS: GitBranchLists = { local: [], tracking: [] }
+export const EMPTY_BRANCH_LISTS: GitBranchLists = { local: [] }
 
-/** A legacy `string[]` is local branches only. */
+/** A legacy `string[]` is local branches only. An `error` is not an empty list. */
 export function readBranchLists(value: unknown): GitBranchLists {
-  if (Array.isArray(value)) {
-    return { local: value.filter((item): item is string => typeof item === 'string'), tracking: [] }
-  }
-  if (!value || typeof value !== 'object') return EMPTY_BRANCH_LISTS
-  const record = value as { local?: unknown; tracking?: unknown }
-  const names = (list: unknown) => Array.isArray(list)
-    ? list.filter((item): item is string => typeof item === 'string')
-    : []
-  return { local: names(record.local), tracking: names(record.tracking) }
+  return localBranchList(value)
 }

@@ -99,10 +99,14 @@ function Preview({ git, narrow = false, monitor }: { git: GitInfoResult; narrow?
     useChatStore.getState().ensureSession(PROJECT)
     useChatStore.setState({ activeProject: PROJECT })
     seedMonitor(monitor)
-    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    useAppStore.setState({ experimentalRemoteNodesEnabled: true, currentFolder: PROJECT, _worktrees: {} })
     setReady(true)
     return () => {
-      useAppStore.setState({ currentFolder: prevApp.currentFolder, _worktrees: prevApp._worktrees })
+      useAppStore.setState({
+        experimentalRemoteNodesEnabled: prevApp.experimentalRemoteNodesEnabled,
+        currentFolder: prevApp.currentFolder,
+        _worktrees: prevApp._worktrees,
+      })
       useChatStore.setState(prevChat)
     }
   }, [git, monitor])

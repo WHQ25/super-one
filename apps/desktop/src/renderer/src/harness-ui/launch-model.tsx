@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { EffortLevel, HarnessId, ModelOption, SessionAgentProfile } from '@superone/shared/agent-types'
+import type { CodexReasoningEffort, EffortLevel, HarnessId, ModelOption, SessionAgentProfile } from '@superone/shared/agent-types'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -61,11 +61,34 @@ const EMPTY_PLATFORMS: never[] = []
 const EMPTY_CREDENTIALS: never[] = []
 const EMPTY_BINDINGS: never[] = []
 
+const REASONING_EFFORTS = new Set<CodexReasoningEffort>(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+
+function isEffortLevel(level: string): level is EffortLevel {
+  return level === 'low' || level === 'medium' || level === 'high' || level === 'xhigh' || level === 'max'
+}
+
+function isReasoningEffort(value: string): value is CodexReasoningEffort {
+  return REASONING_EFFORTS.has(value as CodexReasoningEffort)
+}
+
 /** The profile's models as a catalog, the fallback until a live catalog arrives. */
 export function useProfileCatalog(profile: SessionAgentProfile | undefined): ModelOption[] {
   const models = profile?.models
   return useMemo(
-    () => models?.map((model) => ({ ...model, description: model.description ?? '' })) ?? EMPTY_MODELS,
+    () => models?.map((model): ModelOption => {
+      const supportedEffortLevels = model.supportedEffortLevels?.filter(isEffortLevel)
+      const supportedReasoningEfforts = model.supportedReasoningEfforts?.flatMap((effort) =>
+        isReasoningEffort(effort.value) ? [{ value: effort.value, description: effort.description ?? '' }] : [])
+      return {
+        id: model.id,
+        name: model.name,
+        description: model.description ?? '',
+        ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
+        ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
+        ...(supportedEffortLevels?.length ? { supportedEffortLevels } : {}),
+        ...(supportedReasoningEfforts?.length ? { supportedReasoningEfforts } : {}),
+      }
+    }) ?? EMPTY_MODELS,
     [models],
   )
 }

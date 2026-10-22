@@ -146,23 +146,23 @@ const runningMonitor = {
 
 /** A live Grok monitor stays on the status bar after the turn goes idle. */
 export const RunningMonitor: Story = {
-  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor },
+  args: { git: { branch: 'main', dirty: undefined }, monitor: runningMonitor },
 }
 
 /** Two watches share one chip. */
 export const RunningMonitors: Story = {
-  args: { git: { branch: 'main', dirty: null }, monitor: { ...runningMonitor, count: 2 } },
+  args: { git: { branch: 'main', dirty: undefined }, monitor: { ...runningMonitor, count: 2 } },
 }
 
 /** Narrow width keeps the activity icon and drops the label. */
 export const RunningMonitorNarrow: Story = {
-  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor, narrow: true },
+  args: { git: { branch: 'main', dirty: undefined }, monitor: runningMonitor, narrow: true },
 }
 
 /** A long description stays on one line in the chip. */
 export const RunningMonitorLongTitle: Story = {
   args: {
-    git: { branch: 'main', dirty: null },
+    git: { branch: 'main', dirty: undefined },
     monitor: {
       description: 'watch the production deploy log for the desktop release workflow',
       command: 'tail -f /var/log/superone-release.log',
@@ -171,13 +171,13 @@ export const RunningMonitorLongTitle: Story = {
 }
 
 export const RunningMonitorDark: Story = {
-  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor },
+  args: { git: { branch: 'main', dirty: undefined }, monitor: runningMonitor },
   globals: { theme: 'dark' },
 }
 
 /** Opening the chip shows the live Monitor tool, including its stop control when the host allows it. */
 export const RunningMonitorExpanded: Story = {
-  args: { git: { branch: 'main', dirty: null }, monitor: runningMonitor },
+  args: { git: { branch: 'main', dirty: undefined }, monitor: runningMonitor },
   play: async ({ canvasElement }) => {
     canvasElement.querySelector<HTMLButtonElement>('button[title="Monitor"]')?.click()
   },

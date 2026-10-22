@@ -143,16 +143,19 @@ function prefixEdge(
 
 function edgeMap(keys: readonly string[], texts: readonly (string | undefined)[], at: string | undefined, offset: number): Record<string, number> {
   const map: Record<string, number> = {}
-  if (at === undefined) {
-    for (let index = 0; index < keys.length; index++) map[keys[index]] = texts[index] === undefined ? -1 : texts[index].length
-    return map
+  const end = at === undefined ? keys.length : keys.indexOf(at)
+  if (end < 0) return map
+  for (let index = 0; index < end; index++) {
+    const key = keys[index]
+    const text = texts[index]
+    if (key === undefined) continue
+    map[key] = text === undefined ? -1 : text.length
   }
-  const atIndex = keys.indexOf(at)
-  if (atIndex < 0) return map
-  for (let index = 0; index < atIndex; index++) map[keys[index]] = texts[index] === undefined ? -1 : texts[index].length
-  const text = texts[atIndex]
+  if (at === undefined) return map
+  const key = keys[end]
+  const text = texts[end]
   // A fold notice or a tool has no character offset. A positive offset would pull the whole block above the cut.
-  if (text !== undefined && offset > 0) map[keys[atIndex]] = offset
+  if (key !== undefined && text !== undefined && offset > 0) map[key] = offset
   return map
 }
 

@@ -44,7 +44,8 @@ export function GitBranchMenu({
   return (
     <div>
       <div className="max-h-80 overflow-y-auto">
-        {loading && (
+        {/* A refresh keeps the rows already shown, so the popover does not change height. */}
+        {loading && localRows.length === 0 && (
           <div className="px-3 py-2 text-xs text-muted-foreground">{t('common.loading')}</div>
         )}
         {empty && (

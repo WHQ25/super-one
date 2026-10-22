@@ -232,7 +232,7 @@ function WorktreeDraftPanel({
         )}
 
         <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.createFromHeading')}</div>
-        {loading && (
+        {loading && noBranches && (
           <div className="px-3 py-1 text-xs text-muted-foreground">{t('common.loading')}</div>
         )}
         {noBranches && !loading && (

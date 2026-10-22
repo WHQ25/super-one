@@ -195,6 +195,26 @@ describe('merged status chip', () => {
     expect(checkout.getAttribute('data-state')).toBe('active')
   })
 
+  it('keeps the listed branches while a reopen refreshes them, with no loading row', async () => {
+    const getGitBranches = vi.fn()
+      .mockResolvedValueOnce({ local: ['main', 'develop'] })
+      .mockReturnValue(new Promise(() => {}))
+    Object.assign(window.app, { getGitBranches, getCheckedOutBranches: vi.fn(() => Promise.resolve(['main'])) })
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+
+    await user.click(screen.getByRole('button'))
+    expect(await screen.findByRole('button', { name: 'develop' })).toBeTruthy()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'develop' })).toBeNull())
+
+    await user.click(screen.getByRole('button'))
+    await waitFor(() => expect(getGitBranches).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'develop' })).toBeTruthy()
+    expect(screen.queryByText(/Loading/)).toBeNull()
+  })
+
   it('keeps the environment row, search, branch create, and worktree detach', async () => {
     const getGitBranches = vi.fn(() => Promise.resolve({ local: ['main', 'develop'], tracking: ['origin/main'] }))
     const getCheckedOutBranches = vi.fn(() => Promise.resolve(['main']))

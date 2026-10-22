@@ -10,8 +10,10 @@ desktop, another desktop, or a headless node. Routed calls keep that captured
 owner while the user chooses settings; client payloads cannot retarget the task.
 The sheet
 reads the same host profiles and initial settings as the desktop card through
-`session.suggestedTaskLaunchOptions`; Agent, model, provider, effort, permission
-and sandbox edits stay local until the user taps Launch. Switching agents uses
+`session.suggestedTaskLaunchOptions`. Its launch row is the composer's model
+menu: model, that model's effort, Fast, and provider, then permission and
+sandbox. A Claude credential that remaps models hides effort, as on desktop.
+Edits stay local until the user taps Launch. Switching agents uses
 the target defaults, and switching back restores the source settings. The final
 leased `session.launchSuggestedTask` sends only the card id and run settings to
 the captured source session; the host owns its prompt, directory and worktree.

@@ -186,9 +186,16 @@ function LaunchConfigRow({ launch, profile, onChange }: {
   const { tokens: { colors, spacing } } = useMobileTheme()
   const harness = profile.harnessId
   const { config } = launch
-  // The profile's catalog is the same shape minus a required description.
+  // The picker catalog requires a description. Per-model effort stays on the
+  // profile and is not part of this row's ModelOption.
   const models: ModelOption[] = useMemo(
-    () => profile.models.map((item) => ({ ...item, description: item.description ?? '' })),
+    () => profile.models.map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description ?? '',
+      ...(item.supportsFastMode ? { supportsFastMode: true } : {}),
+      ...(item.serviceTiers ? { serviceTiers: item.serviceTiers } : {}),
+    })),
     [profile.models],
   )
   const model = models.find((item) => item.id === config.model)

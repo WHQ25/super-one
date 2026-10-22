@@ -1,19 +1,62 @@
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { ClipboardCheck } from 'lucide-react-native'
+import type { SessionAgentLaunchSettings, SessionAgentProfile } from '@superone/shared/agent-types'
+import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import type { SuggestedTaskLaunchChoice, SuggestedTaskLaunchOptions } from '@superone/shared/suggested-task'
 import type { SuggestedTaskLaunchRequest } from '../suggested-task-actions'
-import { AgentConfigFields } from '../prompts/AgentConfigFields'
+import { patchSuggestedTaskSettings, suggestedTaskLaunchView } from '../suggested-task-launch-state'
 import { SelectField } from '../prompts/EditableField'
 import { PromptActions } from '../prompts/PromptControls'
 import { PromptSheet } from '../prompts/PromptSheet'
 import { Text } from '../ui/text'
+import { ModelPicker } from '../ui/model-picker'
+import { PermissionModeSelector } from '../ui/permission-mode-selector'
+import { SandboxSelector } from '../ui/sandbox-selector'
 import { useMobileLocale } from '../i18n/context'
 import { useMobileTheme } from '../theme/context'
 
 export interface SuggestedTaskLaunchSheetProps {
   request: SuggestedTaskLaunchRequest
   onDismiss(): void
+}
+
+/**
+ * Agent plus the desktop card's launch bar: model, per-model effort, Fast,
+ * provider, permission and sandbox. Edits stay on the choice until Launch.
+ */
+function LaunchRuntimeRow({ profile, settings, disabled, onChange }: {
+  profile: SessionAgentProfile
+  settings: SessionAgentLaunchSettings
+  disabled: boolean
+  onChange: (settings: SessionAgentLaunchSettings) => void
+}) {
+  const { tokens: { colors, spacing } } = useMobileTheme()
+  const displayed = { ...profile.defaultConfig, ...settings }
+  const view = suggestedTaskLaunchView(profile, displayed)
+  const patch = (next: Partial<SessionAgentLaunchSettings>) => onChange(patchSuggestedTaskSettings(profile, settings, displayed, next))
+  const permissionMode = displayed.permissionMode ?? HARNESS_LAUNCH_OPTIONS[profile.harnessId].defaultPermissionMode
+  return <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs,
+    paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+    <ModelPicker compact harness={profile.harnessId} disabled={disabled}
+      models={view.models} model={view.model} onModel={(model) => patch({ model })}
+      efforts={view.efforts} effort={view.effort} onEffort={(effort) => patch({ effort })}
+      optionParams={view.optionParams}
+      onOptionParam={(id, value) => {
+        if (id === 'claudeFastMode') patch({ claudeFastMode: value === 'true' })
+        if (id === 'fast') patch({ fastMode: value === 'true' })
+      }}
+      providers={view.providers} providerId={view.providerId}
+      onProvider={view.providers.length ? (apiProviderId) => patch({ apiProviderId }) : undefined}
+      acpAgentId={profile.acpAgentId} />
+    <PermissionModeSelector harness={profile.harnessId} disabled={disabled}
+      modes={HARNESS_LAUNCH_OPTIONS[profile.harnessId].permissionModes}
+      value={permissionMode} onChange={(mode) => patch({ permissionMode: mode as SessionAgentLaunchSettings['permissionMode'] })} />
+    <SandboxSelector harness={profile.harnessId} disabled={disabled}
+      sandboxInfo={sandboxInfoFromMode(displayed.sandboxMode ?? 'off')}
+      permissionMode={permissionMode} onChange={(sandboxMode) => patch({ sandboxMode })} />
+  </View>
 }
 
 /** The same host profiles and initial choice as the desktop card, in native controls. */
@@ -68,9 +111,8 @@ export function SuggestedTaskLaunchSheet({ request, onDismiss }: SuggestedTaskLa
     {options && choice && profile ? <View pointerEvents={busy ? 'none' : 'auto'} style={{ gap: spacing.md, opacity: busy ? 0.6 : 1 }}>
       <SelectField label="Agent" value={choice.agentId} options={options.profiles.map(item => ({ id: item.id, label: item.name }))}
         onChange={agentId => setChoice({ agentId, settings: agentId === options.initial.agentId ? options.initial.settings : {} })} />
-      <AgentConfigFields key={profile.id} harness={profile.harnessId} profile={profile}
-        config={{ ...profile.defaultConfig, ...choice.settings }}
-        onChange={settings => setChoice(current => current ? { ...current, settings: { ...current.settings, ...settings } } : current)} />
+      <LaunchRuntimeRow key={profile.id} profile={profile} settings={choice.settings} disabled={busy}
+        onChange={settings => setChoice(current => current ? { ...current, settings } : current)} />
     </View> : null}
   </PromptSheet>
 }

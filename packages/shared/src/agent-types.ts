@@ -1114,6 +1114,12 @@ export interface SessionAgentProfile {
     supportsFastMode?: boolean
     /** Codex service tiers advertised for this model (for example Fast/priority). */
     serviceTiers?: Array<{ id: string; name: string; description: string }>
+    /**
+     * Per-model effort. A phone has no live harness catalog, so a suggested-task
+     * launch reads these instead of the union in `efforts`.
+     */
+    supportedEffortLevels?: readonly string[]
+    supportedReasoningEfforts?: ReadonlyArray<{ value: string; description?: string }>
   }>
   efforts: string[]
   /**

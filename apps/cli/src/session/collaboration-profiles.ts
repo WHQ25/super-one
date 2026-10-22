@@ -111,6 +111,10 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       ...(m.description ? { description: m.description } : {}),
       ...(m.supportsFastMode ? { supportsFastMode: true } : {}),
       ...(m.serviceTiers?.length ? { serviceTiers: m.serviceTiers } : {}),
+      ...(m.supportedEffortLevels?.length ? { supportedEffortLevels: m.supportedEffortLevels } : {}),
+      ...(m.supportedReasoningEfforts?.length ? {
+        supportedReasoningEfforts: m.supportedReasoningEfforts.map((effort) => ({ value: effort.value })),
+      } : {}),
     }))
     const cfg =
       profileConfig && typeof profileConfig === 'object' && !Array.isArray(profileConfig)

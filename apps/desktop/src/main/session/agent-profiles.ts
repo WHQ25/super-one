@@ -378,6 +378,13 @@ export function sessionAgentProfile(provider: ReturnType<typeof listSessionProvi
     ...(model.description ? { description: model.description } : {}),
     ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
     ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
+    ...(model.supportedEffortLevels?.length ? { supportedEffortLevels: model.supportedEffortLevels } : {}),
+    ...(model.supportedReasoningEfforts?.length ? {
+      supportedReasoningEfforts: model.supportedReasoningEfforts.map((effort) => ({
+        value: effort.value,
+        ...(effort.description ? { description: effort.description } : {}),
+      })),
+    } : {}),
   }))
   const name = profileDisplayName(provider, acpAgentId)
   const brandKey = resolveHarnessBrandKey(provider.harnessId, acpAgentId)

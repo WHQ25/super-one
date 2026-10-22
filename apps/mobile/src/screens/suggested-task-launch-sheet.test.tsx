@@ -1,12 +1,17 @@
-import { expect, it, jest } from '@jest/globals'
+import { beforeAll, expect, it, jest } from '@jest/globals'
 import { act, fireEvent, waitFor } from '@testing-library/react-native'
+import { View } from 'react-native'
 import { renderWithTheme } from '../test-render'
 import { SuggestedTaskLaunchSheet } from './suggested-task-launch-sheet'
 import { suggestedTaskOptions as options } from './suggested-task-launch-fixtures'
 import type { SuggestedTaskLaunchRequest } from '../suggested-task-actions'
-import { permissionModeLabel } from '../ui/permission-mode-selector'
 
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }))
+
+beforeAll(() => {
+  const proto = View.prototype as unknown as { measureInWindow: jest.Mock<(cb: (x: number, y: number, w: number, h: number) => void) => void> }
+  proto.measureInWindow.mockImplementation((callback) => callback(20, 300, 80, 32))
+})
 
 function request(): SuggestedTaskLaunchRequest {
   return { loadOptions: jest.fn(async () => options), launch: jest.fn(async () => ({ sessionId: 'child' })) }
@@ -20,12 +25,14 @@ it('lets the user choose agent, model and permissions before launching', async (
   await act(async () => { fireEvent.press(view.getByTestId('prompt-select-Agent')) })
   await act(async () => { fireEvent.press(view.getByRole('radio', { name: 'Codex' })) })
   expect(view.getByText('GPT Basic')).toBeTruthy()
-  await act(async () => { fireEvent.press(view.getByTestId('prompt-select-Model')) })
+  await act(async () => { fireEvent.press(view.getByLabelText(/Model: GPT Basic/)) })
+  await act(async () => { fireEvent.press(view.getByRole('button', { name: 'GPT Basic' })) })
   await act(async () => { fireEvent.press(view.getByRole('radio', { name: 'GPT Other' })) })
-  await act(async () => { fireEvent.press(view.getByTestId('prompt-select-Permission mode')) })
-  await act(async () => { fireEvent.press(view.getByRole('radio', { name: permissionModeLabel('bypassPermissions', 'codex') })) })
+  await act(async () => { fireEvent.press(view.getByRole('button', { name: 'Close Models' })) })
+  await act(async () => { fireEvent.press(view.getByLabelText(/^Permission Mode:/)) })
+  await act(async () => { fireEvent.press(view.getByText('Full Access')) })
   await act(async () => { fireEvent.press(view.getByRole('button', { name: 'Launch' })) })
-  expect(target.launch).toHaveBeenCalledWith({ agentId: 'codex-base', settings: { model: 'gpt-other', fastMode: false, permissionMode: 'bypassPermissions' } })
+  expect(target.launch).toHaveBeenCalledWith({ agentId: 'codex-base', settings: { model: 'gpt-other', effort: 'medium', permissionMode: 'bypassPermissions' } })
   expect(onDismiss).toHaveBeenCalledTimes(1)
 })
 
@@ -85,11 +92,15 @@ it('prevents duplicate launches and keeps the config surface until launch comple
 })
 
 
-it('offers Claude Fast Mode for the official API and passes it in the launch choice', async () => {
+it('keeps per-model effort beside an official API provider and sends Fast from the model menu', async () => {
   const target = request()
   const view = await renderWithTheme(<SuggestedTaskLaunchSheet request={target} onDismiss={() => {}} />)
   await waitFor(() => expect(view.getByText('Opus')).toBeTruthy())
-  await act(async () => { fireEvent(view.getByLabelText('Fast Mode'), 'valueChange', true) })
+  await act(async () => { fireEvent.press(view.getByLabelText(/Model: Opus/)) })
+  const effort = view.getByRole('adjustable', { name: 'Effort' })
+  await act(async () => { fireEvent(effort, 'accessibilityAction', { nativeEvent: { actionName: 'decrement' } }) })
+  await act(async () => { fireEvent(view.getByLabelText('Fast mode'), 'valueChange', true) })
+  await act(async () => { fireEvent.press(view.getByRole('button', { name: 'Close Models' })) })
   await act(async () => { fireEvent.press(view.getByRole('button', { name: 'Launch' })) })
-  expect(target.launch).toHaveBeenCalledWith({ ...options.initial, settings: { ...options.initial.settings, claudeFastMode: true } })
+  expect(target.launch).toHaveBeenCalledWith({ ...options.initial, settings: { ...options.initial.settings, effort: 'low', claudeFastMode: true } })
 })

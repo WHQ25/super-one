@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useState, type ComponentType } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { GitBranch, GitCommit, Check } from 'lucide-react'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import type { GitDirtyStatus } from '@superone/shared/agent-types'
@@ -41,5 +41,33 @@ export function WorktreeEntryRow({ label, detached, dirty, isCurrent, onClick }:
       </div>
       {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
     </button>
+  )
+}
+
+/** Read-only header for a started session's checkout: branch or commit, then its status. */
+export function WorktreeStatusHeader({
+  icon: Icon,
+  label,
+  dirty,
+}: {
+  icon: ComponentType<{ className?: string }>
+  label: string
+  dirty: GitDirtyStatus | undefined
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 text-xs">
+      <Icon className="size-3 shrink-0 text-muted-foreground" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{label}</span>
+        {dirty && (
+          <span className="text-xs text-muted-foreground">
+            {dirty.files > 0
+              ? <Trans i18nKey="chat.worktree.uncommittedStat" components={{ stat: <DiffStat stat={dirty} /> }} />
+              : t('chat.worktree.cleanLabel')}
+          </span>
+        )}
+      </div>
+    </div>
   )
 }

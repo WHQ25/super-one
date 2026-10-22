@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { useTranslation, Trans } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { GitBranch, ChevronDown, Check, Monitor, Server, GitCommit, Circle } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useSessionScope } from '@/stores/chat'
@@ -17,7 +17,7 @@ import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './wo
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
-import { WorktreeEntryRow } from './WorktreeEntryRow'
+import { WorktreeEntryRow, WorktreeStatusHeader } from './WorktreeEntryRow'
 import { readBranchLists } from './git-branch-lists'
 import { DiffStat, sameDirty } from './DiffStat'
 
@@ -366,33 +366,15 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
-          <div className="flex items-center gap-2 px-3 py-2 text-xs">
-            {!isActive ? (
-              <MainCheckoutIcon className="size-3 shrink-0 text-muted-foreground" />
-            ) : activeIsDetached ? (
-              <GitCommit className="size-3 shrink-0 text-muted-foreground" />
-            ) : (
-              <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-            )}
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate">
-                {!isActive
-                  ? mainCheckoutLabel
-                  : activeIsDetached
-                    ? activeShortHead
-                    : (activeEntry?.branch ?? activeGitBranch ?? '')}
-              </span>
-              {activeDirty && (
-                <span className="text-xs text-muted-foreground">
-                  {activeDirty.files > 0 ? (
-                    <Trans i18nKey="chat.worktree.uncommittedStat" components={{ stat: <DiffStat stat={activeDirty} /> }} />
-                  ) : (
-                    t('chat.worktree.cleanLabel')
-                  )}
-                </span>
-              )}
-            </div>
-          </div>
+          <WorktreeStatusHeader
+            icon={!isActive ? MainCheckoutIcon : activeIsDetached ? GitCommit : GitBranch}
+            label={!isActive
+              ? mainCheckoutLabel
+              : activeIsDetached
+                ? activeShortHead
+                : (activeEntry?.branch ?? activeGitBranch ?? '')}
+            dirty={activeDirty}
+          />
 
           {isActive && activePath && activeIsDetached && currentFolder && (
             <WorktreeAssignBranchSection

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, type ComponentType, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitFork, ChevronDown, Check, Circle, Plus } from 'lucide-react'
+import { GitBranch, GitCommit, GitFork, ChevronDown, Check, Circle, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import {
@@ -22,7 +22,7 @@ import { parseRemoteProjectKey, remoteActiveFileRoot } from '@/lib/remote-projec
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
-import { WorktreeEntryRow } from './WorktreeEntryRow'
+import { WorktreeEntryRow, WorktreeStatusHeader } from './WorktreeEntryRow'
 import { DiffStat, UncommittedDetail, sameDirty } from './DiffStat'
 import {
   patchFocusedCreate,
@@ -58,11 +58,6 @@ function sameWorktreePath(a: string | null | undefined, b: string | null | undef
   if (ra) return ra.path.replace(/\/$/, '') === b.replace(/\/$/, '')
   if (rb) return a.replace(/\/$/, '') === rb.path.replace(/\/$/, '')
   return a.replace(/\/$/, '') === b.replace(/\/$/, '')
-}
-
-function displayHostPath(path: string | null | undefined): string {
-  if (!path) return ''
-  return parseRemoteProjectKey(path)?.path ?? path
 }
 
 /** Status-bar chip: environment, then the branch or worktree label. */
@@ -843,15 +838,14 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
-          {environmentMenuNode}
           {startedWorktree ? (
             <>
-              <div className="flex items-center gap-2 px-3 py-2 text-xs">
-                <GitFork className="size-3 shrink-0 text-muted-foreground" />
-                <span>{t('sidebar.hover.worktree')}</span>
-              </div>
-              <div className="truncate px-3 pb-2 font-mono text-xs text-muted-foreground">{displayHostPath(activePath)}</div>
-              <p className="border-t px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: environmentName })}</p>
+              {/* Same as the worktree chip before the merge: the checkout and its status only. */}
+              <WorktreeStatusHeader
+                icon={activeIsDetached ? GitCommit : GitBranch}
+                label={activeIsDetached ? activeShortHead : (activeEntry?.branch ?? activeGitBranch ?? '')}
+                dirty={activeDirty}
+              />
               {isActive && activePath && activeIsDetached && currentFolder && (
                 <WorktreeAssignBranchSection
                   folderPath={currentFolder}
@@ -873,6 +867,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
             </>
           ) : (
             <>
+              {environmentMenuNode}
               {isOldSession && (
                 <p className="px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: environmentName })}</p>
               )}

@@ -3,22 +3,17 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { SessionHoverBody, SessionHoverCard } from './SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
+const HOUR = 60 * 60 * 1000
+
 function model(extra?: Partial<SessionHoverModel>): SessionHoverModel {
   return {
     title: 'Fix the sidebar scroll jump',
     environmentLabel: 'dev-server',
     kind: 'cli-node',
     connection: 'connected',
-    locationKind: 'worktree',
-    locationPath: '/srv/super-one/.worktrees/feat-remote-build',
-    branch: 'feat/remote-build',
-    provider: 'codex',
-    acpAgentId: null,
-    lastActiveAt: '2026-10-22T08:00:00.000Z',
-    parentTitle: null,
-    childCount: 0,
-    startedFrom: null,
-    tags: [],
+    worktreeName: 'feat-remote-build',
+    lastActiveAt: new Date(Date.now() - 3 * HOUR).toISOString(),
+    tags: ['sidebar'],
     ...extra,
   }
 }
@@ -34,17 +29,29 @@ type Story = StoryObj<typeof meta>
 
 function Frame({ children, width = 320 }: { children: ReactNode; width?: number }) {
   return (
-    <div className="bg-popover text-popover-foreground" style={{ width }}>
+    <div className="bg-popover p-3 text-popover-foreground" style={{ width }}>
       {children}
     </div>
   )
 }
 
-export const Connected: Story = {
+export const Worktree: Story = {
   args: { model: model(), children: null },
   render: () => (
     <Frame>
-      <SessionHoverBody model={model()} liveStatus="running" />
+      <SessionHoverBody model={model()} />
+    </Frame>
+  ),
+}
+
+export const Checkout: Story = {
+  name: 'Checkout, no tags, active under a minute ago',
+  args: { model: model(), children: null },
+  render: () => (
+    <Frame>
+      <SessionHoverBody
+        model={model({ kind: 'local', environmentLabel: 'This Mac', worktreeName: null, tags: [], lastActiveAt: new Date().toISOString() })}
+      />
     </Frame>
   ),
 }
@@ -53,28 +60,17 @@ export const Offline: Story = {
   args: { model: model({ connection: 'offline' }), children: null },
   render: () => (
     <Frame>
-      <SessionHoverBody model={model({ connection: 'offline', kind: 'remote-desktop', environmentLabel: 'MacBook-B' })} liveStatus="idle" />
+      <SessionHoverBody model={model({ connection: 'offline', kind: 'remote-desktop', environmentLabel: 'MacBook-B' })} />
     </Frame>
   ),
 }
 
-export const Empty: Story = {
-  name: 'Empty branch, tags and relations',
+export const UnknownActivity: Story = {
+  name: 'Missing activity time',
   args: { model: model(), children: null },
   render: () => (
     <Frame>
-      <SessionHoverBody
-        model={model({
-          branch: null,
-          locationKind: 'checkout',
-          locationPath: '/Users/me/notes',
-          provider: null,
-          parentTitle: null,
-          startedFrom: null,
-          tags: [],
-          lastActiveAt: '',
-        })}
-      />
+      <SessionHoverBody model={model({ lastActiveAt: '' })} />
     </Frame>
   ),
 }
@@ -86,15 +82,10 @@ export const LongContent: Story = {
       <SessionHoverBody
         model={model({
           title: 'Investigate the nightly CI failure that only reproduces on the remote desktop checkout',
-          locationPath: '/Users/very-long-name/Developer/Projects/super-one/.worktrees/super-one/tn9p6x-a68eb49-extra',
-          branch: 'feat/very-long-branch-name-that-should-wrap',
-          parentTitle: 'Parent session with a long title that should wrap inside the card',
-          childCount: 3,
-          startedFrom: 'This Mac',
+          worktreeName: 'tn9p6x-a68eb49-feat-very-long-branch-name-that-should-wrap',
           tags: ['mobile', 'sidebar', 'release', 'investigation'],
-          connection: 'needs-upgrade',
+          lastActiveAt: new Date(Date.now() - 40 * 24 * HOUR).toISOString(),
         })}
-        liveStatus="background"
       />
     </Frame>
   ),
@@ -114,7 +105,7 @@ export const Dark: Story = {
   globals: { theme: 'dark' },
   render: () => (
     <Frame>
-      <SessionHoverBody model={model({ tags: ['mobile'], startedFrom: 'This Mac' })} liveStatus="unseen" />
+      <SessionHoverBody model={model({ tags: ['mobile', 'sidebar'] })} />
     </Frame>
   ),
 }
@@ -124,7 +115,7 @@ export const PinnedOpen: Story = {
   args: { model: model(), children: null },
   render: () => (
     <div className="w-[240px] bg-sidebar p-2 text-sidebar-foreground">
-      <SessionHoverCard model={model()} liveStatus="streaming" open>
+      <SessionHoverCard model={model()} open>
         <span className="block truncate text-[13px]">Fix the sidebar scroll jump</span>
       </SessionHoverCard>
     </div>

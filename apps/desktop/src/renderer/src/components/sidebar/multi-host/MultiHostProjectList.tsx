@@ -51,18 +51,9 @@ function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
 }
 
 function presentationFor(checkout: HostCheckout, bucket: EnvironmentBucket) {
-  return (session: SessionHistoryEntry, sessions: SessionHistoryEntry[]) => {
-    const parent = session.parentSessionId
-      ? sessions.find((row) => row.sessionId === session.parentSessionId)
-      : undefined
+  return (session: SessionHistoryEntry) => {
     return {
-      hover: buildSessionHover({
-        session,
-        checkout,
-        bucket,
-        parentTitle: parent?.title ?? null,
-        childCount: sessions.filter((row) => row.parentSessionId === session.sessionId).length,
-      }),
+      hover: buildSessionHover({ session, checkout, bucket }),
       environmentOffline: bucket.connection === 'offline',
     }
   }

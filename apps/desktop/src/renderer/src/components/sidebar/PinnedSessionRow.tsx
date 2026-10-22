@@ -102,7 +102,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             {hover
               ? (
-                <SessionHoverCard model={hover} liveStatus={status} unseen={isUnseen} triggerClassName="min-w-0">
+                <SessionHoverCard model={hover} triggerClassName="min-w-0">
                   <SessionTitleAnimated projectPath={session.folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
                 </SessionHoverCard>
               )

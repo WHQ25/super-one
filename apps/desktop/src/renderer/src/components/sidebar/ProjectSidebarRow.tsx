@@ -169,7 +169,7 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   /** Dims the checkout and its sessions when that environment is offline. */
   offline?: boolean
   /** Hover card fields. The row never fetches them. */
-  sessionPresentation?: (session: SessionHistoryEntry, sessions: SessionHistoryEntry[]) => {
+  sessionPresentation?: (session: SessionHistoryEntry) => {
     hover?: SessionHoverModel | null
     environmentOffline?: boolean
   }
@@ -683,8 +683,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     onHideSession={onHideSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
-                    {...(sessionPresentation?.(parent, allSessions) ?? {})}
-                    environmentOffline={offline || sessionPresentation?.(parent, allSessions)?.environmentOffline}
+                    {...(sessionPresentation?.(parent) ?? {})}
+                    environmentOffline={offline || sessionPresentation?.(parent)?.environmentOffline}
                   />
                   {childrenToShow.map((child) => (
                     <SessionRow
@@ -698,8 +698,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       onHideSession={onHideSession}
                       onRenameSession={onRenameSession}
                       onDeleteSession={onDeleteSession}
-                      {...(sessionPresentation?.(child, allSessions) ?? {})}
-                      environmentOffline={offline || sessionPresentation?.(child, allSessions)?.environmentOffline}
+                      {...(sessionPresentation?.(child) ?? {})}
+                      environmentOffline={offline || sessionPresentation?.(child)?.environmentOffline}
                     />
                   ))}
                 </div>

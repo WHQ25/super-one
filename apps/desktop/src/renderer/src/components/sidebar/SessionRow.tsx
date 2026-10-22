@@ -239,7 +239,7 @@ export const SessionRow = memo(function SessionRow({
             </div>
             {hover
               ? (
-                <SessionHoverCard model={hover} liveStatus={status} unseen={isUnseen}>
+                <SessionHoverCard model={hover}>
                   {animateTitle
                     ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
                     : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />

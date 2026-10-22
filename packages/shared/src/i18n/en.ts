@@ -372,39 +372,10 @@ export type Messages = {
       environment: string
     }
     hover: {
-      environment: string
-      location: string
-      branch: string
-      harness: string
-      status: string
-      activity: string
-      parent: string
-      startedFrom: string
-      tags: string
-      checkout: string
       worktree: string
-      kindLocal: string
-      kindCliNode: string
-      kindRemoteDesktop: string
       offline: string
       needsUpgrade: string
       connecting: string
-      connected: string
-      noBranch: string
-      idle: string
-      running: string
-      background: string
-      unseen: string
-      unknownHarness: string
-      children: string
-      harnesses: {
-        claude: string
-        codex: string
-        opencode: string
-        deepseek: string
-        cursor: string
-        acp: string
-      }
     }
     environmentSection: {
       empty: string
@@ -4999,39 +4970,10 @@ export const en: Messages = {
       environment: 'By Environment',
     },
     hover: {
-      environment: 'Environment',
-      location: 'Location',
-      branch: 'Branch',
-      harness: 'Harness',
-      status: 'Status',
-      activity: 'Last Active',
-      parent: 'Parent',
-      startedFrom: 'Started From',
-      tags: 'Tags',
-      checkout: 'Checkout',
       worktree: 'Worktree',
-      kindLocal: 'This Machine',
-      kindCliNode: 'CLI Node',
-      kindRemoteDesktop: 'Remote Desktop',
       offline: 'Offline',
       needsUpgrade: 'Needs Upgrade',
       connecting: 'Connecting',
-      connected: 'Connected',
-      noBranch: 'No Branch',
-      idle: 'Idle',
-      running: 'Running',
-      background: 'Background',
-      unseen: 'Unseen',
-      unknownHarness: 'Agent',
-      children: '{{count}} subagents',
-      harnesses: {
-        claude: 'Claude Code',
-        codex: 'Codex',
-        opencode: 'OpenCode',
-        deepseek: 'DeepSeek',
-        cursor: 'Cursor',
-        acp: 'ACP',
-      },
     },
     environmentSection: {
       empty: 'No projects on this environment.',

@@ -36,32 +36,41 @@ describe('buildSessionHover', () => {
     const model = buildSessionHover({
       session: session({
         isWorktree: true,
-        worktreePath: '/srv/wt',
+        worktreePath: '/srv/super-one/.worktrees/feat-remote-build',
         gitBranch: 'feat/remote-build',
-        provider: 'codex',
         tags: ['mobile'],
-        parentSessionId: 'parent',
-        remoteController: { label: 'This Mac' },
       }),
       checkout: checkout(),
       bucket: { label: 'dev-server', kind: 'cli-node', connection: 'offline' },
-      parentTitle: 'Parent session',
-      childCount: 2,
     })
     expect(fetchSpy).not.toHaveBeenCalled()
-    expect(model).toMatchObject({
+    expect(model).toEqual({
+      title: 'Fix the sidebar',
       environmentLabel: 'dev-server',
       kind: 'cli-node',
       connection: 'offline',
-      locationKind: 'worktree',
-      locationPath: '/srv/wt',
-      branch: 'feat/remote-build',
-      provider: 'codex',
-      parentTitle: 'Parent session',
-      childCount: 2,
-      startedFrom: 'This Mac',
+      worktreeName: 'feat-remote-build',
+      lastActiveAt: '2026-10-22T00:00:00.000Z',
       tags: ['mobile'],
     })
     fetchSpy.mockRestore()
+  })
+
+  it('leaves the worktree empty for a session in the checkout', () => {
+    const model = buildSessionHover({
+      session: session(),
+      checkout: checkout(),
+      bucket: { label: 'This Mac', kind: 'local', connection: 'connected' },
+    })
+    expect(model.worktreeName).toBeNull()
+  })
+
+  it('falls back to the branch when a worktree session has no path', () => {
+    const model = buildSessionHover({
+      session: session({ isWorktree: true, gitBranch: 'feat/x' }),
+      checkout: checkout(),
+      bucket: { label: 'This Mac', kind: 'local', connection: 'connected' },
+    })
+    expect(model.worktreeName).toBe('feat/x')
   })
 })

@@ -10,7 +10,8 @@ in sync when adding or removing keys.
   case (`Generating image…`). Preserve the tool-row streaming/action/done forms
   when editing those labels; punctuation alone does not determine casing.
 - Preserve product/acronym spelling: `macOS`, `SuperOne`, `MCP`, `API`, `Codex`.
-- Write natural Chinese; Title Case does not apply to Chinese text.
+- Write natural Chinese; Title Case does not apply to Chinese text. Translate
+  git terms: worktree is 工作树, detached is 分离.
 
 These casing rules also apply to UI field labels exposed by the settings registry.
 They do not turn full agent-facing tool descriptions into Title Case.

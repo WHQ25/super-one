@@ -23,7 +23,7 @@ import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
 import { WorktreeEntryRow } from './WorktreeEntryRow'
-import { DiffStat, sameDirty } from './DiffStat'
+import { DiffStat, UncommittedDetail, sameDirty } from './DiffStat'
 import {
   patchFocusedCreate,
   switchComposerToCheckout,
@@ -113,8 +113,6 @@ interface FailedCheckout {
   error: string
 }
 
-const fmt = (n: number) => n.toLocaleString()
-
 /**
  * GIT_INFO omits `dirty` for a clean checkout, but this popover distinguishes
  * "known clean" (renders `clean` / the grey dot) from "unknown" (blank line):
@@ -125,17 +123,7 @@ const knownDirty = (info: GitInfoResult | null | undefined): GitDirtyStatus | un
 
 function branchDirtyDetail(dirty: GitDirtyStatus | undefined): ReactNode {
   if (!dirty || dirty.files <= 0) return null
-  return (
-    <span className="text-xs text-muted-foreground">
-      uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
-      {(dirty.insertions > 0 || dirty.deletions > 0) && (
-        <>
-          {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
-          {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
-        </>
-      )}
-    </span>
-  )
+  return <UncommittedDetail stat={dirty} />
 }
 
 function CheckoutPanel({

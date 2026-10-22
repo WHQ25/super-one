@@ -2203,6 +2203,13 @@ export type Messages = {
       fromLabel: string
       filesCount_one: string
       filesCount_other: string
+      uncommittedStat: string
+      cleanLabel: string
+      titleActiveBranch: string
+      titleActiveDetached: string
+      titleCreateFrom: string
+      titleAttachTo: string
+      titleCreateBranch: string
       carryLocalChanges: string
       noMatches: string
       createFromLabel: string
@@ -6894,6 +6901,13 @@ export const en: Messages = {
       fromLabel: 'from {{branch}}',
       filesCount_one: '{{count}} file',
       filesCount_other: '{{count}} files',
+      uncommittedStat: 'uncommitted: <stat></stat>',
+      cleanLabel: 'clean',
+      titleActiveBranch: 'Worktree {{name}}',
+      titleActiveDetached: 'Worktree {{hash}}',
+      titleCreateFrom: 'Create worktree from {{base}}',
+      titleAttachTo: 'Attach worktree to {{base}}',
+      titleCreateBranch: 'Create worktree branch {{name}}',
       carryLocalChanges: 'Carry local changes',
       noMatches: 'No matches',
       createFromLabel: 'Create worktree from:',

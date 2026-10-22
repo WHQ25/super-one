@@ -385,9 +385,9 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
               {activeDirty && (
                 <span className="text-xs text-muted-foreground">
                   {activeDirty.files > 0 ? (
-                    <>uncommitted: <DiffStat stat={activeDirty} /></>
+                    <Trans i18nKey="chat.worktree.uncommittedStat" components={{ stat: <DiffStat stat={activeDirty} /> }} />
                   ) : (
-                    'clean'
+                    t('chat.worktree.cleanLabel')
                   )}
                 </span>
               )}

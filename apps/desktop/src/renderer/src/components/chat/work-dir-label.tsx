@@ -28,13 +28,13 @@ export function workDirIcon(state: WorkDirState): ComponentType<{ className?: st
   return GitBranch
 }
 
-export function workDirTitle(state: WorkDirState, t: (key: string) => string): string {
+export function workDirTitle(state: WorkDirState, t: (key: string, options?: Record<string, unknown>) => string): string {
   switch (state.kind) {
-    case 'activeDetached': return `Worktree ${state.hash}`
-    case 'activeBranch': return `Worktree ${state.name}`
-    case 'createFrom': return `Create worktree from ${state.base}`
-    case 'attachTo': return `Attach worktree to ${state.base}`
-    case 'createBranch': return `Create worktree branch ${state.name || '…'}`
+    case 'activeDetached': return t('chat.worktree.titleActiveDetached', { hash: state.hash })
+    case 'activeBranch': return t('chat.worktree.titleActiveBranch', { name: state.name })
+    case 'createFrom': return t('chat.worktree.titleCreateFrom', { base: state.base })
+    case 'attachTo': return t('chat.worktree.titleAttachTo', { base: state.base })
+    case 'createBranch': return t('chat.worktree.titleCreateBranch', { name: state.name || '…' })
     case 'local': return t('tooltips.local')
   }
 }

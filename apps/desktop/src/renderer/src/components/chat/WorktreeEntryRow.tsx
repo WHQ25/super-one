@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { GitBranch, GitCommit, Check } from 'lucide-react'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import type { GitDirtyStatus } from '@superone/shared/agent-types'
@@ -19,6 +20,7 @@ interface WorktreeEntryRowProps {
  * the status line reads `clean` instead of disappearing.
  */
 export function WorktreeEntryRow({ label, detached, dirty, isCurrent, onClick }: WorktreeEntryRowProps) {
+  const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
   return (
     <button
@@ -34,7 +36,7 @@ export function WorktreeEntryRow({ label, detached, dirty, isCurrent, onClick }:
           {label}
         </MarqueeText>
         <span className="text-xs text-muted-foreground">
-          {!dirty ? ' ' : dirty.files > 0 ? <span className="text-amber-500"><DiffStat stat={dirty} /></span> : 'clean'}
+          {!dirty ? ' ' : dirty.files > 0 ? <span className="text-amber-500"><DiffStat stat={dirty} /></span> : t('chat.worktree.cleanLabel')}
         </span>
       </div>
       {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}

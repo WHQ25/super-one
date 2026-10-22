@@ -28,13 +28,12 @@ import { Button } from '@superone/ui/components/ui/button'
 import { useChatStore } from '@/stores/chat'
 import type { GitInfo } from '@superone/shared/agent-types'
 import { readBranchLists } from './git-branch-lists'
+import { UncommittedDetail } from './DiffStat'
 
 interface FailedCheckout {
   branch: string
   error: string
 }
-
-const fmt = (n: number) => n.toLocaleString()
 
 export function ClassicBranchChip({
   currentFolder,
@@ -159,17 +158,7 @@ export function ClassicBranchChip({
                         <GitBranch className="size-3 shrink-0 text-muted-foreground" />
                         <div className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate">{gitInfo.branch}</span>
-                          {dirty && (
-                            <span className="text-xs text-muted-foreground">
-                              uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
-                              {(dirty.insertions > 0 || dirty.deletions > 0) && (
-                                <>
-                                  {dirty.insertions > 0 && <span className="ml-1 text-green-500">+{fmt(dirty.insertions)}</span>}
-                                  {dirty.deletions > 0 && <span className="ml-1 text-red-500">-{fmt(dirty.deletions)}</span>}
-                                </>
-                              )}
-                            </span>
-                          )}
+                          {dirty && <UncommittedDetail stat={dirty} />}
                         </div>
                         <Check className="size-3 shrink-0 text-primary" />
                       </CommandItem>

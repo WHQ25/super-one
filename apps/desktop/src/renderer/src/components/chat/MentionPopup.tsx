@@ -295,7 +295,7 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
   function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true, mcpRoute = null }, ref) {
-    const { t } = useTranslation()
+    const { t, i18n } = useTranslation()
     const agentProfilesEnabled = useAppStore((s) => s.experimentalAgentProfilesEnabled)
     const activeProject = useChatStore((s) => s.activeProject)
     const recentFolders = useAppStore((s) => s.recentFolders)
@@ -1185,7 +1185,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         )
       }
       if (item.kind === 'session') {
-        const age = formatCompactAge(item.lastActiveAt)
+        const age = formatCompactAge(item.lastActiveAt, { locale: i18n.language })
         return (
           <button
             key={`sess-${item.sessionId}`}

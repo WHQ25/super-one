@@ -289,7 +289,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "diff": "^9.0.0",
-    "electron": "44.1.1",
+    "electron": "44.3.0",
     "electron-builder": "^26.7.0",
     "electron-vite": "^5.0.0",
     "jsdom": "^30.0.1",

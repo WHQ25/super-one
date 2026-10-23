@@ -7,19 +7,13 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { environmentSections, groupCheckoutsByRepo, sortProjectGroups } from '@/lib/multi-host/group-projects'
-import { buildSessionHover } from '@/lib/multi-host/session-hover'
+import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
-
-const presentationCache = new WeakMap<SessionHistoryEntry, {
-  checkout: HostCheckout
-  bucket: EnvironmentBucket
-  value: { hover: ReturnType<typeof buildSessionHover>; environmentOffline: boolean }
-}>()
 
 interface MultiHostProjectListProps {
   environments: EnvironmentBucket[]
@@ -54,19 +48,6 @@ function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
   const local = checkouts.find((checkout) => checkout.connectionId === 'local')
   if (local) return local
   return checkouts.reduce((best, checkout) => (checkout.lastOpened > best.lastOpened ? checkout : best))
-}
-
-function presentationFor(checkout: HostCheckout, bucket: EnvironmentBucket) {
-  return (session: SessionHistoryEntry) => {
-    const hit = presentationCache.get(session)
-    if (hit && hit.checkout === checkout && hit.bucket === bucket) return hit.value
-    const value = {
-      hover: buildSessionHover({ session, checkout, bucket }),
-      environmentOffline: bucket.connection === 'offline',
-    }
-    presentationCache.set(session, { checkout, bucket, value })
-    return value
-  }
 }
 
 function ProjectLoadError({
@@ -125,7 +106,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         onDeleteSession={props.onDeleteSession}
         onNewSession={props.onNewSession}
         offline={bucket.connection === 'offline'}
-        sessionPresentation={presentationFor(checkout, bucket)}
+        sessionPresentation={presenterFor(bucket)}
       />
     )
   }

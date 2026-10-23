@@ -70,17 +70,75 @@ export function shareProjectLoad(
 }
 
 /**
- * Write one bucket into the catalog. A loading write keeps the previous
- * checkouts so a reload does not blank the sidebar until the RPC returns.
+ * Write one bucket into the catalog. A reload of a settled environment is not
+ * written: its rows stay as they are until the new list lands. A loading write
+ * over any other state keeps that state's checkouts.
  */
 export function applyCatalogBucket(previous: EnvironmentBucket[], bucket: EnvironmentBucket): EnvironmentBucket[] {
   const index = previous.findIndex((item) => item.environmentId === bucket.environmentId)
   const prior = index >= 0 ? previous[index] : undefined
+  if (bucket.projectsStatus === 'loading' && prior?.projectsStatus === 'ready') return previous
   const nextBucket = bucket.projectsStatus === 'loading' && prior
     ? { ...bucket, checkouts: prior.checkouts }
     : bucket
   if (index < 0) return [...previous, nextBucket]
   return previous.map((item, i) => (i === index ? nextBucket : item))
+}
+
+function sameDirs(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b || a.length !== b.length) return false
+  return a.every((dir, index) => dir === b[index])
+}
+
+function sameCheckout(a: HostCheckout, b: HostCheckout): boolean {
+  return a.environmentId === b.environmentId
+    && a.connectionId === b.connectionId
+    && a.projectId === b.projectId
+    && a.name === b.name
+    && a.pathKey === b.pathKey
+    && a.hostPath === b.hostPath
+    && a.repoIdentity === b.repoIdentity
+    && a.addedAt === b.addedAt
+    && a.lastOpened === b.lastOpened
+    && a.missing === b.missing
+    && sameDirs(a.extraDirs, b.extraDirs)
+}
+
+function shareBucket(prior: EnvironmentBucket | undefined, next: EnvironmentBucket): EnvironmentBucket {
+  if (!prior || prior === next) return next
+  const byPath = new Map(prior.checkouts.map((checkout) => [checkout.pathKey, checkout]))
+  let moved = prior.checkouts.length !== next.checkouts.length
+  const checkouts = next.checkouts.map((checkout, index) => {
+    const old = byPath.get(checkout.pathKey)
+    const kept = old && sameCheckout(old, checkout) ? old : checkout
+    if (kept !== prior.checkouts[index]) moved = true
+    return kept
+  })
+  const sharedCheckouts = moved ? checkouts : prior.checkouts
+  const sameFields = prior.environmentId === next.environmentId
+    && prior.connectionId === next.connectionId
+    && prior.label === next.label
+    && prior.kind === next.kind
+    && prior.connection === next.connection
+    && prior.path === next.path
+    && prior.projectsStatus === next.projectsStatus
+    && prior.projectsError === next.projectsError
+  if (sameFields && sharedCheckouts === prior.checkouts) return prior
+  return { ...next, checkouts: sharedCheckouts }
+}
+
+/**
+ * Keep every bucket and checkout that did not change, and the array itself when
+ * nothing did. Rows compare props by reference, and a reload that lists the same
+ * projects must not render the whole sidebar again.
+ */
+export function shareCatalog(previous: EnvironmentBucket[], next: EnvironmentBucket[]): EnvironmentBucket[] {
+  if (previous === next) return previous
+  const byId = new Map(previous.map((bucket) => [bucket.environmentId, bucket]))
+  const shared = next.map((bucket) => shareBucket(byId.get(bucket.environmentId), bucket))
+  const unchanged = shared.length === previous.length && shared.every((bucket, index) => bucket === previous[index])
+  return unchanged ? previous : shared
 }
 
 function timeOf(iso: string | undefined): number {

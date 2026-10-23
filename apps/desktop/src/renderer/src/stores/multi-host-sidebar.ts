@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { shareCatalog } from '@/lib/multi-host/catalog'
 import { browserSidebarStorage, readSidebarSettings, writeSidebarSettings } from '@/lib/multi-host/sidebar-settings'
 import type { EnvironmentBucket, SidebarGroupBy, SidebarSettings, SidebarSort } from '@/lib/multi-host/types'
 
@@ -37,7 +38,10 @@ export const useMultiHostSidebarStore = create<MultiHostSidebarState>((set) => (
       : [...current, environmentId]
     return { settings: { ...state.settings, collapsedEnvironmentIds } }
   }),
-  replaceEnvironments: (environments) => set({ environments }),
+  replaceEnvironments: (environments) => set((state) => {
+    const next = shareCatalog(state.environments, environments)
+    return next === state.environments ? state : { environments: next }
+  }),
 }))
 
 useMultiHostSidebarStore.subscribe((state, previous) => {

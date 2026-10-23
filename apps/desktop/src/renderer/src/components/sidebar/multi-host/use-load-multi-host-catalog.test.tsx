@@ -54,13 +54,11 @@ describe('useLoadMultiHostCatalog', () => {
     useMultiHostSidebarStore.setState({ environments: [ready] })
   })
 
-  it('keeps the current checkouts while a reload is in flight', async () => {
+  it('leaves a settled catalog untouched while a reload is in flight', async () => {
+    const before = useMultiHostSidebarStore.getState().environments
     renderHook(() => useLoadMultiHostCatalog(true))
-    await waitFor(() => {
-      const bucket = useMultiHostSidebarStore.getState().environments[0]
-      expect(bucket?.projectsStatus).toBe('loading')
-      expect(bucket?.checkouts).toEqual([kept])
-    })
+    await waitFor(() => expect(window.environment.listProjects).toHaveBeenCalled())
+    expect(useMultiHostSidebarStore.getState().environments).toBe(before)
     release([{ projectId: 'new', path: '/src/new', name: 'new' }])
     await waitFor(() => {
       const bucket = useMultiHostSidebarStore.getState().environments[0]

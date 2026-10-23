@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentListItem, ProjectSnapshot } from '@superone/shared/environment'
-import { applyCatalogBucket, createCatalogGeneration, loadEnvironmentCatalog, shareProjectLoad } from './catalog'
+import { applyCatalogBucket, createCatalogGeneration, loadEnvironmentCatalog, shareCatalog, shareProjectLoad } from './catalog'
 import type { EnvironmentBucket } from './types'
 import { connectionOf, environmentKindOf, multiHostChromeVisible } from './environment-kind'
 import { checkoutMergeKey, groupCheckoutsByRepo, sortProjectGroups } from './group-projects'
@@ -28,6 +28,7 @@ function checkout(partial: Partial<HostCheckout> & Pick<HostCheckout, 'projectId
     repoIdentity: partial.repoIdentity ?? null,
     addedAt: partial.addedAt ?? 0,
     lastOpened: partial.lastOpened ?? 0,
+    ...(partial.extraDirs ? { extraDirs: partial.extraDirs } : {}),
   }
 }
 
@@ -371,9 +372,8 @@ describe('loadEnvironmentCatalog', () => {
 })
 
 describe('catalog bucket writes', () => {
-  it('keeps the previous checkouts while a reload is loading', () => {
-    const kept = checkout({ environmentId: 'local', projectId: 'old', name: 'app' })
-    const previous: EnvironmentBucket[] = [{
+  function localBucket(checkouts: HostCheckout[], extra?: Partial<EnvironmentBucket>): EnvironmentBucket {
+    return {
       environmentId: 'local',
       connectionId: 'local',
       label: 'This Mac',
@@ -381,13 +381,52 @@ describe('catalog bucket writes', () => {
       connection: 'connected',
       projectsStatus: 'ready',
       projectsError: null,
-      checkouts: [kept],
-    }]
-    const loading = applyCatalogBucket(previous, { ...previous[0]!, projectsStatus: 'loading', checkouts: [] })
+      checkouts,
+      ...extra,
+    }
+  }
+
+  it('does not write a reload of a settled environment until it lands', () => {
+    const kept = checkout({ environmentId: 'local', projectId: 'old', name: 'app' })
+    const previous = [localBucket([kept])]
+    const loading = applyCatalogBucket(previous, localBucket([], { projectsStatus: 'loading' }))
+    expect(loading).toBe(previous)
+    const ready = applyCatalogBucket(loading, localBucket([]))
+    expect(ready[0]?.checkouts).toEqual([])
+  })
+
+  it('keeps the checkouts of an unsettled environment while it loads', () => {
+    const kept = checkout({ environmentId: 'local', projectId: 'old', name: 'app' })
+    const previous = [localBucket([kept], { projectsStatus: 'idle' })]
+    const loading = applyCatalogBucket(previous, localBucket([], { projectsStatus: 'loading' }))
     expect(loading[0]?.projectsStatus).toBe('loading')
     expect(loading[0]?.checkouts).toEqual([kept])
-    const ready = applyCatalogBucket(loading, { ...previous[0]!, projectsStatus: 'ready', checkouts: [] })
-    expect(ready[0]?.checkouts).toEqual([])
+  })
+
+  it('returns the same catalog when a reload lists the same projects', () => {
+    const previous = [localBucket([
+      checkout({ environmentId: 'local', projectId: 'a', name: 'a' }),
+      checkout({ environmentId: 'local', projectId: 'b', name: 'b', extraDirs: ['/x'] }),
+    ])]
+    const reloaded = [localBucket([
+      checkout({ environmentId: 'local', projectId: 'a', name: 'a' }),
+      checkout({ environmentId: 'local', projectId: 'b', name: 'b', extraDirs: ['/x'] }),
+    ])]
+    expect(shareCatalog(previous, reloaded)).toBe(previous)
+  })
+
+  it('replaces only the checkout that changed', () => {
+    const a = checkout({ environmentId: 'local', projectId: 'a', name: 'a' })
+    const b = checkout({ environmentId: 'local', projectId: 'b', name: 'b' })
+    const previous = [localBucket([a, b])]
+    const opened = checkout({ environmentId: 'local', projectId: 'b', name: 'b', lastOpened: 5 })
+    const next = shareCatalog(previous, [localBucket([
+      checkout({ environmentId: 'local', projectId: 'a', name: 'a' }),
+      opened,
+    ])])
+    expect(next).not.toBe(previous)
+    expect(next[0]?.checkouts[0]).toBe(a)
+    expect(next[0]?.checkouts[1]).toBe(opened)
   })
 
   it('shares one listProjects call until it settles', async () => {

@@ -46,6 +46,10 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
 
   useEffect(() => { folderSessionsRef.current = folderSessions }, [folderSessions])
   useEffect(() => { folderSessionsHaveMoreRef.current = folderSessionsHaveMore }, [folderSessionsHaveMore])
+  // Read at request time. A catalog write that only moved `lastOpened` must not
+  // rebuild `load` and every row callback derived from it.
+  const hostProjectsRef = useRef(hostProjects)
+  useEffect(() => { hostProjectsRef.current = hostProjects }, [hostProjects])
 
   const load = useCallback((folderPath: string, reason: LoadReason, rootTarget: number, initial: SessionHistoryEntry[] = []) => {
     // A text row would change the list height. Only an expand, or a fetch that
@@ -78,7 +82,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
         traceSidebar('sessions_load:start', { folderPath, reason, pageSize: PAGE_SIZE }, folderPath)
         try {
           const { listSessionsPage } = await import('@/lib/session-list-ops')
-          const projectId = hostProjects.find((project) => project.path === folderPath)?.id ?? null
+          const projectId = hostProjectsRef.current.find((project) => project.path === folderPath)?.id ?? null
           while (visibleRootCount(sessions) < rootTarget && hasMore) {
             const offset = sessions.length
             const page = await listSessionsPage(folderPath, { limit: PAGE_SIZE, offset, projectId })
@@ -132,7 +136,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     })
     inFlight.current.set(folderPath, request)
     return request.promise
-  }, [hostProjects])
+  }, [])
 
   const loadFolderSessions = useCallback((folderPath: string, reason: Exclude<LoadReason, 'show_more'>) =>
     load(folderPath, reason, INITIAL_ROOT_TARGET), [load])

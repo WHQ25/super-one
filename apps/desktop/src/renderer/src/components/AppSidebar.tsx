@@ -44,7 +44,7 @@ import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import type { EnvironmentConnection, SidebarSort } from '@/lib/multi-host/types'
 import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
-import { buildSessionHover } from '@/lib/multi-host/session-hover'
+import { sessionPresentation } from '@/lib/multi-host/session-hover'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
 import { SidebarGroupMenu } from '@/components/sidebar/multi-host/SidebarGroupMenu'
 import { MultiHostProjectList } from '@/components/sidebar/multi-host/MultiHostProjectList'
@@ -175,6 +175,10 @@ export const AppSidebar = memo(function AppSidebar() {
     [environments],
   )
   const sessionProjects = multiHostChrome && catalogFolders.length > 0 ? catalogFolders : hostProjects
+  // Row callbacks read the list at click time. `recentFolders` is a new array after
+  // every local open, and a callback that depends on it renders every row again.
+  const sessionProjectsRef = useRef(sessionProjects)
+  useEffect(() => { sessionProjectsRef.current = sessionProjects }, [sessionProjects])
   const pinnedConnectionIds = multiHostChrome
     ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
     : undefined
@@ -329,9 +333,11 @@ export const AppSidebar = memo(function AppSidebar() {
     }
     const remote = parseRemoteProjectKey(folderPath)
     const project = remote
-      ? hostProjects.find((p) => p.path === folderPath)
+      ? sessionProjectsRef.current.find((p) => p.path === folderPath)
       : undefined
-    setOpeningSession({ folderPath, sessionId })
+    // A local resume is on this machine. The glyph spinner only covers a remote
+    // hydrate, which sits beside the title long enough to read as loading.
+    if (remote) setOpeningSession({ folderPath, sessionId })
     try {
       await selectProject(folderPath, {
         connectionId: remote?.connectionId ?? 'local',
@@ -344,7 +350,7 @@ export const AppSidebar = memo(function AppSidebar() {
         current?.folderPath === folderPath && current.sessionId === sessionId ? null : current
       ))
     }
-  }, [selectProject, switchSession, currentFolder, loadFolderSessions, hostProjects])
+  }, [selectProject, switchSession, currentFolder, loadFolderSessions])
 
   const handleDeleteSession = useCallback(async () => {
     if (!deleteTarget) return
@@ -563,7 +569,7 @@ export const AppSidebar = memo(function AppSidebar() {
       // Same lifecycle as local: open project → mint renderer draft only.
       // The host creates the session on its first send (ensureHostSession) with the UI harness.
       void (async () => {
-        const project = sessionProjects.find((p) => p.path === folderPath)
+        const project = sessionProjectsRef.current.find((p) => p.path === folderPath)
         await selectProject(folderPath, {
           connectionId: remote.connectionId,
           projectId: project?.id,
@@ -576,7 +582,7 @@ export const AppSidebar = memo(function AppSidebar() {
       return
     }
     void selectProject(folderPath).then(createNewSession)
-  }, [selectProject, createNewSession, sessionProjects])
+  }, [selectProject, createNewSession])
 
   const refreshOneEnvironment = useCallback((connectionId: string) => {
     setRefreshingConnectionId(connectionId)
@@ -607,7 +613,7 @@ export const AppSidebar = memo(function AppSidebar() {
     if (!multiHostChrome) return null
     for (const bucket of environments) {
       const checkout = bucket.checkouts.find((item) => item.pathKey === session.folderPath)
-      if (checkout) return buildSessionHover({ session, checkout, bucket })
+      if (checkout) return sessionPresentation(session, bucket).hover
     }
     return null
   }

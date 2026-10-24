@@ -302,9 +302,9 @@
         "lucide-react": "^1.41.0",
         "motion": "^13.1.1",
         "radix-ui": "^1.4.3",
-        "react": "^19.2.4",
+        "react": "19.2.8",
         "react-doctor": "^0.9.13",
-        "react-dom": "^19.2.4",
+        "react-dom": "19.2.8",
         "react-router-dom": "^7.18.3",
         "react-scan": "^0.5.7",
         "rehype-stringify": "^10.0.1",
@@ -6565,8 +6565,6 @@
     "@superone/desktop/diff": ["diff@9.0.0", "", {}, "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="],
 
     "@superone/desktop/katex": ["katex@0.18.5", "", { "dependencies": { "commander": "^15.0.0" }, "bin": { "katex": "cli.js" } }, "sha512-1FU5H3RjGJVj6GT9fMjf2uMIXmPQp232aXS3UEeQzf0dxefHg/CKMvNB3DuOC46LFG/E5PNxrE8dOwB782FDGg=="],
-
-    "@superone/desktop/react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
 
     "@superone/desktop-mocks/diff": ["diff@9.0.0", "", {}, "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="],
 

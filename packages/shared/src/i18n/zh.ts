@@ -548,6 +548,7 @@ export const zh: Messages = {
       addFolderRemote: '输入主机上的路径…',
       emptyFolders: '暂无工作区文件夹',
       removeFolder: '移除文件夹',
+      primaryBadge: '主要',
       restartNotice: '移除文件夹后，正在运行的 Claude 会话会在下次发送消息时重启；Codex 等其他 harness 在下一轮生效。',
     },
     projectHover: {

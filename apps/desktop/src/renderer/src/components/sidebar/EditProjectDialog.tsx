@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Folder, FolderPlus, X } from 'lucide-react'
+import { Badge } from '@superone/ui/components/ui/badge'
 import { Button } from '@superone/ui/components/ui/button'
 import {
   Dialog,
@@ -43,8 +44,9 @@ export function EditProjectDialog({ target, onClose, onSaved }: EditProjectDialo
   }, [target])
 
   const addDir = useCallback((dir: string) => {
+    if (!dir || dir === hostPath) return
     setDirs((prev) => (prev.includes(dir) || prev.length >= MAX_PROJECT_EXTRA_DIRS ? prev : [...prev, dir]))
-  }, [])
+  }, [hostPath])
 
   const submit = useCallback(async () => {
     if (!target || saving) return
@@ -72,6 +74,7 @@ export function EditProjectDialog({ target, onClose, onSaved }: EditProjectDialo
 
   const removedAny = (target?.extraDirs ?? []).some((d) => !dirs.includes(d))
   const atLimit = dirs.length >= MAX_PROJECT_EXTRA_DIRS
+  const extraDirs = dirs.filter((dir) => dir !== hostPath)
 
   return (
     <Dialog open={!!target} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -109,13 +112,24 @@ export function EditProjectDialog({ target, onClose, onSaved }: EditProjectDialo
             </span>
           </div>
 
-          {dirs.length === 0 ? (
+          {!hostPath && extraDirs.length === 0 ? (
             <div className="rounded-md border border-dashed px-3 py-4 text-center text-xs italic text-muted-foreground/60">
               {t('sidebar.editProject.emptyFolders')}
             </div>
           ) : (
             <div className="max-h-48 space-y-0.5 overflow-y-auto">
-              {dirs.map((dir) => (
+              {hostPath && (
+                <div className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <Folder className="size-3.5 shrink-0 text-blue-500" />
+                    <span className="truncate text-foreground" title={hostPath}>{homePath(hostPath)}</span>
+                  </span>
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                    {t('sidebar.editProject.primaryBadge')}
+                  </Badge>
+                </div>
+              )}
+              {extraDirs.map((dir) => (
                 <div
                   key={dir}
                   className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50"

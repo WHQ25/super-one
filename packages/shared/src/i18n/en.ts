@@ -520,6 +520,7 @@ export type Messages = {
       addFolderRemote: string
       emptyFolders: string
       removeFolder: string
+      primaryBadge: string
       restartNotice: string
     }
     projectHover: {
@@ -5130,6 +5131,7 @@ export const en: Messages = {
       addFolderRemote: 'Type a path on the host…',
       emptyFolders: 'No workspace folders yet',
       removeFolder: 'Remove Folder',
+      primaryBadge: 'Primary',
       restartNotice:
         'Removing a folder restarts any running Claude session on the next message. Codex and other harnesses pick it up on their next turn.',
     },

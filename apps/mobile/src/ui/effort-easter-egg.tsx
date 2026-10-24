@@ -117,7 +117,7 @@ function MoltenFill({ box, fontSize, children }: { box: Box; fontSize: number; c
       <Svg width={width} height={box.height}>{glyphs(FIRE_EMBER)}</Svg>
     </View>
     {FIRE_SWEEP_CENTERS.map(([cx, cy], index) => <Animated.View key={index} pointerEvents="none" style={{
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       opacity: sweep.interpolate({
         inputRange: SWEEP_SAMPLES,
         outputRange: SWEEP_SAMPLES.map((point) => fireSweepOpacity(point + index / FIRE_SWEEP_CENTERS.length)),
@@ -149,7 +149,7 @@ export function FireText({ children, fontSize }: { children: string; fontSize: n
     return <View onLayout={onLayout}>
       <Text numberOfLines={1} style={{ ...layer, color: FIRE_GOLD }}>{children}</Text>
       {box ? GLOW_LAYERS.map((shadow, index) => <Animated.View key={index} pointerEvents="none" style={{
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         opacity: glow.interpolate({ inputRange: [0, 0.5, 1], outputRange: index === 0 ? [1, 0, 1] : [0, 1, 0] }),
       }}>
         <Text numberOfLines={1} style={{

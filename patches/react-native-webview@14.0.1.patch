@@ -1,0 +1,34 @@
+diff --git a/node_modules/react-native-webview/.bun-tag-506e32e399650946 b/.bun-tag-506e32e399650946
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
+index 38904266dc37b006274104f4680778ffbfece369..27d9982411884500e9e578732d3744ffe7b00d3b 100644
+--- a/apple/RNCWebViewImpl.m
++++ b/apple/RNCWebViewImpl.m
+@@ -1359,7 +1359,11 @@ - (void)                  webView:(WKWebView *)webView
+ 
+     WKNavigationType navigationType = navigationAction.navigationType;
+     NSURLRequest *request = navigationAction.request;
+-    BOOL isTopFrame = [request.URL isEqual:request.mainDocumentURL];
++    // A document loaded from an HTML string has the URL about:blank, and so does an empty
++    // iframe's first navigation; comparing URLs reported that iframe as a main-frame load.
++    BOOL isTopFrame = navigationAction.targetFrame
++      ? navigationAction.targetFrame.isMainFrame
++      : [request.URL isEqual:request.mainDocumentURL];
+     BOOL hasTargetFrame = navigationAction.targetFrame != nil;
+ 
+     if (_onOpenWindow && !hasTargetFrame) {
+diff --git a/index.d.ts b/index.d.ts
+index 10b9c145b920a6a2ba1fb09bd72150328fafe211..2b324f38d623b792585474f69ecc858ef317f6a9 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -5,7 +5,8 @@ export { FileDownload, WebViewMessageEvent, WebViewNavigation } from './lib/WebV
+ 
+ export type WebViewProps = IOSWebViewProps & AndroidWebViewProps & WindowsWebViewProps;
+ 
+-declare class WebView<P = undefined> extends Component<WebViewProps & P> {
++// `undefined` intersects `WebViewProps` into `never`, so JSX props fail to typecheck.
++declare class WebView<P = {}> extends Component<WebViewProps & P> {
+   /**
+    * Go back one page in the webview's history.
+    */

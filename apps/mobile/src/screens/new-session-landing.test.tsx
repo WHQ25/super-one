@@ -31,11 +31,13 @@ it.each(options)('passes the selected $label identity to the landing icon', asyn
     onWorktree={jest.fn()}
     onBranch={jest.fn()}
   />)
-  expect(HarnessIcon).toHaveBeenCalledWith(expect.objectContaining({
-    provider: option.provider,
-    acpAgentId: option.acpAgentId,
-    renderLevel: 'rich',
-  }), undefined)
+  expect(jest.mocked(HarnessIcon).mock.calls.map(([props]) => props)).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      provider: option.provider,
+      acpAgentId: option.acpAgentId,
+      renderLevel: 'rich',
+    }),
+  ]))
 })
 
 it('fills its parent so the harness mark can sit in the transcript, not against the composer', async () => {

@@ -31,7 +31,7 @@ it('asks for a favicon once the draft rests, then draws it instead of the globe'
 })
 
 it('keeps the globe for an SVG favicon and without a resolver', async () => {
-  const svg = jest.fn(async (): Promise<string | null> => 'data:image/svg+xml;base64,PHN2Zz4=')
+  const svg = jest.fn(async (_url: string, _monochrome: boolean): Promise<string | null> => 'data:image/svg+xml;base64,PHN2Zz4=')
   const hook = await renderHook(() => useLinkFavicons('https://svg.dev', 'dark', '#ffffff', svg))
   await act(async () => { jest.advanceTimersByTime(FAVICON_SETTLE_MS) })
   expect(svg).toHaveBeenCalledWith('https://svg.dev', true)

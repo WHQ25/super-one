@@ -60,7 +60,7 @@ function useUpdateStyles() {
       actions: { flexDirection: 'row', gap: spacing.sm },
       action: { flex: 1 },
       gate: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         backgroundColor: colors.background,
         alignItems: 'center',
         justifyContent: 'center',

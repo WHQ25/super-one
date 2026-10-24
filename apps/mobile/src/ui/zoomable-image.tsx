@@ -198,7 +198,7 @@ export function ZoomableImage({ src, label, generation, generationPorts, chromeV
 
 const styles = StyleSheet.create({
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  spinner: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  spinner: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   bar: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   barInner: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 4, borderWidth: StyleSheet.hairlineWidth },
 })

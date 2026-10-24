@@ -53,7 +53,7 @@ test('discards worktree data when a newer shell snapshot supersedes the read', a
 })
 
 test('a turn ending on the open session refreshes git status', async () => {
-  const rpc = jest.fn(async () => ({ branch: 'main', porcelain: ' M a\n?? b\n?? c', insertions: 10, deletions: 2 }))
+  const rpc = jest.fn(async (..._args: unknown[]) => ({ branch: 'main', porcelain: ' M a\n?? b\n?? c', insertions: 10, deletions: 2 }))
   const client = { rpc, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result, rerender } = await renderGit(client, { sessionId: 's1', streaming: true })
 
@@ -65,7 +65,7 @@ test('a turn ending on the open session refreshes git status', async () => {
 })
 
 test('refresh is how switching back or opening the git page re-reads the tree', async () => {
-  const rpc = jest.fn(async () => ({ branch: 'main', porcelain: ' M a', insertions: 2, deletions: 0 }))
+  const rpc = jest.fn(async (..._args: unknown[]) => ({ branch: 'main', porcelain: ' M a', insertions: 2, deletions: 0 }))
   const client = { rpc, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result } = await renderGit(client, { sessionId: 's1', streaming: false })
 
@@ -75,7 +75,7 @@ test('refresh is how switching back or opening the git page re-reads the tree', 
 })
 
 test('switching sessions does not count as a turn ending', async () => {
-  const rpc = jest.fn(async () => ({ branch: 'main' }))
+  const rpc = jest.fn(async (..._args: unknown[]) => ({ branch: 'main' }))
   const client = { rpc, resolveProject: resolveTestProject } as unknown as RelayClient
   const { rerender } = await renderGit(client, { sessionId: 's1', streaming: true })
 

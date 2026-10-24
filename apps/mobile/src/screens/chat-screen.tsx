@@ -238,14 +238,14 @@ export function ChatScreen(props: {
       />
       </View>
       {coveringRestore ? (
-        <View testID="conversation-loading" collapsable={false} style={[StyleSheet.absoluteFillObject, styles.emptyState, coverStyle, { backgroundColor: tokens.colors.background }]}>
+        <View testID="conversation-loading" collapsable={false} style={[StyleSheet.absoluteFill, styles.emptyState, coverStyle, { backgroundColor: tokens.colors.background }]}>
           <ActivityIndicator color={tokens.colors.mutedForeground} />
           <Text style={styles.emptyBody}>{t('Loading…')}</Text>
         </View>
       ) : showLanding && props.landing ? (
         // The renderer stays mounted at opacity 0 and still occupies flex
         // space, so a sibling landing would sit just above the composer.
-        <View testID="new-session-landing" collapsable={false} style={[StyleSheet.absoluteFillObject, coverStyle, { backgroundColor: tokens.colors.background }]}>
+        <View testID="new-session-landing" collapsable={false} style={[StyleSheet.absoluteFill, coverStyle, { backgroundColor: tokens.colors.background }]}>
           <NewSessionLanding {...props.landing} />
         </View>
       ) : null}

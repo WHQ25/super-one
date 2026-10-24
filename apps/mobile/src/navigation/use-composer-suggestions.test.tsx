@@ -287,7 +287,7 @@ test('loads the bare @ catalog through the active runtime and browses its worktr
   const client = mentionClient()
   const runtime = {
     mentionRoot: '/work/review-tree',
-    searchMentions: jest.fn(async () => mentionCatalog),
+    searchMentions: jest.fn(async (..._args: unknown[]) => mentionCatalog),
   }
   const { result } = await mount(client, runtime as unknown as ChatRuntime)
   await act(async () => { result.current.update('@') })

@@ -23,12 +23,14 @@ function Motion({ motion, size, enabled, children, origin }: { motion: IconMotio
   const style = useMemo(() => {
     const result: Record<string, unknown> = {}, transform: Record<string, unknown>[] = []
     for (const track of motionTracks(motion, size)) {
-      const value = phase.interpolate({ inputRange: track.inputRange, outputRange: track.property === 'rotate' ? track.outputRange.map((angle) => `${angle}deg`) : track.outputRange })
+      const value = track.property === 'rotate'
+        ? phase.interpolate({ inputRange: track.inputRange, outputRange: track.outputRange.map((angle) => `${angle}deg`) })
+        : phase.interpolate({ inputRange: track.inputRange, outputRange: track.outputRange })
       if (track.property === 'opacity') result.opacity = value
       else transform.push({ [track.property]: value })
     }
     if (transform.length) result.transform = transform
-    return result as Animated.WithAnimatedObject<ViewStyle>
+    return result as Animated.WithAnimatedValue<ViewStyle>
   }, [motion, size, phase, enabled])
   return <Animated.View pointerEvents="none" style={[{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', transformOrigin: origin }, style]}>{children}</Animated.View>
 }

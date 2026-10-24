@@ -1,13 +1,13 @@
 import type { RefObject } from 'react'
 import type { LucideIcon } from 'lucide-react-native'
-import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native'
+import { Pressable, View, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native'
 import { SpinningIcon } from './spinning-icon'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 
 export function IconButton({ icon: Icon, glyph, label, onPress, onLongPress, accessibilityHint, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, strokeWidth = 1.8, spinning, style, hitSlop, buttonRef }: {
-  buttonRef?: RefObject<View | null>
+  buttonRef?: RefObject<ViewInstance | null>
   icon?: LucideIcon
   /** A typed character (e.g. `/`) when a Lucide mark would read as the wrong symbol. */
   glyph?: string

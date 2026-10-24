@@ -16,6 +16,23 @@ config.resolver.unstable_enablePackageExports = true
 config.resolver.disableHierarchicalLookup = true
 config.resolver.assetExts.push('glb', 'usdz')
 
+// Jest 30's pretty-format@30 is CJS with __esModule and a function default.
+// Its "import" entry re-exports that as `cjsModule.default`, and Metro unwraps
+// the default again, so Expo's dev HMR client throws
+// "Cannot read property 'default' of undefined" while the runtime is starting.
+// Node's require condition is the CJS file, whose default is already the function.
+const prettyFormatCjs = path.join(monorepoRoot, 'node_modules/pretty-format/build/index.js')
+const upstreamResolveRequest = config.resolver.resolveRequest
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'pretty-format') {
+    return { type: 'sourceFile', filePath: prettyFormatCjs }
+  }
+  if (upstreamResolveRequest) {
+    return upstreamResolveRequest(context, moduleName, platform)
+  }
+  return context.resolveRequest(context, moduleName, platform)
+}
+
 // Node-only @superone/shared leaves. Importing these in RN is a bug.
 const block = config.resolver.blockList
 const extraBlock = [

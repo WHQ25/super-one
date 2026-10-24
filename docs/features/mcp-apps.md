@@ -386,8 +386,9 @@ revokes the bridge (the View shows Restart).
   (`frameDomains`) cannot load and are not advertised.
 - Bridge integrity: the RN channel token drops messages not tagged by the chat
   document, `installHostBridge` accepts only the embedding host, and a
-  `react-native-webview` patch keeps iframe loads from resetting the channel
-  on iOS and tolerates a nil `mainDocumentURL`.
+  `react-native-webview` patch keeps an `srcdoc` iframe from being treated as the
+  main frame on iOS, so that load does not reset the channel. A nil
+  `mainDocumentURL` is handled by the library.
 - Requests go RN → relay `mcp_app_request` → `canAccessSession` → the host
   executor. They are never coalesced or resent. A `callTool` lost after
   sending becomes `unknown_outcome`; other lost requests become `timeout`.

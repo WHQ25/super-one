@@ -27,10 +27,11 @@ jest.mock('@shopify/react-native-skia', () => {
     BlurMask: () => null,
     useClock: () => mockClock,
     vec: (x: number, y: number) => ({ x, y }),
-    Skia: { Path: { Make: () => ({
+    Skia: { PathBuilder: { Make: () => ({
       points: [] as number[][],
-      moveTo(x: number, y: number) { this.points.push([x, y]) },
-      lineTo(x: number, y: number) { this.points.push([x, y]) },
+      moveTo(x: number, y: number) { this.points.push([x, y]); return this },
+      lineTo(x: number, y: number) { this.points.push([x, y]); return this },
+      build() { return this },
     }) } },
   }
 })

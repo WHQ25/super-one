@@ -26,7 +26,7 @@ function renderUsage(client: RelayClient, initial: { target: UsageTarget | null;
 }
 
 test('reads the meter for the credential on mount and again when a turn starts and ends', async () => {
-  const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+  const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now()) }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result, rerender } = await renderUsage(client, { target: claude, streaming: false })
 
@@ -43,7 +43,7 @@ test('reads the meter for the credential on mount and again when a turn starts a
 test('keeps sampling a long-running turn and stops polling when it ends', async () => {
   jest.useFakeTimers()
   try {
-    const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+    const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now()) }))
     const { rerender, unmount } = await renderUsage({ rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, { target: claude, streaming: true })
     expect(request).toHaveBeenCalledTimes(1)
     await act(async () => { jest.advanceTimersByTime(5 * 60_000) })
@@ -59,7 +59,7 @@ test('keeps sampling a long-running turn and stops polling when it ends', async 
 })
 
 test('switching sessions on the same credential keeps the reading; a new credential clears it', async () => {
-  const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+  const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now()) }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result, rerender } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage).not.toBeNull())
@@ -77,7 +77,7 @@ test('switching sessions on the same credential keeps the reading; a new credent
 })
 
 test('refresh forces a host read only when the reading on screen is stale', async () => {
-  const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+  const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now()) }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage).not.toBeNull())
@@ -88,7 +88,7 @@ test('refresh forces a host read only when the reading on screen is stale', asyn
 })
 
 test('a stale reading makes refresh ask the host with force', async () => {
-  const request = jest.fn(async () => ({ usage: meter(Date.now() - 6 * 60_000) }))
+  const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now() - 6 * 60_000) }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage).not.toBeNull())
@@ -100,7 +100,7 @@ test('a stale reading makes refresh ask the host with force', async () => {
 })
 
 test('no target means no request', async () => {
-  const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+  const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now()) }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   await renderUsage(client, { target: null, streaming: false })
   expect(request).not.toHaveBeenCalled()
@@ -127,7 +127,7 @@ test('returning to a credential shows its last reading at once while the host co
 })
 
 test('the composer meter keeps its credential while an opened session waits for its catalog', async () => {
-  const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+  const request = jest.fn(async (..._args: unknown[]) => ({ usage: meter(Date.now()) }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   type Props = { sessionId: string; apiProviderId: string | null; catalogReady: boolean }
   const { result, rerender } = await renderHook(

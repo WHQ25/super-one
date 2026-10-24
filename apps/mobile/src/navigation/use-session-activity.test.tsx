@@ -134,7 +134,7 @@ test('reports a read to the host when the session opens or finishes on screen, a
 
 test('re-reports the on-screen session from the reconnect snapshot and survives a dead socket', async () => {
   const done = { ...row, pendingCount: 0, completedMessageId: 'reply-1' }
-  const send = jest.fn(() => { throw new Error('not connected') })
+  const send = jest.fn((..._args: unknown[]) => { throw new Error('not connected') })
   const request = jest.fn<() => Promise<unknown>>().mockResolvedValue({ sessions: [done] })
   const client = activityClient(request, send)
   const result = await renderWithTheme(<Probe client={client} viewed="background" />)

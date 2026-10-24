@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native'
 import { monospace, tint } from '../prompts/styles'
 import { useMobileTheme } from '../theme/context'
 import { highlightLines } from './code-highlight'
@@ -18,7 +18,7 @@ const CODE_LINE_HEIGHT = 19
  */
 export function CodeListing({ text, name, line, topInset }: { text: string; name: string; line?: number; topInset: number }) {
   const { tokens: { colors, scheme } } = useMobileTheme()
-  const scrollRef = useRef<ScrollView>(null)
+  const scrollRef = useRef<ScrollViewInstance>(null)
   const lines = useMemo(() => highlightLines(text, name, scheme), [text, name, scheme])
   const gutterWidth = `${lines.length}`.length
 

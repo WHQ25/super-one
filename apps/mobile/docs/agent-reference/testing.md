@@ -53,7 +53,7 @@ jest-expo reuses the transform Metro already applies. What it costs to use:
   inject it, as `ComposerSuggestionSource.iconStore` does — rather than by
   widening `transformIgnorePatterns`. Check the total, not just the exit code.
 - `jest.config.js` pins `^react$` to this workspace's copy. Bun leaves a nested
-  `apps/mobile/node_modules/react` (pinned 19.1.0) beside the hoisted root one,
+  `apps/mobile/node_modules/react` (pinned 19.3.0) beside the hoisted root one,
   and without the mapping `react-reconciler` and the components under test load
   different React instances — every hook then sees a null dispatcher.
 

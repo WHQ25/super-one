@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type ScrollViewInstance } from 'react-native'
 import { Bot, CheckCircle2, ChevronRight, Circle, CircleDashed, ListTodo, Lock } from 'lucide-react-native'
 import type { TodoItem } from '@superone/shared/agent-types'
 import { COMPLETED_TODO_CLEAR_MS, todosAllCompleted } from '@superone/chat-core'
@@ -46,7 +46,7 @@ export function TodoPanel(props: {
   const tablet = props.tablet ?? shouldUseTabletComposer(width, height)
   const [expanded, setExpanded] = useState(false)
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set())
-  const listRef = useRef<ScrollView>(null)
+  const listRef = useRef<ScrollViewInstance>(null)
 
   const rows = buildTodoPanelRows(props.todos)
   const { completed, total, hasInProgress } = todoPanelSummary(rows)

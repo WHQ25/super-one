@@ -30,7 +30,7 @@ export default function NativePreviewApp() {
   const [route, setRoute] = useState<PreviewRoute | null>(null)
   useEffect(() => {
     let active = true
-    const navigate = (url: string | null) => {
+    const navigate = (url: string | null | undefined) => {
       const next = url ? parsePreviewRoute(url) : null
       if (!active || !next) return
       setTheme(next.theme)

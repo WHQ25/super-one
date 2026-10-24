@@ -24,7 +24,7 @@ test('edits and copies the full paste, and closes only after native save acknowl
 })
 
 test('keeps edited content on rejection and lets the user retry', async () => {
-  const onApply = jest.fn(async () => false)
+  const onApply = jest.fn(async (_text: string, _plain: boolean) => false)
   const onClose = jest.fn()
   await renderWithTheme(<PasteChipEditor text="full paste" onApply={onApply} onClose={onClose} />)
   await act(async () => { fireEvent.changeText(screen.getByLabelText('Pasted Text'), 'keep this edit') })

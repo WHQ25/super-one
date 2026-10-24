@@ -33,7 +33,7 @@ test('the Claude meter lists every window with its remaining share and reset cou
 })
 
 test('the Codex meter carries its account stats and a redeemable reset credit', async () => {
-  const consume = jest.fn(async () => 'reset' as const)
+  const consume = jest.fn(async (_creditId: string | null) => 'reset' as const)
   await renderWithTheme(<UsagePanel usage={codex} onConsumeResetCredit={consume} />)
   expect(screen.getByText('Bonus reset')).toBeTruthy()
   expect(screen.getByText('1.3m')).toBeTruthy()

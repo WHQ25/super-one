@@ -50,12 +50,12 @@ export function MobileThemeProvider({ children, colorScheme, store, locale }: {
   // Native chrome the shell does not paint — keyboards, action sheets, system
   // menus — reads the app-level appearance, not our tokens. Since the app now
   // ships dark regardless of the OS, pin it here or a light device gets a light
-  // keyboard under a dark shell. `null` hands the choice back to the OS, which
+  // keyboard under a dark shell. `auto` hands the choice back to the OS, which
   // is exactly what `system` means. Skipped when `colorScheme` is forced, so
   // previews and component tests never mutate a process-wide setting.
   useEffect(() => {
     if (colorScheme) return
-    Appearance.setColorScheme(mode === 'system' ? null : mode)
+    Appearance.setColorScheme(mode === 'system' ? 'auto' : mode)
   }, [colorScheme, mode])
   const [harness, setHarness] = useState<HarnessId>('claude')
   const [hostHues, setHostHues] = useState<Partial<Record<HarnessId, number | null>>>({})

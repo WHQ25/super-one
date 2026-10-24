@@ -26,7 +26,10 @@ jest.mock('@shopify/react-native-skia', () => ({
   BlendMode: {},
   Canvas: () => null,
   Picture: () => null,
-  Skia: { PictureRecorder: class {} },
+  Skia: {
+    PictureRecorder: class {},
+    PathBuilder: { Make: () => ({ moveTo() { return this }, lineTo() { return this }, close() { return this }, build() { return this } }) },
+  },
   useClock: () => ({ value: 0 }),
 }))
 

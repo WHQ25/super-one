@@ -86,7 +86,7 @@ test('the hardware back button closes the drawer while it is open', async () => 
   const spring = jest.spyOn(Animated, 'spring').mockReturnValue({ start } as never)
   const timing = jest.spyOn(Animated, 'timing').mockReturnValue({ start } as never)
   const onDismiss = jest.fn()
-  const handlers: Array<() => boolean | null | undefined> = []
+  const handlers: Array<Parameters<typeof BackHandler.addEventListener>[1]> = []
   const back = jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_, handler) => {
     handlers.push(handler)
     return { remove: () => { handlers.splice(handlers.indexOf(handler), 1) } }
@@ -94,7 +94,8 @@ test('the hardware back button closes the drawer while it is open', async () => 
   try {
     await renderWithTheme(drawer({ visible: true, onDismiss }))
     expect(handlers).toHaveLength(1)
-    expect(handlers[0]!()).toBe(true)
+    const event: Parameters<Parameters<typeof BackHandler.addEventListener>[1]>[0] = { type: 'hardwareBackPress', timeStamp: 0 }
+    expect(handlers[0]!(event)).toBe(true)
     expect(onDismiss).toHaveBeenCalledTimes(1)
   } finally {
     back.mockRestore()

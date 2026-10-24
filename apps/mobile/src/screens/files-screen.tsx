@@ -1,7 +1,7 @@
 import { ChevronRight, FolderOpen } from 'lucide-react-native'
 import { FileTypeIcon } from '../ui/file-icon'
 import { useRef } from 'react'
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native'
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, View, type ScrollViewInstance } from 'react-native'
 import { Text } from '../ui/text'
 import {
   directoryEntryAction,
@@ -54,7 +54,7 @@ export function FilesScreen(props: {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   const { t } = useMobileLocale()
-  const breadcrumbs = useRef<ScrollView>(null)
+  const breadcrumbs = useRef<ScrollViewInstance>(null)
   const crumbs = fileBrowserCrumbs(props.mode, props.path)
   const gitRoot = props.mode.kind === 'project' ? props.mode.root : null
 

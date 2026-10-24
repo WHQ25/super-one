@@ -13,7 +13,7 @@ function form(properties: Record<string, unknown> = { notes: { type: 'string', t
 }
 
 test('free text grows from one row, preserves newlines, and submits only through its button', async () => {
-  const onSubmit = jest.fn<() => Promise<void>>().mockResolvedValue(undefined)
+  const onSubmit = jest.fn(async (_values: Record<string, unknown>) => {})
   await renderWithTheme(<InputRequestComposer request={form()} connected onSubmit={onSubmit} onCancel={async () => {}} />)
   const input = screen.getByTestId('prompt-field-notes')
   expect(input.props.multiline).toBe(true)

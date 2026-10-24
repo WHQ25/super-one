@@ -12,7 +12,7 @@ import { MobileThemeProvider } from '../theme/context'
 
 beforeAll(() => {
   const measure = View.prototype.measureInWindow as jest.Mock<typeof View.prototype.measureInWindow>
-  measure.mockImplementation(callback => callback(10, 500, 44, 44))
+  measure.mockImplementation((callback: (x: number, y: number, width: number, height: number) => void) => callback(10, 500, 44, 44))
 })
 
 const scheduledSendControls = (overrides: Partial<ScheduledSendControls> = {}): ScheduledSendControls => ({

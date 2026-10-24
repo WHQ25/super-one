@@ -181,7 +181,7 @@ function useStyles() {
     // into a stack of separate objects and cost a third of the visible rows.
     floatingContainer: { marginBottom: 2 },
     actions: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       alignItems: 'stretch',
       flexDirection: 'row',
       justifyContent: 'flex-start',

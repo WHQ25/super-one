@@ -1,18 +1,18 @@
 import { createContext, useContext, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { View } from 'react-native'
+import { View, type ViewInstance } from 'react-native'
 import type { AnchorRect } from './popover-layout'
 
 type MenuHostApi = {
   show: (id: string, node: ReactNode) => void
   hide: (id: string) => void
-  measure: (ref: RefObject<View | null>, done: (rect: AnchorRect) => void) => void
+  measure: (ref: RefObject<ViewInstance | null>, done: (rect: AnchorRect) => void) => void
 }
 const Context = createContext<MenuHostApi | null>(null)
 
 /** A same-window portal preserves the native editor's keyboard and focus. Each
  * native Modal gets its own host so its menus stay above that modal's content. */
 export function MenuHost({ children }: { children: ReactNode }) {
-  const root = useRef<View>(null)
+  const root = useRef<ViewInstance>(null)
   const [entry, setEntry] = useState<{ id: string; node: ReactNode } | null>(null)
   const api = useMemo<MenuHostApi>(() => ({
     show: (id, node) => setEntry({ id, node }),

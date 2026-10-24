@@ -10,12 +10,6 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#111111"
-    },
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "requireFullScreen": false,
@@ -45,6 +39,14 @@
     },
     "plugins": [
       "expo-dev-client",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#111111"
+        }
+      ],
       "expo-secure-store",
       [
         "expo-build-properties",

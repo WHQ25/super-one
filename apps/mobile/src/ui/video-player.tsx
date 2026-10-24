@@ -39,7 +39,7 @@ export function VideoPlayerView({ uri, label }: { uri: string; label: string }) 
           style={styles.video}
           contentFit="contain"
           nativeControls
-          allowsFullscreen
+          fullscreenOptions={{ enable: true }}
           allowsPictureInPicture={false}
           accessibilityLabel={label}
         />

@@ -47,7 +47,7 @@ const rgb = ([r, g, b]: Rgb) => `rgb(${r}, ${g}, ${b})`
 /** The desktop's four-point star (`clip-path` polygon), centred on the origin. */
 function starPath(size: number): SkPath {
   const points: Array<[number, number]> = [[0.5, 0], [0.61, 0.39], [1, 0.5], [0.61, 0.61], [0.5, 1], [0.39, 0.61], [0, 0.5], [0.39, 0.39]]
-  const path = Skia.Path.Make()
+  const path = Skia.PathBuilder.Make()
   points.forEach(([x, y], index) => {
     const px = (x - 0.5) * size
     const py = (y - 0.5) * size
@@ -55,7 +55,7 @@ function starPath(size: number): SkPath {
     else path.lineTo(px, py)
   })
   path.close()
-  return path
+  return path.build()
 }
 
 type Box = { width: number; height: number }

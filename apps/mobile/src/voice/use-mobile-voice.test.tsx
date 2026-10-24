@@ -21,7 +21,7 @@ function fixture() {
   const rpc = jest.fn(async (method: string): Promise<unknown> => method === 'environment.descriptor'
     ? { capabilities: { methods: ['session.voiceStatus', 'session.voiceStart', 'session.voiceReady', 'session.voiceStop'] } }
     : status())
-  const controlledRpc = jest.fn(async (_ref: unknown, method: string, p: { attemptId?: string }): Promise<unknown> => ({
+  const controlledRpc = jest.fn(async (_ref: unknown, method: string, p: { attemptId?: string; request?: unknown }): Promise<unknown> => ({
     ...capability, call: method === 'session.voiceStart'
       ? { ...target, attemptId: p.attemptId, callId: 'call', hostEpoch: 'host', generation: 1, owned: true, state: 'starting' }
       : null,

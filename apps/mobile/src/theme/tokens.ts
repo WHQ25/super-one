@@ -34,7 +34,7 @@ export interface MobileWebViewTheme {
   colors: Pick<GeneratedThemeColors, 'background' | 'surface' | 'foreground' | 'mutedForeground' | 'border'>
 }
 
-export function normalizeColorScheme(scheme: ColorSchemeName): MobileColorScheme {
+export function normalizeColorScheme(scheme: ColorSchemeName | null | undefined): MobileColorScheme {
   return scheme === 'light' ? 'light' : 'dark'
 }
 

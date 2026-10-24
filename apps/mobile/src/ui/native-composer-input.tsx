@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
-import { View } from 'react-native'
+import { View, type ViewInstance } from 'react-native'
 import { NativeMentionEditor, type MentionPress } from './native-mention-editor'
 import { nativeMentionSpans, nativeMentionText, replaceMentionRange, type MentionDocument } from '../mention-document'
 import type { MentionEditorCommand, MentionEditorSnapshot } from '../mention-editor-state'
@@ -58,10 +58,10 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
   onFocus?: () => void
   onBlur?: () => void
   /** A chip was tapped; `frame` is in `editor`'s points, for whoever anchors a card to it. */
-  onMentionPress?: (press: MentionPress, editor: RefObject<View | null>) => void
+  onMentionPress?: (press: MentionPress, editor: RefObject<ViewInstance | null>) => void
 }) {
   // Measured from a plain host view: an Expo native view's ref has no `measureInWindow`.
-  const view = useRef<View>(null)
+  const view = useRef<ViewInstance>(null)
   const [pasteChip, setPasteChip] = useState<{ value: string; offset: number } | null>(null)
   const pressMention = (press: MentionPress) => {
     if (press.kind !== 'paste') { onMentionPress?.(press, view); return }

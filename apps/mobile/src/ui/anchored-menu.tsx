@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react'
-import { AccessibilityInfo, BackHandler, findNodeHandle, Keyboard, Platform, Pressable, ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
+import { AccessibilityInfo, BackHandler, findNodeHandle, Keyboard, Platform, Pressable, ScrollView, TextInput, View, useWindowDimensions, type ViewInstance } from 'react-native'
 import { Text } from './text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Check, ChevronRight } from 'lucide-react-native'
@@ -9,7 +9,7 @@ import { useMenuHost } from './menu-host'
 import { useMobileLocale } from '../i18n/context'
 
 export function useMenuAnchor() {
-  const ref = useRef<View>(null)
+  const ref = useRef<ViewInstance>(null)
   const host = useMenuHost()
   const [anchor, setAnchor] = useState<AnchorRect | null>(null)
   const measurement = useRef(0)

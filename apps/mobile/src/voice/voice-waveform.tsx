@@ -46,7 +46,7 @@ function MovingWaves(props: WaveProps) {
 
 function makeWave(width: number, seconds: number, level: number, layer: number): SkPath {
   'worklet'
-  const path = Skia.Path.Make()
+  const path = Skia.PathBuilder.Make()
   const points = Math.min(180, Math.ceil(width))
   for (let index = 0; index <= points; index++) {
     const u = index / points
@@ -55,7 +55,7 @@ function makeWave(width: number, seconds: number, level: number, layer: number):
     if (index === 0) path.moveTo(x, y)
     else path.lineTo(x, y)
   }
-  return path
+  return path.build()
 }
 
 function Waves({ width, input, output, shimmer, clock }: WaveProps & { clock?: SharedValue<number> }) {

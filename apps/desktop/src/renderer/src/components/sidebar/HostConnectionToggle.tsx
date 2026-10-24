@@ -10,6 +10,7 @@ export function HostConnectionToggle({
   connected,
   busy,
   spinning = false,
+  variant = 'default',
   onToggle,
 }: {
   /** Live or dialing — the next click disconnects. */
@@ -18,30 +19,26 @@ export function HostConnectionToggle({
   busy: boolean
   /** Supervisor is dialing; the button stays pressable so the user can abort. */
   spinning?: boolean
+  variant?: 'default' | 'nested'
   onToggle: () => void
 }) {
   const { t } = useTranslation()
   const showSpinner = busy || spinning
-  // Green while the host is up, red while it is down. Hover keeps the same hue
-  // so the state does not disappear into the sidebar's neutral icon color.
-  const tone = connected
-    ? 'text-success hover:bg-success/15 hover:text-success'
-    : 'text-destructive hover:bg-destructive/15 hover:text-destructive'
+  // Rest matches the other sidebar icons. Hover previews the action: green
+  // turns a stopped host on, red turns a live host off.
+  const tone = connected ? 'hover:text-destructive' : 'hover:text-success'
 
   return (
     <IconButton
       size="sm"
+      variant={variant}
       className={tone}
       tooltip={connected ? t('settings.environments.disconnect') : t('settings.environments.connect')}
       aria-pressed={connected}
       disabled={busy}
       onClick={onToggle}
     >
-      {showSpinner ? (
-        <Loader2 className="size-3 animate-spin" />
-      ) : (
-        <Power className="size-3" />
-      )}
+      {showSpinner ? <Loader2 className="animate-spin" /> : <Power />}
     </IconButton>
   )
 }

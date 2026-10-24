@@ -125,7 +125,7 @@ export function AppsPanel() {
         </div>
       )}
 
-      <ScrollArea className="h-full">
+      <ScrollArea type="scroll" className="sidebar-scroll h-full">
         <div className={cn(
           'relative flex w-0 min-w-full flex-col px-2 py-1',
           isDragOver && 'pointer-events-none',

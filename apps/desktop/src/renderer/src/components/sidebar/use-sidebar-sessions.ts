@@ -26,7 +26,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   currentFolder: string | null
   selectedHostConnectionId: string
   hostProjects: RecentFolder[]
-  /** When set, pins are one flat list across these environments. */
+  /** When set, pins are loaded for each of these environments and grouped in the list. */
   pinnedConnectionIds?: string[]
 }) {
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
@@ -56,6 +56,8 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     // has no rows yet, spins the folder icon. A refresh of a list already on
     // screen stays quiet so switching sessions does not shove the rows.
     const armFolderSpinner = () => {
+      // A local list comes back from this machine. Spinning the folder on expand only flashes.
+      if (!parseRemoteProjectKey(folderPath)) return
       if (reason !== 'expand' && folderSessionsRef.current[folderPath]?.length) return
       setLoadingFolders((previous) => previous[folderPath] ? previous : { ...previous, [folderPath]: true })
     }

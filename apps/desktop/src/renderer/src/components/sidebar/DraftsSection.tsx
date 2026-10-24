@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { Clock, PencilLine, Trash2, Unplug } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -14,11 +14,15 @@ import { nextDraftSlots, selectVisibleDrafts } from './draft-visibility'
 import { toast } from 'sonner'
 
 interface DraftsSectionProps {
-  /** Environment whose drafts are shown — drafts follow the sidebar's host. */
-  connectionId: string
-  /** Dim the rows when that environment is offline. Resume still goes through the same path. */
-  offline?: boolean
+  /** Environments whose drafts are listed as one group, in this order. Pass a stable array. */
+  connectionIds: readonly string[]
+  /** Environments whose rows are dimmed. Resume still goes through the same path. */
+  offlineConnectionIds?: readonly string[]
+  /** Heading shown above the rows while there are any. */
+  label?: ReactNode
 }
+
+const NO_CONNECTIONS: readonly string[] = []
 
 /**
  * Row height, and the sole source of truth for the group's geometry. Rows are
@@ -114,7 +118,7 @@ const DraftRow = memo(function DraftRow({
             discardDeletedDraft(draft.id)
           }).catch((error) => toast.error(error instanceof Error ? error.message : 'Could not delete draft'))
         }}
-        className="opacity-0 transition-opacity group-hover/draft:opacity-100"
+        className="opacity-0 group-hover/draft:opacity-100"
       >
         <Trash2 />
       </IconButton>
@@ -123,16 +127,27 @@ const DraftRow = memo(function DraftRow({
 })
 
 /**
- * Flat draft rows for the selected host — peers of project rows (no section
- * header). Empty host → nothing rendered.
+ * Flat draft rows for one or more environments, in one animated group with an
+ * optional `label` heading. No drafts → nothing rendered.
  */
 export const DraftsSection = memo(function DraftsSection({
-  connectionId,
-  offline = false,
+  connectionIds,
+  offlineConnectionIds = NO_CONNECTIONS,
+  label,
 }: DraftsSectionProps) {
-  // Select the stored array (or undefined). Do not coerce to `[]` inside the
-  // selector — a fresh empty array every snapshot loops useSyncExternalStore.
-  const drafts = useDraftsStore((s) => s.byConnection[connectionId])
+  const byConnection = useDraftsStore((s) => s.byConnection)
+  // Draft ids are unique across environments, so one id → owner map routes resume and delete.
+  const { drafts, ownerOf } = useMemo(() => {
+    const owner = new Map<string, string>()
+    const rows: DraftListEntry[] = []
+    for (const connectionId of connectionIds) {
+      for (const draft of byConnection[connectionId] ?? []) {
+        owner.set(draft.id, connectionId)
+        rows.push(draft)
+      }
+    }
+    return { drafts: rows, ownerOf: owner }
+  }, [byConnection, connectionIds])
   const loadDrafts = useDraftsStore((s) => s.loadDrafts)
   const resumingDraftId = useDraftsStore((s) => s.resumingDraftId)
   const activeProject = useChatStore((s) => s.activeProject)
@@ -151,15 +166,17 @@ export const DraftsSection = memo(function DraftsSection({
   // The clicked row leaves the list immediately (its content is heading for the
   // composer), so keep a copy pinned at the slot it occupied and fly that out
   // while the rows below slide up into the gap.
-  const [flyOut, setFlyOut] = useState<{ draft: DraftListEntry; slotY: number } | null>(null)
+  const [flyOut, setFlyOut] = useState<{ draft: DraftListEntry; connectionId: string; slotY: number } | null>(null)
   const handleResume = useCallback(
     (draft: DraftListEntry, slotY: number) => {
-      setFlyOut({ draft, slotY })
+      const connectionId = ownerOf.get(draft.id)
+      if (!connectionId) return
+      setFlyOut({ draft, connectionId, slotY })
       void resumeDraft(connectionId, draft).then((result) => {
         if (!result.ok) toast.error(result.message || 'Could not open draft')
       })
     },
-    [connectionId],
+    [ownerOf],
   )
 
   // Rows present in the very first painted list are already "there" — only ones
@@ -170,17 +187,18 @@ export const DraftsSection = memo(function DraftsSection({
   }, [])
 
   useEffect(() => {
-    void loadDrafts(connectionId)
-    if (connectionId === 'local') return
+    for (const connectionId of connectionIds) void loadDrafts(connectionId)
+    const remotes = connectionIds.filter((connectionId) => connectionId !== 'local')
+    if (remotes.length === 0) return
     // Outbox drains on reconnect; refresh so pendingSync badges clear and
     // drafts that lived only on the node appear once it is reachable again.
     const unsub = window.environment.onStatusEvent?.((snapshot) => {
-      if (snapshot.connectionId === connectionId && snapshot.state === 'connected') {
-        void loadDrafts(connectionId)
+      if (remotes.includes(snapshot.connectionId) && snapshot.state === 'connected') {
+        void loadDrafts(snapshot.connectionId)
       }
     })
     return typeof unsub === 'function' ? unsub : undefined
-  }, [connectionId, loadDrafts])
+  }, [connectionIds, loadDrafts])
 
   const visibleDrafts = useMemo(
     () => selectVisibleDrafts(drafts, { activeSessionId, activeDraftId, resumingDraftId }),
@@ -199,44 +217,52 @@ export const DraftsSection = memo(function DraftsSection({
 
   // `initial={false}` keeps drafts already present at mount from animating open.
   return (
-    <motion.div
-      className="relative overflow-hidden"
-      initial={false}
-      animate={{ height: slots.length * DRAFT_ROW_HEIGHT }}
-      transition={GROUP_HEIGHT_TRANSITION}
-    >
-      {visibleDrafts.map((draft) => {
-        const slotY = Math.max(0, slots.indexOf(draft.id)) * DRAFT_ROW_HEIGHT
-        return (
+    <>
+      {label && slots.length > 0 && label}
+      <motion.div
+        className="relative overflow-hidden"
+        initial={false}
+        animate={{ height: slots.length * DRAFT_ROW_HEIGHT }}
+        transition={GROUP_HEIGHT_TRANSITION}
+      >
+        {visibleDrafts.map((draft) => {
+          const slotY = Math.max(0, slots.indexOf(draft.id)) * DRAFT_ROW_HEIGHT
+          const connectionId = ownerOf.get(draft.id)!
+          return (
+            <motion.div
+              key={draft.id}
+              className="absolute inset-x-0 top-0"
+              initial={mountedRef.current ? { x: '105%', y: slotY, opacity: 0 } : false}
+              animate={{ x: 0, y: slotY, opacity: 1 }}
+              transition={ROW_TRANSITION}
+            >
+              <DraftRow
+                draft={draft}
+                connectionId={connectionId}
+                slotY={slotY}
+                onResume={handleResume}
+                offline={offlineConnectionIds.includes(connectionId)}
+              />
+            </motion.div>
+          )
+        })}
+        {flyOut && (
           <motion.div
-            key={draft.id}
-            className="absolute inset-x-0 top-0"
-            initial={mountedRef.current ? { x: '105%', y: slotY, opacity: 0 } : false}
-            animate={{ x: 0, y: slotY, opacity: 1 }}
-            transition={ROW_TRANSITION}
+            key={flyOut.draft.id}
+            className="pointer-events-none absolute inset-x-0 top-0"
+            initial={{ x: 0, y: flyOut.slotY, opacity: 1 }}
+            animate={{ x: '105%', y: flyOut.slotY, opacity: 0 }}
+            transition={SLIDE_OUT_TRANSITION}
+            onAnimationComplete={() => setFlyOut(null)}
           >
             <DraftRow
-              draft={draft}
-              connectionId={connectionId}
-              slotY={slotY}
-              onResume={handleResume}
-              offline={offline}
+              draft={flyOut.draft}
+              connectionId={flyOut.connectionId}
+              offline={offlineConnectionIds.includes(flyOut.connectionId)}
             />
           </motion.div>
-        )
-      })}
-      {flyOut && (
-        <motion.div
-          key={flyOut.draft.id}
-          className="pointer-events-none absolute inset-x-0 top-0"
-          initial={{ x: 0, y: flyOut.slotY, opacity: 1 }}
-          animate={{ x: '105%', y: flyOut.slotY, opacity: 0 }}
-          transition={SLIDE_OUT_TRANSITION}
-          onAnimationComplete={() => setFlyOut(null)}
-        >
-          <DraftRow draft={flyOut.draft} connectionId={connectionId} offline={offline} />
-        </motion.div>
-      )}
-    </motion.div>
+        )}
+      </motion.div>
+    </>
   )
 })

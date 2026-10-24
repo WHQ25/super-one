@@ -112,13 +112,13 @@ export const SessionsOnly: Story = {
   },
 }
 
-export const PlainHeader: Story = {
+/** Folder and chevron share one slot. Search, automation, and new session stay hidden until hover. */
+export const HoverActions: Story = {
   render: () => (
     <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
       <ProjectSidebarRow
         {...callbacks}
-        plain
-        folder={{ id: 'plain', name: 'super-one', path: '/storybook/plain', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
+        folder={{ id: 'hover', name: 'super-one', path: '/storybook/hover', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
         sessions={[parent]}
         hasMoreSessions={false}
         isExpanded
@@ -127,10 +127,16 @@ export const PlainHeader: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    const row = canvas.getByText('super-one').closest('.h-9')
+    const actions = row?.querySelector('[data-slot="project-row-actions"]')
     await expect(canvas.getByText('super-one')).toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'New Session' })).toBeInTheDocument()
     await expect(canvas.getByText('Build the account opening workflow')).toBeInTheDocument()
-    await expect(canvas.queryByRole('button', { name: 'Search Sessions' })).not.toBeInTheDocument()
+    await expect(row?.querySelector('.lucide-chevron-right')).toHaveClass('hidden', 'group-hover:block')
+    await expect(row?.querySelector('.lucide-folder-open')).toHaveClass('group-hover:hidden')
+    await expect(actions).toHaveClass('invisible', 'opacity-0', 'group-hover:opacity-100')
+    await expect(within(actions as HTMLElement).getByRole('button', { name: 'Search sessions…', hidden: true })).toBeInTheDocument()
+    await expect(within(actions as HTMLElement).getByRole('button', { name: 'New Automation', hidden: true })).toBeInTheDocument()
+    await expect(within(actions as HTMLElement).getByRole('button', { name: 'New Session', hidden: true })).toBeInTheDocument()
   },
 }
 

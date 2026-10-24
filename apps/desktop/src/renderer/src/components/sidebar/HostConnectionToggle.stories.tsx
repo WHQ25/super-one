@@ -65,9 +65,13 @@ export const Connected: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const power = canvas.getByRole('button', { name: 'Disconnect', pressed: true })
-    await expect(power).toHaveClass('text-success')
+    await expect(power).toHaveClass('text-muted-foreground')
+    await expect(power).toHaveClass('hover:text-destructive')
+    await expect(power).not.toHaveClass('text-success')
     await userEvent.click(power)
-    await expect(canvas.getByRole('button', { name: 'Connect', pressed: false })).toHaveClass('text-destructive')
+    const connect = canvas.getByRole('button', { name: 'Connect', pressed: false })
+    await expect(connect).toHaveClass('text-muted-foreground')
+    await expect(connect).toHaveClass('hover:text-success')
   },
 }
 
@@ -76,9 +80,13 @@ export const Disconnected: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const power = canvas.getByRole('button', { name: 'Connect', pressed: false })
-    await expect(power).toHaveClass('text-destructive')
+    await expect(power).toHaveClass('text-muted-foreground')
+    await expect(power).toHaveClass('hover:text-success')
+    await expect(power).not.toHaveClass('text-destructive')
     await userEvent.click(power)
-    await expect(canvas.getByRole('button', { name: 'Disconnect', pressed: true })).toHaveClass('text-success')
+    const disconnect = canvas.getByRole('button', { name: 'Disconnect', pressed: true })
+    await expect(disconnect).toHaveClass('text-muted-foreground')
+    await expect(disconnect).toHaveClass('hover:text-destructive')
   },
 }
 
@@ -87,7 +95,8 @@ export const Busy: Story = {
   play: async ({ canvasElement }) => {
     const power = within(canvasElement).getByRole('button', { name: 'Disconnect' })
     await expect(power).toBeDisabled()
-    await expect(power).toHaveClass('text-success')
+    await expect(power).toHaveClass('text-muted-foreground')
+    await expect(power).toHaveClass('hover:text-destructive')
     await expect(power.querySelector('.lucide-loader-circle')).not.toBeNull()
   },
 }
@@ -98,7 +107,8 @@ export const Connecting: Story = {
     const canvas = within(canvasElement)
     const power = canvas.getByRole('button', { name: 'Disconnect', pressed: true })
     await expect(power).toBeEnabled()
-    await expect(power).toHaveClass('text-success')
+    await expect(power).toHaveClass('text-muted-foreground')
+    await expect(power).toHaveClass('hover:text-destructive')
     await expect(power.querySelector('.lucide-loader-circle')).not.toBeNull()
     await userEvent.click(power)
     await expect(canvas.getByRole('button', { name: 'Connect', pressed: false })).toBeVisible()

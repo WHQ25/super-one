@@ -1,14 +1,7 @@
 /** @vitest-environment jsdom */
-import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
-
-async function chooseGroupBy(name: RegExp) {
-  const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Group By' }))
-  await user.click(await screen.findByRole('menuitem', { name }))
-}
 
 describe('AppSidebar interactions', () => {
   it('keeps project action anchors measurable while the row is not hovered', async () => {
@@ -219,10 +212,10 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
     expect(await screen.findAllByText('remote-app')).not.toHaveLength(0)
-    await chooseGroupBy(/By Environment/)
 
-    const power = await screen.findByRole('button', { name: 'Disconnect' })
-    expect(power).toHaveClass('text-success')
+    const power = await screen.findByRole('button', { name: 'Disconnect', hidden: true })
+    expect(power).toHaveClass('text-muted-foreground')
+    expect(power).toHaveClass('hover:text-destructive')
     fireEvent.click(power)
 
     await waitFor(() => {
@@ -243,17 +236,17 @@ describe('AppSidebar interactions', () => {
 
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
-    await chooseGroupBy(/By Environment/)
 
-    expect(await screen.findByText('Host offline')).toBeInTheDocument()
-    expect(screen.getByText('Use the power button next to the host name to connect.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
+    expect(await screen.findByText('remote lab')).toBeInTheDocument()
+    expect(screen.queryByText('Host offline')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument()
     expect(mockEnvironment.connect).not.toHaveBeenCalled()
     expect(mockEnvironment.listProjects).not.toHaveBeenCalledWith('env-remote')
     expect(mockEnvironment.listProjects).not.toHaveBeenCalledWith('env-remote', expect.anything())
 
-    const power = screen.getByRole('button', { name: 'Connect' })
-    expect(power).toHaveClass('text-destructive')
+    const power = screen.getByRole('button', { name: 'Connect', hidden: true })
+    expect(power).toHaveClass('text-muted-foreground')
+    expect(power).toHaveClass('hover:text-success')
     fireEvent.click(power)
 
     await waitFor(() => {
@@ -261,7 +254,7 @@ describe('AppSidebar interactions', () => {
     })
   })
 
-  it('replaces the host filter with a group-by menu when another machine is connected', async () => {
+  it('lists every machine under its environment when another machine is connected', async () => {
     appState.currentFolder = null
     appState.recentFolders = []
     appState.experimentalRemoteNodesEnabled = true
@@ -286,19 +279,15 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
-    expect(screen.getByText('Projects')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Group By' })).toBeInTheDocument()
+    expect(await screen.findByText('This Mac')).toBeInTheDocument()
+    expect(screen.getByText('remote lab')).toBeInTheDocument()
+    expect(screen.queryByText('Projects')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Group By' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'By Project' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'This Mac' })).toBeNull()
-    fireEvent.click(await screen.findByRole('button', { name: 'app' }))
+    fireEvent.click(screen.getAllByText('app')[0]!)
     await waitFor(() => {
       expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', '/work/app', expect.anything())
-      expect(mockEnvironment.listSessions).toHaveBeenCalledWith('env-remote', 'remote-app', expect.anything())
     })
-    expect(screen.queryByRole('button', { name: 'remote lab' })).toBeNull()
-    await chooseGroupBy(/By Environment/)
-    expect(await screen.findByText('remote lab')).toBeInTheDocument()
-    expect(screen.getByText('This Mac')).toBeInTheDocument()
   })
 
   it('hides the host power toggle while this computer is selected', async () => {
@@ -384,7 +373,12 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
-    await screen.findByText('Remote Pinned')
+    await screen.findByText('remote lab')
+    expect(await screen.findByText('Remote Pinned')).toBeInTheDocument()
+    // Pins stay global; the hover card says which environment each one lives on.
+    expect(screen.getByText('Pinned').closest('[data-environment-id]')).toBeNull()
+    expect(screen.getByText('Remote Pinned').closest('[data-environment-id]')).toBeNull()
+    expect(screen.getByText('Remote Pinned').closest('[data-slot="hover-card-trigger"]')).not.toBeNull()
     expect(mockEnvironment.listPinnedSessions).toHaveBeenCalledWith('env-remote')
   })
 
@@ -531,6 +525,74 @@ describe('AppSidebar interactions', () => {
         { limit: 13, offset: 13 },
       )
     })
+  })
+
+  it('does not spin the title while a local session opens', async () => {
+    let release: () => void = () => {}
+    chatState.switchSession.mockImplementation(() => new Promise<void>((resolve) => { release = resolve }))
+    sessionFixtures.byFolder = {
+      '/project-a': [
+        { sessionId: 'sid-a', title: 'Session A', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 2 },
+        { sessionId: 'sid-b', title: 'Session B', lastActiveAt: '2026-03-02T00:01:00.000Z', messageCount: 3 },
+      ],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-a',
+        _sessions: {
+          'sid-a': {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'a' }] }],
+            status: 'idle',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _gitBranch: null,
+          },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(screen.getByText('project-a'))
+    fireEvent.click(await screen.findByText('Session B'))
+    await waitFor(() => {
+      expect(chatState.switchSession).toHaveBeenCalledWith('sid-b')
+    })
+    expect(screen.queryByLabelText('Loading...')).toBeNull()
+    await act(async () => { release() })
+  })
+
+  it('spins the title while a remote session hydrates', async () => {
+    let release: () => void = () => {}
+    chatState.switchSession.mockImplementation(() => new Promise<void>((resolve) => { release = resolve }))
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'remote lab' },
+    ])
+    mockEnvironment.listProjects.mockResolvedValue([
+      { projectId: 'project-1', path: '/work/remote-app', name: 'remote-app', lastActiveAt: 1 },
+    ])
+    sessionFixtures.byFolder = {
+      'project-1': [
+        { sessionId: 'sid-remote', title: 'Remote session', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1 },
+      ],
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(await screen.findByText('remote-app'))
+    fireEvent.click(await screen.findByText('Remote session'))
+    expect(await screen.findByLabelText('Loading...')).toBeInTheDocument()
+    await act(async () => { release() })
   })
 
   it('keeps session order after clicking another session in the same project', async () => {

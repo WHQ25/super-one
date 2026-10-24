@@ -6,6 +6,9 @@ import { useChatStore } from '@/stores/chat-store'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { startDraftAutosave } from '@/lib/draft-sync'
 import { DraftsSection } from './DraftsSection'
+import { SidebarSectionLabel } from './SidebarSectionLabel'
+
+const LOCAL = ['local']
 
 const rows: DraftListEntry[] = [{ id: 'preview-draft', text: 'Continue the mobile draft migration', title: 'Continue the mobile draft migration',
   docJson: null, attachments: [], projectPath: '/preview', harness: 'codex', model: 'gpt-5.4', permissionMode: 'default', settings: {},
@@ -26,7 +29,7 @@ function Preview({ remote = false, empty = false, editable = false, cleared = fa
   }, [remote, empty, text])
   return <div className="w-72 bg-sidebar p-2">
     {editable && <input aria-label="Draft content" className="mb-3 w-full rounded border p-2" value={text} onChange={(event) => setText(event.target.value)} />}
-    <DraftsSection connectionId="local" />
+    <DraftsSection connectionIds={LOCAL} />
   </div>
 }
 
@@ -68,10 +71,10 @@ function SideChatDraftPreview() {
       <input aria-label={sessionId === 'preview-side' ? 'Side chat input' : 'Ordinary session input'} className="mt-1 w-full rounded border p-2" value={sessions?.[sessionId]?.draftText ?? ''}
         onChange={(event) => useChatStore.getState().setDraftText(event.target.value, { projectPath, sessionId })} />
     </label>)}
-    <DraftsSection connectionId="local" />
+    <DraftsSection connectionIds={LOCAL} />
   </div>
 }
-const meta = { title: 'Sidebar/DraftsSection', component: DraftsSection, args: { connectionId: 'local' } } satisfies Meta<typeof DraftsSection>
+const meta = { title: 'Sidebar/DraftsSection', component: DraftsSection, args: { connectionIds: LOCAL } } satisfies Meta<typeof DraftsSection>
 export default meta
 type Story = StoryObj<typeof meta>
 export const Saved: Story = { render: () => <Preview /> }
@@ -94,10 +97,46 @@ function OfflinePreview() {
   }, [])
   return (
     <div className="w-72 bg-sidebar p-2">
-      <DraftsSection connectionId="local" offline />
+      <DraftsSection connectionIds={LOCAL} offlineConnectionIds={LOCAL} />
     </div>
   )
 }
 
 /** Same dim and disconnected icon as an offline pinned row. */
 export const Offline: Story = { render: () => <OfflinePreview /> }
+
+const ENVIRONMENTS = ['local', 'build-node']
+const OFFLINE = ['build-node']
+
+function EnvironmentsPreview() {
+  useLayoutEffect(() => {
+    const previous = useDraftsStore.getState()
+    const environment = window.environment
+    const byConnection = {
+      local: rows,
+      'build-node': [{ ...rows[0], id: 'remote-draft', text: 'Rerun the nightly build', title: 'Rerun the nightly build' }],
+    }
+    window.environment = {
+      ...environment,
+      listDrafts: async (connectionId: string) => byConnection[connectionId as keyof typeof byConnection] ?? [],
+      deleteDraft: async () => {},
+    }
+    useDraftsStore.setState({ byConnection, discardedIds: {} })
+    return () => {
+      window.environment = environment
+      useDraftsStore.setState(previous)
+    }
+  }, [])
+  return (
+    <div className="w-72 bg-sidebar p-2">
+      <DraftsSection
+        connectionIds={ENVIRONMENTS}
+        offlineConnectionIds={OFFLINE}
+        label={<SidebarSectionLabel>Drafts</SidebarSectionLabel>}
+      />
+    </div>
+  )
+}
+
+/** Multi-host sidebar: every environment's drafts under one heading; the offline one is dimmed. */
+export const AcrossEnvironments: Story = { render: () => <EnvironmentsPreview /> }

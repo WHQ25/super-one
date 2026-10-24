@@ -22,7 +22,7 @@ import {
 } from '@superone/ui/components/ui/dialog'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type SidebarTab } from '@/stores/app'
-import { parseRemoteProjectKey, remoteProjectKey } from '@/lib/remote-project-key'
+import { parseRemoteProjectKey, projectBelongsToHost, remoteProjectKey } from '@/lib/remote-project-key'
 import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
@@ -44,12 +44,12 @@ import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import type { EnvironmentConnection, SidebarSort } from '@/lib/multi-host/types'
 import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
-import { sessionPresentation } from '@/lib/multi-host/session-hover'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
-import { SidebarGroupMenu } from '@/components/sidebar/multi-host/SidebarGroupMenu'
+import { presenterFor } from '@/lib/multi-host/session-hover'
 import { MultiHostProjectList } from '@/components/sidebar/multi-host/MultiHostProjectList'
 import { useLoadMultiHostCatalog } from '@/components/sidebar/multi-host/use-load-multi-host-catalog'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
+import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
@@ -165,7 +165,6 @@ export const AppSidebar = memo(function AppSidebar() {
   const [openingSession, setOpeningSession] = useState<{ folderPath: string; sessionId: string } | null>(null)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const expandedFoldersRef = useRef(expandedFolders)
-  const groupBy = useMultiHostSidebarStore((s) => s.settings.groupBy)
   const collapsedEnvironmentIds = useMultiHostSidebarStore((s) => s.settings.collapsedEnvironmentIds)
   const environments = useMultiHostSidebarStore((s) => s.environments)
   const multiHostChrome = multiHostChromeVisible(experimentalRemoteNodesEnabled, hostItems)
@@ -609,24 +608,18 @@ export const AppSidebar = memo(function AppSidebar() {
     })
   }, [connectionBusyId, t])
 
-  const pinHover = (session: (typeof pinnedSessions)[number]) => {
+  // Pins stay global across environments; the hover card names each one's environment and project.
+  const pinPresentation = (session: (typeof pinnedSessions)[number]) => {
     if (!multiHostChrome) return null
-    for (const bucket of environments) {
-      const checkout = bucket.checkouts.find((item) => item.pathKey === session.folderPath)
-      if (checkout) return sessionPresentation(session, bucket).hover
-    }
-    return null
-  }
-  const pinOffline = (session: (typeof pinnedSessions)[number]) => {
-    if (!multiHostChrome) return false
-    const remote = parseRemoteProjectKey(session.folderPath)
-    if (!remote) return false
-    return environments.some((bucket) => bucket.connection === 'offline' && bucket.connectionId === remote.connectionId)
+    const bucket = environments.find((item) => projectBelongsToHost(session.folderPath, item.connectionId))
+    if (!bucket) return null
+    const projectName = bucket.checkouts.find((checkout) => checkout.pathKey === session.folderPath)?.name ?? session.folderName
+    return presenterFor(bucket, projectName)(session)
   }
 
-  const draftConnectionIds = multiHostChrome
+  const draftConnectionIds = useMemo(() => (multiHostChrome
     ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
-    : [selectedHostConnectionId]
+    : [selectedHostConnectionId]), [multiHostChrome, hostItems, selectedHostConnectionId])
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -676,10 +669,11 @@ export const AppSidebar = memo(function AppSidebar() {
       <AppDrawer />
 
       {pinnedSessions.length > 0 && sidebarTab === 'sessions' && (
-        <div className="flex flex-col px-1.5 pb-1">
-          <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t('sidebar.pinned')}</span>
+        <div className="flex flex-col px-2 pb-1">
+          <SidebarSectionLabel>{t('sidebar.pinned')}</SidebarSectionLabel>
           {pinnedSessions.map((s) => {
             const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
+            const presentation = pinPresentation(s)
             return (
               <PinnedSessionRow
                 key={s.sessionId}
@@ -688,8 +682,8 @@ export const AppSidebar = memo(function AppSidebar() {
                 status={pinStatus}
                 isUnseen={pinUnseenFlag === '1'}
                 opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
-                hover={pinHover(s)}
-                environmentOffline={pinOffline(s)}
+                hover={presentation?.hover}
+                environmentOffline={presentation?.environmentOffline}
                 onSwitchSession={handleSwitchSession}
                 onPinSession={handlePinSession}
                 onHideSession={handleHideSession}
@@ -708,24 +702,17 @@ export const AppSidebar = memo(function AppSidebar() {
       )}
 
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
+      {!multiHostChrome && (
       <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
-        <div className="flex min-w-0 max-w-[70%] items-center">
-          <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
-            {t('sidebar.projects')}
-          </span>
-          {multiHostChrome && (
-            <SidebarGroupMenu
-              value={groupBy}
-              onChange={(value) => useMultiHostSidebarStore.getState().setGroupBy(value)}
-            />
-          )}
-        </div>
+        <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
+          {t('sidebar.projects')}
+        </span>
         <div className="flex items-center gap-0.5">
           <IconButton
             size="sm"
             tooltip={t('sidebar.addProject.title')}
             onClick={() => {
-              setAddConnectionId(multiHostChrome ? 'local' : selectedHostConnectionId)
+              setAddConnectionId(selectedHostConnectionId)
               setOpenProjectDialogOpen(true)
             }}
           >
@@ -737,7 +724,7 @@ export const AppSidebar = memo(function AppSidebar() {
                 size="sm"
                 tooltip={t('sidebar.sort.title')}
               >
-                <ArrowDownUp className="size-3" />
+                <ArrowDownUp />
               </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
@@ -749,7 +736,7 @@ export const AppSidebar = memo(function AppSidebar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {!multiHostChrome && selectedHostConnectionId !== 'local' && (
+          {selectedHostConnectionId !== 'local' && (
             <>
               <IconButton
                 size="sm"
@@ -757,7 +744,7 @@ export const AppSidebar = memo(function AppSidebar() {
                 disabled={hostProjectsLoading || hostTurnedOff}
                 onClick={refreshHostProjects}
               >
-                <RotateCw className={cn('size-3', hostProjectsLoading && 'animate-spin')} />
+                <RotateCw className={cn(hostProjectsLoading && 'animate-spin')} />
               </IconButton>
               <HostConnectionToggle
                 connected={hostLive || hostConnecting}
@@ -769,6 +756,7 @@ export const AppSidebar = memo(function AppSidebar() {
           )}
         </div>
       </div>
+      )}
 
       <div className="min-h-0 flex-1">
         {multiHostChrome ? (
@@ -777,11 +765,12 @@ export const AppSidebar = memo(function AppSidebar() {
               {t('common.loading')}
             </div>
           ) : (
-            <ScrollArea className="h-full">
+            <ScrollArea type="scroll" className="sidebar-scroll h-full">
               <MultiHostProjectList
                 environments={environments}
-                groupBy={groupBy}
+                groupBy="environment"
                 sort={sortMode}
+                onSort={setSortMode}
                 expandedProjectKeys={expandedFolders}
                 collapsedEnvironmentIds={collapsedEnvironmentIds}
                 folderSessions={folderSessions}
@@ -828,10 +817,10 @@ export const AppSidebar = memo(function AppSidebar() {
             {t('common.loading')}
           </div>
         ) : (
-          <ScrollArea className="h-full">
-            <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
+          <ScrollArea type="scroll" className="sidebar-scroll h-full">
+            <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
               {/* Drafts are environment-scoped peers of projects — no section header. */}
-              <DraftsSection connectionId={selectedHostConnectionId} offline={hostTurnedOff} />
+              <DraftsSection connectionIds={draftConnectionIds} offlineConnectionIds={hostTurnedOff ? draftConnectionIds : undefined} />
               {hostTurnedOff ? (
                 <div className="flex flex-col items-center justify-center gap-1 p-4 text-center text-xs text-sidebar-foreground/70">
                   <span>{t('sidebar.hostDisconnected')}</span>

@@ -1,9 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
+import { PinnedSessionRow } from './PinnedSessionRow'
 import { SessionRow } from './SessionRow'
 
 const FOLDER = '/proj'
@@ -18,6 +21,17 @@ const noop = {
 
 function entry(sessionId: string, title: string): SessionHistoryEntry {
   return { sessionId, title, lastActiveAt: '0', messageCount: 1 }
+}
+
+const hoverModel: SessionHoverModel = {
+  title: 'Hydrating the remote transcript',
+  projectName: 'transcript-viewer',
+  environmentLabel: 'This Mac',
+  kind: 'local',
+  connection: 'connected',
+  worktreeName: null,
+  lastActiveAt: '0',
+  tags: [],
 }
 
 function hoverActionButtons(container: HTMLElement): HTMLElement[] {
@@ -79,6 +93,115 @@ describe('SessionRow opening icon', () => {
     expect(idleRow?.querySelector('.lucide-eye-off')).not.toBeNull()
     const idleGlyph = idleRow?.querySelector('.lucide-message-square')
     expect(idleGlyph?.parentElement?.className ?? '').toContain('group-hover/session:opacity-0')
+  })
+})
+
+describe('SessionRow hover card', () => {
+  it('anchors the card to the session row and keeps the title a direct flex item', () => {
+    const { container } = render(
+      <SessionRow
+        session={entry('open', 'Hydrating the remote transcript')}
+        folderPath={FOLDER}
+        hover={hoverModel}
+        {...noop}
+      />,
+    )
+
+    const trigger = container.querySelector('[data-slot="hover-card-trigger"]')
+    expect(trigger).not.toBeNull()
+    expect(trigger?.className).toContain('group/session')
+    expect(trigger?.className).toContain('flex')
+    expect(trigger?.className).toContain('items-center')
+    expect(trigger?.className).toContain('py-1.5')
+    const title = trigger?.querySelector('.animated-title-wrap')
+    expect(title).not.toBeNull()
+    expect(title?.parentElement).toBe(trigger)
+  })
+
+  it('anchors a pinned card to the whole pinned row', () => {
+    const { container } = render(
+      <PinnedSessionRow
+        session={{ ...entry('pin', 'Pinned title'), provider: 'claude', folderPath: FOLDER, folderName: 'super-one' }}
+        isActive={false}
+        status="idle"
+        isUnseen={false}
+        hover={hoverModel}
+        {...noop}
+      />,
+    )
+
+    const trigger = container.querySelector('[data-slot="hover-card-trigger"]')
+    expect(trigger?.className).toContain('group/pin')
+    expect(trigger?.className).toContain('flex')
+    expect(trigger?.className).toContain('items-center')
+    expect(trigger?.className).toContain('py-1.5')
+    expect(trigger?.className.split(/\s+/)).not.toContain('flex-1')
+    const title = trigger?.querySelector('.animated-title-wrap')
+    expect(title?.parentElement).toBe(trigger)
+    expect(title).toHaveClass('text-md')
+    expect(screen.queryByText('super-one')).toBeNull()
+    expect(trigger?.querySelector('.inline-flex')).toHaveStyle({ width: '20px', height: '20px' })
+  })
+
+  it('clamps the card title to three lines', () => {
+    render(
+      <SessionHoverBody
+        model={{
+          ...hoverModel,
+          title: 'Investigate the nightly CI failure that only reproduces on the remote desktop checkout',
+        }}
+      />,
+    )
+
+    expect(screen.getByText(/Investigate the nightly CI failure/)).toHaveClass('line-clamp-3')
+  })
+
+  it('still opens the session menu from a right-click on the hovered row', () => {
+    const { container } = render(
+      <SessionRow
+        session={entry('open', 'Hydrating the remote transcript')}
+        folderPath={FOLDER}
+        hover={hoverModel}
+        {...noop}
+      />,
+    )
+
+    fireEvent.contextMenu(container.querySelector('[data-slot="hover-card-trigger"]')!)
+    expect(screen.getByText('Pin Session')).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Tags' })).toBeNull()
+  })
+
+  it('still opens the pinned session menu from a right-click', () => {
+    const { container } = render(
+      <PinnedSessionRow
+        session={{ ...entry('pin', 'Pinned title'), folderPath: FOLDER, folderName: 'super-one' }}
+        isActive={false}
+        status="idle"
+        isUnseen={false}
+        hover={hoverModel}
+        {...noop}
+      />,
+    )
+
+    fireEvent.contextMenu(container.querySelector('[data-slot="hover-card-trigger"]')!)
+    expect(screen.getByText('Pin Session')).toBeInTheDocument()
+  })
+
+  it('opens on the right of the row, top-aligned, outside the row', () => {
+    render(
+      <SessionHoverCard model={hoverModel} open>
+        <SessionHoverCardTrigger>
+          <div className="group/session">Hydrating the remote transcript</div>
+        </SessionHoverCardTrigger>
+      </SessionHoverCard>,
+    )
+
+    const content = document.querySelector('[data-slot="hover-card-content"]')
+    expect(content).not.toBeNull()
+    expect(content?.getAttribute('data-side')).toBe('right')
+    expect(content?.getAttribute('data-align')).toBe('start')
+    const trigger = document.querySelector('[data-slot="hover-card-trigger"]')
+    expect(trigger?.contains(content)).toBe(false)
   })
 })
 

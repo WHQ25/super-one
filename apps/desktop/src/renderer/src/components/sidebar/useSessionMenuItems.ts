@@ -60,5 +60,5 @@ export function useSessionMenuItems(
       const title = (session.title || 'Untitled').trim()
       chatInputAPI.insertMention?.('session', session.sessionId, title)
     },
-  })
+  }, { includeTags: false })
 }

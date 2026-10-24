@@ -136,7 +136,7 @@ export function ProjectHistoryList({
       : t('sidebar.contextMenu.noSessions')
 
   return (
-    <div className="flex flex-col overflow-hidden pl-2.5">
+    <div className="flex flex-col overflow-hidden">
       <div className="flex items-center gap-1.5 px-2.5 py-1">
         <Search className="size-3.5 shrink-0 text-sidebar-foreground/50" />
         <input

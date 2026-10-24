@@ -30,6 +30,11 @@ export interface SessionMenuOptions {
    * into a mini window for the session it is already showing (chat header).
    */
   miniWindow?: 'open' | 'convert'
+  /**
+   * Sidebar rows show tags on the hover card, so they pass false. The chat
+   * header has no card and keeps the submenu.
+   */
+  includeTags?: boolean
 }
 
 /**
@@ -141,9 +146,33 @@ export function buildSessionMenuItems(
   const hostPath = isRemoteHost
     ? folderPath.slice(folderPath.indexOf(':', 'remote:'.length) + 1) || folderPath
     : folderPath
-  const tags = session.tags ?? []
-
   const onHide = handlers.onHide
+  const tags = options.includeTags === false ? [] : (session.tags ?? [])
+  const tagsSubmenu: AdaptiveMenuEntry[] = options.includeTags === false
+    ? []
+    : [{
+        kind: 'submenu',
+        id: 'tags',
+        label: t('sidebar.contextMenu.tags'),
+        icon: Tag,
+        items: tags.length
+          ? tags.map((tag) => ({
+              kind: 'item' as const,
+              id: `tag:${tag}`,
+              label: tag,
+              onSelect: () => {
+                void navigator.clipboard.writeText(tag)
+                toast.success(t('sidebar.contextMenu.tagCopiedToast'))
+              },
+            }))
+          : [{
+              kind: 'item' as const,
+              id: 'tags-empty',
+              label: t('sidebar.contextMenu.noTags'),
+              disabled: true,
+              onSelect: () => undefined,
+            }],
+      }]
 
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
@@ -151,29 +180,7 @@ export function buildSessionMenuItems(
     ...(onHide
       ? [{ kind: 'item' as const, id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: onHide }]
       : []),
-    {
-      kind: 'submenu',
-      id: 'tags',
-      label: t('sidebar.contextMenu.tags'),
-      icon: Tag,
-      items: tags.length
-        ? tags.map((tag) => ({
-            kind: 'item' as const,
-            id: `tag:${tag}`,
-            label: tag,
-            onSelect: () => {
-              void navigator.clipboard.writeText(tag)
-              toast.success(t('sidebar.contextMenu.tagCopiedToast'))
-            },
-          }))
-        : [{
-            kind: 'item' as const,
-            id: 'tags-empty',
-            label: t('sidebar.contextMenu.noTags'),
-            disabled: true,
-            onSelect: () => undefined,
-          }],
-    },
+    ...tagsSubmenu,
     { kind: 'separator' },
     ...buildChatFormItems(session, folderPath, t, handlers.chatView, options),
     { kind: 'separator' },

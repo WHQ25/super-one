@@ -5,6 +5,8 @@ import type { EnvironmentBucket, EnvironmentConnection, EnvironmentKind } from '
 
 export interface SessionHoverModel {
   title: string
+  /** Null when the caller has no project to name. */
+  projectName: string | null
   environmentLabel: string
   kind: EnvironmentKind
   connection: EnvironmentConnection
@@ -24,6 +26,7 @@ type HoverEnvironment = Pick<EnvironmentBucket, 'label' | 'kind' | 'connection' 
 export function buildSessionHover(input: {
   session: SessionHistoryEntry
   bucket: HoverEnvironment
+  projectName?: string | null
 }): SessionHoverModel {
   const { session } = input
   const worktreeName = session.worktreePath
@@ -31,6 +34,7 @@ export function buildSessionHover(input: {
     : session.isWorktree ? (session.gitBranch ?? null) : null
   return {
     title: session.title,
+    projectName: input.projectName ?? null,
     environmentLabel: input.bucket.label,
     kind: input.bucket.kind,
     connection: input.bucket.connection,
@@ -46,8 +50,8 @@ export interface SessionPresentation {
   environmentOffline: boolean
 }
 
-function environmentKey(bucket: HoverEnvironment): string {
-  return [bucket.label, bucket.kind, bucket.connection, bucket.path ?? ''].join('\n')
+function environmentKey(bucket: HoverEnvironment, projectName: string | null): string {
+  return [bucket.label, bucket.kind, bucket.connection, bucket.path ?? '', projectName ?? ''].join('\n')
 }
 
 const presentations = new WeakMap<SessionHistoryEntry, { key: string; value: SessionPresentation }>()
@@ -56,12 +60,16 @@ const presentations = new WeakMap<SessionHistoryEntry, { key: string; value: Ses
  * The same session row and environment fields return the same object. A bucket
  * replaced because another of its checkouts moved does not render every row again.
  */
-export function sessionPresentation(session: SessionHistoryEntry, bucket: HoverEnvironment): SessionPresentation {
-  const key = environmentKey(bucket)
+export function sessionPresentation(
+  session: SessionHistoryEntry,
+  bucket: HoverEnvironment,
+  projectName: string | null = null,
+): SessionPresentation {
+  const key = environmentKey(bucket, projectName)
   const hit = presentations.get(session)
   if (hit?.key === key) return hit.value
   const value = {
-    hover: buildSessionHover({ session, bucket }),
+    hover: buildSessionHover({ session, bucket, projectName }),
     environmentOffline: bucket.connection === 'offline',
   }
   presentations.set(session, { key, value })
@@ -70,13 +78,16 @@ export function sessionPresentation(session: SessionHistoryEntry, bucket: HoverE
 
 const presenters = new Map<string, (session: SessionHistoryEntry) => SessionPresentation>()
 
-/** One presenter per environment state, so a row's `sessionPresentation` prop keeps its identity. */
-export function presenterFor(bucket: HoverEnvironment): (session: SessionHistoryEntry) => SessionPresentation {
-  const key = environmentKey(bucket)
+/** One presenter per environment state and project, so a row's `sessionPresentation` prop keeps its identity. */
+export function presenterFor(
+  bucket: HoverEnvironment,
+  projectName: string | null = null,
+): (session: SessionHistoryEntry) => SessionPresentation {
+  const key = environmentKey(bucket, projectName)
   let presenter = presenters.get(key)
   if (!presenter) {
     const environment = { label: bucket.label, kind: bucket.kind, connection: bucket.connection, path: bucket.path }
-    presenter = (session) => sessionPresentation(session, environment)
+    presenter = (session) => sessionPresentation(session, environment, projectName)
     presenters.set(key, presenter)
   }
   return presenter

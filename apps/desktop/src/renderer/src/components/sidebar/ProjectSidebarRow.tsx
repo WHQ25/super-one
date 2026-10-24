@@ -11,6 +11,7 @@ import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { MiniAppHostGroup } from './MiniAppHostGroup'
+import { SidebarHoverChevron, sidebarRowActionsClass } from './hover-disclosure'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -175,8 +176,6 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   }
   /** Merged project: sessions sit under one header, so this checkout draws none. */
   sessionsOnly?: boolean
-  /** Widget project row: chevron, folder, name, and a new-session button that stays visible. */
-  plain?: boolean
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
@@ -199,8 +198,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   offline = false,
   sessionPresentation,
   sessionsOnly = false,
-  plain = false,
 }: ProjectSidebarRowProps) {
+  // A disconnected environment has nothing to list. Ignore a stored expand so
+  // the row collapses as soon as the connection drops.
+  const open = isExpanded && !offline
   const { t } = useTranslation()
   const foregroundSessionId = useChatStore((state) =>
     state.activeProject === folder.path
@@ -265,8 +266,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }, [])
 
   useEffect(() => {
-    if (!isExpanded) setAdditionalNormalCount(0)
-  }, [isExpanded])
+    if (!open) setAdditionalNormalCount(0)
+  }, [open])
 
   /** Every session row below already sits under this project row, at whatever
    *  collapse state the user chose — switching to one must not toggle it. */
@@ -276,9 +277,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   )
 
   const openHistory = useCallback(() => {
+    if (offline || folder.missing) return
     setHistoryMode(true)
-    if (!isExpanded) onToggleExpand(folder.path)
-  }, [isExpanded, onToggleExpand, folder.path])
+    if (!open) onToggleExpand(folder.path)
+  }, [offline, folder.missing, open, onToggleExpand, folder.path])
 
   const scheduledBySession = useScheduledSendsStore((s) => s.bySession)
 
@@ -356,7 +358,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     )
     const requiredCount = sections.attention.length + sections.scheduled.length
     const displayLimit = Math.max(INITIAL_EXPAND_LEVEL, requiredCount) + additionalNormalCount
-    const groupsToShow = visibleSidebarSessionGroups(sections, isExpanded, displayLimit, isPinnedGroup)
+    const groupsToShow = visibleSidebarSessionGroups(sections, open, displayLimit, isPinnedGroup)
     const totalCount = requiredCount + sections.normal.length
     return {
       displayPath: homePath(
@@ -366,12 +368,12 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           : folder.path,
       ),
       groupsToShow,
-      showSessions: isExpanded || groupsToShow.length > 0,
-      hasMoreToShow: isExpanded && (totalCount > groupsToShow.length || hasMoreSessions),
+      showSessions: open || groupsToShow.length > 0,
+      hasMoreToShow: open && (totalCount > groupsToShow.length || hasMoreSessions),
       nextRootTarget: displayLimit + EXPAND_STEP + 1,
       isVisibleWhenCollapsed,
     }
-  }, [allSessions, folder.path, isExpanded, hasMoreSessions, liveSessionSig, realtimeSessionSig, additionalNormalCount, scheduledBySession, foregroundSessionId])
+  }, [allSessions, folder.path, open, hasMoreSessions, liveSessionSig, realtimeSessionSig, additionalNormalCount, scheduledBySession, foregroundSessionId])
 
   /**
    * Every opened mini-app owns a host process, so listing live hosts would just
@@ -414,12 +416,12 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }, [folder.path, folder.missing])
 
   useEffect(() => {
-    if (isExpanded) refreshAutomations()
-  }, [isExpanded, refreshAutomations])
+    if (open) refreshAutomations()
+  }, [open, refreshAutomations])
 
   // MCP / IPC list mutations + run lifecycle (status dots) while this project is expanded.
   useEffect(() => {
-    if (!isExpanded || folder.missing) return
+    if (!open || folder.missing) return
     const unsubChanged = window.app.onAutomationsChanged((event) => {
       if (event.projectPath && event.projectPath !== folder.path) return
       refreshAutomations()
@@ -436,7 +438,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       unsubChanged()
       unsubRun()
     }
-  }, [isExpanded, folder.missing, folder.path, refreshAutomations])
+  }, [open, folder.missing, folder.path, refreshAutomations])
 
   const openCreateDialog = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -452,8 +454,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   const folderMenuItems: AdaptiveMenuEntry[] = [
     ...(!folder.missing
       ? ([
-          { kind: 'item', id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: Search, onSelect: openHistory },
-          // Gated on !missing like history: with the root gone there is nothing
+          // History opens the session list. A disconnected environment has no list to open.
+          ...(!offline
+            ? [{ kind: 'item' as const, id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: Search, onSelect: openHistory }]
+            : []),
+          // Gated on !missing: with the root gone there is nothing
           // meaningful to point workspace folders at.
           { kind: 'item', id: 'edit-project', label: t('sidebar.contextMenu.editProject'), icon: Pencil, onSelect: () => onEditProject(folder) },
           { kind: 'separator' },
@@ -464,77 +469,34 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   return (
     <div>
-      {!sessionsOnly && plain && (
-        <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
-          <div className={cn(
-            'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-2.5',
-            folder.missing || offline ? 'opacity-60' : 'hover:bg-sidebar-hover',
-          )}>
-            <button
-              type="button"
-              onClick={() => {
-                if (folder.missing) return
-                if (historyMode) setHistoryMode(false)
-                onToggleExpand(folder.path)
-              }}
-              className="flex min-w-0 flex-1 items-center gap-1 text-left"
-            >
-              {sessionsLoading ? (
-                <Loader2 aria-label={t('common.loading')} className="size-4 shrink-0 animate-spin text-sidebar-foreground/70" />
-              ) : (
-                <ChevronRight className={cn('size-4 shrink-0 text-sidebar-foreground/70 transition-transform', isExpanded && 'rotate-90')} />
-              )}
-              {folder.missing
-                ? <FolderX className="size-4 shrink-0 text-destructive" />
-                : <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />}
-              <span className={cn('min-w-0 truncate text-md', folder.missing && 'text-sidebar-foreground/50 line-through')}>{folder.name}</span>
-            </button>
-            {!folder.missing && (
-              <IconButton
-                size="sm"
-                tooltip={t('tooltips.newSession')}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onNewSession(folder.path)
-                }}
-              >
-                <SquarePen />
-              </IconButton>
-            )}
-          </div>
-        </AdaptiveContextMenu>
-      )}
-      {!sessionsOnly && !plain && <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
+      {!sessionsOnly && <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
           <div
             onClick={() => {
-              if (folder.missing) return
+              if (folder.missing || offline) return
               if (historyMode) setHistoryMode(false)
               onToggleExpand(folder.path)
             }}
             className={cn(
-              'group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors',
+              'group flex h-9 items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors',
               folder.missing || offline ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-hover',
-              offline && !folder.missing && 'cursor-pointer'
             )}
           >
-            <ChevronRight className={cn(
-              'hidden size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
-              isExpanded && 'rotate-90',
-              // Loading keeps the spinner; the hover chevron must not replace it.
-              (folder.missing || sessionsLoading) && '!hidden'
-            )} />
-            {folder.missing
-              ? <FolderX className="size-4.5 shrink-0 text-destructive" />
-              : sessionsLoading
-                ? (
-                    <span className="flex size-4.5 shrink-0 items-center justify-center">
-                      <Loader2 aria-label={t('common.loading')} className="size-3.5 animate-spin text-sidebar-foreground/70" />
-                    </span>
-                  )
-                : isExpanded
-                  ? <FolderOpen className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-                  : <Folder className="size-4.5 shrink-0 text-sidebar-foreground/70 group-hover:hidden" />
-            }
+            <SidebarHoverChevron
+              expanded={open}
+              locked={folder.missing || sessionsLoading || offline}
+              glyph={folder.missing
+                ? <FolderX className="size-4 shrink-0 text-destructive" />
+                : sessionsLoading
+                  ? (
+                      <span className="flex size-4 shrink-0 items-center justify-center">
+                        <Loader2 aria-label={t('common.loading')} className="size-3.5 animate-spin text-sidebar-foreground/70" />
+                      </span>
+                    )
+                  : open
+                    ? <FolderOpen className="size-4 shrink-0 text-sidebar-foreground/70" />
+                    : <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />
+              }
+            />
             <TooltipProvider delayDuration={500}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -545,13 +507,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            {!folder.missing && (
+            {!folder.missing && !offline && (
               <div
                 data-slot="project-row-actions"
-                className="invisible ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:visible group-hover:pointer-events-auto group-hover:opacity-100"
+                className={sidebarRowActionsClass}
               >
                 <IconButton
-                  size="md"
+                  size="sm"
                   variant="nested"
                   tooltip={t('sidebar.contextMenu.searchSessions')}
                   tooltipSideOffset={8}
@@ -563,7 +525,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   <Search />
                 </IconButton>
                 <IconButton
-                  size="md"
+                  size="sm"
                   variant="nested"
                   tooltip={t('tooltips.newAutomation')}
                   tooltipSideOffset={8}
@@ -572,7 +534,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   <CalendarClock />
                 </IconButton>
                 <IconButton
-                  size="md"
+                  size="sm"
                   variant="nested"
                   tooltip={t('tooltips.newSession')}
                   tooltipSideOffset={8}
@@ -588,143 +550,146 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           </div>
       </AdaptiveContextMenu>}
 
-      {!sessionsOnly && !plain && isExpanded && projectAutomations.length > 0 && (
-        <div className="overflow-hidden pl-2.5">
-          <button
-            onClick={() => setAutomationsExpanded((v) => !v)}
-            className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
-          >
-            <ChevronRight className={cn(
-              'hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/auto:block',
-              automationsExpanded && 'rotate-90',
-            )} />
-            <CalendarClock className="size-3.5 shrink-0 group-hover/auto:hidden" />
-            <span>{t('sidebar.contextMenu.automations')}</span>
-            <span className="ml-auto text-[10px] text-sidebar-foreground/30">{projectAutomations.length}</span>
-          </button>
-          {automationsExpanded && (
-            <div className="flex flex-col py-0.5 pl-2">
-              {projectAutomations.map((automation) => {
-                const automationMenuItems: AdaptiveMenuEntry[] = [
-                  { kind: 'item', id: 'run', label: t('sidebar.contextMenu.runNow'), icon: Play, onSelect: () => { window.app.runAutomationNow(automation.id).catch(() => {}) } },
-                  { kind: 'item', id: 'edit', label: t('sidebar.contextMenu.edit'), icon: Pencil, onSelect: () => openEditDialog(automation) },
-                  { kind: 'separator' },
-                  { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) } },
-                ]
-                return (
-                <AdaptiveContextMenu key={automation.id} items={automationMenuItems}>
-                    <button
-                      onClick={() => openEditDialog(automation)}
-                      className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
-                    >
-                      <span className="flex items-center gap-1.5 truncate">
-                        <CalendarClock className="size-3 shrink-0 text-sidebar-foreground/50" />
-                        <span className="truncate">{automation.name}</span>
-                      </span>
-                      <span className={cn(
-                        'size-1.5 shrink-0 rounded-full',
-                        automation.lastRunStatus === 'error' ? 'bg-red-500' :
-                        automation.lastRunStatus === 'running' ? 'bg-yellow-500' :
-                        automation.enabled ? 'bg-green-500' : 'bg-muted-foreground/30',
-                      )} />
-                    </button>
-                </AdaptiveContextMenu>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Everything under the project header sits one step in. A merged repository indents its own children. */}
+      <div className={cn(!sessionsOnly && 'pl-1')}>
+        {!sessionsOnly && open && projectAutomations.length > 0 && (
+          <div className="overflow-hidden">
+            <button
+              onClick={() => setAutomationsExpanded((v) => !v)}
+              className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
+            >
+              <ChevronRight className={cn(
+                'hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/auto:block',
+                automationsExpanded && 'rotate-90',
+              )} />
+              <CalendarClock className="size-3.5 shrink-0 group-hover/auto:hidden" />
+              <span>{t('sidebar.contextMenu.automations')}</span>
+              <span className="ml-auto text-[10px] text-sidebar-foreground/30">{projectAutomations.length}</span>
+            </button>
+            {automationsExpanded && (
+              <div className="flex flex-col py-0.5 pl-2">
+                {projectAutomations.map((automation) => {
+                  const automationMenuItems: AdaptiveMenuEntry[] = [
+                    { kind: 'item', id: 'run', label: t('sidebar.contextMenu.runNow'), icon: Play, onSelect: () => { window.app.runAutomationNow(automation.id).catch(() => {}) } },
+                    { kind: 'item', id: 'edit', label: t('sidebar.contextMenu.edit'), icon: Pencil, onSelect: () => openEditDialog(automation) },
+                    { kind: 'separator' },
+                    { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) } },
+                  ]
+                  return (
+                  <AdaptiveContextMenu key={automation.id} items={automationMenuItems}>
+                      <button
+                        onClick={() => openEditDialog(automation)}
+                        className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
+                      >
+                        <span className="flex items-center gap-1.5 truncate">
+                          <CalendarClock className="size-3 shrink-0 text-sidebar-foreground/50" />
+                          <span className="truncate">{automation.name}</span>
+                        </span>
+                        <span className={cn(
+                          'size-1.5 shrink-0 rounded-full',
+                          automation.lastRunStatus === 'error' ? 'bg-red-500' :
+                          automation.lastRunStatus === 'running' ? 'bg-yellow-500' :
+                          automation.enabled ? 'bg-green-500' : 'bg-muted-foreground/30',
+                        )} />
+                      </button>
+                  </AdaptiveContextMenu>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-      {!sessionsOnly && !plain && isExpanded && (
-        <MiniAppHostGroup
-          hosts={projectHosts}
-          onOpen={handleOpenHostApp}
-          onStop={handleStopHost}
-        />
-      )}
-
-      <MorphHeight morphKey={historyMode}>
-        {historyMode ? (
-          <ProjectHistoryList
-            folderPath={folder.path}
-            initialSessions={allSessions}
-            openingSessionId={openingSessionId}
-            onClose={() => setHistoryMode(false)}
-            onSwitchSession={switchSessionInPlace}
-            onPinSession={onPinSession}
-            onHideSession={onHideSession}
-            onRenameSession={onRenameSession}
-            onDeleteSession={onDeleteSession}
+        {!sessionsOnly && open && (
+          <MiniAppHostGroup
+            hosts={projectHosts}
+            onOpen={handleOpenHostApp}
+            onStop={handleStopHost}
           />
-        ) : derived.showSessions ? (
-          <div className="flex flex-col py-0.5 pl-2.5">
-            {derived.groupsToShow.length === 0 ? (
-              sessionsLoading || sessionsOnly ? null : (
-                <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
-              )
-            ) : (
-              derived.groupsToShow.map(({ parent, children }) => {
-                const hasChildren = children.length > 0
-                const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
-                const childrenCollapsed = hasChildren && !childrenExpanded
-                const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isVisibleWhenCollapsed)
-                const parentPresentation = sessionPresentation?.(parent)
-                return (
-                <div key={parent.sessionId}>
-                  <SessionRow
-                    session={parent}
-                    folderPath={folder.path}
-                    opening={openingSessionId === parent.sessionId}
-                    hasChildren={hasChildren}
-                    childrenCollapsed={childrenCollapsed}
-                    onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
-                    onSwitchSession={switchSessionInPlace}
-                    onPinSession={onPinSession}
-                    onHideSession={onHideSession}
-                    onRenameSession={onRenameSession}
-                    onDeleteSession={onDeleteSession}
-                    {...(parentPresentation ?? {})}
-                    environmentOffline={offline || parentPresentation?.environmentOffline}
-                  />
-                  {childrenToShow.map((child) => {
-                    const childPresentation = sessionPresentation?.(child)
-                    return (
+        )}
+
+        <MorphHeight morphKey={historyMode}>
+          {historyMode ? (
+            <ProjectHistoryList
+              folderPath={folder.path}
+              initialSessions={allSessions}
+              openingSessionId={openingSessionId}
+              onClose={() => setHistoryMode(false)}
+              onSwitchSession={switchSessionInPlace}
+              onPinSession={onPinSession}
+              onHideSession={onHideSession}
+              onRenameSession={onRenameSession}
+              onDeleteSession={onDeleteSession}
+            />
+          ) : derived.showSessions ? (
+            <div className="flex flex-col py-0.5">
+              {derived.groupsToShow.length === 0 ? (
+                sessionsLoading || sessionsOnly ? null : (
+                  <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
+                )
+              ) : (
+                derived.groupsToShow.map(({ parent, children }) => {
+                  const hasChildren = children.length > 0
+                  const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
+                  const childrenCollapsed = hasChildren && !childrenExpanded
+                  const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isVisibleWhenCollapsed)
+                  const parentPresentation = sessionPresentation?.(parent)
+                  return (
+                  <div key={parent.sessionId}>
                     <SessionRow
-                      key={child.sessionId}
-                      session={child}
+                      session={parent}
                       folderPath={folder.path}
-                      childSession
-                      opening={openingSessionId === child.sessionId}
+                      opening={openingSessionId === parent.sessionId}
+                      hasChildren={hasChildren}
+                      childrenCollapsed={childrenCollapsed}
+                      onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
                       onSwitchSession={switchSessionInPlace}
                       onPinSession={onPinSession}
                       onHideSession={onHideSession}
                       onRenameSession={onRenameSession}
                       onDeleteSession={onDeleteSession}
-                      {...(childPresentation ?? {})}
-                      environmentOffline={offline || childPresentation?.environmentOffline}
+                      {...(parentPresentation ?? {})}
+                      environmentOffline={offline || parentPresentation?.environmentOffline}
                     />
-                    )
-                  })}
-                </div>
-                )
-              })
-            )}
-            {isExpanded && derived.hasMoreToShow && (
-              <button
-                onClick={() => {
-                  setAdditionalNormalCount((count) => count + EXPAND_STEP)
-                  void onLoadMoreSessions(folder.path, derived.nextRootTarget)
-                }}
-                className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
-              >
-                <ChevronDown className="size-3.5 shrink-0" />
-                <span>{t('sidebar.contextMenu.showMore')}</span>
-              </button>
-            )}
-          </div>
-        ) : null}
-      </MorphHeight>
+                    {childrenToShow.map((child) => {
+                      const childPresentation = sessionPresentation?.(child)
+                      return (
+                      <SessionRow
+                        key={child.sessionId}
+                        session={child}
+                        folderPath={folder.path}
+                        childSession
+                        opening={openingSessionId === child.sessionId}
+                        onSwitchSession={switchSessionInPlace}
+                        onPinSession={onPinSession}
+                        onHideSession={onHideSession}
+                        onRenameSession={onRenameSession}
+                        onDeleteSession={onDeleteSession}
+                        {...(childPresentation ?? {})}
+                        environmentOffline={offline || childPresentation?.environmentOffline}
+                      />
+                      )
+                    })}
+                  </div>
+                  )
+                })
+              )}
+              {open && derived.hasMoreToShow && (
+                <button
+                  onClick={() => {
+                    setAdditionalNormalCount((count) => count + EXPAND_STEP)
+                    void onLoadMoreSessions(folder.path, derived.nextRootTarget)
+                  }}
+                  className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
+                >
+                  <ChevronDown className="size-3.5 shrink-0" />
+                  <span>{t('sidebar.contextMenu.showMore')}</span>
+                </button>
+              )}
+            </div>
+          ) : null}
+        </MorphHeight>
+      </div>
 
       <AutomationDialog
         open={automationDialogOpen}

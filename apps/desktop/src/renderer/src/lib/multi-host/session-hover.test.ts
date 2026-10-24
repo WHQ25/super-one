@@ -24,10 +24,12 @@ describe('buildSessionHover', () => {
         tags: ['mobile'],
       }),
       bucket: { label: 'dev-server', kind: 'cli-node', connection: 'offline' },
+      projectName: 'super-one',
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(model).toEqual({
       title: 'Fix the sidebar',
+      projectName: 'super-one',
       environmentLabel: 'dev-server',
       kind: 'cli-node',
       connection: 'offline',
@@ -67,5 +69,12 @@ describe('sessionPresentation', () => {
 
   it('hands one presenter to every bucket in the same state', () => {
     expect(presenterFor({ ...bucket })).toBe(presenterFor({ ...bucket }))
+  })
+
+  it('keeps presenters for different projects apart', () => {
+    const row = session()
+    expect(presenterFor(bucket, 'app')).not.toBe(presenterFor(bucket, 'web'))
+    expect(presenterFor(bucket, 'app')(row).hover.projectName).toBe('app')
+    expect(presenterFor(bucket, 'web')(row).hover.projectName).toBe('web')
   })
 })

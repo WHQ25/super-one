@@ -372,6 +372,13 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   background: oklch(1 0 0 / 0.18);
 }
 
+/* Session and apps lists use Radix. `type="scroll"` keeps the thumb hidden
+   until the list moves. The shared track is 10px; match the 6px native thumb. */
+.sidebar-scroll [data-slot="scroll-area-scrollbar"][data-orientation="vertical"] {
+  width: 6px;
+  padding-inline: 0;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.3s; }

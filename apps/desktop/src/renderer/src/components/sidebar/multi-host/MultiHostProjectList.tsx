@@ -1,5 +1,6 @@
+import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Folder, Pencil, SquarePen, Trash2 } from 'lucide-react'
+import { CalendarClock, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
@@ -9,8 +10,12 @@ import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { environmentSections, groupCheckoutsByRepo, sortProjectGroups } from '@/lib/multi-host/group-projects'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
+import { AutomationDialog } from '@/components/AutomationDialog'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
+import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
+import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
@@ -40,6 +45,7 @@ interface MultiHostProjectListProps {
   onRefreshEnvironment: (connectionId: string) => void
   onToggleConnection: (connectionId: string, connection: EnvironmentBucket['connection']) => void
   onAddProject: (connectionId: string) => void
+  onSort?: (sort: SidebarSort) => void
   connectionBusyId: string | null
   refreshingConnectionId: string | null
 }
@@ -81,6 +87,10 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     environments, groupBy, sort, expandedProjectKeys, collapsedEnvironmentIds,
     draftConnectionIds,
   } = props
+  const offlineConnectionIds = useMemo(
+    () => environments.filter((bucket) => bucket.connection === 'offline').map((bucket) => bucket.connectionId),
+    [environments],
+  )
 
   const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false) => {
     const folder = checkoutToRecentFolder(checkout, name)
@@ -89,7 +99,6 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         key={checkout.pathKey}
         folder={folder}
         sessionsOnly={sessionsOnly}
-        plain
         isExpanded={expandedProjectKeys.has(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
         sessionsLoading={props.loadingFolders[checkout.pathKey] === true}
@@ -106,58 +115,63 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         onDeleteSession={props.onDeleteSession}
         onNewSession={props.onNewSession}
         offline={bucket.connection === 'offline'}
-        sessionPresentation={presenterFor(bucket)}
+        sessionPresentation={presenterFor(bucket, folder.name)}
       />
     )
   }
 
-  const drafts = draftConnectionIds.map((connectionId) => (
+  // Drafts are global like pins (which AppSidebar lists above): they lead the list, ahead of any grouping.
+  const drafts = (
     <DraftsSection
-      key={connectionId}
-      connectionId={connectionId}
-      offline={environments.some((bucket) => bucket.connectionId === connectionId && bucket.connection === 'offline')}
+      connectionIds={draftConnectionIds}
+      offlineConnectionIds={offlineConnectionIds}
+      label={<SidebarSectionLabel>{t('sidebar.drafts.title')}</SidebarSectionLabel>}
     />
-  ))
+  )
 
   if (groupBy === 'environment') {
     const sections = environmentSections(environments, sort)
     return (
-      <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
+      <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
         {drafts}
         {sections.map(({ bucket, checkouts }) => {
-          const expanded = !collapsedEnvironmentIds.includes(bucket.environmentId)
+          const offline = bucket.connection === 'offline'
+          const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
+          const expanded = !offline && !collapsed
           return (
-            <div key={bucket.environmentId}>
+            <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
               <EnvironmentHeader
                 bucket={bucket}
                 expanded={expanded}
                 refreshing={props.refreshingConnectionId === bucket.connectionId}
                 connectionBusy={props.connectionBusyId === bucket.connectionId}
-                onToggle={() => props.onToggleEnvironment(bucket.environmentId)}
+                sort={sort}
+                onToggle={() => {
+                  if (offline) return
+                  props.onToggleEnvironment(bucket.environmentId)
+                }}
                 onRefresh={() => props.onRefreshEnvironment(bucket.connectionId)}
                 onToggleConnection={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}
                 onAddProject={() => props.onAddProject(bucket.connectionId)}
+                onSort={props.onSort}
               />
-              {expanded && bucket.connection === 'offline' && checkouts.length === 0 && (
-                <div className="flex flex-col items-center gap-1 px-4 py-3 text-center text-xs text-sidebar-foreground/70">
-                  <span>{t('sidebar.hostDisconnected')}</span>
-                  <span>{t('sidebar.hostConnectHint')}</span>
-                </div>
-              )}
-              {expanded && bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
-                <div className="px-6 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
-              )}
-              {expanded && bucket.projectsStatus === 'error' && checkouts.length === 0 && (
-                <ProjectLoadError
-                  bucket={bucket}
-                  className="px-6 py-2 text-left text-xs text-sidebar-foreground/70"
-                  onRetry={props.onRefreshEnvironment}
-                />
-              )}
-              {expanded && bucket.projectsStatus === 'ready' && checkouts.length === 0 && bucket.connection !== 'offline' && (
-                <div className="px-6 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
-              )}
-              {expanded && checkouts.map((checkout) => checkoutRow(checkout, bucket))}
+              {/* Projects sit one step inside their environment, hover fill included. */}
+              <div className="pl-1">
+                {expanded && bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
+                  <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
+                )}
+                {expanded && bucket.projectsStatus === 'error' && checkouts.length === 0 && (
+                  <ProjectLoadError
+                    bucket={bucket}
+                    className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
+                    onRetry={props.onRefreshEnvironment}
+                  />
+                )}
+                {expanded && bucket.projectsStatus === 'ready' && checkouts.length === 0 && bucket.connection !== 'offline' && (
+                  <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
+                )}
+                {expanded && checkouts.map((checkout) => checkoutRow(checkout, bucket))}
+              </div>
             </div>
           )
         })}
@@ -171,7 +185,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   )
   const errors = environments.filter((bucket) => bucket.projectsStatus === 'error')
   return (
-    <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
+    <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
       {drafts}
       {errors.map((bucket) => (
         <ProjectLoadError
@@ -190,37 +204,50 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
           return checkoutRow(checkout, bucket)
         }
         const groupKey = `group:${group.key}`
-        const open = expandedProjectKeys.has(groupKey)
+        const allOffline = group.checkouts.every((checkout) => (
+          environments.find((item) => item.environmentId === checkout.environmentId)?.connection === 'offline'
+        ))
+        const open = !allOffline && expandedProjectKeys.has(groupKey)
         const loadingAny = group.checkouts.some((checkout) => props.loadingFolders[checkout.pathKey] === true)
         const anySessions = group.checkouts.some((checkout) => (props.folderSessions[checkout.pathKey]?.length ?? 0) > 0)
+        const target = preferredCheckout(group.checkouts)
         return (
-          <div key={group.key}>
-            <RepoGroupHeader
-              name={group.name}
-              open={open}
-              checkouts={group.checkouts}
-              environments={environments}
-              onToggle={() => {
-                props.onToggleProject(groupKey)
-                if (!open) {
-                  for (const checkout of group.checkouts) {
-                    if (!expandedProjectKeys.has(checkout.pathKey)) props.onToggleProject(checkout.pathKey)
-                  }
+          <RepoGroupHeader
+            key={group.key}
+            name={group.name}
+            open={open}
+            locked={allOffline}
+            checkouts={group.checkouts}
+            environments={environments}
+            onToggle={() => {
+              if (allOffline) return
+              props.onToggleProject(groupKey)
+              if (!open) {
+                for (const checkout of group.checkouts) {
+                  if (!expandedProjectKeys.has(checkout.pathKey)) props.onToggleProject(checkout.pathKey)
                 }
-              }}
-              onNewSession={() => props.onNewSession(preferredCheckout(group.checkouts).pathKey)}
-              onEdit={props.onEditProject}
-              onRemove={props.onRemoveProject}
-            />
+              }
+            }}
+            onNewSession={() => props.onNewSession(target.pathKey)}
+            onEdit={props.onEditProject}
+            onRemove={props.onRemoveProject}
+            onSwitchSession={props.onSwitchSession}
+            onPinSession={props.onPinSession}
+            onHideSession={props.onHideSession}
+            onRenameSession={props.onRenameSession}
+            onDeleteSession={props.onDeleteSession}
+            openingSessionId={props.openingSession?.folderPath === target.pathKey ? props.openingSession.sessionId : null}
+            initialSessions={props.folderSessions[target.pathKey]}
+          >
             {open && group.checkouts.map((checkout) => {
               const bucket = environments.find((item) => item.environmentId === checkout.environmentId)
               if (!bucket) return null
               return checkoutRow(checkout, bucket, undefined, true)
             })}
             {open && !loadingAny && !anySessions && (
-              <div className="px-6 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
+              <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             )}
-          </div>
+          </RepoGroupHeader>
         )
       })}
       {groups.length === 0 && errors.length === 0 && (
@@ -233,16 +260,18 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
 }
 
 function EnvironmentHeader({
-  bucket, expanded, refreshing, connectionBusy, onToggle, onRefresh, onToggleConnection, onAddProject,
+  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort,
 }: {
   bucket: EnvironmentBucket
   expanded: boolean
   refreshing: boolean
   connectionBusy: boolean
+  sort: SidebarSort
   onToggle: () => void
   onRefresh: () => void
   onToggleConnection: () => void
   onAddProject: () => void
+  onSort?: (sort: SidebarSort) => void
 }) {
   return (
     <EnvironmentSectionHeader
@@ -255,27 +284,44 @@ function EnvironmentHeader({
       projectsError={bucket.projectsError}
       refreshing={refreshing}
       connectionBusy={connectionBusy}
+      sort={sort}
       onToggle={onToggle}
       onRefresh={bucket.kind === 'local' ? undefined : onRefresh}
       onToggleConnection={bucket.kind === 'local' ? undefined : onToggleConnection}
       onAddProject={onAddProject}
+      onSort={onSort}
     />
   )
 }
 
 function RepoGroupHeader({
-  name, open, checkouts, environments, onToggle, onNewSession, onEdit, onRemove,
+  name, open, locked = false, checkouts, environments, onToggle, onNewSession, onEdit, onRemove,
+  onSwitchSession, onPinSession, onHideSession, onRenameSession, onDeleteSession,
+  openingSessionId, initialSessions, children,
 }: {
   name: string
   open: boolean
+  /** Every checkout's environment is offline, so the group has nothing to open. */
+  locked?: boolean
   checkouts: HostCheckout[]
   environments: EnvironmentBucket[]
   onToggle: () => void
   onNewSession: () => void
   onEdit: (folder: RecentFolder) => void
   onRemove: (folder: RecentFolder) => void
+  onSwitchSession: MultiHostProjectListProps['onSwitchSession']
+  onPinSession: MultiHostProjectListProps['onPinSession']
+  onHideSession: MultiHostProjectListProps['onHideSession']
+  onRenameSession: MultiHostProjectListProps['onRenameSession']
+  onDeleteSession: MultiHostProjectListProps['onDeleteSession']
+  openingSessionId: string | null
+  initialSessions: SessionHistoryEntry[] | undefined
+  children: ReactNode
 }) {
   const { t } = useTranslation()
+  const [history, setHistory] = useState(false)
+  const [automationOpen, setAutomationOpen] = useState(false)
+  const target = preferredCheckout(checkouts)
   const targetLabel = (checkout: HostCheckout) => {
     const bucket = environments.find((item) => item.environmentId === checkout.environmentId)
     return t('sidebar.actionTarget', { environment: bucket?.label ?? checkout.connectionId, path: checkout.hostPath })
@@ -308,28 +354,102 @@ function RepoGroupHeader({
     },
   ]
   return (
-    <AdaptiveContextMenu items={items} contentClassName="w-56">
-      <div className="group flex h-9 w-full items-center gap-1 overflow-hidden rounded-md px-2.5 hover:bg-sidebar-hover">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1 text-left"
-        >
-          <ChevronRight className={cn('size-4 shrink-0 text-sidebar-foreground/70 transition-transform', open && 'rotate-90')} />
-          <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />
-          <span className="min-w-0 truncate text-md">{name}</span>
-        </button>
-        <IconButton
-          size="sm"
-          tooltip={t('tooltips.newSession')}
-          onClick={(event) => {
-            event.stopPropagation()
-            onNewSession()
-          }}
-        >
-          <SquarePen />
-        </IconButton>
+    <div>
+      <AdaptiveContextMenu items={items} contentClassName="w-56">
+        <div className={cn('group flex h-9 w-full items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors', locked ? 'cursor-default opacity-60' : 'hover:bg-sidebar-hover')}>
+          {locked ? (
+            <div className="flex min-w-0 flex-1 items-center text-left">
+              <SidebarHoverChevron
+                expanded={false}
+                locked
+                glyph={<Folder className="size-4 shrink-0 text-sidebar-foreground/70" />}
+              />
+              <span className="ml-2 min-w-0 truncate text-md">{name}</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (history) setHistory(false)
+                onToggle()
+              }}
+              className="flex min-w-0 flex-1 items-center text-left"
+            >
+              <SidebarHoverChevron
+                expanded={open}
+                glyph={open
+                  ? <FolderOpen className="size-4 shrink-0 text-sidebar-foreground/70" />
+                  : <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />}
+              />
+              <span className="ml-2 min-w-0 truncate text-md">{name}</span>
+            </button>
+          )}
+          {!locked && (
+          <div
+            data-slot="project-row-actions"
+            className={sidebarRowActionsClass}
+          >
+            <IconButton
+              size="sm"
+              variant="nested"
+              tooltip={t('sidebar.contextMenu.searchSessions')}
+              tooltipSideOffset={8}
+              onClick={(event) => {
+                event.stopPropagation()
+                setHistory(true)
+              }}
+            >
+              <Search />
+            </IconButton>
+            <IconButton
+              size="sm"
+              variant="nested"
+              tooltip={t('tooltips.newAutomation')}
+              tooltipSideOffset={8}
+              onClick={(event) => {
+                event.stopPropagation()
+                setAutomationOpen(true)
+              }}
+            >
+              <CalendarClock />
+            </IconButton>
+            <IconButton
+              size="sm"
+              variant="nested"
+              tooltip={t('tooltips.newSession')}
+              tooltipSideOffset={8}
+              onClick={(event) => {
+                event.stopPropagation()
+                onNewSession()
+              }}
+            >
+              <SquarePen />
+            </IconButton>
+          </div>
+          )}
+        </div>
+      </AdaptiveContextMenu>
+      <div className="pl-1">
+        {!locked && history ? (
+          <ProjectHistoryList
+            folderPath={target.pathKey}
+            initialSessions={initialSessions}
+            openingSessionId={openingSessionId}
+            onClose={() => setHistory(false)}
+            onSwitchSession={onSwitchSession}
+            onPinSession={onPinSession}
+            onHideSession={onHideSession}
+            onRenameSession={onRenameSession}
+            onDeleteSession={onDeleteSession}
+          />
+        ) : children}
       </div>
-    </AdaptiveContextMenu>
+      <AutomationDialog
+        open={automationOpen}
+        onOpenChange={setAutomationOpen}
+        editAutomation={null}
+        projectPath={target.pathKey}
+      />
+    </div>
   )
 }

@@ -22,14 +22,14 @@ import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
-import { SessionHoverCard } from './multi-host/SessionHoverCard'
+import { SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
 /** Pin / expand occupy no width at rest. Padding lands on hover. */
 const SESSION_ROW_HOVER_ACTION =
-  'box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 transition-[width,padding,opacity] hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:p-0.5 group-hover/session:opacity-100'
+  'box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:p-0.5 group-hover/session:opacity-100'
 
 /** Lazy `lastEventAt` reader — never subscribe; the store rewrites it on every
  *  content delta and a subscription would re-render the whole session list at
@@ -194,25 +194,25 @@ export const SessionRow = memo(function SessionRow({
             {...dragHandlers}
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
-              'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors',
+              'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-2.25 py-1.5 transition-colors',
               isSessionActive ? 'bg-sidebar-accent sidebar-selected' : 'hover:bg-sidebar-hover',
               (session.isHidden || environmentOffline) && 'opacity-50',
             )}
           >
             {childSession && <CornerDownRight className="size-3 shrink-0 text-sidebar-foreground/45" />}
-            <div className="relative flex size-3 shrink-0 items-center justify-center">
+            <div className="relative flex size-4 shrink-0 items-center justify-center">
               {!opening && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     onHideSession(session.sessionId, !session.isHidden, folderPath)
                   }}
-                  className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/session:opacity-100"
+                  className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/session:opacity-100"
                 >
                   {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
                 </button>
               )}
-              <span className={cn('pointer-events-none transition-opacity', !opening && 'group-hover/session:opacity-0')}>
+              <span className={cn('pointer-events-none', !opening && 'group-hover/session:opacity-0')}>
                 {opening
                   ? <Loader2 aria-label={t('common.loading')} className="size-3 animate-spin text-sidebar-foreground/70" />
                   : scheduled
@@ -237,18 +237,9 @@ export const SessionRow = memo(function SessionRow({
                 }
               </span>
             </div>
-            {hover
-              ? (
-                <SessionHoverCard model={hover}>
-                  {animateTitle
-                    ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
-                    : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
-                  }
-                </SessionHoverCard>
-              )
-              : animateTitle
-                ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
-                : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+            {animateTitle
+              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
+              : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
             {environmentOffline && (
               <Unplug className="size-3 shrink-0 text-sidebar-foreground/70" aria-label={t('sidebar.sessionOffline')} />
@@ -294,12 +285,16 @@ export const SessionRow = memo(function SessionRow({
           </div>
   )
 
+  const rowMenu = (
+    <AdaptiveContextMenu items={menuItems} contentClassName="w-48">
+      {hover ? <SessionHoverCardTrigger>{rowInner}</SessionHoverCardTrigger> : rowInner}
+    </AdaptiveContextMenu>
+  )
+
   return (
     <div>
       {dragPreview}
-      <AdaptiveContextMenu items={menuItems} contentClassName="w-48">
-        {rowInner}
-      </AdaptiveContextMenu>
+      {hover ? <SessionHoverCard model={hover}>{rowMenu}</SessionHoverCard> : rowMenu}
       {pendingReason && (
         <div
           onClick={() => onSwitchSession(folderPath, session.sessionId)}

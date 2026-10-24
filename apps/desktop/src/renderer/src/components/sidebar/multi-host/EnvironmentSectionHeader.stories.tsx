@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, within } from 'storybook/test'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus } from '@/lib/multi-host/types'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
@@ -53,9 +54,15 @@ export const ConnectedOverRelay: Story = {
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
 }
 
+/** The machine icon and the expand chevron share one slot, the same way a project folder does. */
 export const Local: Story = {
   args: { label: 'This Mac', kind: 'local', onRefresh: undefined, onToggleConnection: undefined },
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('.group')
+    await expect(row?.querySelector('.lucide-chevron-right')).toHaveClass('hidden', 'group-hover:block', 'rotate-90')
+    await expect(row?.querySelector('.lucide-monitor')).toHaveClass('group-hover:hidden')
+  },
 }
 
 export const Loading: Story = {
@@ -78,9 +85,22 @@ export const ErrorRetry: Story = {
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
 }
 
+/** The red cloud is the disconnected mark. The row does not expand; hover offers only Connect. */
 export const Offline: Story = {
-  args: { label: 'build-box', connection: 'offline', projectsStatus: 'idle' },
+  args: { label: 'build-box', connection: 'offline', projectsStatus: 'idle', onSort: () => {} },
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvasElement.querySelector('.lucide-unplug')).toBeNull()
+    await expect(canvasElement.querySelector('.lucide-cloud')).toHaveClass('text-error')
+    await expect(canvasElement.querySelector('.lucide-chevron-right')).toHaveClass('!hidden')
+    await expect(canvas.getByText('build-box').closest('button')).toBeNull()
+    await expect(canvas.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Add Project' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Sort Projects', hidden: true })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Connect', hidden: true })).toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-slot="environment-row-actions"]')).toHaveClass('invisible', 'opacity-0', 'group-hover:opacity-100')
+  },
 }
 
 export const NeedsUpgrade: Story = {

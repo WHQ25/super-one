@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { SessionHoverBody, SessionHoverCard } from './SessionHoverCard'
+import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger } from './SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const HOUR = 60 * 60 * 1000
@@ -8,6 +8,7 @@ const HOUR = 60 * 60 * 1000
 function model(extra?: Partial<SessionHoverModel>): SessionHoverModel {
   return {
     title: 'Fix the sidebar scroll jump',
+    projectName: 'super-one',
     environmentLabel: 'dev-server',
     kind: 'cli-node',
     connection: 'connected',
@@ -56,6 +57,16 @@ export const Checkout: Story = {
   ),
 }
 
+export const WithoutProject: Story = {
+  name: 'No project to name',
+  args: { model: model({ projectName: null }), children: null },
+  render: () => (
+    <Frame>
+      <SessionHoverBody model={model({ projectName: null })} />
+    </Frame>
+  ),
+}
+
 export const Offline: Story = {
   args: { model: model({ connection: 'offline' }), children: null },
   render: () => (
@@ -76,6 +87,7 @@ export const UnknownActivity: Story = {
 }
 
 export const LongContent: Story = {
+  name: 'Long title clamps to three lines',
   args: { model: model(), children: null },
   render: () => (
     <Frame width={280}>
@@ -95,7 +107,9 @@ export const Narrow: Story = {
   args: { model: model(), children: null },
   render: () => (
     <Frame width={220}>
-      <SessionHoverBody model={model({ environmentLabel: 'build-box-with-a-very-long-hostname' })} />
+      <SessionHoverBody
+        model={model({ environmentLabel: 'build-box-with-a-very-long-hostname', projectName: 'customer-portal-monorepo-legacy-migration' })}
+      />
     </Frame>
   ),
 }
@@ -111,12 +125,16 @@ export const Dark: Story = {
 }
 
 export const PinnedOpen: Story = {
-  name: 'Open card on the session title',
+  name: 'Open card beside the session row',
   args: { model: model(), children: null },
   render: () => (
     <div className="w-[240px] bg-sidebar p-2 text-sidebar-foreground">
       <SessionHoverCard model={model()} open>
-        <span className="block truncate text-[13px]">Fix the sidebar scroll jump</span>
+        <SessionHoverCardTrigger>
+          <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px]">
+            <span className="block min-w-0 flex-1 truncate">Fix the sidebar scroll jump</span>
+          </div>
+        </SessionHoverCardTrigger>
       </SessionHoverCard>
     </div>
   ),

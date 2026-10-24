@@ -101,14 +101,30 @@ it('keeps a cached folder quiet while a refresh is in flight', async () => {
   expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
 })
 
-it('marks a folder loading until its session list returns', async () => {
+it('does not spin a local folder while its session list loads', async () => {
   const pending = deferred<typeof sessionFixtures.byFolder[typeof FOLDER]>()
   mockEnvironment.listSessions.mockImplementationOnce(() => pending.promise)
   const { result } = setup()
   let load!: Promise<unknown>
   await act(async () => { load = result.current.loadFolderSessions(FOLDER, 'expand') })
-  expect(result.current.loadingFolders[FOLDER]).toBe(true)
+  expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
 
   await act(async () => { pending.resolve(sessionFixtures.byFolder[FOLDER]); await load })
   expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
+})
+
+it('marks a remote folder loading until its session list returns', async () => {
+  const REMOTE = 'remote:conn-b:/work/app'
+  const pending = deferred<typeof sessionFixtures.byFolder[typeof FOLDER]>()
+  mockEnvironment.listSessions.mockImplementationOnce(() => pending.promise)
+  const { result } = renderHook(() => useSidebarSessions({
+    currentFolder: null, selectedHostConnectionId: 'conn-b',
+    hostProjects: [{ id: 'p1', path: REMOTE, name: 'app', addedAt: '2026-10-10T00:00:00.000Z', lastOpened: '2026-10-10T00:00:00.000Z' }],
+  }))
+  let load!: Promise<unknown>
+  await act(async () => { load = result.current.loadFolderSessions(REMOTE, 'expand') })
+  expect(result.current.loadingFolders[REMOTE]).toBe(true)
+
+  await act(async () => { pending.resolve(sessionFixtures.byFolder[FOLDER]); await load })
+  expect(result.current.loadingFolders[REMOTE]).toBeUndefined()
 })

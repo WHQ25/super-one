@@ -192,6 +192,11 @@ describe('buildSessionMenuItems tags submenu', () => {
     ])
   })
 
+  it('omits the submenu when the hover card already shows tags', () => {
+    const items = buildSessionMenuItems({ ...base, tags: ['ui'] }, '/Users/me/app', t, handlers, { includeTags: false })
+    expect(items.some((entry) => entry.kind === 'submenu' && entry.id === 'tags')).toBe(false)
+  })
+
   it('lists current tags as enabled items that copy on select', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText } })

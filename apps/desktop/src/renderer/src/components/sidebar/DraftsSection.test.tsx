@@ -17,6 +17,8 @@ import { DraftsSection } from './DraftsSection'
 import { useDraftsStore } from '@/stores/drafts'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 
+const LOCAL = ['local']
+
 function draft(id: string, title: string): DraftListEntry {
   return {
     id,
@@ -42,11 +44,40 @@ beforeEach(() => {
 })
 
 describe('DraftsSection', () => {
+  it('lists several environments under one heading and routes each row to its own', () => {
+    const local = draft('d1', 'local draft')
+    const remote = draft('d2', 'remote draft')
+    useDraftsStore.setState({ byConnection: { local: [local], node: [remote] } })
+
+    render(
+      <DraftsSection
+        connectionIds={['local', 'node']}
+        offlineConnectionIds={['node']}
+        label={<span>Drafts</span>}
+      />,
+    )
+
+    expect(screen.getAllByText('Drafts')).toHaveLength(1)
+    expect(screen.getByText('remote draft').closest('.group\\/draft')).toHaveClass('opacity-50')
+    expect(screen.getByText('local draft').closest('.group\\/draft')).not.toHaveClass('opacity-50')
+    fireEvent.click(screen.getByText('remote draft'))
+    expect(resumeDraft).toHaveBeenCalledWith('node', remote)
+  })
+
+  it('shows its heading only while there are drafts', () => {
+    const { rerender } = render(<DraftsSection connectionIds={LOCAL} label={<span>Drafts</span>} />)
+    expect(screen.queryByText('Drafts')).toBeNull()
+
+    act(() => useDraftsStore.setState({ byConnection: { local: [draft('d1', 'first draft')] } }))
+    rerender(<DraftsSection connectionIds={LOCAL} label={<span>Drafts</span>} />)
+    expect(screen.getByText('Drafts')).toBeInTheDocument()
+  })
+
   it('resumes the draft that was clicked', () => {
     const one = draft('d1', 'first draft')
     useDraftsStore.setState({ byConnection: { local: [one] } })
 
-    render(<DraftsSection connectionId="local" />)
+    render(<DraftsSection connectionIds={LOCAL} />)
     fireEvent.click(screen.getByText('first draft'))
 
     expect(resumeDraft).toHaveBeenCalledWith('local', one)
@@ -67,7 +98,7 @@ describe('DraftsSection', () => {
       },
     })
 
-    render(<DraftsSection connectionId="local" />)
+    render(<DraftsSection connectionIds={LOCAL} />)
 
     // The draft is no longer a note to self — it is the message that goes out
     // at that time, and it is the only place that promise is visible: the
@@ -91,7 +122,7 @@ describe('DraftsSection', () => {
       },
     })
 
-    render(<DraftsSection connectionId="local" />)
+    render(<DraftsSection connectionIds={LOCAL} />)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'common.delete' })) })
 
     // Otherwise the schedule keeps mirroring text the user just threw away.
@@ -106,7 +137,7 @@ describe('DraftsSection', () => {
       byConnection: { local: [draft('d1', 'first draft'), draft('d2', 'second draft')] },
     })
 
-    const { container } = render(<DraftsSection connectionId="local" />)
+    const { container } = render(<DraftsSection connectionIds={LOCAL} />)
 
     const wrappers = container.querySelectorAll('.absolute')
     expect(wrappers).toHaveLength(2)
@@ -124,7 +155,7 @@ describe('DraftsSection', () => {
     const listed = [1, 2, 3, 4, 5].map((n) => draft(`d${n}`, `draft ${n}`))
     useDraftsStore.setState({ byConnection: { local: listed } })
 
-    const { container } = render(<DraftsSection connectionId="local" />)
+    const { container } = render(<DraftsSection connectionIds={LOCAL} />)
     const slotOf = (title: string) => {
       const row = screen.getByText(title).closest('.absolute') as HTMLElement
       return row.style.transform
@@ -166,7 +197,7 @@ describe('DraftsSection', () => {
       upsertDraft: vi.fn(async (d: { id: string }) => d),
     } as unknown as typeof window.environment
 
-    render(<DraftsSection connectionId="local" />)
+    render(<DraftsSection connectionIds={LOCAL} />)
     fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
 
     await act(async () => {
@@ -182,7 +213,7 @@ describe('DraftsSection', () => {
     const one = draft('d1', 'first draft')
     useDraftsStore.setState({ byConnection: { local: [one] } })
 
-    const { container } = render(<DraftsSection connectionId="local" />)
+    const { container } = render(<DraftsSection connectionIds={LOCAL} />)
     fireEvent.click(screen.getByText('first draft'))
 
     // Resume hides the row the moment it is clicked. Without the flying copy the

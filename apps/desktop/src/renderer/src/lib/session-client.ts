@@ -41,6 +41,11 @@ export function setSessionFlags(projectKey: string, sessionId: string, flags: { 
   return window.environment.setSessionUiFlags(connectionIdForProjectKey(projectKey), sessionId, flags)
 }
 
+/** `read` records the latest completion as seen. Otherwise the receipt is cleared. */
+export function setSessionRead(projectKey: string, sessionId: string, read: boolean) {
+  return window.environment.setSessionRead(connectionIdForProjectKey(projectKey), sessionId, read)
+}
+
 export function removeSession(projectKey: string, sessionId: string) {
   return window.environment.removeSession(connectionIdForProjectKey(projectKey), sessionId)
 }

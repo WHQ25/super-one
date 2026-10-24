@@ -375,6 +375,35 @@ describe('database migration', () => {
     expect(execSql.some((sql) => /^\s*UPDATE\s+chat_messages\b[\s\S]*claude_session_id/i.test(sql))).toBe(false)
     expect(execSql.some((sql) => sql.includes('CREATE TABLE chat_messages_new'))).toBe(false)
     expect(execSql.some((sql) => sql.includes('CREATE TABLE sessions_new'))).toBe(false)
+    expect(execSql.some((sql) => sql.includes('ADD COLUMN seen_completed_message_id'))).toBe(true)
+  })
+
+  it('does not add seen_completed_message_id when the column is already there', async () => {
+    dbMock.prepare.mockImplementation((sql: string) => {
+      if (sql === 'PRAGMA table_info(sessions)') {
+        return {
+          all: () => [
+            { name: 'id' },
+            { name: 'project_id' },
+            { name: 'title' },
+            { name: 'provider_session_id' },
+            { name: 'seen_completed_message_id' },
+          ],
+        }
+      }
+      if (sql === 'PRAGMA table_info(chat_messages)') {
+        return { all: () => [{ name: 'id' }, { name: 'session_id' }] }
+      }
+      if (sql === 'PRAGMA table_info(api_providers)') return { all: () => [] }
+      if (sql === 'PRAGMA table_info(global_resource_cache)') return { all: () => [] }
+      if (sql === 'SELECT * FROM api_providers WHERE agent_configs = \'{}\'') return { all: () => [] }
+      return { all: () => [], get: () => undefined, run: vi.fn() }
+    })
+
+    const { getDb } = await import('./database')
+    expect(() => getDb()).not.toThrow()
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => sql.includes('ADD COLUMN seen_completed_message_id'))).toBe(false)
   })
 })
 

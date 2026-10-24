@@ -2235,6 +2235,13 @@ export class EnvironmentHost {
     return gateway.setSessionUiFlags(sessionId, flags)
   }
 
+  /** The sidebar marked a completion read or unread. The host receipt is what every other client follows. */
+  async setSessionRead(connectionId: string, sessionId: string, read: boolean): Promise<void> {
+    const { gateway } = this.resolveSession(connectionId)
+    if (read) await gateway.markSeen(sessionId)
+    else await gateway.markUnseen(sessionId)
+  }
+
   /**
    * Fork a session on a remote node (remote worktree or remote same-dir local).
    */

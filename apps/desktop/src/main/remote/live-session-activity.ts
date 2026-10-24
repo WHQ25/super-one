@@ -20,6 +20,7 @@ export function liveSessionActivity(session: Session, parentSessionId: string | 
 /** A session-list notice for the session events that change its sidebar summary. */
 export function sessionActivityEvent(session: Session, event: AgentEvent, parentSessionId: string | null): AgentEvent | null {
   if (session.ephemeral || !SESSION_ACTIVITY_EVENTS.has(event.type)) return null
+  const completed = (event.type === 'status_change' && event.status === 'idle') || event.type === 'session_unseen'
   return { type: 'session_activity', activity: liveSessionActivity(session, parentSessionId),
-    ...(event.type === 'status_change' && event.status === 'idle' ? { completed: true } : {}) }
+    ...(completed ? { completed: true } : {}) }
 }

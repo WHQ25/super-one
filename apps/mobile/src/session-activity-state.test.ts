@@ -44,6 +44,11 @@ describe('unseen session completion', () => {
     expect(completionSeen({ completedMessageId: 'reply-1', seenCompletedMessageId: 'reply-1' })).toBe(true)
     expect(completionSeen({ completedMessageId: 'reply-1' })).toBe(false)
   })
+  it('marks a completion unread when a client clears the receipt', () => {
+    const read = { ...idle, seenCompletedMessageId: 'reply-1', isUnseen: false }
+    expect(mergeSessionActivity(read, { ...idle, seenCompletedMessageId: null }, null).isUnseen).toBe(true)
+    expect(mergeSessionActivity(read, { ...idle, seenCompletedMessageId: null }, 'other').isUnseen).toBe(false)
+  })
   it('keeps the local unread flag on a host without seen tracking', () => {
     expect(mergeSessionActivity({ ...idle, status: 'streaming' }, idle, 'current', true).isUnseen).toBe(true)
   })

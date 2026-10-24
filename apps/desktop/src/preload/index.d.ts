@@ -1209,6 +1209,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   ): Promise<import('@superone/shared/mod-ui').ModUiResult<O>>
   renameSession(connectionId: string, sessionId: string, title: string): Promise<unknown>
   removeSession(connectionId: string, sessionId: string): Promise<unknown>
+  setSessionRead(connectionId: string, sessionId: string, read: boolean): Promise<void>
   setSessionUiFlags(
     connectionId: string,
     sessionId: string,

@@ -19,6 +19,7 @@ import { providerSystemPromptAppend } from '@superone/shared/agent-profile'
 import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { closeSuperoneMcpHttpSessions } from '../mcp/superone-mcp-http-state'
+import { seenReceiptForResume } from '../db-sessions'
 import { Session } from './session'
 import { notifySessionClosed } from '../session-list-watch'
 import {
@@ -56,6 +57,11 @@ export interface LoadedSessionData {
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
   systemPromptAppend?: string
+  /**
+   * Stored read receipt. NULL (omitted) means the history is read; `''` is
+   * unread; a message id has been seen through that completion.
+   */
+  seenCompletedMessageId?: string | null
 }
 
 export interface SessionManagerPersistence {
@@ -63,6 +69,8 @@ export interface SessionManagerPersistence {
   onSessionDisposed?: (sessionId: string) => void
   onSessionStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
+  /** `''` marks the session unread. NULL restores the legacy "history is read" state. */
+  onSeenReceipt?: (sessionId: string, receipt: string | null) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
   resolveProviderConfig?: (provider: SessionProvider, apiProviderId?: string | null) => unknown
   getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
@@ -313,6 +321,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       onProviderSessionIdChange: !opts.ephemeral && this.persistence.onProviderSessionIdChange
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
+      onSeenReceipt: !opts.ephemeral && this.persistence.onSeenReceipt
+        ? (sid, receipt) => this.persistence.onSeenReceipt!(sid, receipt)
+        : undefined,
       getActiveProvider: this.persistence.getActiveProvider,
       // Re-read provider from DB so credential/config updates after create are visible.
       resolveProviderConfigForApiProvider: resolveProviderConfig
@@ -400,7 +411,12 @@ export class SessionManagerImpl implements SessionManagerContract {
       sandboxInfo,
       resumedProviderSessionId: data.providerSessionId ?? undefined,
       initialMessages: data.messages,
-      seenCompletedMessageId: this.takeDisposedReceipt(sessionId),
+      seenCompletedMessageId: this.disposedReceipts.has(sessionId)
+        ? this.takeDisposedReceipt(sessionId)
+        : seenReceiptForResume(data.seenCompletedMessageId),
+      onSeenReceipt: this.persistence.onSeenReceipt
+        ? (sid, receipt) => this.persistence.onSeenReceipt!(sid, receipt)
+        : undefined,
       initialTotalCostUsd: data.totalCostUsd,
       initialContextTokens: data.contextTokens,
       title: data.title ?? null,
@@ -438,6 +454,24 @@ export class SessionManagerImpl implements SessionManagerContract {
       this.activeByProject.set(data.projectPath, sessionId)
     }
     return session
+  }
+
+  setSessionRead(sessionId: string, read: boolean): void {
+    const session = this.sessions.get(sessionId)
+    if (session) {
+      if (read) session.markSeen()
+      else session.markUnseen()
+      return
+    }
+    // Resume treats a missing receipt as "history is read" and a null one as unread.
+    if (read) this.disposedReceipts.delete(sessionId)
+    else this.disposedReceipts.set(sessionId, null)
+    try {
+      // No live message id: NULL is the legacy read state. `''` stays unread across restart.
+      this.persistence.onSeenReceipt?.(sessionId, read ? null : '')
+    } catch (err) {
+      log.warn('[SessionManager] seen receipt persist failed:', err)
+    }
   }
 
   getSession(sessionId: string): SessionContract | null {

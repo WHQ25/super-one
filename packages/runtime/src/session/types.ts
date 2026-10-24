@@ -71,6 +71,8 @@ export interface NodeSessionRecord {
   updatedAt: number
   isPinned: boolean
   isHidden: boolean
+  /** Latest completion is unread. Omitted by hosts that do not store a receipt. */
+  unread?: boolean
   /**
    * True after a user (sidebar) rename. Agent renames are rejected while set —
    * desktop parity with sessions.is_user_renamed / session_rename user_locked.

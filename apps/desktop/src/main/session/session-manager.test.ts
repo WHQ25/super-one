@@ -540,6 +540,29 @@ describe('SessionManager', () => {
       await manager.disposeAllSessions()
     })
 
+    it('restores a stored receipt, and a same-process dispose wins over the database', async () => {
+      seedProvider('codex-base', 'codex')
+      const reply = { id: 'reply-1', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex' } as unknown as ChatMessage
+      let stored: string | null = ''
+      const manager = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/project', providerId: 'codex-base', providerSessionId: 'thread-a',
+          messages: [reply], totalCostUsd: 0, contextTokens: 0,
+          seenCompletedMessageId: stored,
+        }),
+        onSeenReceipt: (_sessionId, receipt) => { stored = receipt },
+      })
+      expect(manager.resumeSession('cold').seenCompletedMessageId).toBeNull()
+      await manager.disposeSession('cold')
+      stored = 'reply-1'
+      expect(manager.resumeSession('cold').seenCompletedMessageId).toBeNull()
+      await manager.disposeSession('cold')
+      manager.setSessionRead('cold', true)
+      expect(stored).toBeNull()
+      expect(manager.resumeSession('cold').seenCompletedMessageId).toBe('reply-1')
+      await manager.disposeAllSessions()
+    })
+
     it('getSession returns null for unknown id', () => {
       expect(mgr.getSession('unknown')).toBeNull()
     })

@@ -62,8 +62,13 @@ export function mergeSessionActivity(
     // with it, the receipt check below decides.
     || (previous === undefined && incoming.completedMessageId != null && incoming.seenCompletedMessageId !== undefined)
   )
+  // A client cleared a receipt that already matched this completion.
+  const markedUnread = previous !== undefined
+    && incoming.completedMessageId != null
+    && incoming.seenCompletedMessageId === null
+    && previous.seenCompletedMessageId === incoming.completedMessageId
   const isUnseen = incoming.sessionId !== viewedSessionId
-    && (!!previous?.isUnseen || newCompletion)
+    && (!!previous?.isUnseen || newCompletion || markedUnread)
     && !completionSeen(incoming)
   return { ...incoming, isUnseen }
 }

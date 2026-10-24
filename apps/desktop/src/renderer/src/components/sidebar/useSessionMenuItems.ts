@@ -4,6 +4,9 @@ import { toast } from 'sonner'
 import type { HarnessId, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
+import { setSessionRead } from '@/lib/session-client'
+import { useChatStore } from '@/stores/chat-store'
+import { setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 
 export interface SessionMenuCallbacks {
   /**
@@ -25,6 +28,14 @@ export function useSessionMenuItems(
   callbacks: SessionMenuCallbacks,
 ) {
   const { t } = useTranslation()
+  const unread = useChatStore((s) => s.projectSessions[folderPath]?.unseenCompletedSessions.has(session.sessionId) ?? false)
+
+  const handleMarkRead = useCallback(() => {
+    useChatStore.setState((s) => setUnseenCompleted(s, folderPath, session.sessionId, !unread))
+    void setSessionRead(folderPath, session.sessionId, unread).catch((err) => {
+      console.warn('[sidebar] setSessionRead failed:', err)
+    })
+  }, [folderPath, session.sessionId, unread])
 
   const handleForkSession = useCallback(async (mode: SessionForkMode) => {
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
@@ -48,6 +59,7 @@ export function useSessionMenuItems(
   return buildSessionMenuItems(session, folderPath, t, {
     onRename: () => callbacks.onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath }),
     onPin: () => callbacks.onPinSession(session.sessionId, !session.isPinned, folderPath),
+    onMarkRead: handleMarkRead,
     onHide: () => callbacks.onHideSession(session.sessionId, !session.isHidden, folderPath),
     onFork: handleForkSession,
     onDelete: () => callbacks.onDeleteSession({
@@ -60,5 +72,5 @@ export function useSessionMenuItems(
       const title = (session.title || 'Untitled').trim()
       chatInputAPI.insertMention?.('session', session.sessionId, title)
     },
-  }, { includeTags: false })
+  }, { includeTags: false, unread })
 }

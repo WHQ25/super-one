@@ -26,6 +26,7 @@ function methodsDomain() {
     remoteReadMcpMentions: vi.fn(async () => ({ resources: [] })),
     remoteMcpServers: vi.fn(async () => ({ servers: [] })),
     markRemoteSeen: vi.fn(),
+    markRemoteUnseen: vi.fn(),
     remoteListDirectory: vi.fn(async (path: string) => ({ items: [{ name: 'src', isDirectory: true }], appliedIgnoreMode: 'none', path })),
     remoteCreateDirectory: vi.fn(async () => {}),
     remoteUsage: vi.fn(async () => ({ usage: null })),
@@ -63,6 +64,8 @@ describe('phone endpoint: desktop methods', () => {
     await expect(phone.rpc('harness.systemInfo', { projectId: 'nope', harnessId: 'codex' })).rejects.toMatchObject({ code: 'not_found' })
     await phone.rpc('client.markSeen', { sessionId: 'own' })
     expect(agent.markRemoteSeen).toHaveBeenCalledWith('own')
+    await phone.rpc('client.markUnseen', { sessionId: 'own' })
+    expect(agent.markRemoteUnseen).toHaveBeenCalledWith('own')
     await expect(phone.rpc('client.markSeen', { sessionId: 'missing' })).rejects.toMatchObject({ code: 'not_found' })
   })
 

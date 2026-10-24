@@ -21,7 +21,7 @@ export interface PhoneMethodHost {
   voice?: PhoneVoiceHost
   agent: Pick<AgentService,
     | 'remoteSystemInfo' | 'remoteProjectResources' | 'remoteHarnessOptions' | 'remoteAttachment' | 'remoteSessionActivity'
-    | 'remoteSearchMentions' | 'remoteSearchMcpMentions' | 'remoteReadMcpMentions' | 'remoteMcpServers' | 'markRemoteSeen'
+    | 'remoteSearchMentions' | 'remoteSearchMcpMentions' | 'remoteReadMcpMentions' | 'remoteMcpServers' | 'markRemoteSeen' | 'markRemoteUnseen'
     | 'remoteReadFile' | 'remoteVideoPoster' | 'remoteUpload' | 'remoteUploadComplete' | 'remoteListDirectory' | 'remoteCreateDirectory'
     | 'remoteUsage'
   >
@@ -264,6 +264,12 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       const sessionId = text(p, 'sessionId')
       sessionProjectPath(ctx, sessionId)
       host.agent.markRemoteSeen(sessionId)
+      return { ok: true }
+    },
+    'client.markUnseen': (p, ctx) => {
+      const sessionId = text(p, 'sessionId')
+      sessionProjectPath(ctx, sessionId)
+      host.agent.markRemoteUnseen(sessionId)
       return { ok: true }
     },
     'client.appendLog': async (p, ctx) => {

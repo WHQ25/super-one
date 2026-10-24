@@ -167,6 +167,8 @@ export interface SessionConstructorOptions {
   invalidateProjectResources?: (cwd: string) => void
   onStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
+  /** Persist the read receipt. `''` is unread; a message id has been seen. */
+  onSeenReceipt?: (sessionId: string, receipt: string | null) => void
   getActiveProvider?: (harnessId: HarnessId, apiProviderId: string | null) => RemoteActiveProvider | null
   resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
@@ -398,6 +400,7 @@ export class Session implements SessionContract {
   private _foregroundRefCount = 0
   /** Read receipt shared by every client; see `markSeen`. */
   private _seenCompletedMessageId: string | null = null
+  private readonly onSeenReceipt?: (sessionId: string, receipt: string | null) => void
 
   get seenCompletedMessageId(): string | null {
     return this._seenCompletedMessageId
@@ -415,12 +418,31 @@ export class Session implements SessionContract {
     if (this.recordSeen()) this.forwardEvent({ type: 'session_seen', messageId: this._seenCompletedMessageId })
   }
 
+  markUnseen(): void {
+    const completed = lastCompletedMessageId(this._messages)
+    if (!completed || this._seenCompletedMessageId !== completed) return
+    this._seenCompletedMessageId = null
+    this.persistSeenReceipt('')
+    this.forwardEvent({ type: 'session_unseen' })
+  }
+
   /** Silent half of `markSeen`; true when the receipt moved. */
   private recordSeen(): boolean {
     const next = lastCompletedMessageId(this._messages)
     if (next === this._seenCompletedMessageId) return false
     this._seenCompletedMessageId = next
+    if (next) this.persistSeenReceipt(next)
     return true
+  }
+
+  /** `''` is unread. A missing callback (tests, ephemeral sessions) stores nothing. */
+  private persistSeenReceipt(receipt: string): void {
+    if (!this.onSeenReceipt) return
+    try {
+      this.onSeenReceipt(this.id, receipt)
+    } catch (err) {
+      log.warn('[Session] seen receipt persist failed:', err)
+    }
   }
 
   /**
@@ -587,11 +609,10 @@ export class Session implements SessionContract {
     this.createdAt = opts.createdAt ?? Date.now()
     this._providerSessionId = opts.resumedProviderSessionId ?? null
     if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
-    // Restored history counts as read, as it does in a freshly started desktop
-    // sidebar: only a completion that lands in this process can be unread.
-    // Without this, a phone that reconnects cold reads every restored session
-    // as an unseen completion. A session disposed earlier in this process
-    // brings its own receipt back, so an unread completion stays unread.
+    // No receipt means restored history is read, so a cold client does not treat
+    // every old completion as new. Null is an explicit unread (a dispose in this
+    // process, or `''` stored on the session). An id has been seen through it.
+    this.onSeenReceipt = opts.onSeenReceipt
     this._seenCompletedMessageId = opts.seenCompletedMessageId !== undefined
       ? opts.seenCompletedMessageId
       : lastCompletedMessageId(this._messages)
@@ -2283,7 +2304,7 @@ export class Session implements SessionContract {
     // A read receipt is about the user, not the agent, and neither a mod
     // redrawing nor the runtime announcing its commands is agent work: none may
     // bump the session's recency nor postpone its idle runtime release.
-    if (event.type !== 'session_seen' && event.type !== 'session_commands' && !event.type.startsWith('mod_')) {
+    if (event.type !== 'session_seen' && event.type !== 'session_unseen' && event.type !== 'session_commands' && !event.type.startsWith('mod_')) {
       this._lastEventAt = Date.now()
       this.touchRuntimeActivity()
     }
@@ -2385,8 +2406,14 @@ export class Session implements SessionContract {
     // A run that finishes while the session is on a desktop screen is read as
     // it lands. Recorded before fan-out so the idle-triggered activity summary
     // already carries the receipt; the `session_seen` itself follows the idle.
-    const seenOnIdle = sequenced.type === 'status_change' && sequenced.status === 'idle'
-      && this._foregroundRefCount > 0 && this.recordSeen()
+    const idle = sequenced.type === 'status_change' && sequenced.status === 'idle'
+    const seenOnIdle = idle && this._foregroundRefCount > 0 && this.recordSeen()
+    // A completion that finishes off screen stays unread. An older stored id
+    // would otherwise keep the sidebar treating that row as read.
+    if (idle && this._foregroundRefCount === 0) {
+      const completed = lastCompletedMessageId(this._messages)
+      if (completed && completed !== this._seenCompletedMessageId) this.persistSeenReceipt('')
+    }
     const outbound = this.enrichOutboundEvent(sequenced)
     const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
     const tagged = { ...outbound, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent

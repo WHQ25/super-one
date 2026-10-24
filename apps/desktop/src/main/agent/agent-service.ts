@@ -697,6 +697,11 @@ export class AgentService {
     this.sessionManager?.getSession(sessionId)?.markSeen()
   }
 
+  /** A client marked the latest completion unread again. */
+  markRemoteUnseen(sessionId: string): void {
+    this.sessionManager?.setSessionRead(sessionId, false)
+  }
+
   /** Read a host or node file over the requesting phone's authenticated transport. */
   remoteReadFile(input: PhoneFileInput, source: PhoneFileSource): Promise<unknown> {
     return readPhoneFile(input, source, this.remoteControlService)

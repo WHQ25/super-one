@@ -8,6 +8,7 @@ vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi
 
 import { deleteScheduledSend, deleteScheduledSendBySource, ensureScheduledSendsSchema, upsertScheduledSend } from '../db-scheduled-sends'
 import { watchSessionList } from '../session-list-watch'
+import { listSessionsForFolder, setSessionSeenReceipt } from '../db-sessions'
 import { readRemoteSessionList } from './session-lists'
 import type { Session } from '../session/types'
 
@@ -26,7 +27,8 @@ beforeEach(() => {
       last_user_message_at TEXT, is_worktree INTEGER, is_pinned INTEGER,
       is_hidden INTEGER, git_branch TEXT, worktree_path TEXT, is_automation INTEGER,
       automation_id TEXT, provider_session_id TEXT, provider_id TEXT, provider TEXT,
-      acp_agent_id TEXT, selected_model TEXT, tags_json TEXT, remote_controller_json TEXT
+      acp_agent_id TEXT, selected_model TEXT, tags_json TEXT, remote_controller_json TEXT,
+      seen_completed_message_id TEXT
     );
     CREATE TABLE session_collaboration_grants (child_session_id TEXT, parent_session_id TEXT, kind TEXT, config_json TEXT);
     CREATE TABLE chat_messages (session_id TEXT);
@@ -75,6 +77,29 @@ describe('mobile session list scheduled sends', () => {
     deleteScheduledSend('one')
     expect(projectList().sessions[0].scheduledSendAt).toBeNull()
     expect(changed).toHaveLength(5)
+  })
+
+  it('lists an empty receipt as unread and a stored message id as read', () => {
+    db.prepare("UPDATE sessions SET seen_completed_message_id = '' WHERE id = 'one'").run()
+    db.prepare("UPDATE sessions SET seen_completed_message_id = 'reply-1' WHERE id = 'two'").run()
+    const page = projectList()
+    expect(page.sessions.find((session) => session.sessionId === 'one')).toMatchObject({ unread: true })
+    expect(page.sessions.find((session) => session.sessionId === 'two')).not.toHaveProperty('unread')
+    expect(readRemoteSessionList({ kind: 'pinned' }).sessions).toEqual([
+      expect.objectContaining({ sessionId: 'one', unread: true }),
+    ])
+  })
+
+  it('writes an unread receipt once, and NULL marks the row read again', () => {
+    changed.length = 0
+    setSessionSeenReceipt('two', '')
+    expect(listSessionsForFolder('/repo').find((session) => session.sessionId === 'two')?.unread).toBe(true)
+    expect(changed).toEqual(['/repo'])
+    setSessionSeenReceipt('two', '')
+    expect(changed).toEqual(['/repo'])
+    setSessionSeenReceipt('two', null)
+    expect(listSessionsForFolder('/repo').find((session) => session.sessionId === 'two')?.unread).toBeUndefined()
+    expect(changed).toEqual(['/repo', '/repo'])
   })
 
   it('includes the same armed state in pinned and search results after reconnect', () => {

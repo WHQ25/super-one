@@ -178,6 +178,31 @@ describe('buildSessionMenuItems header vs sidebar shape', () => {
   })
 })
 
+describe('buildSessionMenuItems read toggle', () => {
+  function readItem(unread: boolean) {
+    const onMarkRead = vi.fn()
+    const items = buildSessionMenuItems(base, '/Users/me/app', t, { ...handlers, onMarkRead }, { unread })
+    return items.find((entry): entry is Extract<typeof entry, { kind: 'item' }> => entry.kind === 'item' && entry.id === 'read')
+  }
+
+  it('says mark as read while the session is unread, and the other way when it is not', () => {
+    const onMarkRead = vi.fn()
+    const unread = buildSessionMenuItems(base, '/Users/me/app', t, { ...handlers, onMarkRead }, { unread: true })
+      .find((entry): entry is Extract<typeof entry, { kind: 'item' }> => entry.kind === 'item' && entry.id === 'read')
+    expect(unread?.label).toBe('sidebar.contextMenu.markAsRead')
+    unread?.onSelect()
+    expect(onMarkRead).toHaveBeenCalledOnce()
+    expect(readItem(false)?.label).toBe('sidebar.contextMenu.markAsUnread')
+  })
+
+  it('omits the item when the caller does not handle it', () => {
+    const ids = buildSessionMenuItems(base, '/Users/me/app', t, handlers)
+      .filter((entry): entry is Extract<typeof entry, { kind: 'item' }> => entry.kind === 'item')
+      .map((entry) => entry.id)
+    expect(ids).not.toContain('read')
+  })
+})
+
 describe('buildSessionMenuItems tags submenu', () => {
   function tagsSubmenu(session: SessionHistoryEntry) {
     const items = buildSessionMenuItems(session, '/Users/me/app', t, handlers)

@@ -55,7 +55,7 @@ export function listSessionsForProjectId(
     WITH related_sessions AS (
       SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
              s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
-             s.selected_model, s.tags_json, s.remote_controller_json,
+             s.selected_model, s.tags_json, s.remote_controller_json, s.seen_completed_message_id,
              g.parent_session_id,
              COALESCE(g.parent_session_id, s.id) AS root_session_id,
              COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
@@ -85,7 +85,7 @@ export function listSessionsForProjectId(
     : safeOffset > 0
       ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(projectId, safeOffset)
       : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; selected_model: string | null; parent_session_id: string | null; tags_json: string | null; remote_controller_json: string | null }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; selected_model: string | null; parent_session_id: string | null; tags_json: string | null; remote_controller_json: string | null; seen_completed_message_id: string | null }>
 
   return rows.map((r) => {
     const tags = parseTagsJson(r.tags_json)
@@ -111,8 +111,37 @@ export function listSessionsForProjectId(
       ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
       ...(tags.length ? { tags } : {}),
       ...(remoteController ? { remoteController } : {}),
+      ...listedUnread(r.seen_completed_message_id),
     }
   })
+}
+
+/**
+ * Map the stored receipt onto the value `Session` expects at resume.
+ * NULL (and a row that predates the column) means the history is read.
+ * `''` is an explicit unread. Anything else is the message id that was seen.
+ */
+export function seenReceiptForResume(stored: string | null | undefined): string | null | undefined {
+  if (stored == null) return undefined
+  return stored === '' ? null : stored
+}
+
+/**
+ * Persist a read receipt. `''` is explicit unread; a message id has been seen.
+ * SQL NULL is only written for a disposed session marked read with no id in
+ * hand — that is the legacy "history is read" state, never an unread one.
+ * Unchanged values do not notify the sidebar.
+ */
+export function setSessionSeenReceipt(sessionId: string, receipt: string | null): void {
+  const db = getDb()
+  const row = db.prepare('SELECT seen_completed_message_id AS receipt FROM sessions WHERE id = ?').get(sessionId) as { receipt: string | null } | undefined
+  if (!row || row.receipt === receipt) return
+  db.prepare('UPDATE sessions SET seen_completed_message_id = ? WHERE id = ?').run(receipt, sessionId)
+  notifySessionList(projectPathOfSession(sessionId))
+}
+
+function listedUnread(receipt: string | null | undefined): { unread: true } | Record<string, never> {
+  return receipt === '' ? { unread: true } : {}
 }
 
 /** List sessions for a project folder from DB (no external sync). */
@@ -529,13 +558,13 @@ export function hideSession(sessionId: string, hidden: boolean): void {
 /** Columns every cross-project session list needs, plus the project it lives in. */
 const CROSS_PROJECT_SESSION_SELECT = `
     SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_automation, s.automation_id,
-           s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
+           s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id, s.seen_completed_message_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
     FROM sessions s
     JOIN projects p ON p.id = s.project_id`
 
-type CrossProjectSessionRow = { id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; folder_path: string; folder_name: string }
+type CrossProjectSessionRow = { id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; seen_completed_message_id: string | null; folder_path: string; folder_name: string }
 
 function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
   return {
@@ -550,6 +579,7 @@ function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
     ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+    ...listedUnread(r.seen_completed_message_id),
     folderPath: r.folder_path,
     folderName: r.folder_name,
   }

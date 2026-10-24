@@ -2220,6 +2220,8 @@ export type AgentEventBase =
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   /** Host-recorded read receipt: some client looked at this completion. `messageId` null when nothing has completed yet. */
   | { type: 'session_seen'; messageId: string | null }
+  /** The latest completion was marked unread. The receipt is null until something reads it again. */
+  | { type: 'session_unseen' }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
   | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string; phase?: 'retrying' | 'exhausted' | 'failed' }
   | { type: 'mcp_status'; servers: McpServerInfo[]; init?: { connected: number; total: number } | null }
@@ -3152,6 +3154,11 @@ export interface SessionHistoryEntry {
   worktreePath?: string // filesystem path to the worktree directory
   isPinned?: boolean   // true if session is pinned by user
   isHidden?: boolean   // true if session is hidden by user
+  /**
+   * The latest completion was marked unread. Omitted when the session is read,
+   * or when the host has never stored a receipt (those rows stay read).
+   */
+  unread?: boolean
   /** Agent-set labels for archive list/search. Omitted when empty. */
   tags?: string[]
   isAutomation?: boolean
@@ -4937,6 +4944,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_RENAME_SESSION: 'environment:renameSession',
   ENVIRONMENT_REMOVE_SESSION: 'environment:removeSession',
   ENVIRONMENT_SET_SESSION_UI_FLAGS: 'environment:setSessionUiFlags',
+  /** Mark a session's latest completion read or unread, on this desktop or a paired one. */
+  ENVIRONMENT_SET_SESSION_READ: 'environment:setSessionRead',
   ENVIRONMENT_FORK_SESSION: 'environment:forkSession',
   ENVIRONMENT_RESPOND_SESSION_PERMISSION: 'environment:respondSessionPermission',
   ENVIRONMENT_RESPOND_SESSION_QUESTION: 'environment:respondSessionQuestion',

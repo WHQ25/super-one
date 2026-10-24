@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { removeSession, setSessionFlags } from '@/lib/session-client'
+import { noteListedUnread } from '@/stores/chat-store/helpers/unseen-completed'
 import { traceSidebar } from './sidebar-trace'
 
 const PAGE_SIZE = 13
@@ -20,6 +21,15 @@ interface ListRequest {
 
 function visibleRootCount(sessions: SessionHistoryEntry[]): number {
   return sessions.filter((session) => !session.isHidden && !session.parentSessionId).length
+}
+
+function notePinnedUnread(rows: PinnedSessionEntry[]): void {
+  const unread = rows.filter((row) => row.unread && row.folderPath)
+  if (!unread.length) return
+  useChatStore.setState((state) => noteListedUnread(state, unread.map((row) => ({
+    folderPath: row.folderPath,
+    sessionId: row.sessionId,
+  }))))
 }
 
 export function useSidebarSessions({ currentFolder, selectedHostConnectionId, hostProjects, pinnedConnectionIds }: {
@@ -112,6 +122,10 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
           })
           folderSessionsHaveMoreRef.current = { ...folderSessionsHaveMoreRef.current, [folderPath]: hasMore }
           setFolderSessionsHaveMore((previous) => previous[folderPath] === hasMore ? previous : { ...previous, [folderPath]: hasMore })
+          const unread = sessions.filter((session) => session.unread && !session.isHidden).map((session) => session.sessionId)
+          if (unread.length) {
+            useChatStore.setState((state) => noteListedUnread(state, unread.map((sessionId) => ({ folderPath, sessionId }))))
+          }
           traceSidebar('sessions_load:end', {
             folderPath, reason, fetchedCount: sessions.length, visibleCount: visibleRootCount(sessions),
             elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
@@ -171,6 +185,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
         .then((rows) => {
           if (pinnedHostRef.current !== key) return
           setPinnedSessions(rows)
+          notePinnedUnread(rows)
         })
         .catch(() => {
           if (pinnedHostRef.current === key) setPinnedSessions([])
@@ -181,7 +196,9 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
       window.environment.listPinnedSessions(connectionId).catch(() => [] as PinnedSessionEntry[])
     ))).then((groups) => {
       if (pinnedHostRef.current !== key) return
-      setPinnedSessions(groups.flat())
+      const rows = groups.flat()
+      setPinnedSessions(rows)
+      notePinnedUnread(rows)
     })
   }, [pinnedKey])
 

@@ -104,6 +104,11 @@ export interface SessionRecord {
   selectedEffort: EffortLevel | null
   /** Codex Fast mode (service tier id); null means Fast is off for this session. */
   codexServiceTier: string | null
+  /**
+   * NULL: never stored, so resume treats the history as read.
+   * `''`: the latest completion is unread. A message id has been seen.
+   */
+  seenCompletedMessageId: string | null
 }
 
 function normalizeCodexThreadId(value: string | null | undefined): string | null {
@@ -149,6 +154,7 @@ interface SessionRow {
   selected_model: string | null
   selected_effort: string | null
   codex_service_tier: string | null
+  seen_completed_message_id?: string | null
 }
 
 interface MessageRow {
@@ -190,6 +196,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     selectedModel: storedSelectedModel(harnessId, row.selected_model),
     selectedEffort: (row.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: row.codex_service_tier ?? null,
+    seenCompletedMessageId: row.seen_completed_message_id ?? null,
   }
 }
 

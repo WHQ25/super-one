@@ -355,6 +355,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     await this.client.rpc('client.markSeen', { sessionId })
   }
 
+  /** This desktop marked the latest completion unread: the node clears the receipt for every client. */
+  async markUnseen(sessionId: string): Promise<void> {
+    await this.client.rpc('client.markUnseen', { sessionId })
+  }
+
   /**
    * Events after `afterSequence`, pushed by the node as they commit
    * (`topic.subscribe`). A stream ends with its socket; this resubscribes

@@ -1904,6 +1904,17 @@ describe('Session read receipt', () => {
     backend.resolveSend?.()
   })
 
+  it('persists an off-screen completion as unread, and a later read as that message', () => {
+    const receipts: Array<string | null> = []
+    const { session, backend } = makeSession({ onSeenReceipt: (_sessionId, receipt) => { receipts.push(receipt) } })
+    finishRun(backend)
+    expect(receipts).toEqual([''])
+    session.markSeen()
+    expect(receipts).toEqual(['', 'reply-1'])
+    session.markUnseen()
+    expect(receipts).toEqual(['', 'reply-1', ''])
+  })
+
   it('leaves a run that finishes off screen unread until a client reports it', () => {
     const { session, backend } = makeSession()
     finishRun(backend)
@@ -1911,6 +1922,23 @@ describe('Session read receipt', () => {
 
     session.markSeen()
     expect(session.seenCompletedMessageId).toBe('reply-1')
+  })
+
+  it('marks a read completion unread again, and leaves an unread one alone', () => {
+    const { session, backend } = makeSession()
+    finishRun(backend)
+    session.markSeen()
+    const received: AgentEvent[] = []
+    session.on((e) => received.push(e))
+    const lastEventAt = session.snapshot.lastEventAt
+
+    session.markUnseen()
+    expect(session.seenCompletedMessageId).toBeNull()
+    expect(received).toEqual([expect.objectContaining({ type: 'session_unseen', sessionId: 'sess-1' })])
+    expect(session.snapshot.lastEventAt).toBe(lastEventAt)
+
+    session.markUnseen()
+    expect(received).toHaveLength(1)
   })
 })
 

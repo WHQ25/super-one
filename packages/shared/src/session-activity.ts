@@ -57,7 +57,7 @@ export function summarizeSessionActivity(
 
 export const SESSION_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
   'permission_request', 'ask_user_question', 'plan_approval', 'interaction_resolved',
-  'status_change', 'message_interrupted', 'session_ended', 'session_seen',
+  'status_change', 'message_interrupted', 'session_ended', 'session_seen', 'session_unseen',
   'realtime_started', 'realtime_closed', 'realtime_error',
 ])
 

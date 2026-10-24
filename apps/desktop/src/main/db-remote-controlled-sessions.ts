@@ -47,6 +47,8 @@ export interface DesktopSessionRow {
   totalCostUsd?: number
   isPinned: boolean
   isHidden: boolean
+  /** Latest completion is unread (`seen_completed_message_id` is `''`). */
+  unread?: boolean
   isUserRenamed: boolean
   tags: string[]
   createdAt: number
@@ -88,7 +90,7 @@ export function setSessionRemoteController(sessionId: string, controller: Remote
 const SESSION_COLUMNS = `
   s.id, s.project_id, p.path AS project_path, s.title, s.provider, s.provider_id, s.api_provider_id, s.provider_session_id,
   s.worktree_path, s.is_worktree, s.git_branch, s.context_tokens, s.total_cost_usd,
-  s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
+  s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at, s.seen_completed_message_id,
   COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json, s.acp_agent_id`
 
 /**
@@ -128,6 +130,7 @@ interface Row {
   created_at: string
   updated_at: string
   remote_controller_json: string | null
+  seen_completed_message_id?: string | null
   parent_session_id?: string | null
   acp_agent_id?: string | null
 }
@@ -149,6 +152,7 @@ function toRow(r: Row): DesktopSessionRow {
     totalCostUsd: r.total_cost_usd ?? 0,
     isPinned: !!r.is_pinned,
     isHidden: !!r.is_hidden,
+    ...(r.seen_completed_message_id === '' ? { unread: true } : {}),
     isUserRenamed: !!r.is_user_renamed,
     tags: parseTagsJson(r.tags_json),
     createdAt: Date.parse(r.created_at) || 0,

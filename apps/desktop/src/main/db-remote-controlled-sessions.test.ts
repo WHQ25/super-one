@@ -23,7 +23,7 @@ beforeEach(() => {
       id TEXT PRIMARY KEY, project_id TEXT, title TEXT, created_at TEXT, last_user_message_at TEXT,
       provider TEXT, provider_id TEXT, provider_session_id TEXT, worktree_path TEXT,
       is_pinned INTEGER, is_hidden INTEGER, is_user_renamed INTEGER, tags_json TEXT NOT NULL DEFAULT '[]',
-      remote_controller_json TEXT,
+      remote_controller_json TEXT, seen_completed_message_id TEXT,
       total_cost_usd REAL, context_tokens INTEGER, is_worktree INTEGER, git_branch TEXT, api_provider_id TEXT,
       acp_agent_id TEXT, selected_model TEXT, selected_effort TEXT, codex_service_tier TEXT
     );

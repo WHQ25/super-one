@@ -554,6 +554,8 @@ export type Messages = {
       unpin: string
       hide: string
       unhide: string
+      markAsRead: string
+      markAsUnread: string
       tags: string
       noTags: string
       tagCopiedToast: string
@@ -5163,6 +5165,8 @@ export const en: Messages = {
       unpin: 'Unpin Session',
       hide: 'Hide Session',
       unhide: 'Unhide Session',
+      markAsRead: 'Mark as Read',
+      markAsUnread: 'Mark as Unread',
       tags: 'Tags',
       noTags: 'No tags',
       tagCopiedToast: 'Tag copied',

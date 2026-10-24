@@ -1662,6 +1662,7 @@ function mapSessionRow(s: NodeSessionRecord) {
     updatedAt: s.updatedAt,
     isPinned: s.isPinned,
     isHidden: s.isHidden,
+    ...(s.unread ? { unread: true } : {}),
     isAutomation: s.isAutomation === true,
     automationId: s.automationId ?? null,
     providerResume,

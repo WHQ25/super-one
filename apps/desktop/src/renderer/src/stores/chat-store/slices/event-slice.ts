@@ -21,7 +21,7 @@ import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { buildSlashCommands } from '../helpers/chat-helpers'
 import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers/codex-helpers'
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
-import { clearUnseenCompleted } from '../helpers/unseen-completed'
+import { clearUnseenCompleted, setUnseenCompleted } from '../helpers/unseen-completed'
 import { applySessionActivity } from '../helpers/session-activity'
 import { applyControlHolder, applyRemoteControlChange, externalHolder } from '../helpers/remote-control'
 import { applyWindowRows, todoUpdatesFromWindow } from '../helpers/window-messages'
@@ -219,6 +219,14 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       if (event.projectPath && event.sessionId) {
         const { projectPath, sessionId } = event
         set((s) => clearUnseenCompleted(s, projectPath, sessionId))
+      }
+      return
+    }
+
+    if (event.type === 'session_unseen') {
+      if (event.projectPath && event.sessionId) {
+        const { projectPath, sessionId } = event
+        set((s) => setUnseenCompleted(s, projectPath, sessionId, true))
       }
       return
     }

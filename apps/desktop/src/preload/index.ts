@@ -649,6 +649,8 @@ const environmentAPI = {
     ),
   removeSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REMOVE_SESSION, connectionId, sessionId),
+  setSessionRead: (connectionId: string, sessionId: string, read: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SET_SESSION_READ, connectionId, sessionId, read),
   setSessionUiFlags: (
     connectionId: string,
     sessionId: string,

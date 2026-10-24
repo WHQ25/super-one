@@ -508,6 +508,8 @@ export interface Session {
   readonly seenCompletedMessageId: string | null
   /** Record the latest completion as read on behalf of whichever client is showing it. */
   markSeen(): void
+  /** Clear that receipt so the latest completion is unread again. No-op when it already is. */
+  markUnseen(): void
   hasActiveRuntime(): boolean
   isRuntimeIdle(now: number, timeoutMs: number): boolean
   releaseRuntime(reason: 'idle', afterRelease?: () => Promise<void>): Promise<boolean>
@@ -645,6 +647,8 @@ export interface SessionManager {
   createSession(opts: SessionCreateOptions): Session
   resumeSession(sessionId: string, opts?: { permissionMode?: PermissionMode; sandboxMode?: SandboxMode; passive?: boolean }): Session
   getSession(sessionId: string): Session | null
+  /** Read or unread the latest completion. A session that is not live keeps the receipt for its next resume. */
+  setSessionRead(sessionId: string, read: boolean): void
   getActiveSession(projectPath: string): Session | null
   setActiveSession(projectPath: string, sessionId: string): void
   clearActiveSession(projectPath: string): void

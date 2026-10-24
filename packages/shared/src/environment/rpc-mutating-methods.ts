@@ -76,6 +76,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'client.mintNodeCode',
   'client.pairNode',
   'client.markSeen',
+  'client.markUnseen',
   'client.appendLog',
   'draft.upsert',
   'draft.open',

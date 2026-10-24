@@ -48,6 +48,8 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
     tags?: unknown
     /** Spawn parent on this host. List rows omit it for roots. */
     parentSessionId?: string | null
+    /** Present only when the owning host stored an explicit unread receipt. */
+    unread?: boolean
   }
   const sessionId = String(s.sessionId ?? '')
   const ts = s.updatedAt ?? s.createdAt ?? Date.now()
@@ -85,5 +87,6 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
     ...(acpAgentId ? { acpAgentId } : {}),
     ...(parentSessionId ? { parentSessionId } : {}),
     ...(tags.length ? { tags } : {}),
+    ...(s.unread === true ? { unread: true } : {}),
   }
 }

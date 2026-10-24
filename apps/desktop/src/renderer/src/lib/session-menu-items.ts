@@ -1,4 +1,4 @@
-import { AppWindow, Columns2, Copy, Eye, EyeOff, FolderOpen, GitFork, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
+import { AppWindow, Columns2, Copy, Eye, EyeOff, FolderOpen, GitFork, Mail, MailOpen, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -14,6 +14,8 @@ export interface SessionMenuHandlers {
   onFork: (mode: SessionForkMode) => void
   /** Sidebar-list affordance — omitted by the chat header menu (you cannot hide the session you are in). */
   onHide?: () => void
+  /** Sidebar-list affordance. `unread` picks Mark as Read versus Mark as Unread. */
+  onMarkRead?: () => void
   onDelete?: () => void
   /** Insert a `@session` mention chip into the active chat composer. */
   onAddToChat?: () => void
@@ -35,6 +37,8 @@ export interface SessionMenuOptions {
    * header has no card and keeps the submenu.
    */
   includeTags?: boolean
+  /** Whether the sidebar currently shows this session's unread dot. */
+  unread?: boolean
 }
 
 /**
@@ -177,6 +181,15 @@ export function buildSessionMenuItems(
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
     { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin },
+    ...(handlers.onMarkRead
+      ? [{
+          kind: 'item' as const,
+          id: 'read',
+          label: options.unread ? t('sidebar.contextMenu.markAsRead') : t('sidebar.contextMenu.markAsUnread'),
+          icon: options.unread ? MailOpen : Mail,
+          onSelect: handlers.onMarkRead,
+        }]
+      : []),
     ...(onHide
       ? [{ kind: 'item' as const, id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: onHide }]
       : []),

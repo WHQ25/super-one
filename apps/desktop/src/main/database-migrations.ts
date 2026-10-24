@@ -42,7 +42,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 16
+export const SCHEMA_VERSION = 17
 
 /**
  * The oldest schema revision that can still read this database.
@@ -577,6 +577,12 @@ function applyMigrations(db: Database.Database): void {
   // controller's identity and launch settings); null for local sessions.
   if (!sessionColsPostRebuild.some((c) => c.name === 'remote_controller_json')) {
     db.exec('ALTER TABLE sessions ADD COLUMN remote_controller_json TEXT')
+  }
+  // Read receipt for the latest completed assistant message.
+  // NULL: never stored, so existing rows stay read. '': explicitly unread.
+  // A message id: seen through that completion.
+  if (!sessionColsPostRebuild.some((c) => c.name === 'seen_completed_message_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN seen_completed_message_id TEXT')
   }
   const msgColsPostRebuild = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
   if (!msgColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {

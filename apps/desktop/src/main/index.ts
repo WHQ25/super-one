@@ -123,6 +123,7 @@ import { NotificationService } from './notifications/notification-service'
 import { createNotificationSessionResolver } from './notifications/notification-session'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
+import { setSessionSeenReceipt } from './db-sessions'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { applyRealtimeTimelineEvent } from './session/realtime-timeline-repo'
 import { SessionEventHub } from './stream/session-event-hub'
@@ -525,6 +526,14 @@ const sessionManager = new SessionManagerImpl({
       systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId)
         ?? getRemoteControlledSession(sessionId)?.controller.systemPromptAppend
         ?? undefined,
+      seenCompletedMessageId: loaded.record.seenCompletedMessageId,
+    }
+  },
+  onSeenReceipt: (sessionId, receipt) => {
+    try {
+      setSessionSeenReceipt(sessionId, receipt)
+    } catch (err) {
+      log.warn('[sessionManager] setSessionSeenReceipt failed:', err)
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
@@ -2382,6 +2391,13 @@ function registerIpcHandlers(): void {
     async (_e, connectionId: string, sessionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().removeSession(connectionId, sessionId)
+    },
+  )
+  sessionIpc.handle(
+    AgentIpcChannels.ENVIRONMENT_SET_SESSION_READ,
+    async (_e, connectionId: string, sessionId: string, read: boolean) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().setSessionRead(connectionId, sessionId, read)
     },
   )
   sessionIpc.handle(

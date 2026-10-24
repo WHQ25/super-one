@@ -582,6 +582,8 @@ export const zh: Messages = {
       unpin: '取消置顶会话',
       hide: '隐藏会话',
       unhide: '取消隐藏会话',
+      markAsRead: '标为已读',
+      markAsUnread: '标为未读',
       tags: '标签',
       noTags: '无标签',
       tagCopiedToast: '已复制标签',

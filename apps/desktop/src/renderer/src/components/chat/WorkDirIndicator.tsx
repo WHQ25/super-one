@@ -87,7 +87,7 @@ function LocationChip({
       <span className="text-muted-foreground">·</span>
       <Icon className="size-3 shrink-0 text-muted-foreground" />
       <span className="truncate text-muted-foreground">{location}</span>
-      {tag && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{tag}</Badge>}
+      {tag && <Badge variant="secondary" className="px-1.5 py-0 text-2xs">{tag}</Badge>}
     </span>
   )
 }

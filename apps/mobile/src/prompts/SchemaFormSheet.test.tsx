@@ -113,7 +113,7 @@ test('an unsupported form shows none of its fields and can only be dismissed', a
 })
 
 test('opening a consent URL answers the elicitation; a waiting URL only opens', async () => {
-  const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true)
+  const openURL = jest.spyOn(Linking, 'openURL').mockImplementation(() => Promise.resolve())
   const url: PermissionRequest = {
     requestId: 'url-1', toolName: 'github', input: {}, allowAlwaysAllow: false,
     requestKind: 'mcp_elicitation', serverName: 'github', message: 'Sign in to GitHub',

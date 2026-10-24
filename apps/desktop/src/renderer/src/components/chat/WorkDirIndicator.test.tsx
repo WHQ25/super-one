@@ -64,6 +64,24 @@ beforeEach(() => {
   Object.assign(window.app, { getWorktreeInfo, getGitInfo })
   useChatStore.getState().ensureSession(PROJECT)
   useChatStore.setState({ activeProject: PROJECT })
+  useChatStore.setState((state) => {
+    const project = state.projectSessions[PROJECT]
+    const sid = project?._activeSessionId
+    const session = sid ? project._sessions[sid] : undefined
+    if (!project || !sid || !session) return state
+    return {
+      projectSessions: {
+        ...state.projectSessions,
+        [PROJECT]: {
+          ...project,
+          _sessions: {
+            ...project._sessions,
+            [sid]: { ...session, messages: [], environmentSelection: null, session: null },
+          },
+        },
+      },
+    }
+  })
   useAppStore.setState({
     experimentalRemoteNodesEnabled: true,
     currentFolder: PROJECT,
@@ -213,6 +231,91 @@ describe('merged status chip', () => {
     await waitFor(() => expect(getGitBranches).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('button', { name: 'develop' })).toBeTruthy()
     expect(screen.queryByText(/Loading/)).toBeNull()
+  })
+
+  function markSessionStarted(environmentId?: string) {
+    useChatStore.setState((state) => {
+      const project = state.projectSessions[PROJECT]
+      const sid = project?._activeSessionId
+      const session = sid ? project._sessions[sid] : undefined
+      if (!project || !sid || !session) return state
+      return {
+        projectSessions: {
+          ...state.projectSessions,
+          [PROJECT]: {
+            ...project,
+            _sessions: {
+              ...project._sessions,
+              [sid]: {
+                ...session,
+                messages: [{
+                  id: 'started',
+                  role: 'user',
+                  status: 'complete',
+                  content: [{ type: 'text', text: 'hi' }],
+                  createdAt: '2026-10-24T00:00:00.000Z',
+                  providerId: 'claude',
+                }],
+                ...(environmentId ? { environmentSelection: { environmentId, selection: { kind: 'local' as const } } } : {}),
+              },
+            },
+          },
+        },
+      }
+    })
+  }
+
+  it('hides the local machine hint, and the worktree search once the session has started', async () => {
+    const getGitBranches = vi.fn(() => Promise.resolve({ local: ['main', 'develop'] }))
+    Object.assign(window.app, { getGitBranches, getCheckedOutBranches: vi.fn(() => Promise.resolve(['main'])) })
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    markSessionStarted()
+    useMultiHostSidebarStore.setState({
+      environments: [{
+        environmentId: 'local',
+        connectionId: 'local',
+        label: '25s-MacBook-Pro.local',
+        kind: 'local',
+        connection: 'connected',
+        projectsStatus: 'ready',
+        projectsError: null,
+        checkouts: [],
+      }],
+    })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+
+    expect(screen.queryByText(/This session stays on/)).toBeNull()
+    expect(screen.getByPlaceholderText('Search or create branch…')).toBeTruthy()
+
+    await user.click(screen.getByRole('tab', { name: 'Worktree' }))
+    expect(screen.queryByPlaceholderText('Search worktrees…')).toBeNull()
+    expect(screen.getByText('Fork to new worktree')).toBeTruthy()
+
+    await user.click(screen.getByRole('tab', { name: 'Local' }))
+    expect(screen.getByPlaceholderText('Search or create branch…')).toBeTruthy()
+  })
+
+  it('still names the machine when a started session is on a remote environment', async () => {
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    markSessionStarted('office')
+    useMultiHostSidebarStore.setState({
+      environments: [{
+        environmentId: 'office',
+        connectionId: 'office',
+        label: 'Office',
+        kind: 'cli-node',
+        connection: 'connected',
+        projectsStatus: 'ready',
+        projectsError: null,
+        checkouts: [],
+      }],
+    })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    expect(screen.getByText('This session stays on Office.')).toBeTruthy()
   })
 
   it('keeps the environment row, search, branch create, and worktree detach', async () => {

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { useEffect, useState } from 'react'
 import type { GitDirtyStatus, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
@@ -183,6 +184,26 @@ export const PendingDetachChip: Story = { args: { pendingBase: 'release/2.4', pe
 
 /** A session that already has messages stays on its worktree. */
 export const StartedWorktreeChip: Story = { args: { activePath: WT('dirty'), started: true }, play: openPopover }
+
+/** A started local session omits the machine hint. Its worktree tab only forks. */
+export const StartedLocal: Story = {
+  args: { started: true },
+  play: async ({ canvasElement }) => {
+    await openPopover({ canvasElement })
+    const body = within(canvasElement.ownerDocument.body)
+    expect(body.queryByText(/This session stays on/)).toBeNull()
+    expect(body.getByPlaceholderText('Search or create branch…')).toBeTruthy()
+    await userEvent.click(body.getByRole('tab', { name: 'Worktree' }))
+    await waitFor(() => {
+      expect(body.queryByPlaceholderText('Search worktrees…')).toBeNull()
+      expect(body.getByText('Fork to new worktree')).toBeTruthy()
+    })
+    await userEvent.click(body.getByRole('tab', { name: 'Local' }))
+    await waitFor(() => {
+      expect(body.getByPlaceholderText('Search or create branch…')).toBeTruthy()
+    })
+  },
+}
 
 /** The closed chip in a narrow composer. */
 export const Narrow: Story = { args: { narrow: true, activePath: WT('long') } }

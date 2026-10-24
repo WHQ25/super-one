@@ -876,7 +876,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
           ) : (
             <>
               {environmentMenuNode}
-              {isOldSession && (
+              {isOldSession && environmentKind !== 'local' && (
                 <p className="px-3 py-2 text-xs text-muted-foreground">{t('chat.worktree.environmentFixed', { environment: environmentName })}</p>
               )}
               <Tabs value={modeValue} onValueChange={selectMode}>
@@ -886,15 +886,18 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                     <TabsTrigger value="worktree" className="py-1.5" disabled={isGitRepo === false}>{t('sidebar.hover.worktree')}</TabsTrigger>
                   </TabsList>
                 </div>
-                <form className="border-b px-3 py-2" onSubmit={submitSearch}>
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder={modeValue === 'worktree' ? t('chat.worktree.searchPlaceholder') : t('chat.git.searchBranches')}
-                    className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-                  />
-                </form>
+                {/* A started session's worktree tab only forks. Searching worktrees does nothing there. */}
+                {!(isOldSession && modeValue === 'worktree') && (
+                  <form className="border-b px-3 py-2" onSubmit={submitSearch}>
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder={modeValue === 'worktree' ? t('chat.worktree.searchPlaceholder') : t('chat.git.searchBranches')}
+                      className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                    />
+                  </form>
+                )}
                 {canCreateFromSearch && (
                   <button
                     type="button"

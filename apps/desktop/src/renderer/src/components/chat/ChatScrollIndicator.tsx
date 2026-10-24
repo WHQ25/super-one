@@ -177,7 +177,7 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
   }
 
   return (
-    <div ref={outerRef} className="absolute right-0 top-0 z-20 h-full w-7 pr-1">
+    <div ref={outerRef} data-chat-scroll-indicator className="absolute right-0 top-0 z-20 h-full w-7 pr-1">
       <div
         ref={stripRef}
         onScroll={measure}

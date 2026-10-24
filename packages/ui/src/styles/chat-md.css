@@ -114,7 +114,10 @@
 /* Keep blocks in the reading column until their intrinsic width needs the
    unused margins of this chat pane. Their flex frame keeps them centered.
    Each margin gives up a strip so the right edge clears the turn scroll
-   indicator (w-7) that overlays the pane. */
+   indicator (w-7) that overlays the pane. A narrow pane has no unused
+   margin, so that strip collapses to zero and the column's own padding is
+   the only gap. The toolbar inset below spends whatever of the rail still
+   covers that padding. `--chat-inline-pad` matches the column's padding. */
 .chat-transcript-layout {
   container-type: inline-size;
 }
@@ -124,6 +127,13 @@
   min-width: 100%;
   max-width: calc(100% + 2 * var(--chat-wide-gutter));
   flex-shrink: 0;
+}
+.chat-transcript-layout .assistant-reply .chat-md :is([data-table-toolbar], [data-mermaid-toolbar]) {
+  right: max(0px, calc(
+    var(--spacing, 0.25rem) * 7
+    - var(--chat-inline-pad, calc(var(--spacing, 0.25rem) * 3))
+    - max(0px, (100cqw - var(--container-3xl, 48rem)) / 2)
+  ));
 }
 .chat-transcript-layout .assistant-reply .chat-md [data-chat-mermaid="preview"] {
   width: calc(var(--mermaid-preview-width, 0px) + 8 * var(--spacing, 0.25rem));

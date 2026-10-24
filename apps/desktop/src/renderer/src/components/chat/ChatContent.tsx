@@ -265,7 +265,7 @@ function ChatTranscript({
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area chat-transcript-layout h-full min-w-0" viewportRef={scrollViewportRef}>
           <RemoteTranscriptEdges>
-          <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
+          <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 [--chat-inline-pad:--spacing(3)] @lg:gap-1.5 @lg:p-3.5 @lg:[--chat-inline-pad:--spacing(3.5)] @2xl:gap-1.5 @2xl:p-4 @2xl:[--chat-inline-pad:--spacing(4)]">
             <RemoteTranscriptChrome edge="top" />
             <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={rows.map((row) => {
               const msg = row.message

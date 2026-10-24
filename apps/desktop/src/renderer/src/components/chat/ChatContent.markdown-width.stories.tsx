@@ -45,13 +45,14 @@ const COMPACT_TEXT = [
   '```',
 ].join('\n')
 
-function MarkdownWidthPreview({ width = 1200, compact = false, streaming = false, invalid = false, virtual = false, codex = false }: {
+function MarkdownWidthPreview({ width = 1200, compact = false, streaming = false, invalid = false, virtual = false, codex = false, rail = false }: {
   width?: number
   compact?: boolean
   streaming?: boolean
   invalid?: boolean
   virtual?: boolean
   codex?: boolean
+  rail?: boolean
 }) {
   const [ready, setReady] = useState(false)
   const [paneWidth, setPaneWidth] = useState(width)
@@ -82,6 +83,10 @@ function MarkdownWidthPreview({ width = 1200, compact = false, streaming = false
       content: [{ type: 'text', text: `Earlier response ${index}.` }],
       metadata: undefined,
     })) : []
+    const providerId = codex ? 'codex' : 'claude'
+    const userTurn = (id: string, text: string, createdAt: string): ChatMessage => ({
+      id, role: 'user', providerId, status: 'complete', createdAt, content: [{ type: 'text', text }],
+    })
     useChatStore.setState({
       activeProject: PROJECT,
       projectSessions: {
@@ -93,7 +98,14 @@ function MarkdownWidthPreview({ width = 1200, compact = false, streaming = false
             ...createDefaultPerSessionState(),
             sessionProvider: codex ? 'codex' : 'claude',
             status: streaming ? 'streaming' : 'idle',
-            messages: [...history, message],
+            messages: rail
+              ? [
+                userTurn('rail-user', 'Show the wide blocks.', '2026-10-10T00:00:00.000Z'),
+                userTurn('rail-followup', 'Thanks.', '2026-10-10T00:00:01.000Z'),
+                ...history,
+                message,
+              ]
+              : [...history, message],
           } },
         },
       },
@@ -104,7 +116,7 @@ function MarkdownWidthPreview({ width = 1200, compact = false, streaming = false
       useChatStore.setState(previous)
       useAppStore.setState(app)
     }
-  }, [compact, streaming, invalid, virtual, codex])
+  }, [compact, streaming, invalid, virtual, codex, rail])
 
   return (
     <TooltipProvider>
@@ -176,6 +188,62 @@ export const FitsReadingColumn: Story = {
   },
 }
 export const Narrow: Story = { args: { width: 390 }, play: checkWidth }
+
+const toolbarSelector = '[data-table-toolbar], [data-chat-mermaid="preview"] [data-mermaid-toolbar]'
+
+/** The turn rail covers the pane's right edge. Wide-block toolbars have to stay outside it. */
+const checkToolbarClearsRail: NonNullable<Story['play']> = async context => {
+  await checkWidth(context)
+  const { canvasElement } = context
+  const pane = canvasElement.querySelector('.chat-transcript-layout') as HTMLElement
+  const rail = pane.parentElement?.querySelector('[data-chat-scroll-indicator]') as HTMLElement
+  const markdown = canvasElement.querySelector('[data-message-id="wide-markdown"] .chat-md') as HTMLElement
+  const toolbars = [...markdown.querySelectorAll<HTMLElement>(toolbarSelector)]
+  expect(rail).toBeTruthy()
+  expect(toolbars.length).toBeGreaterThanOrEqual(1)
+  const doc = canvasElement.ownerDocument
+  for (const toolbar of toolbars) {
+    toolbar.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    await waitFor(() => {
+      const box = toolbar.getBoundingClientRect()
+      const paneBox = pane.getBoundingClientRect()
+      expect(box.width).toBeGreaterThan(0)
+      expect(box.top).toBeGreaterThanOrEqual(paneBox.top - 1)
+      expect(box.bottom).toBeLessThanOrEqual(paneBox.bottom + 1)
+      expect(box.right).toBeLessThanOrEqual(rail.getBoundingClientRect().left + 1)
+      const hit = doc.elementFromPoint(box.right - 6, box.top + box.height / 2)
+      expect(toolbar.contains(hit)).toBe(true)
+    })
+  }
+}
+
+const checkToolbarSitsOnRail: NonNullable<Story['play']> = async context => {
+  await checkToolbarClearsRail(context)
+  const pane = context.canvasElement.querySelector('.chat-transcript-layout') as HTMLElement
+  const rail = pane.parentElement?.querySelector('[data-chat-scroll-indicator]') as HTMLElement
+  const markdown = context.canvasElement.querySelector('[data-message-id="wide-markdown"] .chat-md') as HTMLElement
+  const railLeft = rail.getBoundingClientRect().left
+  for (const toolbar of markdown.querySelectorAll<HTMLElement>(toolbarSelector)) {
+    expect(railLeft - toolbar.getBoundingClientRect().right).toBeLessThanOrEqual(2)
+  }
+}
+
+export const NarrowRail: Story = { args: { width: 390, rail: true }, play: checkToolbarSitsOnRail }
+// 700px is past @2xl padding but still inside the reading column, so the gutter stays zero.
+export const MediumRail: Story = { args: { width: 700, rail: true }, play: checkToolbarSitsOnRail }
+
+export const WideRail: Story = {
+  args: { rail: true },
+  play: async context => {
+    await checkToolbarClearsRail(context)
+    const markdown = context.canvasElement.querySelector('[data-message-id="wide-markdown"] .chat-md') as HTMLElement
+    for (const toolbar of markdown.querySelectorAll<HTMLElement>(toolbarSelector)) {
+      const block = toolbar.closest('[data-streamdown="table-wrapper"], [data-chat-mermaid="preview"]') as HTMLElement
+      expect(Math.abs(toolbar.getBoundingClientRect().right - block.getBoundingClientRect().right)).toBeLessThanOrEqual(1)
+    }
+  },
+}
+
 export const DarkChinese: Story = { globals: { theme: 'dark', locale: 'zh' }, play: checkExpanded }
 export const Streaming: Story = { args: { streaming: true }, play: checkWidth }
 export const MermaidError: Story = { args: { invalid: true }, play: checkWidth }

@@ -28,6 +28,11 @@ function TableFullscreen({ open, onOpenChange, children }: {
   )
 }
 
+// The 12px glyph is pinned to the right of the 20px hit target so it lines up
+// with the table edge. The button ring would outline that empty left side.
+const tableActionClass =
+  'justify-end opacity-50 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-0 focus-visible:[&_svg]:rounded-[2px] focus-visible:[&_svg]:outline-2 focus-visible:[&_svg]:outline-offset-1 focus-visible:[&_svg]:outline-ring/50'
+
 export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps<'table'> & { node?: unknown }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -54,7 +59,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             size="xs"
             variant="ghost"
             onClick={handleCopy}
-            className="justify-end opacity-50 transition-opacity hover:opacity-100"
+            className={tableActionClass}
             tooltip={t('tooltips.copyTable')}
           >
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
@@ -63,7 +68,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             size="xs"
             variant="ghost"
             onClick={() => setOpen(true)}
-            className="justify-end opacity-50 transition-opacity hover:opacity-100"
+            className={tableActionClass}
             tooltip={t('tooltips.expand')}
           >
             <Expand className="size-3" />

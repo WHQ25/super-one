@@ -35,6 +35,17 @@ export const Default: Story = {
       const visibleRight = Math.min(table.getBoundingClientRect().right, viewport.getBoundingClientRect().right)
       expect(Math.abs(icon.getBoundingClientRect().right - visibleRight)).toBeLessThanOrEqual(1)
     })
+    expand.focus({ focusVisible: true })
+    await waitFor(() => {
+      expect(getComputedStyle(expand).boxShadow).not.toContain('3px')
+      const stroke = getComputedStyle(icon)
+      expect(stroke.outlineStyle).toBe('solid')
+      const outset = parseFloat(stroke.outlineOffset) + parseFloat(stroke.outlineWidth)
+      const buttonBox = expand.getBoundingClientRect()
+      const glyph = icon.getBoundingClientRect()
+      expect(buttonBox.right - glyph.right).toBeLessThanOrEqual(1)
+      expect(glyph.left - buttonBox.left).toBeGreaterThan(outset)
+    })
     const descriptor = Object.getOwnPropertyDescriptor(navigator.clipboard, 'writeText')
     let copiedText = ''
     Object.defineProperty(navigator.clipboard, 'writeText', {

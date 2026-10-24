@@ -20,6 +20,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Upgrade Claude Agent SDK to 0.3.310 (Claude Code 2.1.310).
 - Claude MCP servers can ask you to open a sign-in link: opening it answers the request, on desktop and phone. Their prompts show the server's own title and label.
 - Claude sessions on a remote node can answer MCP server questions instead of declining them.
 - Files a Claude MCP tool returns by reference appear under its tool row, including from calls that moved to the background.

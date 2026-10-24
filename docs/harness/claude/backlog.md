@@ -30,6 +30,9 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 20 | sdk-server `tools[].permission_policy` (`always_ask` / `always_deny`) | 0.3.301 | Ask or deny individual SuperOne host tools natively, even under `bypassPermissions` | Claude-only; the CLI lowers it to the same ask/deny rules the MCP settings page writes for user servers, which cannot use it (they load through `settingSources`, and stdio has no policy) | open; user servers use settings rules ([0.3.302](upgrades/0.3.302.md)) |
 | 21 | `BUILTIN_TOOL_NAMES` / `LEGACY_TOOL_NAME_ALIASES` | 0.3.301 (alpha) | Validate built-in tool names in permission rules and tool settings | Alpha and documented as incomplete; SuperOne edits only `mcp__` rules today | open |
 | 22 | `reloadPlugins({ addPlugins })` | 0.3.301 | Load a plugin folder into a running session without restart | Plugin dev folders already load at spawn; refused on remote and sandboxed sessions | open |
+| 23 | `get_usage` `recommendations` / `fix` | 0.3.305 | Show what drives usage and offer the CLI's one-tap fix in the usage meter | `fix` sends user messages (`/effort`, a prompt) into the session; needs a confirm step | open |
+| 24 | `command_lifecycle` `wakeup_source` / `scheduled_for` | 0.3.307 | Label which scheduled wakeup or task started a turn | `command_lifecycle` is still undeclared in `sdk.d.ts` | open |
+| 25 | `getContextUsage()` `mcpInstructions`, `pluginId`, `path` | 0.3.304 | Per-server MCP instruction cost and links to the agent/skill file in the context breakdown | Absent on remote/forwarded replies; stdio only | open |
 
 ## Integration gaps
 

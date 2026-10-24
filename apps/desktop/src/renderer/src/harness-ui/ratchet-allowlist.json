@@ -87,10 +87,6 @@
     "count": 5,
     "reason": "MCP popup opens the harness's MCP settings (settings/resource IPC per harness (separate track))"
   },
-  "components/chat/MentionPopup.tsx": {
-    "count": 3,
-    "reason": "session-mention labels name the ACP agent (Grok vs ACP)"
-  },
   "components/chat/PermissionPrompt.tsx": {
     "count": 1,
     "reason": "Codex MCP elicitation forms"

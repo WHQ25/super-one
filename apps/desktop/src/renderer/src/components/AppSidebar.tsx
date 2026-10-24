@@ -836,6 +836,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     sessionsLoading={loadingFolders[folder.path] === true}
                     openingSessionId={openingSession?.folderPath === folder.path ? openingSession.sessionId : null}
                     hasMoreSessions={folderSessionsHaveMore[folder.path] ?? false}
+                    sessionsLoaded={folder.path in folderSessions}
                     onLoadMoreSessions={loadMoreFolderSessions}
                     onToggleExpand={toggleExpand}
                     onSwitchSession={handleSwitchSession}

@@ -8,12 +8,15 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { environmentSections, groupCheckoutsByRepo, sortProjectGroups } from '@/lib/multi-host/group-projects'
+import { knownSessionCount, projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCard'
+import { SessionHoverCardTrigger } from '@/components/sidebar/multi-host/SessionHoverCard'
 import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
@@ -115,6 +118,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         onDeleteSession={props.onDeleteSession}
         onNewSession={props.onNewSession}
         offline={bucket.connection === 'offline'}
+        repoIdentity={checkout.repoIdentity}
+        sessionsLoaded={checkout.pathKey in props.folderSessions}
         sessionPresentation={presenterFor(bucket, folder.name)}
       />
     )
@@ -219,6 +224,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             locked={allOffline}
             checkouts={group.checkouts}
             environments={environments}
+            folderSessions={props.folderSessions}
+            folderSessionsHaveMore={props.folderSessionsHaveMore}
             onToggle={() => {
               if (allOffline) return
               props.onToggleProject(groupKey)
@@ -295,7 +302,8 @@ function EnvironmentHeader({
 }
 
 function RepoGroupHeader({
-  name, open, locked = false, checkouts, environments, onToggle, onNewSession, onEdit, onRemove,
+  name, open, locked = false, checkouts, environments, folderSessions, folderSessionsHaveMore,
+  onToggle, onNewSession, onEdit, onRemove,
   onSwitchSession, onPinSession, onHideSession, onRenameSession, onDeleteSession,
   openingSessionId, initialSessions, children,
 }: {
@@ -305,6 +313,8 @@ function RepoGroupHeader({
   locked?: boolean
   checkouts: HostCheckout[]
   environments: EnvironmentBucket[]
+  folderSessions: Record<string, SessionHistoryEntry[]>
+  folderSessionsHaveMore: Record<string, boolean>
   onToggle: () => void
   onNewSession: () => void
   onEdit: (folder: RecentFolder) => void
@@ -326,6 +336,8 @@ function RepoGroupHeader({
     const bucket = environments.find((item) => item.environmentId === checkout.environmentId)
     return t('sidebar.actionTarget', { environment: bucket?.label ?? checkout.connectionId, path: checkout.hostPath })
   }
+  const localCheckouts = checkouts.filter((checkout) => checkout.connectionId === 'local' && !checkout.missing)
+  const openCheckout = (checkout: HostCheckout) => window.app.showInFolder(checkout.hostPath, '')
   const items: AdaptiveMenuEntry[] = [
     {
       kind: 'submenu',
@@ -339,6 +351,28 @@ function RepoGroupHeader({
         onSelect: () => onEdit(checkoutToRecentFolder(checkout)),
       })),
     },
+    ...(localCheckouts.length === 1
+      ? [{
+          kind: 'item' as const,
+          id: 'open-folder',
+          label: t('sidebar.contextMenu.openFolder'),
+          icon: FolderOpen,
+          onSelect: () => openCheckout(localCheckouts[0]!),
+        }]
+      : localCheckouts.length > 1
+        ? [{
+            kind: 'submenu' as const,
+            id: 'open-folder',
+            label: t('sidebar.contextMenu.openFolder'),
+            icon: FolderOpen,
+            items: localCheckouts.map((checkout) => ({
+              kind: 'item' as const,
+              id: `open-${checkout.environmentId}-${checkout.projectId}`,
+              label: targetLabel(checkout),
+              onSelect: () => openCheckout(checkout),
+            })),
+          }]
+        : []),
     {
       kind: 'submenu',
       id: 'remove-project',
@@ -353,9 +387,37 @@ function RepoGroupHeader({
       })),
     },
   ]
+  const sessionCount = checkouts.reduce<number | null>((sum, checkout) => {
+    if (sum == null) return null
+    const count = knownSessionCount({
+      loaded: checkout.pathKey in folderSessions,
+      hasMore: folderSessionsHaveMore[checkout.pathKey] === true,
+      sessions: folderSessions[checkout.pathKey] ?? [],
+    })
+    return count == null ? null : sum + count
+  }, 0)
+  const hoverFolders = projectHoverFolders(
+    target.hostPath,
+    checkouts.flatMap((checkout) => [checkout.hostPath, ...(checkout.extraDirs ?? [])].filter((path) => path !== target.hostPath)),
+  )
   return (
     <div>
+      <ProjectHoverCard
+        name={name}
+        repoIdentity={target.repoIdentity}
+        folders={hoverFolders}
+        sessionCount={sessionCount}
+        sessionPaths={checkouts.map((checkout) => checkout.pathKey)}
+        offline={locked}
+        onEdit={checkouts.length === 1 ? () => onEdit(checkoutToRecentFolder(target)) : undefined}
+        edits={checkouts.length > 1 ? checkouts.map((checkout) => ({
+          id: `${checkout.environmentId}-${checkout.projectId}`,
+          label: targetLabel(checkout),
+          onSelect: () => onEdit(checkoutToRecentFolder(checkout)),
+        })) : undefined}
+      >
       <AdaptiveContextMenu items={items} contentClassName="w-56">
+        <SessionHoverCardTrigger>
         <div className={cn('group flex h-9 w-full items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors', locked ? 'cursor-default opacity-60' : 'hover:bg-sidebar-hover')}>
           {locked ? (
             <div className="flex min-w-0 flex-1 items-center text-left">
@@ -428,7 +490,9 @@ function RepoGroupHeader({
           </div>
           )}
         </div>
+        </SessionHoverCardTrigger>
       </AdaptiveContextMenu>
+      </ProjectHoverCard>
       <div className="pl-1">
         {!locked && history ? (
           <ProjectHistoryList

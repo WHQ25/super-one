@@ -550,6 +550,10 @@ export const zh: Messages = {
       removeFolder: '移除文件夹',
       restartNotice: '移除文件夹后，正在运行的 Claude 会话会在下次发送消息时重启；Codex 等其他 harness 在下一轮生效。',
     },
+    projectHover: {
+      sessions_one: '{{count}} 个会话',
+      sessions_other: '{{count}} 个会话',
+    },
     contextMenu: {
       sessionHistory: '会话历史',
       editProject: '编辑项目',

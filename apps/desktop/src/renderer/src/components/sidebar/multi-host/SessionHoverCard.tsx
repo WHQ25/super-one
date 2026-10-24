@@ -68,6 +68,36 @@ export const SessionHoverCardTrigger = forwardRef<HTMLElement, ComponentProps<ty
   },
 )
 
+/** Same placement for every sidebar hover card: 4px to the right of the row, top-aligned. */
+export function SidebarHoverCard({
+  open,
+  children,
+  content,
+}: {
+  /** Stories pin the card open. Production leaves this unset. */
+  open?: boolean
+  /** Usually the context menu, with `SessionHoverCardTrigger` on the row inside it. */
+  children: ReactNode
+  content: ReactNode
+}) {
+  return (
+    <HoverCard open={open} openDelay={300} closeDelay={150}>
+      {children}
+      {/* 4px off the row. Flush looks stuck to the title; a collision shift
+          would slide the card left onto it. */}
+      <HoverCardContent
+        className="w-72 p-3"
+        side="right"
+        align="start"
+        sideOffset={4}
+        avoidCollisions={false}
+      >
+        {content}
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
 export function SessionHoverCard({
   model,
   open,
@@ -80,19 +110,8 @@ export function SessionHoverCard({
   children: ReactNode
 }) {
   return (
-    <HoverCard open={open} openDelay={300} closeDelay={150}>
+    <SidebarHoverCard open={open} content={<SessionHoverBody model={model} />}>
       {children}
-      {/* Collision shift slides the card left onto the row when 18rem does not
-          fit. Keep the requested side so the title stays uncovered. */}
-      <HoverCardContent
-        className="w-72 p-3"
-        side="right"
-        align="start"
-        sideOffset={8}
-        avoidCollisions={false}
-      >
-        <SessionHoverBody model={model} />
-      </HoverCardContent>
-    </HoverCard>
+    </SidebarHoverCard>
   )
 }

@@ -2,7 +2,6 @@ import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffec
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, ChevronDown, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -13,7 +12,10 @@ import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { SidebarHoverChevron, sidebarRowActionsClass } from './hover-disclosure'
 import { cn } from '@superone/ui/lib/utils'
-import { homePath } from '@/lib/path-utils'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { knownSessionCount, projectHostPath, projectHoverFolders } from '@/lib/multi-host/project-hover'
+import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
+import { SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
 import { selectSessionTitle } from '@/lib/session-title'
@@ -169,6 +171,13 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   onNewSession: (folderPath: string) => void
   /** Dims the checkout and its sessions when that environment is offline. */
   offline?: boolean
+  /**
+   * Origin when the catalog already knows it. Omit on a recent-folder row so
+   * the card asks the environment. `null` means there is no remote.
+   */
+  repoIdentity?: string | null
+  /** False until this project's session list has been read. Empty is then zero, not unknown. */
+  sessionsLoaded?: boolean
   /** Hover card fields. The row never fetches them. */
   sessionPresentation?: (session: SessionHistoryEntry) => {
     hover?: SessionHoverModel | null
@@ -196,6 +205,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onDeleteSession,
   onNewSession,
   offline = false,
+  repoIdentity,
+  sessionsLoaded = false,
   sessionPresentation,
   sessionsOnly = false,
 }: ProjectSidebarRowProps) {
@@ -361,12 +372,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     const groupsToShow = visibleSidebarSessionGroups(sections, open, displayLimit, isPinnedGroup)
     const totalCount = requiredCount + sections.normal.length
     return {
-      displayPath: homePath(
-        // Strip remote host-scoped keys for display (see remote-project-key.ts).
-        folder.path.startsWith('remote:')
-          ? folder.path.slice(folder.path.indexOf(':', 'remote:'.length) + 1) || folder.path
-          : folder.path,
-      ),
       groupsToShow,
       showSessions: open || groupsToShow.length > 0,
       hasMoreToShow: open && (totalCount > groupsToShow.length || hasMoreSessions),
@@ -451,6 +456,22 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     setAutomationDialogOpen(true)
   }, [])
 
+  const hostPath = projectHostPath(folder.path)
+  const hoverFolders = useMemo(
+    () => projectHoverFolders(hostPath, folder.extraDirs),
+    [hostPath, folder.extraDirs],
+  )
+  const sessionCount = knownSessionCount({
+    loaded: sessionsLoaded,
+    hasMore: hasMoreSessions,
+    sessions: allSessions,
+  })
+  const sessionPaths = useMemo(() => [folder.path], [folder.path])
+  const remoteProject = parseRemoteProjectKey(folder.path)
+  const repoLookup = repoIdentity === undefined
+    ? { connectionId: remoteProject?.connectionId ?? 'local', projectId: folder.id, hostPath }
+    : null
+
   const folderMenuItems: AdaptiveMenuEntry[] = [
     ...(!folder.missing
       ? ([
@@ -461,6 +482,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           // Gated on !missing: with the root gone there is nothing
           // meaningful to point workspace folders at.
           { kind: 'item', id: 'edit-project', label: t('sidebar.contextMenu.editProject'), icon: Pencil, onSelect: () => onEditProject(folder) },
+          // Finder can only reveal a path on this machine.
+          ...(!remoteProject
+            ? [{ kind: 'item' as const, id: 'open-folder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(folder.path, '') }]
+            : []),
           { kind: 'separator' },
         ] as AdaptiveMenuEntry[])
       : []),
@@ -469,7 +494,18 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   return (
     <div>
-      {!sessionsOnly && <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
+      {!sessionsOnly && <ProjectHoverCard
+          name={folder.name}
+          repoIdentity={repoIdentity}
+          repoLookup={repoLookup}
+          folders={hoverFolders}
+          sessionCount={sessionCount}
+          sessionPaths={sessionPaths}
+          offline={offline}
+          onEdit={folder.missing ? undefined : () => onEditProject(folder)}
+        >
+        <AdaptiveContextMenu items={folderMenuItems} contentClassName="w-48">
+          <SessionHoverCardTrigger>
           <div
             onClick={() => {
               if (folder.missing || offline) return
@@ -497,16 +533,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     : <Folder className="size-4 shrink-0 text-sidebar-foreground/70" />
               }
             />
-            <TooltipProvider delayDuration={500}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className={cn('ml-2 min-w-0 truncate text-md', folder.missing && 'text-sidebar-foreground/50 line-through')}>{folder.name}</span>
-                </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={8}>
-                  <span className="text-xs">{folder.missing ? t('tooltips.folderNotFound', { path: folder.path }) : derived.displayPath}</span>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <span className={cn('ml-2 min-w-0 truncate text-md', folder.missing && 'text-sidebar-foreground/50 line-through')}>{folder.name}</span>
             {!folder.missing && !offline && (
               <div
                 data-slot="project-row-actions"
@@ -548,7 +575,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               </div>
             )}
           </div>
-      </AdaptiveContextMenu>}
+          </SessionHoverCardTrigger>
+      </AdaptiveContextMenu>
+      </ProjectHoverCard>}
 
       {/* Everything under the project header sits one step in. A merged repository indents its own children. */}
       <div className={cn(!sessionsOnly && 'pl-1')}>

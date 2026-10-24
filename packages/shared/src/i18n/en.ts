@@ -522,6 +522,10 @@ export type Messages = {
       removeFolder: string
       restartNotice: string
     }
+    projectHover: {
+      sessions_one: string
+      sessions_other: string
+    }
     contextMenu: {
       sessionHistory: string
       editProject: string
@@ -5126,6 +5130,10 @@ export const en: Messages = {
       removeFolder: 'Remove Folder',
       restartNotice:
         'Removing a folder restarts any running Claude session on the next message. Codex and other harnesses pick it up on their next turn.',
+    },
+    projectHover: {
+      sessions_one: '{{count}} Session',
+      sessions_other: '{{count}} Sessions',
     },
     contextMenu: {
       sessionHistory: 'Session History',

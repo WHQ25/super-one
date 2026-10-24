@@ -24,11 +24,11 @@ describe('project hover', () => {
     expect(projectRepoLink(null)).toBeNull()
   })
 
-  it('lists the checkout and extra folders, and shows the path when names collide', () => {
+  it('lists the checkout and extra folders as home-relative paths', () => {
     expect(projectHostPath('remote:cli-1:/srv/app')).toBe('/srv/app')
     expect(projectHoverFolders('/Users/a/src/app', ['/Users/a/src/app', '/Users/a/src/ui'])).toEqual([
-      { name: 'app', path: '/Users/a/src/app', title: '~/src/app' },
-      { name: 'ui', path: '/Users/a/src/ui', title: '~/src/ui' },
+      { name: '~/src/app', path: '/Users/a/src/app', title: '~/src/app' },
+      { name: '~/src/ui', path: '/Users/a/src/ui', title: '~/src/ui' },
     ])
     expect(projectHoverFolders('/srv/app', ['/other/app']).map((folder) => folder.name)).toEqual([
       '/srv/app',

@@ -1,5 +1,4 @@
 import type { ProjectSnapshot } from '@superone/shared/environment'
-import { pathBasename } from '@superone/shared/collab-request-display'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { homePath } from '@superone/shared/path-display'
 
@@ -11,10 +10,13 @@ export interface ProjectRepoLink {
 }
 
 export interface ProjectHoverFolder {
-  /** Basename, or the shortened path when two folders share a basename. */
+  /** Home-relative path (`~/src/app`), or the absolute path when it is outside home. */
   name: string
   path: string
+  /** Same shortened path, so a truncated label can still be read. */
   title: string
+  /** Finder can reveal this folder. Remote and missing checkouts leave it unset. */
+  openable?: boolean
 }
 
 /** `git:<origin>` becomes a browser URL. A checkout with no origin has nothing to open. */
@@ -37,23 +39,17 @@ export function projectHostPath(projectKey: string): string {
   return rest || projectKey
 }
 
-/**
- * The checkout plus any extra workspace folders. Hover text is the full path.
- * Two folders with the same basename show the shortened path so they stay distinct.
- */
+/** The checkout plus any extra workspace folders. The label is the home-relative path. */
 export function projectHoverFolders(rootPath: string, extraDirs?: readonly string[]): ProjectHoverFolder[] {
   const seen = new Set<string>()
   const folders: ProjectHoverFolder[] = []
   for (const path of [rootPath, ...(extraDirs ?? [])]) {
     if (!path || seen.has(path)) continue
     seen.add(path)
-    folders.push({ name: pathBasename(path) || path, path, title: homePath(path) })
+    const label = homePath(path) || path
+    folders.push({ name: label, path, title: label })
   }
-  const names = new Map<string, number>()
-  for (const folder of folders) names.set(folder.name, (names.get(folder.name) ?? 0) + 1)
-  return folders.map((folder) => (
-    (names.get(folder.name) ?? 0) > 1 ? { ...folder, name: folder.title } : folder
-  ))
+  return folders
 }
 
 /** Non-hidden sessions, or null when the sidebar has not loaded the whole list. */

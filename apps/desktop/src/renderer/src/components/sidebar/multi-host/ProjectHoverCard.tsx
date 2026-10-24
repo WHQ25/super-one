@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Folder, GitBranch, Loader2, MessageSquare, Pencil } from 'lucide-react'
+import { Folder, FolderOpen, GitBranch, Loader2, MessageSquare, Pencil } from 'lucide-react'
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { cn } from '@superone/ui/lib/utils'
 import { listAllSessions } from '@/lib/session-list-ops'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import {
@@ -80,6 +81,7 @@ export function ProjectHoverBody({
   offline = false,
   onEdit,
   edits,
+  onOpenFolder,
 }: {
   name: string
   /** `undefined` asks the environment. `null` means this checkout has no origin. */
@@ -93,6 +95,8 @@ export function ProjectHoverBody({
   onEdit?: () => void
   /** Several checkouts: the same targets as the Edit Project submenu. */
   edits?: { id: string; label: string; onSelect: () => void }[]
+  /** Defaults to revealing the folder on this machine. */
+  onOpenFolder?: (path: string) => void
 }) {
   const { t } = useTranslation()
   const repo = useRepoLink(repoIdentity, repoLookup)
@@ -136,9 +140,29 @@ export function ProjectHoverBody({
         </button>
       )}
       {folders.map((folder) => (
-        <div key={folder.path} className="flex items-center gap-1.5 text-muted-foreground" title={folder.title}>
+        <div key={folder.path} className="group/folder relative flex min-w-0 items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground focus-within:text-foreground">
           <Folder className="size-3 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+          <span
+            className={cn('min-w-0 flex-1 truncate', folder.openable && 'group-hover/folder:pr-5 group-focus-within/folder:pr-5')}
+            title={folder.title}
+          >
+            {folder.name}
+          </span>
+          {folder.openable && (
+            <IconButton
+              size="xs"
+              variant="ghost"
+              tooltip={t('sidebar.contextMenu.openFolder')}
+              className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover/folder:pointer-events-auto group-hover/folder:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+              onClick={(event) => {
+                event.stopPropagation()
+                if (onOpenFolder) onOpenFolder(folder.path)
+                else void window.app.showInFolder(folder.path, '')
+              }}
+            >
+              <FolderOpen />
+            </IconButton>
+          )}
         </div>
       ))}
       {(total != null || !offline) && (

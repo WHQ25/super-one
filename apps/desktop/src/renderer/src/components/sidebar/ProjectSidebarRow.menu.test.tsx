@@ -109,4 +109,51 @@ describe('project hover card', () => {
     expect(document.querySelector('[data-slot="hover-card-content"]')?.getAttribute('data-side')).toBe('right')
     stop()
   })
+
+  it('shows the home-relative path and opens that folder from the row icon', () => {
+    window.app.showInFolder = vi.fn(async () => undefined)
+    render(
+      <ProjectHoverCard
+        open
+        name="super-one"
+        repoIdentity={null}
+        folders={projectHoverFolders('/Users/a/src/super-one', ['/Users/a/src/super-one/packages/ui']).map((folder) => ({
+          ...folder,
+          openable: true,
+        }))}
+        sessionCount={0}
+        sessionPaths={[]}
+      >
+        <SessionHoverCardTrigger>
+          <div>super-one</div>
+        </SessionHoverCardTrigger>
+      </ProjectHoverCard>,
+    )
+    expect(screen.getByText('~/src/super-one')).toBeInTheDocument()
+    expect(screen.getByText('~/src/super-one/packages/ui')).toBeInTheDocument()
+    const openers = screen.getAllByRole('button', { name: 'Open Folder' })
+    expect(openers).toHaveLength(2)
+    expect(openers[0]).toHaveClass('opacity-0')
+    fireEvent.click(openers[1]!)
+    expect(window.app.showInFolder).toHaveBeenCalledWith('/Users/a/src/super-one/packages/ui', '')
+  })
+
+  it('omits the folder opener when the checkout is not on this machine', () => {
+    render(
+      <ProjectHoverCard
+        open
+        name="app"
+        repoIdentity={null}
+        folders={projectHoverFolders('/srv/app')}
+        sessionCount={0}
+        sessionPaths={[]}
+      >
+        <SessionHoverCardTrigger>
+          <div>app</div>
+        </SessionHoverCardTrigger>
+      </ProjectHoverCard>,
+    )
+    expect(screen.getByText('/srv/app')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open Folder' })).toBeNull()
+  })
 })

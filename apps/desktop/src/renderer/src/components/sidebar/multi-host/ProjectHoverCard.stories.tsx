@@ -6,6 +6,13 @@ import { ProjectHoverBody, ProjectHoverCard } from './ProjectHoverCard'
 import { SessionHoverCardTrigger } from './SessionHoverCard'
 
 const folders = projectHoverFolders('/Users/a/src/super-one', ['/Users/a/src/super-one/packages/ui'])
+  .map((folder) => ({ ...folder, openable: true }))
+
+function rememberOpen(path: string) {
+  const marker = document.createElement('div')
+  marker.dataset.openedFolder = path
+  document.body.append(marker)
+}
 
 const meta = {
   title: 'Sidebar/ProjectHoverCard',
@@ -35,6 +42,7 @@ export const GitHub: Story = {
         sessionCount={12}
         sessionPaths={[]}
         onEdit={() => {}}
+        onOpenFolder={rememberOpen}
       />
     </Frame>
   ),
@@ -65,10 +73,11 @@ export const NoRemote: Story = {
       <ProjectHoverBody
         name="notes"
         repoIdentity={null}
-        folders={projectHoverFolders('/Users/a/notes')}
+        folders={projectHoverFolders('/Users/a/notes').map((folder) => ({ ...folder, openable: true }))}
         sessionCount={0}
         sessionPaths={[]}
         onEdit={() => {}}
+        onOpenFolder={rememberOpen}
       />
     </Frame>
   ),
@@ -85,10 +94,11 @@ export const LongFolders: Story = {
         folders={projectHoverFolders('/Users/a/src/super-one', [
           '/Users/a/src/super-one/packages/ui',
           '/Users/a/work/checkout/packages/desktop/src/renderer',
-        ])}
+        ]).map((folder) => ({ ...folder, openable: true }))}
         sessionCount={128}
         sessionPaths={[]}
         onEdit={() => {}}
+        onOpenFolder={rememberOpen}
       />
     </Frame>
   ),
@@ -107,6 +117,7 @@ export const Anchored: Story = {
         sessionCount={4}
         sessionPaths={[]}
         onEdit={() => {}}
+        onOpenFolder={rememberOpen}
       >
         <SessionHoverCardTrigger>
           <div className="flex h-9 items-center rounded-md px-2.5 text-sm">super-one</div>
@@ -119,6 +130,33 @@ export const Anchored: Story = {
     const card = await body.findByText('acme/super-one')
     expect(card.closest('[data-slot="hover-card-content"]')?.getAttribute('data-side')).toBe('right')
     expect(card.closest('[data-slot="hover-card-content"]')?.getAttribute('data-align')).toBe('start')
+  },
+}
+
+export const OpenFolder: Story = {
+  name: 'Relative path reveals open folder',
+  args: { name: 'super-one', children: null },
+  render: () => (
+    <Frame>
+      <ProjectHoverBody
+        name="super-one"
+        repoIdentity={null}
+        folders={folders}
+        sessionCount={2}
+        sessionPaths={[]}
+        onOpenFolder={rememberOpen}
+      />
+    </Frame>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    expect(canvas.getByText('~/src/super-one')).toBeTruthy()
+    expect(canvas.getByText('~/src/super-one/packages/ui')).toBeTruthy()
+    const opener = canvas.getAllByRole('button', { name: 'Open Folder' })[1]
+    expect(opener).toBeTruthy()
+    await userEvent.hover(canvas.getByText('~/src/super-one/packages/ui'))
+    await userEvent.click(opener!)
+    expect(document.querySelector('[data-opened-folder]')?.getAttribute('data-opened-folder')).toBe('/Users/a/src/super-one/packages/ui')
   },
 }
 
@@ -137,6 +175,7 @@ export const Edit: Story = {
           marker.dataset.projectEdited = 'true'
           document.body.append(marker)
         }}
+        onOpenFolder={rememberOpen}
       />
     </Frame>
   ),

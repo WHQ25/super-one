@@ -396,10 +396,13 @@ function RepoGroupHeader({
     })
     return count == null ? null : sum + count
   }, 0)
+  const localFolderPaths = new Set(
+    localCheckouts.flatMap((checkout) => [checkout.hostPath, ...(checkout.extraDirs ?? [])]),
+  )
   const hoverFolders = projectHoverFolders(
     target.hostPath,
     checkouts.flatMap((checkout) => [checkout.hostPath, ...(checkout.extraDirs ?? [])].filter((path) => path !== target.hostPath)),
-  )
+  ).map((folder) => ({ ...folder, openable: localFolderPaths.has(folder.path) }))
   return (
     <div>
       <ProjectHoverCard

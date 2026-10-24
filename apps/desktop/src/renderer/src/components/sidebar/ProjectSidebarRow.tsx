@@ -457,17 +457,19 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }, [])
 
   const hostPath = projectHostPath(folder.path)
-  const hoverFolders = useMemo(
-    () => projectHoverFolders(hostPath, folder.extraDirs),
-    [hostPath, folder.extraDirs],
-  )
+  const remoteProject = parseRemoteProjectKey(folder.path)
+  const canOpenFolders = !folder.missing && !remoteProject
+  const hoverFolders = useMemo(() => {
+    const listed = projectHoverFolders(hostPath, folder.extraDirs)
+    if (!canOpenFolders) return listed
+    return listed.map((item) => ({ ...item, openable: true }))
+  }, [hostPath, folder.extraDirs, canOpenFolders])
   const sessionCount = knownSessionCount({
     loaded: sessionsLoaded,
     hasMore: hasMoreSessions,
     sessions: allSessions,
   })
   const sessionPaths = useMemo(() => [folder.path], [folder.path])
-  const remoteProject = parseRemoteProjectKey(folder.path)
   const repoLookup = repoIdentity === undefined
     ? { connectionId: remoteProject?.connectionId ?? 'local', projectId: folder.id, hostPath }
     : null

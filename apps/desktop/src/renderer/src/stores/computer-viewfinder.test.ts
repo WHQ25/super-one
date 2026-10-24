@@ -60,6 +60,25 @@ describe('computer use viewfinder stream', () => {
     expect(useComputerViewfinderStore.getState().targets['session-a']).toBeUndefined()
   })
 
+  it('shows a frame that arrived before the target was claimed', () => {
+    useComputerViewfinderStore.getState().applyFrame({
+      sessionId: 'session-a', windowId: 42, width: 480, height: 320, data: 'early',
+    })
+    expect(useComputerViewfinderStore.getState().frames['session-a']).toBeUndefined()
+
+    useComputerViewfinderStore.getState().applyClaim(target)
+    expect(useComputerViewfinderStore.getState().frames['session-a']?.data).toBe('early')
+    expect(useComputerViewfinderStore.getState().pendingFrames['session-a']).toBeUndefined()
+  })
+
+  it('does not apply an early frame to a different window', () => {
+    useComputerViewfinderStore.getState().applyFrame({
+      sessionId: 'session-a', windowId: 42, width: 480, height: 320, data: 'early',
+    })
+    useComputerViewfinderStore.getState().applyClaim({ ...target, windowId: 43 })
+    expect(useComputerViewfinderStore.getState().frames['session-a']).toBeUndefined()
+  })
+
   it('keeps independent targets and last frames for concurrent sessions', () => {
     useComputerViewfinderStore.getState().applyClaim(target)
     useComputerViewfinderStore.getState().applyFrame({

@@ -67,7 +67,7 @@ describe('Computer Use picture in picture', () => {
     // jsdom serialises CSS lengths to three decimals, so the aspect-derived
     // height is compared as a number rather than as an exact style string.
     expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (3 / 2), 2)
-    expect(pip.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,jpeg')
+    expect(pip.querySelector('canvas')).not.toBeNull()
     await waitFor(() => {
       expect(resizeComputerUseViewfinder).toHaveBeenCalledWith('session-a', 42, 480, 320)
     })

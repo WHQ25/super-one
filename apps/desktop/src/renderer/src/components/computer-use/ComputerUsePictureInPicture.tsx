@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -16,8 +16,65 @@ import {
   computerPipAspect,
   computerPipCaptureSize,
 } from './computer-pip-layout'
+import { createComputerUseFrameQueue } from './computer-use-frame-queue'
 
 const CAPTURE_RESIZE_DEBOUNCE_MS = 120
+
+function loadJpeg(data: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Computer Use frame decode failed'))
+    image.src = `data:image/jpeg;base64,${data}`
+  })
+}
+
+function paintFrame(canvas: HTMLCanvasElement, image: HTMLImageElement): void {
+  const width = image.naturalWidth
+  const height = image.naturalHeight
+  if (width <= 0 || height <= 0) return
+  const context = canvas.getContext('2d')
+  if (!context) return
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+  }
+  context.drawImage(image, 0, 0)
+}
+
+/**
+ * Draw each frame onto a canvas instead of swapping an `<img>` data URL.
+ * The canvas keeps the last picture that finished decoding, so a later frame
+ * cannot blank the preview while its own JPEG is still loading.
+ */
+function useComputerUseFrameCanvas(
+  data: string | null,
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+): void {
+  const pushRef = useRef<(data: string) => void>(() => {})
+
+  useEffect(() => {
+    let active = true
+    const queue = createComputerUseFrameQueue(async (encoded) => {
+      const image = await loadJpeg(encoded)
+      if (!active) return
+      const canvas = canvasRef.current
+      if (canvas) paintFrame(canvas, image)
+    })
+    pushRef.current = (value) => {
+      if (active) queue.push(value)
+    }
+    return () => {
+      active = false
+      queue.close()
+      pushRef.current = () => {}
+    }
+  }, [canvasRef])
+
+  useEffect(() => {
+    if (data) pushRef.current(data)
+  }, [data])
+}
 
 export function ComputerUsePictureInPicture() {
   const { t } = useTranslation()
@@ -101,6 +158,9 @@ export function ComputerUsePictureInPicture() {
     onClick: focusPreview,
   })
 
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useComputerUseFrameCanvas(showPip ? frame?.data ?? null : null, canvasRef)
+
   const cursorVisible = target?.cursorX != null
     && target.cursorY != null
     && (target.sourceWidth ?? 0) > 0
@@ -120,14 +180,11 @@ export function ComputerUsePictureInPicture() {
           className="group/computer-pip pointer-events-none fixed overflow-hidden rounded-xl border border-border bg-black shadow-2xl"
           style={{ left: layout.left, top: layout.top, width: layout.width, height: layout.height }}
         >
-          {frame && (
-            <img
-              aria-hidden="true"
-              draggable={false}
-              className="size-full object-contain"
-              src={`data:image/jpeg;base64,${frame.data}`}
-            />
-          )}
+          <canvas
+            ref={canvasRef}
+            aria-hidden="true"
+            className="size-full object-contain"
+          />
           {cursorVisible && (
             <motion.span
               aria-hidden="true"

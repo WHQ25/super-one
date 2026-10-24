@@ -67,7 +67,7 @@ export const Online: Story = {
   },
 }
 
-/** Single-host rows have no hover card, so the project name stays on the row. */
+/** The project name stays on the row only when the caller omits the hover model. */
 export const WithoutHoverCard: Story = {
   args: { hover: null },
   render: (args) => (

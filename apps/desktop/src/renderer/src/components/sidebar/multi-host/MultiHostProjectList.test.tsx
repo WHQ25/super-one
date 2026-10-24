@@ -2,9 +2,8 @@
 import type { ComponentProps } from 'react'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { projectRef, type DraftListEntry } from '@superone/shared/environment'
+import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentBucket, HostCheckout } from '@/lib/multi-host/types'
-import { useDraftsStore } from '@/stores/drafts'
 import { MultiHostProjectList } from './MultiHostProjectList'
 
 function checkout(partial: Partial<HostCheckout> & Pick<HostCheckout, 'environmentId' | 'projectId' | 'name'>): HostCheckout {
@@ -48,10 +47,6 @@ const remote = checkout({
   hostPath: '/srv/app',
 })
 
-function draft(id: string, title: string): DraftListEntry {
-  return { id, text: title, title, originSessionId: `sess-${id}`, pendingSync: false } as unknown as DraftListEntry
-}
-
 const callbacks = {
   onToggleProject: vi.fn(),
   onToggleEnvironment: vi.fn(),
@@ -86,7 +81,6 @@ function renderList(extra?: Partial<ComponentProps<typeof MultiHostProjectList>>
       folderSessionsHaveMore={{}}
       loadingFolders={{}}
       openingSession={null}
-      draftConnectionIds={[]}
       {...callbacks}
       {...extra}
     />,
@@ -96,7 +90,6 @@ function renderList(extra?: Partial<ComponentProps<typeof MultiHostProjectList>>
 describe('environment sections', () => {
   beforeEach(() => {
     window.app.listAutomations = vi.fn(async () => [])
-    useDraftsStore.setState({ byConnection: {}, resumingDraftId: null, loadDrafts: vi.fn(async () => {}) })
   })
 
   it('holds only projects, without labels or sticky headers', () => {
@@ -117,20 +110,6 @@ describe('environment sections', () => {
     expect(list?.className.split(/\s+/)).not.toContain('px-1.5')
   })
 
-  it('lists every environment\'s drafts under one heading, ahead of the environments', () => {
-    useDraftsStore.setState({ byConnection: { local: [draft('d1', 'Local draft')], 'cli-1': [draft('d2', 'Remote draft')] } })
-    renderList({ draftConnectionIds: ['local', 'cli-1'] })
-
-    const firstSection = document.querySelector('[data-environment-id]')!
-    const heading = screen.getByText('Drafts')
-    expect(heading.compareDocumentPosition(screen.getByText('Local draft')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    for (const title of ['Local draft', 'Remote draft']) {
-      const row = screen.getByText(title)
-      expect(row.closest('[data-environment-id]')).toBeNull()
-      expect(row.compareDocumentPosition(firstSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
-  })
-
   it('folds a collapsed environment\'s projects away', () => {
     renderList({ collapsedEnvironmentIds: ['desktop'] })
 
@@ -138,8 +117,7 @@ describe('environment sections', () => {
     expect(screen.getByText('remote-app')).toBeInTheDocument()
   })
 
-  it('dims an offline environment\'s drafts and hides its projects', () => {
-    useDraftsStore.setState({ byConnection: { 'cli-1': [draft('d2', 'Remote draft')] } })
+  it('hides an offline environment\'s projects', () => {
     renderList({
       environments: [
         bucket({
@@ -151,10 +129,8 @@ describe('environment sections', () => {
           checkouts: [remote],
         }),
       ],
-      draftConnectionIds: ['cli-1'],
     })
 
     expect(screen.queryByText('remote-app')).toBeNull()
-    expect(screen.getByText('Remote draft').closest('.group\\/draft')).toHaveClass('opacity-50')
   })
 })

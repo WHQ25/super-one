@@ -86,7 +86,6 @@ const meta = {
     folderSessionsHaveMore: {},
     loadingFolders: {},
     openingSession: null,
-    draftConnectionIds: [],
     ...callbacks,
   },
 } satisfies Meta<typeof MultiHostProjectList>
@@ -196,7 +195,6 @@ export const Offline: Story = {
         projectsStatus: 'idle',
       }),
     ],
-    draftConnectionIds: ['cli-1'],
   },
   render: (args) => <Frame><MultiHostProjectList {...args} /></Frame>,
 }

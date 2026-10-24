@@ -306,6 +306,7 @@ describe('AppSidebar interactions', () => {
     await screen.findByText('Old Session')
 
     const title = screen.getByText('Old Session')
+    expect(title.closest('[data-slot="hover-card-trigger"]')).not.toBeNull()
     const row = title.closest('.group\\/session') as HTMLElement
     const buttons = row.querySelectorAll('button')
     fireEvent.click(buttons[0] as HTMLButtonElement)
@@ -335,6 +336,9 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     await screen.findByText('Pinned Session')
+    const pinRow = screen.getByText('Pinned Session').closest('.group\\/pin')
+    expect(pinRow?.textContent).not.toContain('project-a')
+    expect(screen.getByText('Pinned Session').closest('[data-slot="hover-card-trigger"]')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Unpin Session' }))
 
     await waitFor(() => {

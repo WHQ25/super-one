@@ -608,18 +608,31 @@ export const AppSidebar = memo(function AppSidebar() {
     })
   }, [connectionBusyId, t])
 
-  // Pins stay global across environments; the hover card names each one's environment and project.
+  // The hover card, not the experiment flag, carries the project and environment.
+  // A local pin uses this machine even when the catalog is not loaded.
+  const localHoverEnvironment = useMemo(() => ({
+    label: localHostLabel,
+    kind: 'local' as const,
+    connection: 'connected' as const,
+  }), [localHostLabel])
   const pinPresentation = (session: (typeof pinnedSessions)[number]) => {
-    if (!multiHostChrome) return null
     const bucket = environments.find((item) => projectBelongsToHost(session.folderPath, item.connectionId))
-    if (!bucket) return null
-    const projectName = bucket.checkouts.find((checkout) => checkout.pathKey === session.folderPath)?.name ?? session.folderName
-    return presenterFor(bucket, projectName)(session)
+    if (bucket) {
+      const projectName = bucket.checkouts.find((checkout) => checkout.pathKey === session.folderPath)?.name ?? session.folderName
+      return presenterFor(bucket, projectName)(session)
+    }
+    if (parseRemoteProjectKey(session.folderPath)) return null
+    return presenterFor(localHoverEnvironment, session.folderName)(session)
   }
 
   const draftConnectionIds = useMemo(() => (multiHostChrome
     ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
     : [selectedHostConnectionId]), [multiHostChrome, hostItems, selectedHostConnectionId])
+  const offlineDraftConnectionIds = useMemo(() => (
+    multiHostChrome
+      ? environments.filter((bucket) => bucket.connection === 'offline').map((bucket) => bucket.connectionId)
+      : hostTurnedOff ? draftConnectionIds : []
+  ), [multiHostChrome, environments, hostTurnedOff, draftConnectionIds])
 
   useSidebarRenderTrace({
     sidebarTab,
@@ -692,6 +705,16 @@ export const AppSidebar = memo(function AppSidebar() {
               />
             )
           })}
+        </div>
+      )}
+
+      {sidebarTab === 'sessions' && (
+        <div className="px-2">
+          <DraftsSection
+            connectionIds={draftConnectionIds}
+            offlineConnectionIds={offlineDraftConnectionIds}
+            label={<SidebarSectionLabel>{t('sidebar.drafts.title')}</SidebarSectionLabel>}
+          />
         </div>
       )}
 
@@ -777,7 +800,6 @@ export const AppSidebar = memo(function AppSidebar() {
                 folderSessionsHaveMore={folderSessionsHaveMore}
                 loadingFolders={loadingFolders}
                 openingSession={openingSession}
-                draftConnectionIds={draftConnectionIds}
                 onToggleProject={toggleExpand}
                 onToggleEnvironment={(environmentId) => useMultiHostSidebarStore.getState().toggleEnvironmentExpanded(environmentId)}
                 onLoadMoreSessions={loadMoreFolderSessions}
@@ -819,8 +841,6 @@ export const AppSidebar = memo(function AppSidebar() {
         ) : (
           <ScrollArea type="scroll" className="sidebar-scroll h-full">
             <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
-              {/* Drafts are environment-scoped peers of projects — no section header. */}
-              <DraftsSection connectionIds={draftConnectionIds} offlineConnectionIds={hostTurnedOff ? draftConnectionIds : undefined} />
               {hostTurnedOff ? (
                 <div className="flex flex-col items-center justify-center gap-1 p-4 text-center text-xs text-sidebar-foreground/70">
                   <span>{t('sidebar.hostDisconnected')}</span>
@@ -847,6 +867,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     onRenameSession={handleRequestRenameSession}
                     onDeleteSession={handleRequestDeleteSession}
                     onNewSession={handleNewSession}
+                    sessionPresentation={presenterFor(localHoverEnvironment, folder.name)}
                   />
                 )
               })}

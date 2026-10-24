@@ -129,7 +129,6 @@ describe('sidebar hover disclosure', () => {
         folderSessionsHaveMore={{}}
         loadingFolders={{}}
         openingSession={null}
-        draftConnectionIds={[]}
         onToggleProject={vi.fn()}
         onToggleEnvironment={vi.fn()}
         onLoadMoreSessions={vi.fn(async () => [])}
@@ -177,7 +176,6 @@ describe('sidebar hover disclosure', () => {
       folderSessionsHaveMore: {},
       loadingFolders: {},
       openingSession: null,
-      draftConnectionIds: [],
       onToggleProject,
       onToggleEnvironment,
       onLoadMoreSessions: vi.fn(async () => []),

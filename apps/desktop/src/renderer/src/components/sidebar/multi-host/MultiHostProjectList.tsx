@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -12,12 +12,10 @@ import { knownSessionCount, projectHoverFolders } from '@/lib/multi-host/project
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
 import { AutomationDialog } from '@/components/AutomationDialog'
-import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger } from '@/components/sidebar/multi-host/SessionHoverCard'
-import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
@@ -33,7 +31,6 @@ interface MultiHostProjectListProps {
   folderSessionsHaveMore: Record<string, boolean>
   loadingFolders: Record<string, boolean>
   openingSession: { folderPath: string; sessionId: string } | null
-  draftConnectionIds: string[]
   onToggleProject: (folderPath: string) => void
   onToggleEnvironment: (environmentId: string) => void
   onLoadMoreSessions: (folderPath: string, minimumRootCount: number) => Promise<SessionHistoryEntry[]>
@@ -88,12 +85,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   const { t } = useTranslation()
   const {
     environments, groupBy, sort, expandedProjectKeys, collapsedEnvironmentIds,
-    draftConnectionIds,
   } = props
-  const offlineConnectionIds = useMemo(
-    () => environments.filter((bucket) => bucket.connection === 'offline').map((bucket) => bucket.connectionId),
-    [environments],
-  )
 
   const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false) => {
     const folder = checkoutToRecentFolder(checkout, name)
@@ -125,20 +117,10 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     )
   }
 
-  // Drafts are global like pins (which AppSidebar lists above): they lead the list, ahead of any grouping.
-  const drafts = (
-    <DraftsSection
-      connectionIds={draftConnectionIds}
-      offlineConnectionIds={offlineConnectionIds}
-      label={<SidebarSectionLabel>{t('sidebar.drafts.title')}</SidebarSectionLabel>}
-    />
-  )
-
   if (groupBy === 'environment') {
     const sections = environmentSections(environments, sort)
     return (
       <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
-        {drafts}
         {sections.map(({ bucket, checkouts }) => {
           const offline = bucket.connection === 'offline'
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
@@ -191,7 +173,6 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   const errors = environments.filter((bucket) => bucket.projectsStatus === 'error')
   return (
     <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
-      {drafts}
       {errors.map((bucket) => (
         <ProjectLoadError
           key={bucket.environmentId}

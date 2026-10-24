@@ -14,15 +14,15 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.1",
-    "@opencode-ai/sdk": "^1.18.26",
+    "@opencode-ai/sdk": "^1.19.3",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*",
-    "@opencode/client": "2.0.27"
+    "@opencode/client": "2.1.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=20"

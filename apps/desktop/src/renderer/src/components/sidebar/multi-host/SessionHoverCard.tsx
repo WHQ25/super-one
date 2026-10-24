@@ -1,4 +1,4 @@
-import { forwardRef, type ComponentProps, type ReactNode } from 'react'
+import { forwardRef, type ComponentProps, type ReactNode, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Folder, GitFork } from 'lucide-react'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
@@ -55,13 +55,19 @@ function HoverLine({ icon, children }: { icon: ReactNode; children: ReactNode })
  *  has to be the row: the card then shares the row's top edge and starts to
  *  its right. The context menu slots its handlers onto this component; they
  *  have to reach the row or a right-click does nothing. */
-export const SessionHoverCardTrigger = forwardRef<HTMLElement, ComponentProps<typeof HoverCardTrigger>>(
+type SessionHoverTriggerProps = ComponentProps<typeof HoverCardTrigger> & {
+  /** Context-menu trigger stamps this. Dropped so the hover-card marker stays. */
+  'data-slot'?: string
+}
+
+export const SessionHoverCardTrigger = forwardRef<HTMLElement, SessionHoverTriggerProps>(
   function SessionHoverCardTrigger({ children, ...props }, ref) {
     // Both triggers stamp `data-slot`. Keep the hover-card marker; the menu
     // opens from `onContextMenu`, not from its slot name.
     const { 'data-slot': _dataSlot, ...rest } = props
     return (
-      <HoverCardTrigger asChild {...rest} ref={ref}>
+      // Radix types the trigger ref as an anchor. `asChild` forwards it to the row.
+      <HoverCardTrigger asChild {...rest} ref={ref as Ref<HTMLAnchorElement>}>
         {children}
       </HoverCardTrigger>
     )

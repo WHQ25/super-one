@@ -23,6 +23,14 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+/** Args only satisfy Storybook. Each story draws itself in `render`. */
+const storyArgs = {
+  folders,
+  sessionCount: 0,
+  sessionPaths: [],
+  children: null,
+}
+
 function Frame({ children, width = 288 }: { children: ReactNode; width?: number }) {
   return (
     <div className="bg-popover p-3 text-popover-foreground" style={{ width }}>
@@ -32,7 +40,7 @@ function Frame({ children, width = 288 }: { children: ReactNode; width?: number 
 }
 
 export const GitHub: Story = {
-  args: { name: 'super-one', children: null },
+  args: { ...storyArgs, name: 'super-one' },
   render: () => (
     <Frame>
       <ProjectHoverBody
@@ -50,7 +58,7 @@ export const GitHub: Story = {
 
 export const OtherRemote: Story = {
   name: 'Git host that is not GitHub',
-  args: { name: 'super-one', children: null },
+  args: { ...storyArgs, name: 'super-one' },
   render: () => (
     <Frame>
       <ProjectHoverBody
@@ -67,7 +75,7 @@ export const OtherRemote: Story = {
 
 export const NoRemote: Story = {
   name: 'Folder with no git origin',
-  args: { name: 'notes', children: null },
+  args: { ...storyArgs, name: 'notes' },
   render: () => (
     <Frame>
       <ProjectHoverBody
@@ -85,7 +93,7 @@ export const NoRemote: Story = {
 
 export const LongFolders: Story = {
   name: 'Several folders with a long path',
-  args: { name: 'super-one', children: null },
+  args: { ...storyArgs, name: 'super-one' },
   render: () => (
     <Frame width={220}>
       <ProjectHoverBody
@@ -106,7 +114,7 @@ export const LongFolders: Story = {
 
 export const Anchored: Story = {
   name: 'Opens 4px to the right of the row',
-  args: { name: 'super-one', children: null },
+  args: { ...storyArgs, name: 'super-one' },
   render: () => (
     <div className="w-64 bg-sidebar p-2 text-sidebar-foreground">
       <ProjectHoverCard
@@ -135,7 +143,7 @@ export const Anchored: Story = {
 
 export const OpenFolder: Story = {
   name: 'Relative path reveals open folder',
-  args: { name: 'super-one', children: null },
+  args: { ...storyArgs, name: 'super-one' },
   render: () => (
     <Frame>
       <ProjectHoverBody
@@ -161,7 +169,7 @@ export const OpenFolder: Story = {
 }
 
 export const Edit: Story = {
-  args: { name: 'super-one', children: null },
+  args: { ...storyArgs, name: 'super-one' },
   render: () => (
     <Frame>
       <ProjectHoverBody

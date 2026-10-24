@@ -15,37 +15,73 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- A plain `@` mention finds session titles across projects, and branches, tags, and worktrees, on desktop and phone. `@session` and `@git` stay available as filters.
-- On the phone, a suggested task opens through the same model menu as the composer: model, that model's effort, Fast, provider, permission, and sandbox. A Claude credential that remaps models hides effort.
+- With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion.
+- Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
+- Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
+- The phone app is built with Expo SDK 58, so it launches on iOS 27.
 
 ### Changed
 
-- Upgrade Claude Agent SDK to 0.3.310 (Claude Code 2.1.310).
-- Claude MCP servers can ask you to open a sign-in link: opening it answers the request, on desktop and phone. Their prompts show the server's own title and label.
-- Claude sessions on a remote node can answer MCP server questions instead of declining them.
-- Files a Claude MCP tool returns by reference appear under its tool row, including from calls that moved to the background.
+- Claude Agent SDK 0.3.310.
+- Electron 44.9.3. Electron 44.9.1 blocks the compromised eMudhra intermediates (CVE-2026-115570); 44.9.3 adds the later Chromium fixes. The bundled Node is 24.22.0.
+- The phone runtime is React Native 0.88 and React 19.3. New Architecture is required, and the splash screen comes from the expo-splash-screen plugin.
 
 ### Fixed
 
-- An MCP question the server or Claude gave up on no longer stays on screen.
+- Computer Use's picture-in-picture paints the JPEG frames.
+- Reasoning stays collapsed while it streams. A manual open stays open until the block finishes.
+- Markdown toolbars sit clear of the scroll rail.
+- A started location popover hides rows that no longer apply, and a refresh keeps the branch list already on screen. A pending worktree chip names only the branch. Worktree and git-status labels are translated.
+- Session hover cards, drafts, and pinned rows keep their place when remote nodes are off.
+- With remote nodes on, a new session keeps its own checkout, and git init runs on the environment that owns the folder.
+- Two screenshots or recordings taken in the same millisecond no longer share a filename.
+
+### Performance
+
+- Opening a local session no longer rebuilds every sidebar row.
+
+## [0.76.0-alpha] - 2026-10-24
+
+### Added
+
+- With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion.
+- Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
+- Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
+- The phone app is built with Expo SDK 58, so it launches on iOS 27.
+
+### Changed
+
+- Claude Agent SDK 0.3.310.
+- Electron 44.9.3. Electron 44.9.1 blocks the compromised eMudhra intermediates (CVE-2026-115570); 44.9.3 adds the later Chromium fixes. The bundled Node is 24.22.0.
+- The phone runtime is React Native 0.88 and React 19.3. New Architecture is required, and the splash screen comes from the expo-splash-screen plugin.
+
+### Fixed
+
+- Computer Use's picture-in-picture paints the JPEG frames.
+- Reasoning stays collapsed while it streams. A manual open stays open until the block finishes.
+- Markdown toolbars sit clear of the scroll rail.
+- A started location popover hides rows that no longer apply, and a refresh keeps the branch list already on screen. A pending worktree chip names only the branch. Worktree and git-status labels are translated.
+- Session hover cards, drafts, and pinned rows keep their place when remote nodes are off.
+- With remote nodes on, a new session keeps its own checkout, and git init runs on the environment that owns the folder.
+- Two screenshots or recordings taken in the same millisecond no longer share a filename.
+
+### Performance
+
+- Opening a local session no longer rebuilds every sidebar row.
+
+## [0.75.5] - 2026-10-23
+
+### Added
+
+- A plain `@` mention finds session titles across projects, and branches, tags, and worktrees, on desktop and phone. `@session` and `@git` stay available as filters.
+- On the phone, a suggested task opens through the same model menu as the composer: model, that model's effort, Fast, provider, permission, and sandbox. A Claude credential that remaps models hides effort.
+
+### Fixed
+
 - Opening a paired desktop no longer aborts the composer.
 - A finished todo list on the phone clears after three seconds.
 - A compaction marker stays inside the phone reply when the transcript boundary is large.
 - The sidebar stays busy until the last Grok monitor finishes. Bash, workflow, and goal tasks still go idle with the turn.
-
-## [0.75.5-alpha] - 2026-10-23
-
-### Added
-
-- Match a plain `@` mention to session titles across projects, and to branches, tags, and worktrees, on desktop and phone. Git refs stay cached per folder. The `@session` and `@git` prefixes remain optional filters.
-- On the phone, open a suggested task through the composer model menu: model, that model's effort, Fast, provider, permission, and sandbox. A Claude credential that remaps models hides effort. Choices stay on the phone until Launch.
-
-### Fixed
-
-- Share one provider scope, so opening a paired desktop no longer aborts the composer (React #185).
-- Clear a finished todo list on the phone after three seconds, the same pause as desktop.
-- Keep a compaction marker inside the mobile reply when the content map exceeds 16 KB.
-- Keep the sidebar in the background until the last Grok monitor finishes. Bash, workflow, and goal tasks still go idle with the turn.
 
 ## [0.75.4] - 2026-10-21
 

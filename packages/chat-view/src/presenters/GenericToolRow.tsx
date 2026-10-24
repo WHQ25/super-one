@@ -8,6 +8,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { AskUserQuestionResultPresenter } from './AskUserQuestionResult'
 import { parseArtifactList, resolveArtifactLink } from './artifact-link'
 import { ArtifactListResult, SINGLE_LINE_LINK_CLASS, type RenderArtifactLink } from './ArtifactListResult'
+import { ResourceLinksResult } from './ResourceLinksResult'
 import { getStallColor, type StallLevel } from './stall-color'
 import { ToolBrandIcon } from './ToolIcon'
 import { ToolErrorText, ToolName } from './ToolRow'
@@ -29,7 +30,7 @@ import {
 import { grokAutoClassifierDenyText } from './grok-auto-deny'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RemoteDiffTokens } from './remote-diff'
-import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent-types'
+import type { BashEditDiff, McpResourceLink, QuestionPreviewFormat } from '@superone/shared/agent-types'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { isPatchToolCall, isPatchToolName, patchFileToolUse, type PatchToolFile } from '@superone/shared/patch-tool'
 import { CodeExecutionToolRow, PatchToolRow } from './NativeCodeToolRow'
@@ -122,6 +123,8 @@ export interface GenericToolRowProps {
   toolLineDelta?: { added: number; removed: number }
   /** Artifact only: the title of the page the result names. */
   resultTitle?: string
+  /** Files an MCP result returned by reference, listed under the header. */
+  resourceLinks?: McpResourceLink[]
   /** Bash only: the working-tree diff the command produced (see BashTerminalPresenter). */
   bashEditDiff?: BashEditDiff
   autoExpand?: boolean
@@ -241,6 +244,7 @@ function GenericToolRow({
   toolDiffTokens,
   toolLineDelta,
   resultTitle,
+  resourceLinks,
   autoExpand,
   allowExpand,
   defaultAutoExpand,
@@ -466,6 +470,10 @@ function GenericToolRow({
           />
         )}
       </div>
+
+      {!isDenied && !isError && resourceLinks?.length ? (
+        <ResourceLinksResult links={resourceLinks} renderFileChip={ports.renderFileChip} renderLink={ports.renderArtifactLink} />
+      ) : null}
 
       {expandable && (
         <div

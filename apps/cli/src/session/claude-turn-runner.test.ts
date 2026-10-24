@@ -206,6 +206,37 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('parks an MCP URL elicitation on the runtime and answers with its decision', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-elicit-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    let answer: unknown
+    const queryFn: ClaudeQueryFn = ({ prompt, options }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        answer = await options?.onElicitation?.(
+          { serverName: 'github', message: 'Sign in to GitHub', mode: 'url', url: 'https://github.com/login/device', elicitationId: 'el-1' },
+          { signal: new AbortController().signal, requestId: 'r1' },
+        )
+        yield* success('s', 'ok') as SDKMessage[]
+      }
+    })() as ReturnType<ClaudeQueryFn>
+    const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false })
+    const onElicitation = vi.fn(async () => ({ action: 'accept' as const, content: null, _meta: null }))
+    await runner({ session: session(), text: 'Sign in', onDelta: () => {}, onElicitation, signal: new AbortController().signal })
+    expect(onElicitation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'permission',
+      requestKind: 'mcp_elicitation',
+      serverName: 'github',
+      elicitationUrl: 'https://github.com/login/device',
+      elicitationId: 'el-1',
+      elicitationAcceptOnOpen: true,
+    }), expect.any(AbortSignal))
+    expect(answer).toEqual({ action: 'accept' })
+    await runner.disposeAll?.()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('keeps the SDK runtime busy while a background task is still running', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-background-busy-'))
     const bin = join(dir, 'claude')

@@ -133,6 +133,19 @@ export interface TaskFileChange {
   removed: number
 }
 
+/**
+ * A file an MCP tool returned by reference (an MCP `resource_link` content
+ * block), as the harness collected it from the raw result.
+ */
+export interface McpResourceLink {
+  uri: string
+  name: string
+  title?: string
+  description?: string
+  mimeType?: string
+  size?: number
+}
+
 export interface BashEditDiffHunk {
   oldStart: number
   oldLines: number
@@ -284,7 +297,7 @@ type ContentBlockData =
   | { type: 'insight'; title: string; content: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
-  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; /** Process exit code of a command; non-zero is an outcome, not a tool error. */ exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff; /** Title of the page an Artifact call names, from the structured result the model never sees. */ resultTitle?: string }
+  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; /** Process exit code of a command; non-zero is an outcome, not a tool error. */ exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff; /** Title of the page an Artifact call names, from the structured result the model never sees. */ resultTitle?: string; /** Files an MCP tool returned by reference. */ resourceLinks?: McpResourceLink[] }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   /** A proposed plan the agent wrote in plan mode; approval is the harness's own decision flow. */
@@ -1379,9 +1392,17 @@ export interface PermissionRequest {
   serverName?: string
   message?: string
   subtitle?: string
+  /** Short label for the requester, when the server supplies one; `serverName` stays its id. */
+  serverLabel?: string
   /** URL-mode MCP elicitation (`x.ai/mcp/elicit` mode=url). */
   elicitationUrl?: string
   elicitationId?: string
+  /**
+   * Opening `elicitationUrl` is the user's consent and answers the request as
+   * accepted (MCP URL mode). Absent, the card stays up after the link opens until
+   * the harness reports the flow complete.
+   */
+  elicitationAcceptOnOpen?: boolean
   riskLevel?: 'low' | 'medium' | 'high'
   supportsAlwaysPersist?: boolean
   /** Form-mode MCP elicitation: the parsed `requestedSchema`, or why it cannot be shown. */
@@ -2163,6 +2184,11 @@ export type AgentEventBase =
     workflowAgents?: WorkflowAgentRow[]
     workflowPhases?: WorkflowPhaseRow[]
     currentPhase?: string
+    /**
+     * Files a backgrounded MCP tool call returned by reference. Its tool_result
+     * was only a placeholder, so they land on that call's result block.
+     */
+    resourceLinks?: McpResourceLink[]
   }
   /** Host browser_download task progress / completion for chat tool UI (taskId is bdl_*). */
   | { type: 'browser_download_update'; taskId: string; status: 'progressing' | 'completed' | 'failed'; path?: string; filename?: string; bytes?: number; totalBytes?: number; mimeType?: string; url?: string; error?: string }

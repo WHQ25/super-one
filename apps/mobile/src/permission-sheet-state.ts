@@ -161,7 +161,7 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
       return { title: request.inputRequest?.title ?? request.message ?? 'Input requested', description: request.inputRequest?.description, approveLabel: request.inputRequest?.submitLabel ?? 'Submit', denyLabel: 'Cancel', items: [] }
     case 'mcp_elicitation':
       return {
-        title: request.message || `Allow ${request.serverName || genericToolName(request.toolName)}?`,
+        title: request.message || `Allow ${request.serverLabel || request.serverName || genericToolName(request.toolName)}?`,
         description: request.subtitle || 'The connected tool needs more information before it can continue.',
         approveLabel: 'Continue',
         denyLabel: 'Decline',

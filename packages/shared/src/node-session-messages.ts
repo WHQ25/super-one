@@ -20,7 +20,7 @@ export type NodeTranscriptBlock = {
   createdAt?: number
 }
 
-export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails'> & {
+export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> & {
   interactionId: string
   kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
@@ -118,8 +118,9 @@ export function nodePendingToPermissionRequest(
     }
   }
   const input = pending.input && typeof pending.input === 'object' ? pending.input : {}
-  const elicitationUrl = typeof input.elicitationUrl === 'string' ? input.elicitationUrl : undefined
-  const elicitationId = typeof input.elicitationId === 'string' ? input.elicitationId : undefined
+  // Grok's node host carries the URL fields in `input`; others set them on the interaction.
+  const elicitationUrl = pending.elicitationUrl ?? (typeof input.elicitationUrl === 'string' ? input.elicitationUrl : undefined)
+  const elicitationId = pending.elicitationId ?? (typeof input.elicitationId === 'string' ? input.elicitationId : undefined)
   const schemaForm = pending.schemaForm ?? (input.schemaForm && typeof input.schemaForm === 'object'
     ? input.schemaForm as PermissionRequest['schemaForm']
     : undefined)
@@ -134,8 +135,10 @@ export function nodePendingToPermissionRequest(
     ...(pending.message ? { message: pending.message } : {}),
     ...(pending.permissionDetails ? { permissionDetails: pending.permissionDetails } : {}),
     ...(pending.serverName ? { serverName: pending.serverName } : {}),
+    ...(pending.serverLabel ? { serverLabel: pending.serverLabel } : {}),
     ...(elicitationUrl ? { elicitationUrl, subtitle: elicitationUrl } : {}),
     ...(elicitationId ? { elicitationId } : {}),
+    ...(elicitationUrl && pending.elicitationAcceptOnOpen ? { elicitationAcceptOnOpen: true } : {}),
     ...(schemaForm ? { schemaForm } : {}),
     ...(pending.elicitationForm ? { elicitationForm: pending.elicitationForm } : {}),
     ...(pending.subtitle ? { subtitle: pending.subtitle } : {}),

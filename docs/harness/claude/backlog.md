@@ -39,7 +39,6 @@ declares less than upstream offers.
 | # | Gap | Effect | Decision |
 |---|---|---|---|
 | G1 | Remote node registers no `hooks` | `denySubagentSessionRename` does not run on remote nodes, so a subagent can call main-thread-only SuperOne tools there | open |
-| G2 | Remote node sets no `onElicitation` | MCP elicitations on remote nodes are auto-declined | open |
 | G3 | Remote node does not forward `skipTranscript` / `isBackgrounded` / `spawnDepth` on `task_started` | Background and nested subagents render differently from desktop | open |
 | G4 | Shared `HookEventName` lacks `DirectoryAdded`, `MessageDisplay`, `PreModelSwitch`, `PostModelSwitch` | The settings.json hook editor cannot offer those events | open |
 | G5 | Mod commands registered `immediate: true` queue behind a running turn | The SDK command list carries no `immediate` flag, so SuperOne cannot tell them from other commands | open, wait for the flag in `initializationResult().commands` |

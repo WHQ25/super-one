@@ -59,6 +59,31 @@ describe('nodePendingToPermissionRequest', () => {
     })
   })
 
+  it('maps a Claude node elicitation set on the interaction itself', () => {
+    const req = nodePendingToPermissionRequest({
+      interactionId: 'claude-elicitation-1',
+      kind: 'permission',
+      toolName: 'github',
+      requestKind: 'mcp_elicitation',
+      message: 'Sign in to GitHub',
+      serverName: 'github',
+      serverLabel: 'GitHub',
+      allowAlwaysAllow: false,
+      input: {},
+      subtitle: 'https://github.com/login/device',
+      elicitationUrl: 'https://github.com/login/device',
+      elicitationId: 'e-2',
+      elicitationAcceptOnOpen: true,
+    })
+    expect(req).toMatchObject({
+      serverLabel: 'GitHub',
+      elicitationUrl: 'https://github.com/login/device',
+      elicitationId: 'e-2',
+      elicitationAcceptOnOpen: true,
+      subtitle: 'https://github.com/login/device',
+    })
+  })
+
   it('ignores non-permission kinds and empty ids', () => {
     expect(
       nodePendingToPermissionRequest({

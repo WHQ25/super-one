@@ -22,7 +22,9 @@
 
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { existsSync } from 'node:fs'
-import type { Options } from '@anthropic-ai/claude-agent-sdk'
+import { randomUUID } from 'node:crypto'
+import type { ElicitationResult, Options } from '@anthropic-ai/claude-agent-sdk'
+import { claudeElicitationRequest } from '@superone/claude/elicitation'
 import {
   ClaudeLiveSession,
   applyRootPermissionGuard,
@@ -600,6 +602,21 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
                 input: req.input,
                 createdAt: Date.now(),
               })
+          : undefined,
+        onElicitation: input.onElicitation
+          ? async (request, signal) => {
+              const permission = claudeElicitationRequest(`claude-elicitation-${randomUUID()}`, request)
+              if (!permission) return { action: 'decline' }
+              const decision = await input.onElicitation!(
+                { ...permission, interactionId: permission.requestId, kind: 'permission', createdAt: Date.now() },
+                AbortSignal.any([input.signal, signal]),
+              )
+              return {
+                action: decision.action,
+                ...(decision.content ? { content: decision.content as NonNullable<ElicitationResult['content']> } : {}),
+                ...(decision._meta ? { _meta: decision._meta } : {}),
+              }
+            }
           : undefined,
         signal: input.signal,
       })

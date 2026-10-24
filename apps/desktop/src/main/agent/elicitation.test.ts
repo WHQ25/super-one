@@ -31,18 +31,65 @@ function makeRequest(overrides: Partial<ElicitationRequest> = {}): ElicitationRe
 }
 
 function makeSignal(aborted = false): AbortSignal {
-  return { aborted } as AbortSignal
+  return aborted ? AbortSignal.abort() : new AbortController().signal
 }
 
 describe('createOnElicitation', () => {
-  it('declines url-mode requests immediately', async () => {
+  it('asks for a URL request and accepts once the user opens the link', async () => {
+    const pending = new Map<string, PendingElicitation>()
+    const events: AgentEvent[] = []
+    const onElicitation = createOnElicitation(pending, (e) => events.push(e))
+    const promise = onElicitation(makeRequest({ mode: 'url', url: 'https://github.com/login/device', elicitationId: 'el-1', requestedSchema: undefined }), { signal: makeSignal() })
+    const event = events[0]
+    if (event?.type !== 'permission_request') throw new Error('expected permission_request')
+    expect(event.request).toMatchObject({ elicitationUrl: 'https://github.com/login/device', elicitationAcceptOnOpen: true, elicitationId: 'el-1' })
+    expect(respondToElicitation(pending, event.request.requestId, true)).toBe(true)
+    await expect(promise).resolves.toEqual({ action: 'accept' })
+  })
+
+  it('declines a URL request that names no URL without asking', async () => {
     const pending = new Map<string, PendingElicitation>()
     const emit = vi.fn()
     const onElicitation = createOnElicitation(pending, emit)
-    const result = await onElicitation(makeRequest({ mode: 'url', url: 'https://example.com' }), { signal: makeSignal() })
-    expect(result).toEqual({ action: 'decline' })
+    await expect(onElicitation(makeRequest({ mode: 'url' }), { signal: makeSignal() })).resolves.toEqual({ action: 'decline' })
     expect(emit).not.toHaveBeenCalled()
     expect(pending.size).toBe(0)
+  })
+
+  it('withdraws the card when the CLI withdraws the request', async () => {
+    const pending = new Map<string, PendingElicitation>()
+    const events: AgentEvent[] = []
+    const controller = new AbortController()
+    const promise = createOnElicitation(pending, (e) => events.push(e))(makeRequest(), { signal: controller.signal })
+    const event = events[0]
+    if (event?.type !== 'permission_request') throw new Error('expected permission_request')
+    controller.abort()
+    await expect(promise).resolves.toEqual({ action: 'cancel' })
+    expect(events.at(-1)).toEqual({ type: 'interaction_resolved', interactionType: 'permission', requestId: event.request.requestId, approved: false })
+    // A late answer finds nothing to resolve.
+    expect(respondToElicitation(pending, event.request.requestId, true, undefined, { environment: 'prod' })).toBe(false)
+  })
+
+  it('does not withdraw a card the user already answered', async () => {
+    const pending = new Map<string, PendingElicitation>()
+    const events: AgentEvent[] = []
+    const controller = new AbortController()
+    const promise = createOnElicitation(pending, (e) => events.push(e))(makeRequest(), { signal: controller.signal })
+    const event = events[0]
+    if (event?.type !== 'permission_request') throw new Error('expected permission_request')
+    respondToElicitation(pending, event.request.requestId, false)
+    controller.abort()
+    await expect(promise).resolves.toEqual({ action: 'decline' })
+    expect(events.some((e) => e.type === 'interaction_resolved')).toBe(false)
+  })
+
+  it('heads the card with the server\'s permission display copy', () => {
+    const events: AgentEvent[] = []
+    void createOnElicitation(new Map(), (e) => events.push(e))(
+      makeRequest({ serverName: 'mcp-deploy', title: 'Deploy to production?', displayName: 'Deploy', description: 'Build 42' }),
+      { signal: makeSignal() },
+    )
+    expect(events[0]).toMatchObject({ request: { message: 'Deploy to production?', subtitle: 'Build 42', serverLabel: 'Deploy', serverName: 'mcp-deploy' } })
   })
 
   it('emits mcp_elicitation with parsed form fields and parks the promise', async () => {

@@ -15,6 +15,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
 import { mapPluginErrors, mapPluginUiMessage } from './plugin-notice-wire'
 import { artifactResultTitle } from './artifact-result'
+import { mcpResourceLinks, toolResultResourceLinks } from './resource-links'
 
 type Raw = Record<string, any>
 
@@ -274,6 +275,7 @@ export function createClaudeAgentEventMapper(
     const isTimedOut = isBash ? extractBashKilled(toolUseResult) : undefined
     const taskCreateTodo = extractTaskCreateTodo(toolName, toolUseResult, text)
     const resultTitle = artifactResultTitle(toolName, toolUseResult)
+    const resourceLinks = toolResultResourceLinks(toolUseResult)
     const isError = isClaudeToolLayerError(toolName, sdkIsError, text)
     const app = options.toolApps?.toolResult(toolUseId, toolUseResult, sdkIsError, content)
     emit({
@@ -288,6 +290,7 @@ export function createClaudeAgentEventMapper(
         ...(isError ? { isError: true } : {}),
         ...(taskCreateTodo ?? {}),
         ...(resultTitle ? { resultTitle } : {}),
+        ...(resourceLinks ? { resourceLinks } : {}),
         parentToolUseId,
         ...(app ? { app } : {}),
       },
@@ -441,8 +444,9 @@ export function createClaudeAgentEventMapper(
           },
         })
         break
-      case 'task_notification':
+      case 'task_notification': {
         if (system.task_id) activeBackgroundTasks.delete(system.task_id)
+        const resourceLinks = mcpResourceLinks(system.resource_links)
         emit({
           type: 'task_notification',
           taskId: system.task_id ?? '',
@@ -450,6 +454,7 @@ export function createClaudeAgentEventMapper(
           taskStatus: system.status ?? 'completed',
           outputFile: system.output_file ?? '',
           summary: system.summary,
+          ...(resourceLinks ? { resourceLinks } : {}),
           usage: system.usage ? {
             totalTokens: system.usage.total_tokens ?? 0,
             toolUses: system.usage.tool_uses ?? 0,
@@ -458,6 +463,7 @@ export function createClaudeAgentEventMapper(
         })
         maybeEmitDeferredIdle()
         break
+      }
       case 'background_tasks_changed':
         activeBackgroundTasks.clear()
         for (const task of system.tasks ?? []) {

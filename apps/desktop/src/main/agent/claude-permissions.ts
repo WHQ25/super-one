@@ -9,7 +9,8 @@ import { readAppSettings } from '../app-settings-service'
 import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
 import { answeredQuestionDelta, buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
-import { acceptedElicitationContent, elicitationFormRequest } from '@superone/shared/schema-form'
+import { acceptedElicitationContent } from '@superone/shared/schema-form'
+import { claudeElicitationRequest } from '@superone/claude/elicitation'
 import { trace } from './event-trace'
 
 export interface PendingPermission {
@@ -48,47 +49,41 @@ export interface PendingElicitation {
  * The SDK auto-declines every elicitation when no onElicitation is provided
  * (sdk.mjs processControlRequest: `return {action:"decline"}`), so wiring this up also
  * enables the generic JSON-Schema form path as a side effect.
+ *
+ * The CLI aborts `signal` when it withdraws the request on its own (the server
+ * timed out, or the tool call that asked was stopped); the card is withdrawn
+ * with it so a late answer is not lost silently.
  */
 export function createOnElicitation(
   pendingElicitations: Map<string, PendingElicitation>,
   emit: (event: AgentEvent) => void,
 ) {
   return async (request: ElicitationRequest, options: { signal: AbortSignal }): Promise<ElicitationResult> => {
-    if (request.mode === 'url') {
-      // No browser-auth UI this round.
-      return { action: 'decline' }
-    }
-
-    const form = elicitationFormRequest(request.requestedSchema)
     const requestId = `elicit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-
-    const permEvent: AgentEvent = {
-      type: 'permission_request',
-      request: {
-        requestId,
-        toolName: request.serverName,
-        toolUseId: requestId,
-        input: {},
-        allowAlwaysAllow: false,
-        requestKind: 'mcp_elicitation',
-        serverName: request.serverName,
-        message: request.message,
-        ...(request.description ? { subtitle: request.description } : {}),
-        ...form,
-      },
-    }
+    const permission = claudeElicitationRequest(requestId, request)
+    if (!permission) return { action: 'decline' }
+    const permEvent: AgentEvent = { type: 'permission_request', request: permission }
     return new Promise<ElicitationResult>((resolve) => {
-      if (options.signal.aborted) {
+      const { signal } = options
+      if (signal.aborted) {
         trace('permission.flow', 'elicit_resolve', { source: 'signal_already_aborted' }, requestId)
         resolve({ action: 'cancel' })
         return
       }
-      pendingElicitations.set(requestId, { resolve, event: permEvent })
-      trace('permission.flow', 'elicit_emit', { serverName: request.serverName }, requestId)
-      log.info('[onElicitation] emit permission_request requestId=%s serverName=%s', requestId, request.serverName)
+      const onAbort = () => {
+        if (!pendingElicitations.delete(requestId)) return
+        trace('permission.flow', 'elicit_resolve', { source: 'signal_aborted' }, requestId)
+        resolve({ action: 'cancel' })
+        emit({ type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false })
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      pendingElicitations.set(requestId, {
+        resolve: (result) => { signal.removeEventListener('abort', onAbort); resolve(result) },
+        event: permEvent,
+      })
+      trace('permission.flow', 'elicit_emit', { serverName: request.serverName, mode: request.mode ?? 'form' }, requestId)
+      log.info('[onElicitation] emit permission_request requestId=%s serverName=%s mode=%s', requestId, request.serverName, request.mode ?? 'form')
       emit(permEvent)
-      // Note: no listener for future abort events, same as createCanUseTool —
-      // cleanup is handled by rejectAllPending() on session reset/interrupt.
     })
   }
 }

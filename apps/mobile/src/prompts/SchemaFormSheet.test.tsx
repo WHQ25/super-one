@@ -1,5 +1,6 @@
 import { expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
+import { Linking } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import type { ReactElement } from 'react'
 import type { PermissionRequest } from '@superone/shared/agent-types'
@@ -109,4 +110,24 @@ test('an unsupported form shows none of its fields and can only be dismissed', a
   expect(screen.getByTestId('prompt-approve')).toBeDisabled()
   await act(async () => { fireEvent.press(screen.getByTestId('prompt-reject')) })
   expect(onDeny).toHaveBeenCalledWith('form-1', undefined)
+})
+
+test('opening a consent URL answers the elicitation; a waiting URL only opens', async () => {
+  const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true)
+  const url: PermissionRequest = {
+    requestId: 'url-1', toolName: 'github', input: {}, allowAlwaysAllow: false,
+    requestKind: 'mcp_elicitation', serverName: 'github', message: 'Sign in to GitHub',
+    elicitationUrl: 'https://github.com/login/device', elicitationAcceptOnOpen: true,
+  }
+  const onAllow = jest.fn()
+  const { rerender } = await renderWithTheme(withInsets(<PermissionSheet perm={url} onAllow={onAllow} onDeny={() => {}} />))
+  await act(async () => { fireEvent.press(screen.getByText('Open in browser')) })
+  expect(openURL).toHaveBeenCalledWith('https://github.com/login/device')
+  expect(onAllow).toHaveBeenCalledWith('url-1')
+
+  onAllow.mockClear()
+  await act(async () => { rerender(withInsets(<PermissionSheet perm={{ ...url, requestId: 'url-2', elicitationAcceptOnOpen: undefined }} onAllow={onAllow} onDeny={() => {}} />)) })
+  await act(async () => { fireEvent.press(screen.getByText('Open in browser')) })
+  expect(onAllow).not.toHaveBeenCalled()
+  openURL.mockRestore()
 })

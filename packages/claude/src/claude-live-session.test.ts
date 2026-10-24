@@ -359,6 +359,34 @@ describe('ClaudeLiveSession', () => {
     await live.dispose()
     rmSync(dir, { recursive: true, force: true })
   })
+  it('answers MCP elicitations through the active turn and declines them between turns', async () => {
+    let options: Options | undefined
+    const answers: unknown[] = []
+    const queryFn: ClaudeQueryFn = ({ prompt, options: opts }) =>
+      (async function* () {
+        options = opts
+        for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+          answers.push(await opts?.onElicitation?.({ serverName: 'github', message: 'Sign in' }, { signal: new AbortController().signal, requestId: 'r1' }))
+          yield* successTurn('s', 'ok') as SDKMessage[]
+        }
+      })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
+    const seen: Array<{ serverName: string; aborted: boolean }> = []
+    await live.sendTurn({
+      content: 'go',
+      onElicitation: async (request, signal) => {
+        seen.push({ serverName: request.serverName, aborted: signal.aborted })
+        return { action: 'accept', content: { ok: true } }
+      },
+    })
+    expect(seen).toEqual([{ serverName: 'github', aborted: false }])
+    expect(answers).toEqual([{ action: 'accept', content: { ok: true } }])
+    // A backgrounded MCP call can ask after its turn ended; nobody is there to answer.
+    await expect(options?.onElicitation?.({ serverName: 'github', message: 'Again' }, { signal: new AbortController().signal, requestId: 'r2' }))
+      .resolves.toEqual({ action: 'decline' })
+    await live.dispose()
+  })
+
   it('re-emits the answered AskUserQuestion tool_use so the tool card can render the preview', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cls-answered-'))
     const bin = join(dir, 'claude')

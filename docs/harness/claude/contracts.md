@@ -525,6 +525,25 @@ module that runs inside the CLI process. Upstream docs:
   `apps/desktop/src/main/mcp-apps/claude-provider.test.ts`; on a bump, rerun
   `bun apps/desktop/scripts/check-claude-mcp-apps.ts`.
 
+### MCP elicitation: URL consent and withdrawal
+
+- **Behavior:** The CLI advertises URL-mode elicitation by default, so servers send
+  `mode: 'url'` requests; without a host answer they are declined and the model is
+  told to open the URL itself. In URL mode `accept` means the user agreed to open
+  the link, not that the flow finished: a 2025-11-25 server may later send
+  `elicitation_complete`, a 2026-07-28 server has no completion signal at all. The
+  CLI aborts `onElicitation`'s `signal` when it gives up on a request (server
+  timeout, the asking call stopped). An MCP call running past 2 minutes moves to
+  the background (`task_type: 'mcp_task'`) and may ask after the turn ended.
+- **Observed:** SDK 0.3.302–0.3.310 `sdk.d.ts`; Claude Code 2.1.281 / 2.1.287
+  changelog and 2.1.302 / 2.1.310 binary strings. Not run against a live server.
+- **Depends on it:** `packages/claude/src/elicitation.ts#claudeElicitationRequest`
+  (`elicitationAcceptOnOpen`), `apps/desktop/src/main/agent/claude-permissions.ts#createOnElicitation`
+  (abort withdraws the card with `interaction_resolved`),
+  `packages/claude/src/claude-live-session.ts` (node declines between turns).
+- **Guard:** `apps/desktop/src/main/agent/elicitation.test.ts`,
+  `packages/claude/src/elicitation.test.ts`, `packages/claude/src/claude-live-session.test.ts`.
+
 ### OAuth with a host redirect needs a reconnect
 
 - **Behavior:** `mcpAuthenticate(server)` without a redirect URI runs the CLI's

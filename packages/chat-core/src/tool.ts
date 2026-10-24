@@ -489,6 +489,14 @@ export function reduceTool(
         }
       }
 
+      // A backgrounded MCP call's tool_result was only a placeholder; the files its
+      // real result returned arrive here and belong on that result block.
+      const { resourceLinks } = event
+      if (resourceLinks?.length && event.toolUseId) {
+        msgs = mapMessagesStructural(msgs, (block) =>
+          block.type === 'tool_result' && block.toolUseId === event.toolUseId ? { ...block, resourceLinks } : block)
+      }
+
       // Resolve final write key: keep established Agent keys on resume; migrate provisional workflow keys.
       const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
       if (!write) {

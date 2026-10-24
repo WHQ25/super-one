@@ -362,11 +362,14 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     respondToPermission(requestId, false)
   }, [requestId, respondToPermission])
 
+  const elicitationAcceptOnOpen = pendingPermission?.elicitationAcceptOnOpen === true
   const openElicitationUrl = useCallback(() => {
     if (!elicitationUrl) return
     requestOpenExternalLink(elicitationUrl)
-    setUrlOpened(true)
-  }, [elicitationUrl])
+    // Opening is the consent the harness waits for; otherwise the card waits for completion.
+    if (elicitationAcceptOnOpen && requestId) respondToPermission(requestId, true)
+    else setUrlOpened(true)
+  }, [elicitationUrl, elicitationAcceptOnOpen, requestId, respondToPermission])
 
   const copyElicitationUrl = useCallback(() => {
     if (!elicitationUrl) return
@@ -558,7 +561,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   }
 
   if (isElicitation) {
-    const message = pendingPermission.message ?? `Allow ${pendingPermission.serverName ?? 'tool'}?`
+    const requester = pendingPermission.serverLabel ?? pendingPermission.serverName
+    const message = pendingPermission.message ?? `Allow ${requester ?? 'tool'}?`
     const subtitle = pendingPermission.subtitle
     const riskLevel = pendingPermission.riskLevel
     const riskColor = riskLevel === 'high'
@@ -636,7 +640,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                 key={requestId}
                 form={schemaForm}
                 resources={formResources}
-                requester={pendingPermission.serverName ?? 'MCP'}
+                requester={requester ?? 'MCP'}
                 onSubmit={handleFormSubmit}
                 onDecline={handleElicitationDecline}
                 onCancel={handleCancel}

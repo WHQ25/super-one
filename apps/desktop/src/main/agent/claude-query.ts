@@ -19,6 +19,7 @@ import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-not
 import { worktreeCwdChange } from '@superone/claude/worktree-cwd'
 import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { artifactResultTitle } from '@superone/claude/artifact-result'
+import { mcpResourceLinks, toolResultResourceLinks } from '@superone/claude/resource-links'
 import { CLAUDE_SCHEDULING_TOOLS, sessionCronsStopHook } from '@superone/claude/session-crons'
 import { ModSurface, withModDevFoldersEnv, type ModSurfaceQuery } from '@superone/claude/mod-surface'
 import type { MessageBridge } from './message-bridge'
@@ -544,6 +545,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const bashEditDiff = isBash ? extractBashEditDiff(userMsg.tool_use_result) : undefined
               const taskCreateTodo = extractTaskCreateTodo(toolName, userMsg.tool_use_result, text)
               const resultTitle = artifactResultTitle(toolName, userMsg.tool_use_result)
+              const resourceLinks = toolResultResourceLinks(userMsg.tool_use_result)
               // Bash: CLI sets is_error for non-zero exits too; only <tool_use_error>
               // marks a true tool-layer failure (validation, blocked, cancelled, …).
               const isError = isToolLayerError(toolName, block.is_error === true, text)
@@ -561,6 +563,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   ...(isError ? { isError: true } : {}),
                   ...(taskCreateTodo ?? {}),
                   ...(resultTitle ? { resultTitle } : {}),
+                  ...(resourceLinks ? { resourceLinks } : {}),
                   parentToolUseId,
                   ...(app ? { app } : {}),
                 },
@@ -757,6 +760,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             })
           } else if (sys.subtype === 'task_notification') {
             if (sys.task_id) activeBackgroundTasks.delete(sys.task_id)
+            const resourceLinks = mcpResourceLinks(sys.resource_links)
             emit({
               type: 'task_notification',
               taskId: sys.task_id ?? '',
@@ -764,6 +768,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               taskStatus: sys.status ?? 'completed',
               outputFile: sys.output_file ?? '',
               summary: sys.summary,
+              ...(resourceLinks ? { resourceLinks } : {}),
               usage: sys.usage ? {
                 totalTokens: sys.usage.total_tokens ?? 0,
                 toolUses: sys.usage.tool_uses ?? 0,
@@ -1136,12 +1141,13 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const bashEditDiff = isBash ? extractBashEditDiff(raw.tool_use_result) : undefined
             const taskCreateTodo = extractTaskCreateTodo(toolName, raw.tool_use_result, summaryText)
             const resultTitle = artifactResultTitle(toolName, raw.tool_use_result)
+            const resourceLinks = toolResultResourceLinks(raw.tool_use_result)
             const isError = isToolLayerError(toolName, raw.is_error === true, summaryText)
             const app = toolApps?.toolResult(toolUseId, raw.tool_use_result, raw.is_error === true)
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(bashEditDiff ? { bashEditDiff } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), ...(resultTitle ? { resultTitle } : {}), parentToolUseId: raw.parent_tool_use_id ?? null, ...(app ? { app } : {}) },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(bashEditDiff ? { bashEditDiff } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), ...(resultTitle ? { resultTitle } : {}), ...(resourceLinks ? { resourceLinks } : {}), parentToolUseId: raw.parent_tool_use_id ?? null, ...(app ? { app } : {}) },
             })
           }
           break

@@ -155,7 +155,7 @@ export interface TranscriptBlock extends MessageDisplayFields {
   queuedInComposer?: boolean
 }
 
-export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails'> {
+export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> {
   interactionId: string
   kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string

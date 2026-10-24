@@ -361,6 +361,32 @@ describe('PermissionPrompt', () => {
     expect(screen.getByRole('button', { name: /reopen/i })).toBeInTheDocument()
   })
 
+  it('answers a consent URL elicitation as accepted when the link opens', () => {
+    activeSessionState.pendingPermissions = [{
+      requestId: 'elicit-url-consent',
+      toolName: 'github',
+      input: {},
+      allowAlwaysAllow: false,
+      requestKind: 'mcp_elicitation',
+      serverName: 'github',
+      message: 'Sign in to GitHub',
+      subtitle: 'https://github.com/login/device',
+      elicitationUrl: 'https://github.com/login/device',
+      elicitationAcceptOnOpen: true,
+    }]
+    const openExternal = vi.fn()
+    ;(window as unknown as { app: { openExternalLink: typeof openExternal } }).app = {
+      openExternalLink: openExternal,
+    }
+
+    renderInChat(<PermissionPrompt />)
+
+    fireEvent.click(screen.getByRole('button', { name: /open in browser/i }))
+    expect(openExternal).toHaveBeenCalledWith('https://github.com/login/device')
+    expect(chatState.respondToPermission).toHaveBeenCalledWith('elicit-url-consent', true)
+    expect(screen.queryByText(/waiting for authorization/i)).toBeNull()
+  })
+
   it('ignores Escape when focus is in a sibling mosaic chat pane', () => {
     const rootA = createRef<HTMLDivElement>()
     const rootB = createRef<HTMLDivElement>()

@@ -100,7 +100,7 @@ export function permissionPendingReason(permission: PermissionRequest, t: Pendin
     case 'mcp_elicitation':
       return permission.message?.trim()
         || t('sidebar.pending.allowTool', {
-          tool: permission.serverName?.trim() || t('sidebar.pending.toolFallback'),
+          tool: permission.serverLabel?.trim() || permission.serverName?.trim() || t('sidebar.pending.toolFallback'),
         })
     default:
       return t('sidebar.pending.allowTool', {

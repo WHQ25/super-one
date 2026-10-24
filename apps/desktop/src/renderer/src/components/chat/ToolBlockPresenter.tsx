@@ -62,7 +62,7 @@ import type { ComposerViewPorts } from '@superone/shared/composer-view-bridge'
 import { FilesPreviewer } from './files-previewer/FilesPreviewer'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
-import type { BashEditDiff } from '@superone/shared/agent-types'
+import type { BashEditDiff, McpResourceLink } from '@superone/shared/agent-types'
 import { EnterPlanModeBlock } from './presenters/PlanModeBlocks'
 import {
   COLLAB_TOOLS,
@@ -133,6 +133,8 @@ export interface ToolBlockProps {
   exitCode?: number
   /** Artifact only: the title of the page the result names. */
   resultTitle?: string
+  /** Files an MCP result returned by reference. */
+  resourceLinks?: McpResourceLink[]
   /** An MCP call rejected until the user signs in to its server. */
   authRequired?: boolean
 }
@@ -230,6 +232,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   resultOutputPath,
   bashEditDiff,
   resultTitle,
+  resourceLinks,
   autoExpand,
   backgroundActivity = false,
   grouped = false,
@@ -640,6 +643,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       elapsedSeconds={elapsedSeconds}
       result={result}
       resultTitle={resultTitle}
+      resourceLinks={resourceLinks}
       isError={isError}
       autoExpand={autoExpand}
       allowExpand={allowExpand}

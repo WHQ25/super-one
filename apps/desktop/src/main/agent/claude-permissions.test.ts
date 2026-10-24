@@ -46,7 +46,7 @@ import { phoneEventPath } from '../remote/test-phone-topics'
 import type { Session, SessionManager } from '../session/types'
 
 function makeSignal(aborted = false): AbortSignal {
-  return { aborted } as AbortSignal
+  return aborted ? AbortSignal.abort() : new AbortController().signal
 }
 
 describe('mobile attention from Claude prompts', () => {

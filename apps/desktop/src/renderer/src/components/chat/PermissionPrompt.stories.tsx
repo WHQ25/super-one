@@ -444,6 +444,53 @@ export const AcpAllowOnce: Story = {
   )],
 }
 
+/** MCP URL mode (Claude): opening the link is the consent, so the card answers and closes. */
+export const UrlElicitationAcceptOnOpen: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="claude"
+        request={{
+          requestId: 'p-url-consent',
+          toolName: 'github',
+          toolUseId: 'p-url-consent',
+          input: {},
+          allowAlwaysAllow: false,
+          requestKind: 'mcp_elicitation',
+          serverName: 'github',
+          message: 'Sign in to GitHub',
+          subtitle: 'https://github.com/login/device?code=WDJB-MJHT&return_to=%2Fsettings%2Fconnections%2Fapplications',
+          elicitationUrl: 'https://github.com/login/device?code=WDJB-MJHT&return_to=%2Fsettings%2Fconnections%2Fapplications',
+          elicitationAcceptOnOpen: true,
+        }}
+      />
+      <Story />
+    </>
+  )],
+}
+
+/** A form elicitation headed by the server's own permission display copy and label. */
+export const ElicitationServerDisplayCopy: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="claude"
+        request={{
+          ...formElicitation('p-display-copy', 'Deploy to production?', {
+            type: 'object',
+            required: ['confirm'],
+            properties: { confirm: { type: 'boolean', title: 'I have checked the release notes' } },
+          }),
+          serverName: 'mcp-deploy',
+          serverLabel: 'Deploy',
+          subtitle: 'Pushes build 42 to the production cluster',
+        }}
+      />
+      <Story />
+    </>
+  )],
+}
+
 /** ACP elicitation keeps the URL / form layout; Always is not a session grant here. */
 export const AcpElicitation: Story = {
   decorators: [(Story) => (

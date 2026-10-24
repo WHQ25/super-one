@@ -18,8 +18,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A plain `@` mention finds session titles across projects, and branches, tags, and worktrees, on desktop and phone. `@session` and `@git` stay available as filters.
 - On the phone, a suggested task opens through the same model menu as the composer: model, that model's effort, Fast, provider, permission, and sandbox. A Claude credential that remaps models hides effort.
 
+### Changed
+
+- Claude MCP servers can ask you to open a sign-in link: opening it answers the request, on desktop and phone. Their prompts show the server's own title and label.
+- Claude sessions on a remote node can answer MCP server questions instead of declining them.
+- Files a Claude MCP tool returns by reference appear under its tool row, including from calls that moved to the background.
+
 ### Fixed
 
+- An MCP question the server or Claude gave up on no longer stays on screen.
 - Opening a paired desktop no longer aborts the composer.
 - A finished todo list on the phone clears after three seconds.
 - A compaction marker stays inside the phone reply when the transcript boundary is large.

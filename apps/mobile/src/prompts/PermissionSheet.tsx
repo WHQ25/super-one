@@ -94,7 +94,11 @@ export function PermissionSheet(props: {
       <PromptPill
         label={t('Open in browser')}
         selected={false}
-        onPress={() => { void Linking.openURL(perm.elicitationUrl!) }}
+        onPress={() => {
+          void Linking.openURL(perm.elicitationUrl!)
+          // Opening is the consent the harness waits for, as on the desktop.
+          if (perm.elicitationAcceptOnOpen) props.onAllow(perm.requestId)
+        }}
       />
     ) : null}
     <PermissionContent request={perm} remembering={rememberingScoped} />

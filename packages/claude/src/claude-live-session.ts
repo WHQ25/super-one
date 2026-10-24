@@ -24,6 +24,7 @@ import { applyRootPermissionGuard } from './root-permission-guard'
 import { resolveAskUserQuestion } from './ask-user-question-bridge'
 import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
 import type {
+  ClaudeElicitationHandler,
   ClaudePermissionHandler,
   ClaudePlanHandler,
   ClaudeQuestionHandler,
@@ -50,6 +51,8 @@ export interface ClaudeLiveTurnInput {
   onPermission?: ClaudePermissionHandler
   onQuestion?: ClaudeQuestionHandler
   onPlan?: ClaudePlanHandler
+  /** MCP elicitation bridge; absent means the turn declines elicitations. */
+  onElicitation?: ClaudeElicitationHandler
   /**
    * Called when the prompt is pushed onto the SDK input stream (a queued turn:
    * when it leaves the queue). See `TurnRunner` `onInputAccepted`.
@@ -142,6 +145,7 @@ function buildLiveOptions(
   onPermission: ClaudePermissionHandler | undefined,
   onQuestion: ClaudeQuestionHandler | undefined,
   onPlan: ClaudePlanHandler | undefined,
+  onElicitation: ClaudeElicitationHandler,
   signal: AbortSignal,
   timing: { pausedMs: number },
   /** Live handles on the in-flight turn — needed to re-emit an answered tool_use. */
@@ -261,6 +265,12 @@ function buildLiveOptions(
     permissionMode: (permissions.permissionMode as Options['permissionMode']) || 'default',
     allowDangerouslySkipPermissions: permissions.allowDangerouslySkipPermissions,
     canUseTool,
+    onElicitation: async (request, elicitOpts) => {
+      const startedAt = Date.now()
+      return onElicitation(request, AbortSignal.any([signal, elicitOpts.signal])).finally(() => {
+        timing.pausedMs += Date.now() - startedAt
+      })
+    },
     abortController,
     settingSources: ['user', 'project', 'local'],
     hooks: { Stop: [sessionCronsStopHook(onSessionCrons)] },
@@ -350,6 +360,7 @@ export class ClaudeLiveSession {
   private permissionHandler: ClaudePermissionHandler | undefined
   private questionHandler: ClaudeQuestionHandler | undefined
   private planHandler: ClaudePlanHandler | undefined
+  private elicitationHandler: ClaudeElicitationHandler | undefined
   private readonly timing = { pausedMs: 0 }
   /**
    * The live SDK query, for control requests outside a turn (MCP Apps
@@ -384,6 +395,8 @@ export class ClaudeLiveSession {
         if (!this.planHandler) return Promise.reject(new Error('plan handler unavailable'))
         return this.planHandler(req)
       },
+      // A request outside a turn (a backgrounded MCP call) has nobody to answer it.
+      (req, signal) => this.elicitationHandler ? this.elicitationHandler(req, signal) : Promise.resolve({ action: 'decline' }),
       this.processAbort.signal,
       this.timing,
       {
@@ -547,6 +560,7 @@ export class ClaudeLiveSession {
     this.permissionHandler = item.input.onPermission
     this.questionHandler = item.input.onQuestion
     this.planHandler = item.input.onPlan
+    this.elicitationHandler = item.input.onElicitation
     this.active = {
       tag: item.tag,
       userUuid: item.msg.uuid ?? item.tag,
@@ -582,6 +596,7 @@ export class ClaudeLiveSession {
     this.permissionHandler = undefined
     this.questionHandler = undefined
     this.planHandler = undefined
+    this.elicitationHandler = undefined
     if (!ok) {
       cur.reject(new Error(cur.resultError || 'Claude turn failed'))
     } else {
@@ -675,6 +690,7 @@ export class ClaudeLiveSession {
             this.permissionHandler = undefined
             this.questionHandler = undefined
             this.planHandler = undefined
+            this.elicitationHandler = undefined
             this.flushPending()
           }
           continue

@@ -1,4 +1,4 @@
-import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
+import type { BashEditDiff, ContentBlock, McpResourceLink } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { isToolResultBlock } from '@superone/shared/content-delta'
 import { isJevRunToolName } from '@superone/shared/jev-run-result-shape'
@@ -51,6 +51,8 @@ export interface GroupContentResult {
   exitCodeMap: Map<string, number>
   /** Titles of the pages Artifact results name, keyed by toolUseId. */
   resultTitleMap: Map<string, string>
+  /** Files MCP results returned by reference, keyed by toolUseId. */
+  resourceLinksMap: Map<string, McpResourceLink[]>
   /** MCP App attachments from tool results, keyed by toolUseId; newer than the call's own copy. */
   toolAppMap: Map<string, ToolAppAttachment>
   /**
@@ -80,6 +82,7 @@ export function groupContentPresenter(
   const bashEditDiffMap = new Map<string, BashEditDiff>()
   const exitCodeMap = new Map<string, number>()
   const resultTitleMap = new Map<string, string>()
+  const resourceLinksMap = new Map<string, McpResourceLink[]>()
   const toolAppMap = new Map<string, ToolAppAttachment>()
   const taskToolUseIds = new Set<string>()
   // Read-only calls whose consecutive runs fold into one summary group.
@@ -104,6 +107,7 @@ export function groupContentPresenter(
       if ('bashEditDiff' in block && block.bashEditDiff) bashEditDiffMap.set(block.toolUseId, block.bashEditDiff)
       if ('exitCode' in block && block.exitCode !== undefined) exitCodeMap.set(block.toolUseId, block.exitCode)
       if ('resultTitle' in block && block.resultTitle) resultTitleMap.set(block.toolUseId, block.resultTitle)
+      if ('resourceLinks' in block && block.resourceLinks?.length) resourceLinksMap.set(block.toolUseId, block.resourceLinks)
       if ('app' in block && block.app) toolAppMap.set(block.toolUseId, block.app)
     }
   }
@@ -296,6 +300,7 @@ export function groupContentPresenter(
     bashEditDiffMap,
     exitCodeMap,
     resultTitleMap,
+    resourceLinksMap,
     toolAppMap,
     runContinuations,
   }

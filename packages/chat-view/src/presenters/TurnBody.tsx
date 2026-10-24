@@ -1,7 +1,7 @@
 import { TranscriptStateScope } from '@superone/ui/lib/transcript-state'
 import { Fragment, useMemo, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
-import type { BashEditDiff, CodexPlanApprovalState, ContentBlock } from '@superone/shared/agent-types'
+import type { BashEditDiff, CodexPlanApprovalState, ContentBlock, McpResourceLink } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { SuggestedTaskState } from '@superone/shared/suggested-task'
 import {
@@ -82,6 +82,8 @@ export interface TurnToolPresenterProps {
   exitCode?: number
   /** Artifact only: the title of the page the result names. */
   resultTitle?: string
+  /** Files an MCP result returned by reference. */
+  resourceLinks?: McpResourceLink[]
   /** An MCP call that needs the user to sign in to its server. */
   authRequired?: boolean
 }
@@ -201,6 +203,7 @@ interface RenderOptions {
   bashEditDiffMap?: Map<string, BashEditDiff>
   exitCodeMap?: Map<string, number>
   resultTitleMap?: Map<string, string>
+  resourceLinksMap?: Map<string, McpResourceLink[]>
   toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
   latestPlan?: LatestPlan
@@ -231,6 +234,7 @@ export function TurnBlockPresenter({
   bashEditDiffMap,
   exitCodeMap,
   resultTitleMap,
+  resourceLinksMap,
   toolAppMap,
   runContinuations,
   latestPlan,
@@ -251,6 +255,7 @@ export function TurnBlockPresenter({
   bashEditDiffMap?: Map<string, BashEditDiff>
   exitCodeMap?: Map<string, number>
   resultTitleMap?: Map<string, string>
+  resourceLinksMap?: Map<string, McpResourceLink[]>
   toolAppMap?: Map<string, ToolAppAttachment>
   latestPlan?: LatestPlan
   runContinuations?: GroupContentResult['runContinuations']
@@ -316,6 +321,7 @@ export function TurnBlockPresenter({
           liveOutput={block.liveOutput}
           exitCode={exitCodeMap?.get(block.toolUseId)}
           resultTitle={resultTitleMap?.get(block.toolUseId)}
+          resourceLinks={resourceLinksMap?.get(block.toolUseId)}
           authRequired={block.authRequired}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
@@ -470,6 +476,7 @@ function renderSegments(
           bashEditDiffMap={options.bashEditDiffMap}
           exitCodeMap={options.exitCodeMap}
           resultTitleMap={options.resultTitleMap}
+          resourceLinksMap={options.resourceLinksMap}
           toolAppMap={options.toolAppMap}
           runContinuations={options.runContinuations}
           latestPlan={options.latestPlan}
@@ -523,6 +530,7 @@ function renderBlocks(blocks: ContentBlock[], startIndex: number, options: Rende
       bashEditDiffMap={options.bashEditDiffMap}
       exitCodeMap={options.exitCodeMap}
       resultTitleMap={options.resultTitleMap}
+      resourceLinksMap={options.resourceLinksMap}
       toolAppMap={options.toolAppMap}
       runContinuations={options.runContinuations}
       latestPlan={options.latestPlan}
@@ -564,6 +572,7 @@ export function TurnBodyPresenter({
     bashEditDiffMap: grouped.bashEditDiffMap,
     exitCodeMap: grouped.exitCodeMap,
     resultTitleMap: grouped.resultTitleMap,
+    resourceLinksMap: grouped.resourceLinksMap,
     toolAppMap: grouped.toolAppMap,
     runContinuations: grouped.runContinuations,
     ...(latestPlanId ? { latestPlan: { id: latestPlanId, approval: planApproval } } : {}),

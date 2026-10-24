@@ -5,7 +5,7 @@
 
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { ElicitationRequest, ElicitationResult, Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 
 export type ClaudePermissionDecision = 'allow' | 'deny'
 
@@ -30,6 +30,9 @@ export type ClaudePermissionHandler = (
 ) => Promise<ClaudePermissionDecision>
 
 export type ClaudeQuestionHandler = (request: ClaudeQuestionRequest) => Promise<unknown>
+
+/** MCP elicitation bridge. `signal` aborts when the CLI withdraws the request. */
+export type ClaudeElicitationHandler = (request: ElicitationRequest, signal: AbortSignal) => Promise<ElicitationResult>
 
 export type ClaudePlanHandler = (request: ClaudePlanRequest) => Promise<{
   decision: 'approve' | 'reject'

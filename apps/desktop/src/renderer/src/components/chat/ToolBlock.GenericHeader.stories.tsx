@@ -361,3 +361,41 @@ export const ArtifactPublishDenied: Story = {
     result: '[denied] User denied permission',
   },
 }
+
+// Files an MCP tool returned by reference (`tool_use_result.resourceLinks`, or a
+// backgrounded call's `task_notification.resource_links`), listed under the header:
+// a local file as its chip, a web address as its link, another scheme as its name.
+const MCP_RESOURCE_LINKS = [
+  { uri: 'file:///Users/me/reports/q4-revenue-breakdown-by-region-and-product-line-final.pdf', name: 'q4-revenue-breakdown-by-region-and-product-line-final.pdf', title: 'Q4 revenue breakdown', mimeType: 'application/pdf' },
+  { uri: 'https://example.com/exports/q4.csv', name: 'q4.csv', title: 'Q4 raw export' },
+  { uri: 'reports://exports/q4/summary', name: 'summary', description: 'Readable through the server only' },
+]
+
+export const McpResourceLinks: Story = {
+  args: {
+    toolName: 'mcp__reports__export_quarter',
+    input: JSON.stringify({ quarter: 'Q4' }),
+    status: 'complete',
+    result: 'Exported 3 files for Q4.',
+    resourceLinks: MCP_RESOURCE_LINKS,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Q4 revenue breakdown')).toBeInTheDocument()
+    await expect(canvas.getByText('Q4 raw export')).toBeInTheDocument()
+    await expect(canvas.getByTitle('reports://exports/q4/summary')).toBeInTheDocument()
+  },
+}
+
+export const McpResourceLinksNarrow: Story = {
+  ...McpResourceLinks,
+  decorators: [(Story) => <StoryShell width={320}><Story /></StoryShell>],
+}
+
+// A failed call lists nothing: its links would name files that may not exist.
+export const McpResourceLinksOnError: Story = {
+  args: { ...McpResourceLinks.args, result: '<tool_use_error>Export failed</tool_use_error>', isError: true },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).queryByText('Q4 raw export')).toBeNull()
+  },
+}

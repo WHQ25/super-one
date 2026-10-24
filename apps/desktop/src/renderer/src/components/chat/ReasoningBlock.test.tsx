@@ -6,7 +6,7 @@ import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
 import { ReasoningBlock } from './ReasoningBlock'
 
 describe('ReasoningBlock', () => {
-  it('auto-expands once showContent flips true during streaming', () => {
+  it('stays collapsed when showContent flips true during streaming', () => {
     const { rerender } = render(
       <ReasoningBlock text="" blockDone={false} showContent={false} />,
     )
@@ -15,23 +15,34 @@ describe('ReasoningBlock', () => {
     rerender(
       <ReasoningBlock text="thought delta" blockDone={false} showContent={true} />,
     )
-    expect(screen.getByText('thought delta')).toBeInTheDocument()
+    expect(screen.queryByText('thought delta')).not.toBeInTheDocument()
+    expect(screen.getByText('Thinking...')).toBeInTheDocument()
   })
 
-  it('stays expanded when content mounts with text during streaming', () => {
+  it('stays collapsed when content mounts during streaming', () => {
     render(<ReasoningBlock text="hello" blockDone={false} showContent={true} />)
-    expect(screen.getByText('hello')).toBeInTheDocument()
+    expect(screen.queryByText('hello')).not.toBeInTheDocument()
+    expect(screen.getByText('Thinking...')).toBeInTheDocument()
   })
 
-  it('respects user collapse after auto-expand', () => {
+  it('keeps a manual expand open as more text streams', () => {
     const { rerender } = render(
-      <ReasoningBlock text="" blockDone={false} showContent={false} />,
-    )
-    rerender(
       <ReasoningBlock text="first chunk" blockDone={false} showContent={true} />,
     )
+    fireEvent.click(screen.getByText('Thinking...'))
     expect(screen.getByText('first chunk')).toBeInTheDocument()
 
+    rerender(
+      <ReasoningBlock text="first chunk more" blockDone={false} showContent={true} />,
+    )
+    expect(screen.getByText('first chunk more')).toBeInTheDocument()
+  })
+
+  it('keeps a manual collapse closed as more text streams', () => {
+    const { rerender } = render(
+      <ReasoningBlock text="first chunk" blockDone={false} showContent={true} />,
+    )
+    fireEvent.click(screen.getByText('Thinking...'))
     fireEvent.click(screen.getByText('Thinking...'))
     expect(screen.queryByText('first chunk')).not.toBeInTheDocument()
 
@@ -41,10 +52,11 @@ describe('ReasoningBlock', () => {
     expect(screen.queryByText('first chunk more')).not.toBeInTheDocument()
   })
 
-  it('collapses on done when collapseOnDone is true', () => {
+  it('collapses a manually opened block when it finishes', () => {
     const { rerender } = render(
       <ReasoningBlock text="thinking text" blockDone={false} showContent={true} />,
     )
+    fireEvent.click(screen.getByText(/^Thinking/))
     expect(screen.getByText('thinking text')).toBeInTheDocument()
 
     rerender(
@@ -75,6 +87,8 @@ describe('ReasoningBlock', () => {
     )
     const { rerender } = render(view('', false))
     rerender(view('reasoning delta', false))
+    expect(screen.queryByText('reasoning delta')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText(/^Thinking/))
     expect(screen.getByText('reasoning delta')).toBeVisible()
 
     rerender(view('reasoning delta', false, false))
@@ -107,6 +121,9 @@ describe('ReasoningBlock', () => {
       </TranscriptStateProvider>
     )
     const { rerender } = render(view())
+    expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText(/^Thinking/))
+    expect(screen.getByText('live reasoning')).toBeVisible()
     fireEvent.click(screen.getByText(/^Thinking/))
     expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
 
@@ -115,11 +132,27 @@ describe('ReasoningBlock', () => {
     expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
   })
 
+  it('preserves a manual expand when a live row is remounted', () => {
+    const values = new Map<string, unknown>()
+    const view = (visible = true) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        {visible && <ReasoningBlock text="live reasoning" blockDone={false} />}
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view())
+    fireEvent.click(screen.getByText(/^Thinking/))
+    expect(screen.getByText('live reasoning')).toBeVisible()
+
+    rerender(view(false))
+    rerender(view())
+    expect(screen.getByText('live reasoning')).toBeVisible()
+  })
+
   it('keeps deferred reasoning open on completion when automatic collapse is disabled', () => {
     const values = new Map<string, unknown>()
     const view = (done: boolean, visible = true) => (
       <TranscriptStateProvider values={values} scope="turn">
-        {visible && <ReasoningBlock text="deferred reasoning" blockDone={done} autoExpand={false} collapseOnDone={false} />}
+        {visible && <ReasoningBlock text="deferred reasoning" blockDone={done} collapseOnDone={false} />}
       </TranscriptStateProvider>
     )
     const { rerender } = render(view(false))

@@ -6,7 +6,6 @@ import { cn } from '@superone/ui/lib/utils'
 
 export interface ReasoningBlockProps {
   onRetry?: () => void
-  autoExpand?: boolean
   onExpandedChange?: (expanded: boolean) => void
   text: string
   blockDone: boolean
@@ -19,7 +18,6 @@ export interface ReasoningBlockProps {
 
 export const ReasoningBlock = memo(function ReasoningBlock({
   onRetry,
-  autoExpand = true,
   onExpandedChange,
   text,
   blockDone,
@@ -31,12 +29,12 @@ export const ReasoningBlock = memo(function ReasoningBlock({
 }: ReasoningBlockProps) {
   const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
-  // Expansion follows the real block lifecycle on both desktop and mobile.
-  const [expanded, setExpanded] = useTranscriptState('reasoning', autoExpand && showContent && (!blockDone || !collapseOnDone))
+  // Streaming stays collapsed. A click opens it; finishing closes it again
+  // unless collapseOnDone is false.
+  const [expanded, setExpanded] = useTranscriptState('reasoning', false)
   // A block can finish while evicted. Remember observed completion separately
   // from expansion so only manual expansion after completion survives a remount.
   const [previousDone, setPreviousDone] = useTranscriptState('reasoning-done', false)
-  const autoExpandedRef = useRef(autoExpand && showContent && !blockDone)
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
 
@@ -59,13 +57,6 @@ export const ReasoningBlock = memo(function ReasoningBlock({
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [blockDone, start])
-
-  useEffect(() => {
-    if (autoExpand && showContent && !blockDone && !autoExpandedRef.current) {
-      autoExpandedRef.current = true
-      setExpanded(true)
-    }
-  }, [autoExpand, showContent, blockDone])
 
   useEffect(() => {
     if (!blockDone) {

@@ -112,6 +112,8 @@ describe('shared ContentBlock turn virtualization', () => {
     )
     const { rerender } = render(view('', false))
     rerender(view('reasoning delta', false))
+    expect(screen.queryByText('reasoning delta')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText(/^Thinking/))
     expect(screen.getByText('reasoning delta')).toBeVisible()
 
     rerender(view('reasoning delta', true))

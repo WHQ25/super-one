@@ -7,6 +7,19 @@
 import { randomBytes } from 'node:crypto'
 
 /**
+ * Same-millisecond captures in this process must not share a name. Two random
+ * bytes collide often enough that a burst of fifty does. A counter still fits
+ * the four hex digits; the start is random so two processes rarely meet.
+ */
+let captureNonce = randomBytes(2).readUInt16BE(0)
+
+function nextCaptureNonce(): string {
+  const nonce = (captureNonce & 0xffff).toString(16).padStart(4, '0')
+  captureNonce = (captureNonce + 1) & 0xffff
+  return nonce
+}
+
+/**
  * `iPhone-17-Pro-20260820-164452-317-9f2c.png` — sortable by name, free of the spaces
  * and punctuation that make a path awkward to paste into a shell, and unique: two
  * captures inside one second used to collide, which is fatal once a desktop mirror
@@ -17,6 +30,6 @@ export function captureFileName(deviceName: string, extension: string, at: Date)
   const pad = (value: number) => String(value).padStart(2, '0')
   const stamp = `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}`
     + `-${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
-    + `-${String(at.getMilliseconds()).padStart(3, '0')}-${randomBytes(2).toString('hex')}`
+    + `-${String(at.getMilliseconds()).padStart(3, '0')}-${nextCaptureNonce()}`
   return `${slug}-${stamp}.${extension}`
 }

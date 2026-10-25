@@ -138,7 +138,7 @@ describe('SessionRow hover card', () => {
     expect(trigger?.className.split(/\s+/)).not.toContain('flex-1')
     const title = trigger?.querySelector('.animated-title-wrap')
     expect(title?.parentElement).toBe(trigger)
-    expect(title).toHaveClass('text-md')
+    expect(title).toHaveClass('text-sm')
     expect(screen.queryByText('super-one')).toBeNull()
     expect(trigger?.querySelector('.inline-flex')).toHaveStyle({ width: '20px', height: '20px' })
   })

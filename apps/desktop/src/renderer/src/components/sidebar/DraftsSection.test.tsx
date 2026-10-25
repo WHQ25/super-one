@@ -60,6 +60,7 @@ describe('DraftsSection', () => {
     expect(screen.getAllByText('Drafts')).toHaveLength(1)
     expect(screen.getByText('remote draft').closest('.group\\/draft')).toHaveClass('opacity-50')
     expect(screen.getByText('local draft').closest('.group\\/draft')).not.toHaveClass('opacity-50')
+    expect(screen.getByText('local draft')).toHaveClass('text-sm')
     fireEvent.click(screen.getByText('remote draft'))
     expect(resumeDraft).toHaveBeenCalledWith('node', remote)
   })

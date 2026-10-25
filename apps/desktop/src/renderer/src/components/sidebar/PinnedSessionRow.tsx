@@ -14,7 +14,7 @@ import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenu
 import { SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
-/** Session icons draw their glyph at `size - 2`, so 20 gives an 18px mark beside `text-md` titles. */
+/** Session icons draw their glyph at `size - 2`, so 20 gives an 18px mark beside `text-sm` titles. */
 const PINNED_ICON_SIZE = 20
 
 const PINNED_ROW_HOVER_ACTION =
@@ -57,7 +57,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   )
   const stallLevel = useStallLevel(isRunning && !inSlashCommand, readLastEventAt)
   const titleClassName = cn(
-    'min-w-0 flex-1 text-md',
+    'min-w-0 flex-1 text-sm',
     isRunning && 'transition-colors duration-500',
     isRunning && getStallColor(stallLevel, ''),
   )

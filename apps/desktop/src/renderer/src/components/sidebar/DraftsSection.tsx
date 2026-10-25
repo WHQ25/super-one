@@ -96,7 +96,7 @@ const DraftRow = memo(function DraftRow({
       ) : (
         <PencilLine className="size-3.5 shrink-0 text-sidebar-foreground/45" aria-hidden />
       )}
-      <span className="min-w-0 flex-1 truncate text-md text-sidebar-foreground">
+      <span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground">
         {draft.title || draft.text.trim() || t('sidebar.drafts.untitled')}
       </span>
       {draft.pendingSync && (

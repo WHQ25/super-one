@@ -564,7 +564,7 @@ function DraftRows({ drafts }: { drafts: MockDraft[] }) {
       ) : (
         <PencilLine className="size-3.5 shrink-0 text-sidebar-foreground/45" />
       )}
-      <span className="min-w-0 flex-1 truncate text-md text-sidebar-foreground">{draft.title}</span>
+      <span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground">{draft.title}</span>
       {draft.pendingSync && <Clock className="size-3 shrink-0 text-warning" aria-label="Pending sync" />}
       <button className="rounded p-1 text-sidebar-foreground/45 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/draft:opacity-100">
         <Trash2 className="size-3" />

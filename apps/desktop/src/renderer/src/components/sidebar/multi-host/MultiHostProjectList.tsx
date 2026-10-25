@@ -112,7 +112,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         offline={bucket.connection === 'offline'}
         repoIdentity={checkout.repoIdentity}
         sessionsLoaded={checkout.pathKey in props.folderSessions}
-        sessionPresentation={presenterFor(bucket, folder.name)}
+        sessionPresentation={presenterFor(bucket, folder.name, folder.path)}
       />
     )
   }

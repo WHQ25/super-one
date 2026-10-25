@@ -1,10 +1,15 @@
-import { forwardRef, type ComponentProps, type ReactNode, type Ref } from 'react'
+import { forwardRef, useEffect, useState, type ComponentProps, type ReactNode, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Folder, GitFork } from 'lucide-react'
+import { Folder, GitCommit, GitFork } from 'lucide-react'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
 import { cn } from '@superone/ui/lib/utils'
 import { formatCompactAge } from '@superone/shared/relative-time'
-import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
+import {
+  worktreeCheckoutLabel,
+  worktreeInfoRoot,
+  type SessionHoverModel,
+  type WorktreeCheckoutLabel,
+} from '@/lib/multi-host/session-hover'
 import { EnvironmentKindIcon } from './EnvironmentSectionHeader'
 
 export function SessionHoverBody({ model }: { model: SessionHoverModel }) {
@@ -26,7 +31,9 @@ export function SessionHoverBody({ model }: { model: SessionHoverModel }) {
           <span className="block truncate">{model.environmentLabel}</span>
         </HoverLine>
         {model.worktreeName && (
-          <HoverLine icon={<GitFork className="size-3" />}>
+          <HoverLine icon={model.checkoutKind === 'commit'
+            ? <GitCommit className="size-3" />
+            : <GitFork className="size-3" />}>
             <span className="block break-all font-mono text-[11px]">{model.worktreeName}</span>
           </HoverLine>
         )}
@@ -77,17 +84,19 @@ export const SessionHoverCardTrigger = forwardRef<HTMLElement, SessionHoverTrigg
 /** Same placement for every sidebar hover card: 4px to the right of the row, top-aligned. */
 export function SidebarHoverCard({
   open,
+  onOpenChange,
   children,
   content,
 }: {
   /** Stories pin the card open. Production leaves this unset. */
   open?: boolean
+  onOpenChange?: (open: boolean) => void
   /** Usually the context menu, with `SessionHoverCardTrigger` on the row inside it. */
   children: ReactNode
   content: ReactNode
 }) {
   return (
-    <HoverCard open={open} openDelay={300} closeDelay={150}>
+    <HoverCard open={open} onOpenChange={onOpenChange} openDelay={300} closeDelay={150}>
       {children}
       {/* 4px off the row. Flush looks stuck to the title; a collision shift
           would slide the card left onto it. */}
@@ -104,6 +113,34 @@ export function SidebarHoverCard({
   )
 }
 
+/** Branch from the session row until the card opens; then the live worktree list, like the workdir chip. */
+function useLiveCheckout(model: SessionHoverModel, shown: boolean): WorktreeCheckoutLabel | null {
+  const path = model.worktreePath ?? null
+  const projectPath = model.projectPath ?? null
+  const [live, setLive] = useState<{ path: string; label: WorktreeCheckoutLabel | null } | null>(null)
+  useEffect(() => {
+    if (!shown || !path) return
+    let cancelled = false
+    void window.app.getWorktreeInfo(worktreeInfoRoot(projectPath, path)).then((info) => {
+      if (!cancelled) setLive({ path, label: worktreeCheckoutLabel(info?.entries, path) })
+    }).catch(() => {
+      if (!cancelled) setLive({ path, label: null })
+    })
+    return () => { cancelled = true }
+  }, [shown, path, projectPath])
+  return live?.path === path ? live.label : null
+}
+
+function checkoutText(live: WorktreeCheckoutLabel | null, storedBranch: string | null, detachedLabel: string): {
+  text: string | null
+  commit: boolean
+} {
+  if (live?.kind === 'branch') return { text: live.name, commit: false }
+  if (live?.kind === 'commit') return { text: live.hash, commit: true }
+  if (live?.kind === 'detached') return { text: detachedLabel, commit: true }
+  return { text: storedBranch, commit: false }
+}
+
 export function SessionHoverCard({
   model,
   open,
@@ -115,8 +152,15 @@ export function SessionHoverCard({
   /** Usually the context menu, with `SessionHoverCardTrigger` on the row inside it. */
   children: ReactNode
 }) {
+  const { t } = useTranslation()
+  const [hovered, setHovered] = useState(false)
+  const live = useLiveCheckout(model, open ?? hovered)
+  const checkout = checkoutText(live, model.worktreeName, t('chat.worktree.detachedLabel'))
+  const shown = checkout.text === model.worktreeName && checkout.commit === (model.checkoutKind === 'commit')
+    ? model
+    : { ...model, worktreeName: checkout.text, ...(checkout.commit ? { checkoutKind: 'commit' as const } : { checkoutKind: undefined }) }
   return (
-    <SidebarHoverCard open={open} content={<SessionHoverBody model={model} />}>
+    <SidebarHoverCard open={open} onOpenChange={setHovered} content={<SessionHoverBody model={shown} />}>
       {children}
     </SidebarHoverCard>
   )

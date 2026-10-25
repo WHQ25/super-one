@@ -619,10 +619,10 @@ export const AppSidebar = memo(function AppSidebar() {
     const bucket = environments.find((item) => projectBelongsToHost(session.folderPath, item.connectionId))
     if (bucket) {
       const projectName = bucket.checkouts.find((checkout) => checkout.pathKey === session.folderPath)?.name ?? session.folderName
-      return presenterFor(bucket, projectName)(session)
+      return presenterFor(bucket, projectName, session.folderPath)(session)
     }
     if (parseRemoteProjectKey(session.folderPath)) return null
-    return presenterFor(localHoverEnvironment, session.folderName)(session)
+    return presenterFor(localHoverEnvironment, session.folderName, session.folderPath)(session)
   }
 
   const draftConnectionIds = useMemo(() => (multiHostChrome
@@ -867,7 +867,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     onRenameSession={handleRequestRenameSession}
                     onDeleteSession={handleRequestDeleteSession}
                     onNewSession={handleNewSession}
-                    sessionPresentation={presenterFor(localHoverEnvironment, folder.name)}
+                    sessionPresentation={presenterFor(localHoverEnvironment, folder.name, folder.path)}
                   />
                 )
               })}

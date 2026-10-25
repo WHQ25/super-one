@@ -143,6 +143,45 @@ describe('SessionRow hover card', () => {
     expect(trigger?.querySelector('.inline-flex')).toHaveStyle({ width: '20px', height: '20px' })
   })
 
+  it('shows a detached worktree commit instead of its folder name', async () => {
+    const previous = window.app.getWorktreeInfo
+    const getWorktreeInfo = vi.fn().mockResolvedValue({
+      isWorktree: true,
+      currentBranch: 'abc1234',
+      entries: [{
+        path: '/repo/.worktrees/m1abc-abc1234',
+        branch: '',
+        head: 'abc1234deadbeef',
+        isMain: false,
+        isCurrent: true,
+      }],
+    })
+    Object.assign(window.app, { getWorktreeInfo })
+    try {
+      render(
+        <SessionHoverCard
+          open
+          model={{
+            ...hoverModel,
+            worktreeName: null,
+            worktreePath: '/repo/.worktrees/m1abc-abc1234',
+            projectPath: '/repo',
+          }}
+        >
+          <SessionHoverCardTrigger>
+            <button type="button">row</button>
+          </SessionHoverCardTrigger>
+        </SessionHoverCard>,
+      )
+
+      expect(await screen.findByText('abc1234')).toBeInTheDocument()
+      expect(screen.queryByText('m1abc-abc1234')).toBeNull()
+      expect(getWorktreeInfo).toHaveBeenCalledWith('/repo/.worktrees/m1abc-abc1234')
+    } finally {
+      Object.assign(window.app, { getWorktreeInfo: previous })
+    }
+  })
+
   it('clamps the card title to three lines', () => {
     render(
       <SessionHoverBody

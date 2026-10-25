@@ -12,7 +12,7 @@ function model(extra?: Partial<SessionHoverModel>): SessionHoverModel {
     environmentLabel: 'dev-server',
     kind: 'cli-node',
     connection: 'connected',
-    worktreeName: 'feat-remote-build',
+    worktreeName: 'feat/remote-build',
     lastActiveAt: new Date(Date.now() - 3 * HOUR).toISOString(),
     tags: ['sidebar'],
     ...extra,
@@ -41,6 +41,16 @@ export const Worktree: Story = {
   render: () => (
     <Frame>
       <SessionHoverBody model={model()} />
+    </Frame>
+  ),
+}
+
+/** A detached worktree shows the short commit, the same text as the workdir chip. */
+export const Detached: Story = {
+  args: { model: model({ worktreeName: 'abc1234', checkoutKind: 'commit' }), children: null },
+  render: () => (
+    <Frame>
+      <SessionHoverBody model={model({ worktreeName: 'abc1234', checkoutKind: 'commit' })} />
     </Frame>
   ),
 }
@@ -94,7 +104,7 @@ export const LongContent: Story = {
       <SessionHoverBody
         model={model({
           title: 'Investigate the nightly CI failure that only reproduces on the remote desktop checkout',
-          worktreeName: 'tn9p6x-a68eb49-feat-very-long-branch-name-that-should-wrap',
+          worktreeName: 'feat/very-long-branch-name-that-should-wrap-onto-the-next-line',
           tags: ['mobile', 'sidebar', 'release', 'investigation'],
           lastActiveAt: new Date(Date.now() - 40 * 24 * HOUR).toISOString(),
         })}

@@ -157,6 +157,17 @@ describe('resolveMarkdownFileLinks', () => {
     expect(resolveMarkdownFileLinks(input, project)).toBe(input)
   })
 
+  it('leaves angle-bracket absolute paths unchanged, including non-ASCII directories', () => {
+    const input = '[推荐三张](</Users/foo/project/assets/outputs/芷晴-可心三条起始图-2026-10-25/推荐三张>)'
+    expect(resolveMarkdownFileLinks(input, project)).toBe(input)
+  })
+
+  it('rewrites an angle-bracket relative path as one destination', () => {
+    expect(resolveMarkdownFileLinks('[x](<src/my file.ts>)', project)).toBe(
+      '[x](</Users/foo/project/src/my file.ts>)',
+    )
+  })
+
   it('leaves http links unchanged', () => {
     const input = '[docs](https://example.com/path)'
     expect(resolveMarkdownFileLinks(input, project)).toBe(input)

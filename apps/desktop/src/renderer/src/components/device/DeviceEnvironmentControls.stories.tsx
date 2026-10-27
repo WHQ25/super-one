@@ -15,7 +15,7 @@ const iosFoldable: DeviceEnvironmentState = {
   deviceId: 'ios-sim:duo',
   postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
   posture: 2,
-  hingeDegrees: 90,
+  hingeDegrees: 75,
 }
 const android: DeviceEnvironmentState = {
   deviceId: 'android:avd:Pixel_Fold', appearance: 'dark', locationReadable: false,
@@ -27,8 +27,9 @@ const android: DeviceEnvironmentState = {
   hingeDegrees: null,
 }
 
-function Scenario({ initial, fail = false }: { initial: DeviceEnvironmentState; fail?: boolean }) {
+function Scenario({ initial, fail = false, finishes }: { initial: DeviceEnvironmentState; fail?: boolean; finishes?: string[] }) {
   const [state, setState] = useState(initial)
+  const [finish, setFinish] = useState(finishes?.[0])
   return <div className="flex min-h-[36rem] items-end justify-end p-4">
     <DeviceEnvironmentControls
       deviceId={initial.deviceId}
@@ -44,6 +45,7 @@ function Scenario({ initial, fail = false }: { initial: DeviceEnvironmentState; 
         return { status: 'applied', deviceId: initial.deviceId, action, state: next }
       }}
       subscribe={() => () => {}}
+      bodyColor={finishes && finish ? { options: finishes, value: finish, onChange: setFinish } : undefined}
     />
   </div>
 }
@@ -60,5 +62,10 @@ export const IosSimulator: Story = { render: () => <Scenario initial={ios} /> }
 /** A foldable that takes any angle: its hinge is the toolbar's, so none shows here. */
 export const IosFoldable: Story = { render: () => <Scenario initial={iosFoldable} /> }
 export const AndroidFoldable: Story = { render: () => <Scenario initial={android} /> }
+/** In the 3D view, a body whose scene ships several finishes: the Duo's two, an iPhone 18 Pro's four. */
+export const BodyColor: Story = { render: () => <Scenario initial={iosFoldable} finishes={['Light', 'Dark']} /> }
+export const BodyColorMany: Story = {
+  render: () => <Scenario initial={ios} finishes={['Black', 'Burgundy', 'Glacier', 'Silver']} />,
+}
 export const CommandError: Story = { render: () => <Scenario initial={ios} fail /> }
 export const Narrow: Story = { render: () => <div className="w-56"><Scenario initial={android} /></div> }

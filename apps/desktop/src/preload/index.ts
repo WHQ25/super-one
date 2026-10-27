@@ -2167,7 +2167,7 @@ const appAPI = {
   composeUsdzPreview: (bytes: Uint8Array, selections: Record<string, string>) =>
     ipcRenderer.invoke(AgentIpcChannels.COMPOSE_USDZ_PREVIEW, bytes, selections),
   listDeviceModels: () => ipcRenderer.invoke(AgentIpcChannels.LIST_DEVICE_MODELS),
-  loadDeviceModel: (model: string) => ipcRenderer.invoke(AgentIpcChannels.LOAD_DEVICE_MODEL, model),
+  loadDeviceModel: (model: string, color?: string) => ipcRenderer.invoke(AgentIpcChannels.LOAD_DEVICE_MODEL, model, color),
   setUnsavedEditorBuffer: (filePath: string, content: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_SET_UNSAVED_BUFFER, filePath, content),
   getFileTree: (folderPath: string) =>

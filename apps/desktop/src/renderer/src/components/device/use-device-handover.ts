@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DEVICE_CAPABILITIES, deviceMatchesReference, isDeviceLandscape, parseDeviceId, type DeviceState } from '@superone/shared/device'
+import { deviceMatchesReference, parseDeviceId, type DeviceState } from '@superone/shared/device'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
@@ -9,6 +9,7 @@ import { useDevicePipStore } from '@/stores/device-pip'
 import { selectViewfinderTarget, useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { hasDeviceTab, openDeviceTab } from '@/components/activity/activity-panel-api'
 import { useDevicePreview } from './use-device-preview'
+import { deviceLayoutRotation } from './device-layout-rotation'
 
 /**
  * Hand the bound device the Activity tab, unless it already has somewhere to be.
@@ -130,7 +131,8 @@ export function useDeviceHandover(): void {
     // shape, so a device on its side is the same numbers swapped by hand; Android
     // re-shapes it and scrcpy republishes the swapped pair, so swapping again would
     // hand the preview a portrait box for a landscape phone.
-    const swap = DEVICE_CAPABILITIES[bound.provider].rigidRotation && isDeviceLandscape(state.orientation)
+    // An unfolded Duo's panel is mounted sideways, which turns the picture too.
+    const swap = deviceLayoutRotation(bound.provider, state.orientation, state.ios?.fold) % 180 !== 0
     const width = (swap ? state.pixelHeight : state.pixelWidth) ?? 0
     const height = (swap ? state.pixelWidth : state.pixelHeight) ?? 0
     const previewDevice = {
@@ -139,6 +141,7 @@ export function useDeviceHandover(): void {
       platform: bound.platform,
       width,
       height,
+      ...(state.ios?.fold ? { panel: state.ios.fold.panel } : {}),
     }
     store.rememberReady(instanceId, previewDevice)
     // Background sessions keep enough metadata to restore their PiP, but must not

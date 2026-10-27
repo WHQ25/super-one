@@ -71,6 +71,23 @@ describe('device environment controls', () => {
     expect(screen.getByRole('slider', { name: 'System Text Size' })).toHaveAttribute('max', '6')
   })
 
+  it('offers the 3D body\'s finishes by name, and none without a body that has several', async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<DeviceEnvironmentControls deviceId="ios-sim:sim-1" provider="ios-sim" disabled={false}
+      read={async () => ios} subscribe={() => () => {}}
+      bodyColor={{ options: ['Night_Sky', 'Star_White'], value: 'Star_White', onChange }} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Device Environment' }))
+
+    expect(screen.getByRole('tablist', { name: 'Body Color' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Star White' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('tab', { name: 'Night Sky' }))
+    expect(onChange).toHaveBeenCalledWith('Night_Sky')
+
+    rerender(<DeviceEnvironmentControls deviceId="ios-sim:sim-1" provider="ios-sim" disabled={false}
+      read={async () => ios} subscribe={() => () => {}} />)
+    expect(screen.queryByRole('tablist', { name: 'Body Color' })).not.toBeInTheDocument()
+  })
+
   it('shows only queried Android postures and no clear-location action', async () => {
     const { configure } = show(android)
     await userEvent.click(screen.getByRole('button', { name: 'Device Environment' }))
@@ -85,7 +102,7 @@ describe('device environment controls', () => {
     show({
       ...ios,
       postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
-      posture: 2, hingeDegrees: 90,
+      posture: 2, hingeDegrees: 75,
     })
     await userEvent.click(screen.getByRole('button', { name: 'Device Environment' }))
     expect(await screen.findByRole('tab', { name: 'Dark' })).toBeInTheDocument()

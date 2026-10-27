@@ -31,6 +31,7 @@ import {
   type PipBounds,
   type PipDimensions,
   type PipLayout,
+  turnPipLayout,
 } from '@/lib/pip-layout'
 
 export interface PipPlacementOptions {
@@ -107,9 +108,9 @@ export function usePipPlacement({ key, active, aspect, dims }: PipPlacementOptio
       // somewhere the later, correct measurement can never bring it back from.
       if (!(rect.width > 0) || !(rect.height > 0)) return
       const next = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-      // A device turning on its side is a new shape, not a new size. Re-fitting it
-      // under the DEFAULT height ceiling is what keeps a landscape box from
-      // inheriting a portrait one's height and spanning the whole chat.
+      // A device turning on its side is a new shape, not a new size: it turns about
+      // its top-right corner, keeping its long side. Re-fitting it under the DEFAULT
+      // height ceiling still keeps a box that turned upright from spanning the chat.
       const turned = aspectRef.current !== aspect
       aspectRef.current = aspect
       setBounds((current) => current && current.left === next.left && current.top === next.top
@@ -121,11 +122,15 @@ export function usePipPlacement({ key, active, aspect, dims }: PipPlacementOptio
           return samePipLayout(current.layout, fresh) ? current : { ...current, layout: fresh }
         }
         if (!turned) return current
+        const turnedLayout = turnPipLayout(current.layout, aspect)
+        const fit = (layout: PipLayout) => clampPipLayout(layout, next, dims, aspect, {
+          maxHeight: defaultPipMaxHeight(next, dims),
+        })
+        const fitted = fit(turnedLayout)
+        // Fitting may resize it; the top-right corner stays where it turned about.
         return {
           ...current,
-          layout: clampPipLayout(current.layout, next, dims, aspect, {
-            maxHeight: defaultPipMaxHeight(next, dims),
-          }),
+          layout: fit({ ...fitted, left: turnedLayout.left + turnedLayout.width - fitted.width }),
         }
       })
     }

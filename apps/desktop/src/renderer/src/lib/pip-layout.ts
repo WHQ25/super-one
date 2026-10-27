@@ -125,6 +125,26 @@ export function clampPipLayout(
   }
 }
 
+/**
+ * The box a preview becomes when what it shows turns to a new shape.
+ *
+ * A device turned on its side keeps its size: its long side stays as long, now along
+ * the other axis. The box keeps its top-right corner, which is where a preview is
+ * pinned by default, so it turns in place rather than sliding along the chat.
+ * Not clamped; the caller fits it to the boundary.
+ */
+export function turnPipLayout(layout: PipLayout, aspect: number): PipLayout {
+  if (!(aspect > 0) || !Number.isFinite(aspect)) return layout
+  const long = Math.max(layout.width, layout.height)
+  const width = aspect >= 1 ? long : long * aspect
+  return {
+    left: layout.left + layout.width - width,
+    top: layout.top,
+    width,
+    height: width / aspect,
+  }
+}
+
 export function createDefaultPipLayout(
   bounds: PipBounds,
   dims: PipDimensions,

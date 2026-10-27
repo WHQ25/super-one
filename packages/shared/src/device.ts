@@ -431,6 +431,8 @@ export interface LoadedDeviceModel {
    * stay in the scene, and the picture goes on whichever the device has lit.
    */
   fold?: { start: number; duration: number }
+  /** The body's finishes, where its scene offers more than one, and the one it wears. */
+  colors?: { options: string[]; selected: string }
 }
 
 /** The concrete device an agent tool resolved, used to select the session PiP. */

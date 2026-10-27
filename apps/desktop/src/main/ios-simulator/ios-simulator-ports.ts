@@ -2,6 +2,8 @@ import type {
   IosSimulatorChrome,
   IosSimulatorCreateRequest,
   IosSimulatorDevice,
+  IosSimulatorFoldPose,
+  IosSimulatorOrientation,
   IosSimulatorHelperProbe,
   IosSimulatorInput,
   IosSimulatorInputResult,
@@ -41,11 +43,25 @@ export interface IosSimulatorNativePort {
   /** `screenId` names the screen to show; omitted, the helper shows the largest. */
   attach(udid: string, screenId?: number): Promise<IosSimulatorNativeAttachment>
   /**
-   * Sweep a foldable's hinge to `position` (0 closed ... 1 open) and show `screenId`;
-   * `tent` then stands it as a tent. The frame stream keeps its old display; the
+   * Sweep a foldable's hinge to `position` (0 closed ... 1 open), landing held as
+   * `hold` (undefined keeps the guest's pose's), and show `screenId`; `pose` then
+   * stands it as a tent or a laptop. The frame stream keeps its old display; the
    * caller restarts it.
    */
-  fold(position: number, durationMs: number, screenId: number, tent?: boolean): Promise<IosSimulatorNativeAttachment>
+  fold(
+    position: number,
+    durationMs: number,
+    screenId: number,
+    hold: IosSimulatorOrientation | undefined,
+    pose?: IosSimulatorFoldPose,
+  ): Promise<IosSimulatorNativeAttachment>
+  /** Stand a device already in `pose` another way, as a turn does to a laptop. */
+  stand(pose: IosSimulatorFoldPose, hold: IosSimulatorOrientation): Promise<void>
+  /**
+   * Turn a swept foldable in neither pose to `hold`, `closed` or open. A sweep leaves
+   * the guest posed, and a pose takes rotation events' place; see `Guest/FoldTool.m`.
+   */
+  turn(hold: IosSimulatorOrientation, closed: boolean): Promise<void>
   startFrames(
     preferredMode: 'native-framebuffer' | 'native-h264',
     quality: IosSimulatorPreviewQuality,

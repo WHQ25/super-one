@@ -77,6 +77,8 @@ export function setup(initial = device()) {
       }
       return attachment
     }),
+    stand: vi.fn(async () => undefined),
+    turn: vi.fn(async () => undefined),
     startFrames: vi.fn(async (
       _preferredMode: 'native-framebuffer' | 'native-h264',
       quality: IosSimulatorPreviewQuality,

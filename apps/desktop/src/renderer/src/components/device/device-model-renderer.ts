@@ -2,7 +2,9 @@ import {
   CanvasTexture,
   Group,
   LinearFilter,
+  Matrix4,
   PerspectiveCamera,
+  Quaternion,
   Raycaster,
   Scene,
   Sphere,
@@ -16,7 +18,7 @@ import type { DeviceModelScreenPick, LoadedDeviceModel } from '@superone/shared/
 import { disposeModel, parseModel, updateModelCameraClipPlanes } from '../coding/model-loader'
 import { addModelFillLights, lightModel } from '../coding/model-environment'
 import { rotateFrameDelta, type DeviceFrameProjector } from './device-input'
-import { foldableBody, rigidBody, type DeviceModelFold } from './device-model-body'
+import { HINGE_DEGREES_PER_SECOND, foldableBody, rigidBody, type DeviceModelFold } from './device-model-body'
 import { attachDeviceModelTurntable } from './device-model-turntable'
 
 export type { DeviceModelFold }
@@ -27,6 +29,7 @@ export interface DeviceModelSource {
   screenMeshName?: string
   flipScreenV?: boolean
   fold?: LoadedDeviceModel['fold']
+  colors?: LoadedDeviceModel['colors']
 }
 
 /** What the scene reads on every use rather than rebuilding for. */
@@ -47,20 +50,58 @@ export interface MountedDeviceModel {
   teardown: () => void
 }
 
-/** A local model for a simulator, through main. */
-export async function loadDesktopDeviceModel(model: string): Promise<DeviceModelSource | null> {
-  const loaded = await window.app.loadDeviceModel(model)
+/** A local model for a simulator, through main, in `color` where it offers it. */
+export async function loadDesktopDeviceModel(model: string, color?: string): Promise<DeviceModelSource | null> {
+  const loaded = await window.app.loadDeviceModel(model, color)
   if (!loaded) return null
   const { archive } = loaded
   const bytes = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer
   const { object } = await parseModel(`device.${loaded.format}`, bytes)
-  return { object, screen: loaded.screen, screenMeshName: loaded.screenMeshName, flipScreenV: loaded.flipScreenV, fold: loaded.fold }
+  return {
+    object, screen: loaded.screen, screenMeshName: loaded.screenMeshName, flipScreenV: loaded.flipScreenV,
+    fold: loaded.fold, colors: loaded.colors,
+  }
 }
 
-/** Closed, standing as a tent, or open: a foldable's forms, by the panel it lights. */
-function foldForm(fold: DeviceModelFold): 'closed' | 'tent' | 'open' {
-  return fold.panel === 'inner' ? 'open' : fold.hingeDegrees > 0 ? 'tent' : 'closed'
+type FoldForm = 'closed' | 'tent' | 'open' | 'laptop'
+
+/** Closed, standing as a tent, open, or laid as a laptop, by the screen turned to the camera. */
+function foldForm(fold: DeviceModelFold): FoldForm {
+  if (fold.laptop) return 'laptop'
+  return (fold.facing ?? fold.panel) === 'inner' ? 'open' : fold.hingeDegrees > 0 ? 'tent' : 'closed'
 }
+
+/** How far above the base half a laptop is looked at, in degrees. */
+const LAPTOP_ELEVATION = 15
+/** How far round a tent's open end the camera stands, in degrees. */
+const TENT_SIDE = 18
+/** A tent's stance grows in over its first degrees of opening, so closing settles flat. */
+const TENT_FULL_AT = 30
+
+const X_AXIS = new Vector3(1, 0, 0)
+const Y_AXIS = new Vector3(0, 1, 0)
+const aboutAxis = (axis: Vector3, degrees: number) => new Quaternion().setFromAxisAngle(axis, (degrees * Math.PI) / 180)
+
+/**
+ * The tilt, in view space, that stands a foldable on the table in its form.
+ *
+ * The stage has turned the hinge level: across for a laptop, along the top for a tent.
+ * A laptop's body is posed looking along its fold's bisector, so each half leans
+ * `90 - hinge / 2` off the view plane; tipping the lower half toward the camera until
+ * it sits `LAPTOP_ELEVATION` under the eye line lays it on the table. A tent's cover
+ * faces the camera; leaning it back by half the hinge stands both halves' edges on
+ * the table, and the camera then steps round towards its open right end at eye level,
+ * so the halves are seen parting as a tent on a desk is.
+ */
+function foldTilt(form: FoldForm, hingeDegrees: number): Quaternion {
+  if (form === 'laptop') return aboutAxis(X_AXIS, LAPTOP_ELEVATION - hingeDegrees / 2)
+  if (form !== 'tent') return new Quaternion()
+  return aboutAxis(Y_AXIS, -TENT_SIDE * Math.min(1, hingeDegrees / TENT_FULL_AT))
+    .multiply(aboutAxis(X_AXIS, -hingeDegrees / 2))
+}
+
+/** The hinge's rate, for the tilt that stands a foldable in its form. */
+const TILT_RADIANS_PER_MS = (HINGE_DEGREES_PER_SECOND * Math.PI) / 180 / 1000
 
 /** The same turn the flat view animates with CSS. */
 const TURN_MS = 300
@@ -86,7 +127,7 @@ export async function mountDeviceModel(
 ): Promise<MountedDeviceModel | null> {
   if (isCancelled()) { disposeModel(source.object); return null }
   // A foldable not yet reported is drawn open, which is how Apple models it at rest.
-  const initialFold = latest.current.fold ?? { hingeDegrees: 180, panel: 'inner', panelRotation: 0 }
+  const initialFold = latest.current.fold ?? { hingeDegrees: 180, panel: 'inner', panelRotation: 0, laptop: false }
   const body = source.fold
     ? foldableBody(source.object, source.fold, initialFold)
     : rigidBody(source.object, source.screen, source.screenMeshName, source.flipScreenV)
@@ -95,9 +136,14 @@ export async function mountDeviceModel(
   // upright placement.
   const stage = new Group()
   stage.add(body.root)
+  // Turned once the stage has levelled the hinge, so the device stands on the table in
+  // its form. Outside the stage, so it follows no device turn.
+  const tilt = new Group()
+  tilt.add(stage)
+  tilt.quaternion.copy(foldTilt(form, initialFold.hingeDegrees))
   // Turned by the user's drag, around the stage's orientation turn: the camera stays put.
   const view = new Group()
-  view.add(stage)
+  view.add(tilt)
   const scene = new Scene()
   scene.add(view)
 
@@ -123,17 +169,27 @@ export async function mountDeviceModel(
   const camera = new PerspectiveCamera(FOV, 1, 0.001, 100)
   const raycaster = new Raycaster()
   const pointer = new Vector2()
-  // Measured in the stage's own space, so only the turn is applied here; a turned
-  // box's corners are exact at the quarter turns the camera is fitted at. Framing
-  // leaves out the user's own turn, so a drag never moves the camera in or out.
-  const bodyBounds = () => body.bounds().applyMatrix4(stage.matrixWorld)
-  const fittedBounds = () => body.bounds().applyMatrix4(stage.matrix)
-  const bodyRadius = () => body.bounds().getBoundingSphere(new Sphere()).radius
-
   let frameRequest = 0
-  let turn: { from: number; to: number; start: number } | null = null
-  let folding = false
+  // `distance` is where the camera stood when the turn began, before the user's zoom.
+  let turn: { from: number; to: number; start: number; distance: number } | null = null
+  // When the tilt last stepped toward the form's stance; null while it stands there.
+  let tippedAt: number | null = null
+  // The user's own turn easing back to face on, from where it was and how far zoomed.
+  let settle: { from: Quaternion; zoom: number; start: number } | null = null
+  // The camera's framing distance as last drawn, before the user's zoom; 0 until then.
+  let framed = 0
   const requestRender = () => { if (!frameRequest) frameRequest = requestAnimationFrame(draw) }
+
+  // Measured in the stage's own space, so only the turn is applied here; a turned
+  // box's corners are exact at the quarter turns the camera is fitted at, so a turn
+  // under way is fitted where it is headed. Framing leaves out the user's own turn,
+  // so a drag never moves the camera in or out.
+  const bodyBounds = () => body.bounds().applyMatrix4(stage.matrixWorld)
+  const fittedBounds = () => {
+    const turned = new Matrix4().makeRotationZ(turn ? turn.from + turn.to : stage.rotation.z)
+    return body.bounds().applyMatrix4(turned.premultiply(tilt.matrix))
+  }
+  const bodyRadius = () => body.bounds().getBoundingSphere(new Sphere()).radius
 
   const fitDistance = () => {
     const size = fittedBounds().getSize(new Vector3())
@@ -141,11 +197,16 @@ export async function mountDeviceModel(
     const horizontal = vertical * camera.aspect
     return Math.max(size.y / 2 / vertical, size.x / 2 / horizontal) * FIT_MARGIN + size.z / 2
   }
-  /** The camera looks straight at the body; only the framing distance changes. */
-  const refit = () => {
-    camera.position.set(0, 0, fitDistance() * turntable.zoom())
+  /**
+   * The camera looks straight at the body; only the framing distance changes. Fitted
+   * on every frame, so a fold reframes as it bends rather than jumping once it settles,
+   * and a turn eases from where the camera stood by the turn's own curve.
+   */
+  const frameCamera = (turnEased: number, zoom: number) => {
+    const fit = fitDistance()
+    framed = turn ? turn.distance + (fit - turn.distance) * turnEased : fit
+    camera.position.set(0, 0, framed * zoom)
     camera.lookAt(0, 0, 0)
-    requestRender()
   }
 
   const hitsGlass = (event: PointerEvent) =>
@@ -158,7 +219,8 @@ export async function mountDeviceModel(
   // A press on the glass is a touch; anywhere else it turns the body.
   const turntable = attachDeviceModelTurntable(renderer.domElement, view, {
     canStart: (event) => !hitsGlass(event),
-    onChange: refit,
+    // A drag takes the body from wherever an easing back has got it to.
+    onChange: () => { settle = null; requestRender() },
   })
 
   const projector: DeviceFrameProjector = {
@@ -188,42 +250,71 @@ export async function mountDeviceModel(
 
   function draw(now: number) {
     frameRequest = 0
+    let turnEased = 1
     if (turn) {
       const progress = Math.min(1, (now - turn.start) / TURN_MS)
-      const eased = 1 - (1 - progress) ** 3
-      stage.rotation.z = turn.from + turn.to * eased
+      turnEased = 1 - (1 - progress) ** 3
+      stage.rotation.z = turn.from + turn.to * turnEased
       stage.updateMatrixWorld(true)
       if (progress < 1) requestRender()
-      else { turn = null; refit() }
+      else turn = null
     }
-    if (body.step(now)) {
-      folding = true
-      requestRender()
-    } else if (folding) {
-      folding = false
-      refit()
+    let moving = body.step(now)
+    // The form's stance follows whatever angle the hinge has reached; a change of form
+    // turns toward its stance at the hinge's own rate.
+    const stance = foldTilt(form, body.hinge())
+    if (!tilt.quaternion.equals(stance)) {
+      tilt.quaternion.rotateTowards(stance, TILT_RADIANS_PER_MS * (now - (tippedAt ?? now)))
+      tilt.updateMatrixWorld(true)
+      tippedAt = tilt.quaternion.angleTo(stance) < 1e-6 ? null : now
+      moving ||= tippedAt !== null
     }
+    let zoom = turntable.zoom()
+    if (settle) {
+      const progress = Math.min(1, (now - settle.start) / TURN_MS)
+      const eased = 1 - (1 - progress) ** 3
+      view.quaternion.slerpQuaternions(settle.from, new Quaternion(), eased)
+      view.updateMatrixWorld(true)
+      zoom = settle.zoom + (zoom - settle.zoom) * eased
+      if (progress < 1) moving = true
+      else settle = null
+    }
+    if (moving) requestRender()
+    frameCamera(turnEased, zoom)
     updateModelCameraClipPlanes(camera, bodyBounds(), bodyRadius())
     renderer.render(scene, camera)
   }
 
+  // Resizing clears the drawing buffer, and a ResizeObserver runs after this frame's
+  // animation callbacks: a render merely requested would leave the frame being painted
+  // blank, so dragging a panel's edge flickered. Drawn now, it lands in the same frame.
   const resize = () => {
     const { width, height } = host.getBoundingClientRect()
     if (width <= 0 || height <= 0) return
     camera.aspect = width / height
     camera.updateProjectionMatrix()
     renderer.setSize(width, height, false)
-    refit()
+    cancelAnimationFrame(frameRequest)
+    draw(performance.now())
   }
   const observer = new ResizeObserver(resize)
   observer.observe(host)
 
-  const reset = () => turntable.reset()
+  /** Back to face on, eased by the turn's own curve. */
+  const reset = () => {
+    const from = view.quaternion.clone()
+    const zoom = turntable.zoom()
+    turntable.reset()
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduced || (from.angleTo(view.quaternion) < 1e-6 && zoom === 1)) return
+    view.quaternion.copy(from)
+    settle = { from, zoom, start: performance.now() }
+    requestRender()
+  }
   // The glass's own mapping may already show part of the turn; the stage does the rest.
   const stageTurn = (degrees: number) => -((degrees - body.turnOffset()) * Math.PI) / 180
   stage.rotation.z = stageTurn(latest.current.rotationDegrees)
   stage.updateMatrixWorld(true)
-  reset()
   resize()
 
   function turnTo(degrees: number) {
@@ -232,10 +323,12 @@ export async function mountDeviceModel(
     if (reduced) {
       stage.rotation.z = target
       stage.updateMatrixWorld(true)
-      refit()
+      requestRender()
       return
     }
-    turn = { from: stage.rotation.z, to: turnBetween(stage.rotation.z, target), start: performance.now() }
+    // Read before the new turn is set: until first drawn, the old target's fit stands in.
+    const distance = framed || fitDistance()
+    turn = { from: stage.rotation.z, to: turnBetween(stage.rotation.z, target), start: performance.now(), distance }
     requestRender()
   }
 
@@ -277,13 +370,16 @@ export async function mountDeviceModel(
       // A new form is a new way of holding the device; start it facing the camera,
       // as the guest starts it upright. A hinge move within one keeps the user's view.
       const next = foldForm(fold)
-      if (next !== form) turntable.reset()
+      if (next !== form) reset()
       form = next
       body.fold(fold, !reduced)
+      if (reduced) {
+        tilt.quaternion.copy(foldTilt(form, fold.hingeDegrees))
+        tilt.updateMatrixWorld(true)
+      }
       // The lit panel's offset may have changed under an unchanged device turn.
       turnTo(latest.current.rotationDegrees)
-      if (reduced) refit()
-      else requestRender()
+      requestRender()
     },
     reset,
     projector,

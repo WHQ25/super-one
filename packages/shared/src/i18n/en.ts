@@ -71,11 +71,13 @@ export type Messages = {
       lock: string
       volumeDown: string
       volumeUp: string
+      rotateLeft: string
       rotateRight: string
       hingeAngle: string
       fold: string
       tent: string
       unfold: string
+      laptop: string
       viewMode: string
       resetView: string
       modelFailed: string
@@ -87,6 +89,7 @@ export type Messages = {
       environment: {
         title: string
         refresh: string
+        bodyColor: string
         appearance: string
         light: string
         dark: string
@@ -4636,11 +4639,13 @@ export const en: Messages = {
       volumeUp: 'Volume Up',
       showSoftwareKeyboard: 'Show Software Keyboard',
       hideSoftwareKeyboard: 'Hide Software Keyboard',
+      rotateLeft: 'Rotate Left',
       rotateRight: 'Rotate Right',
       hingeAngle: 'Hinge Angle',
       fold: 'Fold',
       tent: 'Tent',
       unfold: 'Unfold',
+      laptop: 'Laptop',
       viewMode: 'View Mode',
       resetView: 'Reset View',
       modelFailed: 'The 3D model could not be loaded.',
@@ -4650,6 +4655,7 @@ export const en: Messages = {
       environment: {
         title: 'Device Environment',
         refresh: 'Refresh Settings',
+        bodyColor: 'Body Color',
         appearance: 'Appearance',
         light: 'Light',
         dark: 'Dark',

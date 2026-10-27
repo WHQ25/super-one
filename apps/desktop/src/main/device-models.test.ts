@@ -2,12 +2,16 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { strToU8, zipSync } from 'fflate'
 import { ANDROID_PHONE_REFERENCE_MODEL } from '@superone/shared/device'
+import type { UsdzVariantSet } from './usdz-preview'
 
 const paths = vi.hoisted(() => ({ dev: true, app: '', userData: '', developer: '' }))
 vi.mock('electron', () => ({ app: { getAppPath: () => paths.app, getPath: () => paths.userData } }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { get dev() { return paths.dev } } }))
 vi.mock('./ios-simulator/simctl', () => ({ selectedDeveloperDirectory: async () => paths.developer }))
+const compose = vi.hoisted(() => vi.fn())
+vi.mock('./usdz-preview', () => ({ composeUsdzPreview: compose }))
 
 import { listDeviceModels, loadDeviceModel, readFoldClip } from './device-models'
 
@@ -23,6 +27,16 @@ beforeAll(async () => {
 })
 
 afterAll(async () => { await rm(root, { recursive: true, force: true }) })
+
+/** Where the selected Xcode keeps the Duo's body. */
+async function installXcodeModel(): Promise<void> {
+  const resources = join(
+    root, 'Xcode.app', 'Contents', 'SharedFrameworks', 'DeviceKit.framework', 'Versions', 'A', 'PlugIns',
+    'CoreDevicePopDeviceKitExtension.devicekitplugin', 'Contents', 'Resources',
+  )
+  await mkdir(resources, { recursive: true })
+  await writeFile(join(resources, 'V68.usdz'), bytes)
+}
 
 describe('Android phone reference model', () => {
   for (const [mode, dev, directory] of [
@@ -52,13 +66,27 @@ describe('Android phone reference model', () => {
 describe('Xcode-provided models', () => {
   it.runIf(process.platform === 'darwin')('lists the iPhone Duo only when the selected Xcode ships its body', async () => {
     expect(await listDeviceModels()).not.toContain('iPhone Duo')
-    const resources = join(
-      root, 'Xcode.app', 'Contents', 'SharedFrameworks', 'DeviceKit.framework', 'Versions', 'A', 'PlugIns',
-      'CoreDevicePopDeviceKitExtension.devicekitplugin', 'Contents', 'Resources',
-    )
-    await mkdir(resources, { recursive: true })
-    await writeFile(join(resources, 'V68.usdz'), bytes)
+    await installXcodeModel()
     expect(await listDeviceModels()).toContain('iPhone Duo')
+  })
+
+  it.runIf(process.platform === 'darwin')('wears the finish asked for when the scene offers it, else its own', async () => {
+    await installXcodeModel()
+    const archive = zipSync({ 'preview.usda': strToU8(
+      'def RealityKitAction "Animation"\n{\n    string animation = "book_close"\n    double duration = 5\n    double startTime = 10\n}\n',
+    ) })
+    // V68 names its finishes `color`; Apple's web scenes say `Color`.
+    compose.mockImplementation(async (_input: Uint8Array, select: (variants: UsdzVariantSet[]) => Record<string, string>) => {
+      const declared = [{ name: 'color', options: ['Dark', 'Light'], selected: 'Light' }]
+      const picked = select(declared)
+      return { archive, variants: declared.map((set) => ({ ...set, selected: picked[set.name] ?? set.selected })) }
+    })
+
+    const dark = await loadDeviceModel('iPhone Duo', 'Dark')
+    expect(dark).toEqual(expect.objectContaining({ fold: { start: 10, duration: 5 }, colors: { options: ['Dark', 'Light'], selected: 'Dark' } }))
+    // A finish a later Xcode dropped is not an error: the body wears its default.
+    expect((await loadDeviceModel('iPhone Duo', 'Gold'))?.colors?.selected).toBe('Light')
+    expect((await loadDeviceModel('iPhone Duo'))?.colors?.selected).toBe('Light')
   })
 })
 

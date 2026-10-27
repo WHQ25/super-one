@@ -735,8 +735,8 @@ interface AppAPI extends WindowLayoutAPI {
   }>
   /** Simulator models (`DeviceDescriptor.model`) with a 3D body on this machine. */
   listDeviceModels(): Promise<string[]>
-  /** The composed 3D body for one simulator model; null when it has none. */
-  loadDeviceModel(model: string): Promise<LoadedDeviceModel | null>
+  /** The composed 3D body for one simulator model, in `color` where it offers it; null when it has none. */
+  loadDeviceModel(model: string, color?: string): Promise<LoadedDeviceModel | null>
   setUnsavedEditorBuffer(filePath: string, content: string | null): Promise<void>
   getFileTree(folderPath: string): Promise<FileTreeEntry[]>
   listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>

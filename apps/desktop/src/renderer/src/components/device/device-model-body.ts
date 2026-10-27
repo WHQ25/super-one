@@ -33,6 +33,13 @@ export interface DeviceModelFold {
    * and the stage need not turn for it.
    */
   panelRotation: number
+  /** Laid as a laptop: posed as when open, then tipped by the renderer so one half lies flat. */
+  laptop: boolean
+  /**
+   * The screen turned to the camera, when not the lit one: a hinge held past the other
+   * panel's angle, before the guest has swapped. Its glass stays dark until it lights.
+   */
+  facing?: 'cover' | 'inner'
 }
 
 /**
@@ -54,8 +61,11 @@ export interface DeviceBody {
   paint(texture: Texture | null): void
   /** In the stage's own space; changes only when the body moves. */
   bounds(): Box3
+  /** The hinge's angle right now, mid-move included; 0 for a rigid body. */
+  hinge(): number
   /** Advances a running fold. True while it still moves. */
   step(now: number): boolean
+  /** Bends to `state` when `animate`, at `HINGE_DEGREES_PER_SECOND` within `HINGE_MAX_MOVE_MS`; else at once. */
   fold(state: DeviceModelFold, animate: boolean): void
   dispose(): void
 }
@@ -92,22 +102,30 @@ export function rigidBody(object: Object3D, pick: DeviceModelScreenPick, screenM
     paint: (texture) => paintMaterial(material, texture),
     bounds: () => bounds.clone(),
     turnOffset: () => 0,
+    hinge: () => 0,
     step: () => false,
     fold: () => {},
     dispose: () => {},
   }
 }
 
-/** Matches the helper's own sweep, so the body moves as long as the guest did. */
-const FOLD_MS = 600
+/**
+ * How fast the 3D body's hinge turns toward where it is sent, from the guest or from a
+ * drag: a short move at this rate, so it is as smooth as a long one. The renderer stands
+ * a tent or a laptop at this rate too.
+ */
+export const HINGE_DEGREES_PER_SECOND = 45
+/** The longest a move takes; a wider one turns faster to finish in this. */
+export const HINGE_MAX_MOVE_MS = 1000
 
 /**
  * A skinned foldable whose hinge is scrubbed along its baked `book_close` clip.
  *
  * Each pose is placed with the lit screen facing the camera — the closed cover, the
  * open inner panel, or the half-open one looked at along its fold — so the picture
- * stays readable without the user orbiting round to find it. A fold eases the hinge
- * and that placement together.
+ * stays readable without the user orbiting round to find it; the renderer stands a
+ * tent or a laptop on the table from there. A fold eases the hinge and that placement
+ * together.
  */
 export function foldableBody(
   object: Object3D,
@@ -129,10 +147,18 @@ export function foldableBody(
   let picture: Texture | null = null
   let bounds: Box3 | null = null
   let lastPoint: NormalizedFramePoint | null = null
-  let sweep: {
+  let facing: DeviceModelFold['panel'] = initial.facing ?? initial.panel
+  /**
+   * The move under way. Hinge and placement travel together, linearly in time: the
+   * leg lasts as long as the larger of the two turns takes at the set rate, capped so a
+   * wide move speeds up. A new target, as a drag sends, starts a new leg from wherever
+   * the body is, so the motion never jumps.
+   */
+  let leg: {
     from: number
     to: number
     start: number
+    duration: number
     pose: { from: { quaternion: Quaternion; position: Vector3 }; to: { quaternion: Quaternion; position: Vector3 } }
   } | null = null
 
@@ -168,21 +194,25 @@ export function foldableBody(
     const target = Math.min(180, Math.max(0, state.hingeDegrees))
     panel = state.panel
     panelRotation = state.panelRotation
+    facing = state.facing ?? state.panel
     repaint()
     lastPoint = null
     setHinge(target)
-    const to = foldPose(prepared, lit())
-    if (!animate || target === hinge) {
-      sweep = null
+    const to = foldPose(prepared, facing === 'cover' ? prepared.cover : prepared.inner)
+    const turn = (prepared.root.quaternion.angleTo(to.quaternion) * 180) / Math.PI
+    const travel = Math.max(Math.abs(target - hinge), turn)
+    if (!animate || travel < 1e-3) {
+      leg = null
       hinge = target
       place(to)
       return
     }
     setHinge(hinge)
-    sweep = {
+    leg = {
       from: hinge,
       to: target,
       start: performance.now(),
+      duration: Math.min(HINGE_MAX_MOVE_MS, (travel / HINGE_DEGREES_PER_SECOND) * 1000),
       pose: { from: { quaternion: prepared.root.quaternion.clone(), position: prepared.root.position.clone() }, to },
     }
   }
@@ -221,18 +251,18 @@ export function foldableBody(
       bounds = measured.expandByScalar(measured.getSize(new Vector3()).length() * 0.02)
       return bounds.clone()
     },
+    hinge: () => hinge,
     step(now) {
-      if (!sweep) return false
-      const progress = Math.min(1, (now - sweep.start) / FOLD_MS)
-      const eased = 1 - (1 - progress) ** 3
-      hinge = sweep.from + (sweep.to - sweep.from) * eased
+      if (!leg) return false
+      const progress = Math.min(1, Math.max(0, (now - leg.start) / leg.duration))
+      hinge = leg.from + (leg.to - leg.from) * progress
       setHinge(hinge)
       place({
-        quaternion: sweep.pose.from.quaternion.clone().slerp(sweep.pose.to.quaternion, eased),
-        position: sweep.pose.from.position.clone().lerp(sweep.pose.to.position, eased),
+        quaternion: leg.pose.from.quaternion.clone().slerp(leg.pose.to.quaternion, progress),
+        position: leg.pose.from.position.clone().lerp(leg.pose.to.position, progress),
       })
       if (progress < 1) return true
-      sweep = null
+      leg = null
       return false
     },
     fold,

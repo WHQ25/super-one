@@ -115,11 +115,12 @@ describe('device environment', () => {
     expect(single.postures).toEqual([])
     expect(single.hingeDegrees).toBeNull()
 
-    fold.foldPosition.mockResolvedValue({ hingeDegrees: 45, tent: false })
+    fold.foldPosition.mockResolvedValue({ hingeDegrees: 45, tent: false, laptop: false })
     const state = await environment.read('ios-sim:sim-1')
 
     expect(state.postures).toEqual([
       { id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }, { id: 5, label: 'tent' },
+      { id: 6, label: 'laptop' },
     ])
     // Unlike the emulator console, the host moved this hinge and knows where it is;
     // any angle short of either end reads as half open.
@@ -129,36 +130,46 @@ describe('device environment', () => {
 
   it('moves a foldable simulator\'s hinge and refuses ids it does not have', async () => {
     const { environment, fold } = fixture()
-    fold.foldPosition.mockResolvedValue({ hingeDegrees: 0, tent: false })
+    fold.foldPosition.mockResolvedValue({ hingeDegrees: 0, tent: false, laptop: false })
     fold.setFoldPosition.mockImplementation(async (_udid, target) => { fold.foldPosition.mockResolvedValue(target) })
 
     const result = await environment.configure('ios-sim:sim-1', { kind: 'posture', id: 3 })
 
-    expect(fold.setFoldPosition).toHaveBeenCalledWith('sim-1', { hingeDegrees: 180, tent: false }, { hold: true })
+    expect(fold.setFoldPosition).toHaveBeenCalledWith('sim-1', { hingeDegrees: 180, tent: false, laptop: false }, { hold: true })
     // Read back from the host, so it is verified rather than merely delivered.
     expect(result.status).toBe('verified')
     await expect(environment.configure('ios-sim:sim-1', { kind: 'posture', id: 4 }))
       .rejects.toThrow(/UNSUPPORTED: Posture 4/)
 
-    const hinge = await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 120 })
-    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 120, tent: false })
+    const hinge = await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 150 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 150, tent: false, laptop: false })
     expect(hinge.status).toBe('verified')
 
     // A tent is the emulator's posture 5, read back as itself.
     const tent = await environment.configure('ios-sim:sim-1', { kind: 'posture', id: 5 })
-    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 60, tent: true }, { hold: true })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 45, tent: true, laptop: false }, { hold: true })
     expect(tent.state.posture).toBe(5)
     expect(tent.status).toBe('verified')
 
-    // The angle alone picks the form: 0 closed, up to 60 a tent, wider open.
+    // The angle alone picks the form: 0 closed, up to 60 a tent, 90-120 a laptop, else open.
     await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 40 })
-    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 40, tent: true })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 40, tent: true, laptop: false })
     await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 61 })
-    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 61, tent: false })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 61, tent: false, laptop: false })
     await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 0 })
-    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 0, tent: false })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 0, tent: false, laptop: false })
     await expect(environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 181 }))
       .rejects.toThrow(/between 0 and 180/)
+
+    await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 90 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 90, tent: false, laptop: true })
+    await environment.configure('ios-sim:sim-1', { kind: 'hinge', degrees: 121 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 121, tent: false, laptop: false })
+
+    // A laptop is the posture Android lacks, 6, read back as itself.
+    const laptop = await environment.configure('ios-sim:sim-1', { kind: 'posture', id: 6 })
+    expect(fold.setFoldPosition).toHaveBeenLastCalledWith('sim-1', { hingeDegrees: 90, tent: false, laptop: true }, { hold: true })
+    expect(laptop.state.posture).toBe(6)
     await expect(environment.configure('android:avd:Pixel_Fold', { kind: 'hinge', degrees: 120 }))
       .rejects.toThrow(/UNSUPPORTED/)
   })

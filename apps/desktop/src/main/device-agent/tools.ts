@@ -221,7 +221,7 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       longitude: z.number().min(-180).max(180).optional().describe('Required for kind=location. Decimal degrees.'),
       postureId: z.number().int().min(1).optional().describe('Required for kind=posture; first get this device\'s available ids.'),
       hingeDegrees: z.number().min(0).max(180).optional()
-        .describe('Required for kind=hinge. The angle picks the form: 0 closed, 1-60 tent (cover lit), above 60 open on the inner screen.'),
+        .describe('Required for kind=hinge. The angle picks the form: 0 closed, 1-60 tent (cover lit), 90-120 laptop (inner screen, one half flat), any other angle open on the inner screen.'),
     },
   },
   {

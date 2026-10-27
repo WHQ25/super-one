@@ -4,6 +4,8 @@ import { createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
+  IosSimulatorFoldPose,
+  IosSimulatorOrientation,
   IosSimulatorHelperProbe,
   IosSimulatorInput,
   IosSimulatorInputResult,
@@ -376,10 +378,20 @@ export class IosSimulatorHelperRuntime {
     return attachment
   }
 
-  /** `tent` stands the device half open and face down after the sweep, which lights the cover. */
-  async fold(position: number, durationMs: number, screenId: number, tent = false): Promise<IosSimulatorNativeAttachment> {
+  /**
+   * The sweep lands held as `hold`, or as the guest's pose was. `pose` then stands the device: a tent, half open
+   * and face down, which lights the cover; or a laptop, half open on its side and held
+   * as `hold`, which keeps the inner panel.
+   */
+  async fold(
+    position: number,
+    durationMs: number,
+    screenId: number,
+    hold: IosSimulatorOrientation | undefined,
+    pose?: IosSimulatorFoldPose,
+  ): Promise<IosSimulatorNativeAttachment> {
     if (!this.attached) throw new Error('Attach before folding.')
-    const result = await this.request('fold', { position, durationMs, screenId, tent }) as Record<string, unknown>
+    const result = await this.request('fold', { position, durationMs, screenId, ...(hold ? { hold } : {}), ...(pose ? { pose } : {}) }) as Record<string, unknown>
     // The shown display changed, and with it the framebuffer every ratio is taken of.
     this.attached = {
       ...this.attached,
@@ -387,6 +399,18 @@ export class IosSimulatorHelperRuntime {
       pixelHeight: Number(result.pixelHeight) || 0,
     }
     return this.attached
+  }
+
+  /** Stand a device already in `pose` another way; no sweep, which would reset it. */
+  async stand(pose: IosSimulatorFoldPose, hold: IosSimulatorOrientation): Promise<void> {
+    if (!this.attached) throw new Error('Attach before posing.')
+    await this.request('fold.pose', { pose, hold })
+  }
+
+  /** Turn a swept device in neither pose; rotation events no longer reach it. */
+  async turn(hold: IosSimulatorOrientation, closed: boolean): Promise<void> {
+    if (!this.attached) throw new Error('Attach before turning.')
+    await this.request('fold.turn', { hold, closed })
   }
 
   /**

@@ -22,6 +22,11 @@ interface Props {
   deviceId: string
   provider: DeviceProvider
   disabled: boolean
+  /**
+   * The 3D body's finish, where it offers more than one. A look on this machine, not a
+   * device setting, so it applies at once and is never read back from the device.
+   */
+  bodyColor?: { options: string[]; value: string; onChange: (color: string) => void }
   /** Injectable so stories can exercise the real controls without a device. */
   read?: ReadEnvironment
   configure?: ConfigureEnvironment
@@ -35,7 +40,10 @@ function supported(provider: DeviceProvider, deviceId: string): boolean {
     ))
 }
 
-export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, configure, subscribe }: Props) {
+/** Apple's variant names, e.g. `Night_Sky`, as words. */
+const finishLabel = (name: string) => name.replace(/_/g, ' ')
+
+export function DeviceEnvironmentControls({ deviceId, provider, disabled, bodyColor, read, configure, subscribe }: Props) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<DeviceEnvironmentState | null>(null)
@@ -163,6 +171,16 @@ export function DeviceEnvironmentControls({ deviceId, provider, disabled, read, 
           <RefreshCw />
         </IconButton>
       </div>
+      {bodyColor && <section className="space-y-1.5">
+        <div className="text-xs font-medium">{t(`${prefix}.bodyColor`)}</div>
+        <Tabs value={bodyColor.value} onValueChange={bodyColor.onChange}>
+          <TabsList aria-label={t(`${prefix}.bodyColor`)} className="w-full">
+            {bodyColor.options.map((value) => <TabsTrigger key={value} value={value} className="py-1">
+              {finishLabel(value)}
+            </TabsTrigger>)}
+          </TabsList>
+        </Tabs>
+      </section>}
       {loading && !state && <p className="text-xs text-muted-foreground">{t('activity.device.checking')}</p>}
       {state && <>
         <section className="space-y-1.5">

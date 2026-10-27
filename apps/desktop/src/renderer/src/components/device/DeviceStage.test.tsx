@@ -9,11 +9,14 @@ import type { IosSimulatorChrome } from '@superone/shared/ios-simulator'
 // The frame renderer is a real browser boundary — VideoDecoder and a 2D context,
 // neither of which jsdom provides. Standing in for it also records which canvas
 // each renderer was built against, which is the whole point of these scenarios.
-const video = vi.hoisted(() => ({ builtWith: [] as HTMLCanvasElement[], closed: 0 }))
+const video = vi.hoisted(() => ({ builtWith: [] as HTMLCanvasElement[], painted: [] as (() => void)[], closed: 0 }))
 vi.mock('./device-video', () => ({
   preferredDevicePreviewMode: () => 'native-h264',
   DeviceFrameRenderer: class {
-    constructor(canvas: HTMLCanvasElement) { video.builtWith.push(canvas) }
+    constructor(canvas: HTMLCanvasElement, onFrame: () => void) {
+      video.builtWith.push(canvas)
+      video.painted.push(onFrame)
+    }
     push() {}
     close() { video.closed += 1 }
   },
@@ -192,12 +195,14 @@ function renderStage(
 beforeEach(() => {
   resetDeviceSurfaces()
   video.builtWith.length = 0
+  video.painted.length = 0
   video.closed = 0
 })
 
 describe('iOS Simulator stage preview binding', () => {
   beforeEach(() => {
     video.builtWith.length = 0
+    video.painted.length = 0
     video.closed = 0
   })
 
@@ -238,6 +243,7 @@ describe('iOS Simulator stage preview binding', () => {
 describe('iOS Simulator stage rotation', () => {
   beforeEach(() => {
     video.builtWith.length = 0
+    video.painted.length = 0
   })
 
   it('steps the guest one quarter turn per press and turns the shell to match', async () => {
@@ -261,20 +267,36 @@ describe('iOS Simulator stage rotation', () => {
     await waitFor(() => expect(shell).toHaveStyle({ transform: 'rotate(90deg)' }))
   })
 
-  it('offers one rotation, which comes round to every orientation', async () => {
+  it('turns either way, coming round to every orientation', async () => {
     const { deviceInput } = stubEnvironment(async () => CHROME)
     const user = userEvent.setup()
 
     renderStage()
     await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
-    expect(screen.queryByRole('button', { name: 'Rotate Left' })).toBeNull()
 
     for (let press = 0; press < 3; press++) await user.click(screen.getByRole('button', { name: 'Rotate Right' }))
+    expect(deviceInput).toHaveBeenLastCalledWith(DEVICE.id, { type: 'rotate', orientation: 'landscape-left' })
 
-    expect(deviceInput).toHaveBeenLastCalledWith(DEVICE.id, {
-      type: 'rotate',
-      orientation: 'landscape-left',
-    })
+    await user.click(screen.getByRole('button', { name: 'Rotate Left' }))
+    expect(deviceInput).toHaveBeenLastCalledWith(DEVICE.id, { type: 'rotate', orientation: 'portrait-upside-down' })
+  })
+
+  it('blurs a foldable\'s picture across a panel swap until the new panel paints', async () => {
+    const { pushSessionState } = stubEnvironment(async () => CHROME)
+    renderStage()
+    await waitFor(() => expect(video.builtWith.length).toBeGreaterThan(0))
+    const fold = { hingeDegrees: 0, tent: false, laptop: false, panel: 'cover' as const, panelRotation: 0 as const }
+    pushSessionState({ ...READY, ios: { ...READY.ios!, fold } })
+    const glass = await screen.findByLabelText(DEVICE.name)
+    expect(glass).not.toHaveClass('blur-xl')
+
+    pushSessionState({ ...READY, ios: { ...READY.ios!, fold: { ...fold, hingeDegrees: 180, panel: 'inner', panelRotation: 90 } } })
+    await waitFor(() => expect(screen.getByLabelText(DEVICE.name)).toHaveClass('blur-xl'))
+
+    // The new panel's first frame brings it into focus, after a beat.
+    act(() => { video.painted.at(-1)!() })
+    expect(screen.getByLabelText(DEVICE.name)).toHaveClass('blur-xl')
+    await waitFor(() => expect(screen.getByLabelText(DEVICE.name)).not.toHaveClass('blur-xl'))
   })
 
   it('puts a foldable\'s hinge control in the toolbar, and none on a rigid phone', async () => {
@@ -284,7 +306,7 @@ describe('iOS Simulator stage rotation', () => {
     expect(screen.queryByRole('button', { name: 'Hinge Angle' })).toBeNull()
 
     // Main pushes the hinge whenever it moves, whoever moved it.
-    pushSessionState({ ...READY, ios: { ...READY.ios!, fold: { hingeDegrees: 180, tent: false, panel: 'inner', panelRotation: 90 } } })
+    pushSessionState({ ...READY, ios: { ...READY.ios!, fold: { hingeDegrees: 180, tent: false, laptop: false, panel: 'inner', panelRotation: 90 } } })
 
     expect(await screen.findByRole('button', { name: 'Hinge Angle' })).toBeInTheDocument()
   })

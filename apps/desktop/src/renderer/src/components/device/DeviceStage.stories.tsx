@@ -216,7 +216,7 @@ export const NoModel: Story = {
 export const FoldOpened: Story = {
   args: {
     devices: [DUO], device: DUO,
-    sessionState: foldedState({ hingeDegrees: 180, tent: false, panel: 'inner', panelRotation: 90 }),
+    sessionState: foldedState({ hingeDegrees: 180, tent: false, laptop: false, panel: 'inner', panelRotation: 90 }),
   },
   decorators: [devicePanel(false, DUO_INNER_CHROME)],
 }
@@ -227,7 +227,7 @@ export const FoldOpened: Story = {
 export const FoldTent: Story = {
   args: {
     devices: [DUO], device: DUO,
-    sessionState: foldedState({ hingeDegrees: 60, tent: true, panel: 'cover', panelRotation: 0 }, 'landscape-right'),
+    sessionState: foldedState({ hingeDegrees: 45, tent: true, laptop: false, panel: 'cover', panelRotation: 0 }, 'landscape-right'),
   },
   decorators: [devicePanel(false)],
 }

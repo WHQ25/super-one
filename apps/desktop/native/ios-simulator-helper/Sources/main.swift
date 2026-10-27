@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import IOSurface
 
-private let protocolVersion = 11
+private let protocolVersion = 12
 private let writeLock = NSLock()
 
 private func emit(_ value: Any) {
@@ -316,20 +316,18 @@ private final class HelperSession {
    The sweep runs in the guest, which is the only place that can move the hinge, and
    is awaited: the panel the guest paints changes when the sweep crosses its swap
    point, so switching the display before it lands would show the panel being left.
-   `tent` then stands the device as a tent, which lights the cover; it has to follow
-   the sweep, which resets the pose, and the sweep has to close the device (see
-   `Guest/FoldTool.m`). The frame stream is not touched; the caller restarts it on
-   the new display.
+   The sweep lands held as `hold`: once a sweep has posed the device, rotation events
+   no longer turn it. `pose` then stands the device as a `tent`, which lights the
+   cover, or a `laptop`, which keeps the inner panel. It has to follow the sweep, which resets the pose, and
+   for a tent the sweep has to close the device (see `Guest/FoldTool.m`). The frame
+   stream is not touched; the caller restarts it on the new display.
    */
-  func fold(position: Double, seconds: Double, screenId: Int, tent: Bool) throws -> [String: Any] {
+  func fold(position: Double, seconds: Double, screenId: Int, hold: String?, pose: [String]?) throws -> [String: Any] {
     guard let device else { throw RequestError.unavailable("Attach before folding.") }
-    let tool = foldToolPath()
-    guard FileManager.default.isExecutableFile(atPath: tool) else {
-      throw RequestError.unavailable("The fold tool was not built; the iOS Simulator SDK is missing.")
-    }
+    let tool = try requireFoldTool()
     cancelTouch()
-    try runGuestTool(tool, on: device.udid, [String(position), String(seconds)], refusing: "fold")
-    if tent { try runGuestTool(tool, on: device.udid, ["tent"], refusing: "tent pose") }
+    try runGuestTool(tool, on: device.udid, [String(position), String(seconds)] + (hold.map { [$0] } ?? []), refusing: "fold")
+    if let pose { try runGuestTool(tool, on: device.udid, pose, refusing: "\(pose[0]) pose") }
     let display = try device.displayDescriptor(screenId: screenId)
     guard let surface = display.framebufferSurface() else {
       throw RequestError.unavailable("Framebuffer is not ready.")
@@ -342,6 +340,21 @@ private final class HelperSession {
       "pixelWidth": IOSurfaceGetWidth(surface),
       "pixelHeight": IOSurfaceGetHeight(surface),
     ]
+  }
+
+  /// Stand a device already in a pose another way, or `turn` one in none, without a sweep, which would reset it.
+  func stand(pose: [String]) throws -> [String: Any] {
+    guard let device else { throw RequestError.unavailable("Attach before posing.") }
+    try runGuestTool(try requireFoldTool(), on: device.udid, pose, refusing: "\(pose[0]) pose")
+    return [:]
+  }
+
+  private func requireFoldTool() throws -> String {
+    let tool = foldToolPath()
+    guard FileManager.default.isExecutableFile(atPath: tool) else {
+      throw RequestError.unavailable("The fold tool was not built; the iOS Simulator SDK is missing.")
+    }
+    return tool
   }
 
   /**
@@ -416,7 +429,13 @@ private final class HelperSession {
       }
       return try fold(
         position: try ratio(params, "position"), seconds: seconds / 1000, screenId: screenId,
-        tent: params["tent"] as? Bool ?? false)
+        hold: params["hold"] == nil ? nil : try holdParam(params),
+        pose: params["pose"] == nil ? nil : try poseArguments(params))
+    case "fold.pose":
+      return try stand(pose: try poseArguments(params))
+    case "fold.turn":
+      guard let closed = params["closed"] as? Bool else { throw RequestError.invalid("fold.turn.closed is required.") }
+      return try stand(pose: ["turn", try holdParam(params), closed ? "closed" : "open"])
     case "touch.update":
       let hid = try requireHID()
       guard let rawContacts = params["contacts"] as? [[String: Any]],
@@ -619,6 +638,23 @@ private final class HelperSession {
       return ["ok": true]
     default: throw RequestError.invalid("Unknown method \(method).")
     }
+  }
+
+  /// The fold tool's pose arguments: `tent`, or `laptop` and the way it is held.
+  private func poseArguments(_ params: [String: Any]) throws -> [String] {
+    switch params["pose"] as? String {
+    case "tent": return ["tent"]
+    case "laptop": return ["laptop", try holdParam(params)]
+    default: throw RequestError.invalid("pose must be tent or laptop.")
+    }
+  }
+
+  private func holdParam(_ params: [String: Any]) throws -> String {
+    let holds = ["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]
+    guard let hold = params["hold"] as? String, holds.contains(hold) else {
+      throw RequestError.invalid("hold must be \(holds.joined(separator: ", ")).")
+    }
+    return hold
   }
 
   private func screenIdParam(_ params: [String: Any]) throws -> Int? {

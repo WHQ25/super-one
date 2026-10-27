@@ -592,7 +592,7 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
           "maximum": 9007199254740991
         },
         "hingeDegrees": {
-          "description": "Required for kind=hinge. The angle picks the form: 0 closed, 1-60 tent (cover lit), above 60 open on the inner screen.",
+          "description": "Required for kind=hinge. The angle picks the form: 0 closed, 1-60 tent (cover lit), 90-120 laptop (inner screen, one half flat), any other angle open on the inner screen.",
           "type": "number",
           "minimum": 0,
           "maximum": 180

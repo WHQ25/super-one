@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronLeft, Circle, Home, Keyboard, KeyboardOff, Loader2, LockKeyhole, Play, Plug, Power, RotateCw, Smartphone, Square, Unplug, Volume1, Volume2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, Circle, Home, Keyboard, KeyboardOff, Loader2, LockKeyhole, Play, Plug, Power, RotateCcw, RotateCw, Smartphone, Square, Unplug, Volume1, Volume2 } from 'lucide-react'
 import type {
   DeviceDescriptor,
   DeviceOrientation,
@@ -9,6 +9,10 @@ import type {
 } from '@superone/shared/device'
 import type { DeviceSetupOption } from '@superone/shared/device-setup'
 import {
+  IOS_SIMULATOR_FOLD_FORM_ORIENTATION,
+  iosSimulatorFoldAt,
+  iosSimulatorFoldForm,
+  iosSimulatorFoldPanel,
   type IosSimulatorChrome,
   type IosSimulatorFoldState,
   type IosSimulatorPreviewQuality,
@@ -16,7 +20,6 @@ import {
 import {
   parseDeviceId,
   DEVICE_CAPABILITIES,
-  DEVICE_ROTATION_DEGREES,
   deviceRecordingMaxDurationMs,
   stepDeviceOrientation,
 } from '@superone/shared/device'
@@ -31,10 +34,18 @@ import { DeviceHingeControl } from './DeviceHingeControl'
 import { DevicePreviewMenu } from './DevicePreviewMenu'
 import { IosSimulatorDeviceChrome } from './ios/IosSimulatorDeviceChrome'
 import { DeviceMenu } from './DeviceMenu'
-import { DeviceModelView } from './DeviceModelView'
-import { deviceModelKey, readDeviceView3d, useDeviceModelAvailable, writeDeviceView3d } from './device-3d'
+import { DeviceModelView, type DeviceModelColors } from './DeviceModelView'
+import {
+  deviceModelKey,
+  readDeviceBodyColor,
+  readDeviceView3d,
+  useDeviceModelAvailable,
+  writeDeviceBodyColor,
+  writeDeviceView3d,
+} from './device-3d'
 import type { DeviceFrameProjector } from './device-input'
 import { DeviceTouchPointer, useDeviceTouchPointer } from './DeviceTouchPointer'
+import { deviceLayoutRotation } from './device-layout-rotation'
 import { readPreviewQuality, writePreviewQuality } from './device-preview-quality'
 import { attachDeviceSurface, onDeviceSurfaceFrame } from './device-surface'
 import { useDeviceInput } from './use-device-input'
@@ -83,6 +94,14 @@ interface HardwareKey {
   /** Key under `activity.device`. */
   label: string
 }
+
+/**
+ * The longest a fold's blur waits for the new panel's first frame. The helper encodes
+ * a keyframe at least every second, so past this the stream itself has stalled.
+ */
+const FOLD_SWAP_MAX_MS = 2_500
+/** The least a swap stays blurred, so it reads as a transition rather than a flicker. */
+const FOLD_SWAP_HOLD_MS = 400
 
 const IOS_HARDWARE_KEYS = [
   { input: 'home', icon: Home, label: 'home' },
@@ -271,6 +290,7 @@ export function DeviceStage({
   const [fold, setFold] = useState<IosSimulatorFoldState | null>(null)
   // The angle the hinge slider is being dragged to; the 3D body runs ahead of the guest to it.
   const [hingePreview, setHingePreview] = useState<number | null>(null)
+  const [formPreview, setFormPreview] = useState<number | null>(null)
   const ready = sessionState?.phase === 'ready'
   // The preview is look-only, and the input pipeline has to know it: a hidden keyboard
   // sink that can still take focus, or a touch pointer drawn over a device nobody can
@@ -284,32 +304,18 @@ export function DeviceStage({
   const provider = device?.provider ?? 'ios-sim'
   const capabilities = DEVICE_CAPABILITIES[provider]
   /**
-   * How far the device is lying over, as a reading.
+   * How far the picture is turned on screen, which every consumer below takes: the CSS
+   * transform, the pointer un-rotation in `useDeviceInput`, the touch dot, and the
+   * overlay toolbar's width measurement.
    *
-   * Always true of the DEVICE. Whether it is also true of the PICTURE is
-   * `rigidRotation` below, and confusing the two is the single easiest thing to get
-   * wrong here.
+   * Not the device's orientation as a reading. A simulator's framebuffer keeps its
+   * shape when the device turns, so the host turns artwork and picture together as one
+   * rigid object, and an unfolded Duo's sideways panel is one more such turn. Android
+   * re-shapes its framebuffer instead — scrcpy re-sends its session packet with the
+   * axes swapped — so the picture already ARRIVES upright, this is zero, and the canvas
+   * simply changes size. See `deviceLayoutRotation`.
    */
-  const rotationDegrees = DEVICE_ROTATION_DEGREES[orientation]
-  /**
-   * Whether the framebuffer keeps its shape when the device turns.
-   *
-   * A simulator draws its rotated UI into a surface that never changes shape, so the
-   * host turns artwork and picture together as one rigid object and the device reads
-   * as something being physically turned. Android re-shapes the framebuffer instead —
-   * scrcpy re-sends its session packet with the axes swapped — so the picture already
-   * ARRIVES upright, and rotating it again would lay it on its side.
-   *
-   * Every consumer below therefore takes `layoutRotation`, not `rotationDegrees`:
-   * the CSS transform, the pointer un-rotation in `useDeviceInput`, the touch dot,
-   * and the overlay toolbar's width measurement. On Android all four see zero and
-   * the canvas simply changes size when `pixelWidth`/`pixelHeight` swap.
-   */
-  const rigidRotation = capabilities.rigidRotation
-  // An unfolded Duo shows a panel mounted sideways: its framebuffer is portrait while
-  // the device is held landscape. Standing it up is one more rigid turn of the same
-  // object, so it joins the orientation rather than becoming a second transform.
-  const layoutRotation = rigidRotation ? (rotationDegrees + (fold?.panelRotation ?? 0)) % 360 : 0
+  const layoutRotation = deviceLayoutRotation(provider, orientation, fold)
   const hardwareKeys: readonly HardwareKey[] =
     platform === 'android' ? ANDROID_HARDWARE_KEYS : IOS_HARDWARE_KEYS
   // Handed over by `attachDeviceSurface` below rather than created here: the
@@ -320,6 +326,21 @@ export function DeviceStage({
   const [view3d, setView3d] = useState(readDeviceView3d)
   const modelAvailable = useDeviceModelAvailable(device)
   const modelViewAvailable = modelAvailable && (platform !== 'android' || orientation === 'portrait')
+  const modelKey = deviceModelKey(device)
+  // The finishes the shown body offers, tagged with its model so a switch drops them.
+  const [bodyColors, setBodyColors] = useState<{ model: string; colors: DeviceModelColors } | null>(null)
+  // A pick is written straight to storage; bumping this re-reads it.
+  const [bodyColorPicks, setBodyColorPicks] = useState(0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const bodyColor = useMemo(() => modelKey ? readDeviceBodyColor(modelKey) : undefined, [modelKey, bodyColorPicks])
+  const reportBodyColors = useCallback((colors: DeviceModelColors | null) => {
+    setBodyColors(colors && modelKey ? { model: modelKey, colors } : null)
+  }, [modelKey])
+  const pickBodyColor = useCallback((color: string) => {
+    if (!modelKey) return
+    writeDeviceBodyColor(modelKey, color)
+    setBodyColorPicks((picks) => picks + 1)
+  }, [modelKey])
   // Where the 3D view maps pointers onto the glass; null while its model loads.
   const [projector, setProjector] = useState<DeviceFrameProjector | null>(null)
   const subscribeFrames = useCallback((listener: () => void) => onDeviceSurfaceFrame(deviceId, listener), [deviceId])
@@ -345,14 +366,20 @@ export function DeviceStage({
   // Each panel of a foldable wears its own artwork, so the panel is part of the key.
   const artworkKey = `${deviceId}#${fold?.panel ?? ''}`
   const chrome = artwork?.key === artworkKey ? artwork.chrome : undefined
-  // The canvas mounts only once the shell it hangs in is final. Under the fallback
-  // body first and Apple's artwork second, it would be replaced — and a replaced
-  // canvas costs a stream restart for a purely cosmetic upgrade.
-  const live = ready && chrome !== undefined
   // The glance-only preview stays flat: it is a thumbnail, not a place to turn a device.
   // Android's framebuffer changes shape in landscape; this portrait shell has
   // no rotated-glass mapping for that stream, so use the flat view until upright.
-  const show3d = view3d && modelViewAvailable && live && !preview
+  const wants3d = view3d && modelViewAvailable && !preview
+  // The canvas mounts only once the shell it hangs in is final. Under the fallback
+  // body first and Apple's artwork second, it would be replaced — and a replaced
+  // canvas costs a stream restart for a purely cosmetic upgrade. The 3D body wears no
+  // artwork, so it never waits on it: a foldable changing panels re-asks for the flat
+  // shell's, and waiting would tear the body down and load it again mid-fold.
+  const live = ready && (wants3d || chrome !== undefined)
+  const show3d = wants3d && live
+  // What the picture hangs in: the 3D view's hidden host, or the flat shell, which
+  // changes with the artwork.
+  const surfaceShell = show3d ? '3d' : chrome
   // The dot is drawn in the flat glass's own layout, which the 3D view does not have.
   const touchPointer = useDeviceTouchPointer({
     enabled: interactive && !show3d,
@@ -423,12 +450,12 @@ export function DeviceStage({
     return attachDeviceSurface(
       deviceId,
       host,
-      { quality, framed: chrome != null },
+      { quality, framed: !show3d && chrome != null },
       setHasFrame,
       setCanvas,
     )
     // `show3d` swaps the host element: the 3D view parks the canvas out of sight.
-  }, [chrome, live, quality, deviceId, show3d])
+  }, [surfaceShell, live, quality, deviceId, show3d])
 
   // `chrome` is `undefined` while the artwork lookup is still out and `null` when
   // the model has none; both mean nothing is covered yet, so the toolbar stays whole.
@@ -471,11 +498,57 @@ export function DeviceStage({
     // `chrome` and `live` both swap the shell element out from under the ref.
   }, [overlay, layoutRotation, chrome, live, shellRef])
 
-  const rotate = useCallback(() => {
-    const next = stepDeviceOrientation(orientation, 'right')
+  const rotate = useCallback((direction: 'left' | 'right') => {
+    const next = stepDeviceOrientation(orientation, direction)
     setOrientation(next)
     void sendInput({ type: 'rotate', orientation: next })
   }, [orientation, sendInput])
+
+  /**
+   * A foldable changing panels blurs the picture across the swap, as the device does.
+   * Neither panel's framebuffer carries that blur — the guest goes from one picture to
+   * the other — so it is drawn here: from the moment the device is sent past the other
+   * panel's angle, through the guest's sweep, until the new panel has painted.
+   */
+  const panel = fold?.panel
+  const held = formPreview === null ? null : iosSimulatorFoldAt(formPreview)!
+  const heldPanel = held && iosSimulatorFoldPanel(held)
+  const [litPanel, setLitPanel] = useState(panel)
+  const [panelSwap, setPanelSwap] = useState(false)
+  // Adjusted during render: an effect would leave one unblurred frame between the
+  // drag letting go and the swap taking over.
+  if (litPanel !== panel) {
+    setLitPanel(panel)
+    if (litPanel && panel) setPanelSwap(true)
+  }
+  useEffect(() => {
+    if (!panelSwap) return
+    // State arrives once main has reopened the stream on the new panel, so the next
+    // painted frame is already the new panel's; it then comes into focus.
+    const started = performance.now()
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = onDeviceSurfaceFrame(deviceId, () => {
+      unsubscribe()
+      clearTimeout(timeout)
+      timeout = setTimeout(() => setPanelSwap(false), Math.max(0, FOLD_SWAP_HOLD_MS - (performance.now() - started)))
+    })
+    timeout = setTimeout(() => { unsubscribe(); setPanelSwap(false) }, FOLD_SWAP_MAX_MS)
+    return () => { unsubscribe(); clearTimeout(timeout) }
+  }, [panelSwap, panel, deviceId])
+  const blurred = panelSwap || (heldPanel !== null && panel !== undefined && heldPanel !== panel)
+  /**
+   * The 3D body bends with the drag, and takes the form the device is sent to ahead of
+   * the guest: laid down, and turned the way the host holds a new form, so it is in
+   * place before the new panel's picture lands. A send past the other panel's angle
+   * turns that panel to the camera, dark until the guest swaps to it.
+   */
+  const heldForm = held && iosSimulatorFoldForm(held.hingeDegrees)
+  const modelFold = fold && hingePreview !== null
+    ? { ...fold, hingeDegrees: hingePreview, ...(held ? { laptop: held.laptop, facing: heldPanel! } : {}) }
+    : fold
+  const modelRotation = fold && heldForm && heldForm !== iosSimulatorFoldForm(fold.hingeDegrees)
+    ? deviceLayoutRotation(provider, IOS_SIMULATOR_FOLD_FORM_ORIENTATION[heldForm], fold)
+    : layoutRotation
 
   // Unplugging the simulated hardware keyboard is the only way to raise the guest's
   // on-screen one -- iOS shows that exactly when a field has focus and no hardware
@@ -661,12 +734,14 @@ export function DeviceStage({
           // texture; the input pipeline reads the glass through `projector`.
           <div ref={shellRef} className="size-full">
             <DeviceModelView
-              model={deviceModelKey(device)!}
+              model={modelKey!}
+              color={bodyColor}
+              onColors={reportBodyColors}
               canvas={canvas}
               subscribeFrames={subscribeFrames}
-              rotationDegrees={layoutRotation}
+              rotationDegrees={modelRotation}
               // The 3D body bends at the same hinge; it places the lit screen itself.
-              fold={fold && hingePreview !== null ? { ...fold, hingeDegrees: hingePreview } : fold}
+              fold={modelFold}
               interactive={interactive}
               onProjector={setProjector}
               pointerHandlers={canvasHandlers}
@@ -725,6 +800,8 @@ export function DeviceStage({
                       'flex max-h-full max-w-full items-center justify-center',
                       chrome ? 'h-full w-full' : 'h-full w-auto',
                       !hasFrame && 'opacity-0',
+                      'transition-[filter] duration-500 ease-out motion-reduce:transition-none',
+                      blurred && 'blur-xl',
                       // The dot IS the cursor here — leaving the host arrow on top of it
                       // draws two pointers for one finger.
                       interactive && 'cursor-none touch-none',
@@ -825,12 +902,17 @@ export function DeviceStage({
             turns it, so these are not disabled controls, they are controls with
             nothing behind them. */}
         {capabilities.rotation && (
-          <IconButton tooltip={t('activity.device.rotateRight')} disabled={!ready} onClick={rotate}>
-            <RotateCw />
-          </IconButton>
+          <>
+            <IconButton tooltip={t('activity.device.rotateLeft')} disabled={!ready} onClick={() => rotate('left')}>
+              <RotateCcw />
+            </IconButton>
+            <IconButton tooltip={t('activity.device.rotateRight')} disabled={!ready} onClick={() => rotate('right')}>
+              <RotateCw />
+            </IconButton>
+          </>
         )}
         {/* Hinge, like rotation, is a guest setting rather than input. */}
-        {fold && <DeviceHingeControl deviceId={deviceId} fold={fold} disabled={busy || !ready} onPreview={setHingePreview} />}
+        {fold && <DeviceHingeControl deviceId={deviceId} fold={fold} disabled={busy || !ready} onPreview={setHingePreview} onFormPreview={setFormPreview} />}
         {/* Capture only needs the device running, not interactive: both platforms
             read the display directly rather than through the input transport. */}
         <DeviceCaptureControls
@@ -840,7 +922,13 @@ export function DeviceStage({
           maxDurationMs={device ? deviceRecordingMaxDurationMs(device) ?? undefined : undefined}
         />
         {device && (provider !== 'ios-sim' || device.kind === 'iphone' || device.kind === 'ipad')
-          && <DeviceEnvironmentControls deviceId={deviceId} provider={provider} disabled={busy || !ready} />}
+          && <DeviceEnvironmentControls deviceId={deviceId} provider={provider} disabled={busy || !ready}
+            // Only the 3D body has a finish to choose; the flat artwork comes in one.
+            bodyColor={show3d && bodyColors && bodyColors.model === modelKey ? {
+              options: bodyColors.colors.options,
+              value: bodyColor && bodyColors.colors.options.includes(bodyColor) ? bodyColor : bodyColors.colors.selected,
+              onChange: pickBodyColor,
+            } : undefined} />}
       </div>}
     </div>
   )

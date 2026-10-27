@@ -9,7 +9,7 @@ import {
   stepDeviceOrientation,
 } from './device'
 
-export const IOS_SIMULATOR_PROTOCOL_VERSION = 11 as const
+export const IOS_SIMULATOR_PROTOCOL_VERSION = 12 as const
 /**
  * The neutral device vocabulary, under this platform's old names.
  *
@@ -53,32 +53,63 @@ export type IosSimulatorPreviewMode = 'native-framebuffer' | 'native-h264'
  */
 export const IOS_SIMULATOR_FOLD_POSTURES = [
   { id: 1, posture: 'closed', label: 'closed', hingeDegrees: 0 },
-  { id: 2, posture: 'half-opened', label: 'half opened', hingeDegrees: 90 },
+  // Short of the laptop's range, so it reads as a book held half open.
+  { id: 2, posture: 'half-opened', label: 'half opened', hingeDegrees: 75 },
   { id: 3, posture: 'opened', label: 'opened', hingeDegrees: 180 },
   // Half open and stood on its edges, the cover facing out: what lights the cover
   // with the hinge open. Not an angle; see `IosSimulatorFoldState.tent`.
-  { id: 5, posture: 'tent', label: 'tent', hingeDegrees: 60 },
+  { id: 5, posture: 'tent', label: 'tent', hingeDegrees: 45 },
+  // Half open with one half flat on the table and the inner panel lit across the
+  // hinge. Android has no such posture, so it takes the next free id.
+  // A pose too; see `IosSimulatorFoldState.laptop`.
+  { id: 6, posture: 'laptop', label: 'laptop', hingeDegrees: 90 },
 ] as const
 
 /** The widest opening that still stands as a tent; any wider is the inner screen. */
 export const IOS_SIMULATOR_TENT_MAX_DEGREES = 60
+/** The openings that lie as a laptop; either side of them the device is open as a book. */
+export const IOS_SIMULATOR_LAPTOP_MIN_DEGREES = 90
+export const IOS_SIMULATOR_LAPTOP_MAX_DEGREES = 120
 
 /**
  * Where an angle puts the hinge; null off 0-180. The angle alone picks the form:
  * 0 closed on the cover, up to `IOS_SIMULATOR_TENT_MAX_DEGREES` a tent on the cover,
- * anything wider open on the inner screen.
+ * `IOS_SIMULATOR_LAPTOP_MIN_DEGREES`-`IOS_SIMULATOR_LAPTOP_MAX_DEGREES` a laptop on
+ * the inner screen, any other opening open on the inner screen.
  */
 export function iosSimulatorFoldAt(hingeDegrees: number): IosSimulatorFoldPosition | null {
   if (!Number.isFinite(hingeDegrees) || hingeDegrees < 0 || hingeDegrees > 180) return null
-  return { hingeDegrees, tent: hingeDegrees > 0 && hingeDegrees <= IOS_SIMULATOR_TENT_MAX_DEGREES }
+  const form = iosSimulatorFoldForm(hingeDegrees)
+  return { hingeDegrees, tent: form === 'tent', laptop: form === 'laptop' }
 }
 
-/** A foldable's three forms, by the angle that picks them. */
-export type IosSimulatorFoldForm = 'closed' | 'tent' | 'open'
+/** A foldable's four forms, by the angle that picks them. Open spans both sides of a laptop. */
+export type IosSimulatorFoldForm = 'closed' | 'tent' | 'open' | 'laptop'
 
 export function iosSimulatorFoldForm(hingeDegrees: number): IosSimulatorFoldForm {
-  return hingeDegrees <= 0 ? 'closed' : hingeDegrees <= IOS_SIMULATOR_TENT_MAX_DEGREES ? 'tent' : 'open'
+  if (hingeDegrees <= 0) return 'closed'
+  if (hingeDegrees <= IOS_SIMULATOR_TENT_MAX_DEGREES) return 'tent'
+  return hingeDegrees >= IOS_SIMULATOR_LAPTOP_MIN_DEGREES && hingeDegrees <= IOS_SIMULATOR_LAPTOP_MAX_DEGREES
+    ? 'laptop' : 'open'
 }
+
+/**
+ * How a foldable is held in each of its forms, which a change of form starts from.
+ * Closed it is a phone, upright. Opened, its inner panel is landscape at the device's
+ * own upright (`panelRotation` stands it), so it too starts at portrait. A tent stands
+ * on its long edges with the hinge on top; on the Duo the hinge runs down the cover's
+ * left edge, so that is the device turned a quarter clockwise. A laptop lies with the
+ * hinge across, the same quarter turn the guest's laptop pose names.
+ */
+export const IOS_SIMULATOR_FOLD_FORM_ORIENTATION = {
+  closed: 'portrait',
+  tent: 'landscape-right',
+  open: 'portrait',
+  laptop: 'landscape-right',
+} as const satisfies Record<IosSimulatorFoldForm, IosSimulatorOrientation>
+
+/** A pose the guest is stood in after a sweep; every sweep clears it. */
+export type IosSimulatorFoldPose = 'tent' | 'laptop'
 
 export type IosSimulatorFoldPosture = typeof IOS_SIMULATOR_FOLD_POSTURES[number]['posture']
 
@@ -86,10 +117,10 @@ export function iosSimulatorFoldPosture(posture: IosSimulatorFoldPosture) {
   return IOS_SIMULATOR_FOLD_POSTURES.find((entry) => entry.posture === posture)!
 }
 
-/** The posture a fold reads as: a tent, else by angle, where only the two ends are exact. */
+/** The posture a fold reads as: a pose, else by angle, where only the two ends are exact. */
 export function iosSimulatorFoldPostureOf(fold: IosSimulatorFoldPosition) {
-  const { hingeDegrees, tent } = fold
-  return iosSimulatorFoldPosture(tent ? 'tent'
+  const { hingeDegrees, tent, laptop } = fold
+  return iosSimulatorFoldPosture(tent ? 'tent' : laptop ? 'laptop'
     : hingeDegrees <= 0 ? 'closed' : hingeDegrees >= 180 ? 'opened' : 'half-opened')
 }
 
@@ -102,8 +133,8 @@ export function iosSimulatorFoldPanel(fold: IosSimulatorFoldPosition): IosSimula
   return fold.tent || fold.hingeDegrees <= 0 ? 'cover' : 'inner'
 }
 
-/** Where a foldable's hinge is: its angle, and whether it stands as a tent. */
-export type IosSimulatorFoldPosition = Pick<IosSimulatorFoldState, 'hingeDegrees' | 'tent'>
+/** Where a foldable's hinge is: its angle, and whether it stands as a tent or a laptop. */
+export type IosSimulatorFoldPosition = Pick<IosSimulatorFoldState, 'hingeDegrees' | 'tent' | 'laptop'>
 
 /** A foldable's hinge, which panel it shows, and how that panel is mounted. */
 export interface IosSimulatorFoldState {
@@ -114,6 +145,12 @@ export interface IosSimulatorFoldState {
    * top. A CoreMotion pose rather than an angle, so it is carried beside the angle.
    */
   tent: boolean
+  /**
+   * Lying half open as a laptop, one half flat with the hinge across the lit inner
+   * panel: the device held landscape. A CoreMotion pose like `tent`, picked by angle
+   * the same way: `IOS_SIMULATOR_LAPTOP_MIN_DEGREES` to `IOS_SIMULATOR_LAPTOP_MAX_DEGREES`.
+   */
+  laptop: boolean
   panel: 'cover' | 'inner'
   /**
    * Clockwise turn that stands the shown panel's framebuffer upright. The Duo's inner

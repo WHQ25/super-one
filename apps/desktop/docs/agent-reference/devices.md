@@ -58,10 +58,14 @@ screen 1 is the cover (chrome `phone15`) and screen 3 the inner panel (`phone14`
 `nativeRotation` 270). It boots closed. Screen power does not follow the fold, so the
 host tracks the hinge angle itself (`IosSimulatorManager`, closed on boot) and streams,
 captures and touches the lit panel by screen id. The angle alone picks the form
-(`iosSimulatorFoldAt`): 0° closed on the cover, up to 60° a tent on the cover, wider
-open on the inner screen. The toolbar's hinge control is one 0-180° slider with those
-stops marked; the emulator's posture ids stay as named stops for `device_configure`.
-- **Tent** (posture 5, 60° by default) is not an angle to the guest, which reads any
+(`iosSimulatorFoldAt`): 0° closed on the cover, up to 60° a tent on the cover, 90-120°
+a laptop on the inner screen, any other opening open on the inner screen. The toolbar's
+hinge control is one 0-180° slider whose stops are the named postures' angles (0, 45,
+90, 180); a drag snaps to a stop within 3°. The 3D body follows the drag across every
+form; the guest moves on release, or when the drag rests on a stop for 0.5s, one move at
+a time with the latest target next. The emulator's posture ids stay as named stops for
+`device_configure`.
+- **Tent** (posture 5, 45° by default) is not an angle to the guest, which reads any
   tent as half open; its angle is the host's, for the 3D body. SpringBoard lights the cover at a partial
   angle only under its tent policy, which keys on CoreMotion's tabletop pose
   `PartiallyOpenFaceDown`. The fold tool's `tent` mode sets it through
@@ -75,10 +79,19 @@ stops marked; the emulator's posture ids stay as named stops for `device_configu
   sweep out of a tent to an open angle would keep the cover lit; the manager closes
   first. The hinge runs down the cover's left edge, so a tent is also turned
   `landscape-right` to put it on top, whether or not the foreground app turns.
-- **Orientation follows the form.** Changing between closed, tent and open turns the
-  device to that form's hold (`FOLD_FORM_ORIENTATION`): closed and open upright, the
-  open inner panel then landscape; a tent `landscape-right`. Within one form a hinge
-  move keeps the user's turn.
+- **Laptop** (posture 6, 90° by default; Android has no such id) is, like the tent, a
+  pose the angle picks: 90-120°. The fold tool's `laptop` mode sets CoreMotion's tabletop
+  pose `PartiallyOpen<hold>` for the way the host holds it (`Guest/FoldTool.m`; tabletop
+  3-6 are portrait, upside down, landscape left, landscape right) after the sweep;
+  SpringBoard keeps the inner panel lit and apps lay out for the panel turned upright.
+  It is no panel swap, so unlike the tent it is safe from any open angle and later sweeps
+  still run, and a turned laptop is stood again the new way (`fold.pose`), since
+  CoreMotion reports the pose, not the turn. A laptop's angle within the range is the
+  host's alone; leaving it sweeps, which clears the pose.
+- **Orientation follows the form.** Changing between closed, tent, open and laptop turns
+  the device to that form's hold (`FOLD_FORM_ORIENTATION`): closed and open upright, the
+  open inner panel then landscape; a tent and a laptop `landscape-right`. Within one form
+  a hinge move keeps the user's turn.
 
 - **Moving the hinge** is a guest call: SpringBoard's `SBSDisplayToolService`
   swap with `targetMode = 1` and an absolute position (0 closed, 0.5 = 90°, 1 open).
@@ -87,6 +100,10 @@ stops marked; the emulator's posture ids stay as named stops for `device_configu
   `__TEXT,__entitlements` section; a code-signature claim is refused at spawn. A zero
   duration takes an instant path that cannot leave a closed device, hence the sweep.
 - **Touch** goes to `screenID | 0x40000000`, in framebuffer ratios.
+- **Panel swap blur**: neither panel's framebuffer carries one (recorded: the cover
+  paints until the sweep ends, the inner panel goes from black to its picture), so the
+  2D stage blurs the picture from the lit panel changing until the new panel's first
+  frame paints.
 - **Rotation**: the inner framebuffer is portrait under a landscape panel. The stage
   turns it by `fold.panelRotation` as one more rigid quarter turn.
 - **Artwork**: both chromes ship placeholder nine-slices, so the composite is drawn,
@@ -96,7 +113,13 @@ stops marked; the emulator's posture ids stay as named stops for `device_configu
   in place, nothing copied. Its `book_close` clip is scrubbed to the hinge angle, the lit
   glass is turned to the camera in each pose, and touches raycast the skinned glass by UV
   (`device-model-body.ts`). Apple maps the inner glass landscape, so the picture turns
-  onto it and the stage does not.
+  onto it and the stage does not. A laptop is the open pose with the hinge levelled by
+  the stage's turn, then tipped about the view's horizontal so the lower half lies flat
+  (`foldTilt` in `device-model-renderer.ts`).
+- **Body color**: a model whose root declares a `color`/`Color` variant set (V68: `Light`,
+  `Dark`; Apple's iPhone 18 Pro scene: four) is composed in the finish asked for, and
+  reports its options. The device environment popover offers them while the 3D view is
+  on; the pick is a per-model local preference (`device-3d.ts`), not a device setting.
 - **Known gap**: accessibility returns one tree holding both panels' elements; agent
   observation on an unfolded device is not filtered per panel.
 

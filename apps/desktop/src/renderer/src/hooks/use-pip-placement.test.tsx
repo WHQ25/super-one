@@ -142,6 +142,21 @@ describe('pip placement', () => {
     expect(result.current.layout).toEqual({ left: 800, top: 600, width: 200, height: 100 })
   })
 
+  it('turns a placed preview about its top-right corner, keeping its long side', () => {
+    const { result, rerender } = renderHook(
+      ({ aspect }) => usePipPlacement({ key: 'a', active: true, aspect, dims: DIMS }),
+      { initialProps: { aspect: ASPECT } },
+    )
+    act(() => result.current.setLayout({ left: 500, top: 100, width: 400, height: 200 }))
+
+    // Upright it would be 200 tall, under the width floor; it grows, still from its corner.
+    rerender({ aspect: 1 / ASPECT })
+    expect(result.current.layout).toEqual({ left: 700, top: 100, width: 200, height: 400 })
+
+    rerender({ aspect: ASPECT })
+    expect(result.current.layout).toEqual({ left: 500, top: 100, width: 400, height: 200 })
+  })
+
   it('ignores a collapsed boundary rather than parking the preview in its corner', () => {
     const { result } = mount()
     act(() => result.current.setLayout({ left: 800, top: 600, width: 200, height: 100 }))

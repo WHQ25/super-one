@@ -27,11 +27,13 @@ device that takes any angle (null elsewhere). Set `kind: "appearance"` with `app
 `textSizeOptions` (all 12 iOS categories or the Android runtime's font scales), `kind: "location"` with decimal `latitude` and
 `longitude`, or `kind: "posture"`
 with one of that device's `postureId` values. A foldable iOS Simulator (iPhone Duo)
-uses the emulator's ids: 1 closed, 2 half opened (90°), 3 opened, 5 tent (60°). Tent
-stands it open on its edges, turned landscape with the hinge on top, and lights the
-cover screen — the nightstand/StandBy pose. For an exact angle use `kind: "hinge"` with
-`hingeDegrees`; the angle picks the form: 0 closed, 1–60° a tent, above 60° open on the
-inner screen. The guest itself reads every tent as half open; the angle is SuperOne's.
+uses the emulator's ids: 1 closed, 2 half opened (75°), 3 opened, 5 tent (45°), plus
+6 laptop (90°). Tent stands it open on its edges, turned landscape with the hinge on
+top, and lights the cover screen — the nightstand/StandBy pose. Laptop lays it half open
+with one half flat and the hinge across the lit inner screen, which apps lay out for.
+For an exact angle use `kind: "hinge"` with `hingeDegrees`; the angle picks the form:
+0 closed, 1–60° a tent, 90–120° a laptop, any other angle open on the inner screen. The
+guest itself reads every tent or laptop as half open; the angle is SuperOne's.
 Inner angles off either end read back as posture 2. Take a new
 snapshot after changing the screen in use. `kind: "clear_location"` works
 only on iOS Simulator. Neither simulator interface reliably reads its current

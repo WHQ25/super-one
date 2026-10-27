@@ -7,7 +7,6 @@ import type {
   IosSimulatorChrome,
   IosSimulatorCreateRequest,
   IosSimulatorDevice,
-  IosSimulatorFoldForm,
   IosSimulatorFoldPosition,
   IosSimulatorFoldState,
   IosSimulatorFrame,
@@ -22,7 +21,10 @@ import type {
 } from '@superone/shared/ios-simulator'
 import {
   DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
+  IOS_SIMULATOR_FOLD_FORM_ORIENTATION,
   IOS_SIMULATOR_INPUT_ERROR,
+  IOS_SIMULATOR_LAPTOP_MAX_DEGREES,
+  IOS_SIMULATOR_LAPTOP_MIN_DEGREES,
   IOS_SIMULATOR_TENT_MAX_DEGREES,
   iosSimulatorFoldForm,
   iosSimulatorFoldPanel,
@@ -65,19 +67,7 @@ export type { IosSimulatorChromePort, IosSimulatorNativePort, IosSimulatorPort }
  */
 const FOLD_SWEEP_MS = 600
 const FOLD_MIN_SWEEP_MS = 120
-const CLOSED: IosSimulatorFoldPosition = { hingeDegrees: 0, tent: false }
-/**
- * How a foldable is held in each of its forms, which a change of form starts from.
- * Closed it is a phone, upright. Opened, its inner panel is landscape at the device's
- * own upright (`panelRotation` stands it), so it too starts at portrait. A tent stands
- * on its long edges with the hinge on top; on the Duo the hinge runs down the cover's
- * left edge, so that is the device turned a quarter clockwise.
- */
-const FOLD_FORM_ORIENTATION = {
-  closed: 'portrait',
-  tent: 'landscape-right',
-  open: 'portrait',
-} as const satisfies Record<IosSimulatorFoldForm, IosSimulatorOrientation>
+const CLOSED: IosSimulatorFoldPosition = { hingeDegrees: 0, tent: false, laptop: false }
 
 interface NativeSession {
   udid: string
@@ -336,39 +326,51 @@ export class IosSimulatorManager {
     if (target.tent !== (iosSimulatorFoldForm(target.hingeDegrees) === 'tent')) {
       throw new Error(`A tent is any opening above 0 up to ${IOS_SIMULATOR_TENT_MAX_DEGREES} degrees, and only those.`)
     }
+    if (target.laptop !== (iosSimulatorFoldForm(target.hingeDegrees) === 'laptop')) {
+      throw new Error(`A laptop is any opening from ${IOS_SIMULATOR_LAPTOP_MIN_DEGREES} to ${IOS_SIMULATOR_LAPTOP_MAX_DEGREES} degrees, and only those.`)
+    }
     const layout = await this.foldLayoutOf(udid)
     if (!layout) {
       throw new Error(`UNSUPPORTED: ${this.nameOf(udid) ?? udid} is not a foldable simulator.`)
     }
     const native = await this.ensureNativeSession(udid)
     const panel = this.foldPanel(udid, layout)
+    const current = this.folds.get(udid) ?? CLOSED
     const form = iosSimulatorFoldForm(target.hingeDegrees)
-    if (options.hold || form !== iosSimulatorFoldForm((this.folds.get(udid) ?? CLOSED).hingeDegrees)) {
-      await this.holdAs(udid, native, FOLD_FORM_ORIENTATION[form])
-    }
-    await this.moveHinge(udid, native, layout, target)
+    const turned = (options.hold || form !== iosSimulatorFoldForm(current.hingeDegrees))
+      && this.holdAs(udid, IOS_SIMULATOR_FOLD_FORM_ORIENTATION[form])
+    // A sweep lands held the new way; a form reached without one is turned here.
+    if (!await this.moveHinge(udid, native, layout, target) && turned) await this.applyHold(udid, native)
     // Only a panel swap changes what the stream reads; a move within one panel keeps it.
     if (this.foldPanel(udid, layout) !== panel) await this.startStream(udid, true)
     await this.publishSessionState(udid)
   }
 
+  /** True when the guest has landed held the host's way. */
   private async moveHinge(
     udid: string,
     native: NativeSession,
     layout: IosSimulatorFoldLayout,
     target: IosSimulatorFoldPosition,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const known = this.folds.get(udid)
     const current = known ?? CLOSED
-    // The guest's tent pose has no angle of its own (it reads half open), so a tent
-    // opened wider or narrower is the host's reading alone: the 3D body and the state.
-    if (current.tent && target.tent) { this.folds.set(udid, target); return }
+    // The guest's poses have no angle of their own (each reads half open), so a tent or
+    // a laptop opened wider or narrower is the host's reading alone: the 3D body and the state.
+    if ((current.tent && target.tent) || (current.laptop && target.laptop)) { this.folds.set(udid, target); return false }
     // Already there. An unknown hinge is never "there": it is what closing is for.
-    if (known && !known.tent && !target.tent && known.hingeDegrees === target.hingeDegrees) return
+    if (known && !known.tent && !target.tent && known.hingeDegrees === target.hingeDegrees) return false
     // The guest swaps panels only when a sweep crosses its swap point, so a tent swept
-    // straight to another open angle would keep its cover lit. Closing first crosses it.
-    if (current.tent && target.hingeDegrees > 0) await this.sweepHinge(udid, native, layout, CLOSED)
+    // straight to another open angle would keep its cover lit. Closing first crosses it,
+    // still face down: turned upright at the tent's angle, the guest starts the
+    // continuous panel swap that never finishes (see `Guest/FoldTool.m`).
+    if (current.tent) {
+      await this.sweepHinge(udid, native, layout, CLOSED, false)
+      // Closed already shows the cover; landed face down, it is turned the way it is held.
+      if (target.hingeDegrees === 0) { await this.applyHold(udid, native); return true }
+    }
     await this.sweepHinge(udid, native, layout, target)
+    return true
   }
 
   private async sweepHinge(
@@ -376,6 +378,8 @@ export class IosSimulatorManager {
     native: NativeSession,
     layout: IosSimulatorFoldLayout,
     target: IosSimulatorFoldPosition,
+    /** Land held as `holdAs` settled; false keeps the guest's pose's own orientation. */
+    held = true,
   ): Promise<void> {
     // A tent is stood up from closed, and the pose it sets puts the hinge at its angle.
     // From an open device the change to the tent is a panel swap that never finishes;
@@ -384,22 +388,36 @@ export class IosSimulatorManager {
     const share = Math.abs(degrees - (this.folds.get(udid) ?? CLOSED).hingeDegrees) / 180
     const sweepMs = Math.max(FOLD_MIN_SWEEP_MS, Math.round(FOLD_SWEEP_MS * share))
     const screenId = layout[iosSimulatorFoldPanel(target)].screenId
-    await native.client.fold(degrees / 180, sweepMs, screenId, target.tent)
+    const pose = target.tent ? 'tent' : target.laptop ? 'laptop' : undefined
+    // Held as `holdAs` settled: the sweep sets the guest's orientation, and so does a laptop's pose.
+    await native.client.fold(degrees / 180, sweepMs, screenId, held ? this.orientations.get(udid) ?? 'portrait' : undefined, pose)
     this.folds.set(udid, target)
   }
 
   /**
-   * Turn the device to how a new form is held. Turned before the hinge moves, since a
-   * tent's pose has to come last; and turned whether or not the app on screen turns
-   * with it, since this is how the device is held: a home screen that stays upright
-   * is then drawn on its side, as it would be on a nightstand. Within one form the
-   * hinge leaves alone whatever turn the user gave it.
+   * Hold the device the way a new form is held; true when that is a turn. The sweep
+   * that follows lands held this way, whether or not the app on screen turns with it,
+   * since this is how the device is held: a home screen that stays upright is then
+   * drawn on its side, as it would be on a nightstand. Within one form the hinge
+   * leaves alone whatever turn the user gave it.
    */
-  private async holdAs(udid: string, native: NativeSession, orientation: IosSimulatorOrientation): Promise<void> {
-    if ((this.orientations.get(udid) ?? 'portrait') === orientation) return
-    const result = await native.client.input({ type: 'rotate', orientation })
-    if (!result.ok) throw new Error(result.error ?? 'The simulator did not turn for the new fold.')
+  private holdAs(udid: string, orientation: IosSimulatorOrientation): boolean {
+    if ((this.orientations.get(udid) ?? 'portrait') === orientation) return false
     this.orientations.set(udid, orientation)
+    return true
+  }
+
+  /**
+   * Turn a swept foldable to how the host holds it. A sweep leaves the guest posed,
+   * and from then on its orientation comes from the pose alone, not from rotation
+   * events. A laptop's pose names its hold; a tent's is face down whichever way it is
+   * turned. An unswept device has no pose, and rotation events turn it.
+   */
+  private async applyHold(udid: string, native: NativeSession): Promise<void> {
+    const fold = this.folds.get(udid)
+    if (!fold || fold.tent) return
+    const hold = this.orientations.get(udid) ?? 'portrait'
+    await (fold.laptop ? native.client.stand('laptop', hold) : native.client.turn(hold, fold.hingeDegrees === 0))
   }
 
   async createDevice(request: IosSimulatorCreateRequest): Promise<IosSimulatorDevice> {
@@ -620,7 +638,7 @@ export class IosSimulatorManager {
       const native = await this.ensureNativeSession(udid)
       if (input.type === 'insertText') return this.insertText(udid, native, input)
       const result = await native.client.input(input)
-      if (input.type === 'rotate') return this.settleRotation(udid, input.orientation, result)
+      if (input.type === 'rotate') return this.settleRotation(udid, native, input.orientation, result)
       if (input.type === 'keyboard' && result.ok) {
         this.hardwareKeyboards.set(udid, input.connected)
         await this.publishSessionState(udid)
@@ -756,13 +774,24 @@ export class IosSimulatorManager {
   /**
    * Keep the device's physical turn when delivery succeeds. An app may lock its
    * content orientation; the unchanged framebuffer then turns with the shell.
+   *
+   * A swept foldable takes its turn from its pose rather than the rotation event, so
+   * the pose is turned too; see `applyHold`.
    */
   private async settleRotation(
     udid: string,
+    native: NativeSession,
     orientation: IosSimulatorOrientation,
     result: IosSimulatorInputResult,
   ): Promise<IosSimulatorInputResult> {
-    if (result.ok) this.orientations.set(udid, orientation)
+    if (result.ok) {
+      this.orientations.set(udid, orientation)
+      try {
+        await this.applyHold(udid, native)
+      } catch (error) {
+        result = { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
     // Publish failures too, so an optimistic panel rolls back a failed delivery.
     await this.publishSessionState(udid)
     return result

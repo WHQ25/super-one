@@ -3408,10 +3408,11 @@ function registerIpcHandlers(): void {
     return listDeviceModels()
   })
 
-  ipcMain.handle(AgentIpcChannels.LOAD_DEVICE_MODEL, async (_event, model: string) => {
+  ipcMain.handle(AgentIpcChannels.LOAD_DEVICE_MODEL, async (_event, model: string, color?: string) => {
     if (typeof model !== 'string') throw new Error('Device model must be a string')
+    if (color !== undefined && typeof color !== 'string') throw new Error('Device model color must be a string')
     const { loadDeviceModel } = await import('./device-models')
-    return loadDeviceModel(model)
+    return loadDeviceModel(model, color)
   })
 
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {

@@ -5,7 +5,7 @@ import { is } from '@electron-toolkit/utils'
 import { unzipSync } from 'fflate'
 import { ANDROID_PHONE_REFERENCE_MODEL, type DeviceModelScreenPick, type LoadedDeviceModel } from '@superone/shared/device'
 import { selectedDeveloperDirectory } from './ios-simulator/simctl'
-import { composeUsdzPreview } from './usdz-preview'
+import { composeUsdzPreview, type UsdzVariantSet } from './usdz-preview'
 
 interface DeviceModelEntry {
   file: string
@@ -110,8 +110,14 @@ export async function listDeviceModels(): Promise<string[]> {
   return models
 }
 
-/** The composed stage for one simulator model, or null when it has none on disk. */
-export async function loadDeviceModel(model: string): Promise<LoadedDeviceModel | null> {
+/** Apple names a body's finishes in a root variant set, `color` or `Color` by scene. */
+const isColorSet = (set: UsdzVariantSet) => set.name.toLowerCase() === 'color'
+
+/**
+ * The composed stage for one simulator model, or null when it has none on disk.
+ * `color` picks one of the finishes it reports; one it does not offer wears the default.
+ */
+export async function loadDeviceModel(model: string, color?: string): Promise<LoadedDeviceModel | null> {
   if (model === ANDROID_PHONE_REFERENCE_MODEL) {
     const path = join(modelsDir(), ANDROID_PHONE_REFERENCE_FILE)
     if (!(await exists(path))) return null
@@ -121,10 +127,17 @@ export async function loadDeviceModel(model: string): Promise<LoadedDeviceModel 
   if (!entry) return null
   const path = await entryPath(entry)
   if (!path || !(await exists(path))) return null
-  const { archive } = await composeUsdzPreview(new Uint8Array(await readFile(path)))
-  if (!entry.foldClip) return { archive, format: 'usdz', screen: entry.screen }
+  const { archive, variants } = await composeUsdzPreview(new Uint8Array(await readFile(path)), (declared) => {
+    const set = declared.find(isColorSet)
+    return set && color && set.options.includes(color) ? { [set.name]: color } : {}
+  })
+  const colorSet = variants.find(isColorSet)
+  const colors = colorSet && colorSet.options.length > 1
+    ? { colors: { options: colorSet.options, selected: colorSet.selected } }
+    : {}
+  if (!entry.foldClip) return { archive, format: 'usdz', screen: entry.screen, ...colors }
   const stage = unzipSync(archive, { filter: (file) => file.name === 'preview.usda' })['preview.usda']
   const fold = stage && readFoldClip(new TextDecoder().decode(stage), entry.foldClip)
   if (!fold) throw new Error(`${model}: the ${entry.foldClip} clip is missing from ${entry.file}`)
-  return { archive, format: 'usdz', screen: entry.screen, fold }
+  return { archive, format: 'usdz', screen: entry.screen, fold, ...colors }
 }

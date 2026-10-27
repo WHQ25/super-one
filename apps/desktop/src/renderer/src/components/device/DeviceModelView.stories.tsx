@@ -113,15 +113,17 @@ function Scenario({
   )
 }
 
-const FOLD_POSTURES: Record<'closed' | 'half opened' | 'opened' | 'tent', DeviceModelFold> = {
-  'closed': { hingeDegrees: 0, panel: 'cover', panelRotation: 0 },
-  'half opened': { hingeDegrees: 90, panel: 'inner', panelRotation: 90 },
-  'opened': { hingeDegrees: 180, panel: 'inner', panelRotation: 90 },
+const FOLD_POSTURES: Record<'closed' | 'half opened' | 'opened' | 'tent' | 'laptop', DeviceModelFold> = {
+  'closed': { hingeDegrees: 0, panel: 'cover', panelRotation: 0, laptop: false },
+  'half opened': { hingeDegrees: 75, panel: 'inner', panelRotation: 90, laptop: false },
+  'opened': { hingeDegrees: 180, panel: 'inner', panelRotation: 90, laptop: false },
   // Half open with the cover lit, and the device turned a quarter so the hinge is on top.
-  'tent': { hingeDegrees: 60, panel: 'cover', panelRotation: 0 },
+  'tent': { hingeDegrees: 45, panel: 'cover', panelRotation: 0, laptop: false },
+  // Half open on the inner panel, turned so the hinge runs across and one half lies flat.
+  'laptop': { hingeDegrees: 90, panel: 'inner', panelRotation: 90, laptop: true },
 }
 /** The device turn each posture is held at, beside the turn its panel is mounted at. */
-const FOLD_TURNS: Partial<Record<keyof typeof FOLD_POSTURES, number>> = { tent: 90 }
+const FOLD_TURNS: Partial<Record<keyof typeof FOLD_POSTURES, number>> = { tent: 90, laptop: 90 }
 
 const loadFoldable = async (): Promise<DeviceModelSource> => ({
   object: syntheticFoldableScene(),
@@ -189,3 +191,4 @@ export const FoldableHalfOpen: Story = { render: () => <FoldableScenario initial
 export const FoldableClosed: Story = { render: () => <FoldableScenario initial="closed" /> }
 /** Standing as a tent: the cover lit and faced to the camera, the hinge along the top. */
 export const FoldableTent: Story = { render: () => <FoldableScenario initial="tent" /> }
+export const FoldableLaptop: Story = { render: () => <FoldableScenario initial="laptop" /> }

@@ -36,6 +36,8 @@ export interface DevicePipDevice {
   /** The guest's glass, already turned. Zero when nothing has attached yet. */
   width: number
   height: number
+  /** A foldable's lit panel, which wears its own artwork; absent on every other device. */
+  panel?: 'cover' | 'inner'
 }
 
 /** Panel = the Activity tab, pip = the floating preview, overlay = it expanded. */
@@ -161,7 +163,7 @@ export const useDevicePipStore = create<DevicePipState>()((set) => ({
 
 function sameDevice(a: DevicePipDevice | null, b: DevicePipDevice | null): boolean {
   if (!a || !b) return a === b
-  return a.id === b.id && a.width === b.width && a.height === b.height
+  return a.id === b.id && a.width === b.width && a.height === b.height && a.panel === b.panel
 }
 
 function slotsFor(

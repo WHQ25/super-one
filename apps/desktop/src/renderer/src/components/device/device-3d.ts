@@ -21,6 +21,38 @@ export function writeDeviceView3d(value: boolean, storage: Pick<Storage, 'setIte
   }
 }
 
+// Which finish each model's body wears, by model: how the user likes to see that phone.
+const COLOR_STORAGE_KEY = 'superone.device.bodyColors'
+
+function readBodyColors(storage: Pick<Storage, 'getItem'> | null): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(COLOR_STORAGE_KEY) ?? '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, string> : {}
+  } catch {
+    return {}
+  }
+}
+
+export function readDeviceBodyColor(
+  model: string,
+  storage: Pick<Storage, 'getItem'> | null = globalThis.localStorage ?? null,
+): string | undefined {
+  const color = readBodyColors(storage)[model]
+  return typeof color === 'string' ? color : undefined
+}
+
+export function writeDeviceBodyColor(
+  model: string,
+  color: string,
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null = globalThis.localStorage ?? null,
+): void {
+  try {
+    storage?.setItem(COLOR_STORAGE_KEY, JSON.stringify({ ...readBodyColors(storage), [model]: color }))
+  } catch {
+    // As with the view: a full or disabled storage costs the preference, not the body.
+  }
+}
+
 // What is on disk does not change while the app runs, so one answer serves every panel.
 let available: Promise<ReadonlySet<string>> | null = null
 

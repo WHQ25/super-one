@@ -123,8 +123,14 @@ function makePreview(flat: string, source: string, original: Uint8Array): Uint8A
   return archive
 }
 
-/** Compose the selected root variants without discarding the original stage. */
-export async function composeUsdzPreview(input: Uint8Array, selections: Record<string, string> = {}): Promise<UsdzPreviewResult> {
+/**
+ * Compose the selected root variants without discarding the original stage.
+ * `selections` may be picked from the variants the stage declares, read on the way.
+ */
+export async function composeUsdzPreview(
+  input: Uint8Array,
+  selections: Record<string, string> | ((variants: UsdzVariantSet[]) => Record<string, string>) = {},
+): Promise<UsdzPreviewResult> {
   if (!(input instanceof Uint8Array)) throw new Error('USDZ data must be bytes')
   validateArchive(input)
   const dir = await mkdtemp(join(tmpdir(), 'superone-usdz-'))
@@ -135,7 +141,7 @@ export async function composeUsdzPreview(input: Uint8Array, selections: Record<s
     await writeFile(source, input)
     await usdcat(source, rootUsda)
     const { root, variants } = inspectRootVariants(await readFile(rootUsda, 'utf8'))
-    const selected = checkedSelections(variants, selections)
+    const selected = checkedSelections(variants, typeof selections === 'function' ? selections(variants) : selections)
     const stageInput = Object.keys(selected).length ? join(dir, 'selection.usda') : source
     if (stageInput !== source) await writeFile(stageInput, wrapper(root, source, selected))
     await usdcat(stageInput, flatUsda, true)

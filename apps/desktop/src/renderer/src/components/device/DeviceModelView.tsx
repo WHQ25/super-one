@@ -7,15 +7,21 @@ import type { DeviceFrameProjector } from './device-input'
 import type { DeviceModelFold, DeviceModelSource, MountedDeviceModel } from './device-model-renderer'
 
 export type { DeviceModelSource }
+export type DeviceModelColors = NonNullable<DeviceModelSource['colors']>
 
 // three.js and the model loaders stay out of the startup chunk: the panel that
 // hosts this view is mounted from App, and most sessions never turn the 3D view on.
 const loadRenderer = () => import('./device-model-renderer')
-const loadDesktopDeviceModel = (model: string) => loadRenderer().then((renderer) => renderer.loadDesktopDeviceModel(model))
+const loadDesktopDeviceModel = (model: string, color?: string) =>
+  loadRenderer().then((renderer) => renderer.loadDesktopDeviceModel(model, color))
 
 interface DeviceModelViewProps {
   /** A model catalog key, e.g. "iPhone 17 Pro" or the Android reference body. */
   model: string
+  /** The finish to wear, among those `onColors` reported; unset wears the model's own. */
+  color?: string
+  /** Told the finishes the loaded body offers, and the one it wears; null when it has one. */
+  onColors?: (colors: DeviceModelColors | null) => void
   /** The live picture; null until the device surface hands it over. */
   canvas: HTMLCanvasElement | null
   /** Called on every painted frame of `canvas`. */
@@ -30,7 +36,7 @@ interface DeviceModelViewProps {
   onProjector: (projector: DeviceFrameProjector | null) => void
   /** The input pipeline's pointer handlers, bound where the pointer lands. */
   pointerHandlers?: React.DOMAttributes<HTMLDivElement>
-  loadModel?: (model: string) => Promise<DeviceModelSource | null>
+  loadModel?: (model: string, color?: string) => Promise<DeviceModelSource | null>
   children?: ReactNode
 }
 
@@ -44,6 +50,8 @@ interface DeviceModelViewProps {
  */
 export function DeviceModelView({
   model,
+  color,
+  onColors,
   canvas,
   subscribeFrames,
   rotationDegrees,
@@ -59,8 +67,8 @@ export function DeviceModelView({
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const sceneRef = useRef<MountedDeviceModel | null>(null)
   // Read by the scene without rebuilding it.
-  const latest = useRef({ rotationDegrees, interactive, onProjector, subscribeFrames, fold })
-  latest.current = { rotationDegrees, interactive, onProjector, subscribeFrames, fold }
+  const latest = useRef({ rotationDegrees, interactive, onProjector, onColors, subscribeFrames, fold })
+  latest.current = { rotationDegrees, interactive, onProjector, onColors, subscribeFrames, fold }
 
   useEffect(() => {
     const host = hostRef.current
@@ -70,8 +78,9 @@ export function DeviceModelView({
     setStatus('loading')
 
     void (async () => {
-      const [{ mountDeviceModel }, source] = await Promise.all([loadRenderer(), loadModel(model)])
+      const [{ mountDeviceModel }, source] = await Promise.all([loadRenderer(), loadModel(model, color)])
       if (!source) throw new Error(`No 3D model for ${model}`)
+      if (!cancelled) latest.current.onColors?.(source.colors ?? null)
       const mounted = await mountDeviceModel(host, source, latest, () => cancelled)
       if (!mounted) return
       sceneRef.current = mounted
@@ -90,7 +99,7 @@ export function DeviceModelView({
       cancelled = true
       teardown?.()
     }
-  }, [model, loadModel])
+  }, [model, color, loadModel])
 
   useEffect(() => {
     if (status !== 'ready') return
@@ -105,10 +114,12 @@ export function DeviceModelView({
   const hinge = fold?.hingeDegrees
   const panel = fold?.panel
   const panelRotation = fold?.panelRotation
+  const laptop = fold?.laptop
+  const facing = fold?.facing
   useEffect(() => {
-    if (status !== 'ready' || hinge === undefined || !panel || panelRotation === undefined) return
-    sceneRef.current?.setFold({ hingeDegrees: hinge, panel, panelRotation })
-  }, [hinge, panel, panelRotation, status])
+    if (status !== 'ready' || hinge === undefined || !panel || panelRotation === undefined || laptop === undefined) return
+    sceneRef.current?.setFold({ hingeDegrees: hinge, panel, panelRotation, laptop, ...(facing ? { facing } : {}) })
+  }, [hinge, panel, panelRotation, laptop, facing, status])
 
   return (
     <div className="relative size-full min-h-0" data-testid="device-model-view">

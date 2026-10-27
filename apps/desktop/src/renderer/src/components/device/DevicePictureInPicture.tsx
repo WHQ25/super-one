@@ -65,6 +65,9 @@ const RESIZE_CURSORS: Record<ResizeEdge, string> = {
  */
 const CLICK_SLOP = 4
 
+/** As long as the stage takes to turn the device inside the box. */
+const DEVICE_PIP_TURN_MS = 300
+
 /**
  * Apple's artwork for the bound device — read for its OUTLINE, not to draw with.
  *
@@ -81,6 +84,8 @@ function useIosSimulatorChrome(device: DevicePipDevice | null): IosSimulatorChro
   const [chrome, setChrome] = useState<IosSimulatorChrome | null>(null)
   // Only the simulator has a udid; a mirrored iPhone would be iOS too and have none.
   const udid = device?.provider === 'ios-sim' ? parseDeviceId(device.id)?.native ?? null : null
+  // Main answers for the panel a foldable shows now, so a fold re-asks.
+  const panel = device?.panel
   useEffect(() => {
     setChrome(null)
     if (!udid) return
@@ -90,7 +95,7 @@ function useIosSimulatorChrome(device: DevicePipDevice | null): IosSimulatorChro
       // Missing artwork is not an error here any more than it is in the stage.
       .catch(() => undefined)
     return () => { cancelled = true }
-  }, [udid])
+  }, [udid, panel])
   return chrome
 }
 
@@ -130,6 +135,18 @@ export function DevicePictureInPicture() {
   })
   const [interacting, setInteracting] = useState(false)
   const interactionCleanupRef = useRef<(() => void) | null>(null)
+  // A turn reshapes the box; easing it there, alongside the stage's own turn of the
+  // device, is what makes it read as the phone turning rather than the box jumping.
+  // `useSlotBounds` follows a geometry transition frame by frame, so the device keeps up.
+  const [turning, setTurning] = useState(false)
+  const shownAspect = useRef(aspect)
+  useLayoutEffect(() => {
+    if (shownAspect.current === aspect) return
+    shownAspect.current = aspect
+    setTurning(true)
+    const settle = setTimeout(() => setTurning(false), DEVICE_PIP_TURN_MS)
+    return () => clearTimeout(settle)
+  }, [aspect])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()
@@ -276,7 +293,13 @@ export function DevicePictureInPicture() {
           // shrunk there is no card at all, and the device's own silhouette carries the
           // shadow. What is left here is a frame around a hole: the measured slot, the
           // gesture surface, and the buttons.
-          className={cn('fixed', !expanded && 'group/device-pip')}
+          className={cn(
+            'fixed',
+            !expanded && 'group/device-pip',
+            // Never while the box is in the hand: it has to follow the pointer exactly.
+            !expanded && turning && !interacting
+              && 'transition-[left,top,width,height] duration-300 ease-out motion-reduce:transition-none',
+          )}
           style={expanded ? DEVICE_EXPANDED_BOX : boxStyle}
         >
           {expanded && (

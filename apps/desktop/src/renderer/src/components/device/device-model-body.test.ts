@@ -1,11 +1,11 @@
 import { Group, Raycaster, Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import { syntheticFoldableScene } from './__fixtures__/synthetic-device-model'
-import { foldableBody, type DeviceModelFold } from './device-model-body'
+import { HINGE_DEGREES_PER_SECOND, HINGE_MAX_MOVE_MS, foldableBody, type DeviceModelFold } from './device-model-body'
 
-const CLOSED: DeviceModelFold = { hingeDegrees: 0, panel: 'cover', panelRotation: 0 }
-const HALF: DeviceModelFold = { hingeDegrees: 90, panel: 'inner', panelRotation: 90 }
-const OPEN: DeviceModelFold = { hingeDegrees: 180, panel: 'inner', panelRotation: 90 }
+const CLOSED: DeviceModelFold = { hingeDegrees: 0, panel: 'cover', panelRotation: 0, laptop: false }
+const HALF: DeviceModelFold = { hingeDegrees: 90, panel: 'inner', panelRotation: 90, laptop: false }
+const OPEN: DeviceModelFold = { hingeDegrees: 180, panel: 'inner', panelRotation: 90, laptop: false }
 
 function staged(initial: DeviceModelFold) {
   const stage = new Group()
@@ -35,6 +35,16 @@ describe('foldableBody', () => {
     }
   })
 
+  it('faces an opened cover to the camera, keeping touches on its glass', () => {
+    const body = staged(CLOSED)
+    body.fold({ ...CLOSED, hingeDegrees: 45 }, false)
+    // Face on: the renderer stands the tent and looks round its open end.
+    expect(body.frame().normal.z).toBeCloseTo(1, 3)
+    const hit = body.point(aimAt(body, 0.3, 0.7), false)
+    expect(hit?.xRatio).toBeCloseTo(0.3, 2)
+    expect(hit?.yRatio).toBeCloseTo(0.7, 2)
+  })
+
   it('lays the opened panel\'s portrait framebuffer turned under its landscape glass', () => {
     const body = staged(OPEN)
     const frame = body.frame()
@@ -56,14 +66,50 @@ describe('foldableBody', () => {
     expect(rightHalf!.yRatio).toBeLessThan(0.5)
   })
 
-  it('sweeps to a posture and settles where an instant fold would have put it', () => {
+  it('turns a short move at the set rate', () => {
+    const body = staged(HALF)
+    const start = performance.now()
+    body.fold({ ...HALF, hingeDegrees: 90 + HINGE_DEGREES_PER_SECOND / 2 }, true)
+    // Half a second's worth of travel takes half a second.
+    expect(body.step(start + 250)).toBe(true)
+    expect(body.step(start + 520)).toBe(false)
+  })
+
+  it('speeds a wide move up to finish within the cap, settling where an instant fold would', () => {
     const swept = staged(OPEN)
-    swept.fold(CLOSED, true)
-    expect(swept.step(performance.now())).toBe(true)
-    expect(swept.step(performance.now() + 10_000)).toBe(false)
-    const instant = staged(CLOSED)
+    const start = performance.now()
+    swept.fold(HALF, true)
+    // 90 degrees would take two seconds at the set rate; it takes the cap instead.
+    expect(swept.step(start + HINGE_MAX_MOVE_MS / 2)).toBe(true)
+    expect(swept.hinge()).toBeCloseTo(135, 0)
+    expect(swept.step(start + HINGE_MAX_MOVE_MS + 20)).toBe(false)
+    expect(swept.hinge()).toBe(90)
+    const instant = staged(HALF)
     expect(swept.frame().origin.distanceTo(instant.frame().origin)).toBeLessThan(1e-6)
     expect(swept.bounds().getSize(new Vector3()).x).toBeCloseTo(instant.bounds().getSize(new Vector3()).x, 6)
+  })
+
+  it('carries on from where it is when sent somewhere new mid-move', () => {
+    const body = staged(OPEN)
+    const start = performance.now()
+    body.fold(HALF, true)
+    body.step(start + HINGE_MAX_MOVE_MS / 3)
+    const reached = body.hinge()
+    expect(reached).toBeLessThan(180)
+    expect(reached).toBeGreaterThan(90)
+
+    body.fold(OPEN, true)
+    // No jump back to either end: the new move starts at the angle already reached.
+    expect(body.hinge()).toBe(reached)
+  })
+
+  it('turns the screen it is told to face to the camera, leaving the picture on the lit one', () => {
+    const body = staged(CLOSED)
+    // Held open before the guest has swapped: the inner glass faces the camera, the cover stays lit.
+    body.fold({ ...OPEN, panel: 'cover', panelRotation: 0, facing: 'inner' }, false)
+    expect(body.frame().normal.z).toBeLessThan(0)
+    body.fold(OPEN, false)
+    expect(body.frame().normal.z).toBeCloseTo(1, 3)
   })
 
   it('keeps a drag that leaves the glass where it left, and misses otherwise', () => {

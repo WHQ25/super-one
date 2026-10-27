@@ -72,12 +72,12 @@ describe.skipIf(!enabled)('Apple device models', async () => {
 /** Every pose stands the lit glass up facing the camera, and a centred ray finds its middle. */
 function expectFoldable(object: Parameters<typeof foldableBody>[0], clip: { start: number; duration: number }) {
   const stage = new Group()
-  const body = foldableBody(object, clip, { hingeDegrees: 180, panel: 'inner', panelRotation: 90 })
+  const body = foldableBody(object, clip, { hingeDegrees: 180, panel: 'inner', panelRotation: 90, laptop: false })
   stage.add(body.root)
   for (const pose of [
-    { hingeDegrees: 0, panel: 'cover', panelRotation: 0 },
-    { hingeDegrees: 90, panel: 'inner', panelRotation: 90 },
-    { hingeDegrees: 180, panel: 'inner', panelRotation: 90 },
+    { hingeDegrees: 0, panel: 'cover', panelRotation: 0, laptop: false },
+    { hingeDegrees: 90, panel: 'inner', panelRotation: 90, laptop: false },
+    { hingeDegrees: 180, panel: 'inner', panelRotation: 90, laptop: false },
   ] as const) {
     body.fold(pose, false)
     stage.updateMatrixWorld(true)

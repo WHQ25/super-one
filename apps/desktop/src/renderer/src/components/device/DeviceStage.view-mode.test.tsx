@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useEffect } from 'react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ANDROID_PHONE_REFERENCE_MODEL, type DeviceDescriptor, type DeviceState } from '@superone/shared/device'
 
 vi.mock('./device-video', () => ({
@@ -9,8 +10,14 @@ vi.mock('./device-video', () => ({
   DeviceFrameRenderer: class { push() {} close() {} },
 }))
 // WebGL is a real browser boundary jsdom does not have; the switch is what is under test.
+const modelViews = vi.hoisted(() => ({ mounted: 0, folds: [] as unknown[], rotations: [] as number[] }))
 vi.mock('./DeviceModelView', () => ({
-  DeviceModelView: ({ model }: { model: string }) => <div data-testid="device-model-view">{model}</div>,
+  DeviceModelView: ({ model, fold, rotationDegrees }: { model: string; fold?: unknown; rotationDegrees: number }) => {
+    useEffect(() => { modelViews.mounted += 1 }, [])
+    modelViews.folds.push(fold)
+    modelViews.rotations.push(rotationDegrees)
+    return <div data-testid="device-model-view">{model}</div>
+  },
 }))
 
 import { resetDeviceSurfaces } from './device-surface'
@@ -138,6 +145,51 @@ describe('device view mode switch', () => {
     for (const name of ['Lock', 'Volume Down', 'Volume Up']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
     }
+  })
+
+  it('bends the 3D body through a panel swap rather than loading it again', async () => {
+    localStorage.setItem('superone.device.view3d', 'true')
+    let pushState: (state: DeviceState) => void = () => {}
+    window.environment.onDeviceState = vi.fn((_id: string, listener: (state: DeviceState) => void) => {
+      pushState = listener
+      return () => {}
+    })
+    // The flat shell's artwork for the newly lit panel never answers here: the body must not wait for it.
+    window.environment.iosSimulatorChrome = vi.fn(() => new Promise<never>(() => {}))
+    const device = simulator('iPhone 17 Pro')
+    const closed = { hingeDegrees: 0, tent: false, laptop: false, panel: 'cover' as const, panelRotation: 0 as const }
+    renderStage(device, { ...ready(device), ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true, fold: closed } })
+    await screen.findByTestId('device-model-view')
+    modelViews.mounted = 0
+
+    act(() => pushState({ ...ready(device), ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true,
+      fold: { ...closed, hingeDegrees: 180, panel: 'inner', panelRotation: 90 } } }))
+
+    expect(screen.getByTestId('device-model-view')).toBeInTheDocument()
+    expect(modelViews.mounted).toBe(0)
+    expect(modelViews.folds.at(-1)).toEqual(expect.objectContaining({ hingeDegrees: 180, panel: 'inner' }))
+  })
+
+  it('stands the 3D body in a held form before the guest takes it, picture left on the old panel', async () => {
+    localStorage.setItem('superone.device.view3d', 'true')
+    const device = simulator('iPhone 17 Pro')
+    const open = { hingeDegrees: 180, tent: false, laptop: false, panel: 'inner' as const, panelRotation: 270 as const }
+    renderStage(device, { ...ready(device), ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true, fold: open } })
+    // The guest never answers here, so the body stays wherever it was sent.
+    window.environment.deviceConfigure = vi.fn(() => new Promise<never>(() => {}))
+    await screen.findByTestId('device-model-view')
+    expect(modelViews.rotations.at(-1)).toBe(270)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hinge Angle' }))
+    const slider = await screen.findByRole('slider', { name: 'Hinge Angle' })
+    // Dragged through, a form only bends the body: it stays open, as held.
+    for (const value of ['100', '45']) fireEvent.change(slider, { target: { value } })
+    expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45 })
+    expect(modelViews.rotations.at(-1)).toBe(270)
+    // Sent there, a tent: the cover turned to the camera and held a quarter clockwise, as the host will.
+    fireEvent.pointerUp(slider)
+    expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45, facing: 'cover' })
+    expect(modelViews.rotations.at(-1)).toBe((90 + 270) % 360)
   })
 
   it('offers no switch for a device this machine has no 3D body for', async () => {

@@ -19,12 +19,14 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
 - Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
 - The phone app is built with Expo SDK 58, so it launches on iOS 27.
+- iPhone Duo stands as a laptop (90–120°, one half flat, hinge across the inner screen) beside closed, tent, and open. A tent stands with the hinge on top. The hinge snaps to one stop per form; only resting on that stop, letting go on it, or pressing its label changes the form. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
 
 ### Changed
 
 - Claude Agent SDK 0.3.310.
 - Electron 44.9.3. Electron 44.9.1 blocks the compromised eMudhra intermediates (CVE-2026-115570); 44.9.3 adds the later Chromium fixes. The bundled Node is 24.22.0.
 - The phone runtime is React Native 0.88 and React 19.3. New Architecture is required, and the splash screen comes from the expo-splash-screen plugin.
+- Android phone builds include arm64-v8a and armeabi-v7a only.
 
 ### Fixed
 
@@ -35,10 +37,29 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Session hover cards, drafts, and pinned rows keep their place when remote nodes are off.
 - With remote nodes on, a new session keeps its own checkout, and git init runs on the environment that owns the folder.
 - Two screenshots or recordings taken in the same millisecond no longer share a filename.
+- Desktop usage, probes, and other short external HTTP follow the macOS system proxy. Streaming chat, relay uploads, and loopback calls stay on Node fetch, and the CLI keeps Bun's proxy environment.
+- Draft and pinned sidebar titles use the same size as the other session titles.
+- A detached worktree's hover card shows the short commit, the same label as the workdir chip.
 
 ### Performance
 
 - Opening a local session no longer rebuilds every sidebar row.
+
+## [0.76.0-alpha.1] - 2026-10-28
+
+### Added
+
+- iPhone Duo stands as a laptop (90–120°, one half flat, hinge across the inner screen) beside closed, tent, and open. A tent stands with the hinge on top. The hinge snaps to one stop per form; only resting on that stop, letting go on it, or pressing its label changes the form. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
+
+### Changed
+
+- Android phone builds include arm64-v8a and armeabi-v7a only.
+
+### Fixed
+
+- Desktop usage, probes, and other short external HTTP follow the macOS system proxy. Streaming chat, relay uploads, and loopback calls stay on Node fetch, and the CLI keeps Bun's proxy environment.
+- Draft and pinned sidebar titles use the same size as the other session titles.
+- A detached worktree's hover card shows the short commit, the same label as the workdir chip.
 
 ## [0.76.0-alpha] - 2026-10-24
 

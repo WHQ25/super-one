@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { desktopNetFetch } from './desktop-net-fetch'
 import log from './logger'
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -69,7 +70,7 @@ export function toDataUrl(buf: Buffer): string | null {
 
 export async function download(url: string): Promise<Buffer | null> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
+    const res = await desktopNetFetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
     if (!res.ok) return null
     const buf = Buffer.from(await res.arrayBuffer())
     return buf.length > 0 && detectImageMime(buf) ? buf : null

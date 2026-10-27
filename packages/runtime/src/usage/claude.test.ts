@@ -1,6 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { keychainServiceNames, parseClaudeUsage as parseUsage, type ClaudeUsageResponse as UsageResponse } from './claude'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { keychainServiceNames, parseClaudeUsage as parseUsage, readClaudeRateLimits, setClaudeUsageFetch, type ClaudeUsageResponse as UsageResponse } from './claude'
+
+vi.mock('node:child_process', () => ({
+  execFileSync: () => { throw new Error('no keychain in test') },
+}))
 
 describe('parseUsage (Claude /api/oauth/usage → ClaudeRateLimits)', () => {
   it('maps each known utilization window with its label and converts resets_at ISO to epoch seconds', () => {
@@ -169,5 +176,34 @@ describe('keychainServiceNames — mirrors the CLI\'s own service-name construct
     const decomposed = '/domains/cafe\u0301'
     expect(decomposed).not.toBe(composed)
     expect(keychainServiceNames(decomposed, {})).toEqual(keychainServiceNames(composed, {}))
+  })
+})
+
+describe('readClaudeRateLimits fetch', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('sends the usage read through the injected fetch', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-usage-fetch-'))
+    const globalFetch = vi.fn()
+    vi.stubGlobal('fetch', globalFetch)
+    const http = vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.includes('cedar_ember') ? { cedar_ember: { eligible: false } } : { five_hour: { utilization: 12, resets_at: '2026-01-28T15:00:00Z' } },
+    )))
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: { accessToken: 'token-a', scopes: ['user:profile'], subscriptionType: 'max' },
+    }))
+    setClaudeUsageFetch(http)
+    try {
+      const reading = await readClaudeRateLimits(dir, { force: true })
+      expect(reading.value?.windows[0]).toMatchObject({ id: 'five_hour', usedPercent: 12 })
+      expect(http.mock.calls.map(([url]) => url)).toEqual([
+        'https://api.anthropic.com/api/oauth/usage',
+        'https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1',
+      ])
+      expect(globalFetch).not.toHaveBeenCalled()
+    } finally {
+      setClaudeUsageFetch((url, init) => fetch(url, init))
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -6,14 +6,30 @@ export interface UsageLog {
 
 export const silentLog: UsageLog = { info: () => {}, warn: () => {} }
 
-export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+/** Host override for one usage client. The desktop passes Electron `net.fetch`. */
+export type UsageFetch = (url: string, init: RequestInit) => Promise<Response>
+
+/**
+ * Looks up global `fetch` at call time, so `vi.stubGlobal('fetch')` still
+ * applies until a host calls `setDefaultUsageFetch`.
+ */
+let defaultUsageFetch: UsageFetch = (url, init) => fetch(url, init)
+
+/** Desktop installs Electron `net.fetch`. Headless nodes leave global `fetch`. */
+export function setDefaultUsageFetch(fetchImpl: UsageFetch): void {
+  defaultUsageFetch = fetchImpl
+}
+
+export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, fetchImpl?: UsageFetch): Promise<Response> {
+  const http = fetchImpl ?? defaultUsageFetch
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const send = () => http(url, { ...init, signal: controller.signal })
   try {
-    return await fetch(url, { ...init, signal: controller.signal }).catch((error: unknown) => {
+    return await send().catch((error: unknown) => {
       // Proxies and VPNs drop some of several parallel handshakes; the request was never sent, so retry once.
       if (!isResetBeforeSend(error)) throw error
-      return fetch(url, { ...init, signal: controller.signal })
+      return send()
     })
   } finally {
     clearTimeout(timer)

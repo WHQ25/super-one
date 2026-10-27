@@ -3,6 +3,8 @@
  * Claude CLI keeps (macOS keychain, else `.credentials.json`). The SDK has no
  * usage query. Refreshing rotates the refresh token, so a refreshed login is
  * always written back where it came from — otherwise the CLI is signed out.
+ * The desktop process injects Electron `net.fetch` so these requests follow
+ * the system proxy. Other hosts keep global `fetch`.
  */
 
 import { createHash } from 'node:crypto'
@@ -12,7 +14,7 @@ import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { ClaudeRateLimits, ClaudeRateLimitWindow, ClaudeResetGrant } from '@superone/shared/agent-types'
 import { AsyncCoalescer } from '../async-coalescer'
-import { fetchWithTimeout, isoToEpochSeconds, parseJson, retryAfterMs, silentLog, type UsageLog } from './http'
+import { fetchWithTimeout, isoToEpochSeconds, parseJson, retryAfterMs, silentLog, type UsageFetch, type UsageLog } from './http'
 import { UsageThrottle, type UsageReading } from './throttle'
 
 const KEYCHAIN_SERVICE = 'Claude Code-credentials'
@@ -214,7 +216,7 @@ async function performRefresh(creds: LoadedClaudeCreds, log: UsageLog): Promise<
     return false
   }
   try {
-    const resp = await fetchWithTimeout(REFRESH_URL, {
+    const resp = await claudeFetch(REFRESH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: oauth.refreshToken, client_id: CLIENT_ID, scope: SCOPES }),
@@ -242,6 +244,20 @@ async function performRefresh(creds: LoadedClaudeCreds, log: UsageLog): Promise<
 }
 
 const refreshes = new AsyncCoalescer<LoadedClaudeCreds | null>()
+
+let claudeHttp: UsageFetch = (url, init) => fetch(url, init)
+
+/**
+ * Desktop injects Electron `net.fetch` (system proxy). Headless nodes keep
+ * global `fetch`, which ignores the macOS system proxy.
+ */
+export function setClaudeUsageFetch(fetchImpl: UsageFetch): void {
+  claudeHttp = fetchImpl
+}
+
+function claudeFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  return fetchWithTimeout(url, init, timeoutMs, claudeHttp)
+}
 
 /** Refresh once per (domain, refresh token) even when several readers race; returns the new access token. */
 export async function refreshClaudeToken(creds: LoadedClaudeCreds, log: UsageLog = silentLog): Promise<string | null> {
@@ -370,7 +386,7 @@ export function claudePlanType(oauth: OAuthCreds): string | null {
 }
 
 function fetchUsage(accessToken: string, url = USAGE_URL): Promise<Response> {
-  return fetchWithTimeout(url, {
+  return claudeFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${accessToken.trim()}`,

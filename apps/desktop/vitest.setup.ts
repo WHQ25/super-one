@@ -17,6 +17,9 @@ vi.mock('electron', () => ({
   BrowserWindow: class BrowserWindow {},
   ipcMain: { handle: () => undefined, on: () => undefined, removeHandler: () => undefined },
   session: { defaultSession: {} },
+  net: {
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  },
   safeStorage: {
     isEncryptionAvailable: () => false,
     encryptString: (s: string) => Buffer.from(s),

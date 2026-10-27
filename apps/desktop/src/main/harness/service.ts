@@ -30,6 +30,7 @@ import {
   desktopPackagePins,
   isDesktopManagedPinAligned,
 } from './tarball-installer'
+import { desktopNetFetch } from '../desktop-net-fetch'
 import log from '../logger'
 import { scriptedHarnessEnabled } from '../session/scripted-harness-gate'
 import { refreshGrokInstallation } from './grok-installation'
@@ -344,7 +345,7 @@ export async function prefetchEnabledHarnessesForAppUpdate(
   const prepared: Array<{ id: 'claude' | 'codex'; runtimeVersion: string; reused: boolean }> = []
   const failed: Array<{ id: 'claude' | 'codex'; error: string }> = []
 
-  const resolved = await resolveAppHarnessPins({ appVersion: targetAppVersion })
+  const resolved = await resolveAppHarnessPins({ appVersion: targetAppVersion, fetchImpl: desktopNetFetch })
   const processPins = {
     claude: desktopPackagePins('claude').runtimeVersion,
     codex: desktopPackagePins('codex').runtimeVersion,

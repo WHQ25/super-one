@@ -4,7 +4,10 @@ import { SubscriptionUsageTracker } from '@superone/shared/subscription-usage'
 import { claudeCredentialFingerprint, claudePlanType, loadClaudeCredentials, readClaudeRateLimits } from '@superone/runtime/usage'
 import log from '../logger'
 import { claudeAccountStore } from './claude-account-store'
+import { installClaudeUsageFetch } from './claude-usage-fetch'
 import { usageLog } from './usage-log'
+
+installClaudeUsageFetch()
 
 /**
  * The desktop gauge's view of a Claude login: the runtime reading (throttle,

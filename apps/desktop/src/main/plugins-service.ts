@@ -23,6 +23,7 @@ import {
   updateMarketplace as runtimeUpdateMarketplace,
 } from '@superone/runtime/fs'
 import { execFile } from 'child_process'
+import { desktopNetFetch } from './desktop-net-fetch'
 import { ensureShellPath, withShellPath } from './shell-path'
 
 // These shell out to a bare `claude`.
@@ -108,7 +109,7 @@ export async function getGithubStars(repoSlug: string): Promise<number | null> {
   if (viaGh != null) return viaGh
 
   try {
-    const res = await fetch(`https://api.github.com/repos/${slug}`, {
+    const res = await desktopNetFetch(`https://api.github.com/repos/${slug}`, {
       headers: { Accept: 'application/vnd.github+json' },
       signal: AbortSignal.timeout(10000),
     })
@@ -156,7 +157,7 @@ export async function listGithubReposForOwner(owner: string): Promise<GithubRepo
   if (viaGh) return viaGh
 
   try {
-    const res = await fetch(
+    const res = await desktopNetFetch(
       `https://api.github.com/users/${encodeURIComponent(login)}/repos?per_page=50&sort=updated&type=all`,
       {
         headers: { Accept: 'application/vnd.github+json' },
@@ -189,7 +190,7 @@ async function searchGithubRepositoriesViaRest(
   const headers: Record<string, string> = { Accept: 'application/vnd.github+json' }
   if (githubAuthToken) headers.Authorization = `Bearer ${githubAuthToken}`
   try {
-    const res = await fetch(
+    const res = await desktopNetFetch(
       `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&per_page=${GITHUB_REPO_QUERY_LIMIT}`,
       {
         headers,

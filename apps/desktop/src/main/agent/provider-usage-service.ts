@@ -1,3 +1,4 @@
+import { desktopNetFetch } from '../desktop-net-fetch'
 import log from '../logger'
 import type { ProviderRateLimits } from '@superone/shared/agent-types'
 import { resolveChatService } from '../providers/resolver'
@@ -35,7 +36,7 @@ async function fetchWithTimeout(url: string, apiKey: string, timeoutMs: number):
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, {
+    return await desktopNetFetch(url, {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
       signal: controller.signal,

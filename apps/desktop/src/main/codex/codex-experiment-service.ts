@@ -1,3 +1,4 @@
+import { desktopNetFetch } from '../desktop-net-fetch'
 import { CodexAccountManager } from '@superone/codex/account-manager'
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { codexAccountStore } from './codex-account-store'
@@ -582,7 +583,7 @@ export class CodexExperimentService {
     const timer = setTimeout(() => controller.abort(), CUSTOM_PROVIDER_MODELS_TIMEOUT_MS)
     const url = modelsUrl('openai', baseUrl)
     try {
-      const response = await fetch(url, {
+      const response = await desktopNetFetch(url, {
         headers: authHeaders('openai', resolved.apiKey),
         signal: controller.signal,
       })

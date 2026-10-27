@@ -23,6 +23,7 @@ import {
   type RelayContext,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
+import { desktopNetFetch } from '../desktop-net-fetch'
 import log from '../logger'
 import { authHeaders, modelsUrl } from './endpoint-test'
 
@@ -47,7 +48,7 @@ async function fetchJson(url: string, init?: RequestInit): Promise<FetchJsonResu
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal })
+    const res = await desktopNetFetch(url, { ...init, signal: controller.signal })
     const text = await res.text().catch(() => '')
     if (!res.ok) {
       log.warn('[discover-models] HTTP %s %s body=%s', res.status, url, previewBody(text))

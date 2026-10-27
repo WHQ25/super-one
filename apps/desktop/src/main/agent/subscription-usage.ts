@@ -3,7 +3,10 @@ import { claudeAccountProviderId } from '@superone/shared/agent-types'
 import { codexAccountProviderId } from '@superone/shared/codex-accounts'
 import { readSubscriptionUsage, type ClaudeUsageAccount, type CodexUsageAccount } from '@superone/runtime/usage'
 import { codexAccountStore } from '../codex/codex-account-store'
+import { installClaudeUsageFetch } from './claude-usage-fetch'
 import { usageLog } from './usage-log'
+
+installClaudeUsageFetch()
 
 /** Every signed-in Claude account SuperOne manages, labelled by email, instead of only the CLI's default login. */
 export async function claudeUsageAccounts(): Promise<ClaudeUsageAccount[]> {

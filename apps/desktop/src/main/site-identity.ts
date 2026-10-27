@@ -2,6 +2,7 @@ import { parseNewApiStatus, parseSub2ApiPublicSettings, relaySiteRoot } from '@s
 import { download, toDataUrl } from './image-cache'
 import { fetchPageHtml, resolveFavicon } from './favicon'
 import { readHtmlMeta, readHtmlTitle } from './html-meta'
+import { desktopNetFetch } from './desktop-net-fetch'
 import log from './logger'
 
 const HTML_TIMEOUT_MS = 8000
@@ -60,7 +61,7 @@ async function resolveLogo(root: string, logo: string): Promise<string | null> {
 
 async function fetchJson(url: string): Promise<unknown | null> {
   try {
-    const res = await fetch(url, {
+    const res = await desktopNetFetch(url, {
       redirect: 'follow',
       signal: AbortSignal.timeout(HTML_TIMEOUT_MS),
       headers: { accept: 'application/json' },

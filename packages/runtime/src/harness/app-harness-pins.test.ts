@@ -44,6 +44,15 @@ describe('app harness pins', () => {
     expect(resolved.pins.codex).toBe(managedPackagePins('codex').runtimeVersion)
   })
 
+  it('uses an injected fetch for the manifest', async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({
+      version: '3.0.0',
+      pins: { claude: '1.2.3', codex: '4.5.6' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+    const resolved = await resolveAppHarnessPins({ appVersion: '3.0.0', fetchImpl })
+    expect(resolved.pins).toEqual({ claude: '1.2.3', codex: '4.5.6' })
+  })
+
   it('uses remote pins when published', async () => {
     const resolved = await resolveAppHarnessPins({
       appVersion: '2.0.0',

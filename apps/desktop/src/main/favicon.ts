@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { desktopNetFetch } from './desktop-net-fetch'
 import log from './logger'
 import { download, toDataUrl, toWebDisplayImage } from './image-cache'
 
@@ -39,7 +40,7 @@ export function decodeHtml(bytes: Uint8Array, contentType: string | null): strin
 /** Shared HTML fetch used by favicon resolution, page-title parsing and link previews. */
 export async function fetchPageHtml(pageUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(pageUrl, {
+    const res = await desktopNetFetch(pageUrl, {
       redirect: 'follow',
       signal: AbortSignal.timeout(HTML_TIMEOUT_MS),
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },

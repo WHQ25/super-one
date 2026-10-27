@@ -67,16 +67,19 @@ export async function fetchAppHarnessPins(opts: {
   appVersion: string
   baseUrl?: string
   fetchJson?: (url: string) => Promise<unknown>
+  /** Desktop passes Electron `net.fetch`. Omitted hosts keep global `fetch`. */
+  fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>
   timeoutMs?: number
 }): Promise<AppHarnessPins | null> {
   const url = appHarnessPinsUrl(opts.appVersion, opts.baseUrl ?? HARNESS_CDN_BASE)
+  const http = opts.fetchImpl ?? fetch
   const fetchJson =
     opts.fetchJson ??
     (async (u: string) => {
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 15_000)
       try {
-        const res = await fetch(u, {
+        const res = await http(u, {
           signal: ctrl.signal,
           headers: { accept: 'application/json' },
         })
@@ -105,6 +108,8 @@ export async function resolveAppHarnessPins(opts: {
   appVersion: string
   baseUrl?: string
   fetchJson?: (url: string) => Promise<unknown>
+  /** Desktop passes Electron `net.fetch`. Omitted hosts keep global `fetch`. */
+  fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>
 }): Promise<AppHarnessPins> {
   const remote = await fetchAppHarnessPins(opts)
   if (remote) return remote

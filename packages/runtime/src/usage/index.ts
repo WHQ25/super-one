@@ -2,7 +2,8 @@
  * Subscription usage of every login this machine's harnesses use, read the
  * same way on a desktop and on a headless node: from the CLI's own stored
  * login, straight against each provider's usage API. No harness process has
- * to run. A source without a login contributes no row.
+ * to run. The desktop process injects Electron `net.fetch` for these reads so
+ * they follow the system proxy. A source without a login contributes no row.
  */
 
 import type { ClaudeRateLimits } from '@superone/shared/agent-types'
@@ -21,7 +22,7 @@ export * from './codex'
 export * from './cursor'
 export * from './grok'
 export * from './opencode'
-export { fetchWithTimeout, silentLog, type UsageLog } from './http'
+export { fetchWithTimeout, setDefaultUsageFetch, silentLog, type UsageFetch, type UsageLog } from './http'
 export type { OpenReadOnlyDatabase, ReadOnlyDatabase } from './sqlite-reader'
 export { UsageThrottle, type UsageReading } from './throttle'
 

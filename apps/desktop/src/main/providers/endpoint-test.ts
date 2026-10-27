@@ -1,4 +1,5 @@
 import type { EndpointTestResult } from '@superone/shared/agent-types'
+import { desktopNetFetch } from '../desktop-net-fetch'
 import {
   endpointBaseUrl,
   familyBaseUrl,
@@ -111,7 +112,7 @@ async function probeModelsList(
 ): Promise<EndpointTestResult & { notFound?: boolean }> {
   const family = endpointFamily(endpoint)
   const url = testEndpointModelsUrl(siteRoot, endpoint)
-  const res = await fetch(url, { headers: authHeaders(family, apiKey), signal })
+  const res = await desktopNetFetch(url, { headers: authHeaders(family, apiKey), signal })
   if (res.ok) return { endpointId: endpoint.id, success: true, status: res.status }
   if (res.status === 401 || res.status === 403) return invalidKeyResult(endpoint.id, res.status)
   if (res.status === 404) {
@@ -140,7 +141,7 @@ async function probeAnthropicMessages(
 ): Promise<EndpointTestResult> {
   const base = endpointBaseUrl(siteRoot, endpoint, 'anthropic-messages')
   const url = messagesUrl(base)
-  const res = await fetch(url, {
+  const res = await desktopNetFetch(url, {
     method: 'POST',
     headers: {
       ...authHeaders('anthropic', apiKey),

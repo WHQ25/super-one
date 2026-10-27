@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ClaudeAccount } from '@superone/shared/agent-types'
 import { fetchWithTimeout, hasProfileScope, loadClaudeCredentials, needsRefresh, refreshClaudeToken, type LoadedClaudeCreds } from '@superone/runtime/usage'
+import { desktopNetFetch } from '../desktop-net-fetch'
 import { usageLog } from './usage-log'
 
 const loadCredentials = (dir: string | null) => loadClaudeCredentials(dir, usageLog)
@@ -74,5 +75,5 @@ export function readClaudeAccount(dir: string | null, force = false, store: Clau
 function fetchProfile(token: string): Promise<Response> {
   return fetchWithTimeout('https://api.anthropic.com/api/oauth/profile', {
     headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'claude-code/2.1.289', 'Cache-Control': 'no-cache' },
-  }, 10_000)
+  }, 10_000, desktopNetFetch)
 }

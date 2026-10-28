@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.163.0` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.165.0` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.163.0.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.165.0.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`
@@ -55,6 +55,7 @@ voices still come from
 | `externalAgentConfig/import` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `externalAgentConfig/import/readHistories` | unused | No client call or dedicated handler. | — |
 | `externalAgentConfig/import/recordHistory` | unused | No client call or dedicated handler. | — |
+| `feedback/save` | unused | No client call. SuperOne does not write a local feedback ZIP. | — |
 | `feedback/upload` | unused | No client call or dedicated handler. | — |
 | `fs/copy` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `fs/createDirectory` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
@@ -66,7 +67,7 @@ voices still come from
 | `fs/watch` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `fs/writeFile` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `fuzzyFileSearch` | unused | No client call or dedicated handler. | — |
-| `hooks/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-hooks-service.ts` |
+| `hooks/list` | used | Calls the app-server RPC. `preModelRequest` and `postModelRequest` are dropped by the event allowlist. | `apps/desktop/src/main/codex/codex-hooks-service.ts` |
 | `initialize` | used | Advertises io.modelcontextprotocol/ui with text/html;profile=mcp-app in extensions. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
 | `marketplace/add` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
 | `marketplace/remove` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
@@ -102,7 +103,7 @@ voices still come from
 | `thread/attachmentOwner/list` | unused | Reverse provider attachment lookup; SuperOne owns its attachment identities. | — |
 | `thread/compact/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/delete` | unused | No client call or dedicated handler. | — |
-| `thread/fork` | partial | Native session forks are integrated. Experimental prediction-mode generation is live-verified but not yet a product caller; see prompt-prediction.md. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
+| `thread/fork` | partial | Native session forks are integrated. Experimental prediction-mode generation is live-verified but not yet a product caller; attached forks and prediction-MCP disablement are unused. See prompt-prediction.md. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/goal/clear` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
 | `thread/goal/get` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
 | `thread/goal/set` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
@@ -177,8 +178,9 @@ voices still come from
 | `thread/decrement_elicitation` | unused | No client call or dedicated handler. | — |
 | `thread/increment_elicitation` | unused | No client call or dedicated handler. | — |
 | `thread/items/read` | unused | Experimental bounded item lookup; SuperOne owns transcript pagination. | — |
+| `thread/memory/read` | unused | Experimental memory-summary read. No client call. | — |
 | `thread/memoryMode/set` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/request` | unused | 0.163.0 rejects the placeholder method as not implemented. | — |
+| `thread/prediction/request` | unused | 0.165.0 still rejects the placeholder method as not implemented. | — |
 | `thread/queue/add` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/delete` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
@@ -190,8 +192,10 @@ voices still come from
 | `thread/realtime/appendSpeech` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/appendText` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/listVoices` | partial | Desktop/phone official-account voice catalog prefers v3, falls back to v1, and validates defaultV1. | `apps/desktop/src/main/codex/codex-realtime.ts` |
-| `thread/realtime/start` | partial | Desktop and paired-phone official-account WebRTC; backendReasoningStatus and custom-provider audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
+| `thread/realtime/start` | partial | Desktop and paired-phone official-account WebRTC; backendReasoningStatus, voiceSessionId, and custom-provider audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/stop` | partial | Host-owned desktop/paired-phone voice lifecycle; stop preserves delegated turns. | `apps/desktop/src/main/codex/codex-realtime.ts` |
+| `thread/sample` | unused | Experimental one-shot sample. Not the composer suggestion generator. | — |
+| `thread/sample/cancel` | unused | Cancels `thread/sample`. No client call. | — |
 | `thread/search` | unused | No client call or dedicated handler. | — |
 | `thread/searchOccurrences` | unused | No client call or dedicated handler. | — |
 | `thread/settings/update` | partial | Desktop realtime/model/effort/tier synchronization; disabledPluginIds is unused. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-thread-selection.ts` |
@@ -284,7 +288,7 @@ voices still come from
 | `thread/goal/cleared` | unused | No client call or dedicated handler. | — |
 | `thread/goal/updated` | unused | No client call or dedicated handler. | — |
 | `thread/name/updated` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; 0.163.0 has no producer. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
+| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; 0.165.0 still has no producer. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
 | `thread/project/updated` | unused | No client call or dedicated handler. | — |
 | `thread/queue/changed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/readState/changed` | unused | Generated in the stable bundle but source marks the feature experimental; host unread state remains authoritative. | — |

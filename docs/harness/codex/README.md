@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.163.0` · Ledger version: `0.163.0` · Last updated: 2026-10-17
+Pin: `@openai/codex` `0.165.0` · Ledger version: `0.165.0` · Last updated: 2026-10-29
 
 ## Upstream
 
@@ -27,8 +27,8 @@ Prediction notification reception shares `packages/codex/src/prompt-prediction.t
 across desktop and remote node connections. Valid results use the existing shared
 `prompt_suggestion` event and composer UI: desktop ghost text / Tab-to-fill and
 mobile tappable rows. The receiver remains active after turn completion and
-filters stale or child-thread results. The dedicated 0.163.0 prediction RPC is
-unimplemented, but the official app generates suggestions with an experimental
+filters stale or child-thread results. The dedicated prediction RPC is still
+unimplemented on 0.165.0, but the official app generates suggestions with an experimental
 ephemeral fork plus ordinary `turn/start`; that path is live-verified on the
 pinned binary. SuperOne has not integrated the generator and sends no extra
 prediction call yet. See [prompt-prediction.md](prompt-prediction.md) and the
@@ -55,6 +55,7 @@ prediction call yet. See [prompt-prediction.md](prompt-prediction.md) and the
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.165.0 | 2026-10-29 | executed | [0.165.0](upgrades/0.165.0.md) | — |
 | 0.163.0 | 2026-10-17 | executed | [0.163.0](upgrades/0.163.0.md) | — |
 | 0.162.1 | 2026-10-11 | executed | [0.162.1](upgrades/0.162.1.md) | — |
 | 0.160.0 | 2026-10-05 | executed | [0.160.0](upgrades/0.160.0.md) | — |

@@ -24,6 +24,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Codex runtime 0.165.0.
 - Claude Agent SDK 0.3.310.
 - Electron 44.9.3. Electron 44.9.1 blocks the compromised eMudhra intermediates (CVE-2026-115570); 44.9.3 adds the later Chromium fixes. The bundled Node is 24.22.0.
 - The phone runtime is React Native 0.88 and React 19.3. New Architecture is required, and the splash screen comes from the expo-splash-screen plugin.

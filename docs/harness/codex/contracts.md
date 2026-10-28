@@ -183,15 +183,22 @@ items still map to Agent cards.
 - **Behavior:** 0.163.0 declares experimental `thread/prediction/request` and
   `thread/prediction/updated { threadId, sourceTurnId, result }`, but the server
   returns JSON-RPC `-32601` with `thread/prediction/request is not implemented yet`.
-  The release source contains no prediction notification producer. These facts
-  apply to the dedicated RPC/event, not to client-driven generation. The
-  official app uses experimental ephemeral `thread/fork` plus ordinary
-  `turn/start`, which works on 0.163.0. See [prompt-prediction.md](prompt-prediction.md).
+  The release source contains no prediction notification producer. The same
+  handler string is still the only implementation at `rust-v0.165.0`
+  (`message_processor.rs`); that release also does not construct
+  `ThreadPredictionUpdated`. These facts apply to the dedicated RPC/event, not
+  to client-driven generation. The official app uses experimental ephemeral
+  `thread/fork` plus ordinary `turn/start`, which works on 0.163.0. Experimental
+  `thread/sample` (0.164.0) is a separate one-shot API and is not this receiver.
+  See [prompt-prediction.md](prompt-prediction.md).
   A dedicated-event completed result allows nullable `text`; a failed result
   contains no suggestion.
 - **Observed:** Exact `rust-v0.163.0` source and an isolated npm-binary RPC check
   on 2026-10-17. Its stable generated notification schema includes the event
   despite the experimental source annotation and unavailable implementation.
+  Rechecked `rust-v0.165.0` source on 2026-10-29; the handler text is unchanged
+  and no producer was added. An isolated 0.165.0 npm binary returned the same
+  `-32601` for `thread/prediction/request` after `initialize`.
   A subsequent inspection of installed official app 26.1007.71326 and a live
   0.163.0 inference probe verified the separate fork-based generator.
 - **Depends on it:** `packages/codex/src/prompt-prediction.ts` is shared by the
@@ -305,6 +312,22 @@ items still map to Agent cards.
 - **Guard:** `codex-voice-previews.test.ts`, `codex-voice-ipc.test.ts` and
   `CodexRealtimeVoicePreference.test.tsx`; colocated stories cover loading,
   missing samples, retry, playback failure and narrow Chinese dark layouts.
+
+### Generated images keep `savedPath`; bytes and file ids are alternatives
+
+- **Behavior:** From 0.164.0, an `imageGeneration` item flattens
+  `GeneratedImageRef`. An inline image still has top-level `result` (base64).
+  A stored image has `fileId` and may omit `result`. `savedPath` stays optional.
+  `inputImages` (`path`, `sha256`) is present only after a completed generation
+  that recorded local inputs, and is absent on older items.
+- **Observed:** `rust-v0.165.0` `codex-rs/ext/items/src/image_generation.rs` and
+  the protocol diff from `rust-v0.163.0`. No live image turn on 0.165.0.
+- **Depends on it:** `packages/codex/src/agent-event-mapper.ts` and
+  `apps/desktop/src/main/codex/codex-turn.ts` render from `savedPath`,
+  `revisedPrompt`, `failure`, and `status`. They ignore `result`, `fileId`, and
+  `inputImages`. A completed item with only `fileId` stays without a local file.
+- **Guard:** Existing mapper and turn tests cover camelCase `savedPath` and a
+  follow-up that omits it. They do not cover a `fileId`-only item.
 
 ### V3 owns its catalog but still uses the legacy default field
 

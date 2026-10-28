@@ -2,15 +2,18 @@
 
 Verified on 2026-10-17 against npm Codex 0.163.0, upstream main
 `96eb400d1231f0199e96f640c740096087cf3e9b`, and the locally installed official
-app. Status: client-driven generation is viable; SuperOne currently has the
-suggestion receiver/UI, but has not integrated the generator.
+app. Rechecked on 2026-10-29 against pinned npm Codex 0.165.0:
+`thread/prediction/request` still returns `-32601`. Status: client-driven
+generation is viable; SuperOne currently has the suggestion receiver/UI, but
+has not integrated the generator.
 
 ## Two different interfaces
 
 | Interface | Actual behavior |
 |---|---|
-| `thread/prediction/request` | Declared experimental, but the 0.163.0 and inspected main handlers unconditionally return method-not-found / not implemented. Enabling experimental API does not implement it. |
-| `thread/prediction/updated` | Declared notification; no native generator emits it in the inspected release. SuperOne already receives it if a future server supplies it. |
+| `thread/prediction/request` | Declared experimental, but the 0.163.0 and inspected main handlers unconditionally return method-not-found / not implemented. Enabling experimental API does not implement it. `rust-v0.165.0` `message_processor.rs` still returns `thread/prediction/request is not implemented yet`. |
+| `thread/prediction/updated` | Declared notification; no native generator emits it in the inspected release or in `rust-v0.165.0`. SuperOne already receives it if a future server supplies it. |
+| `thread/sample` | Experimental one-shot fork response added in 0.164.0, with `thread/sample/cancel`. SuperOne does not call it. It is not this receiver. |
 | `thread/fork` with `experimentalPredictionMode: true` | Implemented. Creates an ephemeral fork from a loaded, persisted parent, inheriting effective settings, history, tools and environments for cache reuse. The client then runs a normal `turn/start` to generate a suggestion. |
 
 The unavailable dedicated RPC does **not** mean prompt prediction is impossible

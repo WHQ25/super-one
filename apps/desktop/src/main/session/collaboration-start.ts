@@ -37,6 +37,7 @@ import { collaborationStore as store, notifyCollaborationMailboxChanged } from '
 import { ensureChildProject, isManagedWorktreePath, resolveCwd } from './collaboration-child-project'
 import { sendToRemoteChild, startRemoteChild, type StartedRemoteChild } from './collaboration-remote'
 import {
+  codexLaunchPinsSpeed,
   errorResult,
   isCollaborationTargetReadOnly,
   notifyCollaborationSessionsChanged,
@@ -373,7 +374,7 @@ async function startSessionAgentImpl(
       profileApproval: approvedConfig.profileApproval,
       launchId: approvedConfig.launchId,
       summary: approvedConfig.summary,
-      ...(typeof profile.defaultConfig.fastMode === 'boolean' ? { codexServiceTier: resolveCodexServiceTier(grant.agent_id, profile.defaultConfig, profile) } : {}),
+      ...(codexLaunchPinsSpeed(profile.defaultConfig) ? { codexServiceTier: resolveCodexServiceTier(grant.agent_id, profile.defaultConfig, profile) } : {}),
     }
     store().updateConfig(grant.grant_id, config)
     grant = { ...grant, config_json: JSON.stringify(config) }

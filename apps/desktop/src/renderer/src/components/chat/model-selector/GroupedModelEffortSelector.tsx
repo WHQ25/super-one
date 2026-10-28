@@ -1,4 +1,5 @@
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { codexSpeedTriggerLabel } from '@superone/shared/codex-fast-mode'
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
@@ -410,6 +411,24 @@ export function hasSelectableEffort(effortOptions: SelectorEffortOption[]): bool
   return effortOptions.length > 1
 }
 
+function ultrafastTrigger(label: string): boolean {
+  return label.trim().toLowerCase() === 'ultrafast'
+}
+
+/** Fast is one bolt. Ultrafast is two overlapping bolts, with the name only in the accessible label. */
+function CodexSpeedMark({ label }: { label: string }) {
+  if (!ultrafastTrigger(label)) {
+    return <Zap className="size-3 shrink-0 fill-current" aria-label={label} />
+  }
+  return (
+    <span className="relative inline-block h-3 w-[18px] shrink-0">
+      <Zap className="absolute left-0 top-0 size-3 fill-current" aria-hidden />
+      <Zap className="absolute left-1.5 top-0 size-3 fill-current" aria-hidden />
+      <span className="sr-only">{label}</span>
+    </span>
+  )
+}
+
 export function matchesModelSearch(model: SelectorModelOption, query: string): boolean {
   return [model.id, model.name, model.description]
     .filter((value): value is string => Boolean(value))
@@ -486,8 +505,8 @@ export function GroupedModelEffortSelector({
   const showOptionParams = optionParams.length > 0 && Boolean(onOptionParamChange)
   const toggleParams = optionParams.filter((param) => param.kind === 'toggle')
   const choiceParams = optionParams.filter((param) => param.kind === 'choice')
-  // Fast is surfaced as a lightning icon; other toggles stay hidden in the trigger.
-  const fastEnabled = optionParams.some((param) => param.id === 'fast' && param.selected === 'true')
+  // Fast is one bolt. Ultrafast is two overlapping bolts. Any other named speed still shows its word.
+  const speedLabel = codexSpeedTriggerLabel(optionParams)
   const optionSummary = optionParams
     .filter((param) => param.kind === 'choice' && param.id === 'optimize_for' && param.selected !== 'balanced')
     .map((param) => param.values.find((v) => v.value === param.selected)?.label ?? param.selected)
@@ -522,7 +541,7 @@ export function GroupedModelEffortSelector({
               : [
                   hasAgents ? agentLabel : null,
                   selectedMode?.name ?? null,
-                  fastEnabled ? `Fast · ${modelLabel}` : modelLabel,
+                  speedLabel ? `${speedLabel} · ${modelLabel}` : modelLabel,
                   canSelectEffort ? effortLabel : null,
                   ...optionSummary,
                 ]
@@ -547,7 +566,8 @@ export function GroupedModelEffortSelector({
                   <span className="shrink-0 text-muted-foreground/70">·</span>
                 </>
               )}
-              {fastEnabled && <Zap className="size-3 shrink-0 fill-current" aria-label="Fast" />}
+              {speedLabel && <CodexSpeedMark label={speedLabel} />}
+              {speedLabel && speedLabel !== 'Fast' && !ultrafastTrigger(speedLabel) && <span className="shrink-0">{speedLabel}</span>}
               <span className="min-w-0 shrink truncate">{modelLabel}</span>
               {canSelectEffort && (
                 <>

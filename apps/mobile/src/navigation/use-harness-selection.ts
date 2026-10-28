@@ -10,7 +10,7 @@ import type {
   RemoteSystemInfo,
   SandboxSupportLevel,
 } from '@superone/shared/agent-types'
-import { findCodexFastServiceTier, resolveCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { codexServiceTierFromSpeedParam, findCodexFastServiceTier, resolveCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import type { ChatRuntime } from '../runtime'
 import {
   effortOptionsForModel,
@@ -299,11 +299,13 @@ export function useHarnessSelection() {
       setUltracodePick(value === 'true')
       return
     }
-    if (selectedProvider === 'codex' && id === 'fast') {
-      const next = value === 'true' ? findCodexFastServiceTier(currentModel)?.id ?? null : null
-      claimed.current.serviceTier = next
-      setServiceTier(next)
-      return
+    if (selectedProvider === 'codex') {
+      const next = codexServiceTierFromSpeedParam(currentModel, id, value)
+      if (next !== undefined) {
+        claimed.current.serviceTier = next
+        setServiceTier(next)
+        return
+      }
     }
     setModelParams((current) => ({ ...current, [id]: value }))
   }

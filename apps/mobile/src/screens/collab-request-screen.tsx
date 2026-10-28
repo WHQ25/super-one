@@ -15,7 +15,7 @@ import {
   shortSessionId,
   type LaunchWorkDir,
 } from '@superone/shared/collab-request-display'
-import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { codexSelectedServiceTier, codexServiceTierFromSpeedParam, codexSpeedSelectionPatch } from '@superone/shared/codex-fast-mode'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
@@ -199,7 +199,7 @@ function LaunchConfigRow({ launch, profile, onChange }: {
     [profile.models],
   )
   const model = models.find((item) => item.id === config.model)
-  const fast = findCodexFastServiceTier(model)
+  const selectedTier = codexSelectedServiceTier(model, config)
   // Effort is hidden for a mapped provider — the desktop rule.
   const efforts = config.apiProviderId ? [] : profile.efforts.map((value) => ({ value, label: formatEffortLabel(value) }))
   const providers: RemoteProviderOption[] = profile.apiProviders.length
@@ -214,10 +214,13 @@ function LaunchConfigRow({ launch, profile, onChange }: {
   return <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs,
     marginTop: spacing.xs, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
     <ModelPicker compact harness={harness}
-      models={models} model={config.model ?? ''} onModel={(next) => onChange({ model: next, fastMode: false })}
+      models={models} model={config.model ?? ''} onModel={(next) => onChange({ model: next, fastMode: false, serviceTier: null })}
       efforts={efforts} effort={config.effort ?? ''} onEffort={(effort) => onChange({ effort })}
-      optionParams={optionParamsForModel(harness, model, { serviceTier: config.fastMode && fast ? fast.id : null })}
-      onOptionParam={(id, value) => { if (id === 'fast') onChange({ fastMode: value === 'true' }) }}
+      optionParams={optionParamsForModel(harness, model, { serviceTier: selectedTier })}
+      onOptionParam={(id, value) => {
+        const tier = codexServiceTierFromSpeedParam(model, id, value)
+        if (tier !== undefined) onChange(codexSpeedSelectionPatch(tier))
+      }}
       providers={providers} providerId={config.apiProviderId ?? null}
       onProvider={providers.length ? (id) => onChange({ apiProviderId: id, effort: undefined }) : undefined} />
     <PermissionModeSelector harness={harness} modes={HARNESS_LAUNCH_OPTIONS[harness].permissionModes}

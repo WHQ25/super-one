@@ -31,6 +31,8 @@ export interface LaunchModelPatch {
   effort?: string
   apiProviderId?: string | null
   fastMode?: boolean
+  /** Codex catalog tier. Null is Standard. */
+  serviceTier?: string | null
   claudeFastMode?: boolean
 }
 
@@ -47,6 +49,8 @@ export interface LaunchModelProps {
   /** The row carries a Fast tier choice; harnesses with a Fast tier render its toggle. */
   offerFastMode?: boolean
   fastMode?: boolean
+  /** Codex tier already chosen for this launch. Null is Standard; absent defers to `fastMode`. */
+  serviceTier?: string | null
   claudeFastMode?: boolean
   /** The row cannot pick an API key (it runs on the user's default one): no provider list. */
   hideApiProvider?: boolean

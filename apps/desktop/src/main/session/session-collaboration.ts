@@ -37,7 +37,7 @@ import {
   remoteChildTarget,
   remoteProviderId,
 } from './collaboration-remote'
-import { resolveCodexServiceTier, toolResult } from './collaboration-host'
+import { codexLaunchPinsSpeed, resolveCodexServiceTier, toolResult } from './collaboration-host'
 import type { Session, SessionManager } from './types'
 import { openSessionAgentsConfirm } from './session-collaboration-confirm'
 import { hasExternalParent } from './collaboration-external-parent'
@@ -418,7 +418,7 @@ export function createGrants(parentSessionId: string, launches: SessionAgentLaun
         fingerprint: currentApprovalFingerprint(getSessionProvider(profile.id)!, profile),
         cwd: launch.config.cwd,
       } } : {}),
-      ...(typeof launch.config.fastMode === 'boolean'
+      ...(codexLaunchPinsSpeed(launch.config)
         ? { codexServiceTier: resolveCodexServiceTier(launch.agentId, launch.config, profile) }
         : {}),
     }
@@ -538,15 +538,15 @@ export function getSessionCollaborationRunConfig(
   const sandboxMode = config.sandboxMode && EDITABLE_SANDBOX_MODES.has(config.sandboxMode)
     ? config.sandboxMode
     : undefined
-  const hasFastMode = typeof config.fastMode === 'boolean'
-  const codexServiceTier = hasFastMode
+  const pinsSpeed = codexLaunchPinsSpeed(config)
+  const codexServiceTier = pinsSpeed
     ? resolveCodexServiceTier(row.agent_id, config)
     : undefined
-  if (!permissionMode && !sandboxMode && !hasFastMode) return null
+  if (!permissionMode && !sandboxMode && !pinsSpeed) return null
   return {
     ...(permissionMode ? { permissionMode } : {}),
     ...(sandboxMode ? { sandboxMode } : {}),
-    ...(hasFastMode ? { codexServiceTier } : {}),
+    ...(pinsSpeed ? { codexServiceTier } : {}),
     ...(config.codexPermissionPreset ? { codexPermissionPreset: config.codexPermissionPreset } : {}),
   }
 }

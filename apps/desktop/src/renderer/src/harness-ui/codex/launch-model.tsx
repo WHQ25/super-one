@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
 import type { ModelOption } from '@superone/shared/agent-types'
-import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import {
+  codexModelSwitchSpeedPatch,
+  codexSelectedServiceTier,
+  codexServiceTierFromSpeedParam,
+  codexSpeedOptionParam,
+  codexSpeedSelectionPatch,
+  findCodexFastServiceTier,
+} from '@superone/shared/codex-fast-mode'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
@@ -72,6 +79,7 @@ export function CodexLaunchModel({
   effort,
   offerFastMode,
   fastMode,
+  serviceTier,
   hideApiProvider,
   optionParams,
   onOptionParamChange,
@@ -96,8 +104,16 @@ export function CodexLaunchModel({
     if (live.models.length === 0 || (model && live.models.some((entry) => entry.id === model))) return
     const next = live.models.find((entry) => entry.isDefault) ?? live.models[0]!
     const nextEffort = codexEffortFor(next, effort)
-    onChangeRef.current({ model: next.id, ...(nextEffort ? { effort: nextEffort } : {}) })
-  }, [live.models, model, effort])
+    const currentTier = codexSelectedServiceTier(
+      profile?.models.find((entry) => entry.id === model),
+      { fastMode, serviceTier },
+    )
+    onChangeRef.current({
+      model: next.id,
+      ...(nextEffort ? { effort: nextEffort } : {}),
+      ...(offerFastMode ? codexModelSwitchSpeedPatch(next, currentTier) : {}),
+    })
+  }, [live.models, model, effort, fastMode, serviceTier, offerFastMode, profile?.models])
 
   const profileCatalog = useProfileCatalog(profile)
   const models = useMemo(
@@ -117,10 +133,17 @@ export function CodexLaunchModel({
     return (profile?.efforts ?? []).map((value) => ({ value, label: formatReasoningEffortLabel(value) }))
   }, [selected, profile?.efforts])
 
-  // The Fast tier is a property of the model; the live catalog wins over the profile's copy.
-  const offersFast = (id: string | null | undefined) =>
-    !!findCodexFastServiceTier(live.models.find((entry) => entry.id === id) ?? profile?.models.find((entry) => entry.id === id))
-  const showFast = offerFastMode && !profileOnly && offersFast(model)
+  // The live catalog wins over the profile's copy. Fast-only models keep the bolt;
+  // a catalog with another tier (Ultrafast) chooses speed inside the model menu.
+  const speedModel = (id: string | null | undefined) =>
+    live.models.find((entry) => entry.id === id) ?? profileCatalog.find((entry) => entry.id === id)
+  const currentTier = codexSelectedServiceTier(speedModel(model), { fastMode, serviceTier })
+  const speedParam = offerFastMode && !profileOnly ? codexSpeedOptionParam(speedModel(model), currentTier) : null
+  const showFast = speedParam?.kind === 'toggle'
+  const optionRows = [
+    ...(speedParam?.kind === 'choice' ? [speedParam] : []),
+    ...(optionParams ?? []),
+  ]
 
   return (
     <>
@@ -130,12 +153,12 @@ export function CodexLaunchModel({
         <IconButton
           size="sm"
           tooltip={t('settings.preferences.fastMode.label')}
-          aria-pressed={fastMode === true}
-          onClick={() => onChange({ fastMode: fastMode !== true })}
+          aria-pressed={currentTier != null}
+          onClick={() => onChange(codexSpeedSelectionPatch(currentTier ? null : findCodexFastServiceTier(speedModel(model))?.id ?? null))}
         >
           {/* On/off reads as filled-vs-outline in the model label's own color — the same
               contrast the chat-input trigger uses for its Fast bolt. */}
-          <Zap className={cn(fastMode === true && 'fill-current')} />
+          <Zap className={cn(currentTier != null && 'fill-current')} />
         </IconButton>
       )}
       <GroupedModelEffortSelector
@@ -143,23 +166,29 @@ export function CodexLaunchModel({
         selectedModelId={model ?? null}
         selectedModelLabel={model ? formatCodexModelName(selected?.name, model) : null}
         onSelectModel={(id) => {
+          const next = speedModel(id)
           const nextEffort = codexEffortFor(live.models.find((entry) => entry.id === id), effort)
           onChange({
             model: id,
             ...(nextEffort ? { effort: nextEffort } : {}),
-            ...(offerFastMode && !offersFast(id) ? { fastMode: false } : {}),
+            ...(offerFastMode ? codexModelSwitchSpeedPatch(next, currentTier) : {}),
           })
         }}
         shouldCloseAfterModelSelect={(id) =>
-          (live.models.find((entry) => entry.id === id)?.supportedReasoningEfforts?.length ?? 0) <= 1}
+          (live.models.find((entry) => entry.id === id)?.supportedReasoningEfforts?.length ?? 0) <= 1
+          && codexSpeedOptionParam(speedModel(id), null)?.kind !== 'choice'}
         effortOptions={effortOptions}
         selectedEffort={effort ?? null}
         selectedEffortLabel={effortLabel(effortOptions, effort, formatReasoningEffortLabel)}
         effortLabelClassName={effort === 'ultra' ? 'codex-ultra-text' : undefined}
         onSelectEffort={(value) => onChange({ effort: value })}
         {...selector}
-        optionParams={optionParams}
-        onOptionParamChange={onOptionParamChange}
+        optionParams={optionRows}
+        onOptionParamChange={(id, value) => {
+          const tier = codexServiceTierFromSpeedParam(speedModel(model), id, value)
+          if (tier !== undefined) onChange(codexSpeedSelectionPatch(tier))
+          else onOptionParamChange?.(id, value)
+        }}
         onRefreshModels={live.refresh}
         modelsLoading={live.loading}
       />

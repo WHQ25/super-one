@@ -109,6 +109,7 @@ import type { AddDirScope, AddDirStep } from '../add-dir-state'
 import { appendBrowsePathSegment } from '@superone/shared/path-browse'
 import { LanBrowserPreview } from './LanBrowserPreview'
 import { effortOptionsForModel, resolveSelectedEffort } from '../model-selection-state'
+import { codexServiceTierFromSpeedParam } from '@superone/shared/codex-fast-mode'
 import { optionParamsForModel } from '../model-picker-state'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { shellPreviewPages, type ShellPreviewPage as Page } from './preview-route'
@@ -362,7 +363,8 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
   const [modelParams, setModelParams] = useState<Record<string, string>>({})
   const optionParams = optionParamsForModel(provider, previewModels.find((item) => item.id === model), { serviceTier, params: modelParams })
   const setOptionParam = (id: string, value: string) => {
-    if (provider === 'codex' && id === 'fast') { setServiceTier(value === 'true' ? 'priority' : null); return }
+    const tier = codexServiceTierFromSpeedParam(previewModels.find((item) => item.id === model), id, value)
+    if (provider === 'codex' && tier !== undefined) { setServiceTier(tier); return }
     setModelParams((current) => ({ ...current, [id]: value }))
   }
   const pickerCatalogs = {

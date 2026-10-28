@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { CodexReasoningEffort } from '@superone/shared/agent-types'
+import { codexServiceTierFromSpeedParam, codexSpeedOptionParam } from '@superone/shared/codex-fast-mode'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { formatCodexModelName, formatReasoningEffortLabel } from '../chat-input-utils'
 import { CodexModeSelector } from '../CodexModeSelector'
@@ -12,7 +13,6 @@ import {
   type SelectorModelOption,
 } from './GroupedModelEffortSelector'
 import { useSelectorProviders } from './useSelectorProviders'
-import { findCodexFastServiceTier } from './codex-fast-mode'
 import { currentCodexReasoningEffort } from '@/stores/chat-store/helpers/codex-helpers'
 
 interface Props {
@@ -50,15 +50,8 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
     [codexReasoningEfforts],
   )
   const optionParams = useMemo<SelectorCatalogParam[]>(() => {
-    const fastTier = findCodexFastServiceTier(selectedCodexModelOption)
-    if (!fastTier) return []
-    return [{
-      id: 'fast',
-      label: fastTier.name || 'Fast',
-      kind: 'toggle',
-      values: [{ value: 'false', label: 'Off' }, { value: 'true', label: 'On' }],
-      selected: selectedCodexServiceTier === fastTier.id ? 'true' : 'false',
-    }]
+    const speed = codexSpeedOptionParam(selectedCodexModelOption, selectedCodexServiceTier)
+    return speed ? [speed] : []
   }, [selectedCodexModelOption, selectedCodexServiceTier])
 
   return (
@@ -71,7 +64,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
         shouldCloseAfterModelSelect={(id) => {
           const model = codexModels.find((entry) => entry.id === id)
           return (model?.supportedReasoningEfforts?.length ?? 0) <= 1
-            && !findCodexFastServiceTier(model)
+            && !codexSpeedOptionParam(model, null)
         }}
         effortOptions={effortOptions}
         selectedEffort={shownCodexReasoningEffort}
@@ -79,9 +72,8 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
         onSelectEffort={(value) => setSelectedCodexReasoningEffort(value as CodexReasoningEffort)}
         optionParams={optionParams}
         onOptionParamChange={(id, value) => {
-          if (id === 'fast') {
-            setSelectedCodexServiceTier(value === 'true' ? findCodexFastServiceTier(selectedCodexModelOption)?.id ?? null : null)
-          }
+          const tier = codexServiceTierFromSpeedParam(selectedCodexModelOption, id, value)
+          if (tier !== undefined) setSelectedCodexServiceTier(tier)
         }}
         onRefreshModels={() => {
           void refreshCodexModels(true).then((fresh) => {

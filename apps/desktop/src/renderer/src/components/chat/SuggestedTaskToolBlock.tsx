@@ -111,6 +111,7 @@ function LaunchControls({
         effort={config.effort}
         offerFastMode
         fastMode={config.fastMode}
+        serviceTier={config.serviceTier}
         claudeFastMode={config.claudeFastMode}
         onChange={patch}
       />

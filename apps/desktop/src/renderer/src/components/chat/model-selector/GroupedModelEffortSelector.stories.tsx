@@ -189,3 +189,37 @@ function ToggleOptionWithHintStory() {
 }
 
 export const ToggleOptionWithHint: Story = { render: () => <ToggleOptionWithHintStory /> }
+
+/** Speed choice when a Codex model advertises Fast and Ultrafast. Ultrafast's trigger is two overlapping bolts. */
+function SpeedChoiceStory() {
+  const [modelId, setModelId] = useState('gpt-5.3-codex')
+  const [effort, setEffort] = useState('high')
+  const [tier, setTier] = useState('ultrafast')
+  const params: SelectorCatalogParam[] = [{
+    id: 'serviceTier',
+    label: 'Speed',
+    kind: 'choice',
+    values: [
+      { value: '', label: 'Standard' },
+      { value: 'priority', label: 'Fast' },
+      { value: 'ultrafast', label: 'Ultrafast' },
+    ],
+    selected: tier,
+  }]
+  return (
+    <div className="flex min-h-80 items-end justify-center rounded-lg border bg-muted/20 p-6">
+      <GroupedModelEffortSelector
+        models={MODELS}
+        selectedModelId={modelId}
+        onSelectModel={setModelId}
+        effortOptions={EFFORTS}
+        selectedEffort={effort}
+        onSelectEffort={setEffort}
+        optionParams={params}
+        onOptionParamChange={(_, value) => setTier(value)}
+      />
+    </div>
+  )
+}
+
+export const SpeedChoice: Story = { render: () => <SpeedChoiceStory /> }

@@ -29,6 +29,24 @@ export default {
 }
 
 export const Codex = {}
+
+/** Ultrafast selected: two overlapping bolts, and the accessible name still says Ultrafast. */
+export const CodexUltrafast = {
+  args: {
+    optionParams: [{
+      id: 'serviceTier',
+      label: 'Speed',
+      kind: 'choice' as const,
+      values: [
+        { value: '', label: 'Standard' },
+        { value: 'priority', label: 'Fast' },
+        { value: 'ultrafast', label: 'Ultrafast' },
+      ],
+      selected: 'ultrafast',
+    }],
+    onOptionParam: () => {},
+  } satisfies Partial<ModelPickerProps>,
+}
 export const MissingCatalogEntry = { args: { model: 'gpt-6-astra', models: [] } }
 export const Empty = { args: { model: '', models: [] } }
 export const Disabled = { args: { disabled: true } }

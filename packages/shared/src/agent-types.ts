@@ -1184,6 +1184,12 @@ export interface SessionAgentLaunchConfig {
   effort?: string
   /** Codex only: run the child session on the model's advertised Fast service tier. */
   fastMode?: boolean
+  /**
+   * Explicit Codex tier from a launch UI (`priority`, `ultrafast`, …).
+   * A nonempty string wins over {@link fastMode}. Null is not a pinned Standard:
+   * it does not override a later Fast bolt. Absent defers to {@link fastMode}.
+   */
+  serviceTier?: string | null
   /** Claude Fast Mode. */
   claudeFastMode?: boolean
   /** Host-resolved tier persisted with approved collaboration grants. Not agent-editable. */
@@ -1218,7 +1224,7 @@ export interface SessionAgentLaunchConfig {
 /** How a launch runs: the part of its config the user may retune before it starts. */
 export type SessionAgentLaunchSettings = Pick<
   SessionAgentLaunchConfig,
-  'model' | 'effort' | 'fastMode' | 'claudeFastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
+  'model' | 'effort' | 'fastMode' | 'serviceTier' | 'claudeFastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
 >
 
 /**

@@ -197,8 +197,23 @@ describe('option params', () => {
     expect(optionParamsForModel('codex', codexModel, { serviceTier: 'priority' })[0]!.selected).toBe('true')
   })
 
-  it('leaves Codex alone when the model ships no Fast tier', () => {
+  it('leaves Codex alone when the model ships no speed tier', () => {
     expect(optionParamsForModel('codex', { id: 'o', name: 'O', description: '' })).toEqual([])
+  })
+
+  it('offers Standard, Fast, and Ultrafast when the catalog advertises more than Fast', () => {
+    const model: ModelOption = {
+      ...codexModel,
+      serviceTiers: [
+        { id: 'priority', name: 'Fast', description: '' },
+        { id: 'ultrafast', name: 'Ultrafast', description: '' },
+      ],
+    }
+    const param = optionParamsForModel('codex', model, { serviceTier: 'ultrafast' })[0]
+    expect(param).toMatchObject({ id: 'serviceTier', kind: 'choice', selected: 'ultrafast' })
+    expect(param?.values.map((value) => value.label)).toEqual(['Standard', 'Fast', 'Ultrafast'])
+    expect(keepsOpenAfterModelSelect('codex', { models: [model] }, model.id)).toBe(true)
+    expect(keepsOpenAfterModelSelect('codex', { models: [{ id: 'o', name: 'O', description: '' }] }, 'o')).toBe(false)
   })
 
   it('keeps the Cursor effort param out of Options — it is already the slider', () => {

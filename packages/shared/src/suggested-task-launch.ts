@@ -4,7 +4,7 @@ import { HARNESS_LAUNCH_OPTIONS } from './launch-options'
 import { supportsClaudeFastMode } from './claude-fast-mode'
 import { findCodexFastServiceTier } from './codex-fast-mode'
 
-export const SUGGESTED_TASK_SETTING_KEYS = ['model', 'effort', 'apiProviderId', 'permissionMode', 'sandboxMode', 'fastMode', 'claudeFastMode'] as const satisfies readonly (keyof SessionAgentLaunchSettings)[]
+export const SUGGESTED_TASK_SETTING_KEYS = ['model', 'effort', 'apiProviderId', 'permissionMode', 'sandboxMode', 'fastMode', 'serviceTier', 'claudeFastMode'] as const satisfies readonly (keyof SessionAgentLaunchSettings)[]
 
 /** The only client-editable fields; the source host always owns the task and cwd. */
 export function suggestedTaskSettings(settings: SessionAgentLaunchSettings): SessionAgentLaunchSettings {
@@ -17,6 +17,11 @@ export function suggestedTaskRunSettings(profile: SessionAgentProfile, settings:
   const model = profile.models.find(model => model.id === (picked.model ?? profile.defaultConfig.model))
   const modelEnv = profile.apiProviders.find(provider => provider.id === (picked.apiProviderId ?? profile.defaultConfig.apiProviderId))?.modelEnv
   if (profile.harnessId !== 'codex' || !codexFast || !findCodexFastServiceTier(model)) delete picked.fastMode
+  if (picked.serviceTier !== undefined && (
+    profile.harnessId !== 'codex'
+    || !codexFast
+    || (picked.serviceTier !== null && !model?.serviceTiers?.some(tier => tier.id === picked.serviceTier))
+  )) delete picked.serviceTier
   if (profile.harnessId !== 'claude' || !supportsClaudeFastMode(model, modelEnv)) delete picked.claudeFastMode
   if (picked.effort && profile.efforts.length && !profile.efforts.includes(picked.effort)) delete picked.effort
   return picked
@@ -47,7 +52,11 @@ export function parseSuggestedTaskChoice(value: unknown): SuggestedTaskLaunchCho
   for (const key of SUGGESTED_TASK_SETTING_KEYS) {
     const entry = input[key]
     if (entry === undefined) continue
-    const valid = key === 'fastMode' || key === 'claudeFastMode' ? typeof entry === 'boolean' : (key === 'apiProviderId' && entry === null) || typeof entry === 'string'
+    const valid = key === 'fastMode' || key === 'claudeFastMode'
+      ? typeof entry === 'boolean'
+      : key === 'serviceTier'
+        ? entry === null || (typeof entry === 'string' && entry.trim().length > 0)
+        : (key === 'apiProviderId' && entry === null) || typeof entry === 'string'
     if (!valid) return invalid(`invalid task launch ${key}`)
     if (key === 'permissionMode' && !Object.values(HARNESS_LAUNCH_OPTIONS).some(option => option.permissionModes.some(mode => mode === entry))) return invalid('invalid permission mode')
     if (key === 'sandboxMode' && !Object.values(HARNESS_LAUNCH_OPTIONS).some(option => option.sandboxModes.some(mode => mode === entry))) return invalid('invalid sandbox mode')

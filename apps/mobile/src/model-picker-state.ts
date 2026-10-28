@@ -1,6 +1,6 @@
 import type { HarnessId, ModelOption, ProviderModelEnv, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
-import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { codexSpeedOptionParam } from '@superone/shared/codex-fast-mode'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { selectorCatalogParams, type SelectorCatalogParam } from '@superone/shared/model-option-params'
@@ -83,8 +83,8 @@ export function groupModels(
 
 /**
  * The menu stays open after a model switch when the newly picked model still has
- * effort to tune — matching the desktop selector, which collapses the list back
- * onto the effort slider instead of dismissing.
+ * effort or a Codex speed row to tune — matching the desktop selector, which
+ * collapses the list back onto those controls instead of dismissing.
  */
 export function keepsOpenAfterModelSelect(
   harness: HarnessId,
@@ -92,7 +92,9 @@ export function keepsOpenAfterModelSelect(
   modelId: string,
   providerId: string | null = null,
 ): boolean {
-  return hasSelectableEffort(effortOptionsForModel(harness, info, modelId, providerId))
+  if (hasSelectableEffort(effortOptionsForModel(harness, info, modelId, providerId))) return true
+  if (harness !== 'codex') return false
+  return codexSpeedOptionParam(info.models?.find((model) => model.id === modelId), null) != null
 }
 
 /**
@@ -127,15 +129,8 @@ export function optionParamsForModel(
   selected: { serviceTier?: string | null; params?: Record<string, string> } = {},
 ): SelectorCatalogParam[] {
   if (harness === 'codex') {
-    const fast = findCodexFastServiceTier(model)
-    if (!fast) return []
-    return [{
-      id: 'fast',
-      label: fast.name || 'Fast',
-      kind: 'toggle',
-      values: [{ value: 'false', label: 'Off' }, { value: 'true', label: 'On' }],
-      selected: selected.serviceTier === fast.id ? 'true' : 'false',
-    }]
+    const speed = codexSpeedOptionParam(model, selected.serviceTier)
+    return speed ? [speed] : []
   }
   // Only Cursor consumes `modelParams` on the way back, so only Cursor may show
   // them. Rendering a control the send path drops is worse than hiding it.

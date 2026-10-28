@@ -8,7 +8,7 @@ import type {
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
 import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
-import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { codexModelSwitchSpeedPatch, codexSelectedServiceTier } from '@superone/shared/codex-fast-mode'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { effortOptionsForModel, selectedProviderModelEnv } from './model-selection-state'
 import { optionParamsForModel, type SelectorCatalogParam } from './model-picker-state'
@@ -98,7 +98,7 @@ export function suggestedTaskLaunchView(profile: SessionAgentProfile, config: Se
     optionParams: [
       ...(profile.harnessId === 'claude' && supportsClaudeFastMode(model, modelEnv) ? [claudeFastModeOption(config.claudeFastMode === true)] : []),
       ...optionParamsForModel(profile.harnessId, model, {
-        serviceTier: config.fastMode ? findCodexFastServiceTier(model)?.id ?? null : null,
+        serviceTier: codexSelectedServiceTier(model, config),
       }),
     ],
   }
@@ -125,7 +125,15 @@ export function patchSuggestedTaskSettings(
     const effort = keptEffort(suggestedTaskEfforts(profile, patch.model, providerId), displayed.effort)
     if (effort) next.effort = effort
     else delete next.effort
-    if (profile.harnessId === 'codex' && !findCodexFastServiceTier(catalog)) next.fastMode = false
+    if (profile.harnessId === 'codex') {
+      const previous = profile.models.find((item) => item.id === displayed.model)
+      const currentTier = codexSelectedServiceTier(previous ? catalogModel(previous) : undefined, displayed)
+      const speed = codexModelSwitchSpeedPatch(catalog, currentTier)
+      if ('fastMode' in speed) {
+        next.fastMode = false
+        next.serviceTier = null
+      }
+    }
     if (profile.harnessId === 'claude' && !supportsClaudeFastMode(catalog, modelEnv)) next.claudeFastMode = false
   }
   if ('apiProviderId' in patch && profile.harnessId === 'claude' && modelEnv) delete next.effort

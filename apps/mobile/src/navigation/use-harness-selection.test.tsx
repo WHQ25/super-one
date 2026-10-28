@@ -319,6 +319,31 @@ test('a Fast pick on the landing survives catalog refresh', async () => {
   expect(result.current.serviceTier).toBeNull()
 })
 
+test('an Ultrafast choice stores that catalog tier', async () => {
+  const info = {
+    ...codexInfo,
+    models: [{
+      ...codexInfo.models![0]!,
+      serviceTiers: [
+        { id: 'priority', name: 'Fast', description: '' },
+        { id: 'ultrafast', name: 'Ultrafast', description: '' },
+      ],
+    }],
+  }
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => { result.current.applySystemInfo('codex', info) })
+
+  expect(result.current.optionParams.find((param) => param.id === 'serviceTier')?.values.map((value) => value.label))
+    .toEqual(['Standard', 'Fast', 'Ultrafast'])
+
+  await act(async () => { result.current.setOptionParam('serviceTier', 'ultrafast') })
+  await act(async () => { result.current.applySystemInfo('codex', info) })
+
+  expect(result.current.serviceTier).toBe('ultrafast')
+  expect(result.current.optionParams.find((param) => param.id === 'serviceTier')?.selected).toBe('ultrafast')
+})
+
 test('a model switch does not let catalog refresh re-arm host default Fast', async () => {
   const { result } = await mount()
   await act(async () => { result.current.resetForProvider('codex') })

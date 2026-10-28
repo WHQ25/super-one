@@ -27,7 +27,31 @@ describe('suggested task launch view', () => {
 
   it('clamps effort to the new model and turns Fast off when that model has no tier', () => {
     const next = patchSuggestedTaskSettings(codex, { fastMode: true, effort: 'medium' }, { model: 'gpt-other', effort: 'medium', fastMode: true }, { model: 'gpt-basic' })
-    expect(next).toEqual({ model: 'gpt-basic', effort: 'low', fastMode: false })
+    expect(next).toEqual({ model: 'gpt-basic', effort: 'low', fastMode: false, serviceTier: null })
+  })
+
+  it('keeps Ultrafast when the next model lists it and clears it when the next model does not', () => {
+    const tiers = [
+      { id: 'priority', name: 'Fast', description: '' },
+      { id: 'ultrafast', name: 'Ultrafast', description: '' },
+    ]
+    const profile = {
+      ...codex,
+      models: [
+        ...codex.models,
+        { id: 'gpt-ultra', name: 'Ultra', serviceTiers: tiers },
+        { id: 'gpt-ultra-2', name: 'Ultra 2', serviceTiers: tiers },
+      ],
+    }
+    const displayed = { model: 'gpt-ultra', serviceTier: 'ultrafast', fastMode: true }
+    const kept = patchSuggestedTaskSettings(profile, displayed, displayed, { model: 'gpt-ultra-2' })
+    expect(kept.serviceTier).toBe('ultrafast')
+    expect(kept.fastMode).toBe(true)
+    const cleared = patchSuggestedTaskSettings(profile, displayed, displayed, { model: 'gpt-other' })
+    expect(cleared.serviceTier).toBeNull()
+    expect(cleared.fastMode).toBe(false)
+    const view = suggestedTaskLaunchView(profile, displayed)
+    expect(view.optionParams[0]).toMatchObject({ id: 'serviceTier', selected: 'ultrafast' })
   })
 
   it('drops effort when switching onto a mapped Claude credential', () => {

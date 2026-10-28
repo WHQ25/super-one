@@ -325,6 +325,7 @@ function LaunchPanel({
                 effort={config.effort ?? catalogProfile?.defaultConfig.effort}
                 offerFastMode
                 fastMode={config.fastMode}
+                serviceTier={config.serviceTier}
                 claudeFastMode={config.claudeFastMode}
                 onChange={onChange}
               />
@@ -378,7 +379,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       if (launch.config.remote) {
         // Another machine: only its own catalog applies. Until it loads, or when the
         // machine cannot list one, the child runs on its defaults and only how it runs is editable.
-        const { permissionMode, sandboxMode, fastMode: _fastMode, ...selection } = overrides[launch.launchId] ?? {}
+        const { permissionMode, sandboxMode, fastMode: _fastMode, serviceTier: _serviceTier, ...selection } = overrides[launch.launchId] ?? {}
         const remoteProfile = remoteProfileOf(launch, remoteCatalogs[launch.config.remote.environmentId])
         // A model the agent asked for that the target lacks falls back to the target's default.
         const fallback = remoteProfile && !isLaunchModelOffered(remoteProfile, launch.config)

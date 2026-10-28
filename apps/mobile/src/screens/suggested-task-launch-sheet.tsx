@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { ClipboardCheck } from 'lucide-react-native'
 import type { SessionAgentLaunchSettings, SessionAgentProfile } from '@superone/shared/agent-types'
+import { codexServiceTierFromSpeedParam, codexSpeedSelectionPatch } from '@superone/shared/codex-fast-mode'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import type { SuggestedTaskLaunchChoice, SuggestedTaskLaunchOptions } from '@superone/shared/suggested-task'
@@ -45,7 +46,8 @@ function LaunchRuntimeRow({ profile, settings, disabled, onChange }: {
       optionParams={view.optionParams}
       onOptionParam={(id, value) => {
         if (id === 'claudeFastMode') patch({ claudeFastMode: value === 'true' })
-        if (id === 'fast') patch({ fastMode: value === 'true' })
+        const tier = codexServiceTierFromSpeedParam(view.models.find((item) => item.id === view.model), id, value)
+        if (tier !== undefined) patch(codexSpeedSelectionPatch(tier))
       }}
       providers={view.providers} providerId={view.providerId}
       onProvider={view.providers.length ? (apiProviderId) => patch({ apiProviderId }) : undefined}

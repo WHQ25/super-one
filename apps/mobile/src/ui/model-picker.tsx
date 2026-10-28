@@ -11,12 +11,26 @@ import type {
   RemoteModeOption,
   RemoteProviderOption,
 } from '@superone/shared/agent-types'
+import { codexSpeedTriggerLabel } from '@superone/shared/codex-fast-mode'
 import { useMobileTheme } from '../theme/context'
 import { ULTRACODE_COLORS } from '@superone/shared/composer-mode'
 import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, MenuTextInput, useMenuAnchor } from './anchored-menu'
 import { EffortSlider } from './effort-slider'
 import { FireText } from './effort-easter-egg'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
+
+function ultrafastTrigger(label: string | null): boolean {
+  return label?.trim().toLowerCase() === 'ultrafast'
+}
+
+function UltrafastBolts({ size, color }: { size: number; color: string }) {
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: Math.round(size * 1.45), height: size }}>
+      <Zap size={size} color={color} fill={color} style={{ position: 'absolute', left: 0, top: 0 }} />
+      <Zap size={size} color={color} fill={color} style={{ position: 'absolute', left: Math.round(size * 0.45), top: 0 }} />
+    </View>
+  )
+}
 import { AgentSection, ModeSection, OptionsSection, ProviderSection, SectionLabel } from './model-picker-sections'
 import {
   effortEasterEgg,
@@ -76,7 +90,9 @@ export function ModelPicker(props: ModelPickerProps) {
   const providers = props.providers ?? []
   const agentLabel = agents.find((agent) => agent.id === props.agent)?.name
   const summary = optionParamSummary(optionParams)
-  const fastEnabled = optionParams.some((param) => (param.id === 'fast' || param.id === 'claudeFastMode') && param.selected === 'true')
+  const speedLabel = codexSpeedTriggerLabel(optionParams)
+  const claudeFastOn = optionParams.some((param) => param.id === 'claudeFastMode' && param.selected === 'true')
+  const showZap = Boolean(speedLabel) || claudeFastOn
   // Ultracode's mark sits beside the label even when an egg replaces it, as on desktop.
   const ultracodeOn = optionParams.some((param) => param.id === 'ultracode' && param.selected === 'true')
   const [ur, ug, ub] = ULTRACODE_COLORS[scheme === 'dark' ? 'dark' : 'light'][0]
@@ -120,7 +136,7 @@ export function ModelPicker(props: ModelPickerProps) {
   ]
   return <>
     <Pressable ref={menu.ref} disabled={props.disabled} accessibilityRole="button"
-      accessibilityLabel={`${t('Model')}: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}${ultracodeOn ? ', Ultracode' : ''}`}
+      accessibilityLabel={`${t('Model')}: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}${speedLabel ? `, ${speedLabel}` : ''}${ultracodeOn ? ', Ultracode' : ''}`}
       accessibilityState={{ disabled: props.disabled, expanded: !!menu.anchor }} onPress={() => { collapse(); menu.open() }}
       hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: props.compact ? 6 : 12,
@@ -135,7 +151,8 @@ export function ModelPicker(props: ModelPickerProps) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           {ultracodeOn ? <Workflow size={props.compact ? 11 : 13} color={`rgb(${ur}, ${ug}, ${ub})`} /> : null}
           {egg ? <FireText fontSize={props.compact ? 12 : 15}>{eggLabel}</FireText> : null}
-          {!egg && fastEnabled ? <Zap size={props.compact ? 11 : 13} color={colors.mutedForeground} fill={colors.mutedForeground} /> : null}
+          {!egg && ultrafastTrigger(speedLabel) ? <UltrafastBolts size={props.compact ? 11 : 13} color={colors.mutedForeground} /> : !egg && showZap ? <Zap size={props.compact ? 11 : 13} color={colors.mutedForeground} fill={colors.mutedForeground} /> : null}
+          {!egg && speedLabel && speedLabel !== 'Fast' && !ultrafastTrigger(speedLabel) ? <Text numberOfLines={1} style={{ flexShrink: 0, fontSize: props.compact ? 12 : 15, color: props.compact ? colors.mutedForeground : colors.foreground }}>{speedLabel}</Text> : null}
           {!egg && triggerParts.map((part, index) => <View key={`${part.text}-${index}`}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: part.shrink, minWidth: 0 }}>
             {index > 0 ? <Text style={{ fontSize: props.compact ? 12 : 15, color: colors.mutedForeground, opacity: 0.7 }}>·</Text> : null}

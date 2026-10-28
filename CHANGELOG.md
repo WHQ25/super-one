@@ -15,6 +15,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. The choice is stored as the session service tier.
 - With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion.
 - Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
 - Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.

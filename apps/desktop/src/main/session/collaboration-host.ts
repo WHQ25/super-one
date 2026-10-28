@@ -66,11 +66,20 @@ export function describePeerForCaller(grant: GrantRow, callerSessionId: string):
   return describeGrantPeerForCaller(grant, callerSessionId, sessionTitle)
 }
 
+/** True when a launch names Fast or an explicit catalog tier the host should persist. */
+export function codexLaunchPinsSpeed(config: Pick<SessionAgentLaunchConfig, 'fastMode' | 'serviceTier'>): boolean {
+  return typeof config.fastMode === 'boolean'
+    || (typeof config.serviceTier === 'string' && config.serviceTier.length > 0)
+}
+
 export function resolveCodexServiceTier(
   agentId: string,
   config: SessionAgentLaunchConfig,
   resolvedProfile?: ReturnType<typeof listSessionAgentProfiles>[number],
 ): string | null {
+  // A launch UI pin names the catalog id. Null does not cancel fastMode: a Fast
+  // bolt can turn speed on after an earlier clear left serviceTier null.
+  if (typeof config.serviceTier === 'string' && config.serviceTier) return config.serviceTier
   if (!config.fastMode) return null
   if (config.codexServiceTier !== undefined) return config.codexServiceTier
   const profile = resolvedProfile ?? listSessionAgentProfiles().find((item) => item.id === agentId)

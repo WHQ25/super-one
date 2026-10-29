@@ -39,6 +39,7 @@ function draft(id: string, title: string): DraftListEntry {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   useDraftsStore.setState({ byConnection: {}, loading: {}, resumingDraftId: null, discardedIds: {} })
   useScheduledSendsStore.setState({ bySession: {} })
 })
@@ -228,5 +229,27 @@ describe('DraftsSection', () => {
     const flying = container.querySelector('.pointer-events-none')
     expect(flying).not.toBeNull()
     expect(within(flying as HTMLElement).getByText('first draft')).toBeInTheDocument()
+  })
+
+  it('folds the rows behind a count and keeps that choice after remounting', () => {
+    useDraftsStore.setState({
+      byConnection: { local: [draft('d1', 'first draft'), draft('d2', 'second draft')] },
+    })
+    const { unmount } = render(<DraftsSection connectionIds={LOCAL} label={<span>Drafts</span>} />)
+    const header = screen.getByRole('button', { name: 'Drafts' })
+    expect(header).toHaveAttribute('aria-expanded', 'true')
+    expect(header.querySelector('[data-slot="section-count"]')).toBeNull()
+
+    fireEvent.click(header)
+
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(header.querySelector('[data-slot="section-count"]')).toHaveTextContent('2')
+    const panel = document.getElementById('sidebar-section-drafts')
+    expect(panel).toHaveAttribute('inert')
+    expect(screen.getByText('first draft')).toBeInTheDocument()
+
+    unmount()
+    render(<DraftsSection connectionIds={LOCAL} label={<span>Drafts</span>} />)
+    expect(screen.getByRole('button', { name: /Drafts/ })).toHaveAttribute('aria-expanded', 'false')
   })
 })

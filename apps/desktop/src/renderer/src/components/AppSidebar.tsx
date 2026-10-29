@@ -50,6 +50,7 @@ import { MultiHostProjectList } from '@/components/sidebar/multi-host/MultiHostP
 import { useLoadMultiHostCatalog } from '@/components/sidebar/multi-host/use-load-multi-host-catalog'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
+import { sidebarSectionPanelId, useSidebarSectionCollapsed } from '@/components/sidebar/sidebar-section-collapse'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
@@ -192,6 +193,7 @@ export const AppSidebar = memo(function AppSidebar() {
     hostProjects: sessionProjects,
     pinnedConnectionIds,
   })
+  const [pinnedCollapsed, togglePinnedCollapsed] = useSidebarSectionCollapsed('pinned')
   const [skipConfirm, setSkipConfirm] = useState(false)
 
   // Environments for the host switcher (local + paired remotes).
@@ -683,28 +685,47 @@ export const AppSidebar = memo(function AppSidebar() {
 
       {pinnedSessions.length > 0 && sidebarTab === 'sessions' && (
         <div className="flex flex-col px-2 pb-1">
-          <SidebarSectionLabel>{t('sidebar.pinned')}</SidebarSectionLabel>
-          {pinnedSessions.map((s) => {
-            const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
-            const presentation = pinPresentation(s)
-            return (
-              <PinnedSessionRow
-                key={s.sessionId}
-                session={s}
-                isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
-                status={pinStatus}
-                isUnseen={pinUnseenFlag === '1'}
-                opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
-                hover={presentation?.hover}
-                environmentOffline={presentation?.environmentOffline}
-                onSwitchSession={handleSwitchSession}
-                onPinSession={handlePinSession}
-                onHideSession={handleHideSession}
-                onRenameSession={handleRequestRenameSession}
-                onDeleteSession={handleRequestDeleteSession}
-              />
-            )
-          })}
+          <SidebarSectionLabel
+            section="pinned"
+            count={pinnedSessions.length}
+            collapsed={pinnedCollapsed}
+            onToggle={togglePinnedCollapsed}
+          >
+            {t('sidebar.pinned')}
+          </SidebarSectionLabel>
+          <div
+            id={sidebarSectionPanelId('pinned')}
+            className={cn(
+              'grid transition-[grid-template-rows] duration-200 ease-out',
+              pinnedCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+            )}
+            inert={pinnedCollapsed ? true : undefined}
+            aria-hidden={pinnedCollapsed || undefined}
+          >
+            <div className="overflow-hidden">
+              {pinnedSessions.map((s) => {
+                const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
+                const presentation = pinPresentation(s)
+                return (
+                  <PinnedSessionRow
+                    key={s.sessionId}
+                    session={s}
+                    isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
+                    status={pinStatus}
+                    isUnseen={pinUnseenFlag === '1'}
+                    opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
+                    hover={presentation?.hover}
+                    environmentOffline={presentation?.environmentOffline}
+                    onSwitchSession={handleSwitchSession}
+                    onPinSession={handlePinSession}
+                    onHideSession={handleHideSession}
+                    onRenameSession={handleRequestRenameSession}
+                    onDeleteSession={handleRequestDeleteSession}
+                  />
+                )
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -713,7 +734,6 @@ export const AppSidebar = memo(function AppSidebar() {
           <DraftsSection
             connectionIds={draftConnectionIds}
             offlineConnectionIds={offlineDraftConnectionIds}
-            label={<SidebarSectionLabel>{t('sidebar.drafts.title')}</SidebarSectionLabel>}
           />
         </div>
       )}

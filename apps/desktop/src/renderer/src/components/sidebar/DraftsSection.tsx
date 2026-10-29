@@ -11,6 +11,8 @@ import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { useChatStore } from '@/stores/chat-store'
 import { discardDeletedDraft, getDraftIdForSession } from '@/stores/chat-store/helpers/draft-promote'
 import { nextDraftSlots, selectVisibleDrafts } from './draft-visibility'
+import { SidebarSectionLabel } from './SidebarSectionLabel'
+import { sidebarSectionPanelId, useSidebarSectionCollapsed } from './sidebar-section-collapse'
 import { toast } from 'sonner'
 
 interface DraftsSectionProps {
@@ -18,8 +20,11 @@ interface DraftsSectionProps {
   connectionIds: readonly string[]
   /** Environments whose rows are dimmed. Resume still goes through the same path. */
   offlineConnectionIds?: readonly string[]
-  /** Heading shown above the rows while there are any. */
+  /** Heading shown above the rows while there are any. Defaults to the drafts title. */
   label?: ReactNode
+  /** Controlled fold. Omit to use the saved preference. */
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }
 
 const NO_CONNECTIONS: readonly string[] = []
@@ -134,7 +139,16 @@ export const DraftsSection = memo(function DraftsSection({
   connectionIds,
   offlineConnectionIds = NO_CONNECTIONS,
   label,
+  collapsed: collapsedProp,
+  onToggleCollapsed,
 }: DraftsSectionProps) {
+  const { t } = useTranslation()
+  const [storedCollapsed, toggleStored] = useSidebarSectionCollapsed('drafts')
+  const collapsed = collapsedProp ?? storedCollapsed
+  const toggleCollapsed = () => {
+    if (collapsedProp === undefined) toggleStored()
+    else onToggleCollapsed?.()
+  }
   const byConnection = useDraftsStore((s) => s.byConnection)
   // Draft ids are unique across environments, so one id → owner map routes resume and delete.
   const { drafts, ownerOf } = useMemo(() => {
@@ -218,12 +232,19 @@ export const DraftsSection = memo(function DraftsSection({
   // `initial={false}` keeps drafts already present at mount from animating open.
   return (
     <>
-      {label && slots.length > 0 && label}
+      {slots.length > 0 && (
+        <SidebarSectionLabel section="drafts" count={slots.length} collapsed={collapsed} onToggle={toggleCollapsed}>
+          {label ?? t('sidebar.drafts.title')}
+        </SidebarSectionLabel>
+      )}
       <motion.div
+        id={sidebarSectionPanelId('drafts')}
         className="relative overflow-hidden"
         initial={false}
-        animate={{ height: slots.length * DRAFT_ROW_HEIGHT }}
+        animate={{ height: collapsed ? 0 : slots.length * DRAFT_ROW_HEIGHT }}
         transition={GROUP_HEIGHT_TRANSITION}
+        inert={collapsed ? true : undefined}
+        aria-hidden={collapsed || undefined}
       >
         {visibleDrafts.map((draft) => {
           const slotY = Math.max(0, slots.indexOf(draft.id)) * DRAFT_ROW_HEIGHT

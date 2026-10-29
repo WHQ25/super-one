@@ -349,6 +349,32 @@ describe('AppSidebar interactions', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
   })
 
+  it('folds pinned sessions behind a count', async () => {
+    chatState.activeProject = null
+    mockEnvironment.listPinnedSessions.mockResolvedValue([{
+      sessionId: 'sid-pinned',
+      title: 'Pinned Session',
+      lastActiveAt: '2026-03-02T00:00:00.000Z',
+      messageCount: 2,
+      provider: 'claude',
+      isPinned: true,
+      folderPath: '/project-a',
+      folderName: 'project-a',
+    }])
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await screen.findByText('Pinned Session')
+    const header = screen.getByRole('button', { name: 'Pinned' })
+    fireEvent.click(header)
+
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(header.querySelector('[data-slot="section-count"]')).toHaveTextContent('1')
+    expect(document.getElementById('sidebar-section-pinned')).toHaveAttribute('inert')
+    expect(screen.getByText('Pinned Session')).toBeInTheDocument()
+  })
+
   it('asks the selected host for its own pinned sessions instead of the local ones', async () => {
     appState.currentFolder = null
     appState.recentFolders = []

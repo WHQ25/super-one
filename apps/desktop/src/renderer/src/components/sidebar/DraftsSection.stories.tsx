@@ -6,7 +6,6 @@ import { useChatStore } from '@/stores/chat-store'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { startDraftAutosave } from '@/lib/draft-sync'
 import { DraftsSection } from './DraftsSection'
-import { SidebarSectionLabel } from './SidebarSectionLabel'
 
 const LOCAL = ['local']
 
@@ -132,7 +131,6 @@ function EnvironmentsPreview() {
       <DraftsSection
         connectionIds={ENVIRONMENTS}
         offlineConnectionIds={OFFLINE}
-        label={<SidebarSectionLabel>Drafts</SidebarSectionLabel>}
       />
     </div>
   )
@@ -140,3 +138,33 @@ function EnvironmentsPreview() {
 
 /** Multi-host sidebar: every environment's drafts under one heading; the offline one is dimmed. */
 export const AcrossEnvironments: Story = { render: () => <EnvironmentsPreview /> }
+
+function CollapsedPreview() {
+  const [collapsed, setCollapsed] = useState(true)
+  useLayoutEffect(() => {
+    const previous = useDraftsStore.getState()
+    const environment = window.environment
+    const drafts = [
+      rows[0],
+      { ...rows[0], id: 'second-draft', text: 'Note the release risks', title: 'Note the release risks' },
+    ]
+    window.environment = { ...environment, listDrafts: async () => drafts, deleteDraft: async () => {} }
+    useDraftsStore.setState({ byConnection: { local: drafts }, discardedIds: {} })
+    return () => {
+      window.environment = environment
+      useDraftsStore.setState(previous)
+    }
+  }, [])
+  return (
+    <div className="w-72 bg-sidebar p-2">
+      <DraftsSection
+        connectionIds={LOCAL}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((value) => !value)}
+      />
+    </div>
+  )
+}
+
+/** Rows fold away and the heading keeps a count of what is hidden. */
+export const Collapsed: Story = { render: () => <CollapsedPreview /> }

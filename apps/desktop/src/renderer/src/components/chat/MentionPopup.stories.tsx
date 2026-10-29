@@ -109,6 +109,14 @@ mockIpc('environment', 'searchMentions', async (_root: unknown, needle: unknown)
 mockIpc('environment', 'searchSessionsByTitle', async (_connection: unknown, query: unknown, limit: unknown, projectPaths: unknown) =>
   sessionsFor(String(query ?? ''), typeof limit === 'number' ? limit : undefined, Array.isArray(projectPaths) ? projectPaths.filter((path) => typeof path === 'string') : undefined))
 mockIpc('app', 'listComputerUseInstalledApps', async () => [])
+mockIpc('environment', 'listItems', async () => [
+  { kind: 'local', environmentId: 'local', label: 'This Mac', state: 'connected', installationProfile: 'local-electron', endpointProfiles: [] },
+  { kind: 'remote', environmentId: 'node-1', label: 'studio', state: 'connected', installationProfile: 'systemd-user', endpointProfiles: [] },
+  { kind: 'remote', environmentId: 'node-2', label: 'lab', state: 'connecting', installationProfile: 'container', endpointProfiles: [] },
+  { kind: 'remote', environmentId: 'node-3', label: 'tower', state: 'connected', installationProfile: 'manual', nodeUpgrade: { available: true }, endpointProfiles: [] },
+  { kind: 'remote', environmentId: 'desk-1', label: 'Mac mini', state: 'connected', desired: false, installationProfile: 'local-electron', endpointProfiles: [] },
+])
+
 
 /** Bits & Bolts' real icon: one hard-coded dark stroke, tinted to the theme. */
 const CAD_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="none" stroke="#27272a" stroke-width="3" stroke-linejoin="round" d="M9.5 4.75h13L29 16l-6.5 11.25h-13L3 16zM13 10.8h6l3 5.2-3 5.2h-6L10 16z"/></svg>')
@@ -270,6 +278,21 @@ export const GitTags: Story = { args: { query: 'git tag ' } }
 
 /** A filter that matches nothing names the kind that came back empty. */
 export const GitNoMatches: Story = { args: { query: 'git tag v9' } }
+
+/** `@env`: this machine, remote nodes, and other desktops. Offline rows stay listed. */
+export const EnvironmentCatalog: Story = { args: { query: 'env ' } }
+
+/** The same catalog in a narrow composer: role and status sit under the name. */
+export const EnvironmentCatalogNarrow: Story = { args: { query: 'env ', width: 340 } }
+
+/** `@env mini` filters the same catalog. */
+export const EnvironmentFilter: Story = { args: { query: 'env mini' } }
+
+/** Typing the machine name directly, without `@env`, still offers that machine. */
+export const EnvironmentDirectName: Story = { args: { query: 'mini' } }
+
+/** A name that matches nothing, with the catalog still loaded. */
+export const EnvironmentNoMatches: Story = { args: { query: 'env zzzz' } }
 
 /** `@session`: newest sessions. Wide enough, the project and age sit together on the right. */
 export const SessionRecent: Story = { args: { query: 'session ' } }

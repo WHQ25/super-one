@@ -6,6 +6,16 @@ import { ComposerDraftState } from './composer-draft-state'
 import { parseMentionEditorSnapshot } from './mention-editor-state'
 
 describe('composed and restored messages', () => {
+  it('tells the agent about an environment chip and keeps that note out of the restored draft', () => {
+    const document = [{ text: 'Use ' }, { mention: { kind: 'environment' as const, value: 'cli-node:node-1', displayName: 'studio' } }]
+    const content = composerMessageContent(document)
+    expect(content[0]).toMatchObject({ type: 'text', isPaste: false })
+    expect((content[0] as { text: string }).text).toContain('environmentId: node-1')
+    const restored = composerDraftFromMessage(localUserMessage('m', '', undefined, content))
+    expect(restored.document).toContainEqual(document[1])
+    expect(restored.text).not.toContain('environmentId')
+  })
+
   it('keeps adjacent mentions and pasted text in their original order', () => {
     const document = [{ text: 'Read ' }, { mention: { kind: 'file' as const, value: 'a.ts', displayName: 'a.ts' } }, { text: ' then ' }, { paste: 'short' }, { text: ' done' }]
     const content = composerMessageContent(document)

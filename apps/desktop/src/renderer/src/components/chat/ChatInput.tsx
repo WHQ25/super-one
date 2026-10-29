@@ -27,6 +27,7 @@ import { PasteChipNode } from './paste-chip-node'
 import { isComposerPasteChip } from '@superone/shared/user-message-parts'
 import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { SlashDecoration } from './slash-decoration'
+import { EnvironmentMentionDecoration } from './environment-mention-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
 import { GitMentionDecoration } from './git-mention-decoration'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
@@ -103,6 +104,7 @@ import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { GoalIndicator } from './GoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { cachedEnvironmentMentionLabels, loadEnvironmentMentionCandidates } from '@/lib/environment-mention-catalog'
 import { mentionQueryAllowsSpaces, sessionProjectsOnHost } from './session-mention-query'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
@@ -143,6 +145,8 @@ export function ChatInput({
     const gitPortals = useEnabledGitMentionPortals(fileRoot)
     // Read from the editor's update handler, which is created once.
     const gitPortalsRef = useRef(gitPortals)
+    // Names such as "Mac mini" need their space. Load before the first `@`.
+    useEffect(() => { void loadEnvironmentMentionCandidates() }, [])
     const storeActions = useChatStore(useShallow((s) => ({
       setDraftText: s.setDraftText,
       setDraftJson: s.setDraftJson,
@@ -946,7 +950,7 @@ export function ChatInput({
           kind = 'desktop-app'
           mentionValue = value
           displayName = displayNameHint || value
-        } else if (kindHint === 'session' || kindHint === 'git' || kindHint === 'mcp-resource') {
+        } else if (kindHint === 'session' || kindHint === 'git' || kindHint === 'mcp-resource' || kindHint === 'environment') {
           kind = kindHint
           mentionValue = value
           displayName = displayNameHint || value
@@ -1605,6 +1609,7 @@ export function ChatInput({
         ChipSelection,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         SessionMentionDecoration.configure({ context: sessionProjectOptions }),
+        EnvironmentMentionDecoration.configure({ context: null }),
         GitMentionDecoration.configure({ context: gitPortals }),
         PromptKeywordDecoration.configure({ keywords: promptKeywords }),
         WebLinkDecoration,
@@ -1755,7 +1760,10 @@ export function ChatInput({
           const afterAt = textInParent.slice(lastAt + 1)
           // Default: single-token @mentions (file/agent) close on space.
           // Session grammar needs spaces: @session [project|all] [title…]
-          const spaceOk = mentionQueryAllowsSpaces(afterAt, { gitPortals: gitPortalsRef.current })
+          const spaceOk = mentionQueryAllowsSpaces(afterAt, {
+            gitPortals: gitPortalsRef.current,
+            environmentLabels: cachedEnvironmentMentionLabels(),
+          })
           if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
             // Drop dismiss markers for @ tokens that no longer exist (deleted or replaced).

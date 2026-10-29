@@ -1,6 +1,7 @@
 import { isBuiltinCapabilityId, isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { isMentionTokenKind, nativeMentionSpans, nativeMentionText, type MentionDocument, type MentionToken } from './mention-document'
 import type { MentionEditorCommand, MentionEditorSnapshot } from './mention-editor-state'
+import { cachedEnvironmentMentionLabels } from './environment-mention'
 import { extractMentionQuery, type MentionItem } from './mentions'
 
 /** Only a selected, typed identity becomes a chip. Provider refs must come from
@@ -20,7 +21,7 @@ export function mentionTokenFromItem(item: MentionItem): MentionToken | undefine
  * document: only an accepted native snapshot acknowledges this selection. */
 export function selectNativeMention(snapshot: MentionEditorSnapshot, item: MentionItem, id: number): MentionEditorCommand | undefined {
   if (snapshot.composing || snapshot.start !== snapshot.end) return
-  const query = extractMentionQuery(snapshot.text, snapshot.end)
+  const query = extractMentionQuery(snapshot.text, snapshot.end, undefined, cachedEnvironmentMentionLabels())
   if (!query) return
   // A waypoint is still editable @text until a resource is selected. Which
   // items are waypoints is decided once, in `mentions.ts`, so this path and the

@@ -14,7 +14,7 @@ export { DesktopUpgradeRequiredError, MIN_PHONE_DESKTOP_VERSION } from './phone-
 
 const READS = new Set([
   'environment.descriptor', 'environment.health', 'environment.systemInfo', 'environment.status',
-  'environment.usage', 'environment.list', 'project.list', 'harness.systemInfo', 'harness.projectResources',
+  'environment.usage', 'environment.list', 'environment.mentionTargets', 'project.list', 'harness.systemInfo', 'harness.projectResources',
   'session.list', 'sessionList.page', 'sessionList.pinned', 'sessionList.search', 'sessionList.find',
   'git.status', 'git.branches', 'git.info', 'draft.list',
 ])

@@ -1,5 +1,6 @@
 import { wrapMiniAppMention } from './miniapp-mention-marker'
 import { replaceCapabilityTagsWithMention, stripCapabilityMarkup } from './capability-prompt-tags'
+import { ENVIRONMENT_REMINDER_REGEX, ENVIRONMENT_TAG_REGEX } from './environment-mention'
 import { replaceGitTagsWithMention } from './git-mention-tags'
 import { replaceMcpResourceTagsWithMention } from './mcp-app-mentions'
 
@@ -40,11 +41,13 @@ export function replaceMiniAppTagsWithMention(text: string): string {
     replaceMcpResourceTagsWithMention(replaceGitTagsWithMention(text))
       .replace(MINIAPP_REMINDER_REGEX, '')
       .replace(SESSION_REMINDER_REGEX, '')
+      .replace(ENVIRONMENT_REMINDER_REGEX, '')
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
       .replace(MINIAPP_TAG_REGEX, (_, appName, appId) =>
         wrapMiniAppMention(String(appId).trim(), String(appName).trim()),
       )
       .replace(SESSION_TAG_REGEX, (_, title) => `@${String(title).trim()}`)
+      .replace(ENVIRONMENT_TAG_REGEX, (_, name) => `@${String(name).trim()}`)
       .replace(DESKTOP_APP_TAG_REGEX, (_, name) => `@${String(name).trim()}`)
       .replace(PATH_REF_TAG_REGEX, (_full, _kind, name, value) => {
         const v = String(value).trim()
@@ -61,9 +64,11 @@ export function stripMiniAppMarkup(text: string): string {
     replaceMcpResourceTagsWithMention(replaceGitTagsWithMention(text))
       .replace(MINIAPP_REMINDER_REGEX, '')
       .replace(SESSION_REMINDER_REGEX, '')
+      .replace(ENVIRONMENT_REMINDER_REGEX, '')
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
       .replace(MINIAPP_TAG_REGEX, (_, appName) => `@${String(appName).trim()}`)
       .replace(SESSION_TAG_REGEX, (_, title) => `@${String(title).trim()}`)
+      .replace(ENVIRONMENT_TAG_REGEX, (_, name) => `@${String(name).trim()}`)
       .replace(DESKTOP_APP_TAG_REGEX, (_, name) => `@${String(name).trim()}`)
       .replace(PATH_REF_TAG_REGEX, (_full, _kind, name, value) => {
         const n = String(name).trim()

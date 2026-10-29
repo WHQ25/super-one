@@ -4,6 +4,7 @@ import { PLAIN_MENTION_GROUP_LIMIT, shouldDirectSearch } from '@superone/shared/
 import { sortByMentionMatch } from '@superone/shared/mention-match-tier'
 import { SESSION_MENTION_SEARCH_LIMIT } from '@superone/shared/session-mention-query'
 import { enabledGitMentionPortals, gitMentionSearchKinds, loadGitMentionRefsForKinds, PLAIN_GIT_MENTION_KINDS } from '@superone/shared/git-mention-query'
+import { isEnvironmentMentionQuery, parseEnvironmentMentionQuery } from '@superone/shared/environment-mention'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { requestMentionIcons, requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from '../mention-search'
@@ -21,6 +22,7 @@ import {
   isSessionMentionQuery, parseSessionQuery,
   sessionEmptyLabel, sessionItems, sessionProjectItems, sessionProjectOptions,
 } from '../session-mention'
+import { cachedEnvironmentMentionLabels, requestEnvironmentMentions } from '../environment-mention'
 import { searchSessions } from './workspace-data'
 import {
   gitEmptyLabel, gitKindItems, gitRefItems, isGitMentionQuery, parseGitMentionQuery,
@@ -222,6 +224,14 @@ export function useComposerSuggestions(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextKey, connected])
 
+  // Machine names can contain a space. Cache them before the first `@Mac mini`.
+  useEffect(() => {
+    const client = host.client.current
+    if (!connected || !client) return
+    void requestEnvironmentMentions(client, '').catch(() => { /* The @ search reports its own failure. */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextKey, connected])
+
   /** Whose checkout a runtime-less search covers; a runtime names its own session. */
   const searchTarget = (): MentionSearchOptions => ({
     ...(host.sessionId ? { sessionId: host.sessionId } : {}),
@@ -259,6 +269,17 @@ export function useComposerSuggestions(
     }
   }
 
+  /** `@env`: this machine, remote nodes, and other desktops, filtered by name on the phone. */
+  const environmentLookup = (query: string, client: RelayClient | null): (() => Promise<MentionFetch>) | null => {
+    const parsed = parseEnvironmentMentionQuery(query)
+    if (!parsed) return null
+    return async () => {
+      if (!client) return { remote: [], emptyLabel: 'No machines to mention' }
+      const { items, emptyLabel } = await requestEnvironmentMentions(client, parsed.nameQuery)
+      return { remote: items, emptyLabel }
+    }
+  }
+
   /** `@git` / `@gh`: a kind is optional. Omitted, every kind of that portal is searched. */
   /** Portals the host said it can serve; a portal that is off does not own the grammar. */
   const gitPortals = () => enabledGitMentionPortals(mentionCatalogRef.current?.gitAvailability)
@@ -284,6 +305,18 @@ export function useComposerSuggestions(
       )
       if (!result.ok) return { remote: kindRows, emptyLabel: gitEmptyLabel(parsed, result) }
       return { remote: [...kindRows, ...gitRefItems(result.refs, parsed.refQuery)], emptyLabel: gitEmptyLabel(parsed) }
+    }
+  }
+
+  /** Machines matching a plain `@name`. `@env` owns its own lookup, and a path is a file query. */
+  const plainEnvironments = async (query: string, client: RelayClient | null): Promise<MentionItem[]> => {
+    const name = query.trim()
+    if (!client || !shouldDirectSearch(query, gitPortals()) || name.includes('/')) return []
+    try {
+      const { items } = await requestEnvironmentMentions(client, name)
+      return items
+    } catch {
+      return []
     }
   }
 
@@ -346,6 +379,7 @@ export function useComposerSuggestions(
     client: RelayClient | null,
   ): (() => Promise<MentionFetch>) | null => {
     if (isSessionMentionQuery(query)) return sessionLookup(query, client)
+    if (isEnvironmentMentionQuery(query)) return environmentLookup(query, client)
     if (isGitMentionQuery(query, gitPortals())) return gitLookup(query, client)
     const mode = deriveMentionMode(query)
     const canSearch = !!(runtime || (client && projectPath))
@@ -389,6 +423,7 @@ export function useComposerSuggestions(
     if (!canSearch) return null
     return async () => {
       const extras = plainMentionExtras(query, client)
+      const machinesPromise = plainEnvironments(query, client)
       let result: MentionSearchResult
       try {
         result = await runMentionSearch(mode.needle, runtime, client, mode.scopeDir || undefined)
@@ -396,13 +431,14 @@ export function useComposerSuggestions(
         result = { error: err instanceof Error ? err.message : 'Could not load mention suggestions' }
       }
       const [sessions, refs] = await extras
+      const machines = await machinesPromise
       const widen = async (): Promise<MentionFetch> => {
         const fallback = await runMentionSearch(query, runtime, client)
         if (fallback.error) throw new Error(fallback.error)
         const fetched = absorb(fallback)
         return {
           ...fetched,
-          remote: [...sessions, ...refs, ...fetched.remote],
+          remote: [...machines, ...sessions, ...refs, ...fetched.remote],
           unscopedFallback: true,
         }
       }
@@ -422,15 +458,15 @@ export function useComposerSuggestions(
           const listed = await requestDirectory(client, projectPath, root, mode.scopeDir)
           if (!listed.error) {
             const filtered = filterBrowseItems(listed.items, mode.needle)
-            if (filtered.length > 0) return { ...fetched, remote: [...sessions, ...refs, ...filtered] }
+            if (filtered.length > 0) return { ...fetched, remote: [...machines, ...sessions, ...refs, ...filtered] }
           }
         }
-        return { ...fetched, remote: [...sessions, ...refs, ...fetched.remote], unscopedFallback: true }
+        return { ...fetched, remote: [...machines, ...sessions, ...refs, ...fetched.remote], unscopedFallback: true }
       }
       const fetched = absorb(result)
       const hasFile = fetched.remote.some((item) => item.kind === 'file' || item.kind === 'directory' || item.kind === 'dir-entry')
       if (mode.scopeDir && query.trim() && !hasFile) return widen()
-      return { ...fetched, remote: [...sessions, ...refs, ...fetched.remote] }
+      return { ...fetched, remote: [...machines, ...sessions, ...refs, ...fetched.remote] }
     }
   }
 
@@ -460,7 +496,7 @@ export function useComposerSuggestions(
     const runtime = runtimeRef.current
     const client = host.client.current
     const collapsed = cursor.current.start === cursor.current.end
-    const query = collapsed ? extractMentionQuery(text.current, cursor.current.end, gitPortals()) : null
+    const query = collapsed ? extractMentionQuery(text.current, cursor.current.end, gitPortals(), cachedEnvironmentMentionLabels()) : null
     if (!query) {
       clear()
       return
@@ -516,7 +552,7 @@ export function useComposerSuggestions(
    * Server items sit beside capabilities, as on the desktop: on `@` and plain
    * queries, not inside a portal and not while a folder is being browsed.
    */
-  const mcpQuery = mentionQuery !== null && !isSessionMentionQuery(mentionQuery)
+  const mcpQuery = mentionQuery !== null && !isSessionMentionQuery(mentionQuery) && !isEnvironmentMentionQuery(mentionQuery)
     && !isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionCatalog?.gitAvailability)) && !mentionQuery.endsWith('/')
     ? mentionQuery : null
   const mcpMentions = useMcpMentionSearch(host.client, connected, projectPath, host.sessionId, mcpQuery)
@@ -533,7 +569,8 @@ export function useComposerSuggestions(
     if (mentionQuery === null) return []
     const mode = deriveMentionMode(mentionQuery)
     // A portal grammar (session / git) owns the list: no needle, no file scope.
-    const session = isSessionMentionQuery(mentionQuery) || isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionCatalog?.gitAvailability))
+    const session = isSessionMentionQuery(mentionQuery) || isEnvironmentMentionQuery(mentionQuery)
+      || isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionCatalog?.gitAvailability))
     const anchored = !!mentionScopeDir(mentionQuery)
     // Fallback hits are project-wide. Slicing them at the typed directory
     // would cut a path that does not start there.
@@ -602,7 +639,7 @@ export function useComposerSuggestions(
   }
   const insert = (item: MentionItem): string | undefined => {
     if (cursor.current.start !== cursor.current.end) return
-    const query = extractMentionQuery(text.current, cursor.current.end, gitPortals())
+    const query = extractMentionQuery(text.current, cursor.current.end, gitPortals(), cachedEnvironmentMentionLabels())
     if (!query) return
     const value = insertMention(text.current, query, item)
     const end = cursor.current.end + value.length - text.current.length

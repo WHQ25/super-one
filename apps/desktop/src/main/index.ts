@@ -1137,6 +1137,8 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         sessions: createPhoneSessionHost(sessionManager, openMiniAppForm),
         voice: { manager: sessionManager, preferredVoice: () => readAppSettings().agentPreference.codex.realtimeVoice },
         desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input),
+        mentionTargets: () => import('./remote/environment-mention-targets').then(({ readEnvironmentMentionTargets }) =>
+          readEnvironmentMentionTargets()),
       }),
   }
   const domain = openDesktopDomain(sessionManager, phonePorts)

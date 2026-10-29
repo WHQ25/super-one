@@ -124,9 +124,13 @@ describe('buildSessionProjectOptions', () => {
 })
 
 describe('mentionQueryAllowsSpaces', () => {
-  it('allows spaces only inside the session grammar', () => {
+  it('allows spaces inside session, @env, and a direct environment name', () => {
     expect(mentionQueryAllowsSpaces('session ')).toBe(true)
     expect(mentionQueryAllowsSpaces('session fix auth')).toBe(true)
+    expect(mentionQueryAllowsSpaces('env Mac mini')).toBe(true)
+    expect(mentionQueryAllowsSpaces('Mac mini', { environmentLabels: ['Mac mini'] })).toBe(true)
+    expect(mentionQueryAllowsSpaces('Mac mini ', { environmentLabels: ['Mac mini'] })).toBe(false)
+    expect(mentionQueryAllowsSpaces('environment Mac mini')).toBe(false)
     expect(mentionQueryAllowsSpaces('file name')).toBe(false)
   })
 })

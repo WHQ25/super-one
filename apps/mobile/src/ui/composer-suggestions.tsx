@@ -166,6 +166,8 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
     : item.kind === 'git-portal' ? (item.path === 'gh' ? 'github' : 'git:branch')
     : item.kind === 'git-kind' ? `git:${item.path}`
     : item.kind === 'git-ref' ? `git:${parseGitMentionValue(item.path)?.kind ?? 'branch'}`
+    : item.kind === 'environment-portal' ? 'environment:cli-node'
+    : item.kind === 'environment' ? (item.path.startsWith('local:') ? 'environment:local' : item.path.startsWith('remote-desktop:') ? 'environment:remote-desktop' : 'environment:cli-node')
     : item.kind
   const glyph = mentionGlyphArtwork(glyphKind, scheme, colors.foreground)
   if (glyph) return <Image accessible={false} resizeMode="contain" source={{ uri: `data:image/png;base64,${glyph}` }} style={{ width: size, height: size, borderRadius: item.kind === 'miniapp' ? size * 0.22 : 0 }} />

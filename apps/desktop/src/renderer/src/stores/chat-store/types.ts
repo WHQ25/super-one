@@ -73,6 +73,8 @@ export type MentionKind =
   | 'desktop-app'
   /** SuperOne session archive — value is sessions.id (not provider session id). */
   | 'session'
+  /** Remote machine or paired phone — value is `<role>:<id>` (see `environment-mention`). */
+  | 'environment'
   /** Git ref of the project repository — value is `<kind>:<id>` (see `git-mention-query`). */
   | 'git'
   /**

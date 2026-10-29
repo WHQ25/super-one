@@ -19,6 +19,7 @@ import { isControlledElsewhere } from './remote-control'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
 import { resetHostSession } from '@/lib/session-client'
+import { formatEnvironmentMentionReminder } from '@superone/shared/environment-mention'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
@@ -233,6 +234,9 @@ export async function sendMessageImpl(
     }
     sessionReminderSuffix = `\n\n<superone-session-reminder>\n${lines.join('\n')}\n</superone-session-reminder>`
   }
+  const environmentReminderSuffix = formatEnvironmentMentionReminder(
+    mentions.filter((m) => m.kind === 'environment' && m.value),
+  )
   let capabilityReminderSuffix = ''
   let desktopAppReminderSuffix = ''
   // Expand popup-selected path/agent tags to bare @value for the model; keep
@@ -313,6 +317,7 @@ export async function sendMessageImpl(
     quoteSuffix +
     replyCommentSuffix +
     sessionReminderSuffix +
+    environmentReminderSuffix +
     agentReminderSuffix +
     capabilityReminderSuffix +
     mcpResourceSuffix +

@@ -4,6 +4,7 @@ import { compareMentionMatchKeys, fileMentionMatchKey, gitMentionRefMatchKey, me
 import { compareBuiltinMentionMatches, matchBuiltinMention } from '@superone/shared/mention-capability-match'
 import { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
 import { SESSION_MENTION_KEYWORD, SESSION_MENTION_NAV_PREFIX } from '@superone/shared/session-mention-query'
+import { ENVIRONMENT_MENTION_KEYWORD, ENVIRONMENT_MENTION_NAV_PREFIX } from '@superone/shared/environment-mention'
 import { GH_MENTION_KEYWORD, GH_MENTION_NAV_PREFIX, GIT_MENTION_KEYWORD, GIT_MENTION_NAV_PREFIX, isGitHubRefKind, parseGitMentionValue, type GitMentionCapabilities } from '@superone/shared/git-mention-query'
 import { encodeMcpMentionValue, mcpMentionGroupKey, mcpMentionMatchIndices, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import { GH_UNAVAILABLE_HINT } from './git-mention'
@@ -26,6 +27,7 @@ export const MENTION_GROUP_ORDER = [
   'agent-profile',
   'session-project',
   'session',
+  'environment',
   'git-kind',
   'git-branch',
   'git-commit',
@@ -48,6 +50,7 @@ export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
   'agent-profile': 'Collaborators',
   'session-project': 'Project scope',
   session: 'Sessions',
+  environment: 'Environments',
   'git-kind': 'Ref type',
   'git-branch': 'Branches',
   'git-commit': 'Commits',
@@ -111,10 +114,11 @@ export function mentionGroupKey(item: MentionItem): MentionGroupKey | McpMention
   if (item.kind === 'mcp-resource' && item.mcpGroup) return item.mcpGroup
   // The session portal is a built-in the user reaches the same way, so it
   // belongs in the same group and the same ranking.
-  if (item.kind === 'builtin' || item.kind === 'session-portal' || item.kind === 'git-portal' || isBuiltinCapabilityId(item.kind)) return 'capability'
+  if (item.kind === 'builtin' || item.kind === 'session-portal' || item.kind === 'environment-portal' || item.kind === 'git-portal' || isBuiltinCapabilityId(item.kind)) return 'capability'
   if (item.kind === 'agent-profile') return 'agent-profile'
   if (item.kind === 'session-project') return 'session-project'
   if (item.kind === 'session') return 'session'
+  if (item.kind === 'environment') return 'environment'
   if (item.kind === 'git-kind') return 'git-kind'
   if (item.kind === 'git-ref') return `git-${parseGitMentionValue(item.path)?.kind ?? 'branch'}`
   if (item.kind === 'desktop-app') return 'desktop-app'
@@ -202,6 +206,10 @@ const SESSION_PORTAL = {
   id: SESSION_MENTION_KEYWORD,
   displayName: 'Session',
 }
+const ENVIRONMENT_PORTAL = {
+  id: ENVIRONMENT_MENTION_KEYWORD,
+  displayName: 'Environment',
+}
 const GIT_PORTALS = [
   { id: GIT_MENTION_KEYWORD, displayName: 'Git', aliases: [] as string[], nav: GIT_MENTION_NAV_PREFIX },
   { id: GH_MENTION_KEYWORD, displayName: 'GitHub', aliases: ['issue', 'pr'], nav: GH_MENTION_NAV_PREFIX },
@@ -267,6 +275,29 @@ function capabilityRows(query: string, capabilityIds: unknown[], gitAvailability
         labelIndices: portal.labelIndices,
         inline: `@${SESSION_PORTAL.id}`,
         inlineIndices: portal.keywordIndices,
+      },
+    })
+  }
+  const environmentPortal = matchBuiltinMention(
+    ENVIRONMENT_PORTAL.id,
+    [ENVIRONMENT_PORTAL.displayName],
+    query,
+  )
+  if (environmentPortal) {
+    matches.push({
+      keyword: ENVIRONMENT_PORTAL.id,
+      rank: environmentPortal.rank,
+      row: {
+        item: {
+          kind: 'environment-portal',
+          path: ENVIRONMENT_PORTAL.id,
+          label: ENVIRONMENT_PORTAL.displayName,
+          navigateTo: ENVIRONMENT_MENTION_NAV_PREFIX,
+        } as MentionItem,
+        label: ENVIRONMENT_PORTAL.displayName,
+        labelIndices: environmentPortal.labelIndices,
+        inline: `@${ENVIRONMENT_PORTAL.id}`,
+        inlineIndices: environmentPortal.keywordIndices,
       },
     })
   }
@@ -377,9 +408,10 @@ function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
   const offset = item.label ? 0 : item.path.length - label.length
   const labelIndices = item.labelIndices ?? shiftIndices(item.matchIndices ?? [], offset, label.length)
   const row: MentionRow = { item, label, labelIndices, inlineIndices: [] }
-  if (item.kind === 'session') {
+  if (item.kind === 'session' || item.kind === 'environment') {
     // Project and age share the second line. A phone is always as narrow as
-    // the desktop popup when it drops that pair under the title.
+    // the desktop popup when it drops that pair under the title. An environment
+    // uses the same line for its role and connection.
     return { ...row, ...(item.description ? { hint: item.description } : {}),
       ...(item.badge ? { hintTrailing: item.badge } : {}) }
   }
@@ -439,6 +471,7 @@ function directSearchGroupKeys(
     const key = mentionGroupKey(row.item)
     if (key === 'file') consider('file', fileMentionMatchKey(row.item.path, query))
     else if (key === 'session') consider('session', mentionMatchKey(row.label, query))
+    else if (key === 'environment') consider('environment', mentionMatchKey(row.label, query))
     else if (key === 'git-branch' || key === 'git-worktree' || key === 'git-tag') {
       const parsed = parseGitMentionValue(row.item.path)
       consider(key, gitMentionRefMatchKey({

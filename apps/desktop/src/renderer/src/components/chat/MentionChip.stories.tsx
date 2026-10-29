@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage as ChatMessageType, ImageAttachment } from '@superone/shared/agent-types'
 import { userEvent } from 'storybook/test'
 import { encodeMcpMentionValue, formatMcpResourceReminder, wrapMcpResourceMention, type McpMentionReadResource } from '@superone/shared/mcp-app-mentions'
+import { wrapEnvironmentMention } from '@superone/shared/environment-mention'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import { rememberMcpMentionIcons } from '@/components/mcp-apps/mention-icons'
 import { ChatMessage } from './ChatMessage'
@@ -68,6 +69,13 @@ export const McpResourceLongNarrow: Story = {
   args: {
     width: 320,
     text: `Compare ${part('cad://parts/flange', 'Weld-neck flange DN150 PN40 with raised face and extended hub')} and ${part('cad://parts/gasket', 'Spiral wound gasket')}`,
+  },
+}
+
+/** This machine, a remote node, and another desktop. The icon follows the role; the name is the label. */
+export const Environment: Story = {
+  args: {
+    text: `Run it on ${wrapEnvironmentMention('This Mac', 'local:local-id')}, ${wrapEnvironmentMention('studio', 'cli-node:node-1')} and ${wrapEnvironmentMention('Mac mini', 'remote-desktop:desk-1')}`,
   },
 }
 

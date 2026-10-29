@@ -10,6 +10,7 @@ import { phoneMethodScopes } from './phone-method-scopes'
 import { MCP_APP_CONTROL_OPERATIONS } from '@superone/shared/environment/mcp-apps-rpc'
 import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
 import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from '../mcp-apps/mobile-request'
+import type { EnvironmentMentionCandidate } from '@superone/shared/environment-mention'
 
 /**
  * What the phone methods ask of the desktop: the projections its window and
@@ -27,6 +28,8 @@ export interface PhoneMethodHost {
   >
   /** Phone-assisted desktop pairing; absent when this desktop cannot pair. */
   desktopPair?: (input: { kind: 'mint'; controllerName: string } | { kind: 'pair'; nodeCode: string; nodeName: string }) => Promise<unknown>
+  /** This machine, remote nodes, and other desktops for `@env`. Absent callers get an empty catalog. */
+  mentionTargets?: () => Promise<EnvironmentMentionCandidate[]>
 }
 
 type Handler = (p: Record<string, unknown>, ctx: RpcContext) => unknown | Promise<unknown>
@@ -108,6 +111,7 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       const { readPhoneEnvironments } = await import('./session-link-commands')
       return readPhoneEnvironments()
     },
+    'environment.mentionTargets': async () => ({ targets: host.mentionTargets ? await host.mentionTargets() : [] }),
 
     // Session list pages as the phone's sidebar shows them.
     'sessionList.page': async (p, ctx) => {

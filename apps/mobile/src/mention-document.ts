@@ -1,4 +1,5 @@
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
+import { wrapEnvironmentMention } from '@superone/shared/environment-mention'
 import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
 import { isStoredCapabilityId, wrapCapabilityMention, type StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -8,7 +9,7 @@ import { pasteSummary } from '@superone/shared/user-message-parts'
 
 /** One UTF-16 position in UITextView/EditText, regardless of the visible label. */
 export const MENTION_OBJECT = '\uFFFC'
-const TOKEN_KINDS = ['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session', 'git', 'mcp-resource'] as const
+const TOKEN_KINDS = ['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session', 'environment', 'git', 'mcp-resource'] as const
 export type MentionToken = {
   kind: typeof TOKEN_KINDS[number] | StoredCapabilityId
   value: string
@@ -120,6 +121,7 @@ export function serializeMentionDocument(document: MentionDocument): string {
     else if (kind === 'miniapp') tag = `<superone-miniapp><appname>${displayName}</appname><appid>${value}</appid></superone-miniapp>`
     else if (kind === 'desktop-app') tag = `<superone-desktop-app><name>${displayName}</name><bundleId>${value}</bundleId></superone-desktop-app>`
     else if (kind === 'session') tag = `<superone-session><title>${displayName}</title><sessionId>${value}</sessionId></superone-session>`
+    else if (kind === 'environment') tag = wrapEnvironmentMention(displayName, value)
     else if (kind === 'git') tag = wrapGitMention(value, displayName)
     else if (kind === 'mcp-resource') tag = wrapMcpResourceMention(value, displayName)
     else tag = wrapPathRefMention(kind, kind === 'directory' && !value.endsWith('/') ? `${value}/` : value, displayName || value)

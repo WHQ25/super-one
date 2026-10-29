@@ -21,7 +21,9 @@ export function useMentionArtwork(tokens: readonly { kind: string; value: string
         ? mentionFileArtwork(token.value, false, colors.foreground)
         : token.kind === 'agent-profile' ? mentionBrandArtwork(token.value, scheme, colors.foreground)
         : mentionGlyphArtwork(token.kind === 'desktop-app' ? 'computer'
-          : token.kind === 'git' ? `git:${parseGitMentionValue(token.value)?.kind ?? 'branch'}` : token.kind, scheme, colors.foreground))
+          : token.kind === 'git' ? `git:${parseGitMentionValue(token.value)?.kind ?? 'branch'}`
+          : token.kind === 'environment' ? (token.value.startsWith('local:') ? 'environment:local' : token.value.startsWith('remote-desktop:') ? 'environment:remote-desktop' : 'environment:cli-node')
+          : token.kind, scheme, colors.foreground))
       return png ? [{ key, png }] : []
     })
   }, [identities, colors.foreground, scheme])

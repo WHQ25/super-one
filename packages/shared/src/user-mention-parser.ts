@@ -10,6 +10,7 @@ import {
 } from './agent-mention-tags'
 import { GIT_HOST_TAG_REGEX, GIT_TAG_REGEX, gitTagDisplayName, gitTagValue } from './git-mention-tags'
 import { MCP_RESOURCE_REMINDER_REGEX, MCP_RESOURCE_TAG_REGEX, mcpResourceTagMention } from './mcp-app-mentions'
+import { ENVIRONMENT_REMINDER_REGEX, ENVIRONMENT_TAG_REGEX, encodeEnvironmentMentionValue, type EnvironmentMentionRole } from './environment-mention'
 import {
   DESKTOP_APP_REMINDER_REGEX,
   DESKTOP_APP_TAG_REGEX,
@@ -27,6 +28,8 @@ export type UserMentionKind =
   | 'miniapp'
   | 'desktop-app'
   | 'session'
+  /** Remote machine or paired phone — value is `<role>:<id>` (see `environment-mention`). */
+  | 'environment'
   | 'agent-profile'
   /** Git ref — value is `<kind>:<id>` (see `git-mention-query`). */
   | 'git'
@@ -118,6 +121,25 @@ function findSessionTags(text: string): TagMatch[] {
   return out
 }
 
+function findEnvironmentTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(ENVIRONMENT_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const role = m[2].trim() as EnvironmentMentionRole
+    const value = encodeEnvironmentMentionValue(role, m[3])
+    if (!value) continue
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: 'environment',
+      displayName: m[1].trim(),
+      value,
+    })
+  }
+  return out
+}
+
 function findGitTags(text: string): TagMatch[] {
   const out: TagMatch[] = []
   let m: RegExpExecArray | null
@@ -196,6 +218,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(CAPABILITY_REMINDER_REGEX, '')
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
     .replace(SESSION_REMINDER_REGEX, '')
+    .replace(ENVIRONMENT_REMINDER_REGEX, '')
     .replace(AGENT_REMINDER_REGEX, '')
     .replace(MCP_RESOURCE_REMINDER_REGEX, '')
 
@@ -205,6 +228,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     ...findCapabilityTags(withoutReminder),
     ...findDesktopAppTags(withoutReminder),
     ...findSessionTags(withoutReminder),
+    ...findEnvironmentTags(withoutReminder),
     ...findGitTags(withoutReminder),
     ...findMcpResourceTags(withoutReminder),
     ...findAgentTags(withoutReminder),

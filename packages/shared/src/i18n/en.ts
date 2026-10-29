@@ -3524,6 +3524,20 @@ export type Messages = {
       hintCompleteProject: string
       hintTypeTitle: string
       loadingSessions: string
+      capabilityEnvironment: string
+      groupEnvironments: string
+      noEnvironments: string
+      noEnvironmentTargets: string
+      hintSelectEnvironment: string
+      hintTypeEnvironment: string
+      loadingEnvironments: string
+      environmentCliNode: string
+      environmentRemoteDesktop: string
+      environmentLocal: string
+      environmentConnected: string
+      environmentConnecting: string
+      environmentOffline: string
+      environmentNeedsUpgrade: string
       capabilityGit: string
       capabilityGh: string
       groupGitKinds: string
@@ -8203,6 +8217,20 @@ export const en: Messages = {
       hintCompleteProject: 'complete project',
       hintTypeTitle: 'type title to search',
       loadingSessions: 'Loading…',
+      capabilityEnvironment: 'Environment',
+      groupEnvironments: 'Environments',
+      noEnvironments: 'No matching environments',
+      noEnvironmentTargets: 'No machines to mention',
+      hintSelectEnvironment: 'select environment',
+      hintTypeEnvironment: 'type a name',
+      loadingEnvironments: 'Loading…',
+      environmentCliNode: 'Remote node',
+      environmentRemoteDesktop: 'Remote desktop',
+      environmentLocal: 'This machine',
+      environmentConnected: 'connected',
+      environmentConnecting: 'connecting',
+      environmentOffline: 'offline',
+      environmentNeedsUpgrade: 'needs upgrade',
       capabilityGit: 'Git',
       capabilityGh: 'GitHub',
       groupGitKinds: 'Ref type',

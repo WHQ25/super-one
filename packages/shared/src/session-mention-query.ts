@@ -22,6 +22,7 @@
  * Everything here is pure. Listing sessions is host work.
  */
 
+import { environmentMentionAllowsSpaces, isEnvironmentMentionQuery } from './environment-mention'
 import { fuzzyMatch } from './fuzzy-match'
 import { isGitMentionQuery, type GitMentionPortal } from './git-mention-query'
 
@@ -73,13 +74,16 @@ export function isSessionMentionQuery(query: string): boolean {
 /**
  * A composer closes the @ popup when the query contains a space, because file
  * and agent mentions are single tokens. The session and git grammars need
- * spaces, so this is the exemption list.
+ * spaces, and so does an environment name that contains one.
  */
 export function mentionQueryAllowsSpaces(
   queryAfterAt: string,
-  opts?: { gitPortals?: readonly GitMentionPortal[] },
+  opts?: { gitPortals?: readonly GitMentionPortal[]; environmentLabels?: readonly string[] },
 ): boolean {
-  return isSessionMentionQuery(queryAfterAt) || isGitMentionQuery(queryAfterAt, opts?.gitPortals)
+  return isSessionMentionQuery(queryAfterAt)
+    || isEnvironmentMentionQuery(queryAfterAt)
+    || environmentMentionAllowsSpaces(queryAfterAt, opts?.environmentLabels ?? [])
+    || isGitMentionQuery(queryAfterAt, opts?.gitPortals)
 }
 
 /** Argument grammar shown as ghost text. `[project]` is optional. */

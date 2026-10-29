@@ -1,4 +1,5 @@
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import { formatEnvironmentMentionReminder } from '@superone/shared/environment-mention'
 import { userMessageParts } from '@superone/shared/user-message-parts'
 import { plainMentionText, serializeMentionDocument, type MentionDocument, type MentionSegment, type MentionToken } from './mention-document'
 import type { ComposerDraftSnapshot } from './composer-draft-state'
@@ -18,6 +19,14 @@ export function composerMessageContent(document: MentionDocument, pasteChipsVisi
     } else text += 'text' in segment ? segment.text : 'paste' in segment ? segment.paste : ` ${serializeMentionDocument([segment])} `
   }
   flush()
+  const environmentMentions = document.flatMap((segment) =>
+    'mention' in segment && segment.mention.kind === 'environment' ? [segment.mention] : [])
+  const reminder = formatEnvironmentMentionReminder(environmentMentions)
+  if (reminder) {
+    const last = content.at(-1)
+    if (last?.type === 'text' && last.isPaste !== true) last.text += reminder
+    else content.push({ type: 'text', text: reminder.trimStart(), isPaste: false })
+  }
   return content
 }
 

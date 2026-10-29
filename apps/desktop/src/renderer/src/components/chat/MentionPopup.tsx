@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
-import { Bot, Folder, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
+import { Bot, Folder, Globe, Laptop, LayoutDashboard, MessageSquare, Monitor, MousePointer2, Server } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -68,6 +68,17 @@ import {
 } from './GitMentionRows'
 import { SESSION_META_CLASS, STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
 import { encodeMcpMentionValue, mcpMentionGroupKey, mcpMentionHasStatus } from '@superone/shared/mcp-app-mentions'
+import {
+  ENVIRONMENT_MENTION_KEYWORD,
+  ENVIRONMENT_MENTION_NAV_PREFIX,
+  encodeEnvironmentMentionValue,
+  filterEnvironmentMentions,
+  parseEnvironmentMentionQuery,
+  type EnvironmentMentionCandidate,
+  type EnvironmentMentionRole,
+  type EnvironmentMentionStatus,
+} from '@superone/shared/environment-mention'
+import { loadEnvironmentMentionCandidates } from '@/lib/environment-mention-catalog'
 import { useMcpMentionSearch } from '@/components/mcp-apps/mention-search'
 import type { McpAppRoute } from '@/components/mcp-apps/desktop-executor'
 import { McpMentionRow, McpMentionStatus, mcpMentionFlatItems, type McpMentionFlatItem } from './McpMentionRows'
@@ -149,6 +160,23 @@ type FlatItem =
       matchIndices: number[]
     }
   | {
+      /** Built-in Environment portal — Tab/Enter opens the machine and phone list. */
+      kind: 'environment-portal'
+      id: typeof ENVIRONMENT_MENTION_KEYWORD
+      displayName: string
+      matchIndices: number[]
+      keywordMatchIndices: number[]
+      matchRank: BuiltinMentionMatchRank
+    }
+  | {
+      kind: 'environment'
+      role: EnvironmentMentionRole
+      id: string
+      label: string
+      status: EnvironmentMentionStatus
+      matchIndices: number[]
+    }
+  | {
       kind: 'desktop-app'
       bundleId: string
       displayName: string
@@ -211,7 +239,7 @@ function getSelectPath(item: FlatItem): string {
   return ''
 }
 
-export const MENTION_GROUP_ORDER = ['capability', 'agent-profile', 'session-project', 'session', ...GIT_MENTION_GROUP_ORDER, 'desktop-app', 'agent', 'miniapp', 'file'] as const
+export const MENTION_GROUP_ORDER = ['capability', 'agent-profile', 'session-project', 'session', 'environment', ...GIT_MENTION_GROUP_ORDER, 'desktop-app', 'agent', 'miniapp', 'file'] as const
 
 function directSearchGroupKeys(
   items: readonly FlatItem[],
@@ -227,6 +255,7 @@ function directSearchGroupKeys(
     if (item.kind === 'dir-entry') consider('file', fileMentionMatchKey(item.prefix + item.entry.name, query))
     else if (item.kind === 'file') consider('file', fileMentionMatchKey(item.path, query))
     else if (item.kind === 'session') consider('session', mentionMatchKey(item.title, query))
+    else if (item.kind === 'environment') consider('environment', mentionMatchKey(item.label, query))
     else if (item.kind === 'git-ref') {
       const key = `git-${item.ref.kind}`
       if (key === 'git-branch' || key === 'git-worktree' || key === 'git-tag') {
@@ -240,9 +269,10 @@ function directSearchGroupKeys(
 function mentionGroupKey(item: FlatItem): string {
   if (isGitFlatItem(item)) return gitMentionGroupKey(item)
   if (item.kind === 'agent-profile') return 'agent-profile'
-  if (item.kind === 'capability' || item.kind === 'session-portal') return 'capability'
+  if (item.kind === 'capability' || item.kind === 'session-portal' || item.kind === 'environment-portal') return 'capability'
   if (item.kind === 'session-project') return 'session-project'
   if (item.kind === 'session') return 'session'
+  if (item.kind === 'environment') return 'environment'
   if (item.kind === 'desktop-app') return 'desktop-app'
   if (item.kind === 'agent') return 'agent'
   if (item.kind === 'miniapp') return 'miniapp'
@@ -317,6 +347,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     // responses from a previous keystroke cannot clobber newer state.
     const requestIdRef = useRef(0)
     const sessionLoadGenRef = useRef(0)
+    const environmentLoadGenRef = useRef(0)
 
     const agentEntries = useMemo(
       () => showAgents ? agents.map((a) => ({ name: a.name, model: a.model || '' })) : [],
@@ -333,14 +364,19 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       [query, projectOptions],
     )
     const isSessionMode = parsedSessionQuery !== null
+    const parsedEnvironmentQuery = useMemo(() => parseEnvironmentMentionQuery(query), [query])
+    const isEnvironmentMode = parsedEnvironmentQuery !== null
     const git = useGitMention(query, fileRoot)
     const isGitMode = git.isGitMode
-    // A portal grammar (`@session …`, `@git …`) owns the popup: no files, no capabilities.
-    const isPortalMode = isSessionMode || isGitMode
+    // A portal grammar (`@session …`, `@env …`, `@git …`) owns the popup.
+    const isPortalMode = isSessionMode || isEnvironmentMode || isGitMode
     const directSearch = !isPortalMode && shouldDirectSearch(query, git.portals)
 
     const [sessionRows, setSessionRows] = useState<PinnedSessionEntry[]>([])
     const [sessionLoading, setSessionLoading] = useState(false)
+    const [environmentRows, setEnvironmentRows] = useState<EnvironmentMentionCandidate[]>([])
+    const [environmentLoading, setEnvironmentLoading] = useState(false)
+    const [environmentSettled, setEnvironmentSettled] = useState(false)
     const [sessionSettledFor, setSessionSettledFor] = useState<string | null>(null)
     const directPending = directSearch && (sessionSettledFor !== query || !git.settled)
 
@@ -510,10 +546,38 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
-    // Reset selection when entering a portal mode or changing phase (scope → query → search).
+    // Load once per visit. `@env` and a typed name both filter this catalog
+    // on the client, and a new keystroke must not blank the list first.
     useEffect(() => {
-      if (isPortalMode) onSetSelectedIndex(0)
-    }, [isPortalMode, parsedSessionQuery?.phase, git.parsed?.phase, onSetSelectedIndex])
+      const gen = ++environmentLoadGenRef.current
+      setEnvironmentLoading(true)
+      void loadEnvironmentMentionCandidates()
+        .then((rows) => {
+          if (gen !== environmentLoadGenRef.current) return
+          setEnvironmentRows(rows)
+          setEnvironmentLoading(false)
+          setEnvironmentSettled(true)
+        })
+        .catch(() => {
+          if (gen !== environmentLoadGenRef.current) return
+          setEnvironmentRows([])
+          setEnvironmentLoading(false)
+          setEnvironmentSettled(true)
+        })
+    }, [])
+
+    // Reset selection when entering a portal or changing its phase.
+    // Typing an environment name stays on the same portal, so the highlight holds.
+    const portalId = isEnvironmentMode
+      ? 'environment'
+      : isSessionMode
+        ? `session:${parsedSessionQuery?.phase ?? ''}`
+        : isGitMode
+          ? `git:${git.parsed?.portal ?? ''}:${git.parsed?.phase ?? ''}`
+          : ''
+    useEffect(() => {
+      if (portalId) onSetSelectedIndex(0)
+    }, [portalId, onSetSelectedIndex])
 
     /** Feature gates for built-in @-capability chips (settings toggles). Widget is always on. */
     const [capabilityEnabled, setCapabilityEnabled] = useState<Record<BuiltinCapabilityId, boolean>>({
@@ -681,7 +745,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // Hide when browsing into a subdirectory (`@src/`), but keep on empty `@`.
       if (isPortalMode) return []
       if (isBrowseMode && query) return []
-      const matches: Array<Extract<FlatItem, { kind: 'capability' | 'session-portal' | 'git-portal' }>> = []
+      const matches: Array<Extract<FlatItem, { kind: 'capability' | 'session-portal' | 'environment-portal' | 'git-portal' }>> = []
       for (const cap of BUILTIN_CAPABILITIES) {
         const label = capabilityLabel(cap.id)
         // Keyword (@id) outranks display name so `@se` hits session before "Computer Use".
@@ -710,6 +774,24 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           matches.push({
             kind: 'session-portal',
             id: SESSION_MENTION_KEYWORD,
+            displayName: label,
+            matchIndices: scored.labelIndices,
+            keywordMatchIndices: scored.keywordIndices,
+            matchRank: scored.rank,
+          })
+        }
+      }
+      {
+        const label = t('chat.mentionPopup.capabilityEnvironment')
+        const scored = matchBuiltinMention(
+          ENVIRONMENT_MENTION_KEYWORD,
+          [label, 'Environment'],
+          query,
+        )
+        if (scored) {
+          matches.push({
+            kind: 'environment-portal',
+            id: ENVIRONMENT_MENTION_KEYWORD,
             displayName: label,
             matchIndices: scored.labelIndices,
             keywordMatchIndices: scored.keywordIndices,
@@ -795,6 +877,32 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return sessionFlatItems(sessionRows, parsedSessionQuery.titleQuery, parsedSessionQuery.projects == null)
     }, [parsedSessionQuery, sessionRows, sessionFlatItems])
 
+    const environmentFlatItems = useCallback((nameQuery: string): FlatItem[] => {
+      return filterEnvironmentMentions(environmentRows, nameQuery).flatMap((row) => {
+        if (!encodeEnvironmentMentionValue(row.role, row.id)) return []
+        return [{
+          kind: 'environment' as const,
+          role: row.role,
+          id: row.id,
+          label: row.label,
+          status: row.status,
+          matchIndices: row.matchIndices,
+        }]
+      })
+    }, [environmentRows])
+
+    const matchedEnvironments = useMemo<FlatItem[]>(() => {
+      if (!parsedEnvironmentQuery) return []
+      return environmentFlatItems(parsedEnvironmentQuery.nameQuery)
+    }, [parsedEnvironmentQuery, environmentFlatItems])
+
+    // A typed name (`@studio`, `@Mac mini`) matches without opening `@env`.
+    // Bare `@` and a one-letter query keep the catalog behind the portal.
+    const plainEnvironments = useMemo<FlatItem[]>(() => {
+      if (!directSearch || (isBrowseMode && query)) return []
+      return environmentFlatItems(query.trim())
+    }, [directSearch, isBrowseMode, query, environmentFlatItems])
+
     const plainSessions = useMemo<FlatItem[]>(() => {
       if (!directSearch) return []
       const titleQ = query.trim()
@@ -872,6 +980,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }, [computerUseEnabled, installedDesktopApps, query, isBrowseMode, isPortalMode])
 
     const flatItems: FlatItem[] = useMemo(() => {
+      if (isEnvironmentMode) return matchedEnvironments
       if (isGitMode) return matchedGitItems
       if (isSessionMode) return [...matchedSessionProjects, ...matchedSessions]
       // A real directory listing (or bare `@`) stays a listing. Sessions and
@@ -881,6 +990,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         const items: FlatItem[] = [
           ...matchedAgentTargets,
           ...matchedCapabilities,
+          ...plainEnvironments,
           ...(directSearch ? plainSessions : []),
           ...(directSearch ? plainGitItems : []),
           ...matchedDesktopApps,
@@ -903,6 +1013,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       const items: FlatItem[] = [
         ...matchedAgentTargets,
         ...matchedCapabilities,
+        ...plainEnvironments,
         ...plainSessions,
         ...plainGitItems,
         ...matchedDesktopApps,
@@ -919,7 +1030,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
       }
       return items
-    }, [isGitMode, matchedGitItems, isSessionMode, matchedSessionProjects, matchedSessions, plainSessions, plainGitItems, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, fileFallback, directSearch, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets, mcpItems])
+    }, [isEnvironmentMode, matchedEnvironments, plainEnvironments, isGitMode, matchedGitItems, isSessionMode, matchedSessionProjects, matchedSessions, plainSessions, plainGitItems, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, fileFallback, directSearch, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets, mcpItems])
 
     // Server sections are dynamic; they go right before files, which can run long.
     const mcpGroupKeys = useMemo(() => mcp.sources.map(mcpMentionGroupKey), [mcp.sources])
@@ -951,6 +1062,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // Plain `@foo` still has session and git rows in flight. Reporting empty
       // now would lock the popup shut before they arrive.
       if (directPending) return
+      // A plain `@name` can match a machine that has not loaded yet. Reporting
+      // empty now would lock the popup shut before the catalog arrives.
+      if (!isPortalMode && !(isBrowseMode && query) && query.trim() && !environmentSettled) return
       // Async installed-app catalog must finish before we can say "no matches".
       // Otherwise file-search empties first, ChatInput locks the @ prefix, and
       // desktop apps that arrive a moment later never surface.
@@ -958,7 +1072,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // Same for server items, which can take seconds while a harness starts.
       if (mcp.loading) return
       onResultState?.(query, orderedItems.length === 0 && !mcpShowsStatus)
-    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode, directPending, mcp.loading, mcpShowsStatus])
+    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode, isBrowseMode, environmentSettled, directPending, mcp.loading, mcpShowsStatus])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
@@ -966,6 +1080,16 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         // Built-in Session → switch popup to session search page (both Tab and Enter).
         if (item.kind === 'session-portal') {
           onSelect(SESSION_MENTION_NAV_PREFIX, 'navigate')
+          return
+        }
+        if (item.kind === 'environment-portal') {
+          onSelect(ENVIRONMENT_MENTION_NAV_PREFIX, 'navigate')
+          return
+        }
+        if (item.kind === 'environment') {
+          const value = encodeEnvironmentMentionValue(item.role, item.id)
+          if (!value) return
+          onSelect(value, 'select', 'environment', item.label)
           return
         }
         // Project / all — Tab or Enter completes scope into the query (trailing space).
@@ -1027,7 +1151,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           const item = getSelectedItem()
           if (!item) return
           // Portal / scope rows: Tab navigates (autocomplete).
-          if (item.kind === 'session-portal' || item.kind === 'session-project' || item.kind === 'git-portal' || item.kind === 'git-kind') {
+          if (item.kind === 'session-portal' || item.kind === 'session-project' || item.kind === 'environment-portal' || item.kind === 'git-portal' || item.kind === 'git-kind') {
             handleItemClick(item, 'navigate')
             return
           }
@@ -1037,7 +1161,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           const item = getSelectedItem()
           if (!item) return
           // Portal / scope rows: Enter also completes scope (not insert).
-          if (item.kind === 'session-portal' || item.kind === 'session-project' || item.kind === 'git-portal' || item.kind === 'git-kind') {
+          if (item.kind === 'session-portal' || item.kind === 'session-project' || item.kind === 'environment-portal' || item.kind === 'git-portal' || item.kind === 'git-kind') {
             handleItemClick(item, 'navigate')
             return
           }
@@ -1063,6 +1187,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           ? t('chat.mentionPopup.groupRecentSessions')
           : t('chat.mentionPopup.groupSessions')
       }
+      if (key === 'environment') return t('chat.mentionPopup.groupEnvironments')
       if (key === 'desktop-app') return t('chat.mentionPopup.groupDesktopApps')
       if (key === 'agent') return t('chat.mentionPopup.groupAgents')
       if (key === 'miniapp') return t('chat.mentionPopup.groupMiniApps')
@@ -1158,6 +1283,35 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           </button>
         )
       }
+      if (item.kind === 'environment-portal') {
+        return (
+          <button
+            key="c-environment-portal"
+            ref={setItemRef(i)}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleItemClick(item, 'navigate')}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={rowClass}
+          >
+            <Server className="size-3.5 shrink-0 text-foreground" />
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-medium">
+                <HighlightedPath path={item.displayName} indices={item.matchIndices} />
+              </span>
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                <HighlightedHandle
+                  keyword={ENVIRONMENT_MENTION_KEYWORD}
+                  indices={item.keywordMatchIndices}
+                />
+              </span>
+            </span>
+            <span className="shrink-0 text-2xs text-muted-foreground">
+              <Kbd>tab</Kbd>
+            </span>
+          </button>
+        )
+      }
       if (item.kind === 'session-project') {
         return (
           <button
@@ -1209,6 +1363,42 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                   {age ? <span className={cn(STACKED_DETAIL_CLASS, 'shrink-0')}>{age}</span> : null}
                 </span>
               ) : null}
+            </span>
+          </button>
+        )
+      }
+      if (item.kind === 'environment') {
+        const roleLabel = item.role === 'local'
+          ? t('chat.mentionPopup.environmentLocal')
+          : item.role === 'remote-desktop'
+            ? t('chat.mentionPopup.environmentRemoteDesktop')
+            : t('chat.mentionPopup.environmentCliNode')
+        const statusLabel = item.status === 'connected'
+          ? t('chat.mentionPopup.environmentConnected')
+          : item.status === 'connecting'
+            ? t('chat.mentionPopup.environmentConnecting')
+            : item.status === 'needs-upgrade'
+              ? t('chat.mentionPopup.environmentNeedsUpgrade')
+              : t('chat.mentionPopup.environmentOffline')
+        const Icon = item.role === 'local' ? Laptop : item.role === 'remote-desktop' ? Monitor : Server
+        return (
+          <button
+            key={`env-${item.role}-${item.id}`}
+            ref={setItemRef(i)}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleItemClick(item, 'select')}
+            onMouseEnter={() => onSetSelectedIndex(i)}
+            className={cn(rowClass, STACKED_ROW_CLASS)}
+          >
+            <Icon className={cn('size-3.5 shrink-0 text-foreground', STACKED_ICON_CLASS)} />
+            <span className={STACKED_BODY_CLASS}>
+              <span className="min-w-0 truncate font-medium @md:flex-1">
+                <HighlightedPath path={item.label} indices={item.matchIndices} />
+              </span>
+              <span className={SESSION_META_CLASS}>
+                <span className={STACKED_DETAIL_CLASS}>{roleLabel} · {statusLabel}</span>
+              </span>
             </span>
           </button>
         )
@@ -1416,6 +1606,28 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         >
           {git.parsed ? (
             <GitMentionHeader parsed={git.parsed} onNavigate={(prefix) => onSelect(prefix, 'navigate')} />
+          ) : isEnvironmentMode ? (
+            <div className="flex min-w-0 items-center gap-1.5 border-b border-border/50 px-2 py-1.5 text-xs">
+              <Server className="size-3.5 shrink-0 text-foreground" />
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelect(ENVIRONMENT_MENTION_NAV_PREFIX, 'navigate')}
+                  className="shrink-0 font-medium text-foreground hover:underline"
+                >
+                  {t('chat.mentionPopup.capabilityEnvironment')}
+                </button>
+                {parsedEnvironmentQuery?.nameQuery ? (
+                  <>
+                    <span className="shrink-0 text-muted-foreground/50">/</span>
+                    <span className="min-w-0 max-w-48 truncate text-muted-foreground" title={parsedEnvironmentQuery.nameQuery}>
+                      “{parsedEnvironmentQuery.nameQuery}”
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            </div>
           ) : isSessionMode ? (
             <div className="flex min-w-0 items-center gap-1.5 border-b border-border/50 px-2 py-1.5 text-xs">
               <MessageSquare className="size-3.5 shrink-0 text-foreground" />
@@ -1483,6 +1695,14 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               loading={git.loading && !gitPortalUnavailable}
               unavailable={gitPortalUnavailable ?? git.unavailable}
             />
+          ) : isEnvironmentMode && orderedItems.length === 0 && !environmentLoading ? (
+            <div className="px-2 py-3 text-xs text-muted-foreground">
+              <div className="font-medium text-foreground/80">
+                {environmentRows.length === 0
+                  ? t('chat.mentionPopup.noEnvironmentTargets')
+                  : t('chat.mentionPopup.noEnvironments')}
+              </div>
+            </div>
           ) : isSessionMode && orderedItems.length === 0 && !sessionLoading ? (
             <div className="px-2 py-3 text-xs text-muted-foreground">
               <div className="font-medium text-foreground/80">
@@ -1505,6 +1725,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               {fileGroupIndex < 0 ? mcpStatus : null}
             </>
           )}
+          {isEnvironmentMode && environmentLoading ? (
+            <div className="px-2 py-1.5 text-2xs text-muted-foreground">
+              {t('chat.mentionPopup.loadingEnvironments')}
+            </div>
+          ) : null}
           {isSessionMode && sessionLoading ? (
             <div className="px-2 py-1.5 text-2xs text-muted-foreground">
               {t('chat.mentionPopup.loadingSessions')}
@@ -1520,6 +1745,22 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         <div className="border-t border-border px-2 py-1 text-xs text-muted-foreground shrink-0">
           {git.parsed ? (
             <GitMentionFooter parsed={git.parsed} />
+          ) : isEnvironmentMode && !parsedEnvironmentQuery?.nameQuery ? (
+            <>
+              <Kbd>↵</Kbd> {t('chat.mentionPopup.hintSelectEnvironment')}
+              <span className="mx-1.5">&middot;</span>
+              {t('chat.mentionPopup.hintTypeEnvironment')}
+              <span className="mx-1.5">&middot;</span>
+              <Kbd>esc</Kbd> close
+            </>
+          ) : isEnvironmentMode ? (
+            <>
+              <Kbd>↵</Kbd> {t('chat.mentionPopup.hintSelectEnvironment')}
+              <span className="mx-1.5">&middot;</span>
+              <Kbd>↑↓</Kbd> navigate
+              <span className="mx-1.5">&middot;</span>
+              <Kbd>esc</Kbd> close
+            </>
           ) : isSessionMode && parsedSessionQuery?.projectToken ? (
             <>
               <Kbd>tab</Kbd> {t('chat.mentionPopup.hintCompleteProject')}

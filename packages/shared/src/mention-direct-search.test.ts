@@ -18,6 +18,10 @@ describe('shouldDirectSearch', () => {
     expect(shouldDirectSearch('feat/')).toBe(true)
     expect(shouldDirectSearch('session')).toBe(false)
     expect(shouldDirectSearch('session auth')).toBe(false)
+    expect(shouldDirectSearch('env')).toBe(false)
+    expect(shouldDirectSearch('env studio')).toBe(false)
+    expect(shouldDirectSearch('environment')).toBe(true)
+    expect(shouldDirectSearch('studio')).toBe(true)
     expect(shouldDirectSearch('git branch')).toBe(false)
     expect(shouldDirectSearch('gh 12')).toBe(false)
   })
@@ -54,6 +58,19 @@ describe('orderDirectSearchGroups', () => {
       ...HEAD,
       'git-branch', 'git-worktree', 'git-tag', 'session', 'file',
     ])
+  })
+
+  it('breaks an equal key toward branches, then environments, then files', () => {
+    const order = [...BASE.filter((key) => key !== 'file'), 'environment', 'file'] as const
+    const same = mentionMatchKey('feat/x', 'feat')
+    expect(orderDirectSearchGroups(order, {
+      file: same,
+      session: same,
+      environment: same,
+      'git-branch': same,
+      'git-worktree': same,
+      'git-tag': same,
+    }).slice(-6)).toEqual(['git-branch', 'git-worktree', 'git-tag', 'session', 'environment', 'file'])
   })
 
   it('puts a whole-segment branch above a prefix directory name and a weaker session', () => {

@@ -413,9 +413,10 @@ timeout behavior has not been verified with live provider calls.
 Desktop and phone composers share one `@` grammar.
 
 A plain `@foo` (at least two characters, and not a portal query) also lists
-fuzzy session titles and git branch, tag, and worktree refs, at most three
-of each. A `/` stays in that query: branch names contain one, and `@feat/`
-still searches sessions and refs. Browsing a directory that exists is
+matching environment names, fuzzy session titles, and git branch, tag, and
+worktree refs. Sessions and each git kind show at most three. A `/` stays in
+that query: branch names contain one, and `@feat/` still searches sessions
+and refs. Browsing a directory that exists is
 unchanged. A missing directory, or a scoped file search that comes back
 empty, falls back to an unscoped file search of the whole query. Bare `@`
 does not. Those groups and files form one block after capabilities,
@@ -424,9 +425,9 @@ is ordered by the best match in each group. After the tier, a run that ends
 at the end of the text or just before a separator beats one that continues
 inside the same segment, then a shorter segment wins, then a shorter text.
 An equal score keeps branches, then worktrees, then tags, then sessions,
-then files. Session titles are searched on the host that owns the active
-project, across every project on that host. Commits, issues, and pull
-requests stay out of that plain list.
+then environments, then files. Session titles are searched on the host that
+owns the active project, across every project on that host. Commits, issues,
+and pull requests stay out of that plain list.
 
 `@session` lists recent sessions across those projects. `@session <title>`
 searches titles the same way. An optional project argument remains:
@@ -439,6 +440,15 @@ the query to `session <label> `. Bare `@session` does not list projects.
 Unscoped rows show the project label. Scoped rows hide it. A session active
 at least a minute ago shows that age beside the project, as `12m`, `3h`, `2d`,
 `1w`, `4mo`, or `2y`. Anything newer omits the age.
+
+`@env` lists this machine, remote CLI nodes, and other SuperOne desktops this
+computer can control. `@env <name>` filters that list. Typing `@` and a
+machine's own name, including a name with a space such as `@Mac mini`, matches
+that row in the plain list while the typed text is still a prefix of a known
+label. A chosen row becomes an environment chip. The message tells the agent
+to omit `environmentId` for this machine, and to pass `environmentId` for any
+other machine, including `session_collab_request`'s `environment` field.
+Paired phones are not listed. `@environment` stays a plain name search.
 
 `@git` and `@gh` still open on a kind picker. `@git <query>` searches branch,
 tag, worktree, and commit together. `@gh <query>` searches issues and pull

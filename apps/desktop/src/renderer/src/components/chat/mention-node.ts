@@ -12,6 +12,7 @@ export interface MentionNodeAttrs {
     | BuiltinCapabilityId
     | 'desktop-app'
     | 'session'
+    | 'environment'
     | 'git'
     | 'agent-profile'
     | 'mcp-resource'

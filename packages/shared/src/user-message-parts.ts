@@ -30,6 +30,7 @@ export function isLabelMentionKind(kind: string): boolean {
     isStoredCapabilityId(kind)
     || kind === 'desktop-app'
     || kind === 'session'
+    || kind === 'environment'
     || kind === 'git'
     || kind === 'agent-profile'
     || kind === 'mcp-resource'

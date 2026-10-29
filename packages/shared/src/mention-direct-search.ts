@@ -1,10 +1,12 @@
 /**
- * Plain `@foo` (no portal keyword) also searches session titles and git refs.
- * One gate for both composers: long enough to be a name, and not already
- * inside `@session` / `@git` / `@gh`. A `/` stays in the query: branch names
- * and paths both contain one, and a missing directory falls back to this search.
+ * Plain `@foo` (no portal keyword) also searches session titles, environment
+ * names, and git refs. One gate for both composers: long enough to be a name,
+ * and not already inside `@session` / `@env` / `@git` / `@gh`. A `/` stays in the query:
+ * branch names and paths both contain one, and a missing directory falls back
+ * to this search.
  */
 
+import { isEnvironmentMentionQuery } from './environment-mention'
 import { isGitMentionQuery, type GitMentionPortal } from './git-mention-query'
 import { compareMentionMatchKeys, type MentionMatchKey } from './mention-match-tier'
 import { isSessionMentionQuery } from './session-mention-query'
@@ -17,12 +19,12 @@ export const PLAIN_MENTION_GROUP_LIMIT = 3
  * `shouldDirectSearch` is true. This is membership, not the tie order —
  * equal scores use {@link DIRECT_SEARCH_KEY_TIE_ORDER}.
  */
-export const DIRECT_SEARCH_RANKED_GROUPS = ['file', 'session', 'git-branch', 'git-worktree', 'git-tag'] as const
+export const DIRECT_SEARCH_RANKED_GROUPS = ['file', 'session', 'environment', 'git-branch', 'git-worktree', 'git-tag'] as const
 
 export type DirectSearchRankedGroup = (typeof DIRECT_SEARCH_RANKED_GROUPS)[number]
 
-/** Equal match keys: branches, worktrees, tags, sessions, then files. */
-const DIRECT_SEARCH_KEY_TIE_ORDER = ['git-branch', 'git-worktree', 'git-tag', 'session', 'file'] as const
+/** Equal match keys: branches, worktrees, tags, sessions, environments, then files. */
+const DIRECT_SEARCH_KEY_TIE_ORDER = ['git-branch', 'git-worktree', 'git-tag', 'session', 'environment', 'file'] as const
 
 /**
  * Group-key order for `groupItems` while `shouldDirectSearch` is true.
@@ -63,6 +65,7 @@ export function shouldDirectSearch(
   const q = query.trim()
   if (q.length < 2) return false
   if (isSessionMentionQuery(q)) return false
+  if (isEnvironmentMentionQuery(q)) return false
   if (isGitMentionQuery(q, portals)) return false
   return true
 }

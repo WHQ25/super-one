@@ -15,7 +15,12 @@ const PLACEHOLDER = '\uFFFC'
  * not a flag the caller has to remember to pass.
  */
 /** `gitPortals` gates the space-tolerant `@git` / `@gh` grammars; a portal the host cannot serve types as plain text. */
-export function extractMentionQuery(text: string, cursorPosition: number, gitPortals?: readonly GitMentionPortal[]): MentionQuery | null {
+export function extractMentionQuery(
+  text: string,
+  cursorPosition: number,
+  gitPortals?: readonly GitMentionPortal[],
+  environmentLabels?: readonly string[],
+): MentionQuery | null {
   if (cursorPosition <= 0 || cursorPosition > text.length) return null
   const before = text.slice(0, cursorPosition)
   let sawSpace = false
@@ -27,7 +32,7 @@ export function extractMentionQuery(text: string, cursorPosition: number, gitPor
     if (ch === '@') {
       if (i > 0 && !/\s/.test(before[i - 1]!)) return null
       const query = before.slice(i + 1)
-      if (sawSpace && !mentionQueryAllowsSpaces(query, { gitPortals })) return null
+      if (sawSpace && !mentionQueryAllowsSpaces(query, { gitPortals, environmentLabels })) return null
       return { atPosition: i, query }
     }
     if (/\s/.test(ch)) sawSpace = true

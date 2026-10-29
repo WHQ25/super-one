@@ -27,6 +27,7 @@ import type {
 import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { isEnvironmentMentionQuery } from '@superone/shared/environment-mention'
 import type { SessionGoal } from '@superone/shared/agent-types'
 import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
@@ -281,7 +282,7 @@ export function ChatComposer(props: ChatComposerProps) {
         onRetry={props.onMentionRetry} groupLabels={props.mentionGroupLabels} mcp={props.mcpMentions}
         query={props.mentionQuery ?? ''}
         // A session title may contain a slash; only a path query has a trail.
-        breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery) && !isGitMentionQuery(props.mentionQuery)
+        breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery) && !isEnvironmentMentionQuery(props.mentionQuery) && !isGitMentionQuery(props.mentionQuery)
           ? mentionBreadcrumbs(props.mentionQuery) : []} />
     </>}
     {/* A mode border's halo and sparkles reach past the input box, so nothing on the way up may clip them. */}

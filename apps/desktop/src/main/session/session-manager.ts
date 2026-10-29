@@ -249,8 +249,16 @@ export class SessionManagerImpl implements SessionManagerContract {
             gitBranch = opts.gitBranch ?? prior.gitBranch ?? null
           }
           if (provider.harnessId === 'codex' || provider.harnessId === 'claude') {
-            restoredAccountSession = true
-            apiProviderId = prior.apiProviderId ?? null
+            // Collaboration inserts the sessions row before this call, still
+            // without an account. That placeholder must keep the launch's
+            // apiProviderId. A provider thread, messages, or a stored account
+            // means the id already belongs to a session — including a null
+            // account on an unbound legacy thread, which must not be pinned
+            // to today's default.
+            if (restoringExistingSession || prior.apiProviderId) {
+              restoredAccountSession = true
+              apiProviderId = prior.apiProviderId ?? null
+            }
           }
           if (!resumedProviderSessionId && prior.providerSessionId?.trim()) {
             resumedProviderSessionId = prior.providerSessionId.trim()

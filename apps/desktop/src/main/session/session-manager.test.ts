@@ -354,6 +354,60 @@ describe('SessionManager', () => {
       expect(restored.snapshot.apiProviderId).toBe(a)
       await manager.disposeAllSessions()
     })
+
+    it.each([
+      ['claude', 'claude-base', 'claude-account:cli'],
+      ['codex', 'codex-base', 'codex-account:cli'],
+    ] as const)('keeps an explicit %s api key on an empty collab placeholder row', async (harness, providerId, defaultId) => {
+      seedProvider(providerId, harness)
+      const manager = new SessionManagerImpl({
+        getActiveDefaultApiProviderId: () => defaultId,
+        loadSession: () => ({
+          projectPath: '/project',
+          providerId,
+          providerSessionId: null,
+          apiProviderId: null,
+          messages: [],
+          totalCostUsd: 0,
+          contextTokens: 0,
+        }),
+      })
+      const session = manager.createSession({
+        id: 'child',
+        projectPath: '/project',
+        providerId,
+        apiProviderId: 'api-key-1',
+      })
+      expect(session.snapshot.apiProviderId).toBe('api-key-1')
+      await manager.disposeAllSessions()
+    })
+
+    it.each([
+      ['claude', 'claude-base', 'claude-account:/accounts/a'],
+      ['codex', 'codex-base', 'codex-account:11111111-1111-4111-8111-111111111111'],
+    ] as const)('keeps the stored %s account when cold-creating over an existing thread', async (harness, providerId, storedId) => {
+      seedProvider(providerId, harness)
+      const manager = new SessionManagerImpl({
+        getActiveDefaultApiProviderId: () => 'other-default',
+        loadSession: () => ({
+          projectPath: '/project',
+          providerId,
+          providerSessionId: 'thread-a',
+          apiProviderId: storedId,
+          messages: [],
+          totalCostUsd: 0,
+          contextTokens: 0,
+        }),
+      })
+      const session = manager.createSession({
+        id: 'cold',
+        projectPath: '/project',
+        providerId,
+        apiProviderId: 'api-key-1',
+      })
+      expect(session.snapshot.apiProviderId).toBe(storedId)
+      await manager.disposeAllSessions()
+    })
   })
 
   describe('createSession', () => {

@@ -394,7 +394,7 @@ async function startSessionAgentImpl(
   // existing worktree of the project (Reviewer reading implementer's tree).
   const isWorktreeSession = worktreeEnabled || resolve(cwd) !== resolve(projectPath)
   const worktreePath = isWorktreeSession ? cwd : undefined
-  createSessionRecord(projectPath, childSessionId, title, isWorktreeSession, gitBranch ?? undefined, worktreePath)
+  createSessionRecord(projectPath, childSessionId, title, isWorktreeSession, gitBranch ?? undefined, worktreePath, agentId)
   let child: Session
   // createSession always promotes the new session to project-active. Collaboration
   // children must not steal routing from the parent for unscoped main-process ops.

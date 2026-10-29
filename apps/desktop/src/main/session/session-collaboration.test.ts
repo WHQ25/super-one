@@ -169,12 +169,14 @@ vi.mock('../db-sessions', () => ({
     isWorktree?: boolean,
     _gitBranch?: string,
     worktreePath?: string,
+    providerId?: string,
   ) => {
     // Mirrors the real guard: a session can only be filed under a known project.
     if (!state.projects.some((project) => project.path === projectPath)) {
       throw new Error(`Project not found for path: ${projectPath}`)
     }
     insertSessionRow(sessionId, projectPath, title ?? null, {
+      providerId,
       isWorktree,
       worktreePath: worktreePath ?? null,
     })

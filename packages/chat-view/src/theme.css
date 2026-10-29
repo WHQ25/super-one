@@ -5,6 +5,16 @@
 @import "@superone/ui/styles/chat-md.css";
 @import "@superone/ui/styles/prompt-keyword.css";
 @import "katex/dist/katex.min.css";
+
+/* Registered so `1lh` is resolved on the element that sets it. Children then
+   inherit that length. A plain custom property would resolve `1lh` again on
+   the chip, against the chip's own line. */
+@property --chat-prose-line {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 @source "./**/*.{ts,tsx}";
 @source "../../../node_modules/streamdown/dist/*.js";
 
@@ -71,6 +81,7 @@ a {
   padding: 12px 16px 32px;
   font-size: 0.9375rem;
   line-height: 1.6;
+  --chat-prose-line: 1lh;
 }
 
 .chat-view-top-sentinel,
@@ -119,6 +130,7 @@ a {
 .chat-view-shell .portable-message-body {
   font-size: 0.9375rem;
   line-height: 1.6;
+  --chat-prose-line: 1lh;
 }
 
 /* Summary / recap chrome is 12px on desktop. The assistant body is 15px here,
@@ -152,4 +164,24 @@ a {
 .chat-md [data-streamdown="unordered-list"],
 .chat-md [data-streamdown="ordered-list"] {
   padding-left: 0.75em;
+}
+
+/* Re-resolve the line box on every box that is not the chip. A table or a
+   heading changes font-size, and a unitless line-height then grows a different
+   box than the 15px body. The chip inherits the length from its parent, so the
+   shift follows that line instead of the message body. */
+.chat-view-shell .portable-message-body :where(:not(code)),
+.markdown-document :where(:not(code)) {
+  --chat-prose-line: 1lh;
+}
+
+/* The chip is 12px with a 16px line and 2px of block padding (`py-0.5` twice,
+   0.25rem). On the desktop text-sm line those add up to the same 20px box, so
+   this is 0 and the shared baseline stays. The phone's 15px / 1.6 line is
+   24px, and half of what is left lifts the chip onto that line. A shorter
+   line, such as a 12px table cell, would otherwise come out negative and pull
+   the chip down; the floor keeps that case on the baseline. */
+.chat-view-shell .chat-md :not(pre) > code,
+.markdown-document .chat-md :not(pre) > code {
+  vertical-align: max(0px, calc((var(--chat-prose-line) - 1lh - 0.25rem) / 2));
 }

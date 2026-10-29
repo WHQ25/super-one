@@ -19,6 +19,11 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { build } from 'esbuild'
+import {
+  MIN_CLI_NODE_VERSION,
+  cliNodeEsbuildTarget,
+  posixNodeMeetsMinimumFunction,
+} from '@superone/shared/environment'
 
 const CLI_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO_ROOT = resolve(CLI_ROOT, '../..')
@@ -34,9 +39,6 @@ export const SUPPORTED_TARGETS = [
 ] as const
 
 export type DistTarget = (typeof SUPPORTED_TARGETS)[number]
-
-/** Minimum Node major the bundle is built for. */
-export const MIN_NODE_MAJOR = 20
 
 export interface BuildDistOptions {
   target: DistTarget
@@ -60,7 +62,7 @@ export interface BuildDistResult {
  * Launcher script. Prefers an embedded runtime, then `node` on PATH, and fails
  * with an actionable message instead of a confusing syntax error on old Node.
  */
-function launcherScript(bundlesNodeRuntime: boolean): string {
+export function launcherScript(bundlesNodeRuntime: boolean): string {
   return `#!/bin/sh
 # superone launcher — resolves the runtime, then execs the bundled CLI.
 set -e
@@ -75,18 +77,19 @@ elif command -v node >/dev/null 2>&1; then
   NODE_BIN="node"
 else
   echo "superone: no JavaScript runtime found." >&2
-  echo "Install Node.js ${MIN_NODE_MAJOR} or newer, or use a distribution built with --with-node." >&2
+  echo "Install Node.js ${MIN_CLI_NODE_VERSION} or newer, or use a distribution built with --with-node." >&2
   exit 127
 fi
 
-MAJOR="$("$NODE_BIN" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-if [ "$MAJOR" -lt ${MIN_NODE_MAJOR} ]; then
-  echo "superone: Node.js ${MIN_NODE_MAJOR}+ required, found $("$NODE_BIN" -v 2>/dev/null || echo unknown)." >&2
+${posixNodeMeetsMinimumFunction()}
+VER="$("$NODE_BIN" -p 'process.versions.node' 2>/dev/null || echo 0.0.0)"
+if ! node_meets_minimum "$VER"; then
+  echo "superone: Node.js ${MIN_CLI_NODE_VERSION}+ required, found v$VER." >&2
   exit 1
 fi
 
 exec "$NODE_BIN" "$ROOT/lib/cli.mjs" "$@"
-${bundlesNodeRuntime ? '' : ''}`
+`
 }
 
 /** Copy only what better-sqlite3 needs at runtime for one target. */
@@ -166,7 +169,7 @@ export async function buildDist(options: BuildDistOptions): Promise<BuildDistRes
     bundle: true,
     platform: 'node',
     format: 'esm',
-    target: `node${MIN_NODE_MAJOR}`,
+    target: cliNodeEsbuildTarget(),
     // Native addon: shipped beside the bundle and resolved at runtime.
     external: ['better-sqlite3', 'node-pty'],
     // Inject release version for harness manifest coupling (design §13.3).
@@ -207,7 +210,8 @@ export async function buildDist(options: BuildDistOptions): Promise<BuildDistRes
         name: 'superone',
         version,
         target,
-        minNodeMajor: MIN_NODE_MAJOR,
+        minNode: MIN_CLI_NODE_VERSION,
+        minNodeMajor: Number(MIN_CLI_NODE_VERSION.split('.')[0]),
         bundlesNodeRuntime,
         builtAt: new Date().toISOString(),
       },

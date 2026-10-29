@@ -76,10 +76,15 @@ EOF
 }
 
 need_node() {
+  # Keep this floor aligned with MIN_CLI_NODE_VERSION (22.13.0).
   command -v node >/dev/null || {
-    echo "node not found (need Node >=20; do not use bun for CLI runtime)" >&2
+    echo "node not found (need Node >=22.13.0; do not use bun for CLI runtime)" >&2
     exit 1
   }
+  if ! node -e 'const [maj,min,pat]=process.versions.node.split(".").map((n)=>Number.parseInt(n,10)); if(!(maj>22||(maj===22&&(min>13||(min===13&&pat>=0))))) process.exit(1)'; then
+    echo "Node.js 22.13.0+ required, found $(node -v) (do not use bun for CLI runtime)" >&2
+    exit 1
+  fi
 }
 
 cli_tsx() {

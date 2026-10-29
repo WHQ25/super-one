@@ -689,6 +689,7 @@ describe('add over SSH without a remote path', () => {
     superonePath: null,
     superoneVersion: null,
     nodeMajor: 22,
+    nodeVersion: '22.23.4',
     hasNpm: true,
     hasSystemd: true,
     distTarget: 'linux-x64',
@@ -967,7 +968,7 @@ describe('add over SSH without a remote path', () => {
     const rt = await bootNode()
     let installCalls = 0
     const { host } = hostWith(rt, {
-      probe: { ...linuxProbe, nodeMajor: 16 },
+      probe: { ...linuxProbe, nodeMajor: 16, nodeVersion: '16.0.0' },
       findArtifact: (target) => ({ path: '/local/x.tar.gz', version: '1.0.0', target }),
       installNode: async () => {
         installCalls += 1

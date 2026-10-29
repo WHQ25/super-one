@@ -1480,8 +1480,15 @@ Rules:
    `resources/superone-dist/` when packaged).
 4. Both paths share the post-install bootstrap: start the node on loopback, mint
    a pairing token in memory, open the local forward, pair.
-5. Preflight requires Node ≥ 20 (`MIN_REMOTE_NODE_MAJOR`), npm for the registry
-   path, and a supported target for upload; a missing systemd is a warning.
+5. Preflight requires Node.js >= 22.13.0 (`MIN_CLI_NODE_VERSION`). The probe
+   compares the full version, including version-manager candidates, so Node 20
+   and Node 22.0–22.12 are rejected before install. Registry install runs
+   `npm install -g --engine-strict`, so npm also refuses a host that misses a
+   dependency engine before native compilation. npm is required for the
+   registry path, and a supported target for upload. A missing systemd is a
+   warning. When npm has no compatible prebuild for `better-sqlite3` or
+   `node-pty`, the host needs Python 3, make, and a C++ compiler
+   (Debian/Ubuntu: `python3` and `build-essential`).
 
 ### 15.3 Distribution artifact (upload path and runtime bundle)
 
@@ -1489,8 +1496,10 @@ Rules:
 `linuxmusl`, `darwin` × `x64`, `arm64`) with the JS bundle, native
 `better-sqlite3` and `node-pty` beside it, a launcher, a `.sha256` sidecar and
 `MANIFEST.json`. `--with-node` embeds a Node runtime (`bundlesNodeRuntime`);
-otherwise the launcher uses `node` on PATH and checks major ≥ 20. The npm
-package likewise relies on host Node ≥ 20.
+otherwise the launcher uses `node` on PATH and refuses anything older than
+Node.js 22.13.0 before starting the bundle. The npm package declares
+`engines.node` of `>=22.13.0`, and its launcher does the same check before
+loading the CLI. esbuild targets `node22`; the runtime floor stays 22.13.0.
 
 The target for clean hosts is a complete artifact with an embedded runtime that
 does not depend on the host's Node.js, covered by checksum and signature.

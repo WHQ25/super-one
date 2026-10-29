@@ -29,11 +29,15 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { build } from 'esbuild'
+import {
+  MIN_CLI_NODE_VERSION,
+  cliNodeEngineRange,
+  cliNodeEsbuildTarget,
+} from '@superone/shared/environment'
 
 const CLI_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO_ROOT = resolve(CLI_ROOT, '../..')
 const OUT_DIR = join(CLI_ROOT, 'dist', 'npm')
-const MIN_NODE_MAJOR = 20
 
 /** Public product name (design §15.1). Workspace stays `@superone/cli`. */
 export const PUBLIC_CLI_PACKAGE = '@super-one/cli'
@@ -106,7 +110,7 @@ function assertSafePublishVersion(version: string, tag: string): void {
   }
 }
 
-function buildPublishPackageJson(version: string): Record<string, unknown> {
+export function buildPublishPackageJson(version: string): Record<string, unknown> {
   const optionalDependencies: Record<string, string> = {}
   for (const name of OPTIONAL_CLAUDE_PLATFORMS) {
     optionalDependencies[name] = CLAUDE_SDK_VERSION
@@ -127,7 +131,7 @@ function buildPublishPackageJson(version: string): Record<string, unknown> {
     },
     files: ['bin', 'lib', 'README.md', 'MANIFEST.json'],
     engines: {
-      node: `>=${MIN_NODE_MAJOR}`,
+      node: cliNodeEngineRange(),
     },
     publishConfig: {
       access: 'public',
@@ -146,6 +150,32 @@ function buildPublishPackageJson(version: string): Record<string, unknown> {
     },
     optionalDependencies,
   }
+}
+
+/** Published bin. Checks the full Node version before loading the bundled CLI. */
+export function npmLauncherSource(): string {
+  const [maj, min, pat] = MIN_CLI_NODE_VERSION.split('.').map((part) => Number(part))
+  return `#!/usr/bin/env node
+/**
+ * ${PUBLIC_CLI_PACKAGE} bin — loads the bundled CLI.
+ */
+import { pathToFileURL } from 'node:url'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const [major, minor, patch] = process.versions.node.split('.').map((part) => Number.parseInt(part, 10))
+if (
+  major < ${maj} ||
+  (major === ${maj} && minor < ${min}) ||
+  (major === ${maj} && minor === ${min} && patch < ${pat})
+) {
+  console.error('Node.js ${MIN_CLI_NODE_VERSION}+ required, found ' + process.version)
+  process.exit(1)
+}
+
+const here = dirname(fileURLToPath(import.meta.url))
+await import(pathToFileURL(join(here, '..', 'lib', 'cli.mjs')).href)
+`
 }
 
 export interface PackNpmResult {
@@ -183,7 +213,7 @@ export async function packNpm(options: {
     bundle: true,
     platform: 'node',
     format: 'esm',
-    target: `node${MIN_NODE_MAJOR}`,
+    target: cliNodeEsbuildTarget(),
     // Natives + Claude/Cursor Agent SDKs stay external (npm installs platform binaries).
     external: externalList,
     define: {
@@ -203,17 +233,7 @@ export async function packNpm(options: {
     logLevel: 'warning',
   })
 
-  const launcher = `#!/usr/bin/env node
-/**
- * ${PUBLIC_CLI_PACKAGE} bin — loads the bundled CLI.
- */
-import { pathToFileURL } from 'node:url'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const here = dirname(fileURLToPath(import.meta.url))
-await import(pathToFileURL(join(here, '..', 'lib', 'cli.mjs')).href)
-`
+  const launcher = npmLauncherSource()
   const binPath = join(outDir, 'bin', 'superone.mjs')
   writeFileSync(binPath, launcher)
   chmodSync(binPath, 0o755)
@@ -230,7 +250,8 @@ await import(pathToFileURL(join(here, '..', 'lib', 'cli.mjs')).href)
         name: PUBLIC_CLI_PACKAGE,
         version,
         kind: 'npm',
-        minNodeMajor: MIN_NODE_MAJOR,
+        minNode: MIN_CLI_NODE_VERSION,
+        minNodeMajor: Number(MIN_CLI_NODE_VERSION.split('.')[0]),
         builtAt: new Date().toISOString(),
       },
       null,

@@ -1,9 +1,14 @@
+import { execFileSync } from 'node:child_process'
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   distTargetFor,
-  MIN_REMOTE_NODE_MAJOR,
   parseProbeOutput,
   preflightBlocker,
+  registryNpmInstallInvocation,
+  remoteProbeScript,
   withRemoteNodePath,
   type RemoteHostProbe,
 } from './remote-install'
@@ -14,6 +19,66 @@ function probeOutput(lines: Record<string, string>): string {
     ...Object.entries(lines).map(([k, v]) => `${k}=${v}`),
     'SUPERONE_PROBE_END',
   ].join('\n')
+}
+
+function writeFakeNode(binPath: string, version: string): string {
+  mkdirSync(dirname(binPath), { recursive: true })
+  writeFileSync(
+    binPath,
+    [
+      '#!/bin/sh',
+      `ver='${version}'`,
+      'expr=${2-}',
+      'case "$1" in',
+      "  -v) printf 'v%s\\n' \"$ver\" ;;",
+      '  -p)',
+      '    case "$expr" in',
+      "      *split*) printf '%s\\n' \"${ver%%.*}\" ;;",
+      "      *) printf '%s\\n' \"$ver\" ;;",
+      '    esac',
+      '    ;;',
+      '  *)',
+      '    if [ -n "$SUPERONE_NODE_EXEC_MARK" ]; then : > "$SUPERONE_NODE_EXEC_MARK"; fi',
+      '    exit 0',
+      '    ;;',
+      'esac',
+      'exit 0',
+      '',
+    ].join('\n'),
+  )
+  chmodSync(binPath, 0o755)
+  return binPath
+}
+
+function runProbe(home: string, extraEnv: Record<string, string> = {}): RemoteHostProbe {
+  const bin = join(home, 'bin')
+  mkdirSync(bin, { recursive: true })
+  const bash = join(bin, 'bash')
+  writeFileSync(
+    bash,
+    [
+      '#!/bin/sh',
+      'if [ "$1" = "-lc" ]; then',
+      '  if [ -n "$SUPERONE_FAKE_LOGIN_NODE" ]; then',
+      '    printf "%s\\n" "$SUPERONE_FAKE_LOGIN_NODE"',
+      '  fi',
+      '  exit 0',
+      'fi',
+      'exec /bin/bash "$@"',
+      '',
+    ].join('\n'),
+  )
+  chmodSync(bash, 0o755)
+  const stdout = execFileSync('/bin/bash', ['-c', remoteProbeScript()], {
+    env: {
+      ...process.env,
+      HOME: home,
+      PATH: `${bin}:/usr/bin:/bin`,
+      ...extraEnv,
+    },
+    encoding: 'utf8',
+  })
+  return parseProbeOutput(stdout)
 }
 
 describe('remote host probe parsing', () => {
@@ -114,6 +179,7 @@ describe('preflight', () => {
     superonePath: null,
     superoneVersion: null,
     nodeMajor: 22,
+    nodeVersion: '22.23.4',
     hasNpm: true,
     hasSystemd: true,
     distTarget: 'linux-x64',
@@ -133,14 +199,35 @@ describe('preflight', () => {
 
   it('blocks when the remote has no Node runtime', () => {
     expect(
-      preflightBlocker({ ...base, nodeMajor: null, shellPath: '/usr/bin' }),
+      preflightBlocker({ ...base, nodeMajor: null, nodeVersion: null, shellPath: '/usr/bin' }),
     ).toContain('probe PATH: /usr/bin')
   })
 
   it('blocks and names the found version when Node is too old', () => {
-    const blocker = preflightBlocker({ ...base, nodeMajor: 16 })
-    expect(blocker).toContain(String(MIN_REMOTE_NODE_MAJOR))
+    const blocker = preflightBlocker({ ...base, nodeMajor: 16, nodeVersion: '16.0.0' })
+    expect(blocker).toContain('22.13.0')
     expect(blocker).toContain('found 16')
+  })
+
+  it.each(['20.19.2', '22.12.9'])(
+    'rejects Node %s for registry and upload install',
+    (nodeVersion) => {
+      const probe = { ...base, nodeMajor: Number(nodeVersion.split('.')[0]), nodeVersion }
+      expect(preflightBlocker(probe, 'registry')).toContain(`found ${nodeVersion}`)
+      expect(preflightBlocker(probe, 'upload')).toContain(`found ${nodeVersion}`)
+    },
+  )
+
+  it.each(['22.13.0', '22.23.4', '24.0.0'])('accepts Node %s', (nodeVersion) => {
+    const probe = { ...base, nodeMajor: Number(nodeVersion.split('.')[0]), nodeVersion }
+    expect(preflightBlocker(probe, 'registry')).toBeNull()
+    expect(preflightBlocker(probe, 'upload')).toBeNull()
+  })
+
+  it('asks npm to enforce dependency engines during registry install', () => {
+    expect(registryNpmInstallInvocation('/home/u/.superone/npm', '@super-one/cli@0.75.5')).toContain(
+      '--engine-strict',
+    )
   })
 
   it('blocks an unsupported architecture', () => {
@@ -155,6 +242,38 @@ describe('preflight', () => {
 
   it('does not block a host without systemd — persistence is a warning, not a failure', () => {
     expect(preflightBlocker({ ...base, hasSystemd: false })).toBeNull()
+  })
+
+  it('selects a compatible version-manager Node over an older login Node', () => {
+    const home = mkdtempSync(join(tmpdir(), 'superone-probe-'))
+    try {
+      const oldNode = writeFakeNode(join(home, '.nvm/versions/node/v20.19.2/bin/node'), '20.19.2')
+      writeFakeNode(join(home, '.nvm/versions/node/v22.12.9/bin/node'), '22.12.9')
+      writeFakeNode(join(home, '.nvm/versions/node/v22.13.0/bin/node'), '22.13.0')
+      writeFileSync(join(home, '.nvm/versions/node/v22.13.0/bin/npm'), '#!/bin/sh\nexit 0\n')
+      chmodSync(join(home, '.nvm/versions/node/v22.13.0/bin/npm'), 0o755)
+      writeFakeNode(join(home, '.nvm/versions/node/v22.23.4/bin/node'), '22.23.4')
+      const probe = runProbe(home, { SUPERONE_FAKE_LOGIN_NODE: oldNode })
+      expect(probe.nodePath).toContain('/v22.13.0/')
+      expect(probe.nodeVersion).toBe('22.13.0')
+      expect(preflightBlocker(probe, 'registry')).toBeNull()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('reports an incompatible version-manager Node instead of treating Node 20 as enough', () => {
+    const home = mkdtempSync(join(tmpdir(), 'superone-probe-'))
+    try {
+      writeFakeNode(join(home, '.nvm/versions/node/v20.19.2/bin/node'), '20.19.2')
+      writeFakeNode(join(home, '.nvm/versions/node/v22.12.9/bin/node'), '22.12.9')
+      const probe = runProbe(home)
+      expect(probe.nodeVersion === '20.19.2' || probe.nodeVersion === '22.12.9').toBe(true)
+      expect(preflightBlocker(probe, 'registry')).toContain('22.13.0')
+      expect(preflightBlocker(probe, 'upload')).toContain('22.13.0')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('preserves a discovered version-manager Node path in remote commands', () => {

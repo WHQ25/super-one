@@ -3,8 +3,12 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import {
+  MIN_CLI_NODE_VERSION,
   PUBLIC_CLI_BIN,
   PUBLIC_CLI_PACKAGE,
+  nodeVersionSatisfies,
+  parseNodeVersion,
+  posixNodeMeetsMinimumFunction,
   type RemoteInstallSource,
 } from '@superone/shared/environment'
 import { shellQuote } from './ssh-bootstrap'
@@ -19,8 +23,10 @@ import { sshCapture, sshUpload } from './ssh-forward'
  * RPC protocol instead.
  */
 
-/** Minimum Node major the distribution bundle targets. */
-export const MIN_REMOTE_NODE_MAJOR = 20
+/** Registry install command. `--engine-strict` refuses a host below dependency engines. */
+export function registryNpmInstallInvocation(prefix: string, spec: string): string {
+  return `npm install -g --engine-strict --prefix ${shellQuote(prefix)} ${shellQuote(spec)}`
+}
 
 export { PUBLIC_CLI_BIN, PUBLIC_CLI_PACKAGE }
 export type { RemoteInstallSource }
@@ -36,6 +42,8 @@ export interface RemoteHostProbe {
   superoneVersion: string | null
   /** Node major found on PATH, or null when Node is absent. */
   nodeMajor: number | null
+  /** Full Node version, such as 22.13.0. Null when Node is absent. */
+  nodeVersion?: string | null
   /** Absolute Node executable selected from PATH, a login shell, or a version manager. */
   nodePath?: string | null
   /** Directory containing the selected Node/npm executables. */
@@ -61,13 +69,30 @@ export function remoteProbeScript(): string {
     'echo "home=$HOME"',
     // Alpine/musl needs the linuxmusl-* prebuild instead of linux-*.
     `if [ -f /etc/alpine-release ] || (ldd --version 2>&1 | grep -qi musl); then echo "musl=1"; else echo "musl=0"; fi`,
-    // Non-interactive SSH shells skip nvm/fnm/asdf/mise initialization. Prefer
-    // the login shell, then scan common version-manager layouts directly.
-    `NODE_BIN="$(bash -lc 'command -v node' 2>/dev/null | tail -1)"`,
+    // Non-interactive SSH shells skip nvm/fnm/asdf/mise initialization. A login
+    // or PATH Node older than the CLI floor must not hide a compatible install.
+    ...posixNodeMeetsMinimumFunction().split('\n'),
+    'NODE_BIN=""',
+    'FALLBACK_NODE=""',
+    'consider_node() {',
+    '  c="$1"',
+    '  if [ -n "$NODE_BIN" ]; then return 0; fi',
+    '  if [ ! -x "$c" ]; then return 0; fi',
+    `  ver="$("$c" -p 'process.versions.node' 2>/dev/null || echo 0.0.0)"`,
+    '  if node_meets_minimum "$ver"; then NODE_BIN="$c"; return 0; fi',
+    '  if [ -z "$FALLBACK_NODE" ]; then FALLBACK_NODE="$c"; fi',
+    '  return 0',
+    '}',
+    `LOGIN_NODE="$(bash -lc 'command -v node' 2>/dev/null | tail -1)"`,
+    'consider_node "$LOGIN_NODE"',
+    `PATH_NODE="$(command -v node 2>/dev/null || true)"`,
+    'consider_node "$PATH_NODE"',
+    'for c in "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.volta/bin/node "$HOME"/.asdf/shims/node "$HOME"/.local/share/mise/installs/node/*/bin/node; do',
+    '  consider_node "$c"',
+    'done',
+    'if [ ! -x "$NODE_BIN" ]; then NODE_BIN="$FALLBACK_NODE"; fi',
     `NPM_BIN="$(bash -lc 'command -v npm' 2>/dev/null | tail -1)"`,
-    `if [ ! -x "$NODE_BIN" ]; then NODE_BIN="$(command -v node 2>/dev/null || true)"; fi`,
     `if [ ! -x "$NPM_BIN" ]; then NPM_BIN="$(command -v npm 2>/dev/null || true)"; fi`,
-    `if [ ! -x "$NODE_BIN" ]; then FALLBACK_NODE=""; for c in "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.volta/bin/node "$HOME"/.asdf/shims/node "$HOME"/.local/share/mise/installs/node/*/bin/node; do if [ -x "$c" ]; then [ -n "$FALLBACK_NODE" ] || FALLBACK_NODE="$c"; candidate_major="$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; if [ "$candidate_major" -ge ${MIN_REMOTE_NODE_MAJOR} ] 2>/dev/null; then NODE_BIN="$c"; break; fi; fi; done; [ -x "$NODE_BIN" ] || NODE_BIN="$FALLBACK_NODE"; fi`,
     `if [ -x "$NODE_BIN" ]; then NODE_NPM="$(dirname "$NODE_BIN")/npm"; if [ -x "$NODE_NPM" ]; then NPM_BIN="$NODE_NPM"; fi; fi`,
     `NODE_BIN_DIR=""; if [ -x "$NODE_BIN" ]; then NODE_BIN_DIR="$(dirname "$NODE_BIN")"; export PATH="$NODE_BIN_DIR:$PATH"; fi`,
     `echo "node_path=$NODE_BIN"`,
@@ -94,7 +119,7 @@ export function remoteProbeScript(): string {
     '  fi',
     `  echo "superone_version=$SUPERONE_VER"`,
     'fi',
-    `if [ -x "$NODE_BIN" ]; then echo "node_major=$("$NODE_BIN" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; else echo "node_major="; fi`,
+    `if [ -x "$NODE_BIN" ]; then NODE_VER="$("$NODE_BIN" -p 'process.versions.node' 2>/dev/null || echo)"; echo "node_version=$NODE_VER"; echo "node_major=\${NODE_VER%%.*}"; else echo "node_version="; echo "node_major="; fi`,
     `if [ -x "$NPM_BIN" ]; then echo "npm=1"; else echo "npm=0"; fi`,
     `if command -v systemctl >/dev/null 2>&1; then echo "systemd=1"; else echo "systemd=0"; fi`,
     'echo "SUPERONE_PROBE_END"',
@@ -123,8 +148,13 @@ export function parseProbeOutput(stdout: string): RemoteHostProbe {
         : 'unknown'
 
   const musl = values.get('musl') === '1'
-  const nodeMajorRaw = values.get('node_major')
-  const nodeMajor = nodeMajorRaw ? Number(nodeMajorRaw) || null : null
+  const nodeVersionRaw = (values.get('node_version') || '').trim().replace(/^v/, '')
+  const nodeVersion = nodeVersionRaw || null
+  const nodeMajorRaw = Number.parseInt(values.get('node_major') || '', 10)
+  const nodeMajor =
+    Number.isFinite(nodeMajorRaw) && nodeMajorRaw > 0
+      ? nodeMajorRaw
+      : (nodeVersion ? parseNodeVersion(nodeVersion)?.[0] ?? null : null)
 
   return {
     os,
@@ -134,6 +164,7 @@ export function parseProbeOutput(stdout: string): RemoteHostProbe {
     superonePath: values.get('superone') || null,
     superoneVersion: values.get('superone_version') || null,
     nodeMajor,
+    nodeVersion,
     nodePath: values.get('node_path') || null,
     nodeBinDir: values.get('node_bin_dir') || null,
     npmPath: values.get('npm_path') || null,
@@ -330,7 +361,7 @@ export async function installNodeFromRegistry(
   const installCmd = remoteCommand(
     [
       `mkdir -p ${shellQuote(prefix)} ${shellQuote(localBin)}`,
-      `npm install -g --prefix ${shellQuote(prefix)} ${shellQuote(spec)}`,
+      registryNpmInstallInvocation(prefix, spec),
       `ln -sfn ${shellQuote(remoteExec)} ${shellQuote(commandLink)}`,
       // Prove the launcher is executable; identity is cheap and fails closed.
       `${shellQuote(remoteExec)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
@@ -364,6 +395,14 @@ export async function installNodeFromRegistry(
   }
 }
 
+/** Version string preflight compares. Major-only input is major.0.0, so Node 22 is not 22.13. */
+function reportedNodeVersion(probe: RemoteHostProbe): string | null {
+  const version = probe.nodeVersion?.trim().replace(/^v/, '')
+  if (version) return version
+  if (probe.nodeMajor == null) return null
+  return String(probe.nodeMajor)
+}
+
 /**
  * Explain why a probed host cannot run the node, or null when it can.
  * Returned strings are user-facing and actionable.
@@ -375,12 +414,13 @@ export function preflightBlocker(
   if (probe.os === 'unknown') return 'unsupported remote operating system'
   if (probe.arch === 'unknown') return 'unsupported remote CPU architecture'
   if (!probe.home) return 'could not resolve remote $HOME'
-  if (probe.nodeMajor === null) {
+  const foundNode = reportedNodeVersion(probe)
+  if (!foundNode) {
     const pathDetail = probe.shellPath ? ` (probe PATH: ${probe.shellPath})` : ''
-    return `Node.js ${MIN_REMOTE_NODE_MAJOR}+ is required on the remote host but was not found on PATH${pathDetail}`
+    return `Node.js ${MIN_CLI_NODE_VERSION}+ is required on the remote host but was not found on PATH${pathDetail}`
   }
-  if (probe.nodeMajor < MIN_REMOTE_NODE_MAJOR) {
-    return `Node.js ${MIN_REMOTE_NODE_MAJOR}+ is required on the remote host, found ${probe.nodeMajor}`
+  if (!nodeVersionSatisfies(foundNode)) {
+    return `Node.js ${MIN_CLI_NODE_VERSION}+ is required on the remote host, found ${foundNode}`
   }
   if (source === 'registry' && !probe.hasNpm) {
     const pathDetail = probe.shellPath ? ` (probe PATH: ${probe.shellPath})` : ''

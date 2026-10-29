@@ -2,11 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { packNpm, PUBLIC_CLI_PACKAGE } from '../scripts/pack-npm'
+import { buildPublishPackageJson, packNpm, PUBLIC_CLI_PACKAGE } from '../scripts/pack-npm'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 describe('pack-npm', () => {
+  it('declares the dependency node floor on the publish manifest', () => {
+    const pkg = buildPublishPackageJson('0.0.0-test') as {
+      engines: { node: string }
+    }
+    expect(pkg.engines.node).toBe('>=22.13.0')
+    const workspaceCli = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8')) as {
+      engines: { node: string }
+    }
+    const cursor = JSON.parse(
+      readFileSync(join(HERE, '..', '..', '..', 'packages', 'cursor', 'package.json'), 'utf8'),
+    ) as { engines: { node: string } }
+    expect(workspaceCli.engines.node).toBe('>=22.13.0')
+    expect(cursor.engines.node).toBe('>=22.13.0')
+  })
+
   it.each(['0.0.0-test', '0.0.0-alpha.1'])('builds an isolated publishable CLI for %s', async (version) => {
     const outDir = join(HERE, '..', 'dist', 'npm-test-out')
     rmSync(outDir, { recursive: true, force: true })
@@ -18,12 +33,14 @@ describe('pack-npm', () => {
     const pkg = JSON.parse(readFileSync(join(outDir, 'package.json'), 'utf8')) as {
       name: string
       version: string
+      engines: { node: string }
       dependencies: Record<string, string>
       optionalDependencies: Record<string, string>
       bin: Record<string, string>
     }
     expect(pkg.name).toBe('@super-one/cli')
     expect(pkg.version).toBe(version)
+    expect(pkg.engines.node).toBe('>=22.13.0')
     expect(pkg.bin.superone).toMatch(/bin\/superone\.mjs$/)
     expect(pkg.dependencies['better-sqlite3']).toBeTruthy()
     expect(pkg.dependencies['node-pty']).toBeTruthy()
@@ -43,6 +60,10 @@ describe('pack-npm', () => {
     expect(existsSync(join(outDir, 'lib', 'cli.mjs'))).toBe(true)
     expect(existsSync(join(outDir, 'bin', 'superone.mjs'))).toBe(true)
     expect(existsSync(join(outDir, 'MANIFEST.json'))).toBe(true)
+    const manifest = JSON.parse(readFileSync(join(outDir, 'MANIFEST.json'), 'utf8')) as {
+      minNode: string
+    }
+    expect(manifest.minNode).toBe('22.13.0')
 
     const bundle = readFileSync(join(outDir, 'lib', 'cli.mjs'), 'utf8')
     const channel = version.includes('-alpha') ? 'alpha' : 'stable'

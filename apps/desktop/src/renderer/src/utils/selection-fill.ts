@@ -97,24 +97,32 @@ function covers(range: Range, el: HTMLElement): boolean {
     && range.compareBoundaryPoints(Range.END_TO_END, inner) >= 0
 }
 
-/** The outermost atomic inline box (a file chip) holding `node` inside `li`. */
-function atomicBox(li: HTMLElement, node: Node): HTMLElement | null {
-  let box: HTMLElement | null = null
+/**
+ * The run that paints its own selection, or the outermost atomic inline box,
+ * holding `node` inside `li`. Inline code is `display: inline`, so it is not
+ * atomic, but its padding still carries a fill.
+ */
+function openingRun(li: HTMLElement, node: Node): HTMLElement | null {
+  let target: HTMLElement | null = null
+  let atomic: HTMLElement | null = null
   for (let el = node.parentElement; el && el !== li; el = el.parentElement) {
-    if (getComputedStyle(el).display.startsWith('inline-')) box = el
+    if (el.matches(TARGETS)) target = el
+    if (getComputedStyle(el).display.startsWith('inline-')) atomic = el
   }
-  return box
+  return target ?? atomic
 }
 
 /**
  * A list marker (`::marker`) is not content, so the browser never highlights
  * it. When the selection spans an item's start, paint the strip from the
  * item's content edge to its first character, where an inside marker sits.
- * An item opening with a chip ends the strip at the chip, which fills itself,
- * and takes the line box from the item: the chip's label is its own block.
+ * An item opening with inline code or a chip ends the strip at that run's
+ * outer edge. The run paints its own padding, and both fills are translucent,
+ * so continuing to the first glyph stacks a darker band on the chip.
+ * A chip's label is its own block, so the line box comes from the item.
  */
 function markItem(li: HTMLElement, text: Text): void {
-  const chip = atomicBox(li, text)
+  const chip = openingRun(li, text)
   let rect: DOMRect | undefined
   let left = 0
   if (chip) {

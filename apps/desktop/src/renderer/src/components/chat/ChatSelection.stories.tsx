@@ -91,6 +91,9 @@ const MARKDOWN = [
   '  Copy --> Paste',
   '```',
   '',
+  '- `apps/desktop` under the old path',
+  '- another item',
+  '',
   '- [x] done task',
   '- [ ] open task',
   '- [node-host-server.integration.test.ts](/repo/src/node-host-server.integration.test.ts)',
@@ -116,5 +119,5 @@ function MarkdownReply({ select }: { select: boolean }) {
   )
 }
 
-/** A Markdown reply: list markers fill with the selection, and copying yields Markdown. */
+/** A Markdown reply: list markers fill with the selection, including a bullet that opens on inline code, and copying yields Markdown. */
 export const MarkdownSelected: Story = { args: { select: true }, render: (args) => <MarkdownReply select={args.select} /> }

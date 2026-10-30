@@ -8,7 +8,8 @@
  */
 
 import { query as sdkQuery, type Options, type Query } from '@anthropic-ai/claude-agent-sdk'
-import type { ModelOption } from '@superone/shared/agent-types'
+import type { AccountInfo, ModelOption, SlashCommandInfo } from '@superone/shared/agent-types'
+import { readTerminalSlashCommandsFromInitMessage, sdkSlashCommands } from '@superone/shared/slash-commands'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import type { ClaudeQueryFn } from './types'
@@ -94,11 +95,21 @@ export interface FetchClaudeModelsOptions {
 
 const DEFAULT_PROBE_TIMEOUT_MS = 20_000
 
-/**
- * Ask the harness process which models it supports.
- * Returns `[]` on any failure — callers decide what to show instead.
- */
-export async function fetchClaudeModels(opts: FetchClaudeModelsOptions): Promise<ModelOption[]> {
+export interface ClaudeCatalogProbe {
+  models: ModelOption[]
+  account: AccountInfo
+  slashCommands: SlashCommandInfo[]
+  outputStyles: string[]
+}
+
+export const EMPTY_CLAUDE_CATALOG: ClaudeCatalogProbe = {
+  models: [],
+  account: {},
+  slashCommands: [],
+  outputStyles: [],
+}
+
+function probeOptions(opts: FetchClaudeModelsOptions): Options {
   const binaryPath = opts.binaryPath ?? resolveSdkClaudeBinary()
   // No tool can run with maxTurns 0, and permission-skipping options make the
   // process refuse to start under root — probe with a mode that always starts.
@@ -107,7 +118,7 @@ export async function fetchClaudeModels(opts: FetchClaudeModelsOptions): Promise
     uid: opts.uid === undefined ? process.getuid?.() : opts.uid,
     env: opts.env ?? (process.env as Record<string, string | undefined>),
   })
-  const options: Options = {
+  return {
     cwd: opts.cwd,
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
     maxTurns: 0,
@@ -115,20 +126,59 @@ export async function fetchClaudeModels(opts: FetchClaudeModelsOptions): Promise
     persistSession: false,
     ...(opts.env ? { env: opts.env } : {}),
   }
+}
 
+/**
+ * Ask the harness process which models it supports.
+ * Returns `[]` on any failure — callers decide what to show instead.
+ */
+export async function fetchClaudeModels(opts: FetchClaudeModelsOptions): Promise<ModelOption[]> {
+  return (await fetchClaudeCatalog(opts)).models
+}
+
+/**
+ * One metadata probe: models, the signed-in account, SDK slash commands and
+ * output styles. Returns an empty catalog on any failure.
+ */
+export async function fetchClaudeCatalog(opts: FetchClaudeModelsOptions): Promise<ClaudeCatalogProbe> {
   let q: Query | undefined
   try {
-    q = (opts.queryFn ?? sdkQuery)({ prompt: CLAUDE_METADATA_PROBE_PROMPT, options }) as Query
-    const models = await withTimeout(
-      (async () => {
-        await q!.initializationResult()
-        return (await q!.supportedModels()) as ClaudeModelInfo[]
-      })(),
+    q = (opts.queryFn ?? sdkQuery)({ prompt: CLAUDE_METADATA_PROBE_PROMPT, options: probeOptions(opts) }) as Query
+    const probe = q as Query & {
+      accountInfo?: () => Promise<AccountInfo>
+      supportedCommands?: () => Promise<Array<{ name: string; description: string; argumentHint?: string }>>
+    }
+    let terminalSlashCommands: string[] | undefined
+    const drain = (async () => {
+      for await (const msg of q!) {
+        const tagged = readTerminalSlashCommandsFromInitMessage(msg)
+        if (tagged) terminalSlashCommands = tagged
+      }
+    })()
+    const [init, models, accountInfo, commands] = await withTimeout(
+      Promise.all([
+        probe.initializationResult() as Promise<{ available_output_styles?: string[] }>,
+        probe.supportedModels() as Promise<ClaudeModelInfo[]>,
+        probe.accountInfo?.() ?? Promise.resolve({} as AccountInfo),
+        probe.supportedCommands?.() ?? Promise.resolve([]),
+        drain,
+      ]),
       opts.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS,
     )
-    return mapClaudeModelCatalog(models)
+    return {
+      models: mapClaudeModelCatalog(models),
+      account: {
+        email: accountInfo.email,
+        organization: accountInfo.organization,
+        subscriptionType: accountInfo.subscriptionType,
+        apiKeySource: accountInfo.apiKeySource,
+        apiProvider: accountInfo.apiProvider,
+      },
+      slashCommands: sdkSlashCommands(commands, terminalSlashCommands),
+      outputStyles: init.available_output_styles ?? [],
+    }
   } catch {
-    return []
+    return EMPTY_CLAUDE_CATALOG
   } finally {
     try {
       q?.close()

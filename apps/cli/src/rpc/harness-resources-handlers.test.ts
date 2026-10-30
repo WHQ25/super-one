@@ -1,4 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const getNodeCodexModelCatalog = vi.hoisted(() => vi.fn(async () => [] as Array<{
+  id: string
+  name: string
+  description: string
+  isDefault?: boolean
+}>))
+
+vi.mock('../session/codex-model-catalog', () => ({
+  getNodeCodexModelCatalog,
+}))
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -281,6 +292,198 @@ describe('harness.resources RPC', () => {
 
     const result = res?.result as { claude: { models: Array<{ id: string }> } }
     expect(result.claude.models.map((m) => m.id)).toEqual(['relay-chat'])
+  })
+
+  it('serves the Codex catalog the node probed instead of the built-in slug table', async () => {
+    getNodeCodexModelCatalog.mockReset()
+    getNodeCodexModelCatalog.mockResolvedValue([
+      { id: 'gpt-5.5', name: 'GPT-5.5', description: '', isDefault: true },
+    ])
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-codex-live-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'codex' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+      },
+    )
+
+    const result = res?.result as { codex: { models: Array<{ id: string }> } }
+    expect(result.codex.models.map((model) => model.id)).toEqual(['gpt-5.5'])
+    expect(getNodeCodexModelCatalog).toHaveBeenCalled()
+  })
+
+  it('keeps the built-in Codex slug table when model/list returns nothing', async () => {
+    getNodeCodexModelCatalog.mockReset()
+    getNodeCodexModelCatalog.mockResolvedValue([])
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-codex-fallback-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'codex' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+      },
+    )
+
+    const result = res?.result as { codex: { models: Array<{ id: string }> } }
+    expect(result.codex.models.map((model) => model.id)).toEqual(['gpt-5.2', 'gpt-5.1', 'o3'])
+  })
+
+  it('keeps a bound Codex credential catalog and does not probe model/list', async () => {
+    getNodeCodexModelCatalog.mockReset()
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-codex-provider-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const db = openNodeDatabase(join(projectDir, 'state.sqlite'))
+    const providers = new ProviderStore(db, join(projectDir, 'provider-secrets.key'))
+    providers.upsertCustomPlatform({
+      id: 'custom:relay',
+      brand: 'relay',
+      name: 'Relay',
+      plans: [{
+        id: 'api',
+        name: 'API',
+        auth: 'api-key',
+        baseUrl: 'https://relay.example',
+        endpoints: [{
+          id: 'openai',
+          protocols: ['openai-chat'],
+          models: [{ id: 'relay-gpt', name: 'Relay GPT' }],
+        }],
+      }],
+    })
+    const cred = providers.createCredential({
+      platformId: 'custom:relay',
+      planId: 'api',
+      name: 'relay',
+      secret: 'sk-upstream-secret',
+    })
+    providers.setBinding({ consumer: 'chat:codex', credentialId: cred.id })
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'codex' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+      },
+    )
+    db.close()
+
+    const result = res?.result as { codex: { models: Array<{ id: string }> } }
+    expect(result.codex.models.map((model) => model.id)).toEqual(['relay-gpt'])
+    expect(getNodeCodexModelCatalog).not.toHaveBeenCalled()
+  })
+
+  it('fills Claude account, slash commands and output styles from one probe', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-claude-catalog-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+    const probeClaudeCatalog = vi.fn(async () => ({
+      models: [{ id: 'opus-live', name: 'Opus', description: '' }],
+      account: { email: 'a@b.com', organization: 'Org', subscriptionType: 'max' },
+      slashCommands: [{ name: 'review', description: 'Review', argumentHint: '', isSkill: false }],
+      outputStyles: ['Explanatory'],
+    }))
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'claude' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+        probeClaudeCatalog,
+      },
+    )
+
+    const result = res?.result as {
+      claude: {
+        models: Array<{ id: string }>
+        account: { email?: string }
+        slashCommands: Array<{ name: string }>
+        outputStyles: string[]
+      }
+    }
+    expect(result.claude.models.map((model) => model.id)).toEqual(['opus-live'])
+    expect(result.claude.account).toMatchObject({ email: 'a@b.com', organization: 'Org', subscriptionType: 'max' })
+    expect(result.claude.slashCommands).toEqual([
+      { name: 'review', description: 'Review', argumentHint: '', isSkill: false },
+    ])
+    expect(result.claude.outputStyles).toEqual(['Explanatory'])
+    expect(probeClaudeCatalog).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips the Claude metadata probe when a test replaces the model probe', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-claude-skip-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+    const probeClaudeCatalog = vi.fn(async () => {
+      throw new Error('should not probe')
+    })
+
+    const res = await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'claude' },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+        probeModels: async () => [],
+        probeClaudeCatalog,
+      },
+    )
+
+    const result = res?.result as { claude: { models: Array<{ id: string }>; account: Record<string, unknown> } }
+    expect(result.claude.models.some((model) => model.id === 'claude-opus-5-5')).toBe(true)
+    expect(result.claude.account).toEqual({})
+    expect(probeClaudeCatalog).not.toHaveBeenCalled()
   })
 
   it('requires projectId', async () => {

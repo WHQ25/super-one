@@ -678,6 +678,33 @@ describe('mapXaiStandaloneNotification', () => {
     expect(spawn.map((e) => e.type)).toEqual(['task_started', 'task_notification'])
   })
 
+  it('writes streamed session collab arguments onto the tool block', () => {
+    const state = createXaiCorrelationState()
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'collab_1',
+      name: 'use_tool',
+      arguments_delta: JSON.stringify({
+        tool_name: 'superone__session_collab_request',
+        tool_input: {
+          launches: [{ name: 'Reviewer', role: 'review', summary: 'Look at the diff' }],
+        },
+      }),
+    }, state, { messageId: 'msg-1' })
+    expect(events.map((event) => event.type)).toEqual(['content_delta'])
+    expect(events[0]).toMatchObject({
+      type: 'content_delta',
+      delta: {
+        type: 'tool_use',
+        toolUseId: 'collab_1',
+        toolName: 'mcp__superone__session_collab_request',
+        input: JSON.stringify({
+          launches: [{ name: 'Reviewer', role: 'review', summary: 'Look at the diff' }],
+        }),
+      },
+    })
+  })
+
   it('maps tool_call_delta_chunk to a streaming tool chip plus input delta', () => {
     const state = createXaiCorrelationState()
     const first = mapXaiSessionUpdate({

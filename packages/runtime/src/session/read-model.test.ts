@@ -64,6 +64,41 @@ const textOf = (message: { content: Array<{ type: string; text?: string }> }) =>
   message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 
 describe('SessionReadModel', () => {
+  it('fills ACP model names from the catalog when a cold checkpoint stored none', async () => {
+    const path = dbPath()
+    const node = boot(path, async ({ onAgentEvent }) => {
+      onAgentEvent?.({
+        type: 'acp_models',
+        models: [{ id: 'grok-4', name: 'Grok 4', description: '' }],
+        selectedModelId: 'grok-4',
+        configId: 'cfg',
+        status: 'ready',
+        agentId: 'grok',
+      })
+      return { finalText: 'ok', providerResume: null }
+    })
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'acp' })
+    await node.runtime.send({ sessionId: session.sessionId, text: 'hi', clientMessageId: 'u1', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    const warm = node.runtime.load({ sessionId: session.sessionId }).state as { acpModels?: unknown }
+    expect(warm.acpModels).toEqual([{ id: 'grok-4', name: 'Grok 4', description: '' }])
+    const stored = node.db.prepare(`SELECT models_json FROM acp_agent_models WHERE agent_id = ?`).get('grok') as { models_json: string } | undefined
+    expect(JSON.parse(stored?.models_json ?? '[]')).toEqual([{ id: 'grok-4', name: 'Grok 4', description: '' }])
+    await node.runtime.dispose()
+    const row = node.db.prepare(`SELECT state_json FROM session_read_models WHERE session_id = ?`).get(session.sessionId) as { state_json: string }
+    const state = JSON.parse(row.state_json) as { acpModels: unknown[]; acpModelsStatus?: string }
+    state.acpModels = []
+    state.acpModelsStatus = 'idle'
+    node.db.prepare(`UPDATE session_read_models SET state_json = ? WHERE session_id = ?`).run(JSON.stringify(state), session.sessionId)
+    node.db.close()
+
+    const restarted = boot(path)
+    const loaded = restarted.runtime.load({ sessionId: session.sessionId }).state as { acpModels?: unknown; acpModelsStatus?: string }
+    expect(loaded.acpModels).toEqual([{ id: 'grok-4', name: 'Grok 4', description: '' }])
+    expect(loaded.acpModelsStatus).toBe('ready')
+    await restarted.runtime.dispose()
+  })
+
   it('keeps native composer queue rows out of history, consumes a steer once and removes a cancelled row', async () => {
     let release!: () => void
     const hold = new Promise<void>(resolve => { release = resolve })

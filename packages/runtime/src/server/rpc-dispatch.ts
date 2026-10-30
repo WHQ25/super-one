@@ -496,18 +496,29 @@ function handleProviderExportBundle(ctx: RpcContext): RpcResult {
   return { result: ctx.providers.exportBundle() }
 }
 
-function handleProviderListModels(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleProviderListModels(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   const p = asRecord(payload)
   const harness = String(p.harness ?? p.harnessId ?? 'claude')
   const apiProviderId =
     typeof p.apiProviderId === 'string' && p.apiProviderId.trim() ? p.apiProviderId.trim() : null
+  const options = {
+    experimentalClaudeOpenAiChatEnabled:
+      hostAgentSettings(ctx).experimentalClaudeOpenAiChatEnabled,
+  }
+  if (ctx.providers && ctx.hooks.listLiveHarnessModels) {
+    const live = await ctx.hooks.listLiveHarnessModels({
+      store: ctx.providers,
+      harness,
+      apiProviderId,
+      harnesses: ctx.harnesses,
+      options,
+    })
+    if (Array.isArray(live) && live.length > 0) return { result: live }
+  }
   return {
-    result: ctx.hooks.listHarnessModels(ctx.providers, harness, apiProviderId, {
-      experimentalClaudeOpenAiChatEnabled:
-        hostAgentSettings(ctx).experimentalClaudeOpenAiChatEnabled,
-    }),
+    result: ctx.hooks.listHarnessModels(ctx.providers, harness, apiProviderId, options),
   }
 }
 

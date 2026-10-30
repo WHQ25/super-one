@@ -1,3 +1,4 @@
+import { installNodeRemoteContent } from './session/remote-content'
 import { nodeCodexAccountStore } from './session/codex-accounts'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { AuthService } from './auth/auth-service'
@@ -90,6 +91,7 @@ export interface StartNodeRuntimeOptions extends Partial<NodeRuntimeConfig> {
 }
 
 export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): Promise<NodeRuntime> {
+  installNodeRemoteContent()
   const config = resolveRuntimeConfig(partial)
   const paths = nodePaths(config.nodeHome)
   const identity = loadOrCreateIdentity(config.nodeHome, config.label)

@@ -244,6 +244,10 @@ const DEFAULT_CLAUDE_MODELS: ModelOptionWire[] = [
   { id: 'claude-haiku-5-5', name: 'Haiku 5.5', description: '', supportedEffortLevels: CLAUDE_EFFORT_LEVELS },
 ]
 
+/**
+ * Stale offline fallback. Live catalogs come from Codex `model/list`;
+ * this table must not override that probe or a credential's own models.
+ */
 const DEFAULT_CODEX_MODELS: ModelOptionWire[] = [
   { id: 'gpt-5.2', name: 'GPT-5.2', description: '', isDefault: true },
   { id: 'gpt-5.1', name: 'GPT-5.1', description: '' },

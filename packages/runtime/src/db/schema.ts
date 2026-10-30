@@ -91,6 +91,18 @@ CREATE TABLE IF NOT EXISTS session_read_models (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS acp_agent_models (
+  agent_id TEXT PRIMARY KEY NOT NULL,
+  models_json TEXT NOT NULL,
+  config_id TEXT,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS acp_session_agents (
+  session_id TEXT PRIMARY KEY NOT NULL,
+  agent_id TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS session_messages (
   session_id TEXT NOT NULL,
   message_id TEXT NOT NULL,

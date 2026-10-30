@@ -32,6 +32,7 @@
         "@superone/runtime": "workspace:*",
         "@superone/shared": "workspace:*",
         "better-sqlite3": "^13.0.1",
+        "jpeg-js": "^0.4.4",
         "node-pty": "^1.0.0",
         "ws": "^8.20.0",
         "zod": "^4.4.3",
@@ -794,6 +795,7 @@
         "croner": "^10.0.1",
         "diff": "^9.0.0",
         "fzf": "^0.5.2",
+        "shiki": "^4.4.3",
         "smol-toml": "^1.6.0",
         "tar": "^7.5.7",
         "ws": "^8.20.0",
@@ -4677,6 +4679,8 @@
     "jiti": ["jiti@2.7.0", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
 
     "jose": ["jose@6.2.9", "", {}, "sha512-XrchZOFZUl/T3vTwRe8XK+cJrGtMF4th1ARnDfwbBXFKThGhlsxEE4Zu03AD/bjJSt/9jT/mxrOCkJWOg77aPA=="],
+
+    "jpeg-js": ["jpeg-js@0.4.4", "", {}, "sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg=="],
 
     "js-cookie": ["js-cookie@3.0.8", "", {}, "sha512-yeJd4aNAdYZQjaon2bpD/Gb0B/omw7HQOsynXXcOiWVCacbBcPlgn8S/d1X6blFSaHao7ozqtW7NZW19xpCtIw=="],
 

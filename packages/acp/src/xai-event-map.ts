@@ -1,9 +1,6 @@
 import type { AgentEvent, EffortLevel } from '@superone/shared/agent-types'
 import { normalizeAcpGoalStatus, sessionGoalFromAcp, type AcpGoal } from '@superone/shared/acp-goal'
-import {
-  isAlwaysHiddenToolName,
-  resolveGrokStreamingToolName,
-} from '@superone/shared/tool-ui'
+import { mapGrokToolCallDeltaChunk } from '@superone/shared/grok-tool-delta'
 import {
   XAI_FOLLOW_UPS,
   XAI_MONITOR_EVENT,
@@ -774,59 +771,7 @@ function mapToolCallDeltaChunk(
   state: XaiCorrelationState,
   ctx: MapXaiNotifyContext,
 ): AgentEvent[] {
-  const toolCallId = strField(u, 'tool_call_id', 'toolCallId')
-  const index = numField(u, 'tool_index', 'toolIndex')
-  if (index != null && toolCallId) state.deltaToolIdByIndex.set(index, toolCallId)
-  const id = toolCallId
-    ?? (index != null ? state.deltaToolIdByIndex.get(index) : undefined)
-    ?? (index != null ? `acp_delta_${index}` : null)
-  const messageId = ctx.messageId ?? state.lastMessageId
-  if (!id || !messageId) return []
-  const name = strField(u, 'name')
-  const delta = strField(u, 'arguments_delta', 'argumentsDelta') ?? ''
-  if (name) state.deltaToolWireName.set(id, name)
-  if (delta) state.deltaToolArgs.set(id, (state.deltaToolArgs.get(id) ?? '') + delta)
-  const resolved = resolveGrokStreamingToolName(
-    name ?? state.deltaToolWireName.get(id),
-    state.deltaToolArgs.get(id),
-  )
-  const events: AgentEvent[] = []
-  const hidden = resolved ? isAlwaysHiddenToolName(resolved) : false
-  if (resolved && !hidden && !state.deltaToolStarted.has(id)) {
-    state.deltaToolStarted.add(id)
-    events.push({
-      type: 'content_delta',
-      messageId,
-      delta: {
-        type: 'tool_use',
-        toolUseId: id,
-        toolName: resolved,
-        input: '',
-        status: 'streaming',
-      },
-    })
-    const acc = state.deltaToolArgs.get(id)
-    if (acc) {
-      events.push({
-        type: 'tool_input_delta',
-        messageId,
-        toolUseId: id,
-        partialJson: acc,
-      })
-    }
-    state.deltaToolArgs.delete(id)
-  } else if (delta && state.deltaToolStarted.has(id)) {
-    events.push({
-      type: 'tool_input_delta',
-      messageId,
-      toolUseId: id,
-      partialJson: delta,
-    })
-  }
-  if (resolved && hidden && resolved !== 'UseTool') {
-    state.deltaToolArgs.delete(id)
-  }
-  return events
+  return mapGrokToolCallDeltaChunk(u, state, ctx)
 }
 
 // ── Session meta ────────────────────────────────────────────────────────────

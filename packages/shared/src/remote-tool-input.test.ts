@@ -175,6 +175,14 @@ describe('remote tool input exemptions', () => {
       'mcp__superone__session_collab_request',
       JSON.stringify({ launches: [{ name: 'Reviewer', role: 'review', prompt: 'private prompt' }] }),
     ))).toEqual({ launches: [{ name: 'Reviewer', role: 'review' }] })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__session_collab_start',
+      JSON.stringify({ task: 'Review the diff', model: 'grok-4', token: 'secret' }),
+    ))).toEqual({ task: 'Review the diff' })
+    expect(sanitizeRemoteToolInput(
+      'mcp__superone__session_start',
+      JSON.stringify({ model: 'grok-4' }),
+    )).toBe('')
   })
 
   it('keeps workflow labels without prompts or config values', () => {

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type { ClaudeAccount } from '@superone/shared/agent-types'
 import { isClaudeAccountProvider, claudeAccountCredentialDir } from '@superone/shared/agent-types'
 import { resolveSdkClaudeBinary } from './claude-binary'
-import { dedupeAccounts } from './claude-account-parse'
+import { collectClaudeAccounts, invalidateClaudeAccountListCache, knownClaudeAccounts } from '@superone/runtime/session/claude-account-list'
 import { claudeAccountStore } from './claude-account-store'
 import { readClaudeAccount } from './claude-account-profile'
 import { loadClaudeCredentials } from '@superone/runtime/usage'
@@ -35,10 +35,7 @@ function runAuth(args: string[], dir: string, timeout: number, signal?: AbortSig
   })
 }
 export const readAccount = readClaudeAccount
-const LIST_CACHE_TTL_MS = 60_000
-let listGeneration = 0
-let listCache: { accounts: ClaudeAccount[]; at: number } | null = null
-export function invalidateAccountListCache(): void { listCache = null; listGeneration++ }
+export function invalidateAccountListCache(): void { invalidateClaudeAccountListCache(claudeAccountStore().root) }
 
 const accountChangeListeners = new Set<() => void>()
 
@@ -56,28 +53,15 @@ function notifyClaudeAccountsChanged(): void {
   for (const listener of accountChangeListeners) listener()
 }
 export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
-  if (!force && listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) return listCache.accounts
   const store = claudeAccountStore()
-  const generation = listGeneration
-  // Read the external CLI first so existing installations retain their initial default.
-  const cli = await readAccount(null, force)
-  // A signed-out CLI login belongs to the external CLI; SuperOne can neither renew nor remove it.
-  const accounts = [...(cli.loggedIn ? [cli] : []), ...await Promise.all(store.dirs().map((dir) => readAccount(dir, force)))]
-  const resolved = dedupeAccounts(accounts, (account) => account.credentialDir && store.get(account.credentialDir)?.ownerIdentity).map((account) => ({ ...account, isDefault: store.isDefault(account.credentialDir) }))
-  if (generation === listGeneration) listCache = { accounts: resolved, at: Date.now() }
-  return resolved
+  return collectClaudeAccounts(store, (dir, next) => readAccount(dir, next, store), force)
 }
 /**
  * Signed-in accounts as last recorded in the registry, without probing credentials,
  * for synchronous catalogs. `listAccounts` refreshes the same records.
  */
 export function listKnownAccounts(): ClaudeAccount[] {
-  const store = claudeAccountStore()
-  const accounts = [null, ...store.dirs()].flatMap((dir) => {
-    const account = store.get(dir)?.account
-    return account ? [{ ...account, isDefault: store.isDefault(dir) }] : []
-  })
-  return dedupeAccounts(accounts).filter((account) => account.loggedIn)
+  return knownClaudeAccounts(claudeAccountStore())
 }
 export function createAccountDir(): string {
   const dir = join(accountsRoot(), randomUUID())

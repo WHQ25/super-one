@@ -6,7 +6,7 @@ import {
   type ChatCorePorts,
   type ChatCoreSession,
 } from '@superone/chat-core'
-import type { ChatMessage, HarnessId } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ModelOption } from '@superone/shared/agent-types'
 import {
   SESSION_DURABLE_EVENT,
   committedStreamingMessage,
@@ -79,7 +79,7 @@ export class SessionReadModel {
   /** The session's state and newest messages (or those before `before`), at its current version. */
   snapshot(sessionId: string, page?: Omit<SessionLoadRequest, 'sessionId'>): SessionLoadResult {
     const session = this.load(sessionId)
-    const { messages, ...state } = session.core
+    const { messages, ...state } = this.withAcpNames(sessionId, session.core)
     const { start, end } = sessionMessageRange(messages, page)
     const activeTurn = page?.includeState === false ? [] : activeTurnOutsidePage(messages, { start, end })
     return {
@@ -112,8 +112,57 @@ export class SessionReadModel {
   private reduce(session: LoadedSession, envelope: EnvironmentEventEnvelope): void {
     for (const event of session.mapper.map(envelope)) {
       session.core = { ...session.core, ...applyEventToSession(session.core, event, this.ports) }
+      if (event.type === 'acp_models' && (event.status ?? 'ready') === 'ready' && event.models.length > 0) {
+        const agentId = event.agentId || session.core.acpAgentId || this.records.get(envelope.aggregateId)?.acpAgentId
+        if (agentId) this.rememberAcpModels(envelope.aggregateId, agentId, event.models, event.configId)
+      }
     }
     session.applied = envelope.sessionVersion ?? session.applied
+  }
+
+  /** Last ready ACP catalog for an agent. A cold open uses it when the checkpoint has no names. */
+  private rememberAcpModels(sessionId: string, agentId: string, models: ModelOption[], configId: string | null): void {
+    this.db.prepare(
+      `INSERT INTO acp_agent_models (agent_id, models_json, config_id, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(agent_id) DO UPDATE SET models_json = excluded.models_json, config_id = excluded.config_id, updated_at = excluded.updated_at`,
+    ).run(agentId, JSON.stringify(models), configId, Date.now())
+    this.db.prepare(
+      `INSERT INTO acp_session_agents (session_id, agent_id) VALUES (?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET agent_id = excluded.agent_id`,
+    ).run(sessionId, agentId)
+  }
+
+  private cachedAcpModels(agentId: string | null): { models: ModelOption[]; configId: string | null } | null {
+    if (!agentId) return null
+    const row = this.db.prepare(`SELECT models_json, config_id FROM acp_agent_models WHERE agent_id = ?`).get(agentId) as
+      | { models_json: string; config_id: string | null }
+      | undefined
+    if (!row) return null
+    try {
+      const models = JSON.parse(row.models_json) as ModelOption[]
+      return Array.isArray(models) && models.length > 0 ? { models, configId: row.config_id } : null
+    } catch {
+      return null
+    }
+  }
+
+  private agentFor(sessionId: string, core: ChatCoreSession): string | null {
+    const bound = this.db.prepare(`SELECT agent_id FROM acp_session_agents WHERE session_id = ?`).get(sessionId) as { agent_id: string } | undefined
+    return this.records.get(sessionId)?.acpAgentId || core.acpAgentId || bound?.agent_id || null
+  }
+
+  /** Display names for a cold ACP session whose checkpoint never stored `acp_models`. */
+  private withAcpNames(sessionId: string, core: ChatCoreSession): ChatCoreSession {
+    if (core.acpModels.length > 0) return core
+    const cached = this.cachedAcpModels(this.agentFor(sessionId, core))
+    if (!cached) return core
+    return {
+      ...core,
+      acpModels: cached.models,
+      acpModelsStatus: 'ready',
+      acpModelConfigId: cached.configId,
+      acpModelsError: null,
+    }
   }
 
   /**
@@ -136,11 +185,11 @@ export class SessionReadModel {
       const session = this.load(sessionId)
       return {
         transcript: arrayTranscript(session.core.messages),
-        state: includeState ? coreState(session.core) : {},
+        state: includeState ? coreState(this.withAcpNames(sessionId, session.core)) : {},
         cursor: { sequence: this.log.headSequence(), epoch: this.log.epoch, version: session.applied },
       }
     }
-    const core: ChatCoreSession = { ...createDefaultChatCoreSession(), ...JSON.parse(checkpoint.state_json), messages: [] }
+    const core: ChatCoreSession = this.withAcpNames(sessionId, { ...createDefaultChatCoreSession(), ...JSON.parse(checkpoint.state_json), messages: [] })
     return {
       transcript: sqliteTranscript<{ message_json: string; sort_order: number }>(this.db, {
         table: 'session_messages', idColumn: 'message_id', columns: 'message_json, sort_order', sessionId,

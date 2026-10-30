@@ -19,7 +19,10 @@ import type { ProviderStore } from '../provider/provider-store'
 import type { HarnessManager } from '../session/harness-manager'
 import { listHarnessModels, listHarnessProviderModels } from '../provider/resolve-service'
 import { resolveClaudeBinaryPath } from '../session/claude-turn-runner'
-import { getNodeClaudeModelCatalog } from '../session/claude-model-catalog'
+import { getNodeClaudeCatalog } from '../session/claude-model-catalog'
+import { claudeAccountProbeEnv, claudeCatalogCacheScope } from '../session/claude-probe-env'
+import { getNodeCodexModelCatalog } from '../session/codex-model-catalog'
+import { EMPTY_CLAUDE_CATALOG, type ClaudeCatalogProbe } from '@superone/claude'
 import { discoverOpenCodeV2Resources } from '@superone/opencode/launch'
 import { resolveNodeOpenCodeProvider } from '../provider/opencode-provider'
 
@@ -36,8 +39,13 @@ export interface HarnessResourcesRpcContext {
   harnesses?: HarnessManager
   /** Override home for skill/command discovery (tests). */
   homeDir?: string
-  /** Injectable model probe (tests). Default: probe the node's Claude harness. */
+  /** Injectable model probe (tests). Default: probe the node's Claude and Codex harnesses. */
   probeModels?: (harnessId: string, cwd: string) => Promise<ModelOption[]>
+  /**
+   * Injectable Claude metadata probe (tests). When `probeModels` is set, this
+   * is skipped so a test that replaces the model probe does not spawn Claude.
+   */
+  probeClaudeCatalog?: (cwd: string) => Promise<ClaudeCatalogProbe>
   experimentalClaudeOpenAiChatEnabled?: boolean
 }
 
@@ -55,23 +63,63 @@ function asRecord(payload: unknown): Record<string, unknown> {
   return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
 }
 
-/** Probe the node's own harness for its model catalog (claude only today). */
+/**
+ * One Claude metadata probe for this request: models, account, slash commands
+ * and output styles. A test that injects `probeModels` skips it.
+ */
+function claudeCatalogFor(
+  ctx: HarnessResourcesRpcContext,
+  apiProviderId: string | null,
+  cwd: string,
+): (() => Promise<ClaudeCatalogProbe>) | null {
+  if (ctx.probeModels) return null
+  if (ctx.probeClaudeCatalog) {
+    const probe = ctx.probeClaudeCatalog
+    let pending: Promise<ClaudeCatalogProbe> | null = null
+    return () => (pending ??= probe(cwd))
+  }
+  const binaryPath = resolveClaudeBinaryPath({ harnesses: ctx.harnesses })
+  if (!binaryPath) {
+    // Same resolver the turn runner uses, so this also predicts why sends
+    // fail with "Claude Agent SDK binary not available".
+    console.warn(
+      '[harness.resources] claude model probe skipped: no Agent SDK binary on this node ' +
+        '(reinstall the optional platform package or set SUPERONE_CLAUDE_BINARY)',
+    )
+    return async () => EMPTY_CLAUDE_CATALOG
+  }
+  let pending: Promise<ClaudeCatalogProbe> | null = null
+  return () => (pending ??= getNodeClaudeCatalog({
+    cwd,
+    binaryPath,
+    env: claudeAccountProbeEnv(apiProviderId),
+    accountScope: claudeCatalogCacheScope(apiProviderId),
+  }))
+}
+
+/** Probe the node's own harness for its model catalog (Claude and Codex). */
 function defaultProbeModels(
   ctx: HarnessResourcesRpcContext,
+  apiProviderId: string | null,
+  claudeCatalog: (() => Promise<ClaudeCatalogProbe>) | null,
 ): (harnessId: string, cwd: string) => Promise<ModelOption[]> {
-  return async (harnessId, cwd) => {
-    if (harnessId !== 'claude') return []
-    const binaryPath = resolveClaudeBinaryPath({ harnesses: ctx.harnesses })
-    if (!binaryPath) {
-      // Same resolver the turn runner uses, so this also predicts why sends
-      // fail with "Claude Agent SDK binary not available".
-      console.warn(
-        '[harness.resources] claude model probe skipped: no Agent SDK binary on this node ' +
-          '(reinstall the optional platform package or set SUPERONE_CLAUDE_BINARY)',
-      )
-      return []
+  return async (harnessId) => {
+    if (harnessId === 'codex') {
+      try {
+        return await getNodeCodexModelCatalog({
+          apiProviderId,
+          harnesses: ctx.harnesses,
+        })
+      } catch (err) {
+        console.warn(
+          '[harness.resources] codex model probe failed:',
+          err instanceof Error ? err.message : err,
+        )
+        return []
+      }
     }
-    return getNodeClaudeModelCatalog({ cwd, binaryPath })
+    if (harnessId !== 'claude' || !claudeCatalog) return []
+    return (await claudeCatalog()).models
   }
 }
 
@@ -144,11 +192,13 @@ async function handleHarnessResources(
       ) as ModelOption[]
     }
 
+    const claudeCatalog = claudeCatalogFor(ctx, apiProviderId ?? null, project.path)
+
     // No bound credential: ask the harness on this node what it serves. The
     // built-in slug table only stands in when that probe comes back empty.
     const probeModels = async (hid: string): Promise<ModelOption[]> => {
       if (hid === 'opencode' && nativeOpenCode) return nativeOpenCode.models
-      const probe = ctx.probeModels ?? defaultProbeModels(ctx)
+      const probe = ctx.probeModels ?? defaultProbeModels(ctx, apiProviderId ?? null, claudeCatalog)
       const probed = await probe(hid, project.path)
       if (probed.length > 0) return probed
       // Substituting the built-in slug table is a lie the client cannot detect —
@@ -170,6 +220,11 @@ async function handleHarnessResources(
       homeDir: ctx.homeDir,
       listModels,
       probeModels,
+      ...(claudeCatalog ? {
+        probeAccount: async () => (await claudeCatalog()).account,
+        probeSlashCommands: async () => (await claudeCatalog()).slashCommands,
+        probeOutputStyles: async () => (await claudeCatalog()).outputStyles,
+      } : {}),
       apiProviderId: apiProviderId ?? null,
       harnessId,
     })

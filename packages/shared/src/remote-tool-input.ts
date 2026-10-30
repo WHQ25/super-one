@@ -267,13 +267,18 @@ function sanitizeCollabInput(toolName: string, input: string): string {
   const bare = superoneBareName(toolName)
   const requestTools = new Set(['session_collab_request', 'session_request_agents_collab'])
   const sendTools = new Set(['session_collab_send', 'session_send'])
-  if (!bare || (!requestTools.has(bare) && !sendTools.has(bare)) || !input) return ''
+  const startTools = new Set(['session_collab_start', 'session_start'])
+  if (!bare || (!requestTools.has(bare) && !sendTools.has(bare) && !startTools.has(bare)) || !input) return ''
   let parsed: unknown
   try { parsed = JSON.parse(input) } catch { return '' }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
   const source = parsed as Record<string, unknown>
   if (sendTools.has(bare)) {
     return typeof source.content === 'string' ? JSON.stringify({ content: source.content }) : ''
+  }
+  // The start row shows this brief. Model, effort and account stay on the desktop.
+  if (startTools.has(bare)) {
+    return typeof source.task === 'string' && source.task ? JSON.stringify({ task: source.task }) : ''
   }
   if (!Array.isArray(source.launches)) return ''
   const launches = source.launches.flatMap((launch) => {

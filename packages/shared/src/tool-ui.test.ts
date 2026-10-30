@@ -3,7 +3,9 @@ import {
   applyDescriptionPersonaLabel,
   formatAgentToolOutput,
   formatTranscriptToolResult,
+  grokCollabStreamingInput,
   isAlwaysHiddenToolName,
+  isSessionCollabToolName,
   parseMcpToolName,
   normalizeTranscriptTool,
   resolveGrokStreamingToolName,
@@ -80,6 +82,18 @@ describe('resolveGrokStreamingToolName', () => {
   it('does not unwrap an unclosed tool_name fragment', () => {
     expect(resolveGrokStreamingToolName('use_tool', '{"tool_name":"GitHub__')).toBe('UseTool')
     expect(resolveGrokStreamingToolName('use_tool', '{"tool_name":"superone__sess')).toBe('UseTool')
+  })
+})
+
+describe('grok collab streaming input', () => {
+  it('keeps the inner tool_input once the envelope parses', () => {
+    expect(isSessionCollabToolName('mcp__superone__session_collab_request')).toBe(true)
+    expect(isSessionCollabToolName('mcp__GitHub__list_issues')).toBe(false)
+    expect(grokCollabStreamingInput('{"tool_name":"superone__session_collab_send","tool_input":')).toBeNull()
+    expect(grokCollabStreamingInput(JSON.stringify({
+      tool_name: 'superone__session_collab_send',
+      tool_input: { content: 'Review is complete.', to: 'peer' },
+    }))).toBe(JSON.stringify({ content: 'Review is complete.', to: 'peer' }))
   })
 })
 

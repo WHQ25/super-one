@@ -260,6 +260,46 @@ export function resolveGrokStreamingToolName(
   return ui
 }
 
+/** Collaboration calls whose chat row reads the inner arguments, not the `use_tool` envelope. */
+const SESSION_COLLAB_TOOL_NAMES = new Set([
+  'session_collab_request',
+  'session_request_agents_collab',
+  'session_collab_start',
+  'session_start',
+  'session_collab_send',
+  'session_send',
+  'session_collab_retrieve',
+  'session_collab_wait',
+  'session_wait',
+])
+
+/** True for `session_collab_*` and its short aliases, in wire or `mcp__` form. */
+export function isSessionCollabToolName(toolName: string): boolean {
+  if (!toolName) return false
+  const mcp = parseMcpToolName(toolName)
+  return SESSION_COLLAB_TOOL_NAMES.has(mcp?.mcpToolName ?? toolName)
+}
+
+/**
+ * Inner arguments of a streamed Grok `use_tool` call once `tool_input` is a
+ * complete object. Null while the JSON is still incomplete. A direct call
+ * (no envelope) is returned as itself.
+ *
+ * Collab rows read `launches` / `content` / `task` at the top of the tool
+ * input. Leaving the envelope in place makes those fields look missing.
+ */
+export function grokCollabStreamingInput(argumentsJson: string | undefined): string | null {
+  if (!argumentsJson) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(argumentsJson) } catch { return null }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const record = parsed as Record<string, unknown>
+  const inner = record.tool_input
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) return JSON.stringify(inner)
+  if ('tool_name' in record || 'tool_input' in record) return null
+  return JSON.stringify(record)
+}
+
 /**
  * Normalize a transcript / chat_history tool name + raw args into ToolBlock shape.
  * Grok uses ids like `read_file` and aliases like `target_file`; OpenCode uses

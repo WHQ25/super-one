@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
-import { explicitClaudeModelId, fetchClaudeModels, mapClaudeModelInfo } from './fetch-models'
+import { explicitClaudeModelId, fetchClaudeCatalog, fetchClaudeModels, mapClaudeModelInfo } from './fetch-models'
 import type { ClaudeQueryFn } from './types'
 
 /** Shape returned by `query().supportedModels()` (Agent SDK 0.3.x). */
@@ -93,6 +93,32 @@ describe('fetchClaudeModels', () => {
       throw new Error('spawn failed')
     }) as unknown as ClaudeQueryFn)
     await expect(fetchClaudeModels({ cwd: '/work', queryFn })).resolves.toEqual([])
+  })
+})
+
+describe('fetchClaudeCatalog', () => {
+  it('reads the account, slash commands and output styles from the same probe', async () => {
+    const close = vi.fn()
+    const queryFn = vi.fn(() => ({
+      initializationResult: async () => ({ available_output_styles: ['Explanatory'] }),
+      supportedModels: async () => SDK_MODELS,
+      accountInfo: async () => ({ email: 'a@b.com', organization: 'Org', subscriptionType: 'max' }),
+      supportedCommands: async () => [{ name: 'review', description: 'Review' }],
+      close,
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: 'system', subtype: 'init', terminal_slash_commands: ['exit'] }
+      },
+    })) as unknown as ClaudeQueryFn
+
+    const catalog = await fetchClaudeCatalog({ cwd: '/work', queryFn })
+
+    expect(catalog.models.map((model) => model.id)).toEqual(['haiku'])
+    expect(catalog.account).toMatchObject({ email: 'a@b.com', organization: 'Org', subscriptionType: 'max' })
+    expect(catalog.outputStyles).toEqual(['Explanatory'])
+    expect(catalog.slashCommands).toEqual([
+      { name: 'review', description: 'Review', argumentHint: '', isSkill: false },
+    ])
+    expect(close).toHaveBeenCalled()
   })
 })
 

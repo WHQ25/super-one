@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { applyContentDelta } from '@superone/shared/content-delta'
+import type { ContentBlock } from '@superone/shared/agent-types'
 import {
   mapXaiSessionUpdate,
   mapXaiStandaloneNotification,
@@ -598,6 +600,70 @@ describe('ACP xAI AgentEvent mapping', () => {
       tool_call_id: 'env_1',
       name: 'use_tool',
     }, state, { messageId: 'msg-1' })).toEqual([])
+  })
+
+  it('writes streamed session collab arguments onto the tool block', () => {
+    const state = createXaiCorrelationState()
+    const full = JSON.stringify({
+      tool_name: 'superone__session_collab_request',
+      tool_input: {
+        launches: [{ name: 'Reviewer', role: 'review', summary: 'Look at the diff' }],
+      },
+    })
+    const splitAt = full.indexOf('"launches"')
+    const chunks = [
+      {
+        sessionUpdate: 'tool_call_delta_chunk',
+        tool_call_id: 'collab_1',
+        name: 'use_tool',
+        arguments_delta: full.slice(0, splitAt),
+      },
+      {
+        sessionUpdate: 'tool_call_delta_chunk',
+        tool_call_id: 'collab_1',
+        arguments_delta: full.slice(splitAt),
+      },
+      {
+        sessionUpdate: 'tool_call_delta_chunk',
+        tool_call_id: 'collab_1',
+        arguments_delta: '',
+      },
+    ]
+    const events = chunks.flatMap((chunk) => mapXaiSessionUpdate(chunk, state, { messageId: 'msg-1' }))
+    expect(events.some((event) => event.type === 'tool_input_delta')).toBe(false)
+    let content: ContentBlock[] = []
+    for (const event of events) {
+      if (event.type === 'content_delta') content = applyContentDelta(content, event.delta)
+    }
+    expect(content).toHaveLength(1)
+    expect(content[0]).toMatchObject({
+      type: 'tool_use',
+      toolName: 'mcp__superone__session_collab_request',
+      toolUseId: 'collab_1',
+    })
+    expect(JSON.parse((content[0] as { input: string }).input)).toEqual({
+      launches: [{ name: 'Reviewer', role: 'review', summary: 'Look at the diff' }],
+    })
+  })
+
+  it('puts session_collab_send content on the tool block', () => {
+    const state = createXaiCorrelationState()
+    const events = mapXaiSessionUpdate({
+      sessionUpdate: 'tool_call_delta_chunk',
+      tool_call_id: 'send_1',
+      name: 'use_tool',
+      arguments_delta: JSON.stringify({
+        tool_name: 'superone__session_collab_send',
+        tool_input: { content: 'Review is complete.', to: 'peer' },
+      }),
+    }, state, { messageId: 'msg-1' })
+    expect(events.map((event) => event.type)).toEqual(['content_delta'])
+    expect(events[0]).toMatchObject({
+      delta: {
+        toolName: 'mcp__superone__session_collab_send',
+        input: JSON.stringify({ content: 'Review is complete.', to: 'peer' }),
+      },
+    })
   })
 
   it('unwraps use_tool onto the inner MCP name once tool_name streams in', () => {

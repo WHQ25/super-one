@@ -30,6 +30,10 @@ import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from '@superone/runtime
 import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
 import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@superone/runtime/server/rpc-session-providers'
 import { dispatchHarnessResourcesRpc, HARNESS_RESOURCES_RPC_METHODS } from './harness-resources-handlers'
+import { createClaudeAccountMethods } from '@superone/runtime/server/rpc-claude-accounts'
+import { listNodeClaudeAccounts } from '../session/claude-accounts'
+
+const claudeAccounts = createClaudeAccountMethods(listNodeClaudeAccounts)
 
 export type { RpcResult }
 export { clearWatchBuffersForClient } from '@superone/runtime/server'
@@ -93,6 +97,7 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
   ...SESSION_PROVIDER_RPC_METHODS,
   ...HARNESS_RESOURCES_RPC_METHODS,
   ...CODEX_RPC_METHODS,
+  ...claudeAccounts.methods,
 ])
 
 /** Serve one node RPC with the shared families plus the CLI's own. */
@@ -166,6 +171,9 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
     providers: ctx.providers,
   })
   if (codex) return codex
+
+  const accounts = await claudeAccounts.dispatch(method, payload, ctx)
+  if (accounts) return accounts
 
   return null
 }

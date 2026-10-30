@@ -17,8 +17,10 @@ export type DiffTokenLine = DiffToken[]
 /**
  * What the summaries read from the host that runs them: syntax and ANSI
  * highlighting, picture thumbnails, a subagent's output file and a workflow's
- * agent transcripts. The desktop wires real ones (`configureRemoteContent`);
- * without them a host sends plain text and no thumbnails.
+ * agent transcripts. The desktop wires real ones (`configureRemoteContent`).
+ * A node fills whichever of these are still the empty defaults
+ * (`installDefaultRemoteContent`). Without them a host sends plain text,
+ * full-size pictures, and no subagent or workflow rows.
  */
 export interface RemoteContentPorts {
   highlightCodeSync(code: string, filePath: string): DiffTokenLine[] | null
@@ -29,17 +31,76 @@ export interface RemoteContentPorts {
   listWorkflowAgents(transcriptDir: string): WorkflowAgentRow[]
 }
 
-let ports: RemoteContentPorts = {
-  highlightCodeSync: () => null,
-  highlightCodeByLang: () => null,
-  parseAnsiTokens: () => [],
-  withAttachmentPreviews: (message) => message,
-  readAgentOutput: () => ({ toolEntries: [] }),
-  listWorkflowAgents: () => [],
+function emptyHighlightSync(): null {
+  return null
 }
+
+function emptyHighlightLang(): null {
+  return null
+}
+
+function emptyAnsi(): DiffTokenLine[] {
+  return []
+}
+
+function emptyPreviews(message: ChatMessage): ChatMessage {
+  return message
+}
+
+function emptyAgentOutput(): { toolEntries: [] } {
+  return { toolEntries: [] }
+}
+
+function emptyWorkflowAgents(): WorkflowAgentRow[] {
+  return []
+}
+
+function builtinPorts(): RemoteContentPorts {
+  return {
+    highlightCodeSync: emptyHighlightSync,
+    highlightCodeByLang: emptyHighlightLang,
+    parseAnsiTokens: emptyAnsi,
+    withAttachmentPreviews: emptyPreviews,
+    readAgentOutput: emptyAgentOutput,
+    listWorkflowAgents: emptyWorkflowAgents,
+  }
+}
+
+const PORT_KEYS = ['highlightCodeSync', 'highlightCodeByLang', 'parseAnsiTokens', 'withAttachmentPreviews', 'readAgentOutput', 'listWorkflowAgents'] as const
+
+let ports: RemoteContentPorts = builtinPorts()
 
 export function configureRemoteContent(next: RemoteContentPorts): void {
   ports = next
+}
+
+/** Restore the empty host. Tests use this so a node install can run again. */
+export function resetRemoteContentPortsForTests(): void {
+  ports = builtinPorts()
+}
+
+/**
+ * Fill host reads that are still the empty defaults. A desktop that already
+ * called `configureRemoteContent` keeps its own Shiki, Electron thumbnails
+ * and transcript reader; a node can still fill a port the desktop left empty.
+ */
+export function installDefaultRemoteContent(partial: Partial<RemoteContentPorts>): boolean {
+  const defaults = builtinPorts()
+  let installed = false
+  const next: RemoteContentPorts = { ...ports }
+  for (const key of PORT_KEYS) {
+    const value = partial[key]
+    if (!value || ports[key] !== defaults[key]) continue
+    next[key] = value as never
+    installed = true
+  }
+  if (installed) ports = next
+  return installed
+}
+
+/** Fill the transcript reader while this process still has the empty default. */
+export function installDefaultAgentOutput(read: RemoteContentPorts['readAgentOutput']): boolean {
+  return installDefaultRemoteContent({ readAgentOutput: read })
 }
 
 export function remoteContentPorts(): RemoteContentPorts {

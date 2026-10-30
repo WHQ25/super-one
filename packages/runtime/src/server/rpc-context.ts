@@ -394,6 +394,19 @@ export interface RpcHostHooks {
     apiProviderId?: string | null,
     options?: { experimentalClaudeOpenAiChatEnabled?: boolean },
   ): unknown
+  /**
+   * Live catalog when the provider store has no models of its own.
+   * A non-empty array replaces {@link listHarnessModels}. An empty array means
+   * the probe failed and the caller keeps the stale fallback. `null` means
+   * this harness is not probed here. Hosts that serve their own catalog omit it.
+   */
+  listLiveHarnessModels?(input: {
+    store: ProvidersPort
+    harness: string
+    apiProviderId: string | null
+    harnesses?: HarnessManager
+    options?: { experimentalClaudeOpenAiChatEnabled?: boolean }
+  }): Promise<unknown[] | null>
   probeHarnessReadiness(
     harnesses: HarnessManager,
     id: NodeHarnessId,

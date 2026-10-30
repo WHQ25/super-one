@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { ModelOption } from '@superone/shared/agent-types'
+import type { ClaudeCatalogProbe } from '@superone/claude'
 import {
   getNodeClaudeModelCatalog,
   resetNodeClaudeModelCatalogForTests,
@@ -69,5 +70,36 @@ describe('getNodeClaudeModelCatalog', () => {
     await getNodeClaudeModelCatalog({ cwd: '/work', binaryPath: '/b/claude', fetchModels })
 
     expect(seen).toEqual(['/a/claude', '/b/claude'])
+  })
+
+  it('does not serve one project catalog for another', async () => {
+    const seen: string[] = []
+    const fetchModels = async (opts: { cwd: string }) => {
+      seen.push(opts.cwd)
+      return MODELS
+    }
+
+    await getNodeClaudeModelCatalog({ cwd: '/work', fetchModels })
+    await getNodeClaudeModelCatalog({ cwd: '/other', fetchModels })
+    await getNodeClaudeModelCatalog({ cwd: '/other', fetchModels })
+
+    expect(seen).toEqual(['/work', '/other'])
+  })
+
+  it('does not share inherit, the CLI login, and a managed account', async () => {
+    let calls = 0
+    const fetchCatalog = async (): Promise<ClaudeCatalogProbe> => {
+      calls += 1
+      return { models: MODELS, account: {}, slashCommands: [], outputStyles: [] }
+    }
+    const env = { PATH: '/usr/bin', HOME: '/Users/test' }
+
+    await getNodeClaudeModelCatalog({ cwd: '/work', env, fetchCatalog })
+    await getNodeClaudeModelCatalog({ cwd: '/work', env, accountScope: 'cli', fetchCatalog })
+    await getNodeClaudeModelCatalog({ cwd: '/work', env, accountScope: 'dir:/accounts/a', fetchCatalog })
+    await getNodeClaudeModelCatalog({ cwd: '/work', env, accountScope: 'dir:/accounts/a', fetchCatalog })
+    await getNodeClaudeModelCatalog({ cwd: '/work', env, accountScope: 'dir:/accounts/b', fetchCatalog })
+
+    expect(calls).toBe(4)
   })
 })

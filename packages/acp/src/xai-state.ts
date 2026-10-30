@@ -122,6 +122,8 @@ export interface XaiCorrelationState {
   deltaToolWireName: Map<string, string>
   /** Accumulated `arguments_delta` JSON fragments, keyed by tool_call_id. */
   deltaToolArgs: Map<string, string>
+  /** Last collab `tool_input` JSON already emitted as a tool_use content delta. */
+  deltaCollabInput: Map<string, string>
   /** First-chunk `tool_index` → real `tool_call_id` (later chunks omit the id). */
   deltaToolIdByIndex: Map<number, string>
   /** task_id → bg task info */
@@ -165,6 +167,7 @@ export function createXaiCorrelationState(opts?: { cwd?: string; parentSessionId
     deltaToolStarted: new Set(),
     deltaToolWireName: new Map(),
     deltaToolArgs: new Map(),
+    deltaCollabInput: new Map(),
     deltaToolIdByIndex: new Map(),
     bgTaskById: new Map(),
     goalStarted: new Set(),

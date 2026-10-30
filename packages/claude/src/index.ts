@@ -39,10 +39,13 @@ export {
 export {
   CLAUDE_CLI_DEFAULT_MODEL_ID,
   CLAUDE_METADATA_PROBE_PROMPT,
+  EMPTY_CLAUDE_CATALOG,
   explicitClaudeModelId,
+  fetchClaudeCatalog,
   fetchClaudeModels,
   mapClaudeModelCatalog,
   mapClaudeModelInfo,
+  type ClaudeCatalogProbe,
   type ClaudeModelInfo,
   type FetchClaudeModelsOptions,
 } from './fetch-models'

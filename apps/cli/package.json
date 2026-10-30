@@ -41,6 +41,7 @@
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*",
     "better-sqlite3": "^13.0.1",
+    "jpeg-js": "^0.4.4",
     "node-pty": "^1.0.0",
     "ws": "^8.20.0",
     "zod": "^4.4.3"

@@ -23,7 +23,7 @@ vi.mock('./logger', () => ({
 }))
 
 import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
-import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState, searchSessionsByTitle } from './db-sessions'
+import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, listSessionsForProjectId, listSettledSessions, saveSessionState, searchSessionsByTitle, settleSpawnChildren } from './db-sessions'
 import { watchSessionDeletes } from './session-list-watch'
 
 describe('db-sessions session query + mapping', () => {
@@ -127,6 +127,62 @@ describe('db-sessions session query + mapping', () => {
     const sessions = listSessionsForFolder('/tmp/project-1')
     expect(sessions[0].tags).toEqual(['ui', 'sidebar'])
     expect(sessions[1].tags).toBeUndefined()
+  })
+
+  it('keeps settled sessions out of the active list and returns them for search', () => {
+    getProjectIdMock.mockReturnValue('proj-1')
+    const sqls: string[] = []
+    getDbMock.mockReturnValue({
+      prepare: vi.fn((sql: string) => {
+        sqls.push(sql)
+        return { all: vi.fn().mockReturnValue([]) }
+      }),
+    })
+
+    listSessionsForFolder('/tmp/project-1')
+    expect(sqls[0]).toContain('COALESCE(s.is_settled, 0) = 0')
+
+    listSessionsForProjectId('proj-1', 30, 0, { includeSettled: true })
+    expect(sqls[1]).not.toContain('COALESCE(s.is_settled, 0) = 0')
+  })
+
+  it('pages settled sessions for one project', () => {
+    const sqls: string[] = []
+    const params: unknown[][] = []
+    getDbMock.mockReturnValue({
+      prepare: vi.fn((sql: string) => {
+        sqls.push(sql)
+        return {
+          all: (...args: unknown[]) => {
+            params.push(args)
+            return []
+          },
+          get: (...args: unknown[]) => {
+            params.push(args)
+            return { total: 48 }
+          },
+        }
+      }),
+    })
+
+    expect(listSettledSessions({ projectPath: '/tmp/project-1', limit: 20, offset: 40 })).toEqual({
+      sessions: [],
+      total: 48,
+    })
+    expect(sqls[0]).toContain('COALESCE(s.is_settled, 0) = 1')
+    expect(sqls[0]).toContain('COALESCE(s.is_hidden, 0) = 0')
+    expect(sqls[0]).toContain('p.path = ?')
+    expect(sqls[0]).toContain('LIMIT ? OFFSET ?')
+    expect(params[0]).toEqual(['/tmp/project-1', 20, 40])
+    expect(sqls[1]).toContain('COUNT(*)')
+    expect(sqls[1]).toContain('COALESCE(s.is_settled, 0) = 1')
+    expect(sqls[1]).not.toContain('LIMIT')
+    expect(params[1]).toEqual(['/tmp/project-1'])
+
+    listSettledSessions()
+    expect(sqls[2]).not.toContain('LIMIT')
+    expect(sqls[3]).toContain('COUNT(*)')
+    expect(params[3]).toEqual([])
   })
 
   it('listPinnedSessions keeps inferred provider from SQL rows', () => {
@@ -420,5 +476,28 @@ describe('countMessagesForSessions', () => {
     getDbMock.mockReturnValue({ prepare: prepareMock })
     expect(countMessagesForSessions([]).size).toBe(0)
     expect(prepareMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('settleSpawnChildren', () => {
+  it('settles spawn children and marks them read', () => {
+    const runs: Array<{ sql: string; params: unknown[] }> = []
+    getDbMock.mockReturnValue({
+      prepare: (sql: string) => ({
+        all: () => (sql.includes('session_collaboration_grants') ? [{ id: 'spawn-1' }, { id: 'parent-1' }] : []),
+        get: () => {
+          if (sql.includes('seen_completed_message_id')) return { receipt: '' }
+          if (sql.includes('JOIN projects')) return { path: '/tmp/project' }
+          return undefined
+        },
+        run: (...params: unknown[]) => { runs.push({ sql, params }) },
+      }),
+    })
+
+    expect(settleSpawnChildren('parent-1')).toEqual(['spawn-1'])
+    expect(runs).toEqual([
+      { sql: 'UPDATE sessions SET is_settled = ? WHERE id = ?', params: [1, 'spawn-1'] },
+      { sql: 'UPDATE sessions SET seen_completed_message_id = ? WHERE id = ?', params: [null, 'spawn-1'] },
+    ])
   })
 })

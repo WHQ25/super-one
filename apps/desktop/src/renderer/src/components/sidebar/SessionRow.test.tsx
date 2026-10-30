@@ -1,20 +1,23 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import { PinnedSessionRow } from './PinnedSessionRow'
 import { SessionRow } from './SessionRow'
+import { useSessionMenuItems } from './useSessionMenuItems'
 
 const FOLDER = '/proj'
 
 const noop = {
   onSwitchSession: vi.fn(),
   onPinSession: vi.fn(),
-  onHideSession: vi.fn(),
+  onSettleSession: vi.fn(),
   onRenameSession: vi.fn(),
   onDeleteSession: vi.fn(),
 }
@@ -40,9 +43,24 @@ function hoverActionButtons(container: HTMLElement): HTMLElement[] {
   )
 }
 
+function seedStatus(sessionId: string, status: 'idle' | 'streaming' | 'background' | 'error') {
+  const project = createDefaultProjectState()
+  const live = createDefaultPerSessionState()
+  live.status = status
+  project._sessions[sessionId] = live
+  useChatStore.setState({ activeProject: FOLDER, projectSessions: { [FOLDER]: project } })
+}
+
+function menuIds(session: SessionHistoryEntry): string[] {
+  const { result } = renderHook(() => useSessionMenuItems(session, FOLDER, noop))
+  return result.current.flatMap((entry) => (entry.kind === 'item' ? [entry.id] : []))
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   useScheduledSendsStore.setState({ bySession: {} })
+  useChatStore.setState({ projectSessions: {}, activeProject: null })
+  useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
 })
 
 describe('SessionRow opening icon', () => {
@@ -64,7 +82,7 @@ describe('SessionRow opening icon', () => {
     expect(container.querySelectorAll('.group\\/session')).toHaveLength(1)
   })
 
-  it('keeps the opening spinner in front of the hide control', () => {
+  it('keeps the opening spinner in front of the settle control', () => {
     render(
       <div>
         <SessionRow
@@ -86,13 +104,59 @@ describe('SessionRow opening icon', () => {
     const spinner = screen.getByLabelText('Loading...')
     expect(spinner.parentElement?.className ?? '').not.toContain('group-hover/session:opacity-0')
     const openingRow = spinner.closest('.group\\/session')
-    expect(openingRow?.querySelector('.lucide-eye-off')).toBeNull()
-    expect(openingRow?.querySelector('.lucide-eye')).toBeNull()
+    expect(openingRow?.querySelector('.lucide-circle-check')).toBeNull()
 
     const idleRow = screen.getByText('Idle session').closest('.group\\/session')
-    expect(idleRow?.querySelector('.lucide-eye-off')).not.toBeNull()
+    expect(idleRow?.querySelector('.lucide-circle-check')).not.toBeNull()
     const idleGlyph = idleRow?.querySelector('.lucide-message-square')
     expect(idleGlyph?.parentElement?.className ?? '').toContain('group-hover/session:opacity-0')
+  })
+})
+
+describe('SessionRow settle only while idle', () => {
+  function rowFor(title: string): Element | null {
+    return screen.getByText(title).closest('.group\\/session')
+  }
+
+  it('hides the hover control and the context menu while a turn is streaming', () => {
+    seedStatus('run', 'streaming')
+    render(<SessionRow session={entry('run', 'Streaming')} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    const row = rowFor('Streaming')
+    expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+    expect(row?.querySelector('.relative > span')?.className ?? '').not.toContain('group-hover/session:opacity-0')
+    expect(menuIds(entry('run', 'Streaming'))).not.toContain('settle')
+  })
+
+  it('hides settle while a background task is running', () => {
+    seedStatus('bg', 'background')
+    render(<SessionRow session={entry('bg', 'Background')} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    expect(rowFor('Background')?.querySelector('.lucide-circle-check')).toBeNull()
+    expect(menuIds(entry('bg', 'Background'))).not.toContain('settle')
+  })
+
+  it('hides settle during a live voice call', () => {
+    useRealtimeCallStore.setState({ sessionId: 'voice', state: 'active' })
+    const session = { ...entry('voice', 'Voice'), provider: 'codex' as const }
+    render(<SessionRow session={session} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    expect(rowFor('Voice')?.querySelector('.lucide-circle-check')).toBeNull()
+    expect(menuIds(session)).not.toContain('settle')
+  })
+
+  it('offers settle when the last turn ended in an error', () => {
+    seedStatus('err', 'error')
+    render(<SessionRow session={entry('err', 'Errored')} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    expect(rowFor('Errored')?.querySelector('.lucide-circle-check')).not.toBeNull()
+    expect(menuIds(entry('err', 'Errored'))).toContain('settle')
+  })
+
+  it('keeps unsettle on a settled row that is still streaming', () => {
+    seedStatus('set', 'streaming')
+    const session = { ...entry('set', 'Settled busy'), isSettled: true }
+    render(<SessionRow session={session} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    const row = rowFor('Settled busy')
+    expect(row?.querySelector('.lucide-undo-2')).not.toBeNull()
+    expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+    expect(menuIds(session)).toContain('settle')
   })
 })
 

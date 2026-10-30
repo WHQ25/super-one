@@ -41,7 +41,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   environmentOffline = false,
   onSwitchSession,
   onPinSession,
-  onHideSession,
+  onSettleSession,
   onRenameSession,
   onDeleteSession,
 }: PinnedSessionRowProps) {
@@ -80,7 +80,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   const menuItems = useSessionMenuItems(session, session.folderPath, {
     onSwitchSession,
     onPinSession,
-    onHideSession,
+    onSettleSession,
     onRenameSession,
     onDeleteSession,
   })
@@ -116,6 +116,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
             e.stopPropagation()
             onPinSession(session.sessionId, false, session.folderPath)
           }}
+          aria-label={t('sidebar.contextMenu.unpin')}
           className={PINNED_ROW_HOVER_ACTION}
         >
           <Pin className="size-3" />

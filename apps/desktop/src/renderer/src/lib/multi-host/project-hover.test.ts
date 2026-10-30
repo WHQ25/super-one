@@ -36,13 +36,13 @@ describe('project hover', () => {
     ])
   })
 
-  it('counts only a fully loaded list, and skips hidden sessions', () => {
+  it('counts only a fully loaded list, and skips hidden and settled sessions', () => {
     expect(knownSessionCount({ loaded: false, hasMore: false, sessions: [] })).toBeNull()
     expect(knownSessionCount({ loaded: true, hasMore: true, sessions: [{}, {}] })).toBeNull()
     expect(knownSessionCount({
       loaded: true,
       hasMore: false,
-      sessions: [{}, { isHidden: true }, {}],
+      sessions: [{}, { isHidden: true }, { isSettled: true }, {}],
     })).toBe(2)
   })
 

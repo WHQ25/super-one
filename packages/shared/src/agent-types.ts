@@ -3185,7 +3185,9 @@ export interface SessionHistoryEntry {
   isWorktree?: boolean // true if session was created in a git worktree
   worktreePath?: string // filesystem path to the worktree directory
   isPinned?: boolean   // true if session is pinned by user
-  isHidden?: boolean   // true if session is hidden by user
+  isHidden?: boolean   // true when a system row (collaboration child, scheduled shell) stays out of every list
+  /** Finished. Leaves the active list and the pin strip, and sits in that project's Settled group. */
+  isSettled?: boolean
   /**
    * The latest completion was marked unread. Omitted when the session is read,
    * or when the host has never stored a receipt (those rows stay read).
@@ -3215,6 +3217,12 @@ export interface SessionRemoteControllerInfo {
 export interface PinnedSessionEntry extends SessionHistoryEntry {
   folderPath: string
   folderName: string
+}
+
+/** One page of a project's settled sessions, plus how many that project has in total. */
+export interface SettledSessionPage {
+  sessions: PinnedSessionEntry[]
+  total: number
 }
 
 export interface LoadSessionMessagesResult {
@@ -4942,6 +4950,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_LIST_SESSIONS: 'environment:listSessions',
   /** Cross-project pinned sessions for one environment (sidebar Pinned section). */
   ENVIRONMENT_LIST_PINNED_SESSIONS: 'environment:listPinnedSessions',
+  /** Cross-project settled sessions for one environment (sidebar Settled section). */
+  ENVIRONMENT_LIST_SETTLED_SESSIONS: 'environment:listSettledSessions',
   /** Cross-project session title search for one environment (`@session`, plain `@`). */
   ENVIRONMENT_SEARCH_SESSIONS: 'environment:searchSessionsByTitle',
   /** Unsent composer drafts, stored in the environment that owns the project. */

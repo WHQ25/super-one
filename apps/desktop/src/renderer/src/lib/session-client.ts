@@ -37,7 +37,7 @@ export function renameSession(projectKey: string, sessionId: string, title: stri
   return window.environment.renameSession(connectionIdForProjectKey(projectKey), sessionId, title)
 }
 
-export function setSessionFlags(projectKey: string, sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }) {
+export function setSessionFlags(projectKey: string, sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }) {
   return window.environment.setSessionUiFlags(connectionIdForProjectKey(projectKey), sessionId, flags)
 }
 

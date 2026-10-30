@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWindowMiniModeStore } from '../stores/window-mini-mode'
 import {
   buildSessionMenuItems,
+  canSettleSession,
   resolveSessionIdForCopy,
   type SessionMenuHandlers,
 } from './session-menu-items'
@@ -41,7 +42,7 @@ const base: SessionHistoryEntry = {
 const handlers = {
   onRename: vi.fn(),
   onPin: vi.fn(),
-  onHide: vi.fn(),
+  onSettle: vi.fn(),
   onFork: vi.fn(),
   onDelete: vi.fn(),
   onAddToChat: vi.fn(),
@@ -94,7 +95,7 @@ describe('buildSessionMenuItems remote vs local', () => {
     expect(ids).toContain('mini')
     expect(ids).toContain('rename')
     expect(ids).toContain('pin')
-    expect(ids).toContain('hide')
+    expect(ids).toContain('settle')
     expect(ids).toContain('copyId')
     expect(ids).toContain('addToChat')
     expect(ids).toContain('copyDir')
@@ -144,12 +145,12 @@ describe('buildSessionMenuItems header vs sidebar shape', () => {
     return items.find((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item' && e.id === id)
   }
 
-  it('omits hide when no hide handler is given (chat header menu)', () => {
-    const { onHide: _, onAddToChat: __, ...rest } = handlers
+  it('omits settle when no settle handler is given (chat header menu)', () => {
+    const { onSettle: _, onAddToChat: __, ...rest } = handlers
     const ids = buildSessionMenuItems(base, '/Users/me/app', t, rest, { miniWindow: 'convert' })
       .filter((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item')
       .map((e) => e.id)
-    expect(ids).not.toContain('hide')
+    expect(ids).not.toContain('settle')
     expect(ids).not.toContain('addToChat')
     expect(ids).toContain('mini')
   })
@@ -231,6 +232,34 @@ describe('buildSessionMenuItems tags submenu', () => {
     const first = submenu?.items[0]
     if (first?.kind === 'item') first.onSelect()
     expect(writeText).toHaveBeenCalledWith('ui')
+  })
+})
+
+describe('settle is only offered for an idle session', () => {
+  function ids(session: SessionHistoryEntry, allowSettle?: boolean): string[] {
+    return buildSessionMenuItems(session, '/repo', t, handlers, allowSettle === undefined ? {} : { allowSettle })
+      .filter((entry): entry is Extract<typeof entry, { kind: 'item' }> => entry.kind === 'item')
+      .map((entry) => entry.id)
+  }
+
+  it('keeps settle when the caller does not say otherwise', () => {
+    expect(ids(base)).toContain('settle')
+    expect(canSettleSession(undefined)).toBe(true)
+    expect(canSettleSession('idle')).toBe(true)
+    expect(canSettleSession('error')).toBe(true)
+  })
+
+  it('hides settle while a turn, a background task, or a voice call is running', () => {
+    expect(ids(base, false)).not.toContain('settle')
+    expect(canSettleSession('streaming')).toBe(false)
+    expect(canSettleSession('background')).toBe(false)
+    expect(canSettleSession('idle', { realtimeVoice: true })).toBe(false)
+  })
+
+  it('keeps unsettle on a settled row even when that row looks busy', () => {
+    expect(ids({ ...base, isSettled: true }, false)).toContain('settle')
+    expect(canSettleSession('streaming', { isSettled: true })).toBe(true)
+    expect(canSettleSession('idle', { realtimeVoice: true, isSettled: true })).toBe(true)
   })
 })
 

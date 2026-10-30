@@ -31,7 +31,7 @@ const onSessionChanged = vi.fn(() => () => {})
 
 const noopCallbacks = {
   onPinSession: vi.fn(),
-  onHideSession: vi.fn(),
+  onSettleSession: vi.fn(),
   onRenameSession: vi.fn(),
   onDeleteSession: vi.fn(),
 }
@@ -66,7 +66,7 @@ describe('ProjectHistoryList — in-sidebar scrollable session history', () => {
     )
 
     await waitFor(() => expect(titleRows(container)).toContain('First chat'))
-    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 0 })
+    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 0, includeSettled: true })
     expect(getByPlaceholderText(/search/i)).toBeTruthy()
   })
 
@@ -100,7 +100,7 @@ describe('ProjectHistoryList — in-sidebar scrollable session history', () => {
     fireEvent.scroll(container.querySelector('.overscroll-contain')!)
 
     await waitFor(() => expect(titleRows(container)).toContain('Older session'))
-    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 30 })
+    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 30, includeSettled: true })
   })
 
   it('searches every session in the project, not just the loaded page', async () => {
@@ -125,7 +125,7 @@ describe('ProjectHistoryList — in-sidebar scrollable session history', () => {
     fireEvent.change(getByPlaceholderText(/search/i), { target: { value: 'ancient' } })
 
     await waitFor(() => expect(titleRows(container)).toContain('Ancient bugfix notes'))
-    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 0 })
+    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 0, includeSettled: true })
     expect(titleRows(container)).not.toContain('Recent chat')
   })
 

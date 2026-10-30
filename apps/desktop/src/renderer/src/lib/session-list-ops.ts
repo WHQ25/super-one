@@ -15,6 +15,8 @@ export type ListSessionsPageOptions = {
   offset: number
   /** Optional known project id (remote only; local path is authoritative). */
   projectId?: string | null
+  /** History and search include finished sessions. The active list leaves them out. */
+  includeSettled?: boolean
 }
 
 type EnvironmentSessionRow = {
@@ -25,6 +27,7 @@ type EnvironmentSessionRow = {
   messageCount: number
   isPinned?: boolean
   isHidden?: boolean
+  isSettled?: boolean
   worktreePath?: string | null
   isWorktree?: boolean
   parentSessionId?: string
@@ -34,6 +37,11 @@ type EnvironmentSessionRow = {
   acpAgentId?: string
   providerSessionId?: string
   tags?: string[]
+}
+
+/** Active sidebar rows. Hidden system rows and settled sessions stay out of a project list. */
+export function isListedSession(session: { isHidden?: boolean; isSettled?: boolean }): boolean {
+  return session.isHidden !== true && session.isSettled !== true
 }
 
 /** Normalize environment listSessions rows to SessionHistoryEntry. */
@@ -46,6 +54,7 @@ export function mapEnvironmentSessionRow(row: EnvironmentSessionRow): SessionHis
     messageCount: row.messageCount ?? 0,
     isPinned: row.isPinned,
     isHidden: row.isHidden,
+    ...(row.isSettled ? { isSettled: true } : {}),
     worktreePath: row.worktreePath ?? undefined,
     isWorktree: row.isWorktree ?? Boolean(row.worktreePath),
     ...(row.parentSessionId ? { parentSessionId: row.parentSessionId } : {}),
@@ -112,6 +121,7 @@ export async function listSessionsPage(
   const rows = await window.environment.listSessions(resolved.connectionId, resolved.projectId, {
     limit: options.limit,
     offset: options.offset,
+    ...(options.includeSettled ? { includeSettled: true } : {}),
   })
   return rows.map(mapEnvironmentSessionRow)
 }
@@ -122,7 +132,7 @@ export async function listSessionsPage(
  */
 export async function listAllSessions(
   projectKey: string,
-  options?: { projectId?: string | null; pageSize?: number },
+  options?: { projectId?: string | null; pageSize?: number; includeSettled?: boolean },
 ): Promise<SessionHistoryEntry[]> {
   const pageSize = options?.pageSize ?? 100
   const all: SessionHistoryEntry[] = []
@@ -132,6 +142,7 @@ export async function listAllSessions(
       limit: pageSize,
       offset,
       projectId: options?.projectId,
+      ...(options?.includeSettled ? { includeSettled: true } : {}),
     })
     all.push(...page)
     if (page.length < pageSize) break

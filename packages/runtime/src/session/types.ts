@@ -71,6 +71,8 @@ export interface NodeSessionRecord {
   updatedAt: number
   isPinned: boolean
   isHidden: boolean
+  /** Finished. Omitted or false for an active session. */
+  isSettled?: boolean
   /** Latest completion is unread. Omitted by hosts that do not store a receipt. */
   unread?: boolean
   /**

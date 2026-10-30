@@ -29,7 +29,7 @@ export function ProjectHistoryList({
   onClose,
   onSwitchSession,
   onPinSession,
-  onHideSession,
+  onSettleSession,
   onRenameSession,
   onDeleteSession,
 }: ProjectHistoryListProps) {
@@ -55,6 +55,7 @@ export function ProjectHistoryList({
         const page = await listSessionsPage(folderPath, {
           limit: HISTORY_PAGE_SIZE,
           offset: 0,
+          includeSettled: true,
         })
         if (cancelled) return
         setBrowseSessions(page)
@@ -75,7 +76,7 @@ export function ProjectHistoryList({
     void (async () => {
       try {
         const { listAllSessions } = await import('@/lib/session-list-ops')
-        const all = await listAllSessions(folderPath, { pageSize: HISTORY_PAGE_SIZE })
+        const all = await listAllSessions(folderPath, { pageSize: HISTORY_PAGE_SIZE, includeSettled: true })
         if (!cancelled) setAllSessions(all)
       } catch {
         if (!cancelled) setAllSessions([])
@@ -99,6 +100,7 @@ export function ProjectHistoryList({
       const page = await listSessionsPage(folderPath, {
         limit: HISTORY_PAGE_SIZE,
         offset: pageRef.current * HISTORY_PAGE_SIZE,
+        includeSettled: true,
       })
       setBrowseSessions((prev) => dedupeById([...prev, ...page]))
       setBrowseHasMore(sessionsPageHasMore(page, HISTORY_PAGE_SIZE))
@@ -185,7 +187,7 @@ export function ProjectHistoryList({
                     animateTitle={false}
                     onSwitchSession={onSwitchSession}
                     onPinSession={onPinSession}
-                    onHideSession={onHideSession}
+                    onSettleSession={onSettleSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
                   />

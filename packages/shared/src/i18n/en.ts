@@ -347,6 +347,7 @@ export type Messages = {
       files: string
     }
     pinned: string
+    settled: string
     drafts: {
       title: string
       untitled: string
@@ -579,6 +580,8 @@ export type Messages = {
       unpin: string
       hide: string
       unhide: string
+      settle: string
+      unsettle: string
       markAsRead: string
       markAsUnread: string
       tags: string
@@ -2873,6 +2876,12 @@ export type Messages = {
         hidingSessions: string
         sessionsHidden: string
         hideSessions: string
+        settlingSessions: string
+        sessionsSettled: string
+        settleSessions: string
+        unsettlingSessions: string
+        sessionsUnsettled: string
+        unsettleSessions: string
         unhidingSessions: string
         sessionsUnhidden: string
         unhideSessions: string
@@ -5005,6 +5014,7 @@ export const en: Messages = {
       files: 'Files',
     },
     pinned: 'Pinned',
+    settled: 'Settled',
     drafts: {
       title: 'Drafts',
       untitled: 'Untitled Draft',
@@ -5233,6 +5243,8 @@ export const en: Messages = {
       unpin: 'Unpin Session',
       hide: 'Hide Session',
       unhide: 'Unhide Session',
+      settle: 'Settle',
+      unsettle: 'Unsettle',
       markAsRead: 'Mark as Read',
       markAsUnread: 'Mark as Unread',
       tags: 'Tags',
@@ -7592,6 +7604,12 @@ export const en: Messages = {
         hidingSessions: 'Hiding sessions…',
         sessionsHidden: 'Sessions Hidden',
         hideSessions: 'Hide Sessions',
+        settlingSessions: 'Settling sessions…',
+        sessionsSettled: 'Sessions Settled',
+        settleSessions: 'Settle Sessions',
+        unsettlingSessions: 'Unsettling sessions…',
+        sessionsUnsettled: 'Sessions Unsettled',
+        unsettleSessions: 'Unsettle Sessions',
         unhidingSessions: 'Unhiding sessions…',
         sessionsUnhidden: 'Sessions Unhidden',
         unhideSessions: 'Unhide Sessions',

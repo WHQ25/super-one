@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { settledPanelId } from '@/components/sidebar/sidebar-section-collapse'
 import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
 
 describe('AppSidebar interactions', () => {
@@ -298,7 +299,7 @@ describe('AppSidebar interactions', () => {
     expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull()
   })
 
-  it('hides a normal session when clicking hide icon', async () => {
+  it('settles a session into the settled group', async () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
@@ -312,10 +313,15 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(buttons[0] as HTMLButtonElement)
 
     await waitFor(() => {
-      expect(mockEnvironment.setSessionUiFlags).toHaveBeenCalledWith('local', 'sid-1', { isHidden: true })
+      expect(mockEnvironment.setSessionUiFlags).toHaveBeenCalledWith('local', 'sid-1', { isSettled: true })
     })
+    expect(mockEnvironment.setSessionRead).toHaveBeenCalledWith('local', 'sid-1', true)
     await waitFor(() => {
-      expect(screen.queryByText('Old Session')).toBeNull()
+      const panel = document.getElementById(settledPanelId('/project-a'))
+      const title = screen.getByText('Old Session')
+      expect(panel).toContainElement(title)
+      expect(title.closest('.group\\/session')).not.toBeNull()
+      expect(title.closest('.group\\/pin')).toBeNull()
     })
   })
 
@@ -339,13 +345,13 @@ describe('AppSidebar interactions', () => {
     const pinRow = screen.getByText('Pinned Session').closest('.group\\/pin')
     expect(pinRow?.textContent).not.toContain('project-a')
     expect(screen.getByText('Pinned Session').closest('[data-slot="hover-card-trigger"]')).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Unpin Session' }))
+    fireEvent.click(pinRow?.querySelector('button') as HTMLButtonElement)
 
     await waitFor(() => {
       expect(mockEnvironment.setSessionUiFlags).toHaveBeenCalledWith('local', 'sid-pinned', { isPinned: false })
     })
     expect(screen.getByRole('button', { name: 'Rename Session' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Hide Session' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settle' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
   })
 
@@ -519,17 +525,17 @@ describe('AppSidebar interactions', () => {
       expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
         'local',
         '/project-a',
-        { limit: 13, offset: 0 },
+        { limit: 100, offset: 0 },
       )
     })
     expect(screen.queryByText('New session')).toBeNull()
   })
 
-  it('loads the page after the overflow root so its child group is complete', async () => {
-    const roots = Array.from({ length: 13 }, (_, index) => ({
+  it('keeps paging until a short page so a child past the first page is included', async () => {
+    const roots = Array.from({ length: 100 }, (_, index) => ({
       sessionId: `parent-${index}`,
       title: `Parent ${index}`,
-      lastActiveAt: new Date(2026, 3, 7, 13 - index).toISOString(),
+      lastActiveAt: new Date(2026, 3, 7, 0, 0, 100 - index).toISOString(),
       messageCount: 1,
     }))
     sessionFixtures.byFolder = {
@@ -537,7 +543,7 @@ describe('AppSidebar interactions', () => {
         ...roots,
         {
           sessionId: 'boundary-child',
-          parentSessionId: 'parent-12',
+          parentSessionId: 'parent-99',
           title: 'Boundary child',
           lastActiveAt: '2026-04-07T00:00:00.000Z',
           messageCount: 1,
@@ -552,9 +558,12 @@ describe('AppSidebar interactions', () => {
       expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
         'local',
         '/project-a',
-        { limit: 13, offset: 13 },
+        { limit: 100, offset: 100 },
       )
     })
+    fireEvent.click(screen.getByText('project-a'))
+    expect(await screen.findByText('Parent 99')).toBeInTheDocument()
+    expect(screen.queryByText('Show More')).toBeNull()
   })
 
   it('does not spin the title while a local session opens', async () => {
@@ -682,7 +691,7 @@ describe('AppSidebar interactions', () => {
     expect(afterA.compareDocumentPosition(afterB) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   })
 
-  it('keeps a long-running session above the initial six-session cutoff', async () => {
+  it('shows a running session together with every other non-settled session', async () => {
     sessionFixtures.byFolder = {
       '/project-a': [
         ...Array.from({ length: 6 }, (_, index) => ({
@@ -724,11 +733,11 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(screen.getByText('project-a'))
     await screen.findByText('Long running session')
 
-    expect(screen.queryByText('Recent session 5')).toBeNull()
-    expect(screen.getByText('Show More')).toBeInTheDocument()
+    expect(screen.getByText('Recent session 5')).toBeInTheDocument()
+    expect(screen.queryByText('Show More')).toBeNull()
   })
 
-  it('adds six sessions per Show More until pagination is exhausted and resets on collapse', async () => {
+  it('shows every non-settled session and hides them again when the project collapses', async () => {
     chatState.activeProject = null
     sessionFixtures.byFolder = {
       '/project-a': Array.from({ length: 40 }, (_, index) => ({
@@ -750,27 +759,18 @@ describe('AppSidebar interactions', () => {
     render(<AppSidebar />)
 
     fireEvent.click(screen.getByText('project-a'))
-    await screen.findByText('Paged session 5')
-    expect(screen.queryByText('Paged session 6')).toBeNull()
-
-    for (const lastVisibleIndex of [11, 17, 23, 29, 35, 39]) {
-      fireEvent.click(screen.getByText('Show More'))
-      await screen.findByText(`Paged session ${lastVisibleIndex}`)
-    }
-
-    await waitFor(() => {
-      expect(screen.queryByText('Show More')).toBeNull()
-    })
-    expect(screen.queryByText('Show Less')).toBeNull()
+    await screen.findByText('Paged session 0')
+    expect(screen.getByText('Paged session 39')).toBeInTheDocument()
+    expect(screen.queryByText('Show More')).toBeNull()
     expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
       'local',
       '/project-a',
-      { limit: 13, offset: 26 },
+      { limit: 100, offset: 0 },
     )
-    expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
+    expect(mockEnvironment.listSessions).not.toHaveBeenCalledWith(
       'local',
       '/project-a',
-      { limit: 13, offset: 39 },
+      { limit: 100, offset: 100 },
     )
 
     fireEvent.click(screen.getByText('project-a'))
@@ -778,8 +778,8 @@ describe('AppSidebar interactions', () => {
       expect(screen.queryByText('Paged session 0')).toBeNull()
     })
     fireEvent.click(screen.getByText('project-a'))
-    await screen.findByText('Paged session 5')
-    expect(screen.queryByText('Paged session 6')).toBeNull()
+    expect(await screen.findByText('Paged session 39')).toBeInTheDocument()
+    expect(screen.queryByText('Show More')).toBeNull()
   })
 
   it('shows every running session when their count exceeds the initial cutoff', async () => {
@@ -827,10 +827,8 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(screen.getByText('project-a'))
     await Promise.all(runningSessions.map((session) => screen.findByText(session.title)))
 
-    expect(screen.queryByText('Normal fill session 0')).toBeNull()
-
-    fireEvent.click(screen.getByText('Show More'))
     await Promise.all(normalSessions.map((session) => screen.findByText(session.title)))
+    expect(screen.queryByText('Show More')).toBeNull()
   })
 
   it('shows an unseen session while collapsed and prioritizes it when expanded', async () => {
@@ -868,7 +866,7 @@ describe('AppSidebar interactions', () => {
     const firstNormal = await screen.findByText('Normal session 0')
 
     expect(unseen.compareDocumentPosition(firstNormal) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
-    expect(screen.queryByText('Normal session 5')).toBeNull()
+    expect(screen.getByText('Normal session 5')).toBeInTheDocument()
   })
 
   it('keeps the foreground idle session visible without promoting it', async () => {
@@ -1023,7 +1021,7 @@ describe('AppSidebar interactions', () => {
     await screen.findByText('Pending first reply')
   })
 
-  it('does not prepend idle sessions from _sessions that are beyond the DB pagination limit', async () => {
+  it('does not invent a row for an idle session the loaded list did not return', async () => {
     sessionFixtures.byFolder = {
       '/project-a': Array.from({ length: 10 }, (_, i) => ({
         sessionId: `sid-${i}`,

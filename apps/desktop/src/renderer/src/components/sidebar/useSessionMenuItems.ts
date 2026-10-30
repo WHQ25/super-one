@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { HarnessId, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
-import { buildSessionMenuItems } from '@/lib/session-menu-items'
+import { buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
 import { setSessionRead } from '@/lib/session-client'
 import { useChatStore } from '@/stores/chat-store'
 import { setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
 
 export interface SessionMenuCallbacks {
   /**
@@ -17,7 +18,7 @@ export interface SessionMenuCallbacks {
    */
   onSwitchSession: (folderPath: string, sessionId: string, options?: { revealProject?: boolean }) => void
   onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
-  onHideSession: (sessionId: string, hidden: boolean, folderPath: string) => void
+  onSettleSession: (sessionId: string, settled: boolean, folderPath: string) => void
   onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void
   onDeleteSession: (target: { sessionId: string; title: string; folderPath: string; provider: HarnessId }) => void
 }
@@ -29,6 +30,11 @@ export function useSessionMenuItems(
 ) {
   const { t } = useTranslation()
   const unread = useChatStore((s) => s.projectSessions[folderPath]?.unseenCompletedSessions.has(session.sessionId) ?? false)
+  const status = useChatStore((s) => s.projectSessions[folderPath]?._sessions?.[session.sessionId]?.status)
+  const realtimeVoice = useRealtimeCallStore((s) => (
+    session.provider === 'codex' && s.sessionId === session.sessionId && s.state !== 'idle'
+  ))
+  const allowSettle = canSettleSession(status, { realtimeVoice, isSettled: session.isSettled === true })
 
   const handleMarkRead = useCallback(() => {
     useChatStore.setState((s) => setUnseenCompleted(s, folderPath, session.sessionId, !unread))
@@ -60,7 +66,7 @@ export function useSessionMenuItems(
     onRename: () => callbacks.onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath }),
     onPin: () => callbacks.onPinSession(session.sessionId, !session.isPinned, folderPath),
     onMarkRead: handleMarkRead,
-    onHide: () => callbacks.onHideSession(session.sessionId, !session.isHidden, folderPath),
+    onSettle: () => callbacks.onSettleSession(session.sessionId, !session.isSettled, folderPath),
     onFork: handleForkSession,
     onDelete: () => callbacks.onDeleteSession({
       sessionId: session.sessionId,
@@ -72,5 +78,5 @@ export function useSessionMenuItems(
       const title = (session.title || 'Untitled').trim()
       chatInputAPI.insertMention?.('session', session.sessionId, title)
     },
-  }, { includeTags: false, unread })
+  }, { includeTags: false, unread, allowSettle })
 }

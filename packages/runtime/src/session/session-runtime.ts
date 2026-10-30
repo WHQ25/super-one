@@ -1914,20 +1914,51 @@ export class SessionRuntime {
 
   setUiFlags(
     sessionId: string,
-    flags: { isPinned?: boolean; isHidden?: boolean },
+    flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
   ): NodeSessionRecord {
     const session = this.live.get(sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     if (typeof flags.isPinned === 'boolean') session.isPinned = flags.isPinned
     if (typeof flags.isHidden === 'boolean') session.isHidden = flags.isHidden
+    if (typeof flags.isSettled === 'boolean') session.isSettled = flags.isSettled
     session.updatedAt = Date.now()
     this.persist(session)
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.uiFlags,
-      payload: { isPinned: session.isPinned, isHidden: session.isHidden },
+      payload: { isPinned: session.isPinned, isHidden: session.isHidden, isSettled: session.isSettled === true },
     })
+    // Finished: abort the turn and drop the long-lived harness. The row stays
+    // openable; this is not session.close. Spawn children follow the parent.
+    // The migration does not come through here, and one level matches the
+    // product rule that a spawn child does not launch its own children.
+    if (flags.isSettled === true) {
+      this.stopSettledCompute(sessionId)
+      for (const childId of this.store.spawnChildSessionIds?.(sessionId) ?? []) {
+        if (childId === sessionId || !this.live.has(childId)) continue
+        const child = this.live.get(childId)
+        if (!child || child.isSettled === true) continue
+        this.setUiFlags(childId, { isSettled: true })
+      }
+    }
     return this.clone(session)
+  }
+
+  /** Stop a settled session's in-flight turn and harness process without closing it. */
+  private stopSettledCompute(sessionId: string): void {
+    const session = this.live.get(sessionId)
+    if (!session || session.closed) return
+    const aborts = this.aborts.get(sessionId)
+    for (const abort of aborts ?? []) abort.abort()
+    if (!aborts?.size) void Promise.resolve(this.turnRunner.interruptSession?.(sessionId)).catch(() => {})
+    this.rejectPendingPermission(session)
+    this.cancelHostActionsForSession(sessionId, 'settled')
+    if (session.status === 'streaming') {
+      session.status = 'interrupted'
+      session.updatedAt = Date.now()
+      this.persist(session)
+    }
+    void Promise.resolve(this.turnRunner.disposeSession?.(sessionId)).catch(() => {})
   }
 
   interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void {

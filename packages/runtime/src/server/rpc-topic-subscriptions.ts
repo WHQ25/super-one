@@ -173,7 +173,7 @@ function snapshotTopic(topic: TopicRef, ctx: RpcContext): unknown {
     sessions: ctx.sessions.list().map(session => ({
       sessionId: session.sessionId, projectId: session.projectId, title: session.title, status: session.status,
       harnessId: session.harnessId, providerId: session.providerId, updatedAt: session.updatedAt,
-      isPinned: session.isPinned, isHidden: session.isHidden,
+      isPinned: session.isPinned, isHidden: session.isHidden, isSettled: session.isSettled === true,
     })),
     projects: ctx.projects?.list() ?? [],
   }

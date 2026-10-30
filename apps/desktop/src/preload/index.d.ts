@@ -14,7 +14,7 @@ import type { ComputerUseDisplayInfo, ComputerUseViewfinderClaim, ComputerUseVie
 import type { AttachmentOriginalStatus, OpenCodeResources, StageAttachmentOriginalRequest } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
 import type { CodexPluginCategoryResult, CodexPluginDetailResult, CodexPluginDirectoryResult, CodexPluginInstallTarget, CodexPluginShelfListResult } from '@superone/shared/codex-plugin-shelf'
-import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, ControllerPairingEvent, NodeHostController, NodePairingEvent, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexConfigRequirements, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexResources, CodexSetAuthRequest, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, McpToolPermission, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, ScheduledSend, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, ControllerPairingEvent, NodeHostController, NodePairingEvent, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexConfigRequirements, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexResources, CodexSetAuthRequest, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, McpToolPermission, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, ScheduledSend, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SettledSessionPage, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppHostLogEvent, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
@@ -1078,7 +1078,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   listSessions(
     connectionId: string,
     projectId: string,
-    options: { limit: number; offset: number },
+    options: { limit: number; offset: number; includeSettled?: boolean },
   ): Promise<
     Array<{
       sessionId: string
@@ -1088,6 +1088,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       messageCount: number
       isPinned?: boolean
       isHidden?: boolean
+      isSettled?: boolean
       worktreePath?: string | null
       isWorktree?: boolean
       parentSessionId?: string
@@ -1105,6 +1106,15 @@ export interface EnvironmentAPI extends MediaComposerAPI {
    * the renderer's project key (`remote:<connectionId>:<path>` for remotes).
    */
   listPinnedSessions(connectionId: string): Promise<PinnedSessionEntry[]>
+  /**
+   * One page of settled sessions for one project on one environment.
+   * `total` is that project's settled count, not the length of this page.
+   * `folderPath` on each row is the renderer project key.
+   */
+  listSettledSessions(
+    connectionId: string,
+    options?: { projectPath?: string; limit?: number; offset?: number },
+  ): Promise<SettledSessionPage>
   /**
    * Session titles on one environment. Empty `query` is the recent list.
    * `projectPaths` are host-local folder paths; omit them to span the host.
@@ -1213,7 +1223,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   setSessionUiFlags(
     connectionId: string,
     sessionId: string,
-    flags: { isPinned?: boolean; isHidden?: boolean },
+    flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
   ): Promise<unknown>
   /** Fork a session onto a new worktree, or beside it in the same directory. */
   forkSession(

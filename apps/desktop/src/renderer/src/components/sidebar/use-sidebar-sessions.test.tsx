@@ -21,30 +21,65 @@ function setup() {
   }))
 }
 
-it('restarts an invalidated show-more load at offset zero without duplicating or skipping rows', async () => {
-  const rows = Array.from({ length: 60 }, (_, index) => ({
+it('loads every non-settled page and restarts an invalidated load at offset zero', async () => {
+  const rows = Array.from({ length: 150 }, (_, index) => ({
     sessionId: `root-${index}`, title: `Session ${index}`,
     lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1,
   }))
   sessionFixtures.byFolder[FOLDER] = rows
   const { result } = setup()
   await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
-  expect(result.current.folderSessions[FOLDER]).toHaveLength(26)
+  expect(result.current.folderSessions[FOLDER]).toHaveLength(150)
+  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([0, 100])
 
   const stale = deferred<typeof rows>()
   mockEnvironment.listSessions.mockImplementationOnce(() => stale.promise)
-  let more!: Promise<typeof rows>
-  await act(async () => { more = result.current.loadMoreFolderSessions(FOLDER, 40) })
-  await waitFor(() => expect(mockEnvironment.listSessions).toHaveBeenLastCalledWith('local', FOLDER, { limit: 13, offset: 26 }))
-  const child = { ...rows[0], sessionId: 'child', title: 'Child', parentSessionId: rows[0].sessionId }
-  sessionFixtures.byFolder[FOLDER] = [rows[0], child, ...rows.slice(1)]
-  await act(async () => { result.current.refreshFolderSessions(FOLDER); result.current.refreshFolderSessions(FOLDER) })
-  await act(async () => { stale.resolve(rows.slice(26, 39)); await more })
+  let refresh!: Promise<unknown>
+  await act(async () => { refresh = result.current.loadFolderSessions(FOLDER, 'refresh') })
+  await waitFor(() => expect(mockEnvironment.listSessions).toHaveBeenLastCalledWith('local', FOLDER, { limit: 100, offset: 0 }))
+  const extra = { ...rows[0]!, sessionId: 'extra', title: 'Extra' }
+  sessionFixtures.byFolder[FOLDER] = [extra, ...rows]
+  await act(async () => {
+    result.current.refreshFolderSessions(FOLDER)
+    result.current.refreshFolderSessions(FOLDER)
+  })
+  await act(async () => { stale.resolve(rows.slice(0, 100)); await refresh })
 
-  const loaded = result.current.folderSessions[FOLDER]
-  expect(loaded).toMatchObject(sessionFixtures.byFolder[FOLDER].slice(0, 52))
+  const loaded = result.current.folderSessions[FOLDER]!
+  expect(loaded.map((row) => row.sessionId)).toEqual(sessionFixtures.byFolder[FOLDER]!.map((row) => row.sessionId))
   expect(new Set(loaded.map((row) => row.sessionId)).size).toBe(loaded.length)
-  expect(mockEnvironment.listSessions.mock.calls.map(([, , options]) => options?.offset)).toEqual([0, 13, 26, 0, 13, 26, 39])
+  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([0, 100, 0, 0, 100])
+})
+
+it('pages settled sessions and appends the next page when asked', async () => {
+  sessionFixtures.byFolder[FOLDER] = [
+    { sessionId: 'live', title: 'Live', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1 },
+    ...Array.from({ length: 25 }, (_, index) => ({
+      sessionId: `set-${index}`,
+      title: `Settled ${index}`,
+      lastActiveAt: '2026-03-01T00:00:00.000Z',
+      messageCount: 1,
+      isSettled: true,
+    })),
+  ]
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  await waitFor(() => expect(result.current.settledSessions).toHaveLength(20))
+  expect(mockEnvironment.listSettledSessions).toHaveBeenCalledWith('local', {
+    projectPath: FOLDER, limit: 20, offset: 0,
+  })
+  expect(result.current.settledCounts[FOLDER]).toBe(25)
+  expect(result.current.settledHasMore[FOLDER]).toBe(true)
+
+  await act(async () => { await result.current.loadMoreSettledSessions(FOLDER) })
+  expect(result.current.settledSessions.map((row) => row.sessionId)).toEqual(
+    Array.from({ length: 25 }, (_, index) => `set-${index}`),
+  )
+  expect(result.current.settledHasMore[FOLDER]).toBeUndefined()
+  expect(result.current.settledCounts[FOLDER]).toBe(25)
+  expect(mockEnvironment.listSettledSessions).toHaveBeenCalledWith('local', {
+    projectPath: FOLDER, limit: 20, offset: 20,
+  })
 })
 
 it('clears the in-flight request after a failed load so a later refresh can recover', async () => {
@@ -66,7 +101,7 @@ it('refreshes a phone-created voice session in another cached project without se
   mockEnvironment.listSessions.mockClear()
   await act(async () => { changed(FOLDER) })
   await waitFor(() => expect(result.current.folderSessions[FOLDER][0]).toMatchObject(voice))
-  expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, { limit: 13, offset: 0 })
+  expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, { limit: 100, offset: 0 })
 })
 
 it("re-reads only the paired machine's project its list notice names", async () => {
@@ -86,7 +121,7 @@ it("re-reads only the paired machine's project its list notice names", async () 
   sessionFixtures.byFolder.p1 = [{ ...sessionFixtures.byFolder.p1[0], title: 'Renamed on B' }]
   await act(async () => { changed(REMOTE) })
   await waitFor(() => expect(result.current.folderSessions[REMOTE][0]).toMatchObject({ sessionId: 'b-own', title: 'Renamed on B' }))
-  expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: 13, offset: 0 }]])
+  expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: 100, offset: 0 }]])
 })
 
 it('keeps a cached folder quiet while a refresh is in flight', async () => {

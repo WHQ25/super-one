@@ -51,6 +51,7 @@ A suggestion is a card the user may launch whenever they like. Launching it is a
 | 3 | Matching local Default Profile launches follow current user settings without confirmation. The host reuses saved Profile consent when it matches, and asks for other launches. Each approved launch returns its `launchId`. |
 | 4 | Call `session_collab_start({ launchId, task })` for every approved launch back-to-back. `task` is the full Markdown brief. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling and delivers `task`. Link: host binds the peer and wakes it; a `task` becomes the opening mailbox message. A retry with the same `launchId` is idempotent and keeps the first `task`. |
 | 5 | Spawn/link only: exchange durable Markdown handoffs with `session_collab_send({ to: sessionId })` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. Handoff has no step 5. |
+| 6 | When a spawn child's task is done and you will not message it again, settle it (see [Settle a finished child](#settle-a-finished-child)). |
 
 ### Link example
 
@@ -288,6 +289,16 @@ A `spawn` launch may run on another connected machine: `session_collab_list_agen
 ## Permission and sandbox
 
 The agent's `defaultConfig` (`session_collab_list_agents({ id })`) carries the user's default `permissionMode` and `sandboxMode`. Nobody watches child or handoff sessions: a mode that asks before acting waits on the user, who is notified. Mode names differ per harness: Claude-family `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`; Codex `default`, `auto`, `bypassPermissions`; ACP `default`, `plan`, `auto`, `bypassPermissions`; Cursor `agent`, `plan`, `bypassPermissions`; DeepSeek `plan`, `default`, `bypassPermissions`. The approval dialog shows the mode, and the user can change it there.
+
+## Settle a finished child
+
+When a spawn child's task is done and you will not send it another turn, settle it before you end yours:
+
+```json
+session_cleanup({ action: "settle", sessionIds: ["<child session id>"] })
+```
+
+Settle stops that child's running agent and moves it out of the active list. Settling the parent does the same for every spawn child, so leave the parent active while any child still needs another turn. The transcript stays, and the user can still open the session. Do this every time you finish with a spawn child; leaving it running keeps its process and model calls going. Do not settle a child you still plan to message, a handoff session (it is not yours to retire), or a link peer you did not launch for this task. `action: "unsettle"` puts that session back on the active list, leaves its children as they are, and does not restart its agent.
 
 ## Mailbox
 

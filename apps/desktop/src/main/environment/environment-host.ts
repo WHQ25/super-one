@@ -106,7 +106,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, updateProject, getProjectId, getProjectPathById } from '../recent-folders'
-import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions, searchSessionsByTitle as searchLocalSessionsByTitle } from '../db-sessions'
+import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions, listSettledSessions as listLocalSettledSessions, searchSessionsByTitle as searchLocalSessionsByTitle } from '../db-sessions'
 import type {
   ClonedProject,
   DraftListEntry,
@@ -116,7 +116,7 @@ import type {
   DraftUpsertRequest,
   ProjectSnapshot,
 } from '@superone/shared/environment'
-import type { ChatMessage, PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { ChatMessage, PinnedSessionEntry, SessionHistoryEntry, SettledSessionPage } from '@superone/shared/agent-types'
 import { SESSION_CALL_METHODS, SESSION_CALL_READS, type SessionCallMethod, type SessionCallMethods, type SessionForkRequestInput, type SessionPermissionAnswer, type SessionPlanAnswer, type SessionQuestionAnswer, type SessionSendRequest, type SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { getScheduledSend, getScheduledSendRemoteTarget } from '../db-scheduled-sends'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
@@ -224,6 +224,24 @@ interface RemoteSessionOpen extends RemoteSessionTarget {
 function isStaleFoldRead(error: unknown): boolean {
   const code = (error as { code?: string } | null)?.code
   return code === 'failed_precondition' || code === 'not_found'
+}
+
+/**
+ * `session.listSettled` grew a total. A node that still returns the row array
+ * has no separate count, so the page length stands in for it.
+ */
+function settledPageFromRpc(raw: unknown): { sessions: unknown[]; total: number } {
+  if (Array.isArray(raw)) return { sessions: raw, total: raw.length }
+  if (raw && typeof raw === 'object') {
+    const record = raw as { sessions?: unknown; total?: unknown }
+    if (Array.isArray(record.sessions)) {
+      const total = typeof record.total === 'number' && Number.isFinite(record.total)
+        ? record.total
+        : record.sessions.length
+      return { sessions: record.sessions, total }
+    }
+  }
+  return { sessions: [], total: 0 }
 }
 
 export class EnvironmentHost {
@@ -513,7 +531,7 @@ export class EnvironmentHost {
   async listSessions(
     connectionId: string,
     projectId: string,
-    options: { limit: number; offset: number },
+    options: { limit: number; offset: number; includeSettled?: boolean },
   ): Promise<SessionHistoryEntry[]> {
     if (!projectId) {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
@@ -540,7 +558,9 @@ export class EnvironmentHost {
       // The window's own rows, not the local protocol's session records: those
       // are the phone/controller shape and carry no branch, worktree, spawn
       // parent or remote controller, and name the harness `harnessId`.
-      return listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset)
+      return options.includeSettled
+        ? listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset, { includeSettled: true })
+        : listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset)
     }
 
     const { gateway, environmentId } = this.resolveRemote(connectionId)
@@ -590,6 +610,44 @@ export class EnvironmentHost {
       })
       .filter((r) => r.sessionId && r.folderPath)
       .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+  }
+
+  /**
+   * Settled sessions for one environment, cross-project. Same host routing as
+   * pins. A node too old to know `session.listSettled` answers `not_found`.
+   * `total` is the project's full settled count. An older node that still
+   * returns a bare array reports that page's length, which undercounts a full page.
+   */
+  async listSettledSessions(
+    connectionId: string,
+    options?: { projectPath?: string; limit?: number; offset?: number },
+  ): Promise<SettledSessionPage> {
+    if (connectionId === 'local') return listLocalSettledSessions(options)
+
+    const empty: SettledSessionPage = { sessions: [], total: 0 }
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (typeof gateway.sessions.listSettled !== 'function') return empty
+    let raw: unknown
+    try {
+      raw = await gateway.sessions.listSettled(environmentId, options)
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'not_found') return empty
+      throw err
+    }
+    const page = settledPageFromRpc(raw)
+    const sessions = page.sessions
+      .map((row) => {
+        const r = (row ?? {}) as { projectPath?: string; projectName?: string }
+        const projectPath = typeof r.projectPath === 'string' ? r.projectPath : ''
+        return {
+          ...this.mapRemoteSessionEntry(row),
+          folderPath: projectPath ? remoteProjectKey(connectionId, projectPath) : '',
+          folderName: (typeof r.projectName === 'string' && r.projectName) || basename(projectPath),
+        }
+      })
+      .filter((r) => r.sessionId && r.folderPath)
+      .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+    return { sessions, total: page.total }
   }
 
   /**
@@ -2232,7 +2290,7 @@ export class EnvironmentHost {
   async setSessionUiFlags(
     connectionId: string,
     sessionId: string,
-    flags: { isPinned?: boolean; isHidden?: boolean },
+    flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
   ): Promise<unknown> {
     const { gateway } = this.resolveSession(connectionId)
     return gateway.setSessionUiFlags(sessionId, flags)

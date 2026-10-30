@@ -1436,6 +1436,16 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         })
         return Array.isArray(rows) ? rows : []
       },
+      listSettled: async (environmentId: string, options) => {
+        this.assertEnv(environmentId)
+        // Pass the payload through. A current node returns `{ sessions, total }`;
+        // an older one returns the row array. Dropping a non-array would hide the total.
+        return this.client.rpc<unknown[] | { sessions: unknown[]; total: number }>('session.listSettled', {
+          ...(options?.limit != null ? { limit: options.limit } : {}),
+          ...(options?.offset != null ? { offset: options.offset } : {}),
+          ...(options?.projectPath ? { projectPath: options.projectPath } : {}),
+        })
+      },
       searchTitle: async (environmentId, query, options) => {
         this.assertEnv(environmentId)
         const rows = await this.client.rpc<unknown[]>('session.searchTitle', {
@@ -1577,7 +1587,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   async setSessionUiFlags(
     sessionId: string,
-    flags: { isPinned?: boolean; isHidden?: boolean },
+    flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
   ): Promise<unknown> {
     return this.client.rpc('session.setUiFlags', { sessionId, ...flags })
   }

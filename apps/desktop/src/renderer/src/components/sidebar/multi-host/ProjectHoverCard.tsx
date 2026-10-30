@@ -4,7 +4,7 @@ import { Folder, FolderOpen, GitBranch, Loader2, MessageSquare, Pencil } from 'l
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import { listAllSessions } from '@/lib/session-list-ops'
+import { isListedSession, listAllSessions } from '@/lib/session-list-ops'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import {
   projectRepoLink,
@@ -58,7 +58,7 @@ function useSessionTotal(paths: readonly string[], known: number | null, offline
       const cached = sessionTotals.get(path)
       if (cached != null) return cached
       const rows = await listAllSessions(path)
-      const count = rows.reduce((sum, session) => sum + (session.isHidden ? 0 : 1), 0)
+      const count = rows.reduce((sum, session) => sum + (isListedSession(session) ? 1 : 0), 0)
       sessionTotals.set(path, count)
       return count
     })).then((counts) => {

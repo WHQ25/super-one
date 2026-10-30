@@ -301,6 +301,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.get': (payload, ctx) => handleSessionGet(payload, ctx),
   'session.list': (payload, ctx) => handleSessionList(payload, ctx),
   'session.listPinned': (payload, ctx) => handleSessionListPinned(payload, ctx),
+  'session.listSettled': (payload, ctx) => handleSessionListSettled(payload, ctx),
   'session.searchTitle': (payload, ctx) => handleSessionSearchTitle(payload, ctx),
   'session.acquireControl': (payload, ctx) => handleSessionAcquireControl(payload, ctx),
   'session.renewControl': (payload, ctx) => handleSessionRenewControl(payload, ctx),
@@ -1677,6 +1678,7 @@ function mapSessionRow(s: NodeSessionRecord) {
     updatedAt: s.updatedAt,
     isPinned: s.isPinned,
     isHidden: s.isHidden,
+    ...(s.isSettled ? { isSettled: true } : {}),
     ...(s.unread ? { unread: true } : {}),
     isAutomation: s.isAutomation === true,
     automationId: s.automationId ?? null,
@@ -1726,7 +1728,7 @@ function handleSessionListPinned(payload: unknown, ctx: RpcContext): RpcResult {
   // newest-first, so slicing after the filter keeps the freshest pins.
   const rows = ctx.sessions
     .list(undefined)
-    .filter((s) => s.isPinned === true && s.isHidden !== true)
+    .filter((s) => s.isPinned === true && s.isHidden !== true && s.isSettled !== true)
     .slice(0, limit)
   return {
     result: rows.map((s) => {
@@ -1747,6 +1749,44 @@ function handleSessionListPinned(payload: unknown, ctx: RpcContext): RpcResult {
  * `last_user_msg_at`. Rows sort by `mentionMatchTier`; equal tiers keep that
  * recency order.
  */
+/** Cross-project settled sessions. Same gate and row shape as `session.listPinned`. */
+function handleSessionListSettled(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const limit =
+    typeof p.limit === 'number' && Number.isFinite(p.limit)
+      ? Math.min(Math.max(Math.floor(p.limit), 0), 500)
+      : 200
+  const offset =
+    typeof p.offset === 'number' && Number.isFinite(p.offset)
+      ? Math.max(Math.floor(p.offset), 0)
+      : 0
+  const projectPath = typeof p.projectPath === 'string' && p.projectPath ? p.projectPath : undefined
+  const matched = ctx.sessions
+    .list(undefined)
+    .filter((s) => s.isSettled === true && s.isHidden !== true)
+    .filter((s) => {
+      if (!projectPath) return true
+      const project = s.projectId ? ctx.projects.get(s.projectId) : null
+      return (project?.path ?? s.cwd ?? '') === projectPath
+    })
+  const rows = matched.slice(offset, offset + limit)
+  return {
+    result: {
+      sessions: rows.map((s) => {
+        const project = s.projectId ? ctx.projects.get(s.projectId) : null
+        return {
+          ...mapSessionRow(s),
+          projectPath: project?.path ?? s.cwd ?? '',
+          projectName: project?.name ?? '',
+        }
+      }),
+      total: matched.length,
+    },
+  }
+}
+
 function handleSessionSearchTitle(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
@@ -1984,6 +2024,7 @@ function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): RpcResult {
       result: ctx.sessions.setUiFlags(sessionId, {
         isPinned: typeof p.isPinned === 'boolean' ? p.isPinned : undefined,
         isHidden: typeof p.isHidden === 'boolean' ? p.isHidden : undefined,
+        isSettled: typeof p.isSettled === 'boolean' ? p.isSettled : undefined,
       }),
     }
   } catch (err) {

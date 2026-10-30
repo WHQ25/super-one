@@ -38,6 +38,7 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
     messageCount?: number
     isPinned?: boolean
     isHidden?: boolean
+    isSettled?: boolean
     /** Absolute host cwd when the session is bound to a worktree (or an explicit root). */
     cwd?: string | null
     /** Bare harness session/thread id (desktop Copy Session ID). */
@@ -81,6 +82,7 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
     messageCount,
     isPinned: Boolean(s.isPinned),
     isHidden: Boolean(s.isHidden),
+    ...(s.isSettled ? { isSettled: true } : {}),
     worktreePath: cwd ?? undefined,
     isWorktree: Boolean(cwd),
     ...(providerSessionId ? { providerSessionId } : {}),

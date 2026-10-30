@@ -13,7 +13,7 @@ const FOLDER = '/storybook/super-one'
 const noop = {
   onSwitchSession: () => {},
   onPinSession: () => {},
-  onHideSession: () => {},
+  onSettleSession: () => {},
   onRenameSession: () => {},
   onDeleteSession: () => {},
 }
@@ -163,7 +163,7 @@ export const Opening: Story = {
     const row = spinner.closest('.group\\/session')
     await expect(row).not.toBeNull()
     await expect(spinner.parentElement?.className ?? '').not.toContain('group-hover/session:opacity-0')
-    await expect(row?.querySelector('.lucide-eye-off')).toBeNull()
+    await expect(row?.querySelector('.lucide-circle-check')).toBeNull()
     await expect(canvas.getByText('Hydrating the remote transcript')).toBeInTheDocument()
   },
 }
@@ -218,6 +218,19 @@ export const Hidden: Story = {
   ),
 }
 
+/** Settled rows stay at full opacity. They leave the project list for the Settled group. */
+export const Settled: Story = {
+  render: () => (
+    <Preview rows={[{ session: entry('set', 'Settled session', { isSettled: true }) }]} />
+  ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('.group\\/session')
+    await expect(row?.className ?? '').not.toContain('opacity-50')
+    await expect(row?.querySelector('.lucide-undo-2')).not.toBeNull()
+    await expect(within(canvasElement).getByText('Settled session')).toBeInTheDocument()
+  },
+}
+
 export const Running: Story = {
   render: () => (
     <Preview
@@ -225,6 +238,23 @@ export const Running: Story = {
       rows={[{ session: entry('run', 'Streaming a long turn'), status: 'streaming' }]}
     />
   ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('.group\\/session')
+    await expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+    await expect(row?.querySelector('.relative > span')?.className ?? '').not.toContain('group-hover/session:opacity-0')
+  },
+}
+
+export const Background: Story = {
+  name: 'Background task hides settle',
+  render: () => (
+    <Preview rows={[{ session: entry('bg', 'Running a background task'), status: 'background' }]} />
+  ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('.group\\/session')
+    await expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+    await expect(row?.querySelector('.lucide-undo-2')).toBeNull()
+  },
 }
 
 export const VoiceCallWhileIdle: Story = {
@@ -235,6 +265,10 @@ export const VoiceCallWhileIdle: Story = {
       rows={[{ session: entry('voice-idle', 'Realtime voice session', { provider: 'codex' }) }]}
     />
   ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('.group\\/session')
+    await expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+  },
 }
 
 export const VoiceCallWhileWorking: Story = {
@@ -259,6 +293,9 @@ export const PendingPlan: Story = {
   render: () => (
     <Preview rows={[{ session: entry('plan', 'Needs a plan review'), pendingPlan: true }]} />
   ),
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector('.lucide-circle-check')).not.toBeNull()
+  },
 }
 
 export const LongTitle: Story = {

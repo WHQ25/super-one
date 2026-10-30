@@ -1,7 +1,8 @@
 import { useLayoutEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
-import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { settledPanelId } from './sidebar-section-collapse'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
@@ -12,10 +13,9 @@ const parent: SessionHistoryEntry = {
   lastActiveAt: '2026-10-09T00:00:00.000Z', messageCount: 1, provider: 'claude',
 }
 const callbacks = {
-  onSwitchSession: () => {}, onPinSession: () => {}, onHideSession: () => {},
+  onSwitchSession: () => {}, onPinSession: () => {}, onSettleSession: () => {},
   onRenameSession: () => {}, onDeleteSession: () => {}, onToggleExpand: () => {},
   onEditProject: () => {}, onRemoveProject: () => {}, onNewSession: () => {},
-  onLoadMoreSessions: async () => [],
 }
 
 function Preview({ width = 280 }: { width?: number }) {
@@ -61,7 +61,6 @@ function Preview({ width = 280 }: { width?: number }) {
           {...callbacks}
           folder={{ id: 'collaboration', name: 'super-sub', path: FOLDER, addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
           sessions={[parent]}
-          hasMoreSessions={false}
           isExpanded={false}
         />
       </div>
@@ -99,7 +98,6 @@ export const SessionsOnly: Story = {
         sessionsOnly
         folder={{ id: 'merged', name: 'super-one', path: '/storybook/merged', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
         sessions={[parent]}
-        hasMoreSessions={false}
         isExpanded
       />
     </div>
@@ -120,7 +118,6 @@ export const HoverActions: Story = {
         {...callbacks}
         folder={{ id: 'hover', name: 'super-one', path: '/storybook/hover', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
         sessions={[parent]}
-        hasMoreSessions={false}
         isExpanded
       />
     </div>
@@ -148,7 +145,6 @@ export const LoadingSessions: Story = {
         folder={{ id: 'loading', name: 'super-one', path: '/storybook/loading', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
         sessions={[]}
         sessionsLoading
-        hasMoreSessions={false}
         isExpanded
       />
     </div>
@@ -163,5 +159,37 @@ export const LoadingSessions: Story = {
     await expect(row?.querySelector('.lucide-chevron-right')).toHaveClass('!hidden')
     await expect(canvas.queryByText('Loading...')).not.toBeInTheDocument()
     await expect(canvas.queryByText('No sessions')).not.toBeInTheDocument()
+  },
+}
+
+/** A project that only has finished work shows Settled, not an empty session line. */
+export const OnlySettled: Story = {
+  render: () => (
+    <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <ProjectSidebarRow
+        {...callbacks}
+        folder={{ id: 'settled', name: 'super-one', path: '/storybook/settled', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
+        sessions={[]}
+        settledSessions={[{
+          sessionId: 'settled',
+          title: 'Finished the opening review',
+          lastActiveAt: '2026-10-09T00:00:00.000Z',
+          messageCount: 3,
+          provider: 'claude',
+          isSettled: true,
+          folderPath: '/storybook/settled',
+          folderName: 'super-one',
+        } satisfies PinnedSessionEntry]}
+        isExpanded
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const header = canvas.getByRole('button', { name: /Settled/ })
+    await expect(header).toHaveAttribute('aria-expanded', 'false')
+    await expect(canvas.queryByText('No sessions')).not.toBeInTheDocument()
+    const panel = canvasElement.querySelector(`[id="${settledPanelId('/storybook/settled')}"]`)
+    await expect(panel?.textContent).toContain('Finished the opening review')
   },
 }

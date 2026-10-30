@@ -1,5 +1,5 @@
 import { getDb } from '../database'
-import { deleteSession, hideSession } from '../db-sessions'
+import { deleteSession, setSessionSeenReceipt, settleSession, settleSpawnChildren } from '../db-sessions'
 import log from '../logger'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import { deriveHarnessId } from '../session/session-repo'
@@ -10,7 +10,7 @@ export const SESSION_CLEANUP_MAX_DELETE = 50
 const CLEANUP_CONFIRM_TIMEOUT_MS = 10 * 60_000
 
 // --- session_cleanup ---
-// Discover with session_list first; then hide/unhide immediately or delete with a host confirm dialog.
+// Discover with session_list first; then settle/unsettle immediately or delete with a host confirm dialog.
 
 type CleanupConfirmOutcome = { action: 'accept' | 'decline' | 'cancel' }
 
@@ -32,7 +32,7 @@ export function rejectSessionCleanupConfirm(requestId: string, reason: string): 
 }
 
 export interface SessionCleanupArgs {
-  action: 'hide' | 'unhide' | 'delete'
+  action: 'settle' | 'unsettle' | 'delete'
   /** Required. Prefer ids from session_list. */
   sessionIds: string[]
   includePinned?: boolean
@@ -121,10 +121,10 @@ function childSessionIds(parentId: string): string[] {
 
 export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: BuiltInSuperoneToolDeps) {
   const action = args.action
-  if (action !== 'hide' && action !== 'unhide' && action !== 'delete') {
+  if (action !== 'settle' && action !== 'unsettle' && action !== 'delete') {
     return toolResult({
       status: 'error',
-      message: 'action must be hide | unhide | delete. Discover sessions with session_list first.',
+      message: 'action must be settle | unsettle | delete. Discover sessions with session_list first.',
     }, true)
   }
 
@@ -161,11 +161,20 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
 
   const ids = candidates.map((c) => c.id)
 
-  if (action === 'hide' || action === 'unhide') {
-    const hidden = action === 'hide'
+  if (action === 'settle' || action === 'unsettle') {
+    const settled = action === 'settle'
     for (const id of ids) {
-      hideSession(id, hidden)
-      if (hidden) await deps.sessionHost?.stopBackgroundTasks?.(id)
+      settleSession(id, settled)
+      if (settled) {
+        // Same effect as the sidebar: clear unread, stop the turn, and drop
+        // the harness process. A settled parent takes its spawn children with
+        // it. Unsettle leaves the runtime and those children alone.
+        setSessionSeenReceipt(id, null)
+        await deps.sessionHost?.releaseSettledSession?.(id)
+        for (const childId of settleSpawnChildren(id, new Set([deps.sessionId]))) {
+          await deps.sessionHost?.releaseSettledSession?.(childId)
+        }
+      }
     }
     return toolResult({
       status: 'ok',

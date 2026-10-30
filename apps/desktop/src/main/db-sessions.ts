@@ -2,7 +2,7 @@ import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelectedModel, harnessIdFromProviderId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
-import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
+import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SettledSessionPage, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
 import { notifySessionList, notifySessionsDeleted } from './session-list-watch'
@@ -47,13 +47,17 @@ export function listSessionsForProjectId(
   projectId: string,
   limit?: number,
   offset?: number,
+  options?: { includeSettled?: boolean },
 ): SessionHistoryEntry[] {
   if (!projectId) return []
 
   const db = getDb()
+  // Settled sessions leave the active list. Search and history ask for them
+  // back; the Settled group itself is loaded by listSettledSessions.
+  const settledClause = options?.includeSettled ? '' : '\n        AND COALESCE(s.is_settled, 0) = 0'
   const baseSql = `
     WITH related_sessions AS (
-      SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
+      SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.is_settled, s.git_branch, s.worktree_path,
              s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
              s.selected_model, s.tags_json, s.remote_controller_json, s.seen_completed_message_id,
              g.parent_session_id,
@@ -66,7 +70,7 @@ export function listSessionsForProjectId(
       WHERE s.project_id = ?
         -- A child on another machine keeps a row here only as its mailbox endpoint;
         -- the sidebar lists it under that machine.
-        AND json_extract(g.config_json, '$.remote.environmentId') IS NULL
+        AND json_extract(g.config_json, '$.remote.environmentId') IS NULL${settledClause}
     ), grouped_sessions AS (
       SELECT related_sessions.*,
              MAX(last_user_msg_at) OVER (PARTITION BY root_session_id) AS group_last_active_at
@@ -85,7 +89,7 @@ export function listSessionsForProjectId(
     : safeOffset > 0
       ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(projectId, safeOffset)
       : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; selected_model: string | null; parent_session_id: string | null; tags_json: string | null; remote_controller_json: string | null; seen_completed_message_id: string | null }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; is_settled: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; selected_model: string | null; parent_session_id: string | null; tags_json: string | null; remote_controller_json: string | null; seen_completed_message_id: string | null }>
 
   return rows.map((r) => {
     const tags = parseTagsJson(r.tags_json)
@@ -101,6 +105,7 @@ export function listSessionsForProjectId(
       ...(r.is_worktree ? { isWorktree: true } : {}),
       ...(r.is_pinned ? { isPinned: true } : {}),
       ...(r.is_hidden ? { isHidden: true } : {}),
+      ...(r.is_settled ? { isSettled: true } : {}),
       ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
       ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
       ...(r.is_automation ? { isAutomation: true } : {}),
@@ -558,16 +563,53 @@ export function hideSession(sessionId: string, hidden: boolean): void {
   notifySessionList(projectPathOfSession(sessionId))
 }
 
+/** Finished sessions leave the active list and the pin strip. The row stays. */
+export function settleSession(sessionId: string, settled: boolean): void {
+  const db = getDb()
+  db.prepare('UPDATE sessions SET is_settled = ? WHERE id = ?').run(settled ? 1 : 0, sessionId)
+  notifySessionList(projectPathOfSession(sessionId))
+}
+
+/**
+ * Direct spawn children of a parent. Link peers and handoff sessions are
+ * independent and are not included. The one-shot migration does not use this.
+ */
+export function spawnChildSessionIds(parentId: string): string[] {
+  if (!parentId) return []
+  const rows = getDb().prepare(`
+    SELECT child_session_id AS id FROM session_collaboration_grants
+    WHERE parent_session_id = ?
+      AND child_session_id IS NOT NULL
+      AND COALESCE(kind, 'spawn') = 'spawn'
+  `).all(parentId) as Array<{ id: string }>
+  return rows.map((row) => row.id).filter((id) => id && id !== parentId)
+}
+
+/**
+ * Settling a parent also finishes its spawn children and marks them read.
+ * Their harness processes are stopped by the caller. Unsettle does not call this.
+ * `skipIds` keeps the calling session from settling itself when it is listed
+ * as a child.
+ */
+export function settleSpawnChildren(parentId: string, skipIds?: ReadonlySet<string>): string[] {
+  const childIds = spawnChildSessionIds(parentId).filter((childId) => !skipIds?.has(childId))
+  for (const childId of childIds) {
+    settleSession(childId, true)
+    setSessionSeenReceipt(childId, null)
+  }
+  return childIds
+}
+
 /** Columns every cross-project session list needs, plus the project it lives in. */
 const CROSS_PROJECT_SESSION_SELECT = `
-    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_automation, s.automation_id,
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_settled, s.is_automation, s.automation_id,
            s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id, s.seen_completed_message_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
     FROM sessions s
     JOIN projects p ON p.id = s.project_id`
 
-type CrossProjectSessionRow = { id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; seen_completed_message_id: string | null; folder_path: string; folder_name: string }
+type CrossProjectSessionRow = { id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_settled: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; seen_completed_message_id: string | null; folder_path: string; folder_name: string }
 
 function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
   return {
@@ -578,6 +620,7 @@ function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
     ...(r.is_pinned ? { isPinned: true } : {}),
+    ...(r.is_settled ? { isSettled: true } : {}),
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
@@ -601,10 +644,53 @@ export function findSessionAcrossProjects(sessionId: string): PinnedSessionEntry
 export function listPinnedSessions(): PinnedSessionEntry[] {
   const rows = getDb().prepare(`
     ${CROSS_PROJECT_SESSION_SELECT}
-    WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
+    WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0 AND COALESCE(s.is_settled, 0) = 0
     ORDER BY last_user_msg_at DESC
   `).all() as CrossProjectSessionRow[]
   return rows.map(mapCrossProjectSession)
+}
+
+/**
+ * Finished sessions. Hidden system rows stay out.
+ * `projectPath` limits the page to one project. `limit` pages the result;
+ * omit it only for a caller that really wants every row.
+ * `total` counts every matching row, not just this page.
+ */
+export function listSettledSessions(options?: {
+  projectPath?: string
+  limit?: number
+  offset?: number
+}): SettledSessionPage {
+  const filters = ['COALESCE(s.is_settled, 0) = 1', 'COALESCE(s.is_hidden, 0) = 0']
+  const filterParams: Array<string | number> = []
+  if (options?.projectPath) {
+    filters.push('p.path = ?')
+    filterParams.push(options.projectPath)
+  }
+  const where = filters.join(' AND ')
+  let sql = `
+    ${CROSS_PROJECT_SESSION_SELECT}
+    WHERE ${where}
+    ORDER BY last_user_msg_at DESC`
+  const listParams = [...filterParams]
+  if (options?.limit != null) {
+    const limit = Math.max(1, Math.min(Math.floor(options.limit), 200))
+    const offset = Math.max(0, Math.floor(options.offset ?? 0))
+    sql += ' LIMIT ? OFFSET ?'
+    listParams.push(limit, offset)
+  }
+  const db = getDb()
+  const rows = db.prepare(sql).all(...listParams) as CrossProjectSessionRow[]
+  const totalRow = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sessions s
+    JOIN projects p ON p.id = s.project_id
+    WHERE ${where}
+  `).get(...filterParams) as { total: number } | undefined
+  return {
+    sessions: rows.map(mapCrossProjectSession),
+    total: Number(totalRow?.total ?? 0),
+  }
 }
 
 function clampSessionSearchLimit(limit: number | undefined): number {

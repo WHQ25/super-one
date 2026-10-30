@@ -20,14 +20,13 @@ const local: RecentFolder = {
 const callbacks = {
   onSwitchSession: vi.fn(),
   onPinSession: vi.fn(),
-  onHideSession: vi.fn(),
+  onSettleSession: vi.fn(),
   onRenameSession: vi.fn(),
   onDeleteSession: vi.fn(),
   onToggleExpand: vi.fn(),
   onEditProject: vi.fn(),
   onRemoveProject: vi.fn(),
   onNewSession: vi.fn(),
-  onLoadMoreSessions: vi.fn(async () => []),
 }
 
 describe('project row menu', () => {
@@ -44,7 +43,6 @@ describe('project row menu', () => {
         folder={local}
         sessions={[{ sessionId: 'a', title: 'A', lastActiveAt: '0', messageCount: 1 }]}
         sessionsLoaded
-        hasMoreSessions={false}
         isExpanded={false}
         repoIdentity="git:https://github.com/acme/super-one.git"
       />,
@@ -63,7 +61,6 @@ describe('project row menu', () => {
         {...callbacks}
         folder={{ ...local, path: 'remote:cli-1:/srv/app' }}
         sessions={[]}
-        hasMoreSessions={false}
         isExpanded={false}
         repoIdentity={null}
       />,

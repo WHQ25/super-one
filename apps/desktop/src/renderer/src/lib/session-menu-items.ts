@@ -1,7 +1,7 @@
-import { AppWindow, Columns2, Copy, Eye, EyeOff, FolderOpen, GitFork, Mail, MailOpen, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
+import { AppWindow, CircleCheck, Columns2, Copy, FolderOpen, GitFork, Mail, MailOpen, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
-import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { AgentStatus, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -12,8 +12,8 @@ export interface SessionMenuHandlers {
   onRename: () => void
   onPin: () => void
   onFork: (mode: SessionForkMode) => void
-  /** Sidebar-list affordance — omitted by the chat header menu (you cannot hide the session you are in). */
-  onHide?: () => void
+  /** Sidebar-list affordance — omitted by the chat header menu (you settle a session from its row). */
+  onSettle?: () => void
   /** Sidebar-list affordance. `unread` picks Mark as Read versus Mark as Unread. */
   onMarkRead?: () => void
   onDelete?: () => void
@@ -23,6 +23,20 @@ export interface SessionMenuHandlers {
   onNewSideChat?: () => void
   /** Chat-header affordance — float the chat over the activity panel, or dock it back. */
   chatView?: { floating: boolean; onToggle: () => void }
+}
+
+/**
+ * Settle is for a session that is not working. A running turn, a background
+ * task, or a live voice call hides it. Unsettle stays on a row that is already
+ * settled. A missing status has never been opened in this process, so it is idle.
+ */
+export function canSettleSession(
+  status: AgentStatus | undefined,
+  opts: { realtimeVoice?: boolean; isSettled?: boolean } = {},
+): boolean {
+  if (opts.isSettled) return true
+  if (opts.realtimeVoice) return false
+  return status !== 'streaming' && status !== 'background'
 }
 
 export interface SessionMenuOptions {
@@ -39,6 +53,11 @@ export interface SessionMenuOptions {
   includeTags?: boolean
   /** Whether the sidebar currently shows this session's unread dot. */
   unread?: boolean
+  /**
+   * Sidebar settle is only offered for an idle session. Unsettle stays
+   * available when the row is already settled. Omitted means allow.
+   */
+  allowSettle?: boolean
 }
 
 /**
@@ -150,7 +169,8 @@ export function buildSessionMenuItems(
   const hostPath = isRemoteHost
     ? folderPath.slice(folderPath.indexOf(':', 'remote:'.length) + 1) || folderPath
     : folderPath
-  const onHide = handlers.onHide
+  const onSettle = handlers.onSettle
+  const showSettle = Boolean(onSettle) && (session.isSettled === true || options.allowSettle !== false)
   const tags = options.includeTags === false ? [] : (session.tags ?? [])
   const tagsSubmenu: AdaptiveMenuEntry[] = options.includeTags === false
     ? []
@@ -190,8 +210,8 @@ export function buildSessionMenuItems(
           onSelect: handlers.onMarkRead,
         }]
       : []),
-    ...(onHide
-      ? [{ kind: 'item' as const, id: 'hide', label: session.isHidden ? t('sidebar.contextMenu.unhide') : t('sidebar.contextMenu.hide'), icon: session.isHidden ? Eye : EyeOff, onSelect: onHide }]
+    ...(showSettle && onSettle
+      ? [{ kind: 'item' as const, id: 'settle', label: session.isSettled ? t('sidebar.contextMenu.unsettle') : t('sidebar.contextMenu.settle'), icon: session.isSettled ? Undo2 : CircleCheck, onSelect: onSettle }]
       : []),
     ...tagsSubmenu,
     { kind: 'separator' },

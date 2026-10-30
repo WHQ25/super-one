@@ -202,6 +202,22 @@ describe('SessionManager', () => {
       expect(hoisted.closeMcpHttpSessions).toHaveBeenCalledTimes(runtimeCount)
     })
 
+    it('releaseSettledSession drops the harness process and keeps the session', async () => {
+      const session = mgr.createSession({
+        id: 'settle-me',
+        projectPath: '/p-settle',
+        providerId: 'claude-base',
+      })
+      session.prewarm()
+
+      await mgr.releaseSettledSession('settle-me')
+
+      expect((hoisted.backendsCreated[0] as FakeBackend).releaseRuntimeCalls).toBe(1)
+      expect((hoisted.backendsCreated[0] as FakeBackend).disposed).toBe(false)
+      expect(mgr.getSession('settle-me')).toBe(session)
+      expect(hoisted.closeMcpHttpSessions).toHaveBeenCalledWith('settle-me')
+    })
+
     it('counts only sessions that currently hold a runtime', async () => {
       const sessions = Array.from({ length: 5 }, (_, index) => mgr.createSession({
         id: `mixed-${index}`,

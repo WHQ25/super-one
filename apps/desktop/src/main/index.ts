@@ -2087,7 +2087,7 @@ function registerIpcHandlers(): void {
       _e,
       connectionId: string,
       projectId: string,
-      options: { limit: number; offset: number },
+      options: { limit: number; offset: number; includeSettled?: boolean },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().listSessions(connectionId, projectId, options)
@@ -2098,6 +2098,13 @@ function registerIpcHandlers(): void {
     async (_e, connectionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().listPinnedSessions(connectionId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_LIST_SETTLED_SESSIONS,
+    async (_e, connectionId: string, options?: { projectPath?: string; limit?: number; offset?: number }) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().listSettledSessions(connectionId, options)
     },
   )
   ipcMain.handle(
@@ -2408,7 +2415,7 @@ function registerIpcHandlers(): void {
       _e,
       connectionId: string,
       sessionId: string,
-      flags: { isPinned?: boolean; isHidden?: boolean },
+      flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().setSessionUiFlags(connectionId, sessionId, flags)

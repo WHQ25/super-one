@@ -50,10 +50,9 @@ const remote = checkout({
 const callbacks = {
   onToggleProject: vi.fn(),
   onToggleEnvironment: vi.fn(),
-  onLoadMoreSessions: vi.fn(async () => []),
   onSwitchSession: vi.fn(),
   onPinSession: vi.fn(),
-  onHideSession: vi.fn(),
+  onSettleSession: vi.fn(),
   onRenameSession: vi.fn(),
   onDeleteSession: vi.fn(),
   onEditProject: vi.fn(),
@@ -78,7 +77,6 @@ function renderList(extra?: Partial<ComponentProps<typeof MultiHostProjectList>>
       expandedProjectKeys={new Set()}
       collapsedEnvironmentIds={[]}
       folderSessions={{}}
-      folderSessionsHaveMore={{}}
       loadingFolders={{}}
       openingSession={null}
       {...callbacks}

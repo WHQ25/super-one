@@ -17,7 +17,7 @@ const PROJECT = '/voice'
 const SID = 'voice-session'
 const BACKING_PROMPT = 'You are the coding agent behind a voice conversation'
 const callbacks = {
-  onSwitchSession: vi.fn(), onPinSession: vi.fn(), onHideSession: vi.fn(),
+  onSwitchSession: vi.fn(), onPinSession: vi.fn(), onSettleSession: vi.fn(),
   onRenameSession: vi.fn(), onDeleteSession: vi.fn(),
 }
 

@@ -66,7 +66,54 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
     db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(String(SCHEMA_GENERATION), 'schema_generation')
   }
 
+  settleRecentNodeSessionsOnce(db)
   return db
+}
+
+/** How many user-visible sessions stay active in each project after the one-shot. */
+export const NODE_SETTLED_RECENT_KEEP = 10
+
+/** `meta` marker. Present means the one-shot already kept ten non-child sessions per project. */
+export const NODE_SETTLED_RECENT_KEEP_META_KEY = 'settled_recent_keep'
+
+/**
+ * One open only: in each project, keep the ten most recently updated
+ * non-child sessions and settle every other session. `updated_at` is this
+ * store's stand-in for the desktop sidebar's `last_user_message_at`.
+ * Hidden rows do not take one of the ten slots. Settling does not clear
+ * `is_hidden` or `is_pinned`. A later unsettle is not undone the next time
+ * the node opens.
+ */
+export function settleRecentNodeSessionsOnce(db: NodeDatabase): void {
+  const applied = db.prepare('SELECT value FROM meta WHERE key = ?').get(NODE_SETTLED_RECENT_KEEP_META_KEY) as
+    | { value: string }
+    | undefined
+  if (applied) return
+  const apply = db.transaction(() => {
+    db.exec(`
+      WITH ranked AS (
+        SELECT s.session_id AS id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY s.project_id
+                 ORDER BY s.updated_at DESC, s.session_id DESC
+               ) AS rn
+        FROM sessions s
+        WHERE COALESCE(s.is_hidden, 0) = 0
+          AND s.session_id NOT IN (
+            SELECT child_session_id FROM session_collaboration_grants
+            WHERE child_session_id IS NOT NULL
+          )
+      )
+      UPDATE sessions
+      SET is_settled = 1
+      WHERE session_id NOT IN (SELECT id FROM ranked WHERE rn <= ${NODE_SETTLED_RECENT_KEEP})
+    `)
+    db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(
+      NODE_SETTLED_RECENT_KEEP_META_KEY,
+      String(NODE_SETTLED_RECENT_KEEP),
+    )
+  })
+  apply()
 }
 
 function ensureSessionUiColumns(db: NodeDatabase): void {
@@ -77,6 +124,9 @@ function ensureSessionUiColumns(db: NodeDatabase): void {
   }
   if (!names.has('is_hidden')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!names.has('is_settled')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN is_settled INTEGER NOT NULL DEFAULT 0`)
   }
   if (!names.has('cwd')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN cwd TEXT`)

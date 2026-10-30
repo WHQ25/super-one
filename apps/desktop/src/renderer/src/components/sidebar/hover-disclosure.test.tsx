@@ -19,14 +19,13 @@ const folder: RecentFolder = {
 const callbacks = {
   onSwitchSession: vi.fn(),
   onPinSession: vi.fn(),
-  onHideSession: vi.fn(),
+  onSettleSession: vi.fn(),
   onRenameSession: vi.fn(),
   onDeleteSession: vi.fn(),
   onToggleExpand: vi.fn(),
   onEditProject: vi.fn(),
   onRemoveProject: vi.fn(),
   onNewSession: vi.fn(),
-  onLoadMoreSessions: vi.fn(async () => []),
 }
 
 function checkout(partial: Partial<HostCheckout> & Pick<HostCheckout, 'environmentId' | 'projectId' | 'name'>): HostCheckout {
@@ -79,7 +78,6 @@ describe('sidebar hover disclosure', () => {
         {...callbacks}
         folder={folder}
         sessions={[]}
-        hasMoreSessions={false}
         isExpanded={false}
       />,
     )
@@ -126,15 +124,13 @@ describe('sidebar hover disclosure', () => {
         expandedProjectKeys={new Set()}
         collapsedEnvironmentIds={[]}
         folderSessions={{}}
-        folderSessionsHaveMore={{}}
         loadingFolders={{}}
         openingSession={null}
         onToggleProject={vi.fn()}
         onToggleEnvironment={vi.fn()}
-        onLoadMoreSessions={vi.fn(async () => [])}
         onSwitchSession={vi.fn()}
         onPinSession={vi.fn()}
-        onHideSession={vi.fn()}
+        onSettleSession={vi.fn()}
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
         onEditProject={vi.fn()}
@@ -173,15 +169,13 @@ describe('sidebar hover disclosure', () => {
       folderSessions: {
         'remote:cli-1:/srv/app': [{ sessionId: 's1', title: 'Remote session', lastActiveAt: '0', messageCount: 1 }],
       },
-      folderSessionsHaveMore: {},
       loadingFolders: {},
       openingSession: null,
       onToggleProject,
       onToggleEnvironment,
-      onLoadMoreSessions: vi.fn(async () => []),
       onSwitchSession: vi.fn(),
       onPinSession: vi.fn(),
-      onHideSession: vi.fn(),
+      onSettleSession: vi.fn(),
       onRenameSession: vi.fn(),
       onDeleteSession: vi.fn(),
       onEditProject: vi.fn(),

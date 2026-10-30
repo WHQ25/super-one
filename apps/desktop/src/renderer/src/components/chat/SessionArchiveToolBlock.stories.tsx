@@ -276,14 +276,22 @@ const READ_TOOL_DETAIL = JSON.stringify({
   },
 })
 
-const CLEANUP_HIDDEN = JSON.stringify({
+const CLEANUP_SETTLED = JSON.stringify({
   status: 'ok',
-  action: 'hide',
+  action: 'settle',
   affected: [
     { id: SESSIONS[3].id, title: SESSIONS[3].title },
     { id: 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee', title: 'Old experiment' },
   ],
   skippedPinned: [{ id: SESSIONS[0].id, title: SESSIONS[0].title }],
+  skippedSelf: [],
+})
+
+const CLEANUP_HIDDEN = JSON.stringify({
+  status: 'ok',
+  action: 'hide',
+  affected: [{ id: SESSIONS[3].id, title: SESSIONS[3].title }],
+  skippedPinned: [],
   skippedSelf: [],
 })
 
@@ -417,13 +425,14 @@ export const Gallery: Story = {
       </Section>
 
       <Section title="session_cleanup">
-        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, {
+        {block('session_cleanup', { action: 'settle', sessionIds: [SESSIONS[3].id] }, {
           status: 'streaming',
         })}
         {block('session_cleanup', {
-          action: 'hide',
+          action: 'settle',
           sessionIds: [SESSIONS[3].id, 'eeeeeeee-5555-4000-8000-eeeeeeeeeeee'],
-        }, { result: CLEANUP_HIDDEN })}
+        }, { result: CLEANUP_SETTLED })}
+        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, { result: CLEANUP_HIDDEN })}
         {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, {
           status: 'streaming',
         })}
@@ -636,8 +645,11 @@ export const SessionCleanup: Story = {
   render: () => (
     <StoryShell>
       <Section title="session_cleanup">
-        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, { status: 'streaming' })}
-        {block('session_cleanup', { action: 'hide', sessionIds: [SESSIONS[3].id] }, { result: CLEANUP_HIDDEN })}
+        {block('session_cleanup', { action: 'settle', sessionIds: [SESSIONS[3].id] }, { status: 'streaming' })}
+        {block('session_cleanup', { action: 'settle', sessionIds: [SESSIONS[3].id] }, { result: CLEANUP_SETTLED })}
+        {block('session_cleanup', { action: 'unsettle', sessionIds: [SESSIONS[3].id] }, {
+          result: JSON.stringify({ status: 'ok', action: 'unsettle', affected: [{ id: SESSIONS[3].id, title: SESSIONS[3].title }] }),
+        })}
         {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, { result: CLEANUP_DELETED })}
         {block('session_cleanup', { action: 'delete', sessionIds: [SESSIONS[3].id] }, {
           result: JSON.stringify({ status: 'cancelled', action: 'delete', message: 'User did not approve session deletion.' }),

@@ -25,7 +25,7 @@ beforeEach(() => {
     CREATE TABLE sessions (
       id TEXT PRIMARY KEY, project_id TEXT, title TEXT, created_at TEXT,
       last_user_message_at TEXT, is_worktree INTEGER, is_pinned INTEGER,
-      is_hidden INTEGER, git_branch TEXT, worktree_path TEXT, is_automation INTEGER,
+      is_hidden INTEGER, is_settled INTEGER, git_branch TEXT, worktree_path TEXT, is_automation INTEGER,
       automation_id TEXT, provider_session_id TEXT, provider_id TEXT, provider TEXT,
       acp_agent_id TEXT, selected_model TEXT, tags_json TEXT, remote_controller_json TEXT,
       seen_completed_message_id TEXT

@@ -15,14 +15,13 @@ const folder: RecentFolder = {
 const callbacks = {
   onSwitchSession: vi.fn(),
   onPinSession: vi.fn(),
-  onHideSession: vi.fn(),
+  onSettleSession: vi.fn(),
   onRenameSession: vi.fn(),
   onDeleteSession: vi.fn(),
   onToggleExpand: vi.fn(),
   onEditProject: vi.fn(),
   onRemoveProject: vi.fn(),
   onNewSession: vi.fn(),
-  onLoadMoreSessions: vi.fn(async () => []),
 }
 
 describe('project folder loading icon', () => {
@@ -37,7 +36,6 @@ describe('project folder loading icon', () => {
         folder={folder}
         sessions={[]}
         sessionsLoading
-        hasMoreSessions={false}
         isExpanded
       />,
     )

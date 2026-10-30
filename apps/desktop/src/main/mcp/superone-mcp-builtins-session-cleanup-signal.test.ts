@@ -133,7 +133,7 @@ describe('confirm-gated tools Claude MCP extra.signal forwarding', () => {
 
     const controller = new AbortController()
     await handler!(
-      { action: 'hide', sessionIds: ['sess-1'] },
+      { action: 'settle', sessionIds: ['sess-1'] },
       { signal: controller.signal },
     )
 
@@ -152,7 +152,7 @@ describe('confirm-gated tools Claude MCP extra.signal forwarding', () => {
     registerSuperoneTools(server as never, deps)
 
     await handlers.get('session_cleanup')!(
-      { action: 'hide', sessionIds: ['sess-1'] },
+      { action: 'settle', sessionIds: ['sess-1'] },
       {},
     )
 

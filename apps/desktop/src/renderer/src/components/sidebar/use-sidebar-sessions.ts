@@ -1,26 +1,52 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { shallow } from 'zustand/shallow'
 import { useShallow } from 'zustand/react/shallow'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { removeSession, setSessionFlags } from '@/lib/session-client'
-import { noteListedUnread } from '@/stores/chat-store/helpers/unseen-completed'
+import { removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
+import { isListedSession } from '@/lib/session-list-ops'
+import { noteListedUnread, setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { traceSidebar } from './sidebar-trace'
 
-const PAGE_SIZE = 13
-// Read through the next root to keep the last visible parent's children together.
-const INITIAL_ROOT_TARGET = 14
+/** Active-list page. `session.list` allows up to 500; the loop stops on a short page. */
+const ACTIVE_PAGE_SIZE = 100
+/** Settled rows are numerous. One project page, then the list loads more as it scrolls. */
+const SETTLED_PAGE_SIZE = 20
+/** Local SQL refuses a larger settled page. A refresh that already revealed more walks in chunks. */
+const SETTLED_QUERY_CAP = 200
 
-type LoadReason = 'expand' | 'refresh' | 'current' | 'switch' | 'show_more'
+type LoadReason = 'expand' | 'refresh' | 'current' | 'switch'
 interface ListRequest {
   promise: Promise<SessionHistoryEntry[]>
   invalidated: boolean
 }
 
+interface SettledFolderPage {
+  sessions: PinnedSessionEntry[]
+  hasMore: boolean
+  /** Every settled session in this project, including pages not loaded yet. */
+  total: number
+}
+
+function settledListTarget(folderPath: string): { connectionId: string; projectPath: string } {
+  const remote = parseRemoteProjectKey(folderPath)
+  if (remote) return { connectionId: remote.connectionId, projectPath: remote.path }
+  return { connectionId: 'local', projectPath: folderPath }
+}
+
+function dedupeSettled(rows: PinnedSessionEntry[]): PinnedSessionEntry[] {
+  const seen = new Set<string>()
+  return rows.filter((row) => {
+    if (seen.has(row.sessionId)) return false
+    seen.add(row.sessionId)
+    return true
+  })
+}
+
 function visibleRootCount(sessions: SessionHistoryEntry[]): number {
-  return sessions.filter((session) => !session.isHidden && !session.parentSessionId).length
+  return sessions.filter((session) => isListedSession(session) && !session.parentSessionId).length
 }
 
 function notePinnedUnread(rows: PinnedSessionEntry[]): void {
@@ -40,11 +66,14 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   pinnedConnectionIds?: string[]
 }) {
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
-  const [folderSessionsHaveMore, setFolderSessionsHaveMore] = useState<Record<string, boolean>>({})
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
+  const [settledByFolder, setSettledByFolder] = useState<Record<string, SettledFolderPage>>({})
   const folderSessionsRef = useRef(folderSessions)
-  const folderSessionsHaveMoreRef = useRef(folderSessionsHaveMore)
+  const settledByFolderRef = useRef(settledByFolder)
+  const settledGeneration = useRef(new Map<string, number>())
+  const settledAppendFlight = useRef(new Set<string>())
+  const replaceSettledRef = useRef<(folderPath: string) => void>(() => {})
   const inFlight = useRef(new Map<string, ListRequest>())
   const resetSession = useChatStore((state) => state.resetSession)
   const removeSessionFromMemory = useChatStore((state) => state.removeSessionFromMemory)
@@ -55,13 +84,13 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   }))
 
   useEffect(() => { folderSessionsRef.current = folderSessions }, [folderSessions])
-  useEffect(() => { folderSessionsHaveMoreRef.current = folderSessionsHaveMore }, [folderSessionsHaveMore])
+  useEffect(() => { settledByFolderRef.current = settledByFolder }, [settledByFolder])
   // Read at request time. A catalog write that only moved `lastOpened` must not
   // rebuild `load` and every row callback derived from it.
   const hostProjectsRef = useRef(hostProjects)
   useEffect(() => { hostProjectsRef.current = hostProjects }, [hostProjects])
 
-  const load = useCallback((folderPath: string, reason: LoadReason, rootTarget: number, initial: SessionHistoryEntry[] = []) => {
+  const load = useCallback((folderPath: string, reason: LoadReason) => {
     // A text row would change the list height. Only an expand, or a fetch that
     // has no rows yet, spins the folder icon. A refresh of a list already on
     // screen stays quiet so switching sessions does not shove the rows.
@@ -85,33 +114,31 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     armFolderSpinner()
     const request: ListRequest = { promise: Promise.resolve([]), invalidated: false }
     request.promise = (async () => {
-      let seed = initial
       for (;;) {
         request.invalidated = false
-        const sessions = [...seed]
+        const sessions: SessionHistoryEntry[] = []
         let hasMore = true
         const startedAt = performance.now()
-        traceSidebar('sessions_load:start', { folderPath, reason, pageSize: PAGE_SIZE }, folderPath)
+        traceSidebar('sessions_load:start', { folderPath, reason, pageSize: ACTIVE_PAGE_SIZE }, folderPath)
         try {
           const { listSessionsPage } = await import('@/lib/session-list-ops')
           const projectId = hostProjectsRef.current.find((project) => project.path === folderPath)?.id ?? null
-          while (visibleRootCount(sessions) < rootTarget && hasMore) {
+          while (hasMore) {
             const offset = sessions.length
-            const page = await listSessionsPage(folderPath, { limit: PAGE_SIZE, offset, projectId })
+            const page = await listSessionsPage(folderPath, { limit: ACTIVE_PAGE_SIZE, offset, projectId })
             sessions.push(...page)
-            hasMore = page.length >= PAGE_SIZE
+            hasMore = page.length >= ACTIVE_PAGE_SIZE
             traceSidebar('sessions_load:page', {
               folderPath, reason, offset, pageCount: page.length,
               visibleCount: visibleRootCount(sessions),
               elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
               remote: Boolean(parseRemoteProjectKey(folderPath)),
             }, folderPath)
-            if (request.invalidated) break
+            if (page.length === 0 || request.invalidated) break
           }
           if (request.invalidated) {
-            // Also restart pagination: appending to old offsets can skip or repeat
-            // rows when creation changes the ordering while "show more" is loading.
-            seed = []
+            // Restart from the first page. Appending at the old offset can skip
+            // or repeat rows when a create or settle changes the order mid-read.
             continue
           }
           folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
@@ -120,11 +147,13 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
             if (cached?.length === sessions.length && cached.every((entry, index) => shallow(entry, sessions[index]))) return previous
             return { ...previous, [folderPath]: sessions }
           })
-          folderSessionsHaveMoreRef.current = { ...folderSessionsHaveMoreRef.current, [folderPath]: hasMore }
-          setFolderSessionsHaveMore((previous) => previous[folderPath] === hasMore ? previous : { ...previous, [folderPath]: hasMore })
-          const unread = sessions.filter((session) => session.unread && !session.isHidden).map((session) => session.sessionId)
+          replaceSettledRef.current(folderPath)
+          const unread: Array<{ folderPath: string; sessionId: string }> = []
+          for (const session of sessions) {
+            if (session.unread && isListedSession(session)) unread.push({ folderPath, sessionId: session.sessionId })
+          }
           if (unread.length) {
-            useChatStore.setState((state) => noteListedUnread(state, unread.map((sessionId) => ({ folderPath, sessionId }))))
+            useChatStore.setState((state) => noteListedUnread(state, unread))
           }
           traceSidebar('sessions_load:end', {
             folderPath, reason, fetchedCount: sessions.length, visibleCount: visibleRootCount(sessions),
@@ -136,8 +165,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
             folderPath, reason, error: error instanceof Error ? error.message : String(error),
             elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
           }, folderPath)
-          if (!request.invalidated) return seed
-          seed = []
+          if (!request.invalidated) return []
         }
       }
     })().finally(() => {
@@ -154,16 +182,8 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     return request.promise
   }, [])
 
-  const loadFolderSessions = useCallback((folderPath: string, reason: Exclude<LoadReason, 'show_more'>) =>
-    load(folderPath, reason, INITIAL_ROOT_TARGET), [load])
-
-  const loadMoreFolderSessions = useCallback(async (folderPath: string, minimumRootCount: number) => {
-    const pending = inFlight.current.get(folderPath)
-    if (pending) await pending.promise
-    const cached = folderSessionsRef.current[folderPath] ?? []
-    if (!folderSessionsHaveMoreRef.current[folderPath] || visibleRootCount(cached) >= minimumRootCount) return cached
-    return load(folderPath, 'show_more', minimumRootCount, cached)
-  }, [load])
+  const loadFolderSessions = useCallback((folderPath: string, reason: LoadReason) =>
+    load(folderPath, reason), [load])
 
   /**
    * Which host the rows currently in `pinnedSessions` came from. Read only when
@@ -202,17 +222,116 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     })
   }, [pinnedKey])
 
+  const publishSettled = useCallback((folderPath: string, page: SettledFolderPage) => {
+    const next = { ...settledByFolderRef.current, [folderPath]: page }
+    settledByFolderRef.current = next
+    setSettledByFolder(next)
+  }, [])
+
+  // One project's settled page. A refresh asks for at least as many rows as are
+  // already on screen, so opening the next page does not collapse on the next
+  // session-changed notice. The host key is captured so a late answer cannot
+  // paint under a host the user has already left.
+  const replaceSettled = useCallback((folderPath: string) => {
+    const hostKey = pinnedHostRef.current
+    const generation = (settledGeneration.current.get(folderPath) ?? 0) + 1
+    settledGeneration.current.set(folderPath, generation)
+    const wanted = Math.max(SETTLED_PAGE_SIZE, settledByFolderRef.current[folderPath]?.sessions.length ?? 0)
+    void (async () => {
+      try {
+        const collected: PinnedSessionEntry[] = []
+        let offset = 0
+        let hasMore = true
+        let total = 0
+        const { connectionId, projectPath } = settledListTarget(folderPath)
+        while (offset < wanted && hasMore) {
+          const limit = Math.min(SETTLED_QUERY_CAP, wanted - offset)
+          const page = await window.environment.listSettledSessions(connectionId, { projectPath, limit, offset })
+          if (pinnedHostRef.current !== hostKey || settledGeneration.current.get(folderPath) !== generation) return
+          collected.push(...page.sessions)
+          total = page.total
+          hasMore = page.sessions.length >= limit
+          offset += page.sessions.length
+          if (page.sessions.length === 0) break
+        }
+        if (pinnedHostRef.current !== hostKey || settledGeneration.current.get(folderPath) !== generation) return
+        const sessions = dedupeSettled(collected)
+        publishSettled(folderPath, { sessions, hasMore, total: Math.max(sessions.length, total) })
+      } catch {
+        // Keep the page already on screen. A failed refresh must not hide finished work.
+      }
+    })()
+  }, [publishSettled])
+  useEffect(() => {
+    replaceSettledRef.current = replaceSettled
+  }, [replaceSettled])
+
+  const loadMoreSettledSessions = useCallback((folderPath: string) => {
+    const current = settledByFolderRef.current[folderPath]
+    if (!current?.hasMore || settledAppendFlight.current.has(folderPath)) return Promise.resolve()
+    const hostKey = pinnedHostRef.current
+    const generation = settledGeneration.current.get(folderPath) ?? 0
+    const offset = current.sessions.length
+    const { connectionId, projectPath } = settledListTarget(folderPath)
+    settledAppendFlight.current.add(folderPath)
+    return window.environment.listSettledSessions(connectionId, {
+      projectPath, limit: SETTLED_PAGE_SIZE, offset,
+    }).then((page) => {
+      if (pinnedHostRef.current !== hostKey || (settledGeneration.current.get(folderPath) ?? 0) !== generation) return
+      const existingPage = settledByFolderRef.current[folderPath]
+      const existing = existingPage?.sessions ?? []
+      const sessions = dedupeSettled([...existing, ...page.sessions])
+      publishSettled(folderPath, {
+        sessions,
+        hasMore: page.sessions.length >= SETTLED_PAGE_SIZE,
+        total: Math.max(sessions.length, page.total, existingPage?.total ?? 0),
+      })
+    }).catch(() => {
+      // Leave hasMore set so the next scroll can retry.
+    }).finally(() => {
+      settledAppendFlight.current.delete(folderPath)
+    })
+  }, [publishSettled])
+
+  const refreshSettled = useCallback((folderPath?: string) => {
+    const folders = folderPath
+      ? [folderPath]
+      : [...new Set([...Object.keys(folderSessionsRef.current), ...Object.keys(settledByFolderRef.current)])]
+    for (const folder of folders) replaceSettled(folder)
+  }, [replaceSettled])
+
   const refreshFolderSessions = useCallback((folderPath: string) => {
     loadFolderSessions(folderPath, 'refresh')
   }, [loadFolderSessions])
 
-  // Pinned follows the host switcher. Clear first: the previous host's pins
-  // point at projects on a different machine, so leaving them up while the new
-  // list loads would offer rows the selected host does not have.
+  const settledSessions = useMemo(
+    () => Object.values(settledByFolder).flatMap((page) => page.sessions),
+    [settledByFolder],
+  )
+  const settledHasMore = useMemo(() => {
+    const hasMore: Record<string, boolean> = {}
+    for (const [folderPath, page] of Object.entries(settledByFolder)) {
+      if (page.hasMore) hasMore[folderPath] = true
+    }
+    return hasMore
+  }, [settledByFolder])
+  const settledCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const [folderPath, page] of Object.entries(settledByFolder)) {
+      counts[folderPath] = Math.max(page.sessions.length, page.total)
+    }
+    return counts
+  }, [settledByFolder])
+
+  // Pins follow the host switcher. Drop settled rows from the previous host,
+  // then reload only projects whose session list is already on screen.
   useEffect(() => {
     pinnedHostRef.current = pinnedKey
     setPinnedSessions([])
+    settledByFolderRef.current = {}
+    setSettledByFolder({})
     refreshPinned()
+    for (const folderPath of Object.keys(folderSessionsRef.current)) replaceSettledRef.current(folderPath)
   }, [pinnedKey, refreshPinned])
 
   const pinnedStatuses = useChatStore(useShallow((s) => {
@@ -260,16 +379,18 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
         for (const folder of new Set([...Object.keys(folderSessionsRef.current), ...(currentFolder ? [currentFolder] : [])])) refreshFolderSessions(folder)
       }
       refreshPinned()
+      refreshSettled()
       // A collaboration child pointed outside every open project registers its
       // own — without this the new project row only appears after a restart.
       void useAppStore.getState().fetchRecentFolders()
     })
-  }, [currentFolder, refreshFolderSessions, refreshPinned])
+  }, [currentFolder, refreshFolderSessions, refreshPinned, refreshSettled])
   const sessionListNonce = useAppStore((s) => s.sessionListNonce)
   useEffect(() => {
     if (!currentFolder || sessionListNonce === 0) return
     refreshFolderSessions(currentFolder)
     refreshPinned()
+    refreshSettled()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionListNonce])
 
@@ -279,10 +400,20 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     refreshFolderSessions(folderPath)
   }, [refreshPinned, refreshFolderSessions])
 
-  const handleHideSession = useCallback(async (sessionId: string, hidden: boolean, folderPath: string) => {
-    await setSessionFlags(folderPath, sessionId, { isHidden: hidden })
+  const handleSettleSession = useCallback(async (sessionId: string, settled: boolean, folderPath: string) => {
+    await setSessionFlags(folderPath, sessionId, { isSettled: settled })
+    if (settled) {
+      useChatStore.setState((state) => setUnseenCompleted(state, folderPath, sessionId, false))
+      try {
+        await setSessionRead(folderPath, sessionId, true)
+      } catch (err) {
+        console.warn('[sidebar] setSessionRead failed:', err)
+      }
+    }
     refreshFolderSessions(folderPath)
-  }, [refreshFolderSessions])
+    refreshPinned()
+    refreshSettled()
+  }, [refreshFolderSessions, refreshPinned, refreshSettled])
 
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
     const remote = parseRemoteProjectKey(target.folderPath)
@@ -319,15 +450,33 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
       ),
     }))
     setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== target.sessionId))
+    const settledPage = settledByFolderRef.current[target.folderPath]
+    if (settledPage) {
+      const sessions = settledPage.sessions.filter((session) => session.sessionId !== target.sessionId)
+      const removed = sessions.length < settledPage.sessions.length
+      const nextSettled = {
+        ...settledByFolderRef.current,
+        [target.folderPath]: {
+          ...settledPage,
+          sessions,
+          total: removed ? Math.max(sessions.length, settledPage.total - 1) : settledPage.total,
+        },
+      }
+      settledByFolderRef.current = nextSettled
+      setSettledByFolder(nextSettled)
+    }
     refreshFolderSessions(target.folderPath)
-    if (!remote) refreshPinned()
-  }, [refreshFolderSessions, refreshPinned, resetSession, removeSessionFromMemory])
+    if (!remote) {
+      refreshPinned()
+      refreshSettled()
+    }
+  }, [refreshFolderSessions, refreshPinned, refreshSettled, resetSession, removeSessionFromMemory])
 
 
   return {
-    currentActiveSid, folderSessions, folderSessionsHaveMore, loadingFolders, folderSessionsRef,
-    pinnedSessions, pinnedStatuses, loadFolderSessions, loadMoreFolderSessions,
-    refreshFolderSessions, refreshPinned, handlePinSession, handleHideSession,
-    executeDeleteSession,
+    currentActiveSid, folderSessions, loadingFolders, folderSessionsRef,
+    pinnedSessions, pinnedStatuses, settledSessions, settledHasMore, settledCounts, loadFolderSessions,
+    loadMoreSettledSessions, refreshFolderSessions, refreshPinned, handlePinSession,
+    handleSettleSession, executeDeleteSession,
   }
 }

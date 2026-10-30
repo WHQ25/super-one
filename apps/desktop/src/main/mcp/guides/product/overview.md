@@ -21,7 +21,7 @@ SuperOne is an Electron desktop app that puts every coding-agent harness on one 
 | `contribute` | **Any** GitHub issue or PR (bugs, features, improvements, docs). Issue first, then optional PR. |
 | `debug` | Crashes / wrong behavior: log paths, userData, monorepo map, this machine’s runtime paths |
 | `agent-profiles` | Saved role instructions, explicit long-term collaboration approval, and the ordinary Coordinator Profile pattern |
-| `collaboration` | Before setting `config` in `session_collab_request`; covers launch defaults, choosing a provider or account from usage, shared checkout (default for read-only review), same-repo isolation for implementers, cross-project launches |
+| `collaboration` | Before setting `config` in `session_collab_request`; covers launch defaults, choosing a provider or account from usage, shared checkout (default for read-only review), same-repo isolation for implementers, cross-project launches, and settling a spawn child when its task is done |
 
 ```text
 read_manual({ domain: "product", topic: "contribute" })

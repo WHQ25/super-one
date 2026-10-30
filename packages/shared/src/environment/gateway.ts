@@ -150,6 +150,15 @@ export interface SessionGateway {
    */
   listPinned?(environmentId: string, options?: { limit?: number }): Promise<unknown[]>
   /**
+   * Settled sessions across every project in one environment. New nodes return
+   * `{ sessions, total }`, where `total` is the unpaged count. Older nodes
+   * return a bare array. Optional: a node with no such RPC renders nothing.
+   */
+  listSettled?(
+    environmentId: string,
+    options?: { limit?: number; offset?: number; projectPath?: string },
+  ): Promise<unknown[] | { sessions: unknown[]; total: number }>
+  /**
    * Title search across every project in one environment. Empty `query` is the
    * recent list. `projectPaths` are host-local folder paths; omit them to span
    * the environment. Optional: older nodes have no such RPC and the caller

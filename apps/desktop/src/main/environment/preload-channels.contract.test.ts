@@ -35,6 +35,9 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_LIST_PINNED_SESSIONS).toBe(
       'environment:listPinnedSessions',
     )
+    expect(AgentIpcChannels.ENVIRONMENT_LIST_SETTLED_SESSIONS).toBe(
+      'environment:listSettledSessions',
+    )
     expect(AgentIpcChannels.ENVIRONMENT_SEARCH_SESSIONS).toBe(
       'environment:searchSessionsByTitle',
     )
@@ -95,6 +98,7 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_REMOVE_PROJECT',
       'ENVIRONMENT_LIST_SESSIONS',
       'ENVIRONMENT_LIST_PINNED_SESSIONS',
+      'ENVIRONMENT_LIST_SETTLED_SESSIONS',
       'ENVIRONMENT_SEARCH_SESSIONS',
       'ENVIRONMENT_CREATE_SESSION',
       'ENVIRONMENT_GET_SESSION',

@@ -225,8 +225,7 @@ export function useProjectSessions({
 
   // The host pages rows, not groups, so a page can end inside a collaboration
   // parent's children. A revealed group is whole only once the group after it
-  // has started — the desktop sidebar's `nextRootTarget` rule — so read on
-  // until it has, or the host has nothing left.
+  // has started, so read on until it has, or the host has nothing left.
   const groupsCut = groupCount <= revealed && loadedCount < total
   useEffect(() => {
     if (!armed || !visible || !listExpanded || !loaded || busy || loadingMore || error || !groupsCut) return

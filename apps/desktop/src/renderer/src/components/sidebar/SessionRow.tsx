@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone, Unplug } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, CircleCheck, Clock, CornerDownRight, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone, Undo2, Unplug } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
@@ -20,6 +20,7 @@ import { getPendingReason } from './session-state-utils'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
+import { canSettleSession } from '@/lib/session-menu-items'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
 import { SessionHoverCard, SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
@@ -97,7 +98,7 @@ export const SessionRow = memo(function SessionRow({
   environmentOffline = false,
   onSwitchSession,
   onPinSession,
-  onHideSession,
+  onSettleSession,
   onRenameSession,
   onDeleteSession,
 }: SessionRowProps) {
@@ -180,10 +181,15 @@ export const SessionRow = memo(function SessionRow({
     title: session.title,
   })
 
+  const showSettleControl = !opening && canSettleSession(status, {
+    realtimeVoice: isRealtimeVoiceSession,
+    isSettled: session.isSettled === true,
+  })
+
   const menuItems = useSessionMenuItems(session, folderPath, {
     onSwitchSession,
     onPinSession,
-    onHideSession,
+    onSettleSession,
     onRenameSession,
     onDeleteSession,
   })
@@ -201,18 +207,19 @@ export const SessionRow = memo(function SessionRow({
           >
             {childSession && <CornerDownRight className="size-3 shrink-0 text-sidebar-foreground/45" />}
             <div className="relative flex size-4 shrink-0 items-center justify-center">
-              {!opening && (
+              {showSettleControl && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    onHideSession(session.sessionId, !session.isHidden, folderPath)
+                    onSettleSession(session.sessionId, !session.isSettled, folderPath)
                   }}
+                  aria-label={session.isSettled ? t('sidebar.contextMenu.unsettle') : t('sidebar.contextMenu.settle')}
                   className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/session:opacity-100"
                 >
-                  {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+                  {session.isSettled ? <Undo2 className="size-3" /> : <CircleCheck className="size-3" />}
                 </button>
               )}
-              <span className={cn('pointer-events-none', !opening && 'group-hover/session:opacity-0')}>
+              <span className={cn('pointer-events-none', showSettleControl && 'group-hover/session:opacity-0')}>
                 {opening
                   ? <Loader2 aria-label={t('common.loading')} className="size-3 animate-spin text-sidebar-foreground/70" />
                   : scheduled

@@ -28,7 +28,7 @@ const hover: SessionHoverModel = {
 const callbacks = {
   onSwitchSession: () => {},
   onPinSession: () => {},
-  onHideSession: () => {},
+  onSettleSession: () => {},
   onRenameSession: () => {},
   onDeleteSession: () => {},
 }

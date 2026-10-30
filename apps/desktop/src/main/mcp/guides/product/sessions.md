@@ -127,7 +127,7 @@ project_list({ query: "super-one" })
 session_list({ projectId, limit: 20 })         // or allProjects: true
 session_search({ query: "oauth", projectId })
 session_read({ sessionId })                    // any project by session id
-session_cleanup({ action: "hide", sessionIds: [...] })  // ids may span projects
+session_cleanup({ action: "settle", sessionIds: [...] })  // ids may span projects
 ```
 
 Session rows/hits only include `projectId` (not path/name) — call `project_list` when you need human labels.
@@ -165,10 +165,13 @@ session_read({ sessionId, view: "tool_detail", toolUseId: "..." })  // only if n
 
 ### Cleanup
 
+Settle marks a session finished: it leaves the active sidebar list and the pin strip, stops its running agent, and stays openable. Settling a parent also settles its spawn children. Unsettle puts that session back, does not unsettle its children, and does not restart its agent. Neither asks for confirmation. Settled sessions still appear in `session_list` and `session_search`.
+
 ```
 session_list({ order: "last_active_asc", limit: 50 })   // discover first
-session_cleanup({ action: "hide", sessionIds: [...] })  // soft, no confirm
-session_cleanup({ action: "delete", sessionIds: [...] }) // host confirmation dialog only
+session_cleanup({ action: "settle", sessionIds: [...] })    // finished, no confirm
+session_cleanup({ action: "unsettle", sessionIds: [...] })  // back to the active list
+session_cleanup({ action: "delete", sessionIds: [...] })    // host confirmation dialog only
 ```
 
 Safety: never deletes the **current** session; **pinned** sessions are skipped unless `includePinned: true`. `delete` always requires a user confirmation dialog (no separate preview step).

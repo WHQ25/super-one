@@ -64,6 +64,7 @@ import {
   SESSION_READ_LIMIT_DESCRIPTION,
   SESSION_READ_THINKING_DESCRIPTION,
   SESSION_CLEANUP_DESCRIPTION,
+  SESSION_CLEANUP_ACTION_DESCRIPTION,
   AUTOMATION_LIST_DESCRIPTION,
   AUTOMATION_APPLY_DESCRIPTION,
   AUTOMATION_DELETE_DESCRIPTION,
@@ -169,6 +170,8 @@ export interface SessionTitleSetter {
 export interface SessionTitleHost {
   disposeSession?(sessionId: string): Promise<void>
   stopBackgroundTasks?(sessionId: string): Promise<void>
+  /** Stop a settled session's turn and drop its harness process. The row stays. */
+  releaseSettledSession?(sessionId: string): Promise<void>
   getSession(sessionId: string): SessionTitleSetter | null
   /** A desktop view (pane, mosaic tile or mini window) is drawing this session. */
   isSessionForeground?(sessionId: string): boolean
@@ -806,8 +809,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_CLEANUP_DESCRIPTION,
       inputSchema: {
-        action: z.enum(['hide', 'unhide', 'delete'])
-          .describe('hide/unhide soft-archive (no confirm). delete permanently removes after user approval dialog.'),
+        action: z.enum(['settle', 'unsettle', 'delete'])
+          .describe(SESSION_CLEANUP_ACTION_DESCRIPTION),
         sessionIds: z.array(z.string()).min(1).max(50).describe('Session ids from session_list to act on.'),
         includePinned: z.boolean().optional().describe('Allow pinned sessions. Default false.'),
         maxDelete: z.number().int().min(1).max(50).optional().describe('Hard cap. Default 50.'),

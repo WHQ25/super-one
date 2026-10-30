@@ -237,6 +237,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
       updatedAt: row.updatedAt,
       isPinned: row.isPinned,
       isHidden: row.isHidden,
+      ...(row.isSettled ? { isSettled: true } : {}),
       ...(row.unread ? { unread: true } : {}),
       isUserRenamed: row.isUserRenamed,
       tags: row.tags,

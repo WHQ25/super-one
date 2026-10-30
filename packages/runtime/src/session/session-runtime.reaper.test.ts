@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { openNodeDatabase } from '../db/database'
+import { ControlLeaseService } from '../lease/control-lease'
+import { EventLog } from './event-log'
+import { createSqliteSessionStore } from './sqlite-session-store'
 import {
   SessionRuntime,
   type LeaseGuard,
@@ -82,6 +86,107 @@ function runtimeWithEntries(entries: Array<{
   })
   return { runtime, disposeSession }
 }
+
+describe('SessionRuntime settle', () => {
+  it('stops an in-flight turn and drops the harness without closing the session', async () => {
+    let started!: () => void
+    const running = new Promise<void>((resolve) => { started = resolve })
+    const interruptSession = vi.fn(async () => {})
+    const disposeSession = vi.fn(async () => {})
+    const runner = Object.assign((async (input: { signal: AbortSignal }) => {
+      started()
+      await new Promise<void>((_resolve, reject) => {
+        const fail = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        if (input.signal.aborted) fail()
+        else input.signal.addEventListener('abort', fail, { once: true })
+      })
+      return { finalText: 'should not finish' }
+    }) as TurnRunner, { interruptSession, disposeSession })
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-settle', runner, { runtimeReaperIntervalMs: 0 })
+    const created = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    try {
+      const sent = runtime.send({
+        sessionId: created.sessionId,
+        text: 'work',
+        client: { clientSessionId: 'client-1' },
+        leaseId: 'lease-1',
+        generation: 'gen-1',
+      })
+      await running
+      expect(runtime.get(created.sessionId)?.status).toBe('streaming')
+      runtime.setUiFlags(created.sessionId, { isSettled: true })
+      await sent
+      await vi.waitFor(() => expect(disposeSession).toHaveBeenCalledWith(created.sessionId))
+      const live = runtime.get(created.sessionId)
+      expect(live?.isSettled).toBe(true)
+      expect(live?.closed).toBeFalsy()
+      expect(live?.status).toBe('interrupted')
+      expect(interruptSession).not.toHaveBeenCalled()
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  it('drops an idle harness and leaves a pin-only flag change alone', async () => {
+    const interruptSession = vi.fn(async () => {})
+    const disposeSession = vi.fn(async () => {})
+    const { runtime } = runtimeWithEntries([], [session({ sessionId: 'idle-1', status: 'idle' })])
+    const runner = (runtime as unknown as { turnRunner: TurnRunner }).turnRunner
+    runner.interruptSession = interruptSession
+    runner.disposeSession = disposeSession
+    try {
+      runtime.setUiFlags('idle-1', { isPinned: true })
+      expect(disposeSession).not.toHaveBeenCalled()
+      expect(interruptSession).not.toHaveBeenCalled()
+      runtime.setUiFlags('idle-1', { isSettled: true })
+      expect(runtime.get('idle-1')?.isSettled).toBe(true)
+      expect(runtime.get('idle-1')?.closed).toBeFalsy()
+      expect(runtime.get('idle-1')?.status).toBe('idle')
+      expect(interruptSession).toHaveBeenCalledWith('idle-1')
+      expect(disposeSession).toHaveBeenCalledWith('idle-1')
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
+  it('settling a parent also settles its spawn child and leaves a link peer', async () => {
+    const db = openNodeDatabase(':memory:')
+    const runtime = new SessionRuntime(
+      createSqliteSessionStore(db),
+      new EventLog(db, 'env-settle-children'),
+      new ControlLeaseService(db),
+      'env-settle-children',
+      async () => ({ finalText: 'ok' }),
+      { runtimeReaperIntervalMs: 0 },
+    )
+    try {
+      const parent = runtime.create({ projectId: 'p', harnessId: 'claude' })
+      const child = runtime.create({ projectId: 'p', harnessId: 'claude' })
+      const peer = runtime.create({ projectId: 'p', harnessId: 'claude' })
+      const insert = db.prepare(`
+        INSERT INTO session_collaboration_grants (
+          credential_hash, credential_hint, parent_session_id, child_session_id, agent_id, task, config_json, created_at, kind
+        ) VALUES (?, 'hint', ?, ?, 'agent', 'task', '{}', '2026-01-01', ?)
+      `)
+      insert.run('spawn-grant', parent.sessionId, child.sessionId, 'spawn')
+      insert.run('link-grant', parent.sessionId, peer.sessionId, 'link')
+
+      runtime.setUiFlags(parent.sessionId, { isSettled: true })
+
+      expect(runtime.get(parent.sessionId)?.isSettled).toBe(true)
+      expect(runtime.get(child.sessionId)?.isSettled).toBe(true)
+      expect(runtime.get(peer.sessionId)?.isSettled).toBeFalsy()
+
+      runtime.setUiFlags(parent.sessionId, { isSettled: false })
+      expect(runtime.get(parent.sessionId)?.isSettled).toBe(false)
+      expect(runtime.get(child.sessionId)?.isSettled).toBe(true)
+    } finally {
+      await runtime.dispose()
+      db.close()
+    }
+  })
+})
 
 describe('SessionRuntime idle harness reaper', () => {
   it('releases only idle runtimes older than the adaptive timeout', async () => {

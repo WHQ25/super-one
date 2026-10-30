@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from '@superone/shared/environment'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { homePath } from '@superone/shared/path-display'
+import { isListedSession } from '@/lib/session-list-ops'
 
 export interface ProjectRepoLink {
   /** GitHub shows `owner/repo`. Every other host keeps `host/path`. */
@@ -52,14 +53,14 @@ export function projectHoverFolders(rootPath: string, extraDirs?: readonly strin
   return folders
 }
 
-/** Non-hidden sessions, or null when the sidebar has not loaded the whole list. */
+/** Listed sessions, or null when the sidebar has not loaded the whole list. */
 export function knownSessionCount(input: {
   loaded: boolean
   hasMore: boolean
-  sessions: readonly { isHidden?: boolean }[]
+  sessions: readonly { isHidden?: boolean; isSettled?: boolean }[]
 }): number | null {
   if (!input.loaded || input.hasMore) return null
-  return input.sessions.reduce((count, session) => count + (session.isHidden ? 0 : 1), 0)
+  return input.sessions.reduce((count, session) => count + (isListedSession(session) ? 1 : 0), 0)
 }
 
 const repoLists = new Map<string, Promise<Map<string, string | null>>>()

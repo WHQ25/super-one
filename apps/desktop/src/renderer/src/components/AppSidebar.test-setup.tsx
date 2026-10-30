@@ -2,14 +2,15 @@
 
 import { beforeAll, beforeEach, vi } from 'vitest'
 import { resetEnvironmentListCache } from '@/lib/environment-list'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { DEFAULT_SIDEBAR_SETTINGS } from '@/lib/multi-host/types'
 import { SIDEBAR_SECTION_COLLAPSE_KEY } from '@/components/sidebar/sidebar-section-collapse'
 import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
-import type { PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { PinnedSessionEntry, SettledSessionPage } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 
-export const sessionFixtures = { byFolder: {} as Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; parentSessionId?: string }>> }
+export const sessionFixtures = { byFolder: {} as Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; isPinned?: boolean; isSettled?: boolean; parentSessionId?: string }>> }
 
 export const appState = {
   sidebarTab: 'sessions',
@@ -92,15 +93,40 @@ export const mockEnvironment = {
   listPinnedSessions: vi.fn(
     async (_connectionId: string): Promise<PinnedSessionEntry[]> => [],
   ),
-  setSessionUiFlags: vi.fn(async (_connectionId: string, sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }) => {
-    if (flags.isHidden === undefined) return
+  listSettledSessions: vi.fn(async (
+    _connectionId: string,
+    options?: { projectPath?: string; limit?: number; offset?: number },
+  ): Promise<SettledSessionPage> => {
+    const rows: PinnedSessionEntry[] = []
+    for (const [folderPath, sessions] of Object.entries(sessionFixtures.byFolder)) {
+      const hostPath = parseRemoteProjectKey(folderPath)?.path ?? folderPath
+      if (options?.projectPath && options.projectPath !== hostPath && options.projectPath !== folderPath) continue
+      for (const row of sessions) {
+        if (row.isSettled !== true || row.isHidden === true) continue
+        rows.push({
+          sessionId: row.sessionId,
+          title: row.title,
+          lastActiveAt: row.lastActiveAt,
+          messageCount: row.messageCount,
+          isSettled: true,
+          folderPath,
+          folderName: folderPath.split('/').filter(Boolean).pop() ?? folderPath,
+        })
+      }
+    }
+    const offset = options?.offset ?? 0
+    const sessions = options?.limit == null ? rows.slice(offset) : rows.slice(offset, offset + options.limit)
+    return { sessions, total: rows.length }
+  }),
+  setSessionUiFlags: vi.fn(async (_connectionId: string, sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }) => {
     sessionFixtures.byFolder = Object.fromEntries(
       Object.entries(sessionFixtures.byFolder).map(([folderPath, rows]) => [
         folderPath,
-        rows.map((row) => row.sessionId === sessionId ? { ...row, isHidden: flags.isHidden } : row),
+        rows.map((row) => row.sessionId === sessionId ? { ...row, ...flags } : row),
       ]),
     )
   }),
+  setSessionRead: vi.fn(async () => {}),
   removeSession: vi.fn(async (_connectionId: string, _sessionId: string) => {}),
   renameSession: vi.fn(async (_connectionId: string, _sessionId: string, _title: string) => {}),
   listDrafts: vi.fn(async () => []),
@@ -142,7 +168,14 @@ vi.mock('@/stores/chat', () => ({
       }, () => chatVersion)
       return selector(chatState)
     },
-    { getState: () => chatState },
+    {
+      getState: () => chatState,
+      setState: (partial: unknown) => {
+        const next = typeof partial === 'function' ? (partial as (state: typeof chatState) => unknown)(chatState) : partial
+        if (next && typeof next === 'object') Object.assign(chatState, next)
+        notifyChat()
+      },
+    },
   ),
   useActiveSession: (selector: (s: Record<string, unknown>) => unknown) => selector({}),
   isDraftSession: (id: string | null) => id === '__draft__' || (!!id && id.startsWith('__draft_')),

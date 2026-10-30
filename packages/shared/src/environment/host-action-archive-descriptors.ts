@@ -15,7 +15,8 @@ import {
   SESSION_READ_THINKING_DESCRIPTION,
   SESSION_TAGS_FILTER_DESCRIPTION,
   SESSION_TAG_MATCH_DESCRIPTION,
-  SESSION_CLEANUP_DESCRIPTION
+  SESSION_CLEANUP_DESCRIPTION,
+  SESSION_CLEANUP_ACTION_DESCRIPTION
 } from '../superone-tool-descriptions'
 
 /** Detail groups `environment_get_info` can add to the base row. */
@@ -402,11 +403,11 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
         "action": {
           "type": "string",
           "enum": [
-            "hide",
-            "unhide",
+            "settle",
+            "unsettle",
             "delete"
           ],
-          "description": "hide/unhide soft-archive (no confirm). delete permanently removes after user approval dialog."
+          "description": SESSION_CLEANUP_ACTION_DESCRIPTION
         },
         "sessionIds": {
           "type": "array",

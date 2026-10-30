@@ -14,8 +14,10 @@ import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Archive,
+  CircleCheck,
   EyeOff,
   Eye,
+  Undo2,
   Folder,
   History,
   List,
@@ -865,7 +867,7 @@ export function SessionArchiveToolBlockPresenter({
   }
 
   // ---------- session_cleanup ----------
-  // Discover via session_list; cleanup only hide/unhide/delete (legacy "preview" may still appear in old transcripts).
+  // settle/unsettle/delete. Old transcripts may still say hide/unhide/preview.
   const action =
     typeof params.action === 'string' ? params.action : String(rec?.action ?? 'hide')
   const candidates = asArray(rec?.candidates).map((c) => asRecord(c) ?? {})
@@ -878,7 +880,7 @@ export function SessionArchiveToolBlockPresenter({
   const status = typeof rec?.status === 'string' ? rec.status : ''
   const idCount = Array.isArray(params.sessionIds) ? params.sessionIds.length : 0
 
-  let Icon: typeof Archive | typeof Trash2 | typeof EyeOff | typeof Eye = Archive
+  let Icon: typeof Archive | typeof Trash2 | typeof EyeOff | typeof Eye | typeof CircleCheck | typeof Undo2 = Archive
   let label = t(`${a}.sessionsHidden`)
   let summary: string | undefined
 
@@ -886,9 +888,15 @@ export function SessionArchiveToolBlockPresenter({
     if (action === 'delete') {
       Icon = Trash2
       label = t(`${a}.deleteSessions`)
+    } else if (action === 'unsettle') {
+      Icon = Undo2
+      label = t(`${a}.unsettleSessions`)
     } else if (action === 'unhide') {
       Icon = Eye
       label = t(`${a}.unhideSessions`)
+    } else if (action === 'settle') {
+      Icon = CircleCheck
+      label = t(`${a}.settleSessions`)
     } else {
       Icon = EyeOff
       label = t(`${a}.hideSessions`)
@@ -899,6 +907,10 @@ export function SessionArchiveToolBlockPresenter({
       Icon = Trash2
       label = t(`${a}.confirmingDelete`)
       if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
+    } else if (action === 'unsettle') {
+      Icon = Undo2
+      label = t(`${a}.unsettlingSessions`)
+      if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
     } else if (action === 'unhide') {
       Icon = Eye
       label = t(`${a}.unhidingSessions`)
@@ -906,6 +918,10 @@ export function SessionArchiveToolBlockPresenter({
     } else if (action === 'preview') {
       // Legacy transcripts only
       label = t(`${a}.previewingCleanup`)
+    } else if (action === 'settle') {
+      Icon = CircleCheck
+      label = t(`${a}.settlingSessions`)
+      if (idCount > 0) summary = t(`${a}.sessionCount`, { count: idCount })
     } else {
       Icon = EyeOff
       label = t(`${a}.hidingSessions`)
@@ -915,9 +931,15 @@ export function SessionArchiveToolBlockPresenter({
     if (action === 'delete') {
       Icon = Trash2
       label = t(`${a}.deleteSessions`)
+    } else if (action === 'unsettle') {
+      Icon = Undo2
+      label = t(`${a}.unsettleSessions`)
     } else if (action === 'unhide') {
       Icon = Eye
       label = t(`${a}.unhideSessions`)
+    } else if (action === 'settle') {
+      Icon = CircleCheck
+      label = t(`${a}.settleSessions`)
     } else {
       Icon = EyeOff
       label = t(`${a}.hideSessions`)
@@ -942,6 +964,14 @@ export function SessionArchiveToolBlockPresenter({
     Icon = Archive
     label = t(`${a}.cleanupPreview`)
     summary = t(`${a}.candidateCount`, { count: candidates.length })
+  } else if (action === 'settle') {
+    Icon = CircleCheck
+    label = t(`${a}.sessionsSettled`)
+    summary = t(`${a}.sessionCount`, { count: affected.length || candidates.length || idCount })
+  } else if (action === 'unsettle') {
+    Icon = Undo2
+    label = t(`${a}.sessionsUnsettled`)
+    summary = t(`${a}.sessionCount`, { count: affected.length || candidates.length || idCount })
   } else if (action === 'hide') {
     Icon = EyeOff
     label = t(`${a}.sessionsHidden`)

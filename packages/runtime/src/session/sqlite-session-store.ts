@@ -74,6 +74,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           `SELECT session_id, project_id, harness_id, provider_id, title, status, transcript_json,
                   pending_interaction_json, provider_resume, cwd, created_at, updated_at,
                   COALESCE(is_pinned, 0) AS is_pinned, COALESCE(is_hidden, 0) AS is_hidden,
+                  COALESCE(is_settled, 0) AS is_settled,
                   COALESCE(is_user_renamed, 0) AS is_user_renamed,
                   controller_client_session_id, COALESCE(host_action_capability_version, 0) AS host_action_capability_version,
                   COALESCE(host_action_tool_groups_json, '[]') AS host_action_tool_groups_json,
@@ -99,6 +100,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         updated_at: number
         is_pinned: number
         is_hidden: number
+        is_settled: number
         is_user_renamed: number
         controller_client_session_id: string | null
         host_action_capability_version: number
@@ -144,6 +146,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           updatedAt: r.updated_at,
           isPinned: r.is_pinned === 1,
           isHidden: r.is_hidden === 1,
+          ...(r.is_settled === 1 ? { isSettled: true } : {}),
           isUserRenamed: r.is_user_renamed === 1,
           controllerClientSessionId: r.controller_client_session_id ?? null,
           hostActionCapabilityVersion: r.host_action_capability_version ?? 0,
@@ -160,11 +163,11 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
       db.prepare(
         `INSERT INTO sessions
          (session_id, project_id, harness_id, provider_id, title, status, transcript_json,
-          pending_interaction_json, provider_resume, cwd, created_at, updated_at, is_pinned, is_hidden,
+          pending_interaction_json, provider_resume, cwd, created_at, updated_at, is_pinned, is_hidden, is_settled,
           is_user_renamed,
           controller_client_session_id, host_action_capability_version, host_action_tool_groups_json,
           always_allowed_tools_json, settings_json, is_automation, automation_id, tags_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            title = excluded.title,
            status = excluded.status,
@@ -175,6 +178,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
            updated_at = excluded.updated_at,
            is_pinned = excluded.is_pinned,
            is_hidden = excluded.is_hidden,
+           is_settled = excluded.is_settled,
            is_user_renamed = excluded.is_user_renamed,
            controller_client_session_id = excluded.controller_client_session_id,
            host_action_capability_version = excluded.host_action_capability_version,
@@ -199,6 +203,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         session.updatedAt,
         session.isPinned ? 1 : 0,
         session.isHidden ? 1 : 0,
+        session.isSettled ? 1 : 0,
         session.isUserRenamed ? 1 : 0,
         session.controllerClientSessionId,
         session.hostActionCapabilityVersion,
@@ -213,6 +218,16 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
 
     delete(sessionId: string): void {
       db.prepare(`DELETE FROM sessions WHERE session_id = ?`).run(sessionId)
+    },
+
+    spawnChildSessionIds(parentSessionId: string): string[] {
+      const rows = db.prepare(`
+        SELECT child_session_id AS id FROM session_collaboration_grants
+        WHERE parent_session_id = ?
+          AND child_session_id IS NOT NULL
+          AND COALESCE(kind, 'spawn') = 'spawn'
+      `).all(parentSessionId) as Array<{ id: string }>
+      return rows.map((row) => row.id).filter((id) => id && id !== parentSessionId)
     },
   }
 }

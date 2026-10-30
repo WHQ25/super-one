@@ -10,7 +10,7 @@ import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
-import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, SettledSessionPage, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
@@ -489,7 +489,7 @@ const environmentAPI = {
   listSessions: (
     connectionId: string,
     projectId: string,
-    options: { limit: number; offset: number },
+    options: { limit: number; offset: number; includeSettled?: boolean },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
@@ -505,6 +505,7 @@ const environmentAPI = {
         messageCount: number
         isPinned?: boolean
         isHidden?: boolean
+        isSettled?: boolean
         worktreePath?: string | null
         isWorktree?: boolean
         parentSessionId?: string
@@ -520,6 +521,15 @@ const environmentAPI = {
       AgentIpcChannels.ENVIRONMENT_LIST_PINNED_SESSIONS,
       connectionId,
     ) as Promise<PinnedSessionEntry[]>,
+  listSettledSessions: (
+    connectionId: string,
+    options?: { projectPath?: string; limit?: number; offset?: number },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_LIST_SETTLED_SESSIONS,
+      connectionId,
+      options,
+    ) as Promise<SettledSessionPage>,
   searchSessionsByTitle: (
     connectionId: string,
     query: string,
@@ -654,7 +664,7 @@ const environmentAPI = {
   setSessionUiFlags: (
     connectionId: string,
     sessionId: string,
-    flags: { isPinned?: boolean; isHidden?: boolean },
+    flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_SET_SESSION_UI_FLAGS,

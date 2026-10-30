@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CalendarClock, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
-import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -16,12 +16,14 @@ import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } fro
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { foldProjectSettled } from '@/components/sidebar/sidebar-section-collapse'
 import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/sidebar/multi-host/SessionHoverCard'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
+const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
 
 interface MultiHostProjectListProps {
   environments: EnvironmentBucket[]
@@ -30,15 +32,20 @@ interface MultiHostProjectListProps {
   expandedProjectKeys: Set<string>
   collapsedEnvironmentIds: string[]
   folderSessions: Record<string, SessionHistoryEntry[]>
-  folderSessionsHaveMore: Record<string, boolean>
+  /** Finished sessions across the loaded hosts. Each project keeps its own folder. */
+  settledSessions?: PinnedSessionEntry[]
+  /** folder path → another settled page is waiting below the rows already shown. */
+  settledHasMore?: Record<string, boolean>
+  /** folder path → settled sessions in that project, including pages not loaded yet. */
+  settledCounts?: Record<string, number>
+  onLoadMoreSettled?: (folderPath: string) => void | Promise<void>
   loadingFolders: Record<string, boolean>
   openingSession: { folderPath: string; sessionId: string } | null
   onToggleProject: (folderPath: string) => void
   onToggleEnvironment: (environmentId: string) => void
-  onLoadMoreSessions: (folderPath: string, minimumRootCount: number) => Promise<SessionHistoryEntry[]>
   onSwitchSession: (folderPath: string, sessionId: string) => void
   onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
-  onHideSession: (sessionId: string, hidden: boolean, folderPath: string) => void
+  onSettleSession: (sessionId: string, settled: boolean, folderPath: string) => void
   onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void
   onDeleteSession: (target: { sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId }) => void
   onEditProject: (folder: RecentFolder) => void
@@ -100,14 +107,16 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         sessionsOnly={sessionsOnly}
         isExpanded={expandedProjectKeys.has(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
+        settledSessions={props.settledSessions ?? EMPTY_SETTLED_SESSIONS}
+        settledHasMore={props.settledHasMore?.[checkout.pathKey] ?? false}
+        settledCount={props.settledCounts?.[checkout.pathKey]}
+        onLoadMoreSettled={props.onLoadMoreSettled}
         sessionsLoading={props.loadingFolders[checkout.pathKey] === true}
         openingSessionId={props.openingSession?.folderPath === checkout.pathKey ? props.openingSession.sessionId : null}
-        hasMoreSessions={props.folderSessionsHaveMore[checkout.pathKey] ?? false}
-        onLoadMoreSessions={props.onLoadMoreSessions}
         onToggleExpand={props.onToggleProject}
         onSwitchSession={props.onSwitchSession}
         onPinSession={props.onPinSession}
-        onHideSession={props.onHideSession}
+        onSettleSession={props.onSettleSession}
         onEditProject={props.onEditProject}
         onRemoveProject={props.onRemoveProject}
         onRenameSession={props.onRenameSession}
@@ -200,7 +209,9 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         ))
         const open = !allOffline && expandedProjectKeys.has(groupKey)
         const loadingAny = group.checkouts.some((checkout) => props.loadingFolders[checkout.pathKey] === true)
+        const settled = props.settledSessions ?? EMPTY_SETTLED_SESSIONS
         const anySessions = group.checkouts.some((checkout) => (props.folderSessions[checkout.pathKey]?.length ?? 0) > 0)
+        const anySettled = group.checkouts.some((checkout) => settled.some((session) => session.folderPath === checkout.pathKey))
         const target = preferredCheckout(group.checkouts)
         return (
           <RepoGroupHeader
@@ -211,7 +222,6 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             checkouts={group.checkouts}
             environments={environments}
             folderSessions={props.folderSessions}
-            folderSessionsHaveMore={props.folderSessionsHaveMore}
             onToggle={() => {
               if (allOffline) return
               props.onToggleProject(groupKey)
@@ -219,6 +229,9 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                 for (const checkout of group.checkouts) {
                   if (!expandedProjectKeys.has(checkout.pathKey)) props.onToggleProject(checkout.pathKey)
                 }
+              } else {
+                // Checkout rows unmount while their own expand key stays set.
+                for (const checkout of group.checkouts) foldProjectSettled(checkout.pathKey)
               }
             }}
             onNewSession={() => props.onNewSession(target.pathKey)}
@@ -226,7 +239,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             onRemove={props.onRemoveProject}
             onSwitchSession={props.onSwitchSession}
             onPinSession={props.onPinSession}
-            onHideSession={props.onHideSession}
+            onSettleSession={props.onSettleSession}
             onRenameSession={props.onRenameSession}
             onDeleteSession={props.onDeleteSession}
             openingSessionId={props.openingSession?.folderPath === target.pathKey ? props.openingSession.sessionId : null}
@@ -237,7 +250,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               if (!bucket) return null
               return checkoutRow(checkout, bucket, undefined, true)
             })}
-            {open && !loadingAny && !anySessions && (
+            {open && !loadingAny && !anySessions && !anySettled && (
               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             )}
           </RepoGroupHeader>
@@ -303,9 +316,9 @@ export function EnvironmentHeader({
 }
 
 function RepoGroupHeader({
-  name, open, locked = false, checkouts, environments, folderSessions, folderSessionsHaveMore,
+  name, open, locked = false, checkouts, environments, folderSessions,
   onToggle, onNewSession, onEdit, onRemove,
-  onSwitchSession, onPinSession, onHideSession, onRenameSession, onDeleteSession,
+  onSwitchSession, onPinSession, onSettleSession, onRenameSession, onDeleteSession,
   openingSessionId, initialSessions, children,
 }: {
   name: string
@@ -315,14 +328,13 @@ function RepoGroupHeader({
   checkouts: HostCheckout[]
   environments: EnvironmentBucket[]
   folderSessions: Record<string, SessionHistoryEntry[]>
-  folderSessionsHaveMore: Record<string, boolean>
   onToggle: () => void
   onNewSession: () => void
   onEdit: (folder: RecentFolder) => void
   onRemove: (folder: RecentFolder) => void
   onSwitchSession: MultiHostProjectListProps['onSwitchSession']
   onPinSession: MultiHostProjectListProps['onPinSession']
-  onHideSession: MultiHostProjectListProps['onHideSession']
+  onSettleSession: MultiHostProjectListProps['onSettleSession']
   onRenameSession: MultiHostProjectListProps['onRenameSession']
   onDeleteSession: MultiHostProjectListProps['onDeleteSession']
   openingSessionId: string | null
@@ -392,7 +404,7 @@ function RepoGroupHeader({
     if (sum == null) return null
     const count = knownSessionCount({
       loaded: checkout.pathKey in folderSessions,
-      hasMore: folderSessionsHaveMore[checkout.pathKey] === true,
+      hasMore: false,
       sessions: folderSessions[checkout.pathKey] ?? [],
     })
     return count == null ? null : sum + count
@@ -506,7 +518,7 @@ function RepoGroupHeader({
             onClose={() => setHistory(false)}
             onSwitchSession={onSwitchSession}
             onPinSession={onPinSession}
-            onHideSession={onHideSession}
+            onSettleSession={onSettleSession}
             onRenameSession={onRenameSession}
             onDeleteSession={onDeleteSession}
           />

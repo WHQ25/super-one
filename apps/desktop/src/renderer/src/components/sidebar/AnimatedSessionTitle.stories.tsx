@@ -8,7 +8,7 @@ import { SessionRow } from './SessionRow'
 
 const PROJECT = '/storybook/voice-titles'
 const SID = 'voice-titles'
-const noop = { onSwitchSession: () => {}, onPinSession: () => {}, onHideSession: () => {},
+const noop = { onSwitchSession: () => {}, onPinSession: () => {}, onSettleSession: () => {},
   onRenameSession: () => {}, onDeleteSession: () => {} }
 
 function Preview({ title, restored = false, width = 280 }: { title?: string; restored?: boolean; width?: number }) {

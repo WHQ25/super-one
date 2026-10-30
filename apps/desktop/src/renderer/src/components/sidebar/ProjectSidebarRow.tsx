@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { CalendarClock, ChevronDown, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
+import { CalendarClock, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -13,16 +13,21 @@ import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { SidebarHoverChevron, sidebarRowActionsClass } from './hover-disclosure'
 import { cn } from '@superone/ui/lib/utils'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { isListedSession } from '@/lib/session-list-ops'
 import { knownSessionCount, projectHostPath, projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
-import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { Automation, PinnedSessionEntry, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
 import { selectSessionTitle } from '@/lib/session-title'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { ProjectHistoryList } from './ProjectHistoryList'
+import { SettledSection } from './SettledSection'
+import { foldProjectSettled } from './sidebar-section-collapse'
+
+const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
 
 function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphKey: unknown }) {
   const outerRef = useRef<HTMLDivElement>(null)
@@ -163,8 +168,6 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   sessionsLoading?: boolean
   /** Session whose open is in flight. Spins the icon in front of its title. */
   openingSessionId?: string | null
-  hasMoreSessions: boolean
-  onLoadMoreSessions: (folderPath: string, minimumRootCount: number) => Promise<SessionHistoryEntry[]>
   onToggleExpand: (folderPath: string) => void
   onEditProject: (folder: RecentFolder) => void
   onRemoveProject: (folder: RecentFolder) => void
@@ -185,6 +188,13 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   }
   /** Merged project: sessions sit under one header, so this checkout draws none. */
   sessionsOnly?: boolean
+  /** Finished sessions for every open project. This row keeps its own folder. */
+  settledSessions?: PinnedSessionEntry[]
+  /** This project's settled list has another page below the rows already shown. */
+  settledHasMore?: boolean
+  /** Settled sessions in this project, including pages not loaded yet. */
+  settledCount?: number
+  onLoadMoreSettled?: (folderPath: string) => void | Promise<void>
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
@@ -193,12 +203,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   sessions: allSessions,
   sessionsLoading = false,
   openingSessionId = null,
-  hasMoreSessions,
-  onLoadMoreSessions,
   onToggleExpand,
   onSwitchSession,
   onPinSession,
-  onHideSession,
+  onSettleSession,
   onEditProject,
   onRemoveProject,
   onRenameSession,
@@ -209,10 +217,20 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   sessionsLoaded = false,
   sessionPresentation,
   sessionsOnly = false,
+  settledSessions = EMPTY_SETTLED_SESSIONS,
+  settledHasMore = false,
+  settledCount,
+  onLoadMoreSettled,
 }: ProjectSidebarRowProps) {
   // A disconnected environment has nothing to list. Ignore a stored expand so
   // the row collapses as soon as the connection drops.
   const open = isExpanded && !offline
+  // The settled list unmounts with the project. Fold it here so the next expand
+  // does not reopen the group the person left open.
+  useEffect(() => {
+    if (isExpanded) return
+    foldProjectSettled(folder.path)
+  }, [isExpanded, folder.path])
   const { t } = useTranslation()
   const foregroundSessionId = useChatStore((state) =>
     state.activeProject === folder.path
@@ -260,9 +278,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     return sig
   }))
 
-  const INITIAL_EXPAND_LEVEL = 6
-  const EXPAND_STEP = 6
-  const [additionalNormalCount, setAdditionalNormalCount] = useState(0)
   const [historyMode, setHistoryMode] = useState(false)
   /** Parent session ids whose collab child list is fully expanded. Default: collapsed. */
   const [expandedChildrenIds, setExpandedChildrenIds] = useState<Set<string>>(() => new Set())
@@ -275,10 +290,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       return next
     })
   }, [])
-
-  useEffect(() => {
-    if (!open) setAdditionalNormalCount(0)
-  }, [open])
 
   /** Every session row below already sits under this project row, at whatever
    *  collapse state the user chose — switching to one must not toggle it. */
@@ -297,7 +308,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   const derived = useMemo(() => {
     const projectSession = useChatStore.getState().projectSessions[folder.path]
-    const dbVisibleSessions = allSessions.filter((session) => !session.isHidden)
+    const dbVisibleSessions = allSessions.filter((session) => isListedSession(session))
     const dbSessionById = new Map(allSessions.map((session) => [session.sessionId, session]))
     let sessions = dbVisibleSessions
 
@@ -309,7 +320,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (data.messages.length === 0 && !hasRealtimeTimeline) continue
         const title = selectSessionTitle(useChatStore.getState(), folder.path, sid)
         const dbEntry = dbSessionById.get(sid)
-        if (dbEntry?.isHidden) continue
+        if (dbEntry && !isListedSession(dbEntry)) continue
         if (dbEntry) continue
         // A launch has a durable row before its first task arrives. Until hydration
         // restores its spawn relationship, showing it as a root would flash the
@@ -367,18 +378,21 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       scheduledBySession,
       isAttention,
     )
-    const requiredCount = sections.attention.length + sections.scheduled.length
-    const displayLimit = Math.max(INITIAL_EXPAND_LEVEL, requiredCount) + additionalNormalCount
+    // An open project shows every non-settled group. Collapsed rows still keep
+    // only attention, plus the session the user is already viewing.
+    const displayLimit = sections.attention.length + sections.scheduled.length + sections.normal.length
     const groupsToShow = visibleSidebarSessionGroups(sections, open, displayLimit, isPinnedGroup)
-    const totalCount = requiredCount + sections.normal.length
     return {
       groupsToShow,
       showSessions: open || groupsToShow.length > 0,
-      hasMoreToShow: open && (totalCount > groupsToShow.length || hasMoreSessions),
-      nextRootTarget: displayLimit + EXPAND_STEP + 1,
       isVisibleWhenCollapsed,
     }
-  }, [allSessions, folder.path, open, hasMoreSessions, liveSessionSig, realtimeSessionSig, additionalNormalCount, scheduledBySession, foregroundSessionId])
+  }, [allSessions, folder.path, open, liveSessionSig, realtimeSessionSig, scheduledBySession, foregroundSessionId])
+
+  const projectSettled = useMemo(
+    () => settledSessions.filter((session) => session.folderPath === folder.path),
+    [settledSessions, folder.path],
+  )
 
   /**
    * Every opened mini-app owns a host process, so listing live hosts would just
@@ -466,7 +480,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }, [hostPath, folder.extraDirs, canOpenFolders])
   const sessionCount = knownSessionCount({
     loaded: sessionsLoaded,
-    hasMore: hasMoreSessions,
+    // The active list is read through to a short page, so a loaded project is complete.
+    hasMore: false,
     sessions: allSessions,
   })
   const sessionPaths = useMemo(() => [folder.path], [folder.path])
@@ -648,14 +663,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               onClose={() => setHistoryMode(false)}
               onSwitchSession={switchSessionInPlace}
               onPinSession={onPinSession}
-              onHideSession={onHideSession}
+              onSettleSession={onSettleSession}
               onRenameSession={onRenameSession}
               onDeleteSession={onDeleteSession}
             />
           ) : derived.showSessions ? (
             <div className="flex flex-col py-0.5">
               {derived.groupsToShow.length === 0 ? (
-                sessionsLoading || sessionsOnly ? null : (
+                sessionsLoading || sessionsOnly || projectSettled.length > 0 ? null : (
                   <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
                 )
               ) : (
@@ -676,7 +691,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
                       onSwitchSession={switchSessionInPlace}
                       onPinSession={onPinSession}
-                      onHideSession={onHideSession}
+                      onSettleSession={onSettleSession}
                       onRenameSession={onRenameSession}
                       onDeleteSession={onDeleteSession}
                       {...(parentPresentation ?? {})}
@@ -693,7 +708,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         opening={openingSessionId === child.sessionId}
                         onSwitchSession={switchSessionInPlace}
                         onPinSession={onPinSession}
-                        onHideSession={onHideSession}
+                        onSettleSession={onSettleSession}
                         onRenameSession={onRenameSession}
                         onDeleteSession={onDeleteSession}
                         {...(childPresentation ?? {})}
@@ -705,21 +720,25 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   )
                 })
               )}
-              {open && derived.hasMoreToShow && (
-                <button
-                  onClick={() => {
-                    setAdditionalNormalCount((count) => count + EXPAND_STEP)
-                    void onLoadMoreSessions(folder.path, derived.nextRootTarget)
-                  }}
-                  className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
-                >
-                  <ChevronDown className="size-3.5 shrink-0" />
-                  <span>{t('sidebar.contextMenu.showMore')}</span>
-                </button>
-              )}
             </div>
           ) : null}
         </MorphHeight>
+        {open && !historyMode && projectSettled.length > 0 && (
+          <SettledSection
+            folderPath={folder.path}
+            sessions={projectSettled}
+            count={settledCount}
+            hasMore={settledHasMore}
+            onLoadMore={onLoadMoreSettled ? () => onLoadMoreSettled(folder.path) : undefined}
+            openingSessionId={openingSessionId}
+            presentation={sessionPresentation}
+            onSwitchSession={switchSessionInPlace}
+            onPinSession={onPinSession}
+            onSettleSession={onSettleSession}
+            onRenameSession={onRenameSession}
+            onDeleteSession={onDeleteSession}
+          />
+        )}
       </div>
 
       <AutomationDialog

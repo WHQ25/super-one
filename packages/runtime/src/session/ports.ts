@@ -6,6 +6,11 @@ export interface SessionStore {
   loadAll(): NodeSessionRecord[]
   save(session: NodeSessionRecord): void
   delete(sessionId: string): void
+  /**
+   * Direct spawn children on this host. Stores without a collaboration
+   * table omit it. Link peers are not children.
+   */
+  spawnChildSessionIds?(parentSessionId: string): string[]
 }
 
 /** Durable environment event log for session aggregates. */

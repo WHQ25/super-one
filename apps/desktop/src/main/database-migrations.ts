@@ -42,7 +42,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 17
+export const SCHEMA_VERSION = 19
 
 /**
  * The oldest schema revision that can still read this database.
@@ -717,6 +717,89 @@ function applyMigrations(db: Database.Database): void {
   // Per-project "always allow" rules for agent terminal commands
   // (docs/features/terminal-agent-tools.md §5); DDL owned by the module.
   ensureTerminalCommandRulesSchema(db)
+  ensureSettledSessions(db)
+  settleRecentSessionsOnce(db)
+}
+
+/**
+ * `is_settled` is the sidebar's "this session is finished" flag. It is not
+ * `is_hidden`: hidden rows are system mailboxes (collaboration children,
+ * scheduled-send shells) and stay out of every list.
+ *
+ * The first time the column appears, sessions a person hid move into settled
+ * and become visible again in that group. The move runs once, with the ALTER,
+ * so a later system hide is not rewritten on the next launch.
+ */
+function ensureSettledSessions(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+  if (cols.some((column) => column.name === 'is_settled')) return
+  db.exec('ALTER TABLE sessions ADD COLUMN is_settled INTEGER NOT NULL DEFAULT 0')
+  db.exec(`
+    UPDATE sessions
+    SET is_settled = 1, is_hidden = 0
+    WHERE COALESCE(is_hidden, 0) = 1
+      AND id NOT IN (
+        SELECT child_session_id FROM session_collaboration_grants
+        WHERE child_session_id IS NOT NULL
+      )
+      AND id NOT IN (
+        SELECT session_id FROM scheduled_sends
+        WHERE session_id IS NOT NULL
+      )
+  `)
+}
+
+/** How many user-visible sessions stay active in each project after the one-shot. */
+export const SETTLED_RECENT_KEEP_PER_PROJECT = 10
+
+/**
+ * `app_meta` marker for {@link settleRecentSessionsOnce}. Present means the
+ * one-shot already kept ten non-child sessions per project and settled the rest.
+ */
+export const SETTLED_RECENT_KEEP_META_KEY = 'settled_recent_keep'
+
+/**
+ * One launch only: in each project, keep the ten most recently active
+ * non-child sessions and settle every other session.
+ *
+ * A non-child session is not a collaboration child. Hidden rows and
+ * scheduled-send shells do not take one of the ten slots. Recency matches
+ * the sidebar (`last_user_message_at`, else `created_at`). Settling does not
+ * clear `is_hidden` or `is_pinned`. The marker is written in the same
+ * migration transaction, so a later unsettle is not undone the next time the
+ * app opens.
+ */
+export function settleRecentSessionsOnce(db: Database.Database): void {
+  const applied = db.prepare('SELECT value FROM app_meta WHERE key = ?').get(SETTLED_RECENT_KEEP_META_KEY) as
+    | { value: string }
+    | undefined
+  if (applied) return
+  db.exec(`
+    WITH ranked AS (
+      SELECT s.id,
+             ROW_NUMBER() OVER (
+               PARTITION BY s.project_id
+               ORDER BY COALESCE(s.last_user_message_at, s.created_at) DESC, s.id DESC
+             ) AS rn
+      FROM sessions s
+      WHERE COALESCE(s.is_hidden, 0) = 0
+        AND s.id NOT IN (
+          SELECT child_session_id FROM session_collaboration_grants
+          WHERE child_session_id IS NOT NULL
+        )
+        AND s.id NOT IN (
+          SELECT session_id FROM scheduled_sends
+          WHERE session_id IS NOT NULL
+        )
+    )
+    UPDATE sessions
+    SET is_settled = 1
+    WHERE id NOT IN (SELECT id FROM ranked WHERE rn <= ${SETTLED_RECENT_KEEP_PER_PROJECT})
+  `)
+  db.prepare('INSERT INTO app_meta (key, value) VALUES (?, ?)').run(
+    SETTLED_RECENT_KEEP_META_KEY,
+    String(SETTLED_RECENT_KEEP_PER_PROJECT),
+  )
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

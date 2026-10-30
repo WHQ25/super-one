@@ -58,6 +58,8 @@ export interface NodeHostSessionManager {
   setActiveSession(projectPath: string, sessionId: string): void
   clearActiveSession(projectPath: string): void
   disposeSession(sessionId: string): Promise<void>
+  /** Stop a settled session's turn and harness process. Absent on test fakes. */
+  releaseSettledSession?(sessionId: string): Promise<void>
   onSession(handler: (session: Session) => void): () => void
 }
 
@@ -68,7 +70,7 @@ export interface DesktopSessionEdits {
   setController(sessionId: string, controller: RemoteControllerRecord, providerId?: string): boolean
   rename(sessionId: string, title: string, source: 'user' | 'agent'): void
   tags(sessionId: string, tags: string[]): void
-  flags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }): void
+  flags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }): void
   remove(sessionId: string): void
   close(sessionId: string): Promise<void>
   fork?(input: SessionForkRequest, assertControl: () => void): Promise<SessionForkResult>
@@ -514,7 +516,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     return this.record(this.requireRow(sessionId))
   }
 
-  setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }) {
+  setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }) {
     this.requireRow(sessionId)
     this.deps.edits.flags(sessionId, flags)
     return this.record(this.requireRow(sessionId))

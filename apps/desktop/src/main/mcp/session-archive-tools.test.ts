@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 
-const { getDbMock, getProjectIdMock, loadSessionStateMock, hideSessionMock, deleteSessionMock } =
+const { getDbMock, getProjectIdMock, loadSessionStateMock, settleSessionMock, setSessionSeenReceiptMock, deleteSessionMock, settleSpawnChildrenMock } =
   vi.hoisted(() => ({
     getDbMock: vi.fn(),
     getProjectIdMock: vi.fn(),
     loadSessionStateMock: vi.fn(),
-    hideSessionMock: vi.fn(),
+    settleSessionMock: vi.fn(),
+    setSessionSeenReceiptMock: vi.fn(),
     deleteSessionMock: vi.fn(),
+    settleSpawnChildrenMock: vi.fn(() => [] as string[]),
   }))
 
 vi.mock('../database', () => ({ getDb: getDbMock }))
@@ -23,8 +25,10 @@ vi.mock('../recent-folders', () => ({
 }))
 vi.mock('../db-sessions', () => ({
   loadSessionState: loadSessionStateMock,
-  hideSession: hideSessionMock,
+  settleSession: settleSessionMock,
+  setSessionSeenReceipt: setSessionSeenReceiptMock,
   deleteSession: deleteSessionMock,
+  settleSpawnChildren: settleSpawnChildrenMock,
 }))
 vi.mock('../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -56,6 +60,7 @@ function makeDeps(overrides?: Partial<BuiltInSuperoneToolDeps>): BuiltInSuperone
     sessionId: 'self-session',
     sessionHost: {
       disposeSession: vi.fn(async () => {}),
+      releaseSettledSession: vi.fn(async () => {}),
       getSession: (id: string) =>
         id === 'self-session'
           ? { setTitle: vi.fn(), projectPath: '/tmp/proj', emitHostEvent }
@@ -96,7 +101,10 @@ describe('session archive tools', () => {
       { id: 'proj-2', path: '/tmp/other', name: 'other', addedAt: '2026-01-01', lastOpened: '2026-01-02' },
     ])
     loadSessionStateMock.mockReset()
-    hideSessionMock.mockReset()
+    settleSessionMock.mockReset()
+    setSessionSeenReceiptMock.mockReset()
+    settleSpawnChildrenMock.mockReset()
+    settleSpawnChildrenMock.mockReturnValue([])
     deleteSessionMock.mockReset()
     _resetSessionCleanupConfirmsForTests()
   })
@@ -574,7 +582,7 @@ describe('session archive tools', () => {
     expect(text).not.toContain('truncated')
   })
 
-  it('session_cleanup hide + delete with user confirm (no preview)', async () => {
+  it('session_cleanup settle + delete with user confirm (no preview)', async () => {
     const rows = [
       {
         id: 'old-1',
@@ -617,8 +625,10 @@ describe('session archive tools', () => {
 
     const deps = makeDeps()
 
-    await sessionCleanupHandler({ action: 'hide', sessionIds: ['old-1'] }, deps)
-    expect(hideSessionMock).toHaveBeenCalledWith('old-1', true)
+    await sessionCleanupHandler({ action: 'settle', sessionIds: ['old-1'] }, deps)
+    expect(settleSessionMock).toHaveBeenCalledWith('old-1', true)
+    expect(setSessionSeenReceiptMock).toHaveBeenCalledWith('old-1', null)
+    expect(deps.sessionHost!.releaseSettledSession).toHaveBeenCalledWith('old-1')
 
     // delete: open host confirm then accept (no confirmToken / preview)
     const session = deps.sessionHost!.getSession('self-session')!
@@ -654,11 +664,87 @@ describe('session archive tools', () => {
 
   it('session_cleanup requires sessionIds', async () => {
     const result = await sessionCleanupHandler(
-      { action: 'hide', sessionIds: [] as unknown as string[] },
+      { action: 'settle', sessionIds: [] as unknown as string[] },
       makeDeps(),
     )
     expect(result.isError).toBe(true)
     expect(textResult(result)).toMatch(/sessionIds is required/i)
+  })
+
+  it('session_cleanup unsettle leaves unread and background work alone', async () => {
+    getDbMock.mockReturnValue({
+      prepare: () => ({
+        all: () => [{
+          id: 'old-1',
+          title: 'Old chat',
+          created_at: '2025-01-01T00:00:00.000Z',
+          last_user_msg_at: '2025-01-01T00:00:00.000Z',
+          is_worktree: 0,
+          is_pinned: 0,
+          is_hidden: 0,
+          git_branch: null,
+          worktree_path: null,
+          is_automation: 0,
+          provider_id: 'claude-base',
+          provider: 'claude',
+          acp_agent_id: null,
+          parent_session_id: null,
+          message_count: 1,
+          size_bytes: null,
+          selected_model: null,
+          total_cost_usd: 0,
+          context_tokens: 0,
+        }],
+        get: () => undefined,
+      }),
+    })
+    const deps = makeDeps()
+    const stop = vi.fn()
+    deps.sessionHost!.stopBackgroundTasks = stop
+    const result = await sessionCleanupHandler({ action: 'unsettle', sessionIds: ['old-1'] }, deps)
+    expect(JSON.parse(textResult(result))).toMatchObject({ status: 'ok', action: 'unsettle' })
+    expect(settleSessionMock).toHaveBeenCalledWith('old-1', false)
+    expect(settleSpawnChildrenMock).not.toHaveBeenCalled()
+    expect(setSessionSeenReceiptMock).not.toHaveBeenCalled()
+    expect(stop).not.toHaveBeenCalled()
+    expect(deps.sessionHost!.releaseSettledSession).not.toHaveBeenCalled()
+  })
+
+  it('session_cleanup settle of a parent also releases its spawn children', async () => {
+    getDbMock.mockReturnValue({
+      prepare: () => ({
+        all: () => [{
+          id: 'parent-1',
+          title: 'Parent',
+          created_at: '2025-01-01T00:00:00.000Z',
+          last_user_msg_at: '2025-01-01T00:00:00.000Z',
+          is_worktree: 0,
+          is_pinned: 0,
+          is_hidden: 0,
+          git_branch: null,
+          worktree_path: null,
+          is_automation: 0,
+          provider_id: 'claude-base',
+          provider: 'claude',
+          acp_agent_id: null,
+          parent_session_id: null,
+          message_count: 1,
+          size_bytes: null,
+          selected_model: null,
+          total_cost_usd: 0,
+          context_tokens: 0,
+        }],
+        get: () => undefined,
+      }),
+    })
+    settleSpawnChildrenMock.mockReturnValue(['spawn-1'])
+    const deps = makeDeps()
+    const result = await sessionCleanupHandler({ action: 'settle', sessionIds: ['parent-1'] }, deps)
+    expect(JSON.parse(textResult(result))).toMatchObject({ status: 'ok', action: 'settle' })
+    expect(settleSessionMock).toHaveBeenCalledWith('parent-1', true)
+    expect(settleSpawnChildrenMock).toHaveBeenCalledWith('parent-1', new Set(['self-session']))
+    expect(deps.sessionHost!.releaseSettledSession).toHaveBeenCalledWith('parent-1')
+    expect(deps.sessionHost!.releaseSettledSession).toHaveBeenCalledWith('spawn-1')
   })
 
   it('session_cleanup delete dismisses host confirm when tool AbortSignal aborts', async () => {
@@ -759,12 +845,12 @@ describe('session archive tools', () => {
     })
 
     const result = await sessionCleanupHandler(
-      { action: 'hide', sessionIds: ['a', 'b', 'c'], maxDelete: 2 },
+      { action: 'settle', sessionIds: ['a', 'b', 'c'], maxDelete: 2 },
       makeDeps(),
     )
     expect(JSON.parse(textResult(result))).toMatchObject({
       status: 'ok',
-      action: 'hide',
+      action: 'settle',
       affected: [{ id: 'a' }, { id: 'b' }],
       omittedDueToMaxDelete: ['c'],
     })
@@ -930,14 +1016,14 @@ describe('session archive tools', () => {
       },
     })
     const result = await sessionCleanupHandler(
-      { action: 'hide', sessionIds: ['foreign-1'] },
+      { action: 'settle', sessionIds: ['foreign-1'] },
       makeDeps(),
     )
     expect(JSON.parse(textResult(result))).toMatchObject({
       status: 'ok',
-      action: 'hide',
+      action: 'settle',
       affected: [{ id: 'foreign-1', title: 'Foreign' }],
     })
-    expect(hideSessionMock).toHaveBeenCalledWith('foreign-1', true)
+    expect(settleSessionMock).toHaveBeenCalledWith('foreign-1', true)
   })
 })

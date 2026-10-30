@@ -39,8 +39,8 @@ can actually travel; a closed row that swallowed leftward drags would block the
 close over most of the list.
 The list itself is `SessionListBody` over `useProjectSessions` — 30-row paging and
 swipe pin/hide/delete. **Reveal and paging are separate numbers.** A project shows
-`SESSION_REVEAL_STEP` (6) session *groups* and grows by 6, matching the desktop
-sidebar's `INITIAL_EXPAND_LEVEL` / `EXPAND_STEP`; `SESSION_PAGE_SIZE` (30) is the
+`SESSION_REVEAL_STEP` (6) session *groups* and grows by 6. Desktop lists every
+non-settled session, so this cap is the phone's own; `SESSION_PAGE_SIZE` (30) is the
 network page behind it, because over a relay one request covering five reveals
 beats five requests. Collapsing them into one number is how the phone ended up
 rendering a whole fetch page at once. The count is groups, not rows, so an
@@ -48,9 +48,9 @@ expanded collaboration parent's children ride along instead of costing slots, an
 the group holding the active session is appended past the limit rather than
 promoted — switching sessions must not reshuffle the list under the finger.
 The host still pages *rows*, so a page can stop inside a parent's children; the
-list reads on until the group after the last revealed one has started (desktop's
-`nextRootTarget` rule). A live child the list has not paged in yet is inserted
-from `session_activity`, whose `parentSessionId` nests it under its parent.
+list reads on until the group after the last revealed one has started. A live
+child the list has not paged in yet is inserted from `session_activity`, whose
+`parentSessionId` nests it under its parent.
 Live work is the exception, matching the desktop sidebar: groups that are
 running, unseen, or waiting on the user are partitioned to the top of the
 project, and a collapsed project still renders those rows (plus the active

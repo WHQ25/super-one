@@ -310,7 +310,7 @@ export interface SessionHostPort {
   forkOnHost?(input: SessionForkRequest & { client: { clientSessionId: string }; leaseId: string; generation: string }): Promise<SessionForkResult & { session?: NodeSessionRecord }>
   rename(sessionId: string, title: string, source?: 'user' | 'agent'): NodeSessionRecord
   setTags(sessionId: string, tags: string[]): NodeSessionRecord
-  setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }): NodeSessionRecord
+  setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }): NodeSessionRecord
   close(sessionId: string): void | Promise<void>
   remove(sessionId: string): NodeSessionRecord | null | Promise<NodeSessionRecord | null>
 

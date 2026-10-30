@@ -183,10 +183,10 @@ export const AppSidebar = memo(function AppSidebar() {
     ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
     : undefined
   const {
-    currentActiveSid, folderSessions, folderSessionsHaveMore, loadingFolders, folderSessionsRef,
-    pinnedSessions, pinnedStatuses, loadFolderSessions, loadMoreFolderSessions,
-    refreshFolderSessions, refreshPinned, handlePinSession, handleHideSession,
-    executeDeleteSession,
+    currentActiveSid, folderSessions, loadingFolders, folderSessionsRef,
+    pinnedSessions, pinnedStatuses, settledSessions, settledHasMore, settledCounts, loadFolderSessions,
+    loadMoreSettledSessions, refreshFolderSessions, refreshPinned, handlePinSession,
+    handleSettleSession, executeDeleteSession,
   } = useSidebarSessions({
     currentFolder,
     selectedHostConnectionId,
@@ -718,7 +718,7 @@ export const AppSidebar = memo(function AppSidebar() {
                     environmentOffline={presentation?.environmentOffline}
                     onSwitchSession={handleSwitchSession}
                     onPinSession={handlePinSession}
-                    onHideSession={handleHideSession}
+                    onSettleSession={handleSettleSession}
                     onRenameSession={handleRequestRenameSession}
                     onDeleteSession={handleRequestDeleteSession}
                   />
@@ -816,15 +816,17 @@ export const AppSidebar = memo(function AppSidebar() {
                 expandedProjectKeys={expandedFolders}
                 collapsedEnvironmentIds={collapsedEnvironmentIds}
                 folderSessions={folderSessions}
-                folderSessionsHaveMore={folderSessionsHaveMore}
+                settledSessions={settledSessions}
+                settledHasMore={settledHasMore}
+                settledCounts={settledCounts}
+                onLoadMoreSettled={loadMoreSettledSessions}
                 loadingFolders={loadingFolders}
                 openingSession={openingSession}
                 onToggleProject={toggleExpand}
                 onToggleEnvironment={(environmentId) => useMultiHostSidebarStore.getState().toggleEnvironmentExpanded(environmentId)}
-                onLoadMoreSessions={loadMoreFolderSessions}
                 onSwitchSession={handleSwitchSession}
                 onPinSession={handlePinSession}
-                onHideSession={handleHideSession}
+                onSettleSession={handleSettleSession}
                 onRenameSession={handleRequestRenameSession}
                 onDeleteSession={handleRequestDeleteSession}
                 onEditProject={setEditProjectTarget}
@@ -871,15 +873,17 @@ export const AppSidebar = memo(function AppSidebar() {
                     folder={folder}
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
+                    settledSessions={settledSessions}
+                    settledHasMore={settledHasMore[folder.path] ?? false}
+                    settledCount={settledCounts[folder.path]}
+                    onLoadMoreSettled={loadMoreSettledSessions}
                     sessionsLoading={loadingFolders[folder.path] === true}
                     openingSessionId={openingSession?.folderPath === folder.path ? openingSession.sessionId : null}
-                    hasMoreSessions={folderSessionsHaveMore[folder.path] ?? false}
                     sessionsLoaded={folder.path in folderSessions}
-                    onLoadMoreSessions={loadMoreFolderSessions}
                     onToggleExpand={toggleExpand}
                     onSwitchSession={handleSwitchSession}
                     onPinSession={handlePinSession}
-                    onHideSession={handleHideSession}
+                    onSettleSession={handleSettleSession}
                     onEditProject={setEditProjectTarget}
                     onRemoveProject={handleRemoveProject}
                     onRenameSession={handleRequestRenameSession}

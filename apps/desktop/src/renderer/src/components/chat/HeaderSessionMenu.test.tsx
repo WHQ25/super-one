@@ -70,7 +70,7 @@ describe('HeaderSessionMenu item set', () => {
 
   // The header menu acts on the session already open, so it deliberately carries a
   // smaller set than the sidebar row menu it shares a builder with.
-  it('drops Hide and Add to Chat and converts this window instead of opening a new one', async () => {
+  it('drops Settle and Add to Chat and converts this window instead of opening a new one', async () => {
     const persisted: SessionHistoryEntry = {
       sessionId: 'saved-1',
       title: 'Saved',
@@ -85,7 +85,7 @@ describe('HeaderSessionMenu item set', () => {
 
     expect(await screen.findByRole('menuitem', { name: 'Convert to Mini Window' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Open in Mini Window' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Hide Session' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Settle' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'Add to Chat' })).toBeNull()
     // Still the shared actions the sidebar row has.
     expect(screen.getByRole('menuitem', { name: 'Rename Session' })).toBeInTheDocument()

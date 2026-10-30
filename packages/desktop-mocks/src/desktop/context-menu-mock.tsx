@@ -6,7 +6,7 @@ import {
   AtSign,
   ChevronRight,
   Copy,
-  EyeOff,
+  CircleCheck,
   FolderOpen,
   GitFork,
   History,
@@ -157,7 +157,7 @@ export const PROJECT_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
 export const SESSION_ROW_CONTEXT_MENU: ContextMenuEntry[] = [
   { kind: "item", icon: <Pencil className={SIZE} />, label: "Rename", labelKey: "sidebar.contextMenu.rename" },
   { kind: "item", icon: <Pin className={SIZE} />, label: "Pin", labelKey: "sidebar.contextMenu.pin" },
-  { kind: "item", icon: <EyeOff className={SIZE} />, label: "Hide", labelKey: "sidebar.contextMenu.hide" },
+  { kind: "item", icon: <CircleCheck className={SIZE} />, label: "Settle", labelKey: "sidebar.contextMenu.settle" },
   { kind: "separator" },
   {
     kind: "item",

@@ -84,6 +84,7 @@ import {
   SESSION_TAGS_FILTER_DESCRIPTION,
   SESSION_TAG_MATCH_DESCRIPTION,
   SESSION_CLEANUP_DESCRIPTION,
+  SESSION_CLEANUP_ACTION_DESCRIPTION,
   CONFIG_READ_DESCRIPTION,
   CONFIG_APPLY_DESCRIPTION,
   LIST_MEDIA_PROVIDERS_DESCRIPTION,
@@ -708,8 +709,8 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       properties: {
         action: {
           type: 'string',
-          enum: ['hide', 'unhide', 'delete'],
-          description: 'hide/unhide soft-archive (no confirm). delete permanently removes after user approval dialog.',
+          enum: ['settle', 'unsettle', 'delete'],
+          description: SESSION_CLEANUP_ACTION_DESCRIPTION,
         },
         sessionIds: {
           type: 'array',

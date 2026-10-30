@@ -378,6 +378,13 @@ describe('database migration', () => {
     expect(execSql.some((sql) => sql.includes('ADD COLUMN seen_completed_message_id'))).toBe(true)
   })
 
+  it('plans the one-shot that keeps ten recent sessions per project', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+    const execSql = dbMock.exec.mock.calls.map((call) => call[0] as string)
+    expect(execSql.some((sql) => sql.includes('PARTITION BY s.project_id') && sql.includes('rn <= 10'))).toBe(true)
+  })
+
   it('does not add seen_completed_message_id when the column is already there', async () => {
     dbMock.prepare.mockImplementation((sql: string) => {
       if (sql === 'PRAGMA table_info(sessions)') {
@@ -524,8 +531,8 @@ describe('migration atomicity and schema stamping', () => {
     expect(result).toEqual({ fromVersion: newerVersion, toVersion: newerVersion })
     const pragmas = dbMock.pragma.mock.calls.map((call) => call[0] as string)
     expect(pragmas.some((sql) => sql.startsWith('user_version ='))).toBe(false)
-    expect(metaRun.mock.calls.map((call) => call[0])).toEqual(['last_app_version'])
-    expect(metaRun.mock.calls[0]?.[1]).toBe('0.1.0')
+    expect(metaRun.mock.calls.map((call) => call[0])).toEqual(['settled_recent_keep', 'last_app_version'])
+    expect(metaRun.mock.calls[1]?.[1]).toBe('0.1.0')
   })
 
   it('keeps the compatibility floor at or below the current schema version', async () => {

@@ -545,6 +545,30 @@ export class SessionManagerImpl implements SessionManagerContract {
     await this.sessions.get(sessionId)?.stopBackgroundTasks()
   }
 
+  /**
+   * Settle released the session from attention. Stop its turn and drop the
+   * harness process. The session row stays, so opening it again starts cold.
+   */
+  async releaseSettledSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    try {
+      await session.interrupt()
+    } catch (err) {
+      log.debug('[SessionManager] settle interrupt failed sid=%s:', sessionId, err)
+    }
+    try {
+      await session.stopBackgroundTasks()
+    } catch (err) {
+      log.debug('[SessionManager] settle background stop failed sid=%s:', sessionId, err)
+    }
+    try {
+      await session.releaseRuntime('idle', () => closeSuperoneMcpHttpSessions(sessionId))
+    } catch (err) {
+      log.debug('[SessionManager] settle runtime release failed sid=%s:', sessionId, err)
+    }
+  }
+
   disposeSession(sessionId: string): Promise<void> {
     // Two overlapping disposals of one id (reset, then a harness switch on
     // send) would each finish by deleting the id, removing the session the

@@ -7,6 +7,7 @@ import { groupContentPresenter } from '@superone/chat-view/presenters/groupConte
 import { TurnBodyPresenter, type TurnBodyPresenterParts, type TurnBodyPresenterRuntime } from './presenters/TurnBody'
 import { VirtualTurnSegment } from './VirtualTranscriptBlock'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
+import { useAppStore } from '@/stores/app'
 import { ReasoningBlock } from './ReasoningBlock'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -92,6 +93,7 @@ describe('shared ContentBlock turn virtualization', () => {
   })
 
   it.each([true, false])('collapses reasoning when the answer and completion arrive together in detail mode %s', detailChatMode => {
+    useAppStore.setState({ autoExpandReasoning: false })
     const values = new Map<string, unknown>()
     const reasoningParts = { ...parts, Segment: undefined, Reasoning: ReasoningBlock }
     const startedAt = Date.now() - 5_000

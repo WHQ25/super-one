@@ -1252,7 +1252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   uiFontFamily: null,
   liquidGlass: false,
   autoExpandFileDiffs: false,
-  autoExpandReasoning: false,
+  autoExpandReasoning: true,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
 

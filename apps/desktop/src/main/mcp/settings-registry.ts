@@ -254,7 +254,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         key: 'autoExpandReasoning',
         label: 'Auto-Expand Reasoning',
         type: 'boolean',
-        note: 'When true, reasoning blocks open while they stream. Default off: they stay collapsed until the header is clicked.',
+        note: 'When true (default), reasoning blocks open while they stream. When false, they stay collapsed until the header is clicked.',
         read: (s) => s.autoExpandReasoning,
         toPatch: (v) => ({ autoExpandReasoning: v as boolean }),
       },

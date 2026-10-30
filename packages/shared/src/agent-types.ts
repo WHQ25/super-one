@@ -5700,7 +5700,7 @@ export interface AppSettings {
    */
   autoExpandFileDiffs: boolean
   /**
-   * When true, reasoning blocks open while they stream. When false (default),
+   * When true (default), reasoning blocks open while they stream. When false,
    * they stay collapsed until the header is clicked. Completing a block still
    * collapses it unless that block opts out.
    */

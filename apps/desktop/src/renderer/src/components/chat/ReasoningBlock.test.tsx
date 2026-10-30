@@ -1,14 +1,17 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
 import { useAppStore } from '@/stores/app'
 import { ReasoningBlock } from './ReasoningBlock'
 
+beforeEach(() => {
+  useAppStore.setState({ autoExpandReasoning: false })
+})
+
 afterEach(() => {
   cleanup()
-  useAppStore.setState({ autoExpandReasoning: false })
 })
 
 describe('ReasoningBlock', () => {

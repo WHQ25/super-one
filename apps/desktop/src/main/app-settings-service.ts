@@ -116,7 +116,7 @@ const defaults: AppSettings = {
   crispText: true,
   notificationsPrimedAt: null,
   autoExpandFileDiffs: false,
-  autoExpandReasoning: false,
+  autoExpandReasoning: true,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
   locale: '',

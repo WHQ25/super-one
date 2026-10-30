@@ -52,6 +52,48 @@ describe('sidebar hover card row highlight', () => {
     expect(row).not.toHaveAttribute('data-sidebar-hover-open')
   })
 
+  it('closes as soon as a list scrolls under the pointer', () => {
+    vi.useFakeTimers()
+    render(
+      <div data-testid="session-list">
+        <SidebarHoverCard content={<div>card body</div>}>
+          <SessionHoverCardTrigger>
+            <div className={sidebarHoverCardRowClass}>Session row</div>
+          </SessionHoverCardTrigger>
+        </SidebarHoverCard>
+      </div>,
+    )
+
+    const row = screen.getByText('Session row')
+    fireEvent.pointerEnter(row)
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(row).toHaveAttribute('data-sidebar-hover-open', 'true')
+
+    fireEvent.scroll(screen.getByTestId('session-list'))
+    expect(row).not.toHaveAttribute('data-sidebar-hover-open')
+  })
+
+  it('keeps the card open while its own content scrolls', () => {
+    vi.useFakeTimers()
+    render(
+      <SidebarHoverCard content={<div data-testid="card-scroll">card body</div>}>
+        <SessionHoverCardTrigger>
+          <div className={sidebarHoverCardRowClass}>Session row</div>
+        </SessionHoverCardTrigger>
+      </SidebarHoverCard>,
+    )
+
+    const row = screen.getByText('Session row')
+    fireEvent.pointerEnter(row)
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    fireEvent.scroll(screen.getByTestId('card-scroll'))
+    expect(row).toHaveAttribute('data-sidebar-hover-open', 'true')
+  })
+
   it('marks a pinned-open row before the pointer arrives', () => {
     render(
       <SidebarHoverCard open content={<div>card body</div>}>

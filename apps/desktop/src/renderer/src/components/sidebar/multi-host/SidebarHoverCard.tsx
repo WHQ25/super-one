@@ -1,4 +1,4 @@
-import { cloneElement, createContext, forwardRef, isValidElement, useContext, useState, type ComponentProps, type ReactElement, type ReactNode, type Ref } from 'react'
+import { cloneElement, createContext, forwardRef, isValidElement, useContext, useEffect, useState, type ComponentProps, type ReactElement, type ReactNode, type Ref } from 'react'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
 
 /** True while this sidebar hover card is open. Default false outside a card. */
@@ -58,9 +58,21 @@ export function SidebarHoverCard({
 }) {
   const [hovered, setHovered] = useState(false)
   const shown = open ?? hovered
+  // A trackpad scroll keeps the pointer "inside" the row until the finger lifts,
+  // so the card would stay up for the whole gesture. The list moved; close now.
+  useEffect(() => {
+    if (!shown || open !== undefined) return
+    const dismiss = (event: Event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[data-slot="hover-card-content"]')) return
+      setHovered(false)
+    }
+    window.addEventListener('scroll', dismiss, true)
+    return () => window.removeEventListener('scroll', dismiss, true)
+  }, [shown, open])
   return (
     <HoverCard
-      open={open}
+      open={shown}
       onOpenChange={(next) => {
         setHovered(next)
         onOpenChange?.(next)

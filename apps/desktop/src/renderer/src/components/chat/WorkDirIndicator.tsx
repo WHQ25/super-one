@@ -61,7 +61,13 @@ function sameWorktreePath(a: string | null | undefined, b: string | null | undef
   return a.replace(/\/$/, '') === b.replace(/\/$/, '')
 }
 
-/** Status-bar chip: environment, then the branch or worktree label. */
+/**
+ * Status-bar chip: environment, then the branch or worktree label.
+ * The environment name shrinks away first. The branch stays whole until the
+ * hostname is gone, and only then ellipsizes.
+ * The two labels inherit the trigger hover color. A text color on either one
+ * would stay muted while the other highlights.
+ */
 function LocationChip({
   kind,
   connection,
@@ -81,13 +87,15 @@ function LocationChip({
   tag?: string
 }) {
   return (
-    <span className="flex max-w-72 items-center gap-1 truncate">
-      <EnvironmentKindIcon kind={kind} connection={connection} path={path} className="size-3 shrink-0" />
-      <span className="truncate">{environment}</span>
-      <span className="text-muted-foreground">·</span>
-      <Icon className="size-3 shrink-0 text-muted-foreground" />
-      <span className="truncate text-muted-foreground">{location}</span>
-      {tag && <Badge variant="secondary" className="px-1.5 py-0 text-2xs">{tag}</Badge>}
+    <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+      <span className="flex min-w-0 shrink-[9999] items-center gap-1 overflow-hidden">
+        <EnvironmentKindIcon kind={kind} connection={connection} path={path} className="size-3 shrink-0" />
+        <span className="truncate">{environment}</span>
+        <span className="shrink-0 text-muted-foreground">·</span>
+      </span>
+      <Icon className="size-3 shrink-0" />
+      <span className="min-w-0 shrink truncate">{location}</span>
+      {tag && <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-2xs">{tag}</Badge>}
     </span>
   )
 }
@@ -388,6 +396,8 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [mainBranch, setMainBranch] = useState<string | null>(null)
+  /** Folder whose `mainBranch` came from a finished git read. */
+  const [checkoutResolvedFolder, setCheckoutResolvedFolder] = useState<string | null>(null)
   const [mainDirty, setMainDirty] = useState<GitDirtyStatus | undefined>()
   const [wtMetas, setWtMetas] = useState<Record<string, WtMeta>>({})
   const [checkedOutBranches, setCheckedOutBranches] = useState<Set<string>>(new Set())
@@ -421,17 +431,19 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   }, [currentFolder, isGitRepo, activePath])
 
   // The chip names the shared checkout's branch before the popover opens.
+  // A missing read must not clear the name: session switches were painting
+  // "Local Checkout" until this RPC returned.
   useEffect(() => {
-    if (!currentFolder || isGitRepo === false) {
-      setMainBranch(null)
-      return
-    }
+    if (!currentFolder || isGitRepo === false) return
     let cancelled = false
     const read = () => {
       window.app.getGitInfo(currentFolder).then((info) => {
         if (cancelled) return
-        setMainBranch(info?.branch ?? null)
+        // A null branch must not wipe a name we already show. Switching sessions
+        // was landing on "Local Checkout" for the gap before the real HEAD arrived.
+        setMainBranch((prev) => info?.branch || prev)
         setMainDirty(info?.dirty)
+        setCheckoutResolvedFolder(currentFolder)
       }).catch(() => {})
     }
     read()
@@ -786,6 +798,11 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
       : pendingMode === 'attach'
         ? { kind: 'attachTo', base: pendingBase }
         : { kind: 'createBranch', name: pendingBranchName }
+  // A session already knows its branch. The checkout read is only the live HEAD,
+  // and "Local Checkout" is the settled empty state — never a loading placeholder.
+  const sessionBranch = activeGitBranch || location.branch || null
+  const checkoutReady = checkoutResolvedFolder === currentFolder
+  const checkoutBranch = checkoutReady ? (mainBranch || sessionBranch) : sessionBranch
   const locationLabel = isGitRepo === false
     ? t('chat.git.uninitialized')
     : pendingState
@@ -793,18 +810,18 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
       : isActive
         ? (activeIsDetached
             ? (activeShortHead || t('chat.worktree.detachedLabel'))
-            : (activeEntry?.branch || activeGitBranch || t('sidebar.hover.worktree')))
-        : (mainBranch || localCheckoutLabel)
+            : (activeEntry?.branch || sessionBranch || t('sidebar.hover.worktree')))
+        : (checkoutBranch || (checkoutReady ? localCheckoutLabel : ''))
   const LocationIcon = isGitRepo !== false && (isPending || isActive) ? GitFork : GitBranch
   const showActiveDirty = isActive && !!activeDirty
   const dirtyDot = isGitRepo === false || isPending
     ? null
     : showActiveDirty
       ? (
-        <Circle className={`size-1.5 ${activeDirty!.files > 0 ? 'fill-amber-500 text-amber-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
+        <Circle className={`size-1.5 shrink-0 ${activeDirty!.files > 0 ? 'fill-amber-500 text-amber-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
       )
       : (!isActive && mainDirty && mainDirty.files > 0
-        ? <Circle className="size-1.5 fill-amber-500 text-amber-500" />
+        ? <Circle className="size-1.5 shrink-0 fill-amber-500 text-amber-500" />
         : null)
   const chipTitle = `${environmentName} · ${pendingState ? workDirTitle(pendingState, t) : locationLabel}`
 
@@ -825,7 +842,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+            className="flex min-w-0 max-w-full shrink items-center gap-1 overflow-hidden rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
             title={chipTitle}
           >
             {compact
@@ -842,7 +859,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                 />
               )}
             {dirtyDot}
-            {!compact && <ChevronDown className={`size-3 text-muted-foreground transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
+            {!compact && <ChevronDown className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">

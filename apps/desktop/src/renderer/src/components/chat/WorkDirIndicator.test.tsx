@@ -166,11 +166,78 @@ describe('merged status chip', () => {
     })
   })
 
+  function setActiveGitBranch(branch: string | null) {
+    useChatStore.setState((state) => {
+      const project = state.projectSessions[PROJECT]
+      const sid = project?._activeSessionId
+      const session = sid ? project._sessions[sid] : undefined
+      if (!project || !sid || !session) return state
+      return {
+        projectSessions: {
+          ...state.projectSessions,
+          [PROJECT]: {
+            ...project,
+            _sessions: { ...project._sessions, [sid]: { ...session, _gitBranch: branch } },
+          },
+        },
+      }
+    })
+  }
+
   it('names the checkout branch on the only chip', async () => {
     getGitInfo.mockResolvedValue({ branch: 'main' })
     render(<WorkDirIndicator isGitRepo />)
     await waitFor(() => expect(screen.getByTitle('This PC · main')).toBeTruthy())
     expect(screen.getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('keeps the session branch while checkout git info is still loading', async () => {
+    getGitInfo.mockReturnValue(new Promise(() => {}))
+    getWorktreeInfo.mockReturnValue(new Promise(() => {}))
+    setActiveGitBranch('feat/mobile-live-activity')
+    render(<WorkDirIndicator isGitRepo />)
+    expect(screen.getByTitle('This PC · feat/mobile-live-activity')).toBeTruthy()
+    expect(screen.queryByTitle(/Local Checkout/)).toBeNull()
+    await act(async () => { await Promise.resolve() })
+  })
+
+  it('does not paint Local Checkout before the checkout branch arrives', async () => {
+    let resolveGit: (info: { branch: string }) => void = () => {}
+    getGitInfo.mockReturnValue(new Promise((resolve) => { resolveGit = resolve }))
+    render(<WorkDirIndicator isGitRepo />)
+    expect(screen.queryByTitle(/Local Checkout/)).toBeNull()
+    resolveGit({ branch: 'feat/mobile-live-activity' })
+    await waitFor(() => expect(screen.getByTitle('This PC · feat/mobile-live-activity')).toBeTruthy())
+    expect(screen.queryByTitle(/Local Checkout/)).toBeNull()
+  })
+
+  it('shrinks the environment name before the branch', async () => {
+    getGitInfo.mockReturnValue(new Promise(() => {}))
+    getWorktreeInfo.mockReturnValue(new Promise(() => {}))
+    setActiveGitBranch('feat/mobile-live-activity')
+    useMultiHostSidebarStore.setState({
+      environments: [{
+        environmentId: 'local',
+        connectionId: 'local',
+        label: '25s-MacBook-Pro.local',
+        kind: 'local',
+        connection: 'connected',
+        projectsStatus: 'ready',
+        projectsError: null,
+        checkouts: [],
+      }],
+    })
+    render(<WorkDirIndicator isGitRepo />)
+    const hostname = screen.getByText('25s-MacBook-Pro.local')
+    const branch = screen.getByText('feat/mobile-live-activity')
+    expect(hostname.parentElement?.className).toContain('shrink-[9999]')
+    expect(branch.className).toContain('shrink')
+    expect(branch.className).not.toContain('shrink-[9999]')
+    // The trigger's hover color only reaches labels that do not set their own.
+    expect(branch.className).not.toContain('text-muted-foreground')
+    expect(hostname.className).not.toContain('text-muted-foreground')
+    expect(screen.getByTitle('25s-MacBook-Pro.local · feat/mobile-live-activity')).toBeTruthy()
+    await act(async () => { await Promise.resolve() })
   })
 
   it('names a pending worktree on that same chip', async () => {

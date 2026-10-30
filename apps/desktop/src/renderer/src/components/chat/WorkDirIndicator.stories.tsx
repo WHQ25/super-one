@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { GitDirtyStatus, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { WorkDirIndicator } from './WorkDirIndicator'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 
@@ -49,6 +50,8 @@ function Preview({
   started = false,
   narrow = false,
   experiment = true,
+  hostLabel = null,
+  frameClass,
 }: {
   activePath?: string | null
   isGitRepo?: boolean
@@ -59,6 +62,9 @@ function Preview({
   narrow?: boolean
   /** Remote-nodes experiment. Off shows the pre-branch worktree chip. */
   experiment?: boolean
+  /** Environment name shown on the chip. Long names shrink before the branch. */
+  hostLabel?: string | null
+  frameClass?: string
 }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -110,6 +116,21 @@ function Preview({
         [PROJECT]: { pendingBaseBranch: pendingBase, pendingMode, pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
       },
     })
+    const prevHosts = useMultiHostSidebarStore.getState().environments
+    if (hostLabel) {
+      useMultiHostSidebarStore.setState({
+        environments: [{
+          environmentId: 'local',
+          connectionId: 'local',
+          label: hostLabel,
+          kind: 'local',
+          connection: 'connected',
+          projectsStatus: 'ready',
+          projectsError: null,
+          checkouts: [],
+        }],
+      })
+    }
     setReady(true)
     return () => {
       useAppStore.setState({
@@ -118,11 +139,12 @@ function Preview({
         _worktrees: prevApp._worktrees,
       })
       useChatStore.setState(prevChat)
+      useMultiHostSidebarStore.setState({ environments: prevHosts })
     }
-  }, [activePath, empty, experiment, pendingBase, pendingMode, started])
+  }, [activePath, empty, experiment, hostLabel, pendingBase, pendingMode, started])
   if (!ready) return null
   return (
-    <div className={narrow ? 'w-36 p-2 text-xs text-muted-foreground' : 'flex h-96 items-start p-2 text-xs text-muted-foreground'}>
+    <div className={frameClass ?? (narrow ? 'w-36 p-2 text-xs text-muted-foreground' : 'flex h-96 items-start p-2 text-xs text-muted-foreground')}>
       <WorkDirIndicator compact={narrow} isGitRepo={isGitRepo} />
     </div>
   )
@@ -169,6 +191,15 @@ export const ActiveLongBranch: Story = { args: { activePath: WT('long') }, play:
 
 /** Closed chip only — environment, then the worktree branch. */
 export const Chip: Story = { args: { activePath: WT('dirty') } }
+
+/** A long hostname yields first. The branch stays whole inside a narrow status bar. */
+export const LongNames: Story = {
+  args: {
+    activePath: WT('long'),
+    hostLabel: '25s-MacBook-Pro.local',
+    frameClass: 'w-64 p-2 text-xs text-muted-foreground',
+  },
+}
 
 /** Flag off: the pre-branch worktree chip, with no environment row. */
 export const ClassicChip: Story = { args: { experiment: false, activePath: WT('dirty') } }

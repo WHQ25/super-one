@@ -678,9 +678,18 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       set((s) => {
         const proj = getProject(s, activeProject)
         const current = proj._sessions[sessionId]
+        const listed = proj.sessions.find((entry) => entry.sessionId === sessionId)
+        const base = current ?? createDefaultPerSessionState()
+        // The list already knows the branch. Painting a blank stub first made the
+        // status chip flash "Local Checkout" until the snapshot arrived.
         const next = current?._historyHydrated
           ? current
-          : { ...(current ?? createDefaultPerSessionState()), _historyHydrated: false }
+          : {
+              ...base,
+              _historyHydrated: false,
+              _gitBranch: base._gitBranch ?? listed?.gitBranch ?? null,
+              _worktreePath: base._worktreePath ?? listed?.worktreePath ?? null,
+            }
         return {
           projectSessions: {
             ...s.projectSessions,
@@ -692,7 +701,10 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
           },
         }
       })
-      const remoteCachedWorktree = cached ? _getSessionWorktreePath(cached) : null
+      const painted = useChatStore.getState().projectSessions[activeProject]?._sessions[sessionId]
+      const remoteCachedWorktree = cached
+        ? _getSessionWorktreePath(cached)
+        : _getSessionWorktreePath(painted)
       logWorktreeWrite('switchSession.remoteCached', {
         projectPath: activeProject,
         sessionId,

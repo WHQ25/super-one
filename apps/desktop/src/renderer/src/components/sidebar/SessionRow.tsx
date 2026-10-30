@@ -22,7 +22,7 @@ import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
-import { SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
+import { SessionHoverCard, SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
@@ -195,7 +195,7 @@ export const SessionRow = memo(function SessionRow({
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-2.25 py-1.5 transition-colors',
-              isSessionActive ? 'bg-sidebar-accent sidebar-selected' : 'hover:bg-sidebar-hover',
+              isSessionActive ? 'bg-sidebar-accent sidebar-selected' : sidebarHoverCardRowClass,
               (session.isHidden || environmentOffline) && 'opacity-50',
             )}
           >

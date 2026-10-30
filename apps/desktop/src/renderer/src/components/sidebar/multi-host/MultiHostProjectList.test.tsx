@@ -101,6 +101,7 @@ describe('environment sections', () => {
     expect(header?.className ?? '').not.toContain('bg-')
     const row = screen.getByText('This Mac').closest('.group')
     expect(row?.className).toContain('hover:bg-sidebar-hover')
+    expect(row?.className).toContain('data-[sidebar-hover-open=true]:bg-sidebar-hover')
     expect(row?.className).toContain('h-9')
     expect(row?.className).toContain('px-1.5')
     expect(header).toContainElement(row)

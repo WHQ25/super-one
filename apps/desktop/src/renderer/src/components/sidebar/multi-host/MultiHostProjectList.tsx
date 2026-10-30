@@ -17,7 +17,7 @@ import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCard'
-import { SessionHoverCardTrigger } from '@/components/sidebar/multi-host/SessionHoverCard'
+import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/sidebar/multi-host/SessionHoverCard'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
@@ -422,7 +422,7 @@ function RepoGroupHeader({
       >
       <AdaptiveContextMenu items={items} contentClassName="w-56">
         <SessionHoverCardTrigger>
-        <div className={cn('group flex h-9 w-full items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors', locked ? 'cursor-default opacity-60' : 'hover:bg-sidebar-hover')}>
+        <div className={cn('group flex h-9 w-full items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors', locked ? 'cursor-default opacity-60' : sidebarHoverCardRowClass)}>
           {locked ? (
             <div className="flex min-w-0 flex-1 items-center text-left">
               <SidebarHoverChevron

@@ -10,9 +10,9 @@ import {
   type WorktreeCheckoutLabel,
 } from '@/lib/multi-host/session-hover'
 import { EnvironmentKindIcon } from './EnvironmentKindIcon'
-import { SessionHoverCardTrigger, SidebarHoverCard } from './SidebarHoverCard'
+import { SessionHoverCardTrigger, SidebarHoverCard, sidebarHoverCardRowClass } from './SidebarHoverCard'
 
-export { SessionHoverCardTrigger, SidebarHoverCard }
+export { SessionHoverCardTrigger, SidebarHoverCard, sidebarHoverCardRowClass }
 
 export function SessionHoverBody({ model }: { model: SessionHoverModel }) {
   const { i18n } = useTranslation()

@@ -11,7 +11,7 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
-import { SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
+import { SessionHoverCard, SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 /** Session icons draw their glyph at `size - 2`, so 20 gives an 18px mark beside `text-sm` titles. */
@@ -92,7 +92,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
       onClick={() => onSwitchSession(session.folderPath, session.sessionId)}
       className={cn(
         'group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-2.25 py-1.5 transition-colors',
-        isActive ? 'bg-sidebar-accent sidebar-selected' : 'hover:bg-sidebar-hover',
+        isActive ? 'bg-sidebar-accent sidebar-selected' : sidebarHoverCardRowClass,
         environmentOffline && 'opacity-50',
       )}
     >

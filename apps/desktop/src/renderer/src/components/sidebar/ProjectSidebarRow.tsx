@@ -15,7 +15,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { knownSessionCount, projectHostPath, projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
-import { SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
+import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
 import { selectSessionTitle } from '@/lib/session-title'
@@ -516,7 +516,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             }}
             className={cn(
               'group flex h-9 items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors',
-              folder.missing || offline ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-sidebar-hover',
+              folder.missing || offline ? 'cursor-default opacity-60' : cn('cursor-pointer', sidebarHoverCardRowClass),
             )}
           >
             <SidebarHoverChevron

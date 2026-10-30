@@ -22,6 +22,7 @@ describe('environment header row', () => {
     expect(header?.className ?? '').not.toContain('sticky')
     expect(header?.className ?? '').not.toContain('bg-')
     expect(row?.className).toContain('hover:bg-sidebar-hover')
+    expect(row?.className).toContain('data-[sidebar-hover-open=true]:bg-sidebar-hover')
     expect(row?.className).toContain('h-9')
     expect(row?.className).toContain('px-1.5')
     const glyph = document.querySelector('.lucide-monitor')

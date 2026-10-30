@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger } from './SessionHoverCard'
+import { expect, within } from 'storybook/test'
+import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger, sidebarHoverCardRowClass } from './SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const HOUR = 60 * 60 * 1000
@@ -141,11 +142,16 @@ export const PinnedOpen: Story = {
     <div className="w-[240px] bg-sidebar p-2 text-sidebar-foreground">
       <SessionHoverCard model={model()} open>
         <SessionHoverCardTrigger>
-          <div className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px]">
+          <div className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] ${sidebarHoverCardRowClass}`}>
             <span className="block min-w-0 flex-1 truncate">Fix the sidebar scroll jump</span>
           </div>
         </SessionHoverCardTrigger>
       </SessionHoverCard>
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('[data-sidebar-hover-open="true"]')
+    await expect(row?.className).toContain('data-[sidebar-hover-open=true]:bg-sidebar-hover')
+    await expect(within(canvasElement.ownerDocument.body).findByText('super-one')).resolves.toBeTruthy()
+  },
 }

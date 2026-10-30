@@ -15,6 +15,7 @@ import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentKindIcon } from './EnvironmentKindIcon'
 import { EnvironmentHoverCard, type EnvironmentHoverDetails } from './EnvironmentHoverCard'
+import { sidebarHoverCardRowClass } from './SidebarHoverCard'
 
 export { EnvironmentKindIcon }
 
@@ -108,7 +109,8 @@ export function EnvironmentSectionHeader({
         onRename={onRename}
       >
       <div className={cn(
-        'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors hover:bg-sidebar-hover',
+        'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors',
+        sidebarHoverCardRowClass,
         !offline && 'cursor-pointer',
       )}>
         {offline ? (

@@ -26,8 +26,8 @@ export abstract class EnvironmentRpcClient {
     return this.rpc('environment.systemInfo')
   }
 
-  async liveStatus(): Promise<EnvironmentLiveStatus> {
-    return this.rpc('environment.status')
+  async liveStatus(options?: { sampleCpu?: boolean }): Promise<EnvironmentLiveStatus> {
+    return this.rpc('environment.status', options?.sampleCpu ? { sampleCpu: true } : undefined)
   }
 
   async usage(): Promise<EnvironmentUsageReport> {

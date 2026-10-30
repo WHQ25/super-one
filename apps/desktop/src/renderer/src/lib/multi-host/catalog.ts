@@ -70,19 +70,66 @@ export function shareProjectLoad(
 }
 
 /**
- * Write one bucket into the catalog. A reload of a settled environment is not
- * written: its rows stay as they are until the new list lands. A loading write
- * over any other state keeps that state's checkouts.
+ * Write one bucket into the catalog. A reload of a settled environment does not
+ * replace its rows until the new list lands. The name still updates: a rename
+ * must not wait on that list. A loading write over any other state keeps that
+ * state's checkouts.
  */
 export function applyCatalogBucket(previous: EnvironmentBucket[], bucket: EnvironmentBucket): EnvironmentBucket[] {
   const index = previous.findIndex((item) => item.environmentId === bucket.environmentId)
   const prior = index >= 0 ? previous[index] : undefined
-  if (bucket.projectsStatus === 'loading' && prior?.projectsStatus === 'ready') return previous
+  if (bucket.projectsStatus === 'loading' && prior?.projectsStatus === 'ready') {
+    return retitleBucket(previous, index, prior, bucket)
+  }
   const nextBucket = bucket.projectsStatus === 'loading' && prior
     ? { ...bucket, checkouts: prior.checkouts }
     : bucket
   if (index < 0) return [...previous, nextBucket]
   return previous.map((item, i) => (i === index ? nextBucket : item))
+}
+
+/** Copy a renamed device onto the buckets the sidebar and the workdir chip render. */
+export function environmentBucketsWithLabels(
+  buckets: EnvironmentBucket[],
+  items: ReadonlyArray<Pick<EnvironmentListItem, 'connectionId' | 'label'>>,
+): EnvironmentBucket[] {
+  let changed = false
+  const next = buckets.map((bucket) => {
+    const item = items.find((row) => row.connectionId === bucket.connectionId)
+    if (!item || item.label === bucket.label) return bucket
+    changed = true
+    return { ...bucket, label: item.label }
+  })
+  return changed ? next : buckets
+}
+
+function sameIdentity(
+  prior: EnvironmentBucket,
+  bucket: EnvironmentBucket,
+): boolean {
+  return prior.label === bucket.label
+    && prior.kind === bucket.kind
+    && prior.connection === bucket.connection
+    && prior.path === bucket.path
+}
+
+/** Keep the settled rows, and publish a new name without waiting for them. */
+function retitleBucket(
+  previous: EnvironmentBucket[],
+  index: number,
+  prior: EnvironmentBucket,
+  bucket: EnvironmentBucket,
+): EnvironmentBucket[] {
+  if (sameIdentity(prior, bucket)) return previous
+  const renamed: EnvironmentBucket = {
+    ...prior,
+    label: bucket.label,
+    kind: bucket.kind,
+    connection: bucket.connection,
+  }
+  if (bucket.path) renamed.path = bucket.path
+  else delete renamed.path
+  return previous.map((item, i) => (i === index ? renamed : item))
 }
 
 function sameDirs(a: string[] | undefined, b: string[] | undefined): boolean {

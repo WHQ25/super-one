@@ -29,7 +29,7 @@ import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
 import { probeSandboxRpc } from '../sandbox/index'
-import { getMachineInfo, readLiveStatus } from '../machine/index'
+import { getMachineInfo, readLiveStatus, sampleCpuPercent } from '../machine/index'
 import { readSubscriptionUsage } from '../usage/index'
 import { type NodeSessionRecord } from '../session/index'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
@@ -246,7 +246,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'environment.descriptor': (_payload, ctx) => handleDescriptor(ctx),
   'environment.health': (_payload, ctx) => handleHealth(ctx),
   'environment.systemInfo': (_payload, ctx) => handleSystemInfo(ctx),
-  'environment.status': (_payload, ctx) => handleStatus(ctx),
+  'environment.status': (payload, ctx) => handleStatus(payload, ctx),
   'environment.usage': (payload, ctx) => handleUsage(payload, ctx),
   'settings.get': (_payload, ctx) => handleSettingsGet(ctx),
   'settings.patch': (payload, ctx) => handleSettingsPatch(payload, ctx),
@@ -676,11 +676,15 @@ function handleHealth(ctx: RpcContext): RpcResult {
   }
 }
 
-/** Free memory for scheduling (`environment_get_info`). */
-function handleStatus(ctx: HostRpcContext): RpcResult {
+/** Free memory for scheduling. A CPU percent is one sample, and only when asked. */
+async function handleStatus(payload: unknown, ctx: HostRpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  return { result: readLiveStatus() }
+  const live = readLiveStatus()
+  const sample = payload !== null && typeof payload === 'object' && (payload as { sampleCpu?: unknown }).sampleCpu === true
+  if (!sample) return { result: live }
+  const cpuPercent = await sampleCpuPercent()
+  return { result: cpuPercent == null ? live : { ...live, cpuPercent } }
 }
 
 async function handleUsage(payload: unknown, ctx: RpcContext): Promise<RpcResult> {

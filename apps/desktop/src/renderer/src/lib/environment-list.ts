@@ -51,6 +51,12 @@ export function invalidateEnvironmentList(): void {
   drop()
 }
 
+/** Drop the cache and tell subscribers to read again. A rename does not move the socket. */
+export function notifyEnvironmentListChanged(connectionId = ''): void {
+  drop()
+  for (const listener of [...listeners]) listener({ connectionId })
+}
+
 /**
  * Cached list while someone is subscribed. Concurrent callers share one IPC.
  * No subscriber means no cache: nothing would hear the status push that drops it.

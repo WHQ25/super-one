@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Cloud, Laptop, Link2, Monitor, Network, Server, Smartphone, SquareTerminal, Terminal, Trash2, Wifi, type LucideIcon } from 'lucide-react'
+import { Cloud, Laptop, Link2, Monitor, Network, Pencil, Server, Smartphone, SquareTerminal, Terminal, Trash2, Wifi, type LucideIcon } from 'lucide-react'
 import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
@@ -50,8 +50,15 @@ export function DeviceRow(props: {
   path?: NodeLinkPath | null
   /** Buttons before Remove (connect, retry, …). */
   actions?: ReactNode
-  removeLabel: string
-  onRemove: () => void
+  /** Pencil before those buttons. Edits the name this computer shows. */
+  rename?: {
+    label: string
+    disabled?: boolean
+    onSubmit: (name: string) => void | Promise<void>
+  }
+  /** Omit both to hide Remove. The local environment has no forget action. */
+  removeLabel?: string
+  onRemove?: () => void
   removeDisabled?: boolean
   access?: { enabled: boolean; label: string; onChange: (enabled: boolean) => void }
   accessLocked?: boolean
@@ -62,6 +69,49 @@ export function DeviceRow(props: {
   const Icon = KIND_ICONS[props.kind]
   const kindLabel = t(`settings.remote.deviceKind.${props.kind}`)
   const shownEnabled = props.access ? props.access.enabled && !props.accessLocked : true
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(props.name)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const editingRef = useRef(false)
+  const savingRef = useRef(false)
+  /**
+   * Chromium often reports `isComposing=false` on the Enter that confirms an
+   * IME candidate. Keep our own flag and clear it one frame late.
+   */
+  const imeComposingRef = useRef(false)
+  useEffect(() => {
+    if (!editing) setDraft(props.name)
+  }, [editing, props.name])
+  useEffect(() => {
+    if (!editing) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [editing])
+
+  function closeRename(): void {
+    editingRef.current = false
+    setEditing(false)
+  }
+
+  async function commitRename(): Promise<void> {
+    if (!editingRef.current || savingRef.current) return
+    const next = draft.trim()
+    if (!next || next === props.name) {
+      closeRename()
+      return
+    }
+    savingRef.current = true
+    setSaving(true)
+    try {
+      await props.rename?.onSubmit(next)
+      closeRename()
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
+  }
+
   return (
     <div className={settingsRowClassName}>
       <div className="flex items-center gap-3">
@@ -75,7 +125,42 @@ export function DeviceRow(props: {
         </span>
         <div className={cn('min-w-0 flex-1', !shownEnabled && 'opacity-60')}>
           <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm text-foreground">{props.name}</span>
+            {editing ? (
+              <input
+                ref={inputRef}
+                className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                value={draft}
+                maxLength={80}
+                disabled={saving}
+                aria-label={props.rename?.label}
+                onChange={(event) => setDraft(event.target.value)}
+                onCompositionStart={() => { imeComposingRef.current = true }}
+                onCompositionEnd={() => {
+                  requestAnimationFrame(() => { imeComposingRef.current = false })
+                }}
+                onKeyDown={(event) => {
+                  // keyCode 229 is the legacy marker for a key swallowed by an IME.
+                  if (
+                    imeComposingRef.current
+                    || event.nativeEvent.isComposing
+                    || event.keyCode === 229
+                  ) return
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void commitRename()
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault()
+                    closeRename()
+                  }
+                }}
+                onBlur={() => {
+                  if (imeComposingRef.current) return
+                  void commitRename()
+                }}
+              />
+            ) : (
+              <span className="truncate text-sm text-foreground">{props.name}</span>
+            )}
             {props.online && props.path ? <PathMark path={props.path} /> : null}
           </div>
           {props.status ? (
@@ -95,16 +180,31 @@ export function DeviceRow(props: {
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {props.rename ? (
+            <IconButton
+              size="md"
+              tooltip={props.rename.label}
+              disabled={props.rename.disabled || saving}
+              onClick={() => {
+                editingRef.current = true
+                setEditing(true)
+              }}
+            >
+              <Pencil />
+            </IconButton>
+          ) : null}
           {props.actions}
-          <IconButton
-            size="md"
-            variant="destructive"
-            tooltip={props.removeLabel}
-            disabled={props.removeDisabled}
-            onClick={props.onRemove}
-          >
-            <Trash2 />
-          </IconButton>
+          {props.onRemove && props.removeLabel ? (
+            <IconButton
+              size="md"
+              variant="destructive"
+              tooltip={props.removeLabel}
+              disabled={props.removeDisabled}
+              onClick={props.onRemove}
+            >
+              <Trash2 />
+            </IconButton>
+          ) : null}
           {props.access ? (
             <Switch
               className="ml-1"

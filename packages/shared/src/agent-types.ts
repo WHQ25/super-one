@@ -4992,6 +4992,10 @@ export const AgentIpcChannels = {
   ENVIRONMENT_CONNECT: 'environment:connect',
   ENVIRONMENT_DISCONNECT: 'environment:disconnect',
   ENVIRONMENT_FORGET: 'environment:forget',
+  /** The name this computer shows for a paired device. */
+  ENVIRONMENT_RENAME: 'environment:rename',
+  /** Installed memory and how much is free right now. */
+  ENVIRONMENT_MEMORY: 'environment:memory',
   /** Explicit transient retry (does not unblock auth). */
   ENVIRONMENT_RETRY_NOW: 'environment:retryNow',
   /** Re-pair existing connectionId with a new pairing token (identity-safe). */

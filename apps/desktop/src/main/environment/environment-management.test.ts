@@ -168,12 +168,17 @@ describe('environment list', () => {
 
   it('lists a paired node as disconnected when its socket is not live', async () => {
     const rt = await bootNode()
-    const host = newHost()
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    const host = new EnvironmentHost(ud)
     const { connectionId } = await host.pairRemote({
       baseUrl: rt.server.url,
       pairingToken: rt.auth.createPairingToken().token,
       label: 'offline-box',
     })
+
+    const connected = (await host.listEnvironments()).find((e) => e.kind === 'remote')
+    expect(connected?.machine?.memoryBytes).toBeGreaterThan(0)
 
     host.disconnect(connectionId)
     const remote = (await host.listEnvironments()).find((e) => e.kind === 'remote')
@@ -183,7 +188,49 @@ describe('environment list', () => {
     expect(remote?.desired).toBe(false)
     // Endpoint metadata survives disconnect so the UI can offer reconnect.
     expect(remote?.endpointProfiles.length).toBeGreaterThan(0)
+    expect(remote?.machine?.cpuModel).toBe(connected?.machine?.cpuModel)
+    expect(remote?.machine?.memoryBytes).toBe(connected?.machine?.memoryBytes)
     host.dispose()
+
+    const restarted = new EnvironmentHost(ud)
+    const stored = (await restarted.listEnvironments()).find((e) => e.kind === 'remote')
+    expect(stored?.machine?.cpuModel).toBe(connected?.machine?.cpuModel)
+    expect(stored?.machine?.memoryBytes).toBe(connected?.machine?.memoryBytes)
+    restarted.dispose()
+  })
+
+  it('renames the name this computer shows for a paired node', async () => {
+    const rt = await bootNode()
+    const host = newHost()
+    const { connectionId } = await host.pairRemote({
+      baseUrl: rt.server.url,
+      pairingToken: rt.auth.createPairingToken().token,
+      label: 'linux-box',
+    })
+
+    host.rename(connectionId, '  studio  ')
+    const remote = (await host.listEnvironments()).find((e) => e.kind === 'remote')
+    expect(remote?.label).toBe('studio')
+    expect(() => host.rename(connectionId, '   ')).toThrow(/name/i)
+    host.dispose()
+  })
+
+  it('renames the local environment and keeps the name across a restart', async () => {
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    const host = new EnvironmentHost(ud)
+    const before = (await host.listEnvironments()).find((item) => item.connectionId === 'local')
+    expect(before?.label).toBeTruthy()
+    expect(before?.label).not.toBe('studio')
+
+    host.rename('local', '  studio  ')
+    expect((await host.listEnvironments()).find((item) => item.connectionId === 'local')?.label).toBe('studio')
+    expect(() => host.rename('local', '   ')).toThrow(/name/i)
+    host.dispose()
+
+    const restarted = new EnvironmentHost(ud)
+    expect((await restarted.listEnvironments()).find((item) => item.connectionId === 'local')?.label).toBe('studio')
+    restarted.dispose()
   })
 })
 

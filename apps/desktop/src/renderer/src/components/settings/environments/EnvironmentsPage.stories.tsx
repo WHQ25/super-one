@@ -31,6 +31,38 @@ const meta: Meta<typeof EnvironmentsPage> = {
 export default meta
 type Story = StoryObj<typeof EnvironmentsPage>
 
+/** This computer's environment. Rename only: it cannot be removed. */
+export const LocalComputer: Story = {
+  parameters: {
+    items: [{
+      connectionId: 'local',
+      environmentId: 'local-id',
+      label: 'Hangqis-MacBook-Pro.local',
+      kind: 'local',
+      state: 'connected',
+      endpointProfiles: [],
+      platform: { os: 'darwin', arch: 'arm64' },
+      installationProfile: 'local-electron',
+    }],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const name = await canvas.findByText('Hangqis-MacBook-Pro.local')
+    const row = name.closest('li')
+    await expect(row).not.toBeNull()
+    const local = within(row as HTMLElement)
+    await expect(local.getByRole('button', { name: i18n.t('settings.environments.rename') })).toBeInTheDocument()
+    await expect(local.queryByRole('button', { name: i18n.t('settings.environments.forget') })).toBeNull()
+  },
+}
+
+export const LocalComputerNarrow: Story = {
+  parameters: {
+    ...LocalComputer.parameters,
+    width: 460,
+  },
+}
+
 export const Loading: Story = { parameters: { items: null } }
 
 export const Empty: Story = { parameters: { items: [] } }
@@ -69,7 +101,10 @@ export const DesktopStates: Story = {
     await expect(canvas.queryByText(/not connected to the relay/)).toBeNull()
     await expect(canvas.queryByText('http://VensendeMac-mini.local:7792')).toBeNull()
     await expect(canvas.queryByRole('button', { name: i18n.t('settings.environments.connect') })).toBeNull()
-    await expect(canvas.getAllByRole('button', { name: i18n.t('settings.environments.retryNow') })).toHaveLength(2)
+    const retry = canvas.getAllByRole('button', { name: i18n.t('settings.environments.retryNow') })
+    await expect(retry).toHaveLength(2)
+    await expect(retry[0]).not.toHaveTextContent(/\S/)
+    await expect(canvas.getAllByRole('button', { name: i18n.t('settings.environments.rename') }).length).toBeGreaterThan(0)
   },
 }
 

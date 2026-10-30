@@ -1,11 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { CalendarClock, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
+import { notifyEnvironmentListChanged } from '@/lib/environment-list'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { environmentSections, groupCheckoutsByRepo, sortProjectGroups } from '@/lib/multi-host/group-projects'
 import { knownSessionCount, projectHoverFolders } from '@/lib/multi-host/project-hover'
@@ -250,6 +252,16 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   )
 }
 
+async function renameEnvironment(connectionId: string, name: string): Promise<void> {
+  try {
+    await window.environment.rename(connectionId, name)
+    notifyEnvironmentListChanged(connectionId)
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : String(err))
+    throw err
+  }
+}
+
 export function EnvironmentHeader({
   bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort, obscured = false,
 }: {
@@ -283,6 +295,9 @@ export function EnvironmentHeader({
       onAddProject={onAddProject}
       onSort={onSort}
       obscured={obscured}
+      connectionId={bucket.connectionId}
+      projectCount={bucket.projectsStatus === 'ready' ? bucket.checkouts.length : null}
+      onRename={(name) => renameEnvironment(bucket.connectionId, name)}
     />
   )
 }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
 import { onHostProjectsChanged } from '@/lib/host-projects-bus'
 import { applyCatalogBucket, catalogLoads, loadEnvironmentCatalog, shareProjectLoad } from '@/lib/multi-host/catalog'
+import { startEnvironmentLabelSync } from '@/lib/multi-host/sync-environment-labels'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
 import { useAppStore } from '@/stores/app'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
@@ -34,6 +35,10 @@ export function useLoadMultiHostCatalog(enabled: boolean): void {
   const { t } = useTranslation()
   const recentFolders = useAppStore((state) => state.recentFolders)
   const localLabel = window.app.platform === 'darwin' ? t('sidebar.thisMac') : t('sidebar.thisPc')
+
+  useEffect(() => {
+    startEnvironmentLabelSync()
+  }, [])
 
   useEffect(() => {
     if (!enabled) {

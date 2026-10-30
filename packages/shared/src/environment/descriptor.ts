@@ -62,9 +62,14 @@ export interface EnvironmentMachine {
   gpus?: string[]
 }
 
-/** What changes while a node runs, read on demand through `environment.status`. */
+/**
+ * What changes while a node runs, read on demand through `environment.status`.
+ * `cpuPercent` is present only when the caller asked for one sample (`sampleCpu: true`).
+ */
 export interface EnvironmentLiveStatus {
   freeMemoryBytes: number
+  /** Whole-number busy share, 0–100, from one short sample. */
+  cpuPercent?: number
 }
 
 /** Well-known constant for the in-process desktop environment before identity is persisted. */

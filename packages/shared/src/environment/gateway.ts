@@ -34,8 +34,11 @@ export interface EnvironmentGateway {
    * implement this; local may return a lightweight in-memory projection.
    */
   getSnapshot?(): Promise<EnvironmentSnapshot>
-  /** Free memory (`environment.status`); older nodes reject it as unsupported. */
-  getLiveStatus?(): Promise<EnvironmentLiveStatus>
+  /**
+   * Free memory (`environment.status`); older nodes reject it as unsupported.
+   * `sampleCpu` asks the node for one CPU sample and waits out that window.
+   */
+  getLiveStatus?(options?: { sampleCpu?: boolean }): Promise<EnvironmentLiveStatus>
   /** Subscription usage of the node's logins (`environment.usage`); older nodes reject it as unsupported. */
   getUsage?(): Promise<EnvironmentUsageReport>
   subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope>

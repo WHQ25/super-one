@@ -1260,6 +1260,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   connect(connectionId: string): Promise<unknown>
   disconnect(connectionId: string): Promise<void>
   forget(connectionId: string): Promise<void>
+  /** The name this computer shows for a paired device. */
+  rename(connectionId: string, label: string): Promise<void>
+  /** Installed memory, free memory, and one CPU sample while the host can be asked. */
+  memory(connectionId: string): Promise<{ totalBytes: number | null; freeBytes: number | null; cpuPercent: number | null }>
   retryNow(
     connectionId: string,
   ): Promise<'started' | 'already_connected' | 'blocked' | 'disposed'>

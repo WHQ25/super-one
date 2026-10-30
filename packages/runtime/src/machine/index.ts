@@ -1,2 +1,2 @@
 export { collectMachineInfo, getMachineInfo, type RunCommand } from './machine-info'
-export { readLiveStatus } from './live-status'
+export { cpuPercentBetween, readCpuSnapshot, readLiveStatus, sampleCpuPercent, CPU_SAMPLE_MS, type CpuSnapshot } from './live-status'

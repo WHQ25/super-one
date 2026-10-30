@@ -455,8 +455,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.systemInfo()
   }
 
-  async getLiveStatus() {
-    return this.client.liveStatus()
+  async getLiveStatus(options?: { sampleCpu?: boolean }) {
+    return this.client.liveStatus(options)
   }
 
   async getUsage() {

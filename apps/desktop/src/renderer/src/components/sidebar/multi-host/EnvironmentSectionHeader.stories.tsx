@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus } from '@/lib/multi-host/types'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
@@ -121,4 +121,35 @@ export const Dark: Story = {
   globals: { theme: 'dark' },
   args: { connection: 'offline', label: 'build-box' },
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+}
+
+/** The card sits to the right of the row. The pencil opens environment settings. */
+export const HoverCard: Story = {
+  args: {
+    cardOpen: true,
+    path: 'lan',
+    projectCount: 3,
+    onRename: async () => {},
+    details: {
+      machineOs: 'macOS 26.0',
+      platform: { os: 'darwin', arch: 'arm64' },
+      memory: {
+        totalBytes: 64 * 1024 ** 3,
+        freeBytes: 64 * 1024 ** 3 - Math.round(18.4 * 1024 ** 3),
+      },
+      cpu: { percent: 23, model: 'Apple M3 Max' },
+    },
+  },
+  render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+  play: async () => {
+    const body = within(document.body)
+    await expect(body.getByText('Node · Connected')).toBeInTheDocument()
+    await expect(body.getByText('3 Projects')).toBeInTheDocument()
+    await expect(body.getByText('macOS 26.0')).toBeInTheDocument()
+    await expect(body.getByText('45.6GB Free')).toBeInTheDocument()
+    await expect(body.getByText('Apple M3 Max · 23%')).toBeInTheDocument()
+    await userEvent.click(body.getByRole('button', { name: 'Environment Settings' }))
+    await expect(body.getByRole('dialog')).toBeInTheDocument()
+    await expect(body.getByRole('textbox', { name: 'Display Name' })).toHaveValue('dev-server')
+  },
 }

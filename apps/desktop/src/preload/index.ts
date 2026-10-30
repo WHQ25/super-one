@@ -735,6 +735,14 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DISCONNECT, connectionId),
   forget: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_FORGET, connectionId),
+  rename: (connectionId: string, label: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_RENAME, connectionId, label),
+  memory: (connectionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MEMORY, connectionId) as Promise<{
+      totalBytes: number | null
+      freeBytes: number | null
+      cpuPercent: number | null
+    }>,
   retryNow: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_RETRY_NOW, connectionId) as Promise<
       'started' | 'already_connected' | 'blocked' | 'disposed'

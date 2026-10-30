@@ -10,7 +10,15 @@ import { useLoadMultiHostCatalog } from './use-load-multi-host-catalog'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('@/lib/environment-list', () => ({
-  loadEnvironmentItems: vi.fn(async () => []),
+  loadEnvironmentItems: vi.fn(async () => [{
+    connectionId: 'local',
+    environmentId: 'local',
+    label: 'This Mac',
+    kind: 'local',
+    state: 'connected',
+    installationProfile: 'local-electron',
+    endpointProfiles: [],
+  }]),
   subscribeEnvironmentList: vi.fn(() => () => {}),
 }))
 vi.mock('@/lib/host-projects-bus', () => ({

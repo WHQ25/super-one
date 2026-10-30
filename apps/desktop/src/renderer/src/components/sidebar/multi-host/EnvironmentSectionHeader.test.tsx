@@ -69,3 +69,42 @@ describe('disconnected environment header', () => {
     expect(onToggle).not.toHaveBeenCalled()
   })
 })
+
+describe('environment hover card', () => {
+  it('shows the environment and opens settings from the pencil', () => {
+    const onRename = vi.fn(async () => {})
+    render(
+      <EnvironmentSectionHeader
+        label="dev-server"
+        kind="cli-node"
+        connection="connected"
+        path="lan"
+        expanded
+        projectsStatus="ready"
+        projectsError={null}
+        onToggle={() => {}}
+        projectCount={3}
+        cardOpen
+        onRename={onRename}
+        details={{
+          machineOs: 'macOS 26.0',
+          platform: { os: 'darwin', arch: 'arm64' },
+          memory: {
+            totalBytes: 64 * 1024 ** 3,
+            freeBytes: 64 * 1024 ** 3 - Math.round(18.4 * 1024 ** 3),
+          },
+          cpu: { percent: 23, model: 'Apple M3 Max' },
+        }}
+      />,
+    )
+    expect(screen.getByText('Node · Connected')).toBeInTheDocument()
+    expect(screen.queryByText('LAN')).toBeNull()
+    expect(screen.getByText('3 Projects')).toBeInTheDocument()
+    expect(screen.getByText('macOS 26.0')).toBeInTheDocument()
+    expect(screen.getByText('45.6GB Free')).toBeInTheDocument()
+    expect(screen.getByText('Apple M3 Max · 23%')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Environment Settings' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Display Name' })).toHaveValue('dev-server')
+  })
+})

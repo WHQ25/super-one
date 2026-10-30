@@ -32,7 +32,8 @@ import {
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
 import { PairDesktopDialog } from './PairDesktopDialog'
-import { invalidateEnvironmentList, loadEnvironmentItems, subscribeEnvironmentList } from '@/lib/environment-list'
+import { invalidateEnvironmentList, loadEnvironmentItems, notifyEnvironmentListChanged, subscribeEnvironmentList } from '@/lib/environment-list'
+import { startEnvironmentLabelSync } from '@/lib/multi-host/sync-environment-labels'
 import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
 import { DeviceRow, computerKind } from '../DeviceRow'
@@ -141,6 +142,8 @@ export function EnvironmentsPage() {
   }, [refresh])
 
   useEffect(() => {
+    // Settings unmounts the sidebar. Keep its environment names in sync anyway.
+    startEnvironmentLabelSync()
     void refresh()
     return subscribeEnvironmentList(() => void refresh())
   }, [refresh])
@@ -157,6 +160,11 @@ export function EnvironmentsPage() {
       }
     })
   }, [])
+
+  const localItem = useMemo(
+    () => items.find((item) => item.connectionId === 'local' || item.kind === 'local') ?? null,
+    [items],
+  )
 
   const labItems = useMemo(
     () => items.filter((item) => item.kind === 'remote' && isLoopbackEnvironment(item)),
@@ -208,6 +216,16 @@ export function EnvironmentsPage() {
       toast.error(err instanceof Error ? err.message : String(err))
     } finally {
       endBusy(connectionId)
+    }
+  }
+
+  async function handleRename(item: EnvironmentListItem, name: string): Promise<void> {
+    try {
+      await window.environment.rename(item.connectionId, name)
+      notifyEnvironmentListChanged(item.connectionId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+      throw err
     }
   }
 
@@ -324,6 +342,23 @@ export function EnvironmentsPage() {
         </div>
       ) : (
         <>
+          {localItem && (
+            <SettingsSection title={t('settings.environments.thisComputer')}>
+              <ul className={deviceListClassName}>
+                <li>
+                  <DeviceRow
+                    kind={computerKind(localItem.platform?.os)}
+                    name={localItem.label}
+                    online
+                    rename={{
+                      label: t('settings.environments.rename'),
+                      onSubmit: (name) => handleRename(localItem, name),
+                    }}
+                  />
+                </li>
+              </ul>
+            </SettingsSection>
+          )}
           {showLocalLab && (
             <LocalLabSection
               devices={labItems}
@@ -340,6 +375,7 @@ export function EnvironmentsPage() {
               }
               onForget={handleForget}
               onUpgrade={handleUpgrade}
+              onRename={handleRename}
             />
           )}
 
@@ -393,6 +429,7 @@ export function EnvironmentsPage() {
                           }
                           onRepair={() => handleRepair(item)}
                           onForget={() => handleForget(item)}
+                          onRename={(name) => handleRename(item, name)}
                         />
                       </li>
                     ) : (
@@ -426,6 +463,7 @@ export function EnvironmentsPage() {
                             })
                           }
                           onRepair={() => handleRepair(item)}
+                          onRename={(name) => handleRename(item, name)}
                           busyProgress={
                             busyId === item.connectionId ? busyProgress : null
                           }
@@ -472,6 +510,7 @@ interface LocalLabSectionProps {
   onDisconnect: (connectionId: string) => void
   onForget: (item: EnvironmentListItem) => void
   onUpgrade: (item: EnvironmentListItem) => void
+  onRename: (item: EnvironmentListItem, name: string) => Promise<void>
 }
 
 /** Dev-only card: one-click pair to host-process lab on loopback. */
@@ -486,6 +525,7 @@ function LocalLabSection({
   onDisconnect,
   onForget,
   onUpgrade,
+  onRename,
 }: LocalLabSectionProps) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<LocalLabStatusView | null>(null)
@@ -628,6 +668,7 @@ function LocalLabSection({
                 onDisconnect={() => onDisconnect(item.connectionId)}
                 onForget={() => onForget(item)}
                 onUpgrade={() => onUpgrade(item)}
+                onRename={(name) => onRename(item, name)}
               />
             </li>
           ))}
@@ -654,6 +695,7 @@ export function DesktopNodeRow({
   onRetry,
   onRepair,
   onForget,
+  onRename,
 }: {
   item: EnvironmentListItem
   busy: boolean
@@ -661,6 +703,7 @@ export function DesktopNodeRow({
   onRetry: () => void
   onRepair: () => void
   onForget: () => void
+  onRename: (name: string) => Promise<void>
 }) {
   const { t } = useTranslation()
   const live = LIVE_STATES.includes(item.state)
@@ -680,23 +723,22 @@ export function DesktopNodeRow({
           : connecting
             ? { text: t('settings.environments.state.connecting'), tone: 'muted' as const }
             : { text: t('settings.environments.offline'), tone: 'muted' as const, title: item.lastError }
+  const retryLabel = authBlocked
+    ? t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })
+    : t('settings.environments.retryNow', { defaultValue: 'Retry' })
   const action = busy
-    ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
+    ? (
+      <span className="inline-flex size-7 items-center justify-center">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </span>
+    )
     : actionsLocked || live || connecting || identityConflict
       ? null
-      : authBlocked
-        ? (
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={onRepair}>
-              <RefreshCw className="size-3.5" />
-              {t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
-            </Button>
-          )
-        : (
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={onRetry}>
-              <RefreshCw className="size-3.5" />
-              {t('settings.environments.retryNow', { defaultValue: 'Retry' })}
-            </Button>
-          )
+      : (
+        <IconButton size="md" tooltip={retryLabel} onClick={authBlocked ? onRepair : onRetry}>
+          <RefreshCw />
+        </IconButton>
+      )
 
   return (
     <DeviceRow
@@ -707,6 +749,11 @@ export function DesktopNodeRow({
       status={status.text}
       statusTone={status.tone}
       statusTitle={'title' in status ? status.title : undefined}
+      rename={{
+        label: t('settings.environments.rename'),
+        disabled: busy || actionsLocked,
+        onSubmit: onRename,
+      }}
       actions={action}
       removeLabel={t('settings.environments.forget')}
       onRemove={onForget}
@@ -733,6 +780,7 @@ interface EnvironmentDeviceRowProps {
   onUpgrade: () => void
   onRetry?: () => void
   onRepair?: () => void
+  onRename: (name: string) => Promise<void>
 }
 
 /** Card row aligned with paired phone/desktop rows on Control This Mac. */
@@ -747,6 +795,7 @@ function EnvironmentDeviceRow({
   onUpgrade,
   onRetry,
   onRepair,
+  onRename,
 }: EnvironmentDeviceRowProps) {
   const { t } = useTranslation()
   const live = LIVE_STATES.includes(item.state)
@@ -780,57 +829,59 @@ function EnvironmentDeviceRow({
       removeLabel={t('settings.environments.forget')}
       onRemove={onForget}
       removeDisabled={controlsDisabled}
+      rename={{
+        label: t('settings.environments.rename'),
+        disabled: controlsDisabled,
+        onSubmit: onRename,
+      }}
       actions={(
         <>
-      {busy ? (
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          {busyLabel ? <span className="capitalize">{busyLabel}</span> : null}
-        </span>
-      ) : actionsLocked ? null : live ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground"
-          onClick={onDisconnect}
-        >
-          <Unplug className="size-3.5" />
-          {t('settings.environments.disconnect')}
-        </Button>
-      ) : authBlocked && onRepair ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground"
-          onClick={onRepair}
-        >
-          <RefreshCw className="size-3.5" />
-          {t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
-        </Button>
-      ) : identityConflict ? null : (
-        <>
-          {item.state === 'backoff' && onRetry ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground"
-              onClick={onRetry}
-            >
-              <RefreshCw className="size-3.5" />
-              {t('settings.environments.retryNow', { defaultValue: 'Retry' })}
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-muted-foreground"
-            onClick={onConnect}
-          >
-            <Plug className="size-3.5" />
-            {t('settings.environments.connect')}
-          </Button>
-        </>
-      )}
+          {busy ? (
+            <span className="inline-flex size-7 items-center justify-center" title={busyLabel ?? undefined}>
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            </span>
+          ) : actionsLocked ? null : (
+            <>
+              {live ? (
+                <IconButton size="md" tooltip={t('settings.environments.disconnect')} onClick={onDisconnect}>
+                  <Unplug />
+                </IconButton>
+              ) : authBlocked && onRepair ? (
+                <IconButton
+                  size="md"
+                  tooltip={t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
+                  onClick={onRepair}
+                >
+                  <RefreshCw />
+                </IconButton>
+              ) : identityConflict ? null : (
+                <>
+                  {item.state === 'backoff' && onRetry ? (
+                    <IconButton
+                      size="md"
+                      tooltip={t('settings.environments.retryNow', { defaultValue: 'Retry' })}
+                      onClick={onRetry}
+                    >
+                      <RefreshCw />
+                    </IconButton>
+                  ) : null}
+                  <IconButton size="md" tooltip={t('settings.environments.connect')} onClick={onConnect}>
+                    <Plug />
+                  </IconButton>
+                </>
+              )}
+              {item.nodeUpgrade?.canUpgradeOverSsh ? (
+                <IconButton
+                  size="md"
+                  tooltip={busy ? t('settings.environments.upgradingNode') : t('settings.environments.upgradeNode')}
+                  disabled={controlsDisabled}
+                  onClick={onUpgrade}
+                >
+                  <ArrowUpCircle />
+                </IconButton>
+              ) : null}
+            </>
+          )}
         </>
       )}
     >
@@ -862,20 +913,7 @@ function EnvironmentDeviceRow({
           <p className="text-xs text-warning">
             {t('settings.environments.nodeOutdated', nodeUpgradeVersions(item.nodeUpgrade, t))}
           </p>
-          {item.nodeUpgrade.canUpgradeOverSsh ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={onUpgrade}
-              disabled={controlsDisabled}
-            >
-              <ArrowUpCircle className="size-3.5" />
-              {busy
-                ? t('settings.environments.upgradingNode')
-                : t('settings.environments.upgradeNode')}
-            </Button>
-          ) : (
+          {item.nodeUpgrade.canUpgradeOverSsh ? null : (
             <p className="text-xs text-muted-foreground">
               {t('settings.environments.nodeOutdatedManual')}
             </p>

@@ -9,8 +9,13 @@ import type { RpcContext, SessionHostPort } from './rpc-context'
 import type { NodeIdentity } from './identity'
 
 const machine = { os: 'macOS 26.0', cpuModel: 'Apple M3 Max', cpuCores: 16, memoryBytes: 64 * 2 ** 30, gpus: ['Apple M3 Max'], toolchains: [{ name: 'git', version: '2.50.1' }] }
-vi.mock('../machine/index', async (importOriginal) => ({ ...(await importOriginal<object>()), getMachineInfo: async () => machine }))
+vi.mock('../machine/index', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getMachineInfo: async () => machine,
+  sampleCpuPercent,
+}))
 const readSubscriptionUsage = vi.hoisted(() => vi.fn(async () => [{ harness: 'codex', account: null, planType: 'Pro 100', windows: [] }]))
+const sampleCpuPercent = vi.hoisted(() => vi.fn(async () => 37))
 vi.mock('../usage/index', () => ({ readSubscriptionUsage }))
 
 const dirs: string[] = []
@@ -41,6 +46,16 @@ describe('node context for scheduling', () => {
   it('reports free memory', async () => {
     const status = (await dispatchRpc('environment.status', {}, host())).result as EnvironmentLiveStatus
     expect(status.freeMemoryBytes).toBeGreaterThan(0)
+  })
+
+  it('samples cpu only when the caller asks', async () => {
+    sampleCpuPercent.mockClear()
+    const plain = (await dispatchRpc('environment.status', {}, host())).result as EnvironmentLiveStatus
+    expect(plain.cpuPercent).toBeUndefined()
+    expect(sampleCpuPercent).not.toHaveBeenCalled()
+    const sampled = (await dispatchRpc('environment.status', { sampleCpu: true }, host())).result as EnvironmentLiveStatus
+    expect(sampled.freeMemoryBytes).toBeGreaterThan(0)
+    expect(sampled.cpuPercent).toBe(37)
   })
 
   it('requires environment:read', async () => {

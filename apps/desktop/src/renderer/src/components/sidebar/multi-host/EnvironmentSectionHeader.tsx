@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDownUp, Cloud, Monitor, Plus, RotateCw, TriangleAlert, Wifi } from 'lucide-react'
+import { ArrowDownUp, Plus, RotateCw, TriangleAlert } from 'lucide-react'
 import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { useTranslation } from 'react-i18next'
 import {
@@ -13,28 +13,10 @@ import { cn } from '@superone/ui/lib/utils'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus, SidebarSort } from '@/lib/multi-host/types'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
+import { EnvironmentKindIcon } from './EnvironmentKindIcon'
+import { EnvironmentHoverCard, type EnvironmentHoverDetails } from './EnvironmentHoverCard'
 
-/**
- * This machine is a monitor. A remote node or desktop shows how it is reached:
- * Wi-Fi on the LAN, a cloud through relay, SSH or Tailscale, and a red cloud
- * while it is offline.
- */
-export function EnvironmentKindIcon({
-  kind,
-  connection,
-  path,
-  className = 'size-3.5 shrink-0',
-}: {
-  kind: EnvironmentKind
-  connection?: EnvironmentConnection
-  path?: NodeLinkPath
-  className?: string
-}) {
-  if (kind === 'local') return <Monitor className={className} aria-hidden />
-  if (connection === 'offline') return <Cloud className={cn(className, 'text-error')} aria-hidden />
-  if (path === 'lan') return <Wifi className={className} aria-hidden />
-  return <Cloud className={className} aria-hidden />
-}
+export { EnvironmentKindIcon }
 
 export function EnvironmentSectionHeader({
   label,
@@ -53,6 +35,11 @@ export function EnvironmentSectionHeader({
   sort,
   onSort,
   obscured = false,
+  connectionId,
+  projectCount = null,
+  onRename,
+  cardOpen,
+  details,
 }: {
   label: string
   kind: EnvironmentKind
@@ -71,6 +58,15 @@ export function EnvironmentSectionHeader({
   onSort?: (sort: SidebarSort) => void
   /** The scrolling copy is covered by the unpainted pinned name. */
   obscured?: boolean
+  connectionId?: string
+  /** `null` until the project list has settled. */
+  projectCount?: number | null
+  /** Saves the name this computer shows for this environment. */
+  onRename?: (name: string) => Promise<void>
+  /** Stories pin the hover card open. */
+  cardOpen?: boolean
+  /** Skips the environment-list read. Stories pass the lines they draw. */
+  details?: EnvironmentHoverDetails
 }) {
   const { t } = useTranslation()
   const [sortOpen, setSortOpen] = useState(false)
@@ -100,6 +96,17 @@ export function EnvironmentSectionHeader({
       aria-hidden={obscured || undefined}
       inert={obscured ? true : undefined}
     >
+      <EnvironmentHoverCard
+        open={cardOpen}
+        label={label}
+        kind={kind}
+        connection={connection}
+        path={path}
+        projectCount={projectCount}
+        connectionId={connectionId}
+        details={details}
+        onRename={onRename}
+      >
       <div className={cn(
         'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors hover:bg-sidebar-hover',
         !offline && 'cursor-pointer',
@@ -159,6 +166,7 @@ export function EnvironmentSectionHeader({
           )}
         </div>
       </div>
+      </EnvironmentHoverCard>
       {open && projectsStatus === 'error' && (
         <div className="px-6 pb-1 text-[11px] text-sidebar-foreground/70">
           <button type="button" className="underline" onClick={onRefresh}>{t('common.retry')}</button>

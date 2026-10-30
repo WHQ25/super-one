@@ -530,6 +530,27 @@ export type Messages = {
       sessions_one: string
       sessions_other: string
     }
+    /** Hover card on an environment row. */
+    environmentHover: {
+      kindLocal: string
+      kindDesktop: string
+      kindNode: string
+      projects_one: string
+      projects_other: string
+      /** Free memory, as in `32GB Free`. */
+      memoryFree: string
+      /** Chip name or core count, then the busy share. */
+      cpu: string
+      /** CPU busy share when the chip name is unknown. */
+      cpuPercent: string
+      cpuCores_one: string
+      cpuCores_other: string
+    }
+    /** Dialog opened from the environment card. Later settings share this dialog. */
+    environmentSettings: {
+      title: string
+      name: string
+    }
     contextMenu: {
       sessionHistory: string
       editProject: string
@@ -1047,6 +1068,11 @@ export type Messages = {
       disconnect: string
       forget: string
       forgetConfirm: string
+      rename: string
+      /** Section for the environment running on this computer. */
+      thisComputer: string
+      retryNow: string
+      repairPairing: string
       addSuccess: string
       credentialInMemoryOnly: string
       /** How a connected node is reached right now. */
@@ -5163,6 +5189,22 @@ export const en: Messages = {
       sessions_one: '{{count}} Session',
       sessions_other: '{{count}} Sessions',
     },
+    environmentHover: {
+      kindLocal: 'This Computer',
+      kindDesktop: 'Remote Desktop',
+      kindNode: 'Node',
+      projects_one: '{{count}} Project',
+      projects_other: '{{count}} Projects',
+      memoryFree: '{{amount}} Free',
+      cpu: '{{name}} · {{percent}}%',
+      cpuPercent: '{{percent}}%',
+      cpuCores_one: '{{count}} core',
+      cpuCores_other: '{{count}} cores',
+    },
+    environmentSettings: {
+      title: 'Environment Settings',
+      name: 'Display Name',
+    },
     contextMenu: {
       sessionHistory: 'Session History',
       editProject: 'Edit Project',
@@ -5714,6 +5756,10 @@ export const en: Messages = {
       connect: 'Connect',
       disconnect: 'Disconnect',
       forget: 'Remove',
+      rename: 'Rename',
+      thisComputer: 'This computer',
+      retryNow: 'Retry',
+      repairPairing: 'Repair pairing',
       forgetConfirm:
         'Remove "{{label}}" from this computer? The remote service keeps running; only local credentials are erased.',
       addSuccess: 'Environment connected',

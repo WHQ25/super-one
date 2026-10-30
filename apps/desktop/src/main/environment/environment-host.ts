@@ -275,12 +275,15 @@ export class EnvironmentHost {
   private readonly connectInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
   /** Single-flight automated SSH re-pair per connectionId. */
   private readonly repairOverSshInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
+  /** Name this computer shows for itself. Absent means the descriptor's name. */
+  private localDisplayName: string | null = null
 
   constructor(userDataDir?: string, options: EnvironmentHostOptions = {}) {
     this.legacyScheduledSends = options.legacyScheduledSends
     const dataDir = userDataDir || app.getPath('userData')
     mkdirSync(dataDir, { recursive: true })
     this.knownPath = join(dataDir, 'known-environments.json')
+    this.localDisplayName = this.readLocalDisplayName()
     this.credentials = new NodeCredentialStore(dataDir)
     // Production default: real desktop MCP tool surface (browser_snapshot, …).
     // Lazy require avoids pulling MCP/electron into pure unit tests that only
@@ -2599,8 +2602,9 @@ export class EnvironmentHost {
    * Flattened projection of every environment the user can see: the local
    * runtime plus each paired node with its live supervisor state.
    *
-   * Descriptor fields are only present while a node is reachable — a stored
-   * environment stays listed when offline so the UI can offer a reconnect.
+   * Live descriptor fields are present while a node is reachable. Platform,
+   * chip, and installed memory are kept from that descriptor so they still
+   * show after disconnect. Live CPU and free memory are not stored.
    */
   async listEnvironments(options?: { includeDescriptors?: boolean }): Promise<EnvironmentListItem[]> {
     const local = this.registry.getLocal()
@@ -2610,10 +2614,12 @@ export class EnvironmentHost {
         connectionId: 'local',
         environmentId: localDescriptor.environmentId,
         ...(localDescriptor.environmentAliases ? { environmentAliases: localDescriptor.environmentAliases } : {}),
-        label: localDescriptor.label,
+        label: this.localDisplayName || localDescriptor.label,
         kind: 'local',
         state: 'connected',
         platform: localDescriptor.platform,
+        ...(localDescriptor.cliVersion ? { cliVersion: localDescriptor.cliVersion } : {}),
+        ...(localDescriptor.machine ? { machine: localDescriptor.machine } : {}),
         nodeVersion: localDescriptor.nodeVersion,
         protocolVersion: localDescriptor.protocolVersion,
         capabilities: localDescriptor.capabilities,
@@ -2636,8 +2642,22 @@ export class EnvironmentHost {
       // last snapshot is stale in that case, so report it as disconnected.
       const state = snapshot?.state ?? (this.lastStatus.has(known.connectionId) ? 'disconnected' : 'available')
       const platform = descriptor?.platform ?? known.platform
-      if (descriptor?.platform && (known.platform?.os !== descriptor.platform.os || known.platform?.arch !== descriptor.platform.arch)) {
-        this.connections.updateKnown(known.connectionId, { platform: descriptor.platform })
+      const machine = descriptor?.machine ?? known.machine
+      const platformChanged = !!descriptor?.platform && (
+        known.platform?.os !== descriptor.platform.os || known.platform?.arch !== descriptor.platform.arch
+      )
+      const machineChanged = !!descriptor?.machine && (
+        !known.machine
+        || known.machine.os !== descriptor.machine.os
+        || known.machine.cpuModel !== descriptor.machine.cpuModel
+        || known.machine.cpuCores !== descriptor.machine.cpuCores
+        || known.machine.memoryBytes !== descriptor.machine.memoryBytes
+      )
+      if ((platformChanged || machineChanged) && descriptor) {
+        this.connections.updateKnown(known.connectionId, {
+          ...(platformChanged ? { platform: descriptor.platform } : {}),
+          ...(machineChanged ? { machine: descriptor.machine } : {}),
+        })
       }
 
       items.push({
@@ -2656,7 +2676,7 @@ export class EnvironmentHost {
         cliVersion: descriptor?.cliVersion,
         protocolVersion: descriptor?.protocolVersion,
         capabilities: descriptor?.capabilities,
-        machine: descriptor?.machine,
+        machine,
         endpointProfiles: known.endpointProfiles,
         preferredEndpointId: known.preferredEndpointId,
         activePath: this.connections.getActivePath(known.connectionId) ?? undefined,
@@ -2991,6 +3011,62 @@ export class EnvironmentHost {
     }
     this.startHostActionConsumer(connectionId)
     return descriptor
+  }
+
+  /**
+   * The name this computer shows for an environment, including itself.
+   * A paired device's own list of controllers is left unchanged.
+   */
+  rename(connectionId: string, label: string): void {
+    const name = label.trim()
+    if (!name) throw new Error('A device name is required')
+    if (name.length > 80) throw new Error('Device name is too long')
+    if (connectionId === 'local') {
+      if (this.localDisplayName === name) return
+      this.localDisplayName = name
+      this.writeKnown(this.loadKnown())
+      return
+    }
+    const known = this.connections.listKnown().find((item) => item.connectionId === connectionId)
+    if (!known) throw new Error(`unknown connection ${connectionId}`)
+    if (known.label === name) return
+    this.connections.updateKnown(connectionId, { label: name })
+  }
+
+  /**
+   * Installed memory, free memory, and one CPU sample while the host is reachable.
+   * Free and CPU stay null when the host is offline or too old to answer `environment.status`.
+   * The sample is this call only. Nothing keeps polling.
+   */
+  async memory(connectionId: string): Promise<{ totalBytes: number | null; freeBytes: number | null; cpuPercent: number | null }> {
+    if (connectionId === 'local') {
+      const [{ readLocalNodeContext }, { sampleCpuPercent }] = await Promise.all([
+        import('./local-node-context'),
+        import('@superone/runtime/machine'),
+      ])
+      const [{ machine, live }, cpuPercent] = await Promise.all([
+        readLocalNodeContext(),
+        sampleCpuPercent(),
+      ])
+      return { totalBytes: machine.memoryBytes, freeBytes: live.freeMemoryBytes, cpuPercent }
+    }
+    const known = this.connections.listKnown().find((item) => item.connectionId === connectionId)
+    const gateway = known ? this.getGateway(known.environmentId) : null
+    if (!known || !gateway?.getLiveStatus || !this.connections.isConnected(known.connectionId)) {
+      return { totalBytes: null, freeBytes: null, cpuPercent: null }
+    }
+    const [descriptor, live] = await Promise.all([
+      gateway.getDescriptor().catch(() => null),
+      gateway.getLiveStatus({ sampleCpu: true }).catch(() => null),
+    ])
+    const cpuPercent = typeof live?.cpuPercent === 'number' && Number.isFinite(live.cpuPercent)
+      ? Math.min(100, Math.max(0, Math.round(live.cpuPercent)))
+      : null
+    return {
+      totalBytes: descriptor?.machine?.memoryBytes ?? null,
+      freeBytes: live?.freeMemoryBytes ?? null,
+      cpuPercent,
+    }
   }
 
   /** Disconnect and erase all client-local state for this environment. */
@@ -3540,6 +3616,17 @@ export class EnvironmentHost {
     return this.transfers
   }
 
+  private readLocalDisplayName(): string | null {
+    if (!existsSync(this.knownPath)) return null
+    try {
+      const raw = JSON.parse(readFileSync(this.knownPath, 'utf8')) as { localLabel?: unknown }
+      const label = typeof raw.localLabel === 'string' ? raw.localLabel.trim() : ''
+      return label || null
+    } catch {
+      return null
+    }
+  }
+
   private loadKnown(): KnownEnvironmentRecord[] {
     if (!existsSync(this.knownPath)) return []
     try {
@@ -3563,11 +3650,12 @@ export class EnvironmentHost {
   }
 
   private writeKnown(all: KnownEnvironmentRecord[]): void {
-    writeFileSync(
-      this.knownPath,
-      JSON.stringify({ version: 1, environments: all }, null, 2),
-      'utf8',
-    )
+    const body: { version: 1; environments: KnownEnvironmentRecord[]; localLabel?: string } = {
+      version: 1,
+      environments: all,
+    }
+    if (this.localDisplayName) body.localLabel = this.localDisplayName
+    writeFileSync(this.knownPath, JSON.stringify(body, null, 2), 'utf8')
   }
 }
 

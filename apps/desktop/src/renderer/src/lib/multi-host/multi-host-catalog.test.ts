@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentListItem, ProjectSnapshot } from '@superone/shared/environment'
-import { applyCatalogBucket, createCatalogGeneration, loadEnvironmentCatalog, shareCatalog, shareProjectLoad } from './catalog'
+import { applyCatalogBucket, createCatalogGeneration, environmentBucketsWithLabels, loadEnvironmentCatalog, shareCatalog, shareProjectLoad } from './catalog'
 import type { EnvironmentBucket } from './types'
 import { connectionOf, environmentKindOf, multiHostChromeVisible } from './environment-kind'
 import { checkoutMergeKey, groupCheckoutsByRepo, sortProjectGroups } from './group-projects'
@@ -393,6 +393,40 @@ describe('catalog bucket writes', () => {
     expect(loading).toBe(previous)
     const ready = applyCatalogBucket(loading, localBucket([]))
     expect(ready[0]?.checkouts).toEqual([])
+  })
+
+  it('publishes a renamed environment before its project list lands', () => {
+    const kept = checkout({ environmentId: 'node-1', connectionId: 'conn-1', projectId: 'old', name: 'app' })
+    const previous = [localBucket([kept], {
+      environmentId: 'node-1',
+      connectionId: 'conn-1',
+      label: 'old-box',
+      kind: 'cli-node',
+    })]
+    const loading = applyCatalogBucket(previous, localBucket([], {
+      environmentId: 'node-1',
+      connectionId: 'conn-1',
+      label: 'studio',
+      kind: 'cli-node',
+      projectsStatus: 'loading',
+    }))
+    expect(loading).not.toBe(previous)
+    expect(loading[0]?.label).toBe('studio')
+    expect(loading[0]?.projectsStatus).toBe('ready')
+    expect(loading[0]?.checkouts).toBe(previous[0]?.checkouts)
+  })
+
+  it('copies a renamed label onto the matching bucket and leaves the others', () => {
+    const kept = checkout({ environmentId: 'node-1', projectId: 'old', name: 'app' })
+    const remote = localBucket([kept], { environmentId: 'node-1', connectionId: 'conn-1', label: 'old-box', kind: 'cli-node' })
+    const local = localBucket([])
+    const next = environmentBucketsWithLabels([local, remote], [
+      { connectionId: 'conn-1', label: 'studio' },
+    ])
+    expect(next[0]).toBe(local)
+    expect(next[1]?.label).toBe('studio')
+    expect(next[1]?.checkouts).toBe(remote.checkouts)
+    expect(environmentBucketsWithLabels(next, [{ connectionId: 'conn-1', label: 'studio' }])).toBe(next)
   })
 
   it('keeps the checkouts of an unsettled environment while it loads', () => {

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { invalidateEnvironmentList, loadEnvironmentItems, resetEnvironmentListCache, subscribeEnvironmentList } from './environment-list'
+import { invalidateEnvironmentList, loadEnvironmentItems, notifyEnvironmentListChanged, resetEnvironmentListCache, subscribeEnvironmentList } from './environment-list'
 
 const listItems = vi.fn()
 let status: ((snapshot: { connectionId: string }) => void) | null = null
@@ -46,6 +46,17 @@ describe('loadEnvironmentItems', () => {
     unsubscribe()
     await loadEnvironmentItems()
     expect(listItems).toHaveBeenCalledTimes(4)
+  })
+
+  it('tells subscribers to read again after a rename', async () => {
+    const seen: string[] = []
+    const unsubscribe = subscribeEnvironmentList((snapshot) => { seen.push(snapshot.connectionId) })
+    await loadEnvironmentItems()
+    notifyEnvironmentListChanged('env-1')
+    expect(seen).toEqual(['env-1'])
+    await loadEnvironmentItems()
+    expect(listItems).toHaveBeenCalledTimes(2)
+    unsubscribe()
   })
 
   it('binds the status bridge of the environment object installed for this test', async () => {

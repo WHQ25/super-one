@@ -117,6 +117,7 @@ export function mockEnvironmentApi(items: EnvironmentListItem[] | null, opts: { 
     connect: ok,
     disconnect: ok,
     forget: ok,
+    rename: ok,
     retryNow: async () => 'retrying',
     enableHarness: ok,
     disableHarness: ok,

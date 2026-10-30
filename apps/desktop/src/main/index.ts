@@ -2508,6 +2508,14 @@ function registerIpcHandlers(): void {
     const { getEnvironmentHost } = await import('./environment')
     getEnvironmentHost().forget(connectionId)
   })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_RENAME, async (_e, connectionId: string, label: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    getEnvironmentHost().rename(connectionId, label)
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MEMORY, async (_e, connectionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().memory(connectionId)
+  })
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_RETRY_NOW, async (_e, connectionId: string) => {
     const { getEnvironmentHost } = await import('./environment')
     return getEnvironmentHost().retryNow(connectionId)

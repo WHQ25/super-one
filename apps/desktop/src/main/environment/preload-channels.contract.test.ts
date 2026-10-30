@@ -64,6 +64,8 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_CONNECT).toBe('environment:connect')
     expect(AgentIpcChannels.ENVIRONMENT_DISCONNECT).toBe('environment:disconnect')
     expect(AgentIpcChannels.ENVIRONMENT_FORGET).toBe('environment:forget')
+    expect(AgentIpcChannels.ENVIRONMENT_RENAME).toBe('environment:rename')
+    expect(AgentIpcChannels.ENVIRONMENT_MEMORY).toBe('environment:memory')
     expect(AgentIpcChannels.ENVIRONMENT_RETRY_NOW).toBe('environment:retryNow')
     expect(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING).toBe('environment:repairPairing')
     expect(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING_SSH).toBe(
@@ -113,6 +115,8 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_CONNECT',
       'ENVIRONMENT_DISCONNECT',
       'ENVIRONMENT_FORGET',
+      'ENVIRONMENT_RENAME',
+      'ENVIRONMENT_MEMORY',
       'ENVIRONMENT_RETRY_NOW',
       'ENVIRONMENT_REPAIR_PAIRING',
       'ENVIRONMENT_REPAIR_PAIRING_SSH',

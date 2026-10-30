@@ -2,6 +2,8 @@
  * Client-local connection metadata. Not authoritative runtime state.
  */
 
+import type { EnvironmentMachine } from './descriptor'
+
 export type EndpointKind = 'direct-wss' | 'tailscale' | 'ssh-forward' | 'relay' | 'local'
 
 export type InstallationProfile =
@@ -91,6 +93,11 @@ export interface KnownEnvironment {
   desired?: boolean
   /** The node's platform as it last reported it, so it shows while offline. */
   platform?: { os: string; arch: string }
+  /**
+   * Chip and installed memory from the last connected descriptor.
+   * The card shows these while the host is offline. Live use is not stored.
+   */
+  machine?: EnvironmentMachine
   /** Client-local presentation only. */
   createdAt: number
   updatedAt: number

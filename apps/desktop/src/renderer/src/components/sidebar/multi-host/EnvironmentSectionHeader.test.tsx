@@ -17,6 +17,10 @@ describe('environment header row', () => {
       />,
     )
     const row = screen.getByText('This Mac').closest('.group')
+    const header = row?.parentElement
+    expect(header?.getAttribute('data-slot')).toBe('environment-section-header')
+    expect(header?.className ?? '').not.toContain('sticky')
+    expect(header?.className ?? '').not.toContain('bg-')
     expect(row?.className).toContain('hover:bg-sidebar-hover')
     expect(row?.className).toContain('h-9')
     expect(row?.className).toContain('px-1.5')

@@ -48,6 +48,8 @@ interface MultiHostProjectListProps {
   onSort?: (sort: SidebarSort) => void
   connectionBusyId: string | null
   refreshingConnectionId: string | null
+  /** In-flow names hidden while the unpainted pin shows them. */
+  obscuredEnvironmentIds?: readonly string[]
 }
 
 function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
@@ -141,6 +143,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                 onToggleConnection={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}
                 onAddProject={() => props.onAddProject(bucket.connectionId)}
                 onSort={props.onSort}
+                obscured={props.obscuredEnvironmentIds?.includes(bucket.environmentId) ?? false}
               />
               {/* Projects sit one step inside their environment, hover fill included. */}
               <div className="pl-1">
@@ -247,8 +250,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   )
 }
 
-function EnvironmentHeader({
-  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort,
+export function EnvironmentHeader({
+  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort, obscured = false,
 }: {
   bucket: EnvironmentBucket
   expanded: boolean
@@ -260,6 +263,7 @@ function EnvironmentHeader({
   onToggleConnection: () => void
   onAddProject: () => void
   onSort?: (sort: SidebarSort) => void
+  obscured?: boolean
 }) {
   return (
     <EnvironmentSectionHeader
@@ -278,6 +282,7 @@ function EnvironmentHeader({
       onToggleConnection={bucket.kind === 'local' ? undefined : onToggleConnection}
       onAddProject={onAddProject}
       onSort={onSort}
+      obscured={obscured}
     />
   )
 }

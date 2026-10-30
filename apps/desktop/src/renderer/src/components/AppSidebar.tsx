@@ -46,7 +46,7 @@ import { multiHostChromeVisible } from '@/lib/multi-host/environment-kind'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { refreshEnvironmentCheckouts } from '@/lib/multi-host/refresh-environment'
 import { presenterFor } from '@/lib/multi-host/session-hover'
-import { MultiHostProjectList } from '@/components/sidebar/multi-host/MultiHostProjectList'
+import { MultiHostEnvironmentScroll } from '@/components/sidebar/multi-host/MultiHostEnvironmentScroll'
 import { useLoadMultiHostCatalog } from '@/components/sidebar/multi-host/use-load-multi-host-catalog'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
@@ -808,8 +808,7 @@ export const AppSidebar = memo(function AppSidebar() {
               {t('common.loading')}
             </div>
           ) : (
-            <ScrollArea type="scroll" className="sidebar-scroll h-full">
-              <MultiHostProjectList
+            <MultiHostEnvironmentScroll
                 environments={environments}
                 groupBy="environment"
                 sort={sortMode}
@@ -840,7 +839,6 @@ export const AppSidebar = memo(function AppSidebar() {
                 connectionBusyId={connectionBusyId}
                 refreshingConnectionId={refreshingConnectionId}
               />
-            </ScrollArea>
           )
         ) : selectedHostConnectionId !== 'local' && hostProjectsError && !hostTurnedOff ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs text-sidebar-foreground/70">

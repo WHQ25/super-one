@@ -92,16 +92,18 @@ describe('environment sections', () => {
     window.app.listAutomations = vi.fn(async () => [])
   })
 
-  it('holds only projects, without labels or sticky headers', () => {
+  it('lists each device without a painted name bar', () => {
     renderList()
 
     expect(screen.queryByText('Projects')).toBeNull()
-    expect(document.querySelector('[data-slot="environment-section-header"]')).toBeNull()
+    const header = document.querySelector('[data-environment-id="desktop"] > [data-slot="environment-section-header"]')
+    expect(header?.className ?? '').not.toContain('sticky')
+    expect(header?.className ?? '').not.toContain('bg-')
     const row = screen.getByText('This Mac').closest('.group')
     expect(row?.className).toContain('hover:bg-sidebar-hover')
     expect(row?.className).toContain('h-9')
     expect(row?.className).toContain('px-1.5')
-    expect(row?.className).not.toContain('sticky')
+    expect(header).toContainElement(row)
     const localSection = document.querySelector('[data-environment-id="desktop"]')
     expect(localSection?.querySelector(':scope > .pl-1')?.textContent).toContain('app')
     // List inset matches New Session (mx-2). The hover fill shares that edge; projects indent one step (pl-1).

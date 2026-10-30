@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, within } from 'storybook/test'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
-import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
+import { MultiHostEnvironmentScroll } from './MultiHostEnvironmentScroll'
 import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentBucket, HostCheckout } from '@/lib/multi-host/types'
 import { MultiHostProjectList } from './MultiHostProjectList'
@@ -146,28 +146,37 @@ const manyLocal = Array.from({ length: 14 }, (_, index) => checkout({
   hostPath: `/src/project-${index}`,
   repoIdentity: `git:project-${index}`,
 }))
+const manyRemote = Array.from({ length: 10 }, (_, index) => checkout({
+  environmentId: 'node-1',
+  connectionId: 'cli-1',
+  projectId: `r${index}`,
+  name: `remote-${index}`,
+  pathKey: `remote:cli-1:/srv/remote-${index}`,
+  hostPath: `/srv/remote-${index}`,
+  repoIdentity: `git:remote-${index}`,
+}))
 
-/** Environment and project icons share one column; nothing sticks while the list scrolls. */
+/** The device name stays at the top of a long list, with no fill behind it. */
 export const LongList: Story = {
   args: {
     groupBy: 'environment',
     environments: [
       bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: manyLocal }),
-      bucket({ environmentId: 'node-1', connectionId: 'cli-1', label: 'build', checkouts: [remote] }),
+      bucket({ environmentId: 'node-1', connectionId: 'cli-1', label: 'build', checkouts: manyRemote }),
     ],
   },
   render: (args) => (
-    <ScrollArea type="scroll" className="sidebar-scroll h-80 w-72 bg-sidebar text-sidebar-foreground">
-      <MultiHostProjectList {...args} />
-    </ScrollArea>
+    <div className="h-80 w-72 bg-sidebar text-sidebar-foreground">
+      <MultiHostEnvironmentScroll {...args} />
+    </div>
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Pins and drafts are global, so an environment holds only its projects.
     await expect(canvas.queryByText('Pinned', { exact: true })).toBeNull()
     await expect(canvas.queryByText('Projects', { exact: true })).toBeNull()
 
-    const environmentName = canvas.getByText('This Mac')
+    const pin = canvasElement.querySelector<HTMLElement>('[data-slot="pinned-device-name"]')
+    const environmentName = within(pin!).getByText('This Mac')
     const projectName = canvas.getByText('project-0')
     const environmentRow = environmentName.closest('.group')
     const projectRow = projectName.closest('.group')
@@ -176,10 +185,29 @@ export const LongList: Story = {
     await expect(environmentIcon).not.toBeNull()
     await expect(projectIcon).not.toBeNull()
     await expect(Math.abs(environmentIcon!.getBoundingClientRect().left - projectIcon!.getBoundingClientRect().left)).toBeLessThan(2)
-    await expect(environmentRow).toHaveClass('hover:bg-sidebar-hover', 'h-9', 'px-0')
-    await expect(projectRow).toHaveClass('px-0')
+    await expect(environmentRow).toHaveClass('hover:bg-sidebar-hover', 'h-9', 'px-1.5')
+    await expect(projectRow).toHaveClass('pl-2.5', 'pr-1.5')
     await expect(canvasElement.querySelector('[data-environment-id="desktop"]')?.parentElement).toHaveClass('px-2')
-    await expect(canvasElement.querySelector('[data-slot="environment-section-header"]')).toBeNull()
+
+    const pinnedHeader = pin!.querySelector<HTMLElement>('[data-slot="environment-section-header"]')
+    const viewport = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
+    await expect(pinnedHeader).not.toBeNull()
+    await expect(viewport).not.toBeNull()
+    const fill = getComputedStyle(pinnedHeader!).backgroundColor
+    await expect(fill === 'rgba(0, 0, 0, 0)' || fill === 'transparent').toBe(true)
+    await expect(pinnedHeader!.className).not.toContain('bg-')
+    const pinTop = pin!.getBoundingClientRect().top
+    viewport!.scrollTop = 160
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await expect(Math.abs(pin!.getBoundingClientRect().top - pinTop)).toBeLessThan(1)
+    const band = pin!.getBoundingClientRect()
+    const hit = document.elementFromPoint(band.left + band.width / 2, band.top + band.height / 2)
+    await expect(pin!.contains(hit)).toBe(true)
+
+    viewport!.scrollTop = viewport!.scrollHeight
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await expect(pin!.textContent).toContain('build')
+    await expect(Math.abs(pin!.getBoundingClientRect().top - pinTop)).toBeLessThan(1)
   },
 }
 

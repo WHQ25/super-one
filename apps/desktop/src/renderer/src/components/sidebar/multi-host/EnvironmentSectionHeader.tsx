@@ -52,6 +52,7 @@ export function EnvironmentSectionHeader({
   onAddProject,
   sort,
   onSort,
+  obscured = false,
 }: {
   label: string
   kind: EnvironmentKind
@@ -68,6 +69,8 @@ export function EnvironmentSectionHeader({
   onAddProject?: () => void
   sort?: SidebarSort
   onSort?: (sort: SidebarSort) => void
+  /** The scrolling copy is covered by the unpainted pinned name. */
+  obscured?: boolean
 }) {
   const { t } = useTranslation()
   const [sortOpen, setSortOpen] = useState(false)
@@ -90,7 +93,13 @@ export function EnvironmentSectionHeader({
   )
 
   return (
-    <div className={cn('flex flex-col', offline && 'opacity-70')} data-environment-connection={connection}>
+    <div
+      data-slot="environment-section-header"
+      data-environment-connection={connection}
+      className={cn(offline && 'opacity-70', obscured && 'invisible')}
+      aria-hidden={obscured || undefined}
+      inert={obscured ? true : undefined}
+    >
       <div className={cn(
         'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors hover:bg-sidebar-hover',
         !offline && 'cursor-pointer',

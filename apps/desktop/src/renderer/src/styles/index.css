@@ -379,6 +379,12 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   padding-inline: 0;
 }
 
+/* The pinned device name floats above this list with no fill. Clip the
+   scrollport's top band to the name's height so rows end at that edge. */
+.device-name-clip [data-slot="scroll-area-viewport"] {
+  clip-path: inset(var(--device-name-clip, 0px) 0 0 0);
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.3s; }

@@ -1,9 +1,15 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
+import { useAppStore } from '@/stores/app'
 import { ReasoningBlock } from './ReasoningBlock'
+
+afterEach(() => {
+  cleanup()
+  useAppStore.setState({ autoExpandReasoning: false })
+})
 
 describe('ReasoningBlock', () => {
   it('stays collapsed when showContent flips true during streaming', () => {
@@ -23,6 +29,66 @@ describe('ReasoningBlock', () => {
     render(<ReasoningBlock text="hello" blockDone={false} showContent={true} />)
     expect(screen.queryByText('hello')).not.toBeInTheDocument()
     expect(screen.getByText('Thinking...')).toBeInTheDocument()
+  })
+
+  it('opens streaming content when auto-expand is on', () => {
+    render(<ReasoningBlock text="hello" blockDone={false} showContent autoExpand />)
+    expect(screen.getByText('hello')).toBeInTheDocument()
+  })
+
+  it('opens streaming content when the appearance setting is on', () => {
+    useAppStore.setState({ autoExpandReasoning: true })
+    render(<ReasoningBlock text="hello" blockDone={false} showContent />)
+    expect(screen.getByText('hello')).toBeInTheDocument()
+  })
+
+  it('does not auto-expand a block that mounts already finished', () => {
+    render(<ReasoningBlock text="done" blockDone showContent autoExpand />)
+    expect(screen.queryByText('done')).not.toBeInTheDocument()
+    expect(screen.getByText('Thought')).toBeInTheDocument()
+  })
+
+  it('keeps a manual collapse closed while auto-expand is on', () => {
+    const { rerender } = render(
+      <ReasoningBlock text="first chunk" blockDone={false} showContent autoExpand />,
+    )
+    expect(screen.getByText('first chunk')).toBeInTheDocument()
+    fireEvent.click(screen.getByText(/^Thinking/))
+    expect(screen.queryByText('first chunk')).not.toBeInTheDocument()
+
+    rerender(
+      <ReasoningBlock text="first chunk more" blockDone={false} showContent autoExpand />,
+    )
+    expect(screen.queryByText('first chunk more')).not.toBeInTheDocument()
+  })
+
+  it('collapses an auto-expanded block when it finishes', () => {
+    const { rerender } = render(
+      <ReasoningBlock text="thinking text" blockDone={false} showContent autoExpand />,
+    )
+    expect(screen.getByText('thinking text')).toBeInTheDocument()
+
+    rerender(
+      <ReasoningBlock text="thinking text" blockDone showContent autoExpand />,
+    )
+    expect(screen.queryByText('thinking text')).not.toBeInTheDocument()
+  })
+
+  it('preserves an auto-expanded manual collapse across a remount', () => {
+    const values = new Map<string, unknown>()
+    const view = (visible = true) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        {visible && <ReasoningBlock text="live reasoning" blockDone={false} autoExpand />}
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view())
+    expect(screen.getByText('live reasoning')).toBeVisible()
+    fireEvent.click(screen.getByText(/^Thinking/))
+    expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
+
+    rerender(view(false))
+    rerender(view())
+    expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
   })
 
   it('keeps a manual expand open as more text streams', () => {

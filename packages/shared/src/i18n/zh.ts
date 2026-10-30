@@ -1502,6 +1502,10 @@ export const zh: Messages = {
         label: '自动展开文件 diff',
         description: '流式输出时自动展开 Edit、Write、FileChange 工具以实时显示 diff。关闭后默认只显示带行数变化的 header，点击后再展开。',
       },
+      autoExpandReasoning: {
+        label: '自动展开推理',
+        description: '流式输出时自动展开推理过程。关闭后保持折叠，点击标题后再查看。',
+      },
       detailChatMode: {
         label: '详细模式',
         description: '轮次结束后仍完整展示工具调用、推理与中间过程。关闭时默认只显示结论，过程折叠在「详细过程」中。流式输出过程中始终展示完整过程。',

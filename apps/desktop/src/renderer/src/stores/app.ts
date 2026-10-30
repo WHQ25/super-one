@@ -274,6 +274,7 @@ interface AppState extends HarnessThemeState {
   uiFontFamily: string | null
   liquidGlass: boolean
   autoExpandFileDiffs: boolean
+  autoExpandReasoning: boolean
   detailChatMode: boolean
   sessionContinuationHint: SessionContinuationHintSettings
   setTerminalPalette: (scheme: 'light' | 'dark', id: string | null) => Promise<void>
@@ -283,6 +284,7 @@ interface AppState extends HarnessThemeState {
   setUiFontFamily: (family: string | null) => Promise<void>
   setLiquidGlass: (enabled: boolean) => Promise<void>
   setAutoExpandFileDiffs: (enabled: boolean) => Promise<void>
+  setAutoExpandReasoning: (enabled: boolean) => Promise<void>
   setDetailChatMode: (enabled: boolean) => Promise<void>
   setSessionContinuationHint: (patch: Partial<SessionContinuationHintSettings>) => Promise<void>
 
@@ -1250,6 +1252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   uiFontFamily: null,
   liquidGlass: false,
   autoExpandFileDiffs: false,
+  autoExpandReasoning: false,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
 
@@ -1272,6 +1275,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         uiFontFamily: settings.uiFontFamily,
         liquidGlass: settings.liquidGlass,
         autoExpandFileDiffs: settings.autoExpandFileDiffs,
+        autoExpandReasoning: settings.autoExpandReasoning,
         detailChatMode: settings.detailChatMode,
         sessionContinuationHint: settings.sessionContinuationHint,
       })
@@ -1367,6 +1371,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       .catch((err) => console.error('[auto-expand-file-diffs] persist failed:', err))
   },
 
+  setAutoExpandReasoning: async (enabled) => {
+    set({ autoExpandReasoning: enabled })
+    void window.app
+      .saveAppSettings({ autoExpandReasoning: enabled })
+      .catch((err) => console.error('[auto-expand-reasoning] persist failed:', err))
+  },
+
   setDetailChatMode: async (enabled) => {
     set({ detailChatMode: enabled })
     void window.app
@@ -1450,6 +1461,7 @@ if (typeof window !== 'undefined') {
       uiFontFamily: settings.uiFontFamily,
       liquidGlass: settings.liquidGlass,
       autoExpandFileDiffs: settings.autoExpandFileDiffs,
+      autoExpandReasoning: settings.autoExpandReasoning,
       detailChatMode: settings.detailChatMode,
       sessionContinuationHint: settings.sessionContinuationHint,
     })

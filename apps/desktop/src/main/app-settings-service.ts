@@ -116,6 +116,7 @@ const defaults: AppSettings = {
   crispText: true,
   notificationsPrimedAt: null,
   autoExpandFileDiffs: false,
+  autoExpandReasoning: false,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
   locale: '',
@@ -650,6 +651,7 @@ export function readAppSettings(): AppSettings {
       notificationsPrimedAt:
         typeof data.notificationsPrimedAt === 'number' ? data.notificationsPrimedAt : null,
       autoExpandFileDiffs: typeof data.autoExpandFileDiffs === 'boolean' ? data.autoExpandFileDiffs : defaults.autoExpandFileDiffs,
+      autoExpandReasoning: typeof data.autoExpandReasoning === 'boolean' ? data.autoExpandReasoning : defaults.autoExpandReasoning,
       detailChatMode: typeof data.detailChatMode === 'boolean'
         ? data.detailChatMode
         // Migrate inverted legacy key (compactChatMode true meant collapsed process).
@@ -742,6 +744,7 @@ export function readAppSettings(): AppSettings {
       crispText: defaults.crispText,
       notificationsPrimedAt: defaults.notificationsPrimedAt,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
+      autoExpandReasoning: defaults.autoExpandReasoning,
       detailChatMode: defaults.detailChatMode,
       sessionContinuationHint: defaults.sessionContinuationHint,
       locale: defaults.locale,
@@ -877,6 +880,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
         ? patch.notificationsPrimedAt
         : current.notificationsPrimedAt,
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
+    autoExpandReasoning: patch.autoExpandReasoning ?? current.autoExpandReasoning,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,
     sessionContinuationHint: patch.sessionContinuationHint === undefined
       ? current.sessionContinuationHint

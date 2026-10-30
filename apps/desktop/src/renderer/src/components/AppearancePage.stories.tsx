@@ -35,6 +35,7 @@ function seed(store: Partial<ReturnType<typeof useAppStore.getState>> = {}, mode
       uiFontFamily: null,
       liquidGlass: false,
       autoExpandFileDiffs: true,
+      autoExpandReasoning: false,
       detailChatMode: false,
       ...store,
     })
@@ -66,6 +67,7 @@ export const CustomSchemes: Story = {
       mermaidDarkTheme: 'neutral',
       uiFontFamily: 'Helvetica Neue',
       liquidGlass: true,
+      autoExpandReasoning: true,
     }, 'light'),
   ],
 }

@@ -5700,6 +5700,12 @@ export interface AppSettings {
    */
   autoExpandFileDiffs: boolean
   /**
+   * When true, reasoning blocks open while they stream. When false (default),
+   * they stay collapsed until the header is clicked. Completing a block still
+   * collapses it unless that block opts out.
+   */
+  autoExpandReasoning: boolean
+  /**
    * When true (Detail Mode), completed assistant turns show the full process
    * (tools, reasoning, intermediate narration). When false (default / compact),
    * process is collapsed under a disclosure and only the trailing conclusion
@@ -5946,6 +5952,7 @@ export interface AppSettingsPatch {
   crispText?: boolean
   notificationsPrimedAt?: number | null
   autoExpandFileDiffs?: boolean
+  autoExpandReasoning?: boolean
   detailChatMode?: boolean
   /** Merged into the stored value field by field. */
   sessionContinuationHint?: Partial<import('./session-continuation').SessionContinuationHintSettings>

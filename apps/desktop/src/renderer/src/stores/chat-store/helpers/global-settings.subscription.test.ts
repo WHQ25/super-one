@@ -14,7 +14,7 @@ const mirroredKeys: readonly (keyof AppSettings)[] = [
   'experimentalAgentsEnabled', 'enabledExperimentalAgents', 'experimentalAgentProfilesEnabled', 'experimentalClaudeOpenAiChatEnabled',
   'experimentalRemoteNodesEnabled', 'terminalLightPalette', 'terminalDarkPalette', 'terminalFontSize',
   'terminalFontFamily', 'mermaidLightTheme', 'mermaidDarkTheme', 'uiFontFamily', 'liquidGlass',
-  'autoExpandFileDiffs', 'detailChatMode', 'sessionContinuationHint',
+  'autoExpandFileDiffs', 'autoExpandReasoning', 'detailChatMode', 'sessionContinuationHint',
 ]
 
 beforeAll(async () => {

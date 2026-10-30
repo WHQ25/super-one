@@ -105,6 +105,8 @@ export function AppearancePage() {
   const setLiquidGlass = useAppStore((s) => s.setLiquidGlass)
   const autoExpandFileDiffs = useAppStore((s) => s.autoExpandFileDiffs)
   const setAutoExpandFileDiffs = useAppStore((s) => s.setAutoExpandFileDiffs)
+  const autoExpandReasoning = useAppStore((s) => s.autoExpandReasoning)
+  const setAutoExpandReasoning = useAppStore((s) => s.setAutoExpandReasoning)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const setDetailChatMode = useAppStore((s) => s.setDetailChatMode)
   const sessionContinuationHint = useAppStore((s) => s.sessionContinuationHint)
@@ -227,6 +229,16 @@ export function AppearancePage() {
           <Switch
             checked={autoExpandFileDiffs}
             onCheckedChange={setAutoExpandFileDiffs}
+            disabled={loading}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.autoExpandReasoning.label')}
+          description={t('settings.general.autoExpandReasoning.description')}
+        >
+          <Switch
+            checked={autoExpandReasoning}
+            onCheckedChange={setAutoExpandReasoning}
             disabled={loading}
           />
         </SettingsRow>

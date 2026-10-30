@@ -1411,6 +1411,10 @@ export type Messages = {
         label: string
         description: string
       }
+      autoExpandReasoning: {
+        label: string
+        description: string
+      }
       detailChatMode: {
         label: string
         description: string
@@ -6113,6 +6117,10 @@ export const en: Messages = {
       autoExpandFileDiffs: {
         label: 'Auto-Expand File Diffs',
         description: 'Automatically expand Edit, Write, and FileChange tools while streaming. When off, only the header with line counts is shown until you expand.',
+      },
+      autoExpandReasoning: {
+        label: 'Auto-Expand Reasoning',
+        description: 'Open reasoning blocks while they stream. When off, they stay collapsed until you expand them.',
       },
       detailChatMode: {
         label: 'Detail Mode',

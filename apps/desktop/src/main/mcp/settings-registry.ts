@@ -251,6 +251,14 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ autoExpandFileDiffs: v as boolean }),
       },
       {
+        key: 'autoExpandReasoning',
+        label: 'Auto-Expand Reasoning',
+        type: 'boolean',
+        note: 'When true, reasoning blocks open while they stream. Default off: they stay collapsed until the header is clicked.',
+        read: (s) => s.autoExpandReasoning,
+        toPatch: (v) => ({ autoExpandReasoning: v as boolean }),
+      },
+      {
         key: 'detailChatMode',
         label: 'Detail Mode',
         type: 'boolean',

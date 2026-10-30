@@ -12,6 +12,8 @@ export interface ReasoningBlockProps {
   startedAt?: number
   endedAt?: number
   showContent?: boolean
+  /** Open while streaming. A manual collapse stays closed until the block finishes. */
+  autoExpand?: boolean
   collapseOnDone?: boolean
   isFirst?: boolean
 }
@@ -24,14 +26,16 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   startedAt,
   endedAt,
   showContent = true,
+  autoExpand = false,
   collapseOnDone = true,
   isFirst = false,
 }: ReasoningBlockProps) {
   const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
-  // Streaming stays collapsed. A click opens it; finishing closes it again
-  // unless collapseOnDone is false.
-  const [expanded, setExpanded] = useTranscriptState('reasoning', false)
+  // Streaming stays collapsed unless autoExpand is on. A click wins over that
+  // preference; finishing closes the block again unless collapseOnDone is false.
+  const [expanded, setExpanded] = useTranscriptState('reasoning', autoExpand && showContent && !blockDone)
+  const [userChose, setUserChose] = useTranscriptState('reasoning-choice', false)
   // A block can finish while evicted. Remember observed completion separately
   // from expansion so only manual expansion after completion survives a remount.
   const [previousDone, setPreviousDone] = useTranscriptState('reasoning-done', false)
@@ -75,6 +79,11 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   }, [blockDone, collapseOnDone, startedAt, start, fallbackEnd, previousDone])
 
   useEffect(() => {
+    if (!autoExpand || !showContent || blockDone || userChose || expanded) return
+    setExpanded(true)
+  }, [autoExpand, showContent, blockDone, userChose, expanded, setExpanded])
+
+  useEffect(() => {
     if (!showContent) return
     if (!expanded) return
     cancelAnimationFrame(rafRef.current)
@@ -98,7 +107,10 @@ export const ReasoningBlock = memo(function ReasoningBlock({
           'flex items-center gap-1.5 text-xs text-muted-foreground',
           showContent && 'cursor-pointer select-none transition-colors hover:text-foreground',
         )}
-        onClick={showContent ? () => setExpanded((v) => !v) : undefined}
+        onClick={showContent ? () => {
+          setUserChose(true)
+          setExpanded((v) => !v)
+        } : undefined}
       >
         {active
           ? <Brain className="size-3 animate-pulse" />

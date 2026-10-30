@@ -79,10 +79,11 @@ export const mockEnvironment = {
   listSessions: vi.fn(async (
     _connectionId: string,
     projectId: string,
-    options?: { limit?: number; offset?: number },
+    options?: { limit?: number; offset?: number; includeSettled?: boolean },
   ) => {
     // Local Environment API passes folder path as projectId during migration.
-    const rows = sessionFixtures.byFolder[projectId] ?? []
+    const rows = (sessionFixtures.byFolder[projectId] ?? [])
+      .filter((row) => options?.includeSettled === true || row.isSettled !== true)
     if (options?.limit != null) {
       const offset = options.offset ?? 0
       return rows.slice(offset, offset + options.limit)

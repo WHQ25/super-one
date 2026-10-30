@@ -299,6 +299,74 @@ describe('AppSidebar interactions', () => {
     expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull()
   })
 
+  it('keeps an opened settled Codex session out of the active list', async () => {
+    sessionFixtures.byFolder = {
+      '/project-a': [{
+        sessionId: 'sid-voice',
+        title: 'Opened voice',
+        lastActiveAt: '2026-03-02T00:00:00.000Z',
+        messageCount: 2,
+        isSettled: true,
+        provider: 'codex',
+      }, {
+        sessionId: 'sid-other',
+        title: 'Other voice',
+        lastActiveAt: '2026-03-01T00:00:00.000Z',
+        messageCount: 2,
+        isSettled: true,
+        provider: 'codex',
+      }],
+    }
+    const idle = {
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      status: 'idle',
+      pendingPermissions: [],
+      pendingQuestion: null,
+      pendingPlanApproval: null,
+      awaitingAssistantReply: false,
+      sessionProvider: 'codex',
+      _gitBranch: null,
+      _historyHydrated: true,
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-voice',
+        _sessions: {
+          'sid-voice': { ...idle, _title: 'Opened voice' },
+          'sid-other': { ...idle, _title: 'Other voice' },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+    const { useCodexRealtimeViewStore } = await import('@/stores/codex-realtime-view')
+    useCodexRealtimeViewStore.setState({ sessions: {} })
+    for (const sessionId of ['sid-voice', 'sid-other']) {
+      useCodexRealtimeViewStore.getState().setTimeline(sessionId, {
+        segments: [{ id: 'seg-1', realtimeSessionId: 'rt-1', role: 'user', text: 'spoken' }],
+        threadMessages: [],
+        activeRealtimeSessionId: null,
+        hasTimeline: true,
+      })
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByRole('button', { name: /Settled/ })
+    expect(screen.queryByText('Opened voice')).toBeNull()
+    expect(screen.queryByText('Other voice')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Settled/ }))
+    const panel = document.getElementById(settledPanelId('/project-a'))
+    const opened = await screen.findByText('Opened voice')
+    const other = screen.getByText('Other voice')
+    expect(panel).toContainElement(opened)
+    expect(panel).toContainElement(other)
+    expect(screen.getAllByText('Opened voice')).toHaveLength(1)
+    expect(screen.getAllByText('Other voice')).toHaveLength(1)
+    useCodexRealtimeViewStore.setState({ sessions: {} })
+  })
+
   it('settles a session into the settled group', async () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)

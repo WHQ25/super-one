@@ -4,6 +4,7 @@ import type { ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-
 import {
   groupSidebarSessions,
   partitionSidebarSessionGroups,
+  shouldSynthesizeActiveSidebarSession,
   visibleChildSessions,
   visibleSidebarSessionGroups,
 } from './ProjectSidebarRow'
@@ -17,6 +18,35 @@ function session(sessionId: string, parentSessionId?: string): SessionHistoryEnt
     messageCount: 0,
   }
 }
+
+describe('shouldSynthesizeActiveSidebarSession', () => {
+  it('leaves a settled session in the Settled group when it is open and has a Codex voice timeline', () => {
+    expect(shouldSynthesizeActiveSidebarSession({
+      settled: true,
+      foreground: true,
+      live: false,
+      hasRealtimeTimeline: true,
+    })).toBe(false)
+  })
+
+  it('still surfaces a voice session that has no database row yet', () => {
+    expect(shouldSynthesizeActiveSidebarSession({
+      settled: false,
+      foreground: true,
+      live: false,
+      hasRealtimeTimeline: true,
+    })).toBe(true)
+  })
+
+  it('does not surface an idle session that is neither open nor a voice timeline', () => {
+    expect(shouldSynthesizeActiveSidebarSession({
+      settled: false,
+      foreground: false,
+      live: false,
+      hasRealtimeTimeline: false,
+    })).toBe(false)
+  })
+})
 
 describe('groupSidebarSessions', () => {
   it('nests collaboration sessions under their parent without hiding unrelated sessions', () => {

@@ -147,6 +147,23 @@ export function visibleSidebarSessionGroups(
 }
 
 /**
+ * A session the active query did not return. Settled sessions are omitted from
+ * that query on purpose; opening one, or restoring its Codex voice timeline,
+ * must not invent a second row above the Settled group. A session with no row
+ * yet still surfaces while it is the one on screen, a live turn, or a voice
+ * timeline that has not been written down.
+ */
+export function shouldSynthesizeActiveSidebarSession(input: {
+  settled: boolean
+  foreground: boolean
+  live: boolean
+  hasRealtimeTimeline: boolean
+}): boolean {
+  if (input.settled) return false
+  return input.foreground || input.live || input.hasRealtimeTimeline
+}
+
+/**
  * Mirrors project-list collapse: when the parent's child list is collapsed,
  * still surface children that must stay reachable (running, pending, unseen,
  * and the session currently in the foreground). Expanded lists show every child.
@@ -310,6 +327,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     const projectSession = useChatStore.getState().projectSessions[folder.path]
     const dbVisibleSessions = allSessions.filter((session) => isListedSession(session))
     const dbSessionById = new Map(allSessions.map((session) => [session.sessionId, session]))
+    const settledIds = new Set<string>()
+    for (const session of settledSessions) {
+      if (session.folderPath === folder.path) settledIds.add(session.sessionId)
+    }
     let sessions = dbVisibleSessions
 
     if (projectSession?._sessions) {
@@ -320,7 +341,15 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (data.messages.length === 0 && !hasRealtimeTimeline) continue
         const title = selectSessionTitle(useChatStore.getState(), folder.path, sid)
         const dbEntry = dbSessionById.get(sid)
-        if (dbEntry && !isListedSession(dbEntry)) continue
+        // The active query drops settled rows, so they have no db entry to reject.
+        // The Settled page is that missing fact: an open Codex timeline is not a
+        // second active row.
+        if (!shouldSynthesizeActiveSidebarSession({
+          settled: settledIds.has(sid) || (dbEntry != null && !isListedSession(dbEntry)),
+          foreground: sid === foregroundSessionId,
+          live: isLiveSession(data, projectSession.unseenCompletedSessions.has(sid)),
+          hasRealtimeTimeline,
+        })) continue
         if (dbEntry) continue
         // A launch has a durable row before its first task arrives. Until hydration
         // restores its spawn relationship, showing it as a root would flash the
@@ -328,9 +357,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (!data._historyHydrated && data.messages.some(
           (message) => message.metadata?.collaboration?.kind === 'initial_task',
         )) continue
-        const isUnseen = projectSession.unseenCompletedSessions.has(sid)
-        const isForeground = sid === foregroundSessionId
-        if (!hasRealtimeTimeline && !isForeground && !isLiveSession(data, isUnseen)) continue
         if (!data._title && !getSessionTitle(data.messages) && !data._historyHydrated) continue
         live.push({
           sessionId: sid,
@@ -387,7 +413,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       showSessions: open || groupsToShow.length > 0,
       isVisibleWhenCollapsed,
     }
-  }, [allSessions, folder.path, open, liveSessionSig, realtimeSessionSig, scheduledBySession, foregroundSessionId])
+  }, [allSessions, settledSessions, folder.path, open, liveSessionSig, realtimeSessionSig, scheduledBySession, foregroundSessionId])
 
   const projectSettled = useMemo(
     () => settledSessions.filter((session) => session.folderPath === folder.path),

@@ -59,6 +59,19 @@ describe('sidebar session title — stall color repaint', () => {
 
     expect(container.querySelector('.animated-title-inner')).not.toBe(duringTransition)
   })
+
+  it('keeps the same element when a finished turn only drops the color transition', () => {
+    const { container, rerender } = render(
+      <SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="text-[13px] transition-colors duration-500" />,
+    )
+    const before = container.querySelector('.animated-title-inner')
+
+    rerender(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="text-[13px]" />)
+
+    act(() => { vi.advanceTimersByTime(1000) })
+
+    expect(container.querySelector('.animated-title-inner')).toBe(before)
+  })
 })
 
 describe('sidebar session title — hover marquee', () => {

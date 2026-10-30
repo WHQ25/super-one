@@ -225,11 +225,31 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     }
     return map
   }))
+  // A session becoming live can insert or reorder a row, so the open folder is
+  // re-read. Leaving live does not change list order (that follows the last user
+  // message) and re-reading here flashes the sidebar when a turn ends. Folder
+  // and session changes still load. Collaboration inserts arrive through
+  // `onSessionChanged`, which invalidates an in-flight read. The applied key
+  // survives a StrictMode double invoke so the second pass does not load again,
+  // and a session switch in the same render as idle still does.
+  const sessionLive = currentStatus === 'streaming' || currentStatus === 'background'
+  const appliedListKey = useRef<string | null>(null)
   useEffect(() => {
-    if (!currentFolder) return
+    if (!currentFolder) {
+      appliedListKey.current = null
+      return
+    }
+    const sid = currentActiveSid ?? ''
+    const key = `${currentFolder}\0${sid}\0${sessionLive ? '1' : '0'}`
+    if (appliedListKey.current === key) return
+    const previous = appliedListKey.current
+    appliedListKey.current = key
+    if (previous) {
+      const [prevFolder, prevSid, prevLive] = previous.split('\0')
+      if (prevFolder === currentFolder && prevSid === sid && prevLive === '1' && !sessionLive) return
+    }
     void loadFolderSessions(currentFolder, 'current')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFolder, currentStatus, currentActiveSid])
+  }, [currentFolder, currentActiveSid, sessionLive, loadFolderSessions])
   useEffect(() => {
     return window.app.onSessionChanged((projectPath) => {
       // A phone can create voice in another expanded project while desktop stays

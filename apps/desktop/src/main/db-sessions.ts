@@ -130,14 +130,17 @@ export function seenReceiptForResume(stored: string | null | undefined): string 
  * Persist a read receipt. `''` is explicit unread; a message id has been seen.
  * SQL NULL is only written for a disposed session marked read with no id in
  * hand — that is the legacy "history is read" state, never an unread one.
- * Unchanged values do not notify the sidebar.
+ * Unchanged values do not notify the sidebar. Neither does a receipt that stays
+ * read (NULL or a message id, to another message id): the list only shows the
+ * unread bit, and notifying here flashes the sidebar when a foreground turn ends.
  */
 export function setSessionSeenReceipt(sessionId: string, receipt: string | null): void {
   const db = getDb()
   const row = db.prepare('SELECT seen_completed_message_id AS receipt FROM sessions WHERE id = ?').get(sessionId) as { receipt: string | null } | undefined
   if (!row || row.receipt === receipt) return
+  const unreadChanged = (receipt === '') !== (row.receipt === '')
   db.prepare('UPDATE sessions SET seen_completed_message_id = ? WHERE id = ?').run(receipt, sessionId)
-  notifySessionList(projectPathOfSession(sessionId))
+  if (unreadChanged) notifySessionList(projectPathOfSession(sessionId))
 }
 
 function listedUnread(receipt: string | null | undefined): { unread: true } | Record<string, never> {

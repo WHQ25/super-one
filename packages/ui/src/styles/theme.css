@@ -524,13 +524,13 @@ html:not(.dark) [data-sidebar-inner] .sidebar-selected .session-icon-ground {
   line-height: 0;
 }
 
+/* No `will-change`: ending the animation drops a promoted layer, and over the
+   macOS vibrancy sidebar that teardown flashes the whole surface. */
 .harness-session-pulse {
-  will-change: transform, opacity;
   animation: harness-session-pulse 1.1s ease-in-out infinite;
 }
 
 .harness-session-breathe {
-  will-change: opacity;
   animation: harness-session-breathe 2s ease-in-out infinite;
 }
 

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
-import { appState, mockEnvironment, sessionFixtures } from '../AppSidebar.test-setup'
+import { appState, chatState, mockEnvironment, notifyChat, sessionFixtures } from '../AppSidebar.test-setup'
 import { useSidebarSessions } from './use-sidebar-sessions'
 
 const FOLDER = '/project-a'
@@ -111,6 +111,43 @@ it('does not spin a local folder while its session list loads', async () => {
 
   await act(async () => { pending.resolve(sessionFixtures.byFolder[FOLDER]); await load })
   expect(result.current.loadingFolders[FOLDER]).toBeUndefined()
+})
+
+it('reloads when the open session starts streaming and stays quiet when that turn ends', async () => {
+  const hostProjects = appState.recentFolders.map((folder) => ({
+    ...folder, id: folder.path, lastOpened: folder.addedAt,
+  }))
+  const { result } = renderHook(() => useSidebarSessions({
+    currentFolder: FOLDER, selectedHostConnectionId: 'local', hostProjects,
+  }))
+  await waitFor(() => expect(result.current.folderSessions[FOLDER]).toHaveLength(1))
+  mockEnvironment.listSessions.mockClear()
+
+  const project = chatState.projectSessions[FOLDER] as {
+    _activeSessionId: string
+    _sessions: Record<string, { status: string }>
+  }
+  act(() => {
+    project._sessions['sid-1'].status = 'streaming'
+    notifyChat()
+  })
+  await waitFor(() => expect(mockEnvironment.listSessions).toHaveBeenCalled())
+  await act(async () => { await Promise.resolve() })
+  mockEnvironment.listSessions.mockClear()
+
+  act(() => {
+    project._sessions['sid-1'].status = 'idle'
+    notifyChat()
+  })
+  await act(async () => { await Promise.resolve() })
+  expect(mockEnvironment.listSessions).not.toHaveBeenCalled()
+
+  act(() => {
+    project._sessions['sid-2'] = { ...project._sessions['sid-1'], status: 'idle' }
+    project._activeSessionId = 'sid-2'
+    notifyChat()
+  })
+  await waitFor(() => expect(mockEnvironment.listSessions).toHaveBeenCalled())
 })
 
 it('marks a remote folder loading until its session list returns', async () => {

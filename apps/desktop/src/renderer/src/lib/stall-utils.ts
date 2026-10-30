@@ -37,17 +37,28 @@ export function getStallLevel(lastEventAt: number): StallLevel {
  * red again and the transition slides the rest of the text to white behind it —
  * the original bug, one repaint later. So the key also flips once the transition
  * has settled, when the computed color has actually reached its target.
+ *
+ * Motion utilities share that class string. A turn ending drops them while the
+ * color stays put; keying on the raw string remounts the title anyway and the
+ * sidebar flashes. Only the color identity drives the key.
  */
+const ELLIPSIS_MOTION_CLASS = /^(?:transition(?:-(?:colors|all|opacity|transform|shadow|none))?|duration-\S+|ease-\S+|delay-\S+)$/
+
+function ellipsisColorKey(className: string): string {
+  return className.split(/\s+/).filter((token) => token && !ELLIPSIS_MOTION_CLASS.test(token)).join(' ')
+}
+
 export function useEllipsisRepaintKey(colorClassName: string): string {
-  const [settled, setSettled] = useState(colorClassName)
+  const colorKey = ellipsisColorKey(colorClassName)
+  const [settled, setSettled] = useState(colorKey)
 
   useEffect(() => {
-    if (settled === colorClassName) return
-    const id = setTimeout(() => setSettled(colorClassName), STALL_COLOR_SETTLE_MS)
+    if (settled === colorKey) return
+    const id = setTimeout(() => setSettled(colorKey), STALL_COLOR_SETTLE_MS)
     return () => clearTimeout(id)
-  }, [colorClassName, settled])
+  }, [colorKey, settled])
 
-  return `${colorClassName}|${settled}`
+  return `${colorKey}|${settled}`
 }
 
 function readActiveLastEventAt(): number {

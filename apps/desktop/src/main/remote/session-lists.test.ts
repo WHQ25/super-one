@@ -102,6 +102,19 @@ describe('mobile session list scheduled sends', () => {
     expect(changed).toEqual(['/repo', '/repo'])
   })
 
+  it('persists a new read receipt without notifying until the unread bit changes', () => {
+    changed.length = 0
+    setSessionSeenReceipt('two', 'reply-1')
+    setSessionSeenReceipt('two', 'reply-2')
+    expect(changed).toEqual([])
+    expect(db.prepare('SELECT seen_completed_message_id AS receipt FROM sessions WHERE id = ?').get('two')).toEqual({ receipt: 'reply-2' })
+    setSessionSeenReceipt('two', '')
+    expect(changed).toEqual(['/repo'])
+    setSessionSeenReceipt('two', 'reply-3')
+    expect(listSessionsForFolder('/repo').find((session) => session.sessionId === 'two')?.unread).toBeUndefined()
+    expect(changed).toEqual(['/repo', '/repo'])
+  })
+
   it('includes the same armed state in pinned and search results after reconnect', () => {
     upsertScheduledSend('one', { sendAt, armed: true })
     for (const command of [

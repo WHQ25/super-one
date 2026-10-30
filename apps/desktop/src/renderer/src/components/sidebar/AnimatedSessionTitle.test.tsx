@@ -74,6 +74,14 @@ describe('sidebar session title — stall color repaint', () => {
   })
 })
 
+describe('sidebar session title — idle text', () => {
+  it('draws an idle title as one text node', () => {
+    const { container } = render(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="" />)
+    expect(container.querySelectorAll('.animated-title-ch')).toHaveLength(0)
+    expect(container.querySelector('.animated-title-inner')).toHaveTextContent(TITLE)
+  })
+})
+
 describe('sidebar session title — hover marquee', () => {
   function renderOverflowing(visibleWidth: number, textWidth: number) {
     const { container } = render(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="" />)

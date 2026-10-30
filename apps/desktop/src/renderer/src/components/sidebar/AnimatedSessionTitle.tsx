@@ -99,7 +99,6 @@ export function SessionTitleAnimated({ projectPath, sessionId, fallback, classNa
     }
   }, [targetTitle, sessionId])
 
-  const chars = [...displayTitle]
   const isWriting = phase === 'in'
   // The color class lives on the wrap; `.animated-title-inner` is what actually
   // truncates, so it is the node that has to be recreated — after the wrap's
@@ -122,15 +121,17 @@ export function SessionTitleAnimated({ projectPath, sessionId, fallback, classNa
       {...hoverHandlers}
     >
       <span key={repaintKey} ref={contentRef} className="animated-title-inner" style={marqueeStyle ?? undefined}>
-        {chars.map((ch, i) => (
-          <span
-            key={`${writeKey}-${i}`}
-            className={cn('animated-title-ch', isWriting && 'is-flip')}
-            style={isWriting ? { animationDelay: `${i * CHAR_STAGGER_MS}ms` } : undefined}
-          >
-            {ch}
-          </span>
-        ))}
+        {isWriting
+          ? [...displayTitle].map((ch, i) => (
+              <span
+                key={`${writeKey}-${i}`}
+                className="animated-title-ch is-flip"
+                style={{ animationDelay: `${i * CHAR_STAGGER_MS}ms` }}
+              >
+                {ch}
+              </span>
+            ))
+          : displayTitle}
       </span>
     </span>
   )

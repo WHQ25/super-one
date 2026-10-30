@@ -223,6 +223,16 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   }, [pinnedKey])
 
   const publishSettled = useCallback((folderPath: string, page: SettledFolderPage) => {
+    const current = settledByFolderRef.current[folderPath]
+    // Expand re-reads this page. An unchanged result must not build a new list:
+    // every project row takes `settledSessions`, so a new array renders them all.
+    if (
+      current
+      && current.hasMore === page.hasMore
+      && current.total === page.total
+      && current.sessions.length === page.sessions.length
+      && current.sessions.every((row, index) => shallow(row, page.sessions[index]))
+    ) return
     const next = { ...settledByFolderRef.current, [folderPath]: page }
     settledByFolderRef.current = next
     setSettledByFolder(next)

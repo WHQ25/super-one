@@ -1,7 +1,6 @@
 import { memo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
-import { cn } from '@superone/ui/lib/utils'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { SessionRow } from './SessionRow'
 import { SidebarSectionLabel } from './SidebarSectionLabel'
@@ -34,6 +33,10 @@ export interface SettledSectionProps extends SessionMenuCallbacks {
 /**
  * Finished sessions inside one project. Folded until opened, and absent when
  * this project has nothing settled, so the group does not ask for attention.
+ *
+ * Rows stay unmounted while folded. A zero-height grid still lays out every
+ * row, and a project with a long settled history was paying that cost on every
+ * expand even though only the heading is visible.
  */
 export const SettledSection = memo(function SettledSection({
   folderPath,
@@ -79,14 +82,11 @@ export const SettledSection = memo(function SettledSection({
       </div>
       <div
         id={panelId}
-        className={cn(
-          'grid transition-[grid-template-rows] duration-200 ease-out',
-          collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
-        )}
+        hidden={collapsed || undefined}
         inert={collapsed ? true : undefined}
         aria-hidden={collapsed || undefined}
       >
-        <div className="overflow-hidden">
+        {collapsed ? null : (
           <div
             ref={scrollRef}
             onScroll={handleScroll}
@@ -108,7 +108,7 @@ export const SettledSection = memo(function SettledSection({
               )
             })}
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

@@ -71,7 +71,8 @@ export const Collapsed: Story = {
     await expect(canvasElement.querySelector('[data-slot="settled-divider"]')).toBeNull()
     const panel = canvasElement.querySelector(`[id="${settledPanelId(FOLDER)}"]`)
     await expect(panel).toHaveAttribute('inert')
-    await expect(panel?.textContent).toContain('Finished the sidebar pass')
+    await expect(panel).toHaveAttribute('hidden')
+    await expect(canvas.queryByText('Finished the sidebar pass')).toBeNull()
   },
 }
 

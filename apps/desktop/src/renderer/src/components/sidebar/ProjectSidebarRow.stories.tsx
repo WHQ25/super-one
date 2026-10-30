@@ -190,6 +190,7 @@ export const OnlySettled: Story = {
     await expect(header).toHaveAttribute('aria-expanded', 'false')
     await expect(canvas.queryByText('No sessions')).not.toBeInTheDocument()
     const panel = canvasElement.querySelector(`[id="${settledPanelId('/storybook/settled')}"]`)
-    await expect(panel?.textContent).toContain('Finished the opening review')
+    await expect(panel).toHaveAttribute('hidden')
+    await expect(canvas.queryByText('Finished the opening review')).toBeNull()
   },
 }

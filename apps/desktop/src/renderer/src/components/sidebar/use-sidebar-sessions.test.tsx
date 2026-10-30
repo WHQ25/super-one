@@ -82,6 +82,28 @@ it('pages settled sessions and appends the next page when asked', async () => {
   })
 })
 
+it('keeps the settled page when expanding again returns the same rows', async () => {
+  sessionFixtures.byFolder[FOLDER] = [
+    { sessionId: 'live', title: 'Live', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1 },
+    ...Array.from({ length: 25 }, (_, index) => ({
+      sessionId: `set-${index}`,
+      title: `Settled ${index}`,
+      lastActiveAt: '2026-03-01T00:00:00.000Z',
+      messageCount: 1,
+      isSettled: true,
+    })),
+  ]
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  await waitFor(() => expect(result.current.settledSessions).toHaveLength(20))
+  const first = result.current.settledSessions
+  const calls = mockEnvironment.listSettledSessions.mock.calls.length
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  await waitFor(() => expect(mockEnvironment.listSettledSessions.mock.calls.length).toBeGreaterThan(calls))
+  await act(async () => { await Promise.resolve() })
+  expect(result.current.settledSessions).toBe(first)
+})
+
 it('clears the in-flight request after a failed load so a later refresh can recover', async () => {
   const { result } = setup()
   mockEnvironment.listSessions.mockRejectedValueOnce(new Error('disconnected'))

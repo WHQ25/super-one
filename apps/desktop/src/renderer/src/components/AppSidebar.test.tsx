@@ -317,12 +317,15 @@ describe('AppSidebar interactions', () => {
     })
     expect(mockEnvironment.setSessionRead).toHaveBeenCalledWith('local', 'sid-1', true)
     await waitFor(() => {
-      const panel = document.getElementById(settledPanelId('/project-a'))
-      const title = screen.getByText('Old Session')
-      expect(panel).toContainElement(title)
-      expect(title.closest('.group\\/session')).not.toBeNull()
-      expect(title.closest('.group\\/pin')).toBeNull()
+      expect(screen.getByRole('button', { name: /Settled/ })).toBeInTheDocument()
+      expect(screen.queryByText('Old Session')).toBeNull()
     })
+    fireEvent.click(screen.getByRole('button', { name: /Settled/ }))
+    const panel = document.getElementById(settledPanelId('/project-a'))
+    const settledTitle = screen.getByText('Old Session')
+    expect(panel).toContainElement(settledTitle)
+    expect(settledTitle.closest('.group\\/session')).not.toBeNull()
+    expect(settledTitle.closest('.group\\/pin')).toBeNull()
   })
 
   it('shows the normal session menu with unpin for a pinned session', async () => {

@@ -156,7 +156,7 @@ describe('opened tab note', () => {
     mockCall.mockResolvedValueOnce('pip')
     expect(await openedTabNoteFor('s1', { pip: true, bringForward: focus })).toEqual({
       shown: 'pip',
-      reveal: `Opened in the background: the user sees it only as a small picture-in-picture over the chat. If they want it in front, call ${focus}.`,
+      reveal: `Opened in the background: the user sees it only as a small picture-in-picture over the chat. Leave it there unless the user asks to bring it forward, then call ${focus}.`,
     })
     expect(mockCall).toHaveBeenCalledWith('s1', 'tabPresentation', { pip: true })
 

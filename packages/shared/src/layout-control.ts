@@ -278,7 +278,7 @@ export function openedTabNote(presentation: OpenedTabPresentation, bringForward:
   const where = presentation === 'pip'
     ? 'Opened in the background: the user sees it only as a small picture-in-picture over the chat.'
     : 'Opened in the background: the user cannot see it now.'
-  return { shown: presentation, reveal: `${where} If they want it in front, call ${bringForward}.` }
+  return { shown: presentation, reveal: `${where} Leave it there unless the user asks to bring it forward, then call ${bringForward}.` }
 }
 
 export function focusTabCall(tab: string): string {

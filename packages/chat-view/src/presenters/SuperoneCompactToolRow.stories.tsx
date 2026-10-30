@@ -90,7 +90,7 @@ const MINIAPP_OPENED_IN_PIP = JSON.stringify({
   name: 'Budget Tracker',
   tab: 'miniapp-budget-tracker:p1',
   shown: 'pip',
-  reveal: 'Opened in the background: the user sees it only as a small picture-in-picture over the chat. If they want it in front, call layout_act action=focus_tab tab="miniapp-budget-tracker:p1".',
+  reveal: 'Opened in the background: the user sees it only as a small picture-in-picture over the chat. Leave it there unless the user asks to bring it forward, then call layout_act action=focus_tab tab="miniapp-budget-tracker:p1".',
 })
 
 export const MiniAppOpen: Story = {

@@ -350,9 +350,10 @@ navigation. Voice call state and streaming output do not own foreground focus.
 Agent openers never reveal the panel or take focus: `browser_tabs` open,
 `terminal_tabs` run in a new tab, `miniapp_dev_preview` and
 `device_request_control`. Their results add `shown` (`pip` or `background`) and a
-`reveal` sentence naming the `layout_act` call that brings the tab forward
-(`focus_tab`, or `show_panel` for a device, whose tab is created when the panel
-opens). Nothing is added while the caller's panel is on screen. The renderer
+`reveal` sentence. It tells the agent to leave the tab where it opened unless
+the user asks to bring it forward, and names the `layout_act` call for that
+request (`focus_tab`, or `show_panel` for a device, whose tab is created when
+the panel opens). Nothing is added while the caller's panel is on screen. The renderer
 answers from session state (`openedTabPresentation`, bridge op `tabPresentation`),
 not from the tab, because terminal and device tabs are docked asynchronously;
 the wording is `openedTabNote` in the shared contract.

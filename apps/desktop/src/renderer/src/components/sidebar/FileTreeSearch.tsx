@@ -9,6 +9,7 @@ import type { FileSearchResult } from '@superone/shared/agent-types'
 import { useFileTreeStore } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { openFileTab } from '@/components/activity/activity-panel-api'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { buildSearchTree, type FlatSearchNode } from './file-search-tree'
 
 const DEBOUNCE_MS = 150
@@ -111,7 +112,11 @@ export function FileTreeSearch({
         </IconButton>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+      <ScrollArea
+        type="scroll"
+        edgeFade
+        className="sidebar-scroll min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]]:pb-2"
+      >
         {searched && nodes.length === 0 ? (
           <div className="px-3 py-4 text-center text-xs text-sidebar-foreground/50">
             {t('sidebar.search.noResults')}
@@ -152,7 +157,7 @@ export function FileTreeSearch({
             </button>
           ))
         )}
-      </div>
+      </ScrollArea>
     </div>
   )
 }

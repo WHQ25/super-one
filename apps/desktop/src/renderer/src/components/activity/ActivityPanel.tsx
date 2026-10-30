@@ -19,6 +19,7 @@ import { connectMcpAppTabs } from './mcp-app-tabs'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
+import { watchScrollEdgeFades } from '@superone/ui/lib/scroll-edge-fade'
 import { ActivityLauncher } from './ActivityLauncher'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -93,6 +94,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
   const apiRef = useRef<DockviewApi | null>(null)
   const [headerApi, setHeaderApi] = useState<DockviewApi | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const stopTabStripEdgeFadeRef = useRef<(() => void) | null>(null)
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
   const layoutDockview = useCallback((width?: number, height?: number) => {
@@ -148,9 +150,18 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
     const syncHasPanels = () => useActivityPanelStore.getState().setHasPanels(event.api.panels.length > 0)
     syncHasPanels()
 
-    const dAdd = event.api.onDidAddPanel(syncHasPanels)
+    stopTabStripEdgeFadeRef.current?.()
+    const root = innerRef.current
+    const edgeFades = root ? watchScrollEdgeFades(root, '.dv-tabs-container') : null
+    stopTabStripEdgeFadeRef.current = () => edgeFades?.stop()
+
+    const dAdd = event.api.onDidAddPanel(() => {
+      syncHasPanels()
+      edgeFades?.scan()
+    })
     const d1 = event.api.onDidRemovePanel((panel) => {
       syncHasPanels()
+      edgeFades?.scan()
       // A side chat lives exactly as long as its tab. Ignored mid-swap: parking a
       // session's layout removes every panel, and that is a stash, not a close.
       if (panel.id === SIDE_CHAT_PANEL_ID && !isLayoutSwapping()) {
@@ -227,6 +238,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
     const container = innerRef.current?.querySelector<HTMLElement>('.dockview-theme-superone')
     const updateSingleGroupClass = () => {
       container?.classList.toggle('single-group', event.api.groups.length <= 1)
+      edgeFades?.scan()
     }
     updateSingleGroupClass()
     const d3 = event.api.onDidAddGroup(updateSingleGroupClass)
@@ -250,6 +262,8 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
     return () => {
       resizeObserverRef.current?.disconnect()
       resizeObserverRef.current = null
+      stopTabStripEdgeFadeRef.current?.()
+      stopTabStripEdgeFadeRef.current = null
       const cur = useActivityViewStateStore.getState()._currentSessionId
       if (cur) useActivityViewStateStore.getState().park(cur)
       connectMcpAppTabs(null)

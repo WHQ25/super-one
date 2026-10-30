@@ -125,6 +125,38 @@ test('fades a wide table only at the edges that still have columns past them', a
   await expect.poll(fades).toEqual(['24px', '0px'])
 })
 
+test('drops the leading fade once a scrolled table fits again', async ({ page }) => {
+  await send(page, { type: 'hydrate', sessionStatus: 'idle', messages: [message('wide', WIDE_TABLE)] })
+
+  const scroller = page.locator('article[data-turn-id="wide"] table').locator('..')
+  await expect(scroller).toBeVisible()
+  const fades = () => scroller.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return [style.getPropertyValue('--scroll-fade-start'), style.getPropertyValue('--scroll-fade-end')]
+  })
+
+  await scroller.evaluate((node) => { node.scrollLeft = node.scrollWidth })
+  await expect.poll(fades).toEqual(['24px', '0px'])
+
+  // Same scroller, no longer overflowing: drop columns until the row fits.
+  // Replacing the message would mount a fresh timeline and hide the bug.
+  await scroller.evaluate((node) => {
+    const table = node.querySelector('table')
+    if (!table) return
+    for (const row of table.rows) {
+      while (row.cells.length > 1) row.deleteCell(row.cells.length - 1)
+    }
+  })
+  await expect.poll(fades).toEqual(['0px', '0px'])
+
+  await scroller.evaluate((node) => {
+    const table = node.querySelector('table')
+    if (table) table.style.minWidth = '2000px'
+    node.scrollLeft = node.scrollWidth
+  })
+  await expect.poll(fades).toEqual(['24px', '0px'])
+})
+
 test('leaves a table that fits unmasked', async ({ page }) => {
   const scroller = page.locator('article[data-turn-id="table"] table').locator('..')
   await expect(scroller).toBeVisible()

@@ -101,7 +101,9 @@
   scrollbar-width: none;
   overscroll-behavior-x: contain;
   /* Each edge dissolves only once there is something hidden past it
-     (`scroll-edge-fade-x` in @superone/ui animations.css). */
+     (`scroll-edge-fade-x` in @superone/ui animations.css). Chromium keeps a
+     timeline that finished at the end — the leading fade — after the strip
+     stops overflowing; scroll-edge-fade.ts restarts it. */
   mask-image: linear-gradient(
     to right,
     transparent 0,

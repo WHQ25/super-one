@@ -379,6 +379,21 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   padding-inline: 0;
 }
 
+/* The pinned device name covers this viewport's top band. Start the fade at
+   the visible edge (`scroll-edge-fade-y` in @superone/ui animations.css).
+   The selector stops at this viewport, so a Settled or history list inside a
+   project does not inherit the offset and hide its first row. */
+.device-name-clip > [data-slot="scroll-area"] > [data-slot="scroll-area-viewport"].scroll-edge-fade-y {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent var(--device-name-clip, 0px),
+    #000 calc(var(--device-name-clip, 0px) + var(--scroll-fade-start)),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+}
+
 /* The pinned device name floats above this list with no fill. Clip the
    scrollport's top band to the name's height so rows end at that edge. */
 .device-name-clip [data-slot="scroll-area-viewport"] {

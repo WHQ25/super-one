@@ -66,6 +66,7 @@ describe('ProjectHistoryList — in-sidebar scrollable session history', () => {
     )
 
     await waitFor(() => expect(titleRows(container)).toContain('First chat'))
+    expect(container.querySelector('.scroll-edge-fade-y')).not.toBeNull()
     expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 0, includeSettled: true })
     expect(getByPlaceholderText(/search/i)).toBeTruthy()
   })
@@ -97,7 +98,7 @@ describe('ProjectHistoryList — in-sidebar scrollable session history', () => {
     )
     await waitFor(() => expect(titleRows(container)).toContain('Session 0'))
 
-    fireEvent.scroll(container.querySelector('.overscroll-contain')!)
+    fireEvent.scroll(container.querySelector('[data-slot="scroll-area-viewport"]')!)
 
     await waitFor(() => expect(titleRows(container)).toContain('Older session'))
     expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 30, includeSettled: true })

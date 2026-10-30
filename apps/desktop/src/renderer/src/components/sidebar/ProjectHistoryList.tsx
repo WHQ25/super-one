@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { Search, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 
 const HISTORY_PAGE_SIZE = 30
@@ -160,10 +161,12 @@ export function ProjectHistoryList({
           <X />
         </IconButton>
       </div>
-      <div
-        ref={scrollRef}
+      <ScrollArea
+        type="scroll"
+        edgeFade
+        viewportRef={scrollRef}
         onScroll={handleScroll}
-        className="hide-scrollbar overflow-y-auto overscroll-contain"
+        className="sidebar-scroll min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
         style={{ maxHeight: HISTORY_VIEWPORT_MAX }}
       >
         {sessions.length === 0 ? (
@@ -196,7 +199,7 @@ export function ProjectHistoryList({
             })}
           </div>
         )}
-      </div>
+      </ScrollArea>
     </div>
   )
 }

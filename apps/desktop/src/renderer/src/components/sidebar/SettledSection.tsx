@@ -1,4 +1,5 @@
 import { memo, useCallback, useRef } from 'react'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useTranslation } from 'react-i18next'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
@@ -75,7 +76,6 @@ export const SettledSection = memo(function SettledSection({
           onToggle={toggleCollapsed}
           controlsId={panelId}
           countTone="plain"
-          divider={!collapsed}
         >
           {t('sidebar.settled')}
         </SidebarSectionLabel>
@@ -87,11 +87,13 @@ export const SettledSection = memo(function SettledSection({
         aria-hidden={collapsed || undefined}
       >
         {collapsed ? null : (
-          <div
-            ref={scrollRef}
+          <ScrollArea
+            type="scroll"
+            edgeFade
+            viewportRef={scrollRef}
             onScroll={handleScroll}
             data-settled-list=""
-            className="max-h-64 overflow-y-auto overscroll-contain"
+            className="sidebar-scroll max-h-64 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
           >
             {sessions.map((session) => {
               const row = presentation?.(session)
@@ -107,7 +109,7 @@ export const SettledSection = memo(function SettledSection({
                 />
               )
             })}
-          </div>
+          </ScrollArea>
         )}
       </div>
     </div>

@@ -150,7 +150,9 @@
 }
 /* The scroll box directly around the table (the desktop wrapper also holds a
    toolbar). Its edges fade while columns are hidden past them, so an overflow
-   whose edge lands on a column border still reads as scrollable. */
+   whose edge lands on a column border still reads as scrollable. Chat markdown
+   restarts a timeline Chromium leaves finished after the table stops
+   overflowing (`scroll-edge-fade.ts`). */
 .chat-md [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
   mask-image: linear-gradient(
     to right,

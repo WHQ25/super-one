@@ -15,7 +15,6 @@ export function SidebarSectionLabel({
   onToggle,
   controlsId,
   countTone = 'badge',
-  divider = false,
   children,
 }: {
   section: SidebarSectionId
@@ -26,12 +25,6 @@ export function SidebarSectionLabel({
   controlsId?: string
   /** Settled totals get plain muted text. Pinned and Drafts keep the filled badge. */
   countTone?: 'badge' | 'plain'
-  /**
-   * A hairline on the bottom edge of this heading, in the hover color.
-   * The hover fill is the same color, so the line disappears into it at once
-   * and is visible again as soon as the pointer leaves.
-   */
-  divider?: boolean
   children: ReactNode
 }) {
   return (
@@ -41,7 +34,7 @@ export function SidebarSectionLabel({
       aria-expanded={!collapsed}
       aria-controls={controlsId ?? sidebarSectionPanelId(section)}
       onClick={onToggle}
-      className={`group flex w-full min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring${divider ? ' relative overflow-hidden' : ''}`}
+      className="group flex w-full min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
     >
       <SidebarHoverChevron
         expanded={!collapsed}
@@ -68,12 +61,6 @@ export function SidebarSectionLabel({
           </span>
         </>
       )}
-      {divider ? (
-        <span
-          data-slot="settled-divider"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-sidebar-hover"
-        />
-      ) : null}
     </button>
   )
 }

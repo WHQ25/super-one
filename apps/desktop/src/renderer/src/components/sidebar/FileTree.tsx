@@ -22,6 +22,7 @@ import {
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 
 const EDGE_SCROLL_ZONE = 40
 const EDGE_SCROLL_SPEED = 8
@@ -316,9 +317,11 @@ export function FileTree() {
             {servesFiles ? t('sidebar.noFiles') : t('sidebar.filesUnavailable')}
           </div>
         ) : (
-          <div
-            ref={scrollRef}
-            className="h-full overflow-auto"
+          <ScrollArea
+            type="scroll"
+            edgeFade
+            viewportRef={scrollRef}
+            className="sidebar-scroll h-full min-h-0 [&_[data-slot=scroll-area-viewport]]:overscroll-contain"
           >
             <div
               style={{ height: `${virtualizer.getTotalSize() + 40}px`, position: 'relative' }}
@@ -361,8 +364,7 @@ export function FileTree() {
                 />
               )}
             </div>
-
-          </div>
+          </ScrollArea>
         )}
 
         {externalDragOver && (

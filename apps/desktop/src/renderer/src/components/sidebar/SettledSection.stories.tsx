@@ -111,9 +111,7 @@ export const Expanded: Story = {
     const header = within(canvasElement).getByRole('button', { name: /Settled/ })
     await expect(header).toHaveAttribute('aria-expanded', 'true')
     await expect(header.querySelector('[data-slot="section-count"]')).toBeNull()
-    const divider = canvasElement.querySelector('[data-slot="settled-divider"]')
-    await expect(divider).toHaveClass('bg-sidebar-hover')
-    await expect(header).toContainElement(divider)
+    await expect(canvasElement.querySelector('[data-slot="settled-divider"]')).toBeNull()
   },
 }
 
@@ -176,8 +174,16 @@ export const ScrollForMore: Story = {
     await expect(canvas.getByText('Settled session 0')).toBeInTheDocument()
     await expect(canvas.getByText('Settled session 11')).toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: 'Show More' })).toBeNull()
-    await expect(canvasElement.querySelector('[data-settled-list]')).not.toBeNull()
+    const list = canvasElement.querySelector('[data-settled-list] [data-slot="scroll-area-viewport"]')
+    await expect(list).not.toBeNull()
+    await expect(list).toHaveClass('scroll-edge-fade-y')
   },
+}
+
+/** Same overflow, on the dark sidebar, so the mask still reads against that ground. */
+export const ScrollForMoreDark: Story = {
+  ...ScrollForMore,
+  globals: { theme: 'dark' },
 }
 
 export const Dark: Story = {

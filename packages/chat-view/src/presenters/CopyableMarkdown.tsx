@@ -1,4 +1,5 @@
-import { type ComponentType, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentType, type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { bindScrollEdgeFades, TABLE_SCROLL_EDGE_SELECTOR } from '@superone/ui/lib/scroll-edge-fade'
 import { Check, Copy } from 'lucide-react'
 import {
   Streamdown,
@@ -69,6 +70,18 @@ function useMathPluginForText(text: string, runtime: CopyableMarkdownRuntime): M
  * repair costs at most one frame of a half-typed tag rendered as text.
  */
 const REMEND_OPTIONS = { htmlTags: false }
+
+function ScrollEdgeFadeRoot({ children }: { children: ReactNode }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    return bindScrollEdgeFades(root, TABLE_SCROLL_EDGE_SELECTOR)
+  }, [])
+  // No box of its own: the markdown block's margins stay where they were.
+  // The element exists so the fade repair can see tables Streamdown adds later.
+  return <div ref={rootRef} className="contents">{children}</div>
+}
 
 const STREAMING_THROTTLE_MS = 33
 
@@ -209,21 +222,23 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         </button>
       </div>
-      <Streamdown
-        {...markdownBlockOptions(normalized, runtime)}
-        className="chat-md"
-        plugins={plugins}
-        remarkPlugins={runtime.remarkPlugins}
-        rehypePlugins={runtime.rehypePlugins}
-        components={merged}
-        controls={runtime.controls}
-        linkSafety={runtime.linkSafety}
-        tableMaxHeight={runtime.tableMaxHeight}
-        remend={REMEND_OPTIONS}
-        isAnimating={isStreaming}
-      >
-        {normalized}
-      </Streamdown>
+      <ScrollEdgeFadeRoot>
+        <Streamdown
+          {...markdownBlockOptions(normalized, runtime)}
+          className="chat-md"
+          plugins={plugins}
+          remarkPlugins={runtime.remarkPlugins}
+          rehypePlugins={runtime.rehypePlugins}
+          components={merged}
+          controls={runtime.controls}
+          linkSafety={runtime.linkSafety}
+          tableMaxHeight={runtime.tableMaxHeight}
+          remend={REMEND_OPTIONS}
+          isAnimating={isStreaming}
+        >
+          {normalized}
+        </Streamdown>
+      </ScrollEdgeFadeRoot>
     </div>
   )
 })
@@ -243,21 +258,23 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
   )
 
   return (
-    <Streamdown
-      {...markdownBlockOptions(normalized, runtime)}
-      className="chat-md"
-      plugins={plugins}
-      remarkPlugins={runtime.remarkPlugins}
-      rehypePlugins={runtime.rehypePlugins}
-      components={merged}
-      controls={runtime.controls}
-      linkSafety={runtime.linkSafety}
-      tableMaxHeight={runtime.tableMaxHeight}
-      remend={REMEND_OPTIONS}
-      isAnimating={isStreaming}
-    >
-      {normalized}
-    </Streamdown>
+    <ScrollEdgeFadeRoot>
+      <Streamdown
+        {...markdownBlockOptions(normalized, runtime)}
+        className="chat-md"
+        plugins={plugins}
+        remarkPlugins={runtime.remarkPlugins}
+        rehypePlugins={runtime.rehypePlugins}
+        components={merged}
+        controls={runtime.controls}
+        linkSafety={runtime.linkSafety}
+        tableMaxHeight={runtime.tableMaxHeight}
+        remend={REMEND_OPTIONS}
+        isAnimating={isStreaming}
+      >
+        {normalized}
+      </Streamdown>
+    </ScrollEdgeFadeRoot>
   )
 })
 

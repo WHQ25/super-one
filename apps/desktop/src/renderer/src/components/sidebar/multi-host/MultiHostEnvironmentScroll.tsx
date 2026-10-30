@@ -101,7 +101,7 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
 
   return (
     <div ref={frameRef} className="device-name-clip relative h-full">
-      <ScrollArea type="scroll" viewportRef={viewportRef} className="sidebar-scroll h-full">
+      <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll h-full">
         <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} />
       </ScrollArea>
       {pinned && (

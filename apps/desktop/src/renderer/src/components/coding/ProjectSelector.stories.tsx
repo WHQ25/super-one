@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { useAppStore } from '@/stores/app'
 import { ProjectSelector } from './ProjectSelector'
 
@@ -38,3 +39,35 @@ export const Empty: Story = {
   beforeEach: () => { useAppStore.setState({ currentFolder: null, recentFolders: [] }) },
 }
 export const Dark: Story = { decorators: [(Story) => <div className="dark bg-background p-6"><Story /></div>] }
+
+const manyFolders = Array.from({ length: 16 }, (_, index) => ({
+  id: `project-${index}`,
+  path: `/demo/project-${index}`,
+  name: `Project ${index}`,
+  addedAt: '',
+  lastOpened: '',
+}))
+
+/** A long menu fades the project rows. Add Project stays pinned under the list. */
+export const ManyProjects: Story = {
+  beforeEach: () => {
+    useAppStore.setState({
+      currentFolder: '/demo/project-0',
+      recentFolders: manyFolders,
+    })
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: /Project 0/ }))
+    const scroller = document.querySelector('[data-slot="dropdown-menu-content"] [data-slot="scroll-area-viewport"]')
+    await expect(scroller).not.toBeNull()
+    await expect(scroller).toHaveClass('scroll-edge-fade-y')
+    await expect(scroller?.closest('[data-slot="scroll-area"]')).toHaveClass('max-h-48')
+    const add = within(document.body).getByRole('menuitem', { name: 'Add Project...' })
+    await expect(scroller!.contains(add)).toBe(false)
+  },
+}
+
+export const ManyProjectsDark: Story = {
+  ...ManyProjects,
+  globals: { theme: 'dark' },
+}

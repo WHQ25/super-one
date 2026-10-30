@@ -29,6 +29,7 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { Check, ChevronDown, Loader2, Plus } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { withDraftCarry } from '@/lib/draft-surface-select'
@@ -810,15 +811,21 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
                 <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', menuOpen && 'rotate-180')} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="max-h-80 w-64 overflow-y-auto">
-              {projects.map((folder) => (
-                <DropdownMenuItem key={folder.path} onClick={() => openExisting(folder)} className="gap-2">
-                  <span className="truncate">{folder.name}</span>
-                  <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {homePath(displayHostPath(folder.path))}
-                  </span>
-                </DropdownMenuItem>
-              ))}
+            <DropdownMenuContent align="center" className="w-64 overflow-hidden">
+              <ScrollArea
+                type="scroll"
+                edgeFade
+                className="max-h-80 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
+              >
+                {projects.map((folder) => (
+                  <DropdownMenuItem key={folder.path} onClick={() => openExisting(folder)} className="gap-2">
+                    <span className="truncate">{folder.name}</span>
+                    <span className="ml-auto truncate text-xs text-muted-foreground">
+                      {homePath(displayHostPath(folder.path))}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </ScrollArea>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={startAddProject} className="gap-2">
                 <Plus className="size-4 shrink-0" />

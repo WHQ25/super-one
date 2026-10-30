@@ -191,6 +191,7 @@ export const LongList: Story = {
     const viewport = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
     await expect(pinnedHeader).not.toBeNull()
     await expect(viewport).not.toBeNull()
+    await expect(viewport).toHaveClass('scroll-edge-fade-y')
     const fill = getComputedStyle(pinnedHeader!).backgroundColor
     await expect(fill === 'rgba(0, 0, 0, 0)' || fill === 'transparent').toBe(true)
     await expect(pinnedHeader!.className).not.toContain('bg-')

@@ -859,7 +859,7 @@ export const AppSidebar = memo(function AppSidebar() {
             {t('common.loading')}
           </div>
         ) : (
-          <ScrollArea type="scroll" className="sidebar-scroll h-full">
+          <ScrollArea type="scroll" edgeFade className="sidebar-scroll h-full">
             <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
               {hostTurnedOff ? (
                 <div className="flex flex-col items-center justify-center gap-1 p-4 text-center text-xs text-sidebar-foreground/70">

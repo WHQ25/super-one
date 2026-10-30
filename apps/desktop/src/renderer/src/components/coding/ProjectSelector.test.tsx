@@ -84,6 +84,28 @@ describe('ProjectSelector remote empty states', () => {
     expect(screen.queryByText(/no projects/i)).not.toBeInTheDocument()
   })
 
+  it('fades the project list and keeps Add Project outside the scroller', async () => {
+    currentFolder = 'remote:env-1:/work/app-0'
+    hostProjects.mockReturnValue({
+      connectionId: 'env-1',
+      isLocal: false,
+      projects: Array.from({ length: 12 }, (_, index) => remoteFolder(`app-${index}`)),
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    })
+
+    render(<ProjectSelector />)
+    openMenu()
+
+    const item = await screen.findByRole('menuitem', { name: 'app-0' })
+    const scroller = item.closest('[data-slot="scroll-area-viewport"]')
+    expect(scroller).toHaveClass('scroll-edge-fade-y')
+    expect(scroller?.closest('[data-slot="scroll-area"]')).toHaveClass('max-h-48')
+    const add = screen.getByRole('menuitem', { name: /add project/i })
+    expect(scroller?.contains(add)).toBe(false)
+  })
+
   it('says the host has no projects when the list is genuinely empty', async () => {
     hostProjects.mockReturnValue({
       connectionId: 'env-1',

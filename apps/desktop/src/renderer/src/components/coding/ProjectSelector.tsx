@@ -9,6 +9,7 @@ import { useHostProjects } from '@/hooks/use-host-projects'
 import { loadEnvironmentItems } from '@/lib/environment-list'
 import { remoteProjectKey, displayHostPath } from '@/lib/remote-project-key'
 import { Check, ChevronDown, Folder, FolderOpen, Plus, RotateCw } from 'lucide-react'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
@@ -190,7 +191,11 @@ export function ProjectSelector({
               {t('chat.suggestions.noProjects')}
             </div>
           )}
-          <div className="max-h-48 overflow-y-auto">
+          <ScrollArea
+            type="scroll"
+            edgeFade
+            className="max-h-48 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
+          >
             {/*
               Stale entries stay visible but unopenable — same treatment as
               ProjectSidebarRow, so "every project is missing" reads as a host
@@ -217,7 +222,7 @@ export function ProjectSelector({
                 )}
               </DropdownMenuItem>
             ))}
-          </div>
+          </ScrollArea>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={addProject}

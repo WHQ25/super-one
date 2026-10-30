@@ -27,9 +27,12 @@
    keyframe on `animation-timeline: scroll(self inline)`. Each edge dissolves
    only while content is hidden past it. A container that does not overflow has
    an inactive timeline, so both fades stay at their 0px initial value — a fully
-   opaque mask — and so does any engine without scroll-driven animations. The
-   fades are registered lengths because plain custom properties do not
-   interpolate. */
+   opaque mask — and so does any engine without scroll-driven animations.
+   Chromium does not drop a timeline that already finished at 100% when the
+   range later collapses, so a caller that removes the overflow has to restart
+   the animation (`scroll-edge-fade.ts`; the activity tab strip and chat
+   tables do). The fades are registered
+   lengths because plain custom properties do not interpolate. */
 @property --scroll-fade-start {
   syntax: '<length>';
   inherits: false;
@@ -59,4 +62,42 @@
     --scroll-fade-start: 24px;
     --scroll-fade-end: 0px;
   }
+}
+
+/* Vertical cousin of the horizontal fade. Both axes use 24px, and a
+   container runs one axis or the other. ScrollArea's edgeFade applies the
+   mask to the viewport. A list that does not overflow has an inactive
+   timeline, so both fades stay at 0px. */
+@keyframes scroll-edge-fade-y {
+  0% {
+    --scroll-fade-start: 0px;
+    --scroll-fade-end: 24px;
+  }
+  4% {
+    --scroll-fade-start: 24px;
+    --scroll-fade-end: 24px;
+  }
+  96% {
+    --scroll-fade-start: 24px;
+    --scroll-fade-end: 24px;
+  }
+  100% {
+    --scroll-fade-start: 24px;
+    --scroll-fade-end: 0px;
+  }
+}
+
+.scroll-edge-fade-y {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+  animation-name: scroll-edge-fade-y;
+  animation-duration: auto;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self block);
 }

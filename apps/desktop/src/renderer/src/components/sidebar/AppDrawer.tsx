@@ -301,7 +301,11 @@ export function AppDrawer() {
                   </div>
                 )}
 
-                <ScrollArea className="max-h-96">
+                <ScrollArea
+                  type="scroll"
+                  edgeFade
+                  className="sidebar-scroll max-h-96 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
+                >
                   <div className="px-1 py-1">
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                       <SortableContext items={orderedApps.map((a) => a.id)} strategy={verticalListSortingStrategy}>

@@ -60,3 +60,23 @@ export const Error: Story = {
     result: 'command exited 1',
   },
 }
+
+export const AskedQuestion: Story = {
+  name: 'Asked question · harness title stays out of the header',
+  args: {
+    toolName: 'AskUserQuestion',
+    status: 'complete',
+    defaultExpanded: true,
+    toolSummary: 'Ask: Which layout should the phone keep using?',
+    input: JSON.stringify({
+      questions: [{
+        question: 'Which layout should the phone keep using?',
+        header: 'Layout',
+        options: [{ label: 'Compact' }, { label: 'Comfortable' }],
+      }],
+      answers: { 'Which layout should the phone keep using?': 'Compact' },
+    }),
+    result: '"Which layout should the phone keep using?"="Compact"',
+    ports: { ...ports, preferSentSummary: true },
+  },
+}

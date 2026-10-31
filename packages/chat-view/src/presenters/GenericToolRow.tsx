@@ -355,9 +355,13 @@ function GenericToolRow({
       ? (input.length > 80 ? input.slice(0, 80) + '…' : input)
       : '')
 
-  // A titled publish would otherwise print its title twice — once as the
-  // summary, once as the chip label. One identity per header.
-  const headerSummary = artifactLink && summary === artifactLink.label ? '' : summary
+  // One identity per header. A titled publish would print its title twice.
+  // AskUserQuestion's name is already "Asked N question(s)"; the chip would
+  // repeat that count, or on the phone (preferSentSummary) the harness title
+  // ("Ask: …") beside the question the row body already shows.
+  const headerSummary = toolName === 'AskUserQuestion' || (artifactLink && summary === artifactLink.label)
+    ? ''
+    : summary
 
   const displayName = mcpInfo
     ? <>{presentation?.serverTitle ?? mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{presentation?.toolTitle ?? mcpInfo.mcpToolName.replace(/_/g, ' ')}</>

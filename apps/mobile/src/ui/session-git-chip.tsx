@@ -23,8 +23,10 @@ export function SessionGitChip(props: {
   const { t } = useMobileLocale()
   const fontSize = props.fontSize ?? 11
   const iconSize = props.iconSize ?? 12
-  const missing = props.view.kind === 'worktreeMissing'
-  const tint = missing ? colors.warning : colors.mutedForeground
+  // The read-only banner under the transcript is the notice. Repeating it
+  // beside the project name only crowds the title row.
+  if (props.view.kind === 'worktreeMissing') return null
+  const tint = colors.mutedForeground
   const label = sessionGitLabel(props.view)
   const tappable = props.view.kind === 'branch' && !!props.onPress
   const body = (

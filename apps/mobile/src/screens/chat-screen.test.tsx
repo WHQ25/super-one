@@ -156,7 +156,9 @@ test.each([
     inputComposer: <Text>Answer question</Text>, voiceComposer: <Text>Voice controls</Text>,
   }), scheme, locale)
 
-  expect(screen.getByText(message)).toBeTruthy()
+  const notice = screen.getByText(message)
+  expect(notice.props.numberOfLines).toBe(1)
+  expect(notice).toHaveStyle({ fontSize: 11 })
   expect(screen.getByTestId('chat-webview')).toBeTruthy()
   expect(screen.queryByLabelText('Message')).toBeNull()
   expect(screen.queryByLabelText('Send')).toBeNull()

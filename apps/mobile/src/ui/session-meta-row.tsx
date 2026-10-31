@@ -12,8 +12,8 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
  *
  * Its own component rather than markup inside `MobileHeader` so the preview
  * gallery can walk every state through the shipping code — the states that
- * matter most here (reconnect backoff, a deleted worktree) are the ones a
- * healthy session never reaches.
+ * matter most here (reconnect backoff, a removed worktree that leaves only
+ * the project name) are the ones a healthy session never reaches.
  */
 export function SessionMetaRow(props: {
   deviceStatus: DeviceStatus

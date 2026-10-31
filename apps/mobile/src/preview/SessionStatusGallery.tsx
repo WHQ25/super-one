@@ -29,9 +29,10 @@ const BRANCH: SessionGitView = { kind: 'branch', branch: 'feat/mobile-ui', dirty
  *
  * It exists because the interesting states are the unreachable ones: a healthy
  * session is `connectedLan` on a clean branch forever, and the reconnect
- * countdown, a detached worktree and a deleted worktree only appear when
- * something has gone wrong on the desktop. Reproducing those by hand means
- * pulling a cable or deleting a directory mid-session.
+ * countdown and a detached worktree only appear when something has gone wrong
+ * on the desktop. A removed worktree leaves the project name alone; the
+ * read-only banner is the notice. Reproducing those by hand means pulling a
+ * cable or deleting a directory mid-session.
  *
  * The rows render the shipping `SessionMetaRow`, not a copy of it, so a change
  * to the real component shows up here or nowhere.
@@ -65,7 +66,7 @@ function buildRows(deadlineMs: number): Row[] {
       git: { kind: 'worktreeBranch', branch: 'review/pr-482' } },
     { label: 'Checkout · detached worktree', status: 'connectedLan', subtitle: 'super-one',
       git: { kind: 'worktreeDetached', head: '9f3c1d7' } },
-    { label: 'Checkout · worktree deleted under the session', status: 'connectedLan', subtitle: 'super-one',
+    { label: 'Checkout · removed worktree stays off this line', status: 'connectedLan', subtitle: 'super-one',
       git: { kind: 'worktreeMissing' } },
     { label: 'No checkout known yet', status: 'connectedLan', subtitle: 'super-one' },
     { label: 'No project · harness name stands in', status: 'connectedLan', subtitle: 'Claude Code' },

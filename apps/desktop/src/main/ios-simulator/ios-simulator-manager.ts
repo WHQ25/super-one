@@ -68,6 +68,13 @@ export type { IosSimulatorChromePort, IosSimulatorNativePort, IosSimulatorPort }
 const FOLD_SWEEP_MS = 600
 const FOLD_MIN_SWEEP_MS = 120
 const CLOSED: IosSimulatorFoldPosition = { hingeDegrees: 0, tent: false, laptop: false }
+/**
+ * A preview that dies in a tight loop is left stopped after this many reopens.
+ * Each reopen costs a new encoder and up to a second before the next keyframe,
+ * and a helper that cannot hold a socket would otherwise do that forever.
+ * A frame that actually paints clears the count.
+ */
+const PREVIEW_RESTART_LIMIT = 3
 
 interface NativeSession {
   udid: string
@@ -143,6 +150,8 @@ export class IosSimulatorManager {
   private readonly nativeSessions = new Map<string, NativeSession>()
   private readonly nativeFlights = new Map<string, Promise<NativeSession>>()
   private readonly streams = new Map<string, PreviewStream>()
+  /** udid -> how many times the current preview has been reopened after an interruption. */
+  private readonly previewRestarts = new Map<string, number>()
   // Start and stop must not interleave: both end up calling into one helper that
   // rejects a second `stream.start`, and a late stop would close the stream its
   // successor just opened.
@@ -1104,6 +1113,8 @@ export class IosSimulatorManager {
       if (existing) await this.disposeNativeSession(udid)
       const layout = await this.foldLayoutOf(udid)
       const client = await this.nativeFactory()
+      client.watchExit?.((error) => this.onHelperExit(udid, error))
+      client.watchFrameStream?.((reason) => this.onFrameSocketClosed(udid, reason))
       let lastError: unknown
       for (let attempt = 0; attempt < this.attachAttempts; attempt++) {
         try {
@@ -1201,7 +1212,52 @@ export class IosSimulatorManager {
         : new Uint8Array(packet.data.buffer, packet.data.byteOffset, packet.data.byteLength),
     }
     if (codecConfig) stream.lastConfigFrame = frame
+    else this.previewRestarts.delete(udid)
     for (const callback of stream.listeners) callback(frame)
+  }
+
+  /**
+   * The helper process is gone. Rebuilding waits on the next `ensureNativeSession`,
+   * which nothing calls until the next tap, so a panel that is only watching stays
+   * on the last frame. This is that call.
+   */
+  private onHelperExit(udid: string, error: Error): void {
+    this.reopenPreview(udid, `helper exited: ${error.message}`, false)
+  }
+
+  /**
+   * Frames stopped and the process did not. A dead process closes the socket too;
+   * that close is ignored so the exit path is the one that rebuilds.
+   */
+  private onFrameSocketClosed(udid: string, reason: string): void {
+    if (this.nativeSessions.get(udid)?.client.alive === false) return
+    this.reopenPreview(udid, reason, true)
+  }
+
+  private reopenPreview(udid: string, reason: string, recycleFrames: boolean): void {
+    if (!this.owners.has(udid)) return
+    const stream = this.streams.get(udid)
+    if (!stream || stream.listeners.size === 0) {
+      log.warn('[ios-simulator] preview stream interrupted', udid, reason)
+      return
+    }
+    const count = this.previewRestarts.get(udid) ?? 0
+    if (count > PREVIEW_RESTART_LIMIT) return
+    if (count === PREVIEW_RESTART_LIMIT) {
+      this.previewRestarts.set(udid, count + 1)
+      stream.started = false
+      stream.lastConfigFrame = null
+      log.warn('[ios-simulator] preview stream left stopped after repeated interruptions', udid, reason)
+      this.onStreamError(udid, new Error(reason))
+      return
+    }
+    this.previewRestarts.set(udid, count + 1)
+    log.warn('[ios-simulator] preview stream interrupted', udid, reason)
+    stream.lastConfigFrame = null
+    // Leave `started` set when the process is still up, so the reopen closes the
+    // old socket before `stream.start`. A dead process skips that and is rebuilt.
+    if (!recycleFrames) stream.started = false
+    void this.startStream(udid, recycleFrames)
   }
 
   /**
@@ -1218,6 +1274,7 @@ export class IosSimulatorManager {
     if (!stream) return
     if (!force && stream.listeners.size > 0) return
     this.streams.delete(udid)
+    this.previewRestarts.delete(udid)
     stream.listeners.clear()
     await this.nativeSessions.get(udid)?.client.closeFrames()
   }

@@ -15,6 +15,7 @@ const electron = vi.hoisted(() => ({
       postMessage: ReturnType<typeof vi.fn>
     }
   }>,
+  rejectPost: false,
 }))
 
 vi.mock('electron', () => ({
@@ -33,7 +34,9 @@ vi.mock('electron', () => ({
       close: vi.fn(),
       on: vi.fn(),
       start: vi.fn(),
-      postMessage: vi.fn(),
+      postMessage: vi.fn(() => {
+        if (electron.rejectPost) throw new Error('port closed')
+      }),
     }
 
     constructor() {
@@ -45,6 +48,7 @@ vi.mock('electron', () => ({
 vi.mock('../logger', () => ({ default: { warn: vi.fn() } }))
 
 import { closeDevicePorts, registerDeviceIpc } from './ipc'
+import log from '../logger'
 
 const IOS_DEVICE: DeviceDescriptor = {
   id: 'ios-sim:sim-1',
@@ -95,6 +99,7 @@ beforeEach(() => {
   electron.handlers.clear()
   electron.listeners.clear()
   electron.ports.length = 0
+  electron.rejectPost = false
 })
 
 afterEach(() => closeDevicePorts())
@@ -211,5 +216,28 @@ describe('device IPC routing', () => {
     expect(unsubscribeIos).not.toHaveBeenCalled()
     expect(ios.subscribe).toHaveBeenCalledOnce()
     expect(android.subscribe).toHaveBeenCalledOnce()
+  })
+
+  it('closes the preview port when a frame cannot be delivered', () => {
+    const ios = surface('ios-sim')
+    const unsubscribe = vi.fn()
+    let deliver: ((frame: never) => void) | null = null
+    vi.mocked(ios.subscribe).mockImplementation((_deviceId, listener) => {
+      deliver = listener as (frame: never) => void
+      return unsubscribe
+    })
+    electron.rejectPost = true
+    registerDeviceIpc({ surfaces: () => [ios], listDevices: async () => [] })
+
+    const event = { sender: { id: 7, postMessage: vi.fn() }, ports: [] }
+    electron.listeners.get(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN)!(event, 'ios-sim:sim-1')
+    deliver?.({} as never)
+
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(log.warn).toHaveBeenCalledWith(
+      '[device] preview port closed',
+      'ios-sim:sim-1',
+      expect.any(Error),
+    )
   })
 })

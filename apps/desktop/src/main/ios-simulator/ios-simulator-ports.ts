@@ -67,6 +67,17 @@ export interface IosSimulatorNativePort {
     quality: IosSimulatorPreviewQuality,
     listener: (frame: NativeFramePacket) => void,
   ): Promise<IosSimulatorNativeStreamInfo>
+  /**
+   * One notice when the helper process exits on its own. `dispose` does not call
+   * it: the owner is already tearing the session down, and a restart there would
+   * race that teardown.
+   */
+  watchExit?(listener: (error: Error) => void): void
+  /**
+   * The frame socket closed outside `closeFrames`. The process can still be
+   * alive, so the owner restarts the stream instead of rebuilding the runtime.
+   */
+  watchFrameStream?(listener: (reason: string) => void): void
   closeFrames(): Promise<void>
   input(input: IosSimulatorInput): Promise<IosSimulatorInputResult>
   dumpAccessibility(options?: { maxDepth?: number; maxNodes?: number })

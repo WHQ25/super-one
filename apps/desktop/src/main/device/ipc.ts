@@ -163,7 +163,12 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
       let unsubscribe = () => {}
       try {
         unsubscribe = forDevice(deviceId).subscribe(deviceId, (frame) => {
-          try { port2.postMessage(frame) } catch { closePort(key) }
+          try { port2.postMessage(frame) } catch (error) {
+            // The renderer keeps the last bitmap until something asks again.
+            // Closing here is what makes its port fire `onclose` and do that.
+            log.warn('[device] preview port closed', deviceId, error)
+            closePort(key)
+          }
         }, streamOptions)
       } catch (error: unknown) {
         // Without this the panel sits on its spinner forever: a stream that never

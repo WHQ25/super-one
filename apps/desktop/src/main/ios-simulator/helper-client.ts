@@ -256,6 +256,13 @@ export class IosSimulatorHelperRuntime {
    * restarted child would answer every request from a device it never attached to.
    */
   private crashed = false
+  private exitNotified = false
+  private exitWatcher: ((error: Error) => void) | null = null
+  private frameWatcher: ((reason: string) => void) | null = null
+  /** Bumped by `closeFrames` so a socket close from that teardown is not a failure. */
+  private frameEpoch = 0
+  private frameCloseSuppressed = false
+  private frameEndScheduled = false
   private readonly touchUpdates = new LatestValueQueue<
     Extract<IosSimulatorInput, { type: 'touch.update' }>,
     IosSimulatorInputResult
@@ -289,16 +296,48 @@ export class IosSimulatorHelperRuntime {
     // write below is exactly when it fires. `exit` already fails the pending map.
     child.stdin.on('error', () => undefined)
     child.on('error', (error) => {
-      this.crashed = true
-      this.failAll(error)
+      this.notifyExit(error)
     })
     child.on('exit', (code, signal) => {
       this.process = null
       this.attached = null
-      this.crashed = true
-      this.failAll(new Error(
+      this.notifyExit(new Error(
         `iOS helper exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})${this.stderrTail.trim() ? `: ${this.stderrTail.trim()}` : ''}`,
       ))
+    })
+  }
+
+  /** The owner rebuilds from this. `dispose` never reaches it. */
+  watchExit(listener: (error: Error) => void): void {
+    this.exitWatcher = listener
+  }
+
+  /** The owner restarts the frame stream from this, without replacing the process. */
+  watchFrameStream(listener: (reason: string) => void): void {
+    this.frameWatcher = listener
+  }
+
+  private notifyExit(error: Error): void {
+    this.crashed = true
+    this.failAll(error)
+    if (this.disposed || this.exitNotified) return
+    this.exitNotified = true
+    this.exitWatcher?.(error)
+  }
+
+  /**
+   * A socket close during `closeFrames`, or one that arrives because the process
+   * already died, is not a separate failure. The exit notice is what restarts a
+   * dead process; this one is only for a live process whose frames went away.
+   */
+  private scheduleFrameEnd(reason: string): void {
+    if (this.frameCloseSuppressed || this.disposed || this.crashed || this.frameEndScheduled) return
+    this.frameEndScheduled = true
+    const epoch = this.frameEpoch
+    setImmediate(() => {
+      this.frameEndScheduled = false
+      if (epoch !== this.frameEpoch || this.frameCloseSuppressed || this.disposed || this.crashed) return
+      this.frameWatcher?.(reason)
     })
   }
 
@@ -482,9 +521,18 @@ export class IosSimulatorHelperRuntime {
     const queuedFrames: NativeFramePacket[] = []
     let started = false
     const server = createServer((socket) => {
-      this.frameSocket?.destroy()
+      // Replace first. Destroying the previous socket emits `close` synchronously,
+      // and that close has to see it is no longer the current one.
+      const previous = this.frameSocket
       this.frameSocket = socket
+      previous?.destroy()
       this.frameParser = new NativeFrameParser()
+      socket.on('error', () => undefined)
+      socket.on('close', () => {
+        if (this.frameSocket !== socket) return
+        this.frameSocket = null
+        this.scheduleFrameEnd('frame socket closed')
+      })
       socket.on('data', (chunk) => {
         try {
           for (const frame of this.frameParser.push(chunk)) {
@@ -570,19 +618,25 @@ export class IosSimulatorHelperRuntime {
   }
 
   async closeFrames(): Promise<void> {
+    this.frameEpoch += 1
+    this.frameCloseSuppressed = true
     this.negotiatedStream = null
-    if (this.frameServer && this.process) {
-      await this.request('stream.stop').catch(() => undefined)
+    try {
+      if (this.frameServer && this.process) {
+        await this.request('stream.stop').catch(() => undefined)
+      }
+      this.frameSocket?.destroy()
+      this.frameSocket = null
+      await new Promise<void>((resolve) => {
+        if (!this.frameServer) { resolve(); return }
+        this.frameServer.close(() => resolve())
+      })
+      this.frameServer = null
+      if (this.frameDirectory) await rm(this.frameDirectory, { recursive: true, force: true })
+      this.frameDirectory = null
+    } finally {
+      this.frameCloseSuppressed = false
     }
-    this.frameSocket?.destroy()
-    this.frameSocket = null
-    await new Promise<void>((resolve) => {
-      if (!this.frameServer) { resolve(); return }
-      this.frameServer.close(() => resolve())
-    })
-    this.frameServer = null
-    if (this.frameDirectory) await rm(this.frameDirectory, { recursive: true, force: true })
-    this.frameDirectory = null
   }
 
   async dispose(): Promise<void> {

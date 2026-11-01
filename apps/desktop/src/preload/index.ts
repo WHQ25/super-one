@@ -19,6 +19,7 @@ import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceI
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
 import { forEachAgentEventPayload } from './agent-event-payload'
+import { DeviceStreamPorts, type DeviceFramePort } from './device-stream-ports'
 import { createAutomationCallInbox, type BrowserAutomationCall } from './browser-automation-inbox'
 import { isGlassPlatformSupported } from '../main/window-glass'
 import type { SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
@@ -94,21 +95,20 @@ const agentAPI = {
 // and a shared set handed every panel every other panel's frames for it to discard —
 // four panels at 60fps meant 720 dispatches a second, 3/4 of them wasted.
 const deviceFrameListeners = new Map<string, Set<(frame: DeviceFrame) => void>>()
-const devicePorts = new Map<string, MessagePort>()
+const deviceStreamPorts = new DeviceStreamPorts(
+  (deviceId, options) => ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN, deviceId, options),
+  (deviceId) => ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE, deviceId),
+  deviceFrameListeners,
+)
 
 ipcRenderer.on(
   AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_PORT,
   (event, payload: { deviceId: string }) => {
     const port = event.ports[0]
     if (!port) return
-    devicePorts.get(payload.deviceId)?.close()
-    devicePorts.set(payload.deviceId, port)
-    port.onmessage = (message) => {
-      const frame = message.data as DeviceFrame
-      const listeners = deviceFrameListeners.get(payload.deviceId)
-      if (listeners) for (const listener of listeners) listener(frame)
-    }
-    port.start()
+    // DOM `MessagePort` types omit `close`, which Chromium does fire when main
+    // closes its end. The cast is that event, not a different object.
+    deviceStreamPorts.accept(payload.deviceId, port as unknown as DeviceFramePort)
   },
 )
 
@@ -244,11 +244,9 @@ const environmentAPI = {
     return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_DEVICE_ENVIRONMENT_CHANGED, handler)
   },
   openDeviceStream: (deviceId: string, options?: DeviceStreamOptions) =>
-    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN, deviceId, options),
+    deviceStreamPorts.open(deviceId, options),
   closeDeviceStream: (deviceId: string) => {
-    devicePorts.get(deviceId)?.close()
-    devicePorts.delete(deviceId)
-    ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_CLOSE, deviceId)
+    deviceStreamPorts.close(deviceId)
   },
   onDeviceFrame: (deviceId: string, callback: (frame: DeviceFrame) => void) => {
     const listeners = deviceFrameListeners.get(deviceId) ?? new Set()

@@ -772,7 +772,10 @@ describe('IosSimulatorManager stream lifetime', () => {
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
     if (cause === 'dead helper') harness.crashHelper()
     const ready = new IosSimulatorDevicePort(manager).waitForPreview('ios-sim:device-a')
-    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
+    // A dead helper reopens on its own, and the preview wait asks for one more fresh stream.
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(
+      cause === 'dead helper' ? 3 : 2,
+    ))
     harness.emitFrame({ kind: 'h264', keyframe: true, timestampUs: 100, data: Buffer.from([1]) })
     expect(panel).toHaveBeenCalled()
     await ready
@@ -810,6 +813,89 @@ describe('IosSimulatorManager stream lifetime', () => {
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(3))
     expect(harness.nativeFactory).toHaveBeenCalledTimes(2)
     stopRetry()
+    stop()
+    await manager.dispose()
+  })
+
+  it('reopens the preview when the frame socket closes under a watching panel', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const manager = bootedManager(harness)
+    await manager.bind('session-a', 'device-a')
+    const stop = manager.subscribe('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    harness.dropFrameSocket()
+
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
+    expect(harness.native.closeFrames).toHaveBeenCalled()
+    // The process never died, so the same runtime is asked for a new stream.
+    expect(harness.nativeFactory).toHaveBeenCalledTimes(1)
+    stop()
+    await manager.dispose()
+  })
+
+  it('reopens the preview when the helper exits while a panel is only watching', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const manager = bootedManager(harness)
+    await manager.bind('session-a', 'device-a')
+    const stop = manager.subscribe('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
+
+    harness.crashHelper()
+
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
+    expect(harness.nativeFactory).toHaveBeenCalledTimes(2)
+    stop()
+    await manager.dispose()
+  })
+
+  it('stops reopening a preview that keeps dropping its frame socket', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const errors = vi.fn()
+    const manager = new IosSimulatorManager({
+      simctl: harness.simctl,
+      capture: harness.capture,
+      captureRoot: '/tmp/superone-ios-captures',
+      nativeFactory: harness.nativeFactory,
+      helperProbe: async () => null,
+      attachAttempts: 1,
+      onStreamError: errors,
+    })
+    await manager.bind('session-a', 'device-a')
+    const stop = manager.subscribe('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      harness.dropFrameSocket()
+      await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(attempt + 2))
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    harness.dropFrameSocket()
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledTimes(1))
+    expect(harness.native.startFrames).toHaveBeenCalledTimes(4)
+    stop()
+    await manager.dispose()
+  })
+
+  it('reopens again after a painted frame clears the interruption count', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const manager = bootedManager(harness)
+    await manager.bind('session-a', 'device-a')
+    const stop = manager.subscribe('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      harness.dropFrameSocket()
+      await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(attempt + 2))
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    // The next drop would be the one that gives up. A painted frame puts that back.
+    harness.emitFrame()
+    harness.dropFrameSocket()
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(5))
     stop()
     await manager.dispose()
   })

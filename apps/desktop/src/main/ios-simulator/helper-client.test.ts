@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
+  IOS_SIMULATOR_PROTOCOL_VERSION,
+} from '@superone/shared/ios-simulator'
 import {
   IosSimulatorHelperRuntime,
   isCoalescibleTouchUpdate,
@@ -119,5 +126,76 @@ describe('IosSimulatorHelperRuntime lifetime', () => {
     const second = await runtime.input({ type: 'insertText', text: 'hello' })
 
     expect(second).toEqual({ ok: false, error: 'iOS helper runtime exited.' })
+  })
+
+  it('tells the owner when the process exits', async () => {
+    const runtime = new IosSimulatorHelperRuntime(DEAD_HELPER)
+    const exited = new Promise<Error>((resolve) => runtime.watchExit(resolve))
+
+    const result = await runtime.input({ type: 'insertText', text: 'hello' })
+
+    expect(result.ok).toBe(false)
+    expect((await exited).message).toMatch(/iOS helper exited/)
+  })
+})
+
+describe('IosSimulatorHelperRuntime frame socket', () => {
+  const directories: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+  })
+
+  async function script(hold: boolean): Promise<string> {
+    const directory = await mkdtemp(join(tmpdir(), 'superone-helper-script-'))
+    directories.push(directory)
+    const path = join(directory, 'helper')
+    await writeFile(path, `#!/usr/bin/env node
+const net = require('net')
+let buf = ''
+process.stdout.write(JSON.stringify({ event: 'ready', protocolVersion: ${IOS_SIMULATOR_PROTOCOL_VERSION} }) + '\\n')
+process.stdin.on('data', (chunk) => {
+  buf += chunk
+  let nl
+  while ((nl = buf.indexOf('\\n')) >= 0) {
+    const line = buf.slice(0, nl)
+    buf = buf.slice(nl + 1)
+    if (!line) continue
+    const msg = JSON.parse(line)
+    if (msg.method === 'stream.start') {
+      const socket = net.connect(msg.params.socketPath, () => {
+        if (!${hold}) socket.end()
+      })
+      socket.on('error', () => undefined)
+    }
+    process.stdout.write(JSON.stringify({ id: msg.id, ok: true, result: { codec: 'h264', pixelWidth: 8, pixelHeight: 8 } }) + '\\n')
+  }
+})
+`)
+    await chmod(path, 0o755)
+    return path
+  }
+
+  it('reports a frame socket that closes on its own', async () => {
+    const runtime = new IosSimulatorHelperRuntime(await script(false))
+    const ended = new Promise<string>((resolve) => runtime.watchFrameStream(resolve))
+
+    await runtime.startFrames('native-h264', DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY, () => undefined)
+
+    await expect(ended).resolves.toBe('frame socket closed')
+    await runtime.dispose()
+  })
+
+  it('stays quiet when the owner closes the frame socket', async () => {
+    const runtime = new IosSimulatorHelperRuntime(await script(true))
+    let ended = false
+    runtime.watchFrameStream(() => { ended = true })
+    await runtime.startFrames('native-h264', DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY, () => undefined)
+
+    await runtime.closeFrames()
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(ended).toBe(false)
+    await runtime.dispose()
   })
 })

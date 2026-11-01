@@ -53,6 +53,8 @@ export function setup(initial = device()) {
   }
   let streamInfo: IosSimulatorNativeStreamInfo | null = null
   let alive = true
+  let onExit: ((error: Error) => void) | null = null
+  let onFrameEnd: ((reason: string) => void) | null = null
   let guestLandscape = false
   let guestFollowsRotation = true
   const native = {
@@ -97,6 +99,8 @@ export function setup(initial = device()) {
       return streamInfo
     }),
     closeFrames: vi.fn(async () => { frameListener = null; streamInfo = null }),
+    watchExit: (listener: (error: Error) => void) => { onExit = listener },
+    watchFrameStream: (listener: (reason: string) => void) => { onFrameEnd = listener },
     input: vi.fn(async (input: IosSimulatorInput) => {
       // The app may follow the device turn or keep its content orientation locked.
       if (input.type === 'rotate' && guestFollowsRotation) {
@@ -142,6 +146,13 @@ export function setup(initial = device()) {
       attachment = null
       frameListener = null
       streamInfo = null
+      onExit?.(new Error('iOS helper exited (code=1, signal=null)'))
+    },
+    /** The process stays up; only the frame socket drops. */
+    dropFrameSocket: () => {
+      frameListener = null
+      streamInfo = null
+      onFrameEnd?.('frame socket closed')
     },
     emitFrame: (frame: NativeFramePacket = {
       kind: 'h264', keyframe: true, timestampUs: 123_000,

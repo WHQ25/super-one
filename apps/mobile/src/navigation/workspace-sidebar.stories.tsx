@@ -95,6 +95,37 @@ export const LongTitles = {
   },
 }
 
+const parkedDraft = {
+  id: 'draft-1',
+  title: 'Continue the mobile composer migration',
+  text: 'Continue the mobile composer migration',
+  docJson: null,
+  projectPath: '/repo',
+  attachments: [],
+  harness: 'codex' as const,
+  model: null,
+  permissionMode: null,
+  settings: {},
+  originSessionId: null,
+  createdAt: '2026-09-12T00:00:00Z',
+  updatedAt: '2026-09-12T00:00:00Z',
+}
+
+export const FoldedGroups = {
+  render: (props: WorkspaceSidebarProps) => {
+    const cache = new WorkspaceListCache()
+    cache.pinned = {
+      rows: [{ sessionId: 'p1', title: 'Pinned Codex session', projectPath: '/repo', projectName: 'repo', isPinned: true, provider: 'codex' }],
+      revision: 0,
+    }
+    cache.pinnedRevision = 0
+    cache.pinnedCollapsed = true
+    cache.draftsCollapsed = true
+    return <Frame><WorkspaceSidebar {...props} cache={cache} drafts={[parkedDraft]} onOpenDraft={() => {}} onDeleteDraft={() => {}} /></Frame>
+  },
+  name: 'Folded · pinned and drafts',
+}
+
 export const Narrow = {
   render: (props: WorkspaceSidebarProps) => (
     <Frame width={240}><WorkspaceSidebar {...props} /></Frame>

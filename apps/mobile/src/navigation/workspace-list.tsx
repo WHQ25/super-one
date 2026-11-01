@@ -9,6 +9,7 @@ import { useMobileTheme } from '../theme/context'
 import type { WorkspaceListCache } from '../workspace-list-cache'
 import { IconButton, SwipeSessionRow } from '../ui'
 import { SessionRowContent } from '../ui/session-row-content'
+import { CollapsiblePanel, WorkspaceSectionHeading } from '../ui/workspace-section-heading'
 import { useMobileLocale } from '../i18n/context'
 import { WorkspaceProjectRow } from './workspace-project-row'
 import { readPinnedSessions } from './workspace-data'
@@ -82,6 +83,18 @@ export function WorkspaceList(props: WorkspaceListProps) {
 
   const { client } = props
   const [pinned, setPinned] = useState<SessionListRow[]>(() => cache.pinned?.rows ?? [])
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(cache.pinnedCollapsed)
+  const [draftsCollapsed, setDraftsCollapsed] = useState(cache.draftsCollapsed)
+  const togglePinned = () => {
+    const next = !pinnedCollapsed
+    cache.pinnedCollapsed = next
+    setPinnedCollapsed(next)
+  }
+  const toggleDrafts = () => {
+    const next = !draftsCollapsed
+    cache.draftsCollapsed = next
+    setDraftsCollapsed(next)
+  }
   const refreshPinned = useCallback(() => {
     if (!client) return
     const revision = cache.pinnedRevision
@@ -106,7 +119,14 @@ export function WorkspaceList(props: WorkspaceListProps) {
   }, [visible, props.listRevision, cache, refreshPinned])
 
   const { onLeave } = props
-  const leave = (run: () => void) => { onLeave?.(); run() }
+  // The drawer closes itself first. The persistent sidebar has nothing to
+  // close. The callback's result is returned so opening a draft stays parked
+  // until that open finishes; dropping the promise let the row pop back in
+  // while it was still flying out.
+  const leave = <T,>(run: () => T): T => {
+    onLeave?.()
+    return run()
+  }
   /**
    * The project a pinned row lives in. `list_pinned_sessions` is cross-project
    * and always names one, so a row without it has nothing to act on — rather
@@ -147,41 +167,49 @@ export function WorkspaceList(props: WorkspaceListProps) {
 
     <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 16 }}>
       {pinned.length ? <View style={{ paddingBottom: 6 }}>
-        <Text style={{ paddingHorizontal: 12, paddingBottom: 2, color: colors.mutedForeground, fontSize: 12 }}>{t('Pinned')}</Text>
+        <WorkspaceSectionHeading section="pinned" title={t('Pinned')} count={pinned.length} collapsed={pinnedCollapsed} onToggle={togglePinned} />
         {/* The same swipe the project lists carry, so unpinning happens where
             the pin is visible instead of only where the session lives. */}
-        {pinned.map((session) => {
-          const project = pinnedProject(session)
-          if (!project) return null
-          const actions = listActionsFor(project)
-          return <SwipeSessionRow
-            key={session.sessionId}
-            sessionId={session.sessionId}
-            title={session.title}
-            pinned={session.isPinned ?? true}
-            onPress={() => actions.onOpenSession(session)}
-            onPin={() => { void actions.onPinSession(session, false) }}
-            onSettle={() => { void actions.onSettleSession(session, true) }}
-            onDelete={() => { void actions.onDeleteSession(session) }}
-          >
-            {({ revealed }) => <SessionRowContent
-              item={{ session: { ...session, isPinned: true }, child: false, hasChildren: false, collapsed: false }}
-              selected={session.sessionId === props.activeSessionId}
-              surface="panel"
-              revealed={revealed}
-              branded
-              subtitle={session.projectName}
-            />}
-          </SwipeSessionRow>
-        })}
+        <CollapsiblePanel open={!pinnedCollapsed} testID="workspace-pinned-panel">
+          {pinned.map((session) => {
+            const project = pinnedProject(session)
+            if (!project) return null
+            const actions = listActionsFor(project)
+            return <SwipeSessionRow
+              key={session.sessionId}
+              sessionId={session.sessionId}
+              title={session.title}
+              pinned={session.isPinned ?? true}
+              onPress={() => actions.onOpenSession(session)}
+              onPin={() => { void actions.onPinSession(session, false) }}
+              onSettle={() => { void actions.onSettleSession(session, true) }}
+              onDelete={() => { void actions.onDeleteSession(session) }}
+            >
+              {({ revealed }) => <SessionRowContent
+                item={{ session: { ...session, isPinned: true }, child: false, hasChildren: false, collapsed: false }}
+                selected={session.sessionId === props.activeSessionId}
+                surface="panel"
+                revealed={revealed}
+                branded
+                subtitle={session.projectName}
+              />}
+            </SwipeSessionRow>
+          })}
+        </CollapsiblePanel>
       </View> : null}
 
+      {props.onOpenDraft && props.onDeleteDraft ? <WorkspaceDrafts
+        drafts={props.drafts ?? []}
+        activeDraftId={props.activeDraftId}
+        collapsed={draftsCollapsed}
+        onToggleCollapsed={toggleDrafts}
+        onOpenDraft={(draft) => leave(() => props.onOpenDraft!(draft))}
+        onDeleteDraft={props.onDeleteDraft}
+      /> : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 2, paddingBottom: 2 }}>
         <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>{t('Projects')}</Text>
         <IconButton icon={FolderPlus} label="Add project" onPress={() => leave(props.onAddProject)} chrome="plain" color={colors.mutedForeground} />
       </View>
-      {props.onOpenDraft && props.onDeleteDraft ? <WorkspaceDrafts drafts={props.drafts ?? []} activeDraftId={props.activeDraftId}
-        onOpenDraft={(draft) => leave(() => props.onOpenDraft!(draft))} onDeleteDraft={props.onDeleteDraft} /> : null}
       {!props.projects.length ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No projects yet. Add one to start a session.')}</Text> : null}
       {props.projects.map((project) => <WorkspaceProjectRow
         key={project.path}

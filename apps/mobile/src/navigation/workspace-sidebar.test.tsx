@@ -137,6 +137,39 @@ test('a change in any project re-reads the Pinned section, which spans them all'
   expect(calls('sessionList.page')).toBe(1)
 })
 
+test('folds pinned sessions behind the pin icon and keeps that fold across a remount', async () => {
+  const { client } = host()
+  const { rerender } = await renderWithTheme(remountable(true, { client }))
+  await waitFor(() => expect(screen.getByText('Pinned one')).toBeTruthy())
+  expect(screen.getByTestId('workspace-section-icon-pinned')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Pinned', expanded: true })).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByTestId('workspace-section-pinned')) })
+  expect(screen.getByRole('button', { name: 'Pinned, 1', expanded: false })).toBeTruthy()
+  expect(screen.getByTestId('workspace-section-count-pinned')).toBeTruthy()
+  expect(screen.getByTestId('workspace-pinned-panel', { includeHiddenElements: true }).props.accessibilityElementsHidden).toBe(true)
+  expect(screen.getByText('Pinned one', { includeHiddenElements: true })).toBeTruthy()
+
+  await rerender(remountable(false, { client }))
+  await rerender(remountable(true, { client }))
+  expect(screen.getByRole('button', { name: 'Pinned, 1', expanded: false })).toBeTruthy()
+})
+
+test('a remount keeps a folded Drafts group', async () => {
+  const draft = {
+    id: 'draft-1', title: 'Parked note', text: 'Parked note', docJson: null, projectPath: '/repo',
+    attachments: [], harness: 'codex' as const, model: null, permissionMode: null, settings: {},
+    originSessionId: null, createdAt: '2026-09-12T00:00:00Z', updatedAt: '2026-09-12T00:00:00Z',
+  }
+  const drafts = { drafts: [draft], onOpenDraft: () => {}, onDeleteDraft: () => {} }
+  const { rerender } = await renderWithTheme(remountable(true, drafts))
+  expect(screen.getByTestId('workspace-section-icon-drafts')).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByTestId('workspace-section-drafts')) })
+  expect(cache.draftsCollapsed).toBe(true)
+  await rerender(remountable(false, drafts))
+  await rerender(remountable(true, drafts))
+  expect(screen.getByRole('button', { name: 'Drafts, 1', expanded: false })).toBeTruthy()
+})
+
 test('a remount keeps the projects the user had expanded', async () => {
   const { rerender } = await renderWithTheme(remountable(true, {}))
   await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'other' })) })

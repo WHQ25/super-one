@@ -41,6 +41,12 @@ export class WorkspaceListCache {
     this.persistence?.set('pinned', value ? { rows: value.rows.slice(0, 30), revision: -1 } : null)
   }
   pinnedRevision = 0
+  /**
+   * Pinned and Drafts start open, matching the desktop sidebar. Remembered
+   * here so a drawer remount — and a later persistent pane — keeps the fold.
+   */
+  pinnedCollapsed = false
+  draftsCollapsed = false
   /** Which project rows stand open — also lost on every drawer unmount otherwise. */
   expandedPaths: ReadonlySet<string> = new Set()
   /**

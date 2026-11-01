@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import type { DraftListEntry } from '@superone/shared/environment/draft-rpc'
 import { MobileThemeProvider } from '../theme/context'
+import { Text } from '../ui/text'
 import { WorkspaceDrafts } from './workspace-drafts'
 import { WorkspaceList } from './workspace-list'
 import { WorkspaceListCache } from '../workspace-list-cache'
@@ -31,3 +32,57 @@ export const Interactive = { render: () => <MobileThemeProvider><View style={{ w
 export const Empty = { render: () => <MobileThemeProvider><DraftsPreview empty /></MobileThemeProvider> }
 export const Cleared = { render: () => <MobileThemeProvider><View style={{ width: 280 }}><DraftsPreview cleared /></View></MobileThemeProvider> }
 export const RemoteEditing = { render: () => <MobileThemeProvider><DraftsPreview remote /></MobileThemeProvider> }
+
+/** The open composer is not a row. The other parked draft stays. */
+export const EditingCurrent = {
+  render: () => <MobileThemeProvider><View style={{ width: 280 }}>
+    <WorkspaceDrafts drafts={draftPreviewRows} activeDraftId="draft-1" onOpenDraft={() => {}} onDeleteDraft={() => {}} />
+  </View></MobileThemeProvider>,
+  name: 'Editing · current draft stays out of the list',
+}
+
+export const Folded = {
+  render: () => <MobileThemeProvider><View style={{ width: 280 }}>
+    <WorkspaceDrafts drafts={draftPreviewRows} collapsed onOpenDraft={() => {}} onDeleteDraft={() => {}} />
+  </View></MobileThemeProvider>,
+  name: 'Folded · count, notebook icon',
+}
+
+export const Narrow = {
+  render: () => <MobileThemeProvider><View style={{ width: 220 }}>
+    <WorkspaceDrafts drafts={draftPreviewRows} onOpenDraft={() => {}} onDeleteDraft={() => {}} />
+  </View></MobileThemeProvider>,
+  name: 'Narrow',
+}
+
+export const Light = {
+  render: () => <MobileThemeProvider colorScheme="light"><View style={{ width: 280, backgroundColor: '#fff' }}>
+    <WorkspaceDrafts drafts={draftPreviewRows} onOpenDraft={() => {}} onDeleteDraft={() => {}} />
+  </View></MobileThemeProvider>,
+  name: 'Light',
+}
+
+export const Chinese = {
+  render: () => <MobileThemeProvider locale="zh"><View style={{ width: 280 }}>
+    <WorkspaceDrafts drafts={draftPreviewRows} collapsed onOpenDraft={() => {}} onDeleteDraft={() => {}} />
+  </View></MobileThemeProvider>,
+  name: '中文 · 折叠',
+}
+
+/** A draft that appears after the sidebar is already up flies in from the right. */
+export const Arriving = {
+  render: () => <MobileThemeProvider><View style={{ width: 280 }}>
+    <ArrivingPreview />
+  </View></MobileThemeProvider>,
+  name: 'Arriving · flies in from the right',
+}
+
+function ArrivingPreview() {
+  const [rows, setRows] = useState(draftPreviewRows.slice(0, 1))
+  return <>
+    <Pressable accessibilityRole="button" onPress={() => setRows(draftPreviewRows)} style={{ padding: 12 }}>
+      <Text>Add draft</Text>
+    </Pressable>
+    <WorkspaceDrafts drafts={rows} onOpenDraft={() => {}} onDeleteDraft={(row) => setRows((current) => current.filter((item) => item.id !== row.id))} />
+  </>
+}

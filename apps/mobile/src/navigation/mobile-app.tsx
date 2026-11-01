@@ -2482,8 +2482,16 @@ export function MobileApp() {
     listRevision: sessionListRevision,
     drafts: remoteDrafts.rows,
     activeDraftId: remoteDrafts.activeId,
-    onOpenDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
-      runUiAction(() => runWorkspaceTransition(() => remoteDrafts.open(row)), setStatus, 'Could not open draft'),
+    onOpenDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) => {
+      // Returned, not swallowed: the sidebar keeps the clicked row hidden
+      // until this settles, and a failure has to put that row back.
+      const pending = runWorkspaceTransition(() => remoteDrafts.open(row))
+      void pending.catch((error: unknown) => {
+        const message = errorMessage(error, 'Could not open draft')
+        if (message) setStatus(message)
+      })
+      return pending
+    },
     onDeleteDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
       runUiAction(() => remoteDrafts.remove(row), setStatus, 'Could not delete draft'),
     onNewSession: (p: Project) => runUiAction(() => startNewSession(p), setStatus, 'failed to open project'),

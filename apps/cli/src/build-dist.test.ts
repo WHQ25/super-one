@@ -6,9 +6,6 @@ import { describe, expect, it } from 'vitest'
 import { launcherScript } from '../scripts/build-dist'
 import { npmLauncherSource } from '../scripts/pack-npm'
 
-const NODE_20 = '/Users/wuhangqi25/.nvm/versions/node/v20.18.2/bin/node'
-const NODE_22 = '/Users/wuhangqi25/.nvm/versions/node/v22.13.1/bin/node'
-
 function writeFakeNode(binPath: string, version: string): void {
   mkdirSync(dirname(binPath), { recursive: true })
   writeFileSync(
@@ -72,7 +69,7 @@ function runUploadLauncher(version: string): { status: number; stderr: string; e
   }
 }
 
-function runNpmLauncher(nodeBin: string): { status: number; stderr: string; stdout: string } {
+function runNpmLauncher(nodeVersion: string): { status: number; stderr: string; stdout: string } {
   const root = mkdtempSync(join(tmpdir(), 'superone-npm-launcher-'))
   try {
     mkdirSync(join(root, 'bin'))
@@ -81,8 +78,23 @@ function runNpmLauncher(nodeBin: string): { status: number; stderr: string; stdo
     writeFileSync(launcher, npmLauncherSource())
     chmodSync(launcher, 0o755)
     writeFileSync(join(root, 'lib', 'cli.mjs'), 'console.log("LOADED")\n')
+    // The published bin reads process.versions of the runtime that starts it.
+    // Spoof that in a child of this process so the floor does not depend on a
+    // second Node install or a developer nvm path.
+    const driver = join(root, 'driver.mjs')
+    writeFileSync(
+      driver,
+      `import { pathToFileURL } from 'node:url'
+const nodeVersion = ${JSON.stringify(nodeVersion)}
+Object.defineProperty(process, 'version', { value: 'v' + nodeVersion })
+Object.defineProperty(process, 'versions', {
+  value: { ...process.versions, node: nodeVersion },
+})
+await import(pathToFileURL(${JSON.stringify(launcher)}).href)
+`,
+    )
     try {
-      const stdout = execFileSync(nodeBin, [launcher, 'version'], {
+      const stdout = execFileSync(process.execPath, [driver], {
         encoding: 'utf8',
         env: process.env,
       })
@@ -116,15 +128,15 @@ describe('upload launcher node floor', () => {
 })
 
 describe('npm launcher node floor', () => {
-  it('rejects the installed Node 20 runtime before loading the CLI', () => {
-    const result = runNpmLauncher(NODE_20)
+  it.each(['20.18.2', '22.12.9'])('rejects Node %s before loading the CLI', (version) => {
+    const result = runNpmLauncher(version)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('Node.js 22.13.0+ required')
     expect(result.stdout).not.toContain('LOADED')
   })
 
-  it('loads the CLI on Node 22.13', () => {
-    const result = runNpmLauncher(NODE_22)
+  it.each(['22.13.0', '22.13.1', '24.0.0'])('loads the CLI on Node %s', (version) => {
+    const result = runNpmLauncher(version)
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('LOADED')
   })

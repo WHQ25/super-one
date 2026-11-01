@@ -19,6 +19,12 @@ name: Release Mobile
 # `min_supported_build_code` blank inherits whatever is already published.
 # Raising it locks every older build out with no client-side way back, so it
 # only ever moves when someone types a number here.
+#
+# Android can also skip EAS. `apk_url` is a local `eas build --local` APK,
+# either https or a draft release under `staging/android-apk/` (never `v*`,
+# never `mobile/*`). The runner checks the package, version and build code
+# against this checkout, then publishes through the same script. iOS has no
+# equivalent: an `apk_url` on an iOS or `both` dispatch fails before EAS.
 
 on:
   workflow_dispatch:
@@ -52,6 +58,11 @@ on:
         default: alpha
       build_id:
         description: 'Publish an existing EAS build instead of starting a new one. Use this to re-point latest.json at an older build — that is the rollback. iOS only rewrites its manifest: the build is already on TestFlight.'
+        required: false
+        type: string
+        default: ''
+      apk_url:
+        description: 'Android only. Publish this local APK instead of starting an EAS build. https://… or the gh-release: URL printed by scripts/stage-local-android-apk.ts. Mutually exclusive with build_id. Blank builds on EAS.'
         required: false
         type: string
         default: ''
@@ -96,6 +107,11 @@ on:
         required: false
         type: string
         default: ''
+      apk_url:
+        description: 'Android only. Local APK (https or gh-release:staging/android-apk/…) instead of an EAS build. Mutually exclusive with build_id.'
+        required: false
+        type: string
+        default: ''
       min_supported_build_code:
         description: Raise the hard gate. Blank inherits the published value.
         required: false
@@ -126,6 +142,7 @@ env:
   INPUT_ANDROID_PROFILE: ${{ inputs.android_profile }}
   INPUT_IOS_PROFILE: ${{ inputs.ios_profile }}
   INPUT_BUILD_ID: ${{ inputs.build_id }}
+  INPUT_APK_URL: ${{ inputs.apk_url }}
   INPUT_MIN_SUPPORTED: ${{ inputs.min_supported_build_code }}
   INPUT_TESTFLIGHT_URL: ${{ inputs.testflight_url }}
   INPUT_DRY_RUN: ${{ inputs.dry_run }}
@@ -157,9 +174,23 @@ jobs:
       TRACK: ${{ inputs.android_profile == 'alpha' && 'alpha' || 'stable' }}
     timeout-minutes: 90
     permissions:
-      # Tagging the published build, not pushing to a branch.
+      # Tagging the published build, and downloading or deleting the local-APK
+      # staging draft. Not pushing to a branch.
       contents: write
     steps:
+      # Before checkout. A `both` dispatch must not queue EAS for half of it
+      # while the other half publishes a file.
+      - name: Reject a local APK outside an Android-only run
+        if: ${{ inputs.apk_url != '' && (inputs.platform != 'android' || inputs.build_id != '') }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_PLATFORM}" != android ]; then
+            echo "::error::apk_url publishes one local Android APK; set platform=android (got ${INPUT_PLATFORM})"
+            exit 1
+          fi
+          echo "::error::apk_url and build_id are mutually exclusive"
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
@@ -179,6 +210,7 @@ jobs:
 
       # Before the queue, not at publish. A reused build_id is exempt: it is
       # how stable is rolled back, which must work while the desktop lags.
+      # A local APK is a new binary, so it is not exempt.
       - name: Check the stable desktop floor
         if: ${{ env.TRACK == 'stable' && inputs.build_id == '' }}
         env:
@@ -188,13 +220,28 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         run: bun scripts/publish-mobile-update.ts --check-stable-floor
 
-      - name: Resolve the APK on EAS
+      - name: Resolve the APK
         id: build
-        working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -n "${INPUT_APK_URL}" ]; then
+            # The file is already built. Download it, then refuse a package,
+            # version or build code that is not this checkout's — a dev client
+            # or the other track must not become latest.json. The commit is
+            # this checkout (`inputs.ref`), because a local APK has no EAS
+            # build record to name the tree it came from.
+            bun scripts/stage-local-android-apk.ts --fetch --apk-url "${INPUT_APK_URL}" --out superone.apk
+            bun scripts/android-apk-identity.ts --apk superone.apk --profile "${INPUT_ANDROID_PROFILE}" --github-output "$GITHUB_OUTPUT"
+            BUILD_COMMIT="$(git rev-parse HEAD)"
+            echo "url=local" >> "$GITHUB_OUTPUT"
+            echo "build_commit=${BUILD_COMMIT}" >> "$GITHUB_OUTPUT"
+            echo "Local APK for ${BUILD_COMMIT}"
+            exit 0
+          fi
+          cd apps/mobile
           if [ -z "${EXPO_TOKEN:-}" ]; then
             echo "::error::EXPO_TOKEN secret is not set — an EAS build cannot authenticate"
             exit 1
@@ -266,6 +313,7 @@ jobs:
           echo "Built ${APP_VERSION} (${BUILD_CODE}) from ${BUILD_COMMIT:-unknown}"
 
       - name: Download APK
+        if: ${{ inputs.apk_url == '' }}
         env:
           # Signed and short-lived, so it is fetched in the same job that
           # produced it rather than passed between jobs.
@@ -389,6 +437,16 @@ jobs:
             --title "SuperOne ${LABEL} ${APP_VERSION} (build ${BUILD_CODE})" --notes-file notes.md
           echo "Released ${TAG} with ${ASSET}"
 
+      # After a real publish, not before: a failed publish has to be able to
+      # download the same draft again. A dry run leaves it for the real one.
+      # https URLs have nothing to delete. The script refuses every tag outside
+      # staging/android-apk/, so this cannot remove a desktop or mobile release.
+      - name: Delete the local APK staging draft
+        if: ${{ success() && inputs.dry_run != true && inputs.apk_url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun scripts/stage-local-android-apk.ts --delete --apk-url "${INPUT_APK_URL}"
+
       - name: Upload staged tree (debug artifact)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -413,6 +471,14 @@ jobs:
       # Tagging the published build, not pushing to a branch.
       contents: write
     steps:
+      # apk_url is an Android file. Failing here, before checkout, is what
+      # keeps a `both` or `ios` dispatch from queueing an EAS iOS build for it.
+      - name: Reject a local APK
+        if: ${{ inputs.apk_url != '' }}
+        run: |
+          echo "::error::apk_url is an Android APK; dispatch platform=android (got ${INPUT_PLATFORM})"
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}

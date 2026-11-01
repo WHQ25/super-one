@@ -216,14 +216,55 @@ Leave `android_profile` / `ios_profile`, `min_supported_build_code` and
 jobs run in parallel inside the one run; each holds its own concurrency group,
 so a later single-platform re-dispatch still queues behind it.
 
+### Local Android APK
+
+Use this instead of the Android half of Step 3 when the APK is built on this
+machine (`eas build --local`). iOS stays on EAS, as its own dispatch with no
+`apk_url`. The free EAS plan stops an Android build at 45 minutes; retrying
+does not raise that cap.
+
+`expo run:android` is not this path. It signs with the debug keystore and, for
+the dev variant, a different application id. The workflow checks the package,
+version name and version code against the checkout. It does not check the
+signing certificate, so only `eas build --local` produces an APK that installs
+over the shipped app.
+
+1. Build from a clean checkout of the commit you will pass as `ref`. From
+   `apps/mobile`, pinned to the same CLI the workflow uses:
+   ```bash
+   bunx eas-cli@24.0.0 build --local --platform android --profile alpha
+   ```
+   Stable uses `--profile internal`. The APK stays on disk; EAS does not keep a
+   URL for it.
+2. Stage it. Do not commit the APK, and do not attach it to the desktop Release.
+   ```bash
+   bun scripts/stage-local-android-apk.ts --apk <the path eas printed> --profile alpha
+   ```
+   A dirty mobile tree is refused: the workflow will compare the APK to `ref`,
+   not to uncommitted files. If the build rewrote a tracked file, restore it
+   first; the APK still has to match that commit's version and build code.
+   The script prints `apk_url=gh-release:staging/android-apk/<id>/superone.apk`
+   and `ref=<sha>`. That draft is not a `v*` or `mobile/*` tag.
+3. Dispatch the workflow file from `main` and the app from that `ref`:
+   ```bash
+   gh workflow run release-mobile.yml --ref main \
+     -f platform=android -f android_profile=alpha \
+     -f ref="$SHA" -f apk_url="$APK_URL" -f dry_run=false
+   ```
+   `platform=both` or an iOS dispatch with `apk_url` set fails before EAS.
+   `apk_url` and `build_id` together fail. Then Step 4–6 for Android. After a
+   real publish the workflow deletes the staging draft. A dry run leaves it, so
+   the real dispatch can reuse the same `apk_url`.
+
 ### Step 4: Monitor
 
 ```bash
 gh run watch <run-id> --exit-status
 ```
 
-Wall clock is the EAS queue plus the build: Android typically 15–25 min, iOS
-20–40 min, then `eas submit` hands the IPA to App Store Connect. **TestFlight
+Wall clock for an EAS build is the queue plus the build. iOS is typically
+20–40 min, then `eas submit` hands the IPA to App Store Connect. A local
+Android APK skips that queue; the job is the upload. **TestFlight
 processing continues after the run is green** (a few minutes to an hour); the
 public link already points at the group, and Beta App Review has been passed
 once — later builds do not wait for it.
@@ -252,7 +293,9 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 
 | Failure | Action |
 |---|---|
-| `build code <N+1> does not advance the published <M>` | Step 2 was skipped or a newer binary shipped in between. Bump `build-code.js` past `M`, commit, re-dispatch with the new `ref` |
+| `build code <N+1> does not advance the published <M>` | Step 2 was skipped or a newer binary shipped in between. Bump `build-code.js` past `M`, commit, re-dispatch with the new `ref`. A local APK has to be rebuilt at the new code: the identity check refuses a file that does not match the checkout |
+| `APK does not match this checkout` | The file was built from a different package, version or build code than `ref`. Rebuild `eas build --local` from that commit. A dev client (`.dev`) or the other track will not publish. The staging draft is still there |
+| `apk_url publishes one local Android APK` / `apk_url is an Android APK` | `platform` was `ios` or `both`, or `build_id` was also set. Nothing was queued. Re-dispatch Android alone; dispatch iOS separately without `apk_url` |
 | App Store Connect rejects the build number | Same cause on the iOS side (a `CFBundleVersion` it has seen). Bump again; the Android run is unaffected |
 | One platform job red, the other green | They are independent jobs. `gh run rerun <run-id> --failed` re-runs the red one on the same `ref` (same build code, same commit for both tags). If the fix has to be in the tree, bump the build code again and dispatch fresh — the green platform's build code must not be reused either |
 | Need to re-point a platform at an older build (rollback) | `gh workflow run release-mobile.yml -f platform=<android or ios> -f <android_profile or ios_profile>=<the build's own profile> -f build_id=<older EAS build id> -f ref=<full 40-char SHA> -f dry_run=false` — one platform per dispatch (a build id belongs to one). Skips the EAS queue and rewrites that track's `latest.json` at that build; a profile mismatch is refused. iOS submits nothing, so the build must still be installable in TestFlight, and TestFlight still offers its newest build: expire the bad ones in App Store Connect too. Phones already on a newer build stay there. **For stable, pick the build tagged at the stable desktop's own commit** (`git rev-parse mobile/<platform>/v1.0.0-build<N>^{commit}` equal to `v<stable>^{commit}`), not the newest one below `MIN_PHONE_DESKTOP_VERSION`: breaking phone↔desktop changes from before that constant carry no machine-readable floor (build 35 broke stable 0.72.2 that way) |
@@ -274,7 +317,13 @@ fingerprint move, say that OTA is unblocked again from this build onward.
   on. A platform only gets a binary when its fingerprint moved; the other takes
   an OTA, so the two published codes may differ.
 - **One dispatch per release builds every platform that needs a binary from one
-  `ref`**, so the tags for one build code name one commit.
+  `ref`**, so the tags for one build code name one commit. A local Android APK
+  is the exception: `apk_url` is Android-only, so iOS is a second dispatch
+  without it.
+- **A local APK is staged, not committed.** The draft lives at
+  `staging/android-apk/<id>` and is deleted after a non-dry-run publish. It is
+  never a `v*` tag, never a `mobile/*` tag, and never an asset on the desktop
+  Release.
 - **`alpha` on both platforms** — for builds and for update channels alike.
   Stable (Android `internal`, iOS `production`) is typed only by a stable cut,
   never a default; a stable phone must never require an unreleased stable

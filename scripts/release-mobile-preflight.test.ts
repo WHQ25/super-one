@@ -182,4 +182,32 @@ describe('release-mobile workflow preflight placement', () => {
       expect(submitIndex).toBeGreaterThan(index)
     }
   })
+
+  it('publishes a local Android APK without queueing EAS or iOS', () => {
+    const on = workflow.on as {
+      workflow_dispatch: { inputs: Record<string, { default?: string }> }
+      workflow_call: { inputs: Record<string, { default?: string }> }
+    }
+    expect(on.workflow_dispatch.inputs.apk_url?.default).toBe('')
+    expect(on.workflow_call.inputs.apk_url?.default).toBe('')
+
+    const android = workflow.jobs.android.steps as Array<{ name?: string; id?: string; if?: string; run?: string }>
+    const ios = workflow.jobs.ios.steps as Array<{ name?: string; if?: string; run?: string }>
+    expect(android[0]?.name).toBe('Reject a local APK outside an Android-only run')
+    expect(android[0]?.if).toContain('inputs.apk_url')
+    expect(android[0]?.if).toContain('inputs.build_id')
+    expect(ios[0]?.name).toBe('Reject a local APK')
+    expect(ios[0]?.if).toContain("inputs.apk_url != ''")
+
+    const build = android.find((step) => step.id === 'build')
+    expect(build?.run).toContain('stage-local-android-apk.ts --fetch')
+    expect(build?.run).toContain('android-apk-identity.ts')
+    expect(build?.run?.indexOf('INPUT_APK_URL')).toBeLessThan(build?.run?.indexOf('EXPO_TOKEN secret is not set') ?? -1)
+    expect(android.find((step) => step.name === 'Download APK')?.if).toBe("${{ inputs.apk_url == '' }}")
+
+    const cleanup = android.find((step) => step.name === 'Delete the local APK staging draft')
+    expect(cleanup?.if).toContain('success()')
+    expect(cleanup?.if).toContain('inputs.dry_run != true')
+    expect(cleanup?.run).toContain('--delete')
+  })
 })

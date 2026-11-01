@@ -145,6 +145,8 @@ app's TestFlight; both default to `alpha`; `platform=both` is one dispatch),
 downloads the artifact and runs that script; it needs an `EXPO_TOKEN` secret and defaults
 `dry_run` to true.
 
+A local Android APK can replace that EAS build. `eas build --local --platform android --profile alpha` (stable: `internal`) uses the same profile and the EAS project keystore, so the result installs over that track's app. `expo run:android` does not. The file is not an EAS artifact URL. `scripts/stage-local-android-apk.ts` puts it on a draft Release under `staging/android-apk/` — not `v*`, not `mobile/*`, and not an asset of the desktop Release — and `release-mobile.yml`'s `apk_url` downloads it. Before publish, the runner reads the binary manifest and refuses a package, version name or version code that is not the checkout's. It does not read the signing certificate. iOS has no local path; an `apk_url` there fails before EAS. The release procedure is `.agents/skills/release/references/mobile.md`.
+
 JS-only changes go out through `.github/workflows/update-mobile.yml` instead — `eas
 update`, one publish per platform because the channels differ (`alpha` on both, or
 stable: Android `internal`, iOS `production`). The alpha identity is part of the

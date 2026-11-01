@@ -3,7 +3,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-if (process.env.EAS_BUILD !== 'true') {
+// Cloud EAS sets EAS_BUILD=true. `eas build --local` sets EAS_BUILD=1.
+// Either one is the build sandbox; an ordinary shell has neither.
+if (process.env.EAS_BUILD !== 'true' && process.env.EAS_BUILD !== '1') {
   throw new Error('prepare-eas-install may only run inside EAS Build')
 }
 

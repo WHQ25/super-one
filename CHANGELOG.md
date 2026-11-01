@@ -15,10 +15,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. The choice is stored as the session service tier.
-- With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion.
+- Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. The choice is stored as the session service tier. Ultrafast's trigger is two overlapping bolts; Fast stays one bolt.
+- With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion. The device name floats above the list. An environment card names the machine, its OS, chip, and memory; a connected host adds free memory and one CPU sample. The chip and installed memory stay after disconnect.
+- Finished sessions settle into a project group. The first launch keeps the ten newest non-child sessions in each project and settles the rest. Settling stops that session's harness and, for a parent, its direct children. Collaboration children and scheduled-send shells stay hidden. Opening a settled session leaves it in that group. Pinned and draft sections fold, and the count shows how many rows are hidden. Folded settled rows stay unmounted until the group opens.
+- Scroll areas fade their clipped edges. Settled sessions, history, the file tree, the project menu, tab strips, and markdown tables share that treatment.
 - Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
+- A message can name a machine with @env or that machine's name, without moving the current session. The agent omits environmentId on this machine and passes it for any other. Paired phones are not targets.
+- An appearance setting auto-expands reasoning while it streams. It is on by default. A manual collapse still wins, and the block closes again when it finishes.
 - Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
+- A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts.
 - The phone app is built with Expo SDK 58, so it launches on iOS 27.
 - iPhone Duo stands as a laptop (90–120°, one half flat, hinge across the inner screen) beside closed, tent, and open. A tent stands with the hinge on top. The hinge snaps to one stop per form; only resting on that stop, letting go on it, or pressing its label changes the form. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
 
@@ -33,35 +38,69 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Fixed
 
 - Computer Use's picture-in-picture paints the JPEG frames.
-- Reasoning stays collapsed while it streams. A manual open stays open until the block finishes.
 - Markdown toolbars sit clear of the scroll rail.
-- A started location popover hides rows that no longer apply, and a refresh keeps the branch list already on screen. A pending worktree chip names only the branch. Worktree and git-status labels are translated.
-- Session hover cards, drafts, and pinned rows keep their place when remote nodes are off.
+- A started location popover hides rows that no longer apply, and a refresh keeps the branch list already on screen. A pending worktree chip names only the branch. A removed worktree is named in the banner, not again beside the title. Worktree and git-status labels are translated.
+- Session hover cards close when the list scrolls, and the row keeps its fill until the card closes. Drafts and pinned rows keep their place when remote nodes are off.
 - With remote nodes on, a new session keeps its own checkout, and git init runs on the environment that owns the folder.
 - Two screenshots or recordings taken in the same millisecond no longer share a filename.
 - Desktop usage, probes, and other short external HTTP follow the macOS system proxy. Streaming chat, relay uploads, and loopback calls stay on Node fetch, and the CLI keeps Bun's proxy environment.
 - Draft and pinned sidebar titles use the same size as the other session titles.
 - A detached worktree's hover card shows the short commit, the same label as the workdir chip.
+- The branch stays visible when the workdir chip is tight, and a session switch does not paint "Local Checkout" before the git read returns.
+- A list marker's fill stops at leading inline code.
+- Phone inline code sits on the prose line.
+- Asked questions on the phone show the question without the harness title beside it.
+- layout_act runs only when the user asks to change the layout or to bring a tab, panel, or session forward. It does not run to take a screenshot, inspect a page, or make a background tab paint.
+- Grok receives the SuperOne host context through session rules. Other agents, and a resumed Grok session, get it on the first prompt.
+- Remote installs require Node 22.13.0 or newer (Fixes #95).
+- A collaboration child keeps the account it was launched with when its session row is still a placeholder (Fixes #94).
+- An angle-bracket absolute file path stays absolute (Fixes #92).
+- The default Claude account stays listed when another login shares its identity (Fixes #89).
 
 ### Performance
 
 - Opening a local session no longer rebuilds every sidebar row.
 
-## [0.76.0-alpha.1] - 2026-10-28
+## [0.76.0-alpha.1] - 2026-11-01
 
 ### Added
 
+- Finished sessions settle into a project group. The first launch keeps the ten newest non-child sessions in each project and settles the rest. Settling stops that session's harness and, for a parent, its direct children. Collaboration children and scheduled-send shells stay hidden. Pinned and draft sections fold, and the count shows how many rows are hidden. The device name floats above the list. An environment card names the machine, its OS, chip, and memory; a connected host adds free memory and one CPU sample.
+- Scroll areas fade their clipped edges, including settled sessions, history, the file tree, the project menu, tab strips, and markdown tables.
+- A message can name a machine with @env or that machine's name. The agent omits environmentId on this machine and passes it for any other. Paired phones are not targets.
+- Reasoning auto-expands while it streams. Appearance can turn that off. A manual collapse still wins, and the block closes again when it finishes.
+- Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. Ultrafast's trigger is two overlapping bolts; Fast stays one bolt.
+- A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts.
 - iPhone Duo stands as a laptop (90–120°, one half flat, hinge across the inner screen) beside closed, tent, and open. A tent stands with the hinge on top. The hinge snaps to one stop per form; only resting on that stop, letting go on it, or pressing its label changes the form. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
 
 ### Changed
 
+- Codex runtime 0.165.0.
 - Android phone builds include arm64-v8a and armeabi-v7a only.
 
 ### Fixed
 
+- layout_act runs only when the user asks to change the layout or to bring a tab, panel, or session forward. It does not run to take a screenshot, inspect a page, or make a background tab paint.
+- Grok receives the SuperOne host context through session rules. Other agents, and a resumed Grok session, get it on the first prompt.
+- Remote installs require Node 22.13.0 or newer (Fixes #95).
+- A collaboration child keeps the account it was launched with when its session row is still a placeholder (Fixes #94).
+- An angle-bracket absolute file path stays absolute (Fixes #92).
+- The default Claude account stays listed when another login shares its identity (Fixes #89).
 - Desktop usage, probes, and other short external HTTP follow the macOS system proxy. Streaming chat, relay uploads, and loopback calls stay on Node fetch, and the CLI keeps Bun's proxy environment.
 - Draft and pinned sidebar titles use the same size as the other session titles.
 - A detached worktree's hover card shows the short commit, the same label as the workdir chip.
+- The session list no longer flashes when a turn ends.
+- A hover card closes when the list scrolls, and the row keeps its fill until the card closes.
+- Opening a settled session leaves it in the settled group.
+- The branch stays visible when the workdir chip is tight, and a session switch does not paint "Local Checkout" before the git read returns.
+- A list marker's fill stops at leading inline code.
+- Phone inline code sits on the prose line.
+- A removed worktree is named in the banner, not again beside the title.
+- Asked questions on the phone show the question without the harness title beside it.
+
+### Performance
+
+- Folded settled rows stay unmounted until the group opens.
 
 ## [0.76.0-alpha] - 2026-10-24
 

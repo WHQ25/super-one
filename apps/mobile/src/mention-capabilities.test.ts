@@ -15,7 +15,7 @@ describe('host capability settings to mobile mention menu', () => {
   it('enables computer and browser only when the connected host has them on', () => {
     const ids = availableMentionCapabilityIds({ computerUseEnabled: true, cdpEnabled: true }, 'darwin')
     // Session and Git portals are independent of host capability settings.
-    expect(enabled('', ids)).toEqual(['computer', 'browser', 'widget', 'session', 'git', 'gh'])
+    expect(enabled('', ids)).toEqual(['computer', 'browser', 'widget', 'session', 'env', 'git', 'gh'])
     expect(mentionTokenFromItem(buildMentionRows('computer use', { remote: [], agentProfiles: [], capabilityIds: ids })[0]!.item)?.kind)
       .toBe('computer')
     expect(enabled('browser', availableMentionCapabilityIds({ cdpEnabled: false }, 'darwin'))).toEqual([])
@@ -36,9 +36,9 @@ describe('host capability settings to mobile mention menu', () => {
   it('uses the host platform and retains safe legacy-host behavior', () => {
     expect(mentionCapabilityAvailability({ computerUseEnabled: true }, 'win32').computer).toBe(false)
     // A host that answered without the field has widget on; debug is retired.
-    expect(enabled('', hostCapabilityIds(undefined))).toEqual(['widget', 'session', 'git', 'gh'])
+    expect(enabled('', hostCapabilityIds(undefined))).toEqual(['widget', 'session', 'env', 'git', 'gh'])
     expect(enabled('debug', ['widget', 'debug'])).toEqual([])
-    expect(enabled('', [])).toEqual(['session', 'git', 'gh'])
-    expect(enabled('', ['unknown', 'browser', null])).toEqual(['browser', 'session', 'git', 'gh'])
+    expect(enabled('', [])).toEqual(['session', 'env', 'git', 'gh'])
+    expect(enabled('', ['unknown', 'browser', null])).toEqual(['browser', 'session', 'env', 'git', 'gh'])
   })
 })

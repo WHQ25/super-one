@@ -56,4 +56,13 @@ describe('draft session origin', () => {
     Object.assign(window, { environment: { callSession: vi.fn().mockRejectedValue(new Error('IPC unavailable')) } })
     await expect(shouldReuseDraftOriginSessionId('original', undefined, '/repo')).rejects.toThrow('IPC unavailable')
   })
+
+  it('mints a new session when Electron reports the origin session is gone', async () => {
+    Object.assign(window, {
+      environment: {
+        callSession: vi.fn().mockRejectedValue(new Error("Error invoking remote method 'environment:callSession': Error: session not found")),
+      },
+    })
+    expect(await shouldReuseDraftOriginSessionId('original', undefined, '/repo')).toBe(false)
+  })
 })

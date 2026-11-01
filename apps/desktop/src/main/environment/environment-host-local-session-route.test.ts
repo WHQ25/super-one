@@ -304,6 +304,7 @@ describe('scheduled sends on the local environment endpoint', () => {
       clear: (id) => { own.lease.assertMutation(); bySession.delete(id) },
     } })
     expect(await host.callSession('local', 'own', 'session.scheduledSend.get', {})).toBeNull()
+    expect(await host.callSession('local', 'draft-origin', 'session.scheduledSend.get', {})).toBeNull()
     await runWindowControl(7, () => host.callSession('local', 'own', 'session.scheduledSend.set', { patch: { armed: true, message: 'later' } }))
     expect(await host.callSessionList('local', 'sessionList.scheduledSends', {})).toMatchObject([{ sessionId: 'own', message: 'later' }])
     await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.scheduledSend.set', { patch: { sendAt: NaN } }))).rejects.toMatchObject({ code: 'invalid_argument' })

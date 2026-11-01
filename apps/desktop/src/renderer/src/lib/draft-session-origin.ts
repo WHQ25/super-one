@@ -1,3 +1,4 @@
+import { unwrapIpcInvokeError } from '@superone/shared/ipc-error'
 import { callSession } from './session-client'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 import type { PerSessionState } from '@/stores/chat-store/types'
@@ -15,7 +16,16 @@ export async function shouldReuseDraftOriginSessionId(
   try {
     return !!(await callSession(projectPath, originSessionId, 'session.scheduledSend.get', {}))?.armed
   } catch (error) {
-    if (['unsupported', 'not_found'].includes((error as { code?: string }).code ?? '')) return false
+    // The origin of an old draft is often not a session anymore. Electron's
+    // invoke wrapper keeps the message and drops `code`, so match both.
+    if (absentOriginSession(error)) return false
     throw error
   }
+}
+
+function absentOriginSession(error: unknown): boolean {
+  const code = (error as { code?: string }).code
+  if (code === 'not_found' || code === 'unsupported') return true
+  const message = unwrapIpcInvokeError(error instanceof Error ? error.message : String(error))
+  return message === 'session not found' || message.startsWith('Unsupported session operation')
 }

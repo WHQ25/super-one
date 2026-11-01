@@ -42,7 +42,11 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
     if (method === 'session.rewind' && !['files', 'conversation', 'code+chat'].includes(String(p.mode))) {
       throw Object.assign(new Error('invalid rewind mode'), { code: 'invalid_argument' })
     }
-    if (!ctx.sessions?.get(sessionId)) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    // A parked draft keeps its origin id after that session row is gone. The
+    // queued-send record is keyed by the id and can answer on its own.
+    if (method !== 'session.scheduledSend.get' && !ctx.sessions?.get(sessionId)) {
+      throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    }
     // Capture the exact proof before async native work; never read a newer UI lease.
     const leaseId = SESSION_OPERATION_READS.has(method) ? undefined : requiredText(p, 'leaseId')
     const generation = SESSION_OPERATION_READS.has(method) ? undefined : requiredText(p, 'generation')

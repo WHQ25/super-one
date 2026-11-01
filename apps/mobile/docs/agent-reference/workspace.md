@@ -80,6 +80,20 @@ The count on the folded heading is the project's total. Collapsing the project
 hides the group and does not fetch it. Settling sets `isSettled` and leaves the
 open chat in place; the host drops the harness. Unsettle puts the row back on
 the active list. A desktop that does not serve the method renders no group.
+The composer being edited is not a sidebar row. Its draft is saved, and the
+row appears when that session is left and `activeDraftId` clears.
+**Pinned** and **Drafts** are their own groups, in that order, above Projects.
+Each heading carries the desktop glyph — Pin, and NotebookPen — and folds from
+the heading. Both start open. A folded heading shows a count and keeps its
+rows mounted, clipped and out of the accessibility tree. The choice lives on
+the workspace cache, so closing the drawer does not forget it. A draft already
+on screen when the list mounts stays put. One that arrives later flies in from
+the right, and opening one flies that row out toward the composer while the
+rows below hold their slots until the draft being left takes its place. The
+opened row stays out of the list until the composer claims it, so the two
+never show together. That flight is there for a sidebar that stays on screen,
+such as the Duo held as a book. Reduced motion skips it.
+
 **Several projects stand open at once**, as on the desktop, so the session list is
 owned per row (`WorkspaceProjectRow`) rather than per drawer — one shared list
 state could only ever serve one project, which is what made this an accordion. A
@@ -131,8 +145,8 @@ through. A command applies to the list only when it resolves `true`;
 the shell reports the failure. Search is **not** in the list: it is global,
 host-side (`search_sessions`), and owns the `session-search` screen, which draws
 its own field plus Cancel and therefore gets no header bar. The drawer also
-carries a cross-project **Pinned** section above Projects (`list_pinned_sessions`),
-and search plus new session sit at the *top*. The device it is connected to
+carries a cross-project **Pinned** section above Drafts and Projects
+(`list_pinned_sessions`), and search plus new session sit at the *top*. The device it is connected to
 sits at the *bottom*, reporting its connection state with
 `ConnectionStatusIndicator` beside a disconnect and an app-settings action.
 Reaching another desktop means disconnecting first, so that row is a

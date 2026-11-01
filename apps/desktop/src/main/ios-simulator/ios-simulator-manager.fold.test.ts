@@ -36,6 +36,12 @@ describe('IosSimulatorManager foldable', () => {
     expect(native.attach).toHaveBeenCalledWith('device-a', 1)
     expect(native.fold).not.toHaveBeenCalled()
     expect(state.fold).toEqual({ hingeDegrees: 0, tent: false, laptop: false, panel: 'cover', panelRotation: 0 })
+
+    // Closed at boot is not a sweep. Rotation events still turn it.
+    await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
+    expect(native.input).toHaveBeenCalledWith({ type: 'rotate', orientation: 'landscape-left' })
+    expect(native.fold).not.toHaveBeenCalled()
+    expect((await manager.getSessionState('device-a')).orientation).toBe('landscape-left')
   })
 
   it('closes a foldable it finds running, since the hinge cannot be read', async () => {
@@ -151,20 +157,22 @@ describe('IosSimulatorManager foldable', () => {
     await manager.setFoldPosition('device-a', open(180))
     expect(native.fold.mock.calls.map((call) => call[3])).toEqual([undefined, 'portrait'])
 
-    // The user turns it, which turns the pose; a wider or narrower opening keeps that turn.
+    // The user turns it. The sweep carries the hold; a wider or narrower opening keeps it.
     await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
-    expect(native.turn).toHaveBeenLastCalledWith('landscape-left', false)
+    expect(native.fold).toHaveBeenLastCalledWith(1, 120, 3, 'landscape-left', undefined)
+    expect(native.turn).not.toHaveBeenCalled()
     await manager.setFoldPosition('device-a', open(150))
     expect(native.fold).toHaveBeenLastCalledWith(150 / 180, expect.any(Number), 3, 'landscape-left', undefined)
 
     // A named posture is a form, so it is held its own way even within one: back upright.
     await manager.setFoldPosition('device-a', open(180), { hold: true })
     expect(native.fold).toHaveBeenLastCalledWith(1, expect.any(Number), 3, 'portrait', undefined)
-    // Already there, with no sweep to carry the hold, the pose is turned instead.
+    // Already at that angle, the same sweep carries the hold. A tabletop pose would not.
     await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
-    native.turn.mockClear()
+    native.fold.mockClear()
     await manager.setFoldPosition('device-a', open(180), { hold: true })
-    expect(native.turn).toHaveBeenCalledWith('portrait', false)
+    expect(native.fold).toHaveBeenCalledWith(1, 120, 3, 'portrait', undefined)
+    expect(native.turn).not.toHaveBeenCalled()
     await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
     // Folding shut is a phone again, upright.
@@ -189,11 +197,15 @@ describe('IosSimulatorManager foldable', () => {
     native.fold.mockClear()
     await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true, laptop: false })
     await manager.setFoldPosition('device-a', open(0))
-    // Closing from a tent is one sweep: closed already shows the cover. It stays face
-    // down through the sweep, then turns upright.
+    // Closing from a tent sweeps face down, then sweeps again so the upright hold
+    // lands. A tabletop pose of 0 would not keep it.
     expect(native.fold.mock.calls.map((call) => [call[0], call[2], call[3], call[4]]))
-      .toEqual([[0, 1, 'landscape-right', 'tent'], [0, 1, undefined, undefined]])
-    expect(native.turn).toHaveBeenLastCalledWith('portrait', true)
+      .toEqual([
+        [0, 1, 'landscape-right', 'tent'],
+        [0, 1, undefined, undefined],
+        [0, 1, 'portrait', undefined],
+      ])
+    expect(native.turn).not.toHaveBeenCalled()
   })
 
   it('lays an open device as a laptop: turned, swept to the angle, then posed on the inner panel', async () => {
@@ -240,32 +252,38 @@ describe('IosSimulatorManager foldable', () => {
       .resolves.toEqual(expect.objectContaining({ ok: true }))
 
     expect(native.stand).toHaveBeenCalledWith('laptop', 'landscape-left')
+    expect(native.input).not.toHaveBeenCalled()
   })
 
-  it('turns the pose of a swept device out of one, which rotation events no longer reach', async () => {
+  it('sweeps an open device again so the new hold lands', async () => {
     const { manager, native } = duo()
     await manager.boot('session-a', 'device-a')
     await manager.setFoldPosition('device-a', open(180))
 
     await manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' })
 
-    expect(native.turn).toHaveBeenCalledWith('landscape-left', false)
+    expect(native.fold).toHaveBeenLastCalledWith(1, 120, 3, 'landscape-left', undefined)
+    expect(native.input).not.toHaveBeenCalled()
+    expect(native.turn).not.toHaveBeenCalled()
     expect(native.stand).not.toHaveBeenCalled()
+    expect((await manager.getSessionState('device-a')).orientation).toBe('landscape-left')
   })
 
-  it('leaves a tent face down when it turns, and reports a pose that would not turn', async () => {
+  it('leaves a tent face down when it turns, and keeps the old hold when a sweep is refused', async () => {
     const { manager, native } = duo()
     await manager.boot('session-a', 'device-a')
     await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true, laptop: false })
 
     await manager.input('device-a', { type: 'rotate', orientation: 'portrait' })
+    expect(native.input).toHaveBeenCalledWith({ type: 'rotate', orientation: 'portrait' })
     expect(native.turn).not.toHaveBeenCalled()
     expect(native.stand).not.toHaveBeenCalled()
 
     await manager.setFoldPosition('device-a', open(180))
-    native.turn.mockRejectedValueOnce(new Error('SpringBoard kept tabletop pose 0 held 1'))
+    native.fold.mockRejectedValueOnce(new Error('The guest refused the fold (1): a display swap is already in flight'))
     await expect(manager.input('device-a', { type: 'rotate', orientation: 'landscape-left' }))
-      .resolves.toEqual({ ok: false, error: 'SpringBoard kept tabletop pose 0 held 1' })
+      .resolves.toEqual({ ok: false, error: 'The guest refused the fold (1): a display swap is already in flight' })
+    expect((await manager.getSessionState('device-a')).orientation).toBe('portrait')
   })
 
   it('loads the chrome of whichever panel the hinge shows', async () => {

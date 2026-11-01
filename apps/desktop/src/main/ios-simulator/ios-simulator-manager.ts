@@ -143,6 +143,9 @@ export class IosSimulatorManager {
   private readonly hardwareKeyboards = new Map<string, boolean>()
   // And again for a foldable's hinge, which no CoreSimulator call reports either.
   private readonly folds = new Map<string, IosSimulatorFoldPosition>()
+  // Boot records every device closed, which is not a sweep. Only a sweep that
+  // landed leaves a pose SpringBoard will keep, and only then do rotation events stop.
+  private readonly hingePosed = new Set<string>()
   /** udid -> its device type's bundle. A device never changes type, so read once. */
   private readonly deviceTypeBundles = new Map<string, { identifier: string; bundlePath: string }>()
   /** udid -> its fold layout, null for a single-screen device. Settled before attach. */
@@ -401,6 +404,7 @@ export class IosSimulatorManager {
     // Held as `holdAs` settled: the sweep sets the guest's orientation, and so does a laptop's pose.
     await native.client.fold(degrees / 180, sweepMs, screenId, held ? this.orientations.get(udid) ?? 'portrait' : undefined, pose)
     this.folds.set(udid, target)
+    this.hingePosed.add(udid)
   }
 
   /**
@@ -417,16 +421,25 @@ export class IosSimulatorManager {
   }
 
   /**
-   * Turn a swept foldable to how the host holds it. A sweep leaves the guest posed,
-   * and from then on its orientation comes from the pose alone, not from rotation
-   * events. A laptop's pose names its hold; a tent's is face down whichever way it is
-   * turned. An unswept device has no pose, and rotation events turn it.
+   * Turn a swept foldable to how the host holds it.
+   *
+   * A sweep leaves a pose behind, and SpringBoard then ignores rotation events.
+   * The pose it keeps is the sweep's own orientation, or a laptop's tabletop pose.
+   * An open or closed device therefore sweeps again to the hinge it is already at:
+   * a tabletop pose of 0 is rewritten back to portrait, which is why a turn at 180°
+   * only sometimes landed. A tent stays face down. A device that has not been
+   * swept, including one boot recorded closed, still turns from rotation events.
    */
   private async applyHold(udid: string, native: NativeSession): Promise<void> {
     const fold = this.folds.get(udid)
-    if (!fold || fold.tent) return
-    const hold = this.orientations.get(udid) ?? 'portrait'
-    await (fold.laptop ? native.client.stand('laptop', hold) : native.client.turn(hold, fold.hingeDegrees === 0))
+    if (!this.hingePosed.has(udid) || !fold || fold.tent) return
+    if (fold.laptop) {
+      await native.client.stand('laptop', this.orientations.get(udid) ?? 'portrait')
+      return
+    }
+    const layout = await this.foldLayoutOf(udid)
+    if (!layout) throw new Error(`${this.nameOf(udid) ?? udid} is not a foldable simulator.`)
+    await this.sweepHinge(udid, native, layout, fold)
   }
 
   async createDevice(request: IosSimulatorCreateRequest): Promise<IosSimulatorDevice> {
@@ -532,6 +545,7 @@ export class IosSimulatorManager {
     this.orientations.delete(udid)
     this.hardwareKeyboards.delete(udid)
     this.folds.delete(udid)
+    this.hingePosed.delete(udid)
   }
 
   /** Whether this app booted the simulator, so `release` knows to stop it again. */
@@ -646,6 +660,11 @@ export class IosSimulatorManager {
     try {
       const native = await this.ensureNativeSession(udid)
       if (input.type === 'insertText') return this.insertText(udid, native, input)
+      // Open, closed, and laptop holds are the sweep or the laptop pose. A rotation
+      // event would be ignored, and failing it would skip the sweep that does land.
+      if (input.type === 'rotate' && this.rotationFollowsHinge(udid)) {
+        return this.settleHingeRotation(udid, native, input.orientation)
+      }
       const result = await native.client.input(input)
       if (input.type === 'rotate') return this.settleRotation(udid, native, input.orientation, result)
       if (input.type === 'keyboard' && result.ok) {
@@ -780,12 +799,40 @@ export class IosSimulatorManager {
     }
   }
 
+  /** A swept foldable whose hold is the hinge sweep or the laptop pose, not a rotation event. */
+  private rotationFollowsHinge(udid: string): boolean {
+    const fold = this.folds.get(udid)
+    return this.hingePosed.has(udid) && fold !== undefined && !fold.tent
+  }
+
+  /**
+   * Turn the 3D hold onto a swept device. The orientation is published only after
+   * the sweep or the laptop pose lands, so a refusal puts the shell back.
+   */
+  private async settleHingeRotation(
+    udid: string,
+    native: NativeSession,
+    orientation: IosSimulatorOrientation,
+  ): Promise<IosSimulatorInputResult> {
+    const previous = this.orientations.get(udid) ?? 'portrait'
+    this.orientations.set(udid, orientation)
+    let result: IosSimulatorInputResult = { ok: true }
+    try {
+      await this.applyHold(udid, native)
+    } catch (error) {
+      this.orientations.set(udid, previous)
+      result = { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+    await this.publishSessionState(udid)
+    return result
+  }
+
   /**
    * Keep the device's physical turn when delivery succeeds. An app may lock its
    * content orientation; the unchanged framebuffer then turns with the shell.
    *
-   * A swept foldable takes its turn from its pose rather than the rotation event, so
-   * the pose is turned too; see `applyHold`.
+   * A tent still takes this path: its pose stays face down, and the rotation event
+   * turns the shell. Every other swept form is `settleHingeRotation`.
    */
   private async settleRotation(
     udid: string,

@@ -66,6 +66,15 @@ describe('DraftsSection', () => {
     expect(resumeDraft).toHaveBeenCalledWith('node', remote)
   })
 
+  it('lists only the focused project', () => {
+    const here = draft('d1', 'this project')
+    const there = { ...draft('d2', 'other project'), projectPath: '/other' }
+    useDraftsStore.setState({ byConnection: { local: [here, there] } })
+    render(<DraftsSection connectionIds={LOCAL} projectKey="/p" label={<span>Drafts</span>} />)
+    expect(screen.getByText('this project')).toBeInTheDocument()
+    expect(screen.queryByText('other project')).toBeNull()
+  })
+
   it('shows its heading only while there are drafts', () => {
     const { rerender } = render(<DraftsSection connectionIds={LOCAL} label={<span>Drafts</span>} />)
     expect(screen.queryByText('Drafts')).toBeNull()

@@ -27,6 +27,18 @@ describe('ActiveSessionList', () => {
     expect(screen.queryByRole('button', { name: 'Show More' })).toBeNull()
   })
 
+  it('fills the focus pane instead of keeping the height cap', () => {
+    render(
+      <ActiveSessionList layout="fill">
+        <div>Focused session</div>
+      </ActiveSessionList>,
+    )
+    const list = document.querySelector('[data-active-session-list]')
+    expect(list).toHaveClass('h-full')
+    expect(list).not.toHaveClass('max-h-64')
+    expect(list).not.toHaveClass('max-h-36')
+  })
+
   it('scrolls a child list separately from the active list', () => {
     const onLoadMore = vi.fn()
     render(

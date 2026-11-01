@@ -10,6 +10,7 @@ import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import { PinnedSessionRow } from './PinnedSessionRow'
 import { SessionRow } from './SessionRow'
+import { useSidebarFocusStore } from './sidebar-focus'
 import { useSessionMenuItems } from './useSessionMenuItems'
 
 const FOLDER = '/proj'
@@ -61,6 +62,49 @@ beforeEach(() => {
   useScheduledSendsStore.setState({ bySession: {} })
   useChatStore.setState({ projectSessions: {}, activeProject: null })
   useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+  useSidebarFocusStore.setState({ target: null })
+})
+
+describe('session focus drill', () => {
+  it('opens a parent session on double click and leaves a leaf row alone', () => {
+    const session = entry('parent', 'Opening workflow')
+    const { rerender } = render(
+      <SessionRow
+        session={session}
+        folderPath={FOLDER}
+        hasChildren
+        focusEnvironmentId="env-1"
+        animateTitle={false}
+        {...noop}
+      />,
+    )
+    fireEvent.click(screen.getByText('Opening workflow'))
+    expect(noop.onSwitchSession).toHaveBeenCalledWith(FOLDER, 'parent')
+    expect(useSidebarFocusStore.getState().target).toBeNull()
+    fireEvent.doubleClick(screen.getByText('Opening workflow'))
+    expect(useSidebarFocusStore.getState().target).toEqual({
+      kind: 'session',
+      folderPath: FOLDER,
+      sessionId: 'parent',
+      environmentId: 'env-1',
+    })
+
+    useSidebarFocusStore.setState({ target: null })
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Pin Session' }))
+    expect(useSidebarFocusStore.getState().target).toBeNull()
+
+    useSidebarFocusStore.setState({ target: null })
+    rerender(
+      <SessionRow
+        session={entry('leaf', 'Leaf note')}
+        folderPath={FOLDER}
+        animateTitle={false}
+        {...noop}
+      />,
+    )
+    fireEvent.doubleClick(screen.getByText('Leaf note'))
+    expect(useSidebarFocusStore.getState().target).toBeNull()
+  })
 })
 
 describe('SessionRow opening icon', () => {

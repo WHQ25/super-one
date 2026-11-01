@@ -360,6 +360,14 @@ export type Messages = {
     }
     scheduledFor: string
     projects: string
+    /** Leaves focus and shows the full list again. */
+    focusExit: string
+    /** Hover label for the level menu on the focus bar. */
+    focusLevels: string
+    /** Title of the sibling menu when an environment is focused. */
+    focusSwitchEnvironment: string
+    /** Title of the sibling menu when a parent session is focused. */
+    focusSwitchSession: string
     thisMac: string
     thisPc: string
     hostDisconnected: string
@@ -5028,6 +5036,10 @@ export const en: Messages = {
     /** Marks a draft row or a session row whose message goes out at that time. */
     scheduledFor: 'Scheduled for {{time}}',
     projects: 'Projects',
+    focusExit: 'Exit Focus',
+    focusLevels: 'Focus Levels',
+    focusSwitchEnvironment: 'Select Environment',
+    focusSwitchSession: 'Select Session',
     thisMac: 'This Mac',
     thisPc: 'This PC',
     hostDisconnected: 'Host offline',

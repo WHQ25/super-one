@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
+import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect, type RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
@@ -27,6 +27,7 @@ import { ActiveSessionList } from './ActiveSessionList'
 import { ProjectHistoryList } from './ProjectHistoryList'
 import { SettledSection } from './SettledSection'
 import { foldProjectSettled } from './sidebar-section-collapse'
+import { focusProject } from './sidebar-focus'
 
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
 
@@ -34,24 +35,27 @@ function SessionGroupsFrame({
   open,
   hasMore,
   onLoadMore,
+  fill = false,
   children,
 }: {
   open: boolean
   hasMore: boolean
   onLoadMore?: () => void | Promise<void>
+  /** Focus mode: this project's list is the pane, so the height cap comes off. */
+  fill?: boolean
   children: React.ReactNode
 }) {
   // A collapsed project only keeps attention rows. Those stay in the sidebar flow.
   // The open list is its own scroller, same as search and Settled.
   if (!open) return children
   return (
-    <ActiveSessionList hasMore={hasMore} onLoadMore={onLoadMore}>
+    <ActiveSessionList hasMore={hasMore} onLoadMore={onLoadMore} layout={fill ? 'fill' : 'cap'}>
       {children}
     </ActiveSessionList>
   )
 }
 
-function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphKey: unknown }) {
+function MorphHeight({ children, morphKey, fill = false }: { children: React.ReactNode; morphKey: unknown; fill?: boolean }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const prevKeyRef = useRef(morphKey)
@@ -66,7 +70,8 @@ function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphK
   useLayoutEffect(() => {
     const from = pendingFromRef.current
     pendingFromRef.current = null
-    if (from == null || !outerRef.current || !innerRef.current) return
+    // A pixel height would pin the focus pane instead of letting the list fill it.
+    if (fill || from == null || !outerRef.current || !innerRef.current) return
     const to = innerRef.current.offsetHeight
     if (from === to || typeof outerRef.current.animate !== 'function') return
     animationRef.current?.cancel()
@@ -77,8 +82,8 @@ function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphK
   })
 
   return (
-    <div ref={outerRef} style={{ overflow: 'hidden' }}>
-      <div ref={innerRef}>{children}</div>
+    <div ref={outerRef} className={cn(fill && 'flex min-h-0 flex-1 flex-col')} style={{ overflow: 'hidden' }}>
+      <div ref={innerRef} className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>{children}</div>
     </div>
   )
 }
@@ -199,6 +204,11 @@ export function visibleChildSessions(
   return children.filter(isVisibleWhenCollapsed)
 }
 
+export interface ProjectFocusActions {
+  openHistory: () => void
+  openAutomation: () => void
+}
+
 interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
   isExpanded: boolean
@@ -249,6 +259,12 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   onLoadChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
   /** Scrolling a parent's child list loads the next page. */
   onLoadMoreChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
+  /** `fill` is project focus: the active list takes the pane and Settled stays at the bottom. */
+  sessionListLayout?: 'cap' | 'fill'
+  /** The environment this checkout belongs to. Omitted on the single-host list. */
+  focusEnvironmentId?: string | null
+  /** Focus bar calls search and new-automation while this row's own header is hidden. */
+  focusActionsRef?: RefObject<ProjectFocusActions | null>
 }
 
 const EMPTY_CHILD_SESSIONS: Record<string, SessionHistoryEntry[]> = {}
@@ -300,7 +316,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   initialExpandedChildIds,
   onLoadChildSessions,
   onLoadMoreChildSessions,
+  sessionListLayout = 'cap',
+  focusEnvironmentId,
+  focusActionsRef,
 }: ProjectSidebarRowProps) {
+  const fill = sessionListLayout === 'fill'
   // A disconnected environment has nothing to list. Ignore a stored expand so
   // the row collapses as soon as the connection drops.
   const open = isExpanded && !offline
@@ -555,11 +575,23 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     }
   }, [open, folder.missing, folder.path, refreshAutomations])
 
-  const openCreateDialog = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
+  const openAutomation = useCallback(() => {
     setEditingAutomation(null)
     setAutomationDialogOpen(true)
   }, [])
+
+  const openCreateDialog = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    openAutomation()
+  }, [openAutomation])
+
+  useEffect(() => {
+    if (!focusActionsRef) return
+    focusActionsRef.current = { openHistory, openAutomation }
+    return () => {
+      focusActionsRef.current = null
+    }
+  }, [focusActionsRef, openHistory, openAutomation])
 
   const openEditDialog = useCallback((automation: Automation) => {
     setEditingAutomation(automation)
@@ -584,7 +616,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       ? ([
           // History opens the session list. A disconnected environment has no list to open.
           ...(!offline
-            ? [{ kind: 'item' as const, id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: Search, onSelect: openHistory }]
+            ? [
+                { kind: 'item' as const, id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: Search, onSelect: openHistory },
+              ]
             : []),
           // Gated on !missing: with the root gone there is nothing
           // meaningful to point workspace folders at.
@@ -600,7 +634,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   ]
 
   return (
-    <div>
+    <div className={cn(fill && 'flex h-full min-h-0 flex-1 flex-col')}>
       {!sessionsOnly && <ProjectHoverCard
           name={folder.name}
           repoIdentity={repoIdentity}
@@ -617,6 +651,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               if (folder.missing || offline) return
               if (historyMode) setHistoryMode(false)
               onToggleExpand(folder.path)
+            }}
+            onDoubleClick={(event) => {
+              if (folder.missing || offline) return
+              event.stopPropagation()
+              focusProject(folder.path, focusEnvironmentId)
             }}
             className={cn(
               'group flex h-9 items-center overflow-hidden rounded-md pl-2.5 pr-1.5 transition-colors',
@@ -644,6 +683,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               <div
                 data-slot="project-row-actions"
                 className={sidebarRowActionsClass}
+                onDoubleClick={(event) => event.stopPropagation()}
               >
                 <IconButton
                   size="sm"
@@ -686,7 +726,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       </ProjectHoverCard>}
 
       {/* Everything under the project header sits one step in. A merged repository indents its own children. */}
-      <div className={cn(!sessionsOnly && 'pl-1')}>
+      <div className={cn(!sessionsOnly && 'pl-1', fill && 'flex h-full min-h-0 flex-col')}>
         {!sessionsOnly && open && projectAutomations.length > 0 && (
           <div className="overflow-hidden">
             <button
@@ -743,7 +783,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           />
         )}
 
-        <MorphHeight morphKey={historyMode}>
+        <MorphHeight morphKey={historyMode} fill={fill}>
           {historyMode ? (
             <ProjectHistoryList
               folderPath={folder.path}
@@ -757,7 +797,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               onDeleteSession={onDeleteSession}
             />
           ) : derived.showSessions ? (
-            <div className="flex flex-col py-0.5">
+            <div className={cn('flex flex-col py-0.5', fill && 'min-h-0 flex-1')}>
               {derived.groupsToShow.length === 0 ? (
                 sessionsLoading || sessionsOnly || projectSettled.length > 0 ? null : (
                   <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
@@ -765,6 +805,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               ) : (
                 <SessionGroupsFrame
                   open={open}
+                  fill={fill}
                   hasMore={sessionsHasMore}
                   onLoadMore={onLoadMoreSessions ? () => onLoadMoreSessions(folder.path) : undefined}
                 >
@@ -813,6 +854,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       onDeleteSession={onDeleteSession}
                       {...(parentPresentation ?? {})}
                       environmentOffline={offline || parentPresentation?.environmentOffline}
+                      focusEnvironmentId={focusEnvironmentId}
                     />
                     {childrenExpanded ? (
                       <ActiveSessionList
@@ -832,6 +874,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           ) : null}
         </MorphHeight>
         {open && !historyMode && projectSettled.length > 0 && (
+          <div className={cn(fill && 'shrink-0')}>
           <SettledSection
             folderPath={folder.path}
             sessions={projectSettled}
@@ -846,6 +889,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             onRenameSession={onRenameSession}
             onDeleteSession={onDeleteSession}
           />
+          </div>
         )}
       </div>
 

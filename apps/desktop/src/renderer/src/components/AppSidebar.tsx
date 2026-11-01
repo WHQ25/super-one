@@ -61,6 +61,14 @@ import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
+import { SidebarFocusView } from '@/components/sidebar/SidebarFocusView'
+import { useSidebarFocusStore } from '@/components/sidebar/sidebar-focus'
+import {
+  draftScopeForFocus,
+  focusContextKey,
+  pinnedSessionsForFocus,
+  useFocusContextCollapsed,
+} from '@/components/sidebar/sidebar-focus-context'
 import { BrandColorPopover } from '@/components/sidebar/BrandColorPopover'
 import { UsageStatusIcon } from '@/components/UsageStatusIcon'
 import { UpdateStatusIcon } from '@/components/UpdateStatusIcon'
@@ -168,6 +176,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const expandedFoldersRef = useRef(expandedFolders)
   const collapsedEnvironmentIds = useMultiHostSidebarStore((s) => s.settings.collapsedEnvironmentIds)
   const environments = useMultiHostSidebarStore((s) => s.environments)
+  const sidebarFocus = useSidebarFocusStore((s) => s.target)
   const multiHostChrome = multiHostChromeVisible(experimentalRemoteNodesEnabled, hostItems)
   useLoadMultiHostCatalog(experimentalRemoteNodesEnabled)
   const catalogFolders = useMemo(
@@ -645,6 +654,83 @@ export const AppSidebar = memo(function AppSidebar() {
     expanded: expandedTraceState,
   })
 
+  const showSessionFocus = sidebarTab === 'sessions' && sidebarFocus != null
+  const focusContext = sidebarFocus && sidebarFocus.kind !== 'session' ? sidebarFocus : null
+  const focusPinned = useMemo(
+    () => (focusContext ? pinnedSessionsForFocus(pinnedSessions, focusContext, environments) : pinnedSessions),
+    [focusContext, pinnedSessions, environments],
+  )
+  const focusDrafts = useMemo(
+    () => (focusContext ? draftScopeForFocus(focusContext, environments) : null),
+    [focusContext, environments],
+  )
+  const focusCollapsed = useFocusContextCollapsed(focusContextKey(sidebarFocus))
+  const pinnedForList = focusContext ? focusPinned : pinnedSessions
+  const pinnedIsCollapsed = focusContext ? focusCollapsed.pinned : pinnedCollapsed
+  const togglePinnedSection = focusContext ? focusCollapsed.togglePinned : togglePinnedCollapsed
+  const showPinned = pinnedForList.length > 0 && sidebarTab === 'sessions' && (!showSessionFocus || focusContext)
+  const showDrafts = sidebarTab === 'sessions' && (!showSessionFocus || focusContext)
+  const pinnedAndDrafts = (showPinned || showDrafts) ? (
+    <>
+      {showPinned && (
+        <div className="flex flex-col px-2 pb-1">
+          <SidebarSectionLabel
+            section="pinned"
+            count={pinnedForList.length}
+            collapsed={pinnedIsCollapsed}
+            onToggle={togglePinnedSection}
+          >
+            {t('sidebar.pinned')}
+          </SidebarSectionLabel>
+          <div
+            id={sidebarSectionPanelId('pinned')}
+            className={cn(
+              'grid transition-[grid-template-rows] duration-200 ease-out',
+              pinnedIsCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+            )}
+            inert={pinnedIsCollapsed ? true : undefined}
+            aria-hidden={pinnedIsCollapsed || undefined}
+          >
+            <div className="overflow-hidden">
+              {pinnedForList.map((s) => {
+                const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
+                const presentation = pinPresentation(s)
+                return (
+                  <PinnedSessionRow
+                    key={s.sessionId}
+                    session={s}
+                    isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
+                    status={pinStatus}
+                    isUnseen={pinUnseenFlag === '1'}
+                    opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
+                    hover={presentation?.hover}
+                    environmentOffline={presentation?.environmentOffline}
+                    onSwitchSession={handleSwitchSession}
+                    onPinSession={handlePinSession}
+                    onSettleSession={handleSettleSession}
+                    onRenameSession={handleRequestRenameSession}
+                    onDeleteSession={handleRequestDeleteSession}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      {showDrafts && (
+        <div className="px-2">
+          <DraftsSection
+            connectionIds={focusDrafts ? focusDrafts.connectionIds : draftConnectionIds}
+            offlineConnectionIds={focusDrafts ? focusDrafts.offlineConnectionIds : offlineDraftConnectionIds}
+            projectKey={focusDrafts?.projectKey}
+            collapsed={focusContext ? focusCollapsed.drafts : undefined}
+            onToggleCollapsed={focusContext ? focusCollapsed.toggleDrafts : undefined}
+          />
+        </div>
+      )}
+    </>
+  ) : null
+
   return (
     <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
       {isMac && (
@@ -684,60 +770,7 @@ export const AppSidebar = memo(function AppSidebar() {
 
       <AppDrawer />
 
-      {pinnedSessions.length > 0 && sidebarTab === 'sessions' && (
-        <div className="flex flex-col px-2 pb-1">
-          <SidebarSectionLabel
-            section="pinned"
-            count={pinnedSessions.length}
-            collapsed={pinnedCollapsed}
-            onToggle={togglePinnedCollapsed}
-          >
-            {t('sidebar.pinned')}
-          </SidebarSectionLabel>
-          <div
-            id={sidebarSectionPanelId('pinned')}
-            className={cn(
-              'grid transition-[grid-template-rows] duration-200 ease-out',
-              pinnedCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
-            )}
-            inert={pinnedCollapsed ? true : undefined}
-            aria-hidden={pinnedCollapsed || undefined}
-          >
-            <div className="overflow-hidden">
-              {pinnedSessions.map((s) => {
-                const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
-                const presentation = pinPresentation(s)
-                return (
-                  <PinnedSessionRow
-                    key={s.sessionId}
-                    session={s}
-                    isActive={currentFolder === s.folderPath && currentActiveSid === s.sessionId}
-                    status={pinStatus}
-                    isUnseen={pinUnseenFlag === '1'}
-                    opening={openingSession?.folderPath === s.folderPath && openingSession.sessionId === s.sessionId}
-                    hover={presentation?.hover}
-                    environmentOffline={presentation?.environmentOffline}
-                    onSwitchSession={handleSwitchSession}
-                    onPinSession={handlePinSession}
-                    onSettleSession={handleSettleSession}
-                    onRenameSession={handleRequestRenameSession}
-                    onDeleteSession={handleRequestDeleteSession}
-                  />
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {sidebarTab === 'sessions' && (
-        <div className="px-2">
-          <DraftsSection
-            connectionIds={draftConnectionIds}
-            offlineConnectionIds={offlineDraftConnectionIds}
-          />
-        </div>
-      )}
+      {!showSessionFocus && pinnedAndDrafts}
 
       {filesMounted && (
         <div className={cn('min-h-0 flex-1', sidebarTab !== 'files' && 'hidden')}>
@@ -745,6 +778,48 @@ export const AppSidebar = memo(function AppSidebar() {
         </div>
       )}
 
+      {showSessionFocus ? (
+        <SidebarFocusView
+          belowBar={focusContext ? pinnedAndDrafts : null}
+          environments={environments}
+          sort={sortMode}
+          expandedProjectKeys={expandedFolders}
+          folders={sortedFolders}
+          localHostLabel={localHostLabel}
+          folderSessions={folderSessions}
+          sessionsHasMore={folderSessionsHasMore}
+          onLoadMoreSessions={loadMoreFolderSessions}
+          childSessions={folderChildSessions}
+          childSessionsHasMore={folderChildHasMore}
+          onLoadChildSessions={loadChildSessions}
+          onLoadMoreChildSessions={loadMoreChildSessions}
+          settledSessions={settledSessions}
+          settledHasMore={settledHasMore}
+          settledCounts={settledCounts}
+          onLoadMoreSettled={loadMoreSettledSessions}
+          loadingFolders={loadingFolders}
+          openingSession={openingSession}
+          onToggleProject={toggleExpand}
+          onSwitchSession={handleSwitchSession}
+          onPinSession={handlePinSession}
+          onSettleSession={handleSettleSession}
+          onRenameSession={handleRequestRenameSession}
+          onDeleteSession={handleRequestDeleteSession}
+          onEditProject={setEditProjectTarget}
+          onRemoveProject={handleRemoveProject}
+          onNewSession={handleNewSession}
+          onRefreshEnvironment={refreshOneEnvironment}
+          onToggleConnection={toggleEnvironmentConnection}
+          onAddProject={(connectionId) => {
+            setAddConnectionId(connectionId)
+            setOpenProjectDialogOpen(true)
+          }}
+          onSort={setSortMode}
+          connectionBusyId={connectionBusyId}
+          refreshingConnectionId={refreshingConnectionId}
+          onLoadFolderSessions={(folderPath) => { void loadFolderSessions(folderPath, 'expand') }}
+        />
+      ) : (
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {!multiHostChrome && (
       <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
@@ -915,6 +990,7 @@ export const AppSidebar = memo(function AppSidebar() {
         )}
       </div>
       </div>
+      )}
 
       <div className="flex items-center gap-1 px-3 py-2">
         <TooltipProvider delayDuration={300}>

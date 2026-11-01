@@ -21,11 +21,12 @@ import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCa
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/sidebar/multi-host/SessionHoverCard'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
+import { focusEnvironment } from '@/components/sidebar/sidebar-focus'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
 
-interface MultiHostProjectListProps {
+export interface MultiHostProjectListProps {
   environments: EnvironmentBucket[]
   groupBy: SidebarGroupBy
   sort: SidebarSort
@@ -69,6 +70,8 @@ interface MultiHostProjectListProps {
   refreshingConnectionId: string | null
   /** In-flow names hidden while the unpainted pin shows them. */
   obscuredEnvironmentIds?: readonly string[]
+  /** Focus mode: one environment's projects, with no environment header of their own. */
+  flat?: boolean
 }
 
 function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
@@ -141,7 +144,37 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         offline={bucket.connection === 'offline'}
         repoIdentity={checkout.repoIdentity}
         sessionPresentation={presenterFor(bucket, folder.name, folder.path)}
+        focusEnvironmentId={bucket.environmentId}
       />
+    )
+  }
+
+  if (props.flat) {
+    const sections = environmentSections(environments, sort)
+    return (
+      <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
+        {sections.map(({ bucket, checkouts }) => (
+          <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
+            {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
+              <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
+            )}
+            {bucket.projectsStatus === 'error' && checkouts.length === 0 && (
+              <ProjectLoadError
+                bucket={bucket}
+                className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
+                onRetry={props.onRefreshEnvironment}
+              />
+            )}
+            {checkouts.length === 0 && bucket.projectsStatus !== 'loading' && bucket.projectsStatus !== 'error' && (
+              <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
+            )}
+            {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
+          </div>
+        ))}
+        {sections.length === 0 && (
+          <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
+        )}
+      </div>
     )
   }
 
@@ -325,6 +358,7 @@ export function EnvironmentHeader({
       connectionId={bucket.connectionId}
       projectCount={bucket.projectsStatus === 'ready' ? bucket.checkouts.length : null}
       onRename={(name) => renameEnvironment(bucket.connectionId, name)}
+      onEnterFocus={() => focusEnvironment(bucket.environmentId)}
     />
   )
 }

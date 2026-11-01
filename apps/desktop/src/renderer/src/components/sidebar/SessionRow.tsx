@@ -21,6 +21,7 @@ import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { canSettleSession } from '@/lib/session-menu-items'
+import { focusSession } from './sidebar-focus'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
 import type { ProjectState } from '@/stores/chat-store/types'
@@ -197,7 +198,7 @@ function SessionRowTrailing({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="ml-auto flex shrink-0 items-center">
+    <div className="ml-auto flex shrink-0 items-center" onDoubleClick={(event) => event.stopPropagation()}>
       {/* Why this row is at the top of the list. Always visible — the
           hover-revealed pin, unsettle, and expand buttons beside it are
           actions, this is a state, and a state the user cannot see
@@ -270,6 +271,8 @@ interface SessionRowProps extends SessionRowCallbacks {
   hover?: SessionHoverModel | null
   /** The session's environment is offline. Dims the row; no extra request. */
   environmentOffline?: boolean
+  /** Passed through so focus can step back to this environment. Omitted inherits. */
+  focusEnvironmentId?: string | null
 }
 
 export const SessionRow = memo(function SessionRow({
@@ -283,6 +286,7 @@ export const SessionRow = memo(function SessionRow({
   onToggleChildren,
   hover = null,
   environmentOffline = false,
+  focusEnvironmentId,
   onSwitchSession,
   onPinSession,
   onSettleSession,
@@ -362,6 +366,9 @@ export const SessionRow = memo(function SessionRow({
     onRenameSession,
     onDeleteSession,
   })
+  const onDrill = hasChildren
+    ? () => focusSession(folderPath, session.sessionId, focusEnvironmentId)
+    : undefined
 
   return (
     <SessionRowFrame
@@ -390,6 +397,7 @@ export const SessionRow = memo(function SessionRow({
       remote={remoteSessionIds.includes(session.sessionId)}
       stallLevel={stallLevel}
       menuItems={menuItems}
+      onDrill={onDrill}
       settleLabel={t('sidebar.contextMenu.settle')}
       loadingLabel={t('common.loading')}
       offlineLabel={t('sidebar.sessionOffline')}
@@ -423,6 +431,7 @@ function SessionRowFrame({
   remote,
   stallLevel,
   menuItems,
+  onDrill,
   settleLabel,
   loadingLabel,
   offlineLabel,
@@ -452,6 +461,7 @@ function SessionRowFrame({
   remote: boolean
   stallLevel: StallLevel
   menuItems: ReturnType<typeof useSessionMenuItems>
+  onDrill?: () => void
   settleLabel: string
   loadingLabel: string
   offlineLabel: string
@@ -461,6 +471,10 @@ function SessionRowFrame({
             ref={rowRef}
             {...dragHandlers}
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
+            onDoubleClick={onDrill ? (event) => {
+              event.stopPropagation()
+              onDrill()
+            } : undefined}
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-2.25 py-1.5 transition-colors',
               view.isSessionActive ? 'bg-sidebar-accent sidebar-selected' : sidebarHoverCardRowClass,

@@ -18,6 +18,9 @@ export const SESSION_LIST_SCROLL_CLASS = `max-h-64 ${SESSION_LIST_SCROLL_BEHAVIO
 /** Shorter than the active list, so an expanded parent still fits inside it. */
 export const SESSION_CHILD_LIST_SCROLL_CLASS = `max-h-36 ${SESSION_LIST_SCROLL_BEHAVIOR}`
 
+/** Focus mode: the list is the pane, so it takes the parent's height instead of a cap. */
+export const SESSION_LIST_FILL_CLASS = `h-full min-h-0 flex-1 ${SESSION_LIST_SCROLL_BEHAVIOR}`
+
 /**
  * jsdom, and the frame before max-height resolves, report a 0px viewport.
  * Mounting the loaded rows keeps that frame from painting an empty list.

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { DraftListEntry } from '@superone/shared/environment'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { resumeDraft } from '@/lib/draft-resume'
+import { draftProjectKey } from '@/stores/chat-store/helpers/draft-promote'
 import { useDraftsStore } from '@/stores/drafts'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { formatSendWhen } from '@/components/chat/scheduled-send-time'
@@ -25,6 +26,8 @@ interface DraftsSectionProps {
   /** Controlled fold. Omit to use the saved preference. */
   collapsed?: boolean
   onToggleCollapsed?: () => void
+  /** When set, only drafts for this renderer project key are listed. */
+  projectKey?: string
 }
 
 const NO_CONNECTIONS: readonly string[] = []
@@ -141,6 +144,7 @@ export const DraftsSection = memo(function DraftsSection({
   label,
   collapsed: collapsedProp,
   onToggleCollapsed,
+  projectKey,
 }: DraftsSectionProps) {
   const { t } = useTranslation()
   const [storedCollapsed, toggleStored] = useSidebarSectionCollapsed('drafts')
@@ -156,12 +160,13 @@ export const DraftsSection = memo(function DraftsSection({
     const rows: DraftListEntry[] = []
     for (const connectionId of connectionIds) {
       for (const draft of byConnection[connectionId] ?? []) {
+        if (projectKey && draftProjectKey(connectionId, draft.projectPath) !== projectKey) continue
         owner.set(draft.id, connectionId)
         rows.push(draft)
       }
     }
     return { drafts: rows, ownerOf: owner }
-  }, [byConnection, connectionIds])
+  }, [byConnection, connectionIds, projectKey])
   const loadDrafts = useDraftsStore((s) => s.loadDrafts)
   const resumingDraftId = useDraftsStore((s) => s.resumingDraftId)
   const activeProject = useChatStore((s) => s.activeProject)

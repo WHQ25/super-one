@@ -19,6 +19,89 @@ import { sidebarHoverCardRowClass } from './SidebarHoverCard'
 
 export { EnvironmentKindIcon }
 
+export function EnvironmentRowActions({
+  offline,
+  remote,
+  connection,
+  refreshing,
+  connectionBusy,
+  sort,
+  onSort,
+  onAddProject,
+  onRefresh,
+  onToggleConnection,
+  resident = false,
+}: {
+  offline: boolean
+  remote: boolean
+  connection: EnvironmentConnection
+  refreshing: boolean
+  connectionBusy: boolean
+  sort?: SidebarSort
+  onSort?: (sort: SidebarSort) => void
+  onAddProject?: () => void
+  onRefresh?: () => void
+  onToggleConnection?: () => void
+  /** Focus mode keeps these icons on screen. The row still reveals them on hover. */
+  resident?: boolean
+}) {
+  const { t } = useTranslation()
+  const [sortOpen, setSortOpen] = useState(false)
+  return (
+    <div
+      data-slot="environment-row-actions"
+      onDoubleClick={(event) => event.stopPropagation()}
+      className={cn(
+        resident ? 'flex shrink-0 items-center gap-0.5' : sidebarRowActionsClass,
+        !resident && sortOpen && 'pointer-events-auto visible w-auto opacity-100',
+      )}
+    >
+      {!offline && onSort && (
+        <DropdownMenu open={sortOpen} onOpenChange={setSortOpen}>
+          <DropdownMenuTrigger asChild>
+            <IconButton size="sm" variant="nested" tooltip={t('sidebar.sort.title')}>
+              <ArrowDownUp />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={() => onSort('recent')} className="text-xs">
+              {sort === 'recent' ? '✓ ' : '   '}{t('sidebar.sort.recent')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSort('added')} className="text-xs">
+              {sort === 'added' ? '✓ ' : '   '}{t('sidebar.sort.added')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {!offline && onAddProject && (
+        <IconButton size="sm" variant="nested" tooltip={t('sidebar.addProject.title')} onClick={onAddProject}>
+          <Plus />
+        </IconButton>
+      )}
+      {remote && !offline && onRefresh && (
+        <IconButton
+          size="sm"
+          variant="nested"
+          tooltip={t('common.refresh')}
+          disabled={refreshing}
+          onClick={onRefresh}
+        >
+          <RotateCw className={cn(refreshing && 'animate-spin')} />
+        </IconButton>
+      )}
+      {remote && onToggleConnection && (
+        <HostConnectionToggle
+          variant="nested"
+          connected={!offline && (connection === 'connected' || connection === 'needs-upgrade' || connection === 'connecting')}
+          busy={connectionBusy}
+          spinning={connection === 'connecting'}
+          onToggle={onToggleConnection}
+        />
+      )}
+    </div>
+  )
+}
+
 export function EnvironmentSectionHeader({
   label,
   kind,
@@ -35,6 +118,7 @@ export function EnvironmentSectionHeader({
   onAddProject,
   sort,
   onSort,
+  onEnterFocus,
   obscured = false,
   connectionId,
   projectCount = null,
@@ -57,6 +141,8 @@ export function EnvironmentSectionHeader({
   onAddProject?: () => void
   sort?: SidebarSort
   onSort?: (sort: SidebarSort) => void
+  /** Double-click gives this environment the list pane under the app drawer. */
+  onEnterFocus?: () => void
   /** The scrolling copy is covered by the unpainted pinned name. */
   obscured?: boolean
   connectionId?: string
@@ -70,7 +156,6 @@ export function EnvironmentSectionHeader({
   details?: EnvironmentHoverDetails
 }) {
   const { t } = useTranslation()
-  const [sortOpen, setSortOpen] = useState(false)
   const offline = connection === 'offline'
   const remote = kind !== 'local'
   const open = expanded && !offline
@@ -108,11 +193,18 @@ export function EnvironmentSectionHeader({
         details={details}
         onRename={onRename}
       >
-      <div className={cn(
-        'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors',
-        sidebarHoverCardRowClass,
-        !offline && 'cursor-pointer',
-      )}>
+      <div
+        onDoubleClick={(event) => {
+          if (!onEnterFocus) return
+          event.stopPropagation()
+          onEnterFocus()
+        }}
+        className={cn(
+          'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors',
+          sidebarHoverCardRowClass,
+          !offline && 'cursor-pointer',
+        )}
+      >
         {offline ? (
           <div className={labelClass}>{disclosure}</div>
         ) : (
@@ -120,53 +212,18 @@ export function EnvironmentSectionHeader({
             {disclosure}
           </button>
         )}
-        <div
-          data-slot="environment-row-actions"
-          className={cn(sidebarRowActionsClass, sortOpen && 'pointer-events-auto visible w-auto opacity-100')}
-        >
-          {!offline && onSort && (
-            <DropdownMenu open={sortOpen} onOpenChange={setSortOpen}>
-              <DropdownMenuTrigger asChild>
-                <IconButton size="sm" variant="nested" tooltip={t('sidebar.sort.title')}>
-                  <ArrowDownUp />
-                </IconButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={() => onSort('recent')} className="text-xs">
-                  {sort === 'recent' ? '✓ ' : '   '}{t('sidebar.sort.recent')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onSort('added')} className="text-xs">
-                  {sort === 'added' ? '✓ ' : '   '}{t('sidebar.sort.added')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          {!offline && onAddProject && (
-            <IconButton size="sm" variant="nested" tooltip={t('sidebar.addProject.title')} onClick={onAddProject}>
-              <Plus />
-            </IconButton>
-          )}
-          {remote && !offline && onRefresh && (
-            <IconButton
-              size="sm"
-              variant="nested"
-              tooltip={t('common.refresh')}
-              disabled={refreshing}
-              onClick={onRefresh}
-            >
-              <RotateCw className={cn(refreshing && 'animate-spin')} />
-            </IconButton>
-          )}
-          {remote && onToggleConnection && (
-            <HostConnectionToggle
-              variant="nested"
-              connected={!offline && (connection === 'connected' || connection === 'needs-upgrade' || connection === 'connecting')}
-              busy={connectionBusy}
-              spinning={connection === 'connecting'}
-              onToggle={onToggleConnection}
-            />
-          )}
-        </div>
+        <EnvironmentRowActions
+          offline={offline}
+          remote={remote}
+          connection={connection}
+          refreshing={refreshing}
+          connectionBusy={connectionBusy}
+          sort={sort}
+          onSort={onSort}
+          onAddProject={onAddProject}
+          onRefresh={onRefresh}
+          onToggleConnection={onToggleConnection}
+        />
       </div>
       </EnvironmentHoverCard>
       {open && projectsStatus === 'error' && (

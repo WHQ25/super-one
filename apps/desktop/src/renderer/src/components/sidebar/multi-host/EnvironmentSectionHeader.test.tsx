@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
+import { EnvironmentRowActions, EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 
 describe('environment header row', () => {
   it('highlights on hover at the same height and inset as a project row', () => {
@@ -107,5 +107,68 @@ describe('environment hover card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Environment Settings' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Display Name' })).toHaveValue('dev-server')
+  })
+})
+
+describe('environment focus entry', () => {
+  it('focuses on double click and ignores a double click on the actions', () => {
+    const onEnterFocus = vi.fn()
+    const onToggle = vi.fn()
+    const { rerender } = render(
+      <EnvironmentSectionHeader
+        label="This Mac"
+        kind="local"
+        connection="connected"
+        expanded
+        projectsStatus="ready"
+        projectsError={null}
+        onToggle={onToggle}
+        onEnterFocus={onEnterFocus}
+        onAddProject={() => {}}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'This Mac' }))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    expect(onEnterFocus).not.toHaveBeenCalled()
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'This Mac' }))
+    expect(onEnterFocus).toHaveBeenCalledTimes(1)
+    onEnterFocus.mockClear()
+    fireEvent.doubleClick(document.querySelector('[data-slot="environment-row-actions"]')!)
+    expect(onEnterFocus).not.toHaveBeenCalled()
+
+    rerender(
+      <EnvironmentSectionHeader
+        label="build-box"
+        kind="cli-node"
+        connection="offline"
+        expanded
+        projectsStatus="error"
+        projectsError={null}
+        onToggle={onToggle}
+        onEnterFocus={onEnterFocus}
+      />,
+    )
+    fireEvent.doubleClick(screen.getByText('build-box'))
+    expect(onEnterFocus).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps resident actions visible', () => {
+    render(
+      <EnvironmentRowActions
+        resident
+        offline={false}
+        remote={false}
+        connection="connected"
+        refreshing={false}
+        connectionBusy={false}
+        sort="recent"
+        onSort={() => {}}
+        onAddProject={() => {}}
+      />,
+    )
+    const actions = document.querySelector('[data-slot="environment-row-actions"]')
+    expect(actions?.className).not.toContain('opacity-0')
+    expect(actions?.className).not.toContain('invisible')
+    expect(screen.getByRole('button', { name: 'Sort Projects' })).toBeVisible()
   })
 })

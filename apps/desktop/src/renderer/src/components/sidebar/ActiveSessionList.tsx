@@ -1,7 +1,7 @@
 import { Children, isValidElement, useCallback, useRef, type ReactNode, type WheelEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
-import { chainSessionListWheel, measureSessionListRow, observeSessionListRect, SESSION_CHILD_LIST_SCROLL_CLASS, SESSION_LIST_SCROLL_CLASS, SESSION_ROW_ESTIMATE } from './session-list-scroll'
+import { chainSessionListWheel, measureSessionListRow, observeSessionListRect, SESSION_CHILD_LIST_SCROLL_CLASS, SESSION_LIST_FILL_CLASS, SESSION_LIST_SCROLL_CLASS, SESSION_ROW_ESTIMATE } from './session-list-scroll'
 
 /** Same near-bottom prefetch as project history and the settled list. */
 const ACTIVE_SCROLL_PREFETCH = 300
@@ -13,6 +13,11 @@ export interface ActiveSessionListProps {
   onLoadMore?: () => void | Promise<void>
   /** `child` is the list under one expanded parent. It scrolls on its own. */
   kind?: 'active' | 'child'
+  /**
+   * `cap` keeps the sidebar from growing with an unsettled project.
+   * `fill` is focus mode: this list is the pane, so the cap comes off.
+   */
+  layout?: 'cap' | 'fill'
   children: ReactNode
 }
 
@@ -24,7 +29,7 @@ export interface ActiveSessionListProps {
  * a shorter cap so it fits inside this list.
  * Scrolling near the bottom asks for the next page.
  */
-export function ActiveSessionList({ hasMore = false, onLoadMore, kind = 'active', children }: ActiveSessionListProps) {
+export function ActiveSessionList({ hasMore = false, onLoadMore, kind = 'active', layout = 'cap', children }: ActiveSessionListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
   const items = Children.toArray(children)
@@ -63,7 +68,7 @@ export function ActiveSessionList({ hasMore = false, onLoadMore, kind = 'active'
       onScroll={handleScroll}
       onWheel={handleWheel}
       {...(kind === 'child' ? { 'data-child-session-list': '' } : { 'data-active-session-list': '' })}
-      className={kind === 'child' ? SESSION_CHILD_LIST_SCROLL_CLASS : SESSION_LIST_SCROLL_CLASS}
+      className={layout === 'fill' ? SESSION_LIST_FILL_CLASS : kind === 'child' ? SESSION_CHILD_LIST_SCROLL_CLASS : SESSION_LIST_SCROLL_CLASS}
     >
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }} className="w-full">
         {virtualizer.getVirtualItems().map((item) => (

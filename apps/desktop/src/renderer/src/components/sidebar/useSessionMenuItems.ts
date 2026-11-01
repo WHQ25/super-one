@@ -31,8 +31,9 @@ export function useSessionMenuItems(
   const { t } = useTranslation()
   const unread = useChatStore((s) => s.projectSessions[folderPath]?.unseenCompletedSessions.has(session.sessionId) ?? false)
   const status = useChatStore((s) => s.projectSessions[folderPath]?._sessions?.[session.sessionId]?.status)
+  // realtime-call only holds the Codex voice session, so the session id is enough.
   const realtimeVoice = useRealtimeCallStore((s) => (
-    session.provider === 'codex' && s.sessionId === session.sessionId && s.state !== 'idle'
+    s.sessionId === session.sessionId && s.state !== 'idle'
   ))
   const allowSettle = canSettleSession(status, { realtimeVoice, isSettled: session.isSettled === true })
 

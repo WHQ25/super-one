@@ -421,7 +421,7 @@ function CodexSpeedMark({ label }: { label: string }) {
     return <Zap className="size-3 shrink-0 fill-current" aria-label={label} />
   }
   return (
-    <span className="relative inline-block h-3 w-[18px] shrink-0">
+    <span className="relative inline-block h-3 w-4.5 shrink-0">
       <Zap className="absolute left-0 top-0 size-3 fill-current" aria-hidden />
       <Zap className="absolute left-1.5 top-0 size-3 fill-current" aria-hidden />
       <span className="sr-only">{label}</span>

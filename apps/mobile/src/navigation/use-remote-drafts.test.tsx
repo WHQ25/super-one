@@ -1,6 +1,6 @@
 import { expect, jest, test } from '@jest/globals'
 import { act, renderHook } from '@testing-library/react-native'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { DraftListEntry, DraftSessionSettings } from '@superone/shared/environment/draft-rpc'
 import { useComposerDraft } from './use-composer-draft'
@@ -94,6 +94,55 @@ async function saveDraft(result: { current: { composer: ReturnType<typeof useCom
 function lastUpsert(commands: Array<{ method: string; payload: Record<string, unknown> }>, id: string) {
   return commands.filter((command) => command.method === 'draft.upsert' && command.payload.id === id).at(-1)
 }
+
+test('continuing a parked composer updates that draft instead of adding a pending copy', async () => {
+  const harness = draftHarness({ harness: 'codex', codexModel: 'saved-model' })
+  const { result, unmount } = await harness.render()
+  await act(async () => { result.current.composer.changeText('hello') })
+  await act(async () => { await result.current.library.park() })
+  await act(async () => { result.current.library.begin() })
+  await act(async () => { result.current.composer.changeText('hello!') })
+  await act(async () => { await result.current.library.park() })
+  expect([...harness.rows.keys()]).toHaveLength(1)
+  expect([...harness.rows.values()][0].text).toBe('hello!')
+  expect(result.current.library.rows).toHaveLength(1)
+  expect(result.current.library.rows[0].pendingSync).toBeUndefined()
+  await unmount()
+})
+
+test('a composer that still holds its text reuses the claimed draft after reload', async () => {
+  const rows = new Map<string, DraftListEntry>()
+  const storage = new Map<string, string>([['composer.drafts.desktop', JSON.stringify({
+    pending: [{ input: { id: 'existing', text: 'hello', projectPath: '/repo', attachments: [], settings: { harness: 'codex' } } }],
+    deleted: [], composerId: 'existing',
+  })]])
+  const kv = { get: async (key: string) => storage.get(key) ?? null, set: async (key: string, value: string) => { storage.set(key, value) } }
+  const rpc = async (method: string, payload: Record<string, unknown>) => {
+    if (method === 'draft.list') return { drafts: [...rows.values()] }
+    if (method === 'draft.upsert') {
+      const draft = { ...payload, title: payload.text, updatedAt: 'now', createdAt: payload.createdAt ?? 'now' } as DraftListEntry
+      rows.set(draft.id, draft)
+      return { draft, leaseId: `lease-${draft.id}` }
+    }
+    if (method === 'draft.open') return { draft: rows.get(String(payload.draftId)), leaseId: `lease-${payload.draftId}` }
+    return { ok: true }
+  }
+  const { result, unmount } = await renderHook(() => {
+    const composer = useComposerDraft()
+    useLayoutEffect(() => { composer.changeText('hello!') }, [])
+    const clientRef = useRef({ rpc } as unknown as RelayClient)
+    const library = useRemoteDrafts({
+      kv, pairingId: 'desktop', clientRef, composer, attachments: [], projectPath: '/repo', sessionId: null,
+      settings: { harness: 'codex' },
+      apply: async () => {}, onError: jest.fn(), onRevoked: () => {},
+    })
+    return { library }
+  })
+  await act(async () => { await result.current.library.park() })
+  expect([...rows.keys()]).toEqual(['existing'])
+  expect([...rows.values()][0].text).toBe('hello!')
+  await unmount()
+})
 
 test('an opened draft keeps its saved environment when the phone routes elsewhere', async () => {
   const harness = draftHarness({ harness: 'codex', environmentId: 'mac' })

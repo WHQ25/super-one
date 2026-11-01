@@ -68,6 +68,28 @@ test('a native snapshot revokes a locally held draft taken by another controller
   expect(library.get('held')?.controllerDeviceId).toBe('other')
 })
 
+test('a pending copy of a draft already on the host is not listed or uploaded', async () => {
+  const host = new Map([['kept', { ...row('kept'), text: 'same', title: 'same' }]])
+  const uploaded: string[] = []
+  const library = new RemoteDraftLibrary({
+    kv: { get: async () => null, set: async () => {} }, key: 'drafts',
+    rpc: async (method, payload) => {
+      if (method === 'draft.list') return { drafts: [...host.values()] }
+      if (method === 'draft.upsert') uploaded.push(String(payload.id))
+      return { ok: true }
+    },
+    changed: () => {}, revoked: () => {},
+  })
+  await library.refresh()
+  await library.stage({ id: 'copy', text: 'same', projectPath: '/repo', attachments: [] })
+  expect(library.rows.map((draft) => draft.id)).toEqual(['kept'])
+  expect(library.rows.some((draft) => draft.pendingSync)).toBe(false)
+  await library.flush('copy')
+  await library.reconnect(null)
+  expect(uploaded).toEqual([])
+  expect([...host.keys()]).toEqual(['kept'])
+})
+
 test('a late draft-list response cannot resurrect rows removed by a newer native snapshot', async () => {
   let finish!: (value: { drafts: DraftListEntry[] }) => void
   const pending = new Promise<{ drafts: DraftListEntry[] }>(resolve => { finish = resolve })

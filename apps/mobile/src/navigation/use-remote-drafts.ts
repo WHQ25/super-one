@@ -60,13 +60,28 @@ export function useRemoteDrafts(opts: {
     },
   }), [opts.kv, opts.pairingId])
   const lastSignature = useRef('')
+  // Set when the composer is parked without being replaced. The next edit
+  // continues that draft; a replaced composer (new session) mints a new id.
+  const resumeId = useRef<string | null>(null)
+  const resumeGeneration = useRef<number | null>(null)
+  const boot = useRef(Promise.resolve())
   const stage = () => {
     const o = current.current
     if (suspended.current || o.sessionId || !o.pairingId || !o.projectPath) return null
     const snapshot = { ...o.composer.exportSnapshot(), attachments: o.attachments }
     if (!active.current && !snapshot.text.trim() && !snapshot.attachments.length) return null
-    const id = active.current ?? randomId()
-    if (!active.current) { active.current = id; setActiveId(id) }
+    if (!active.current) {
+      const resume = resumeId.current != null && resumeGeneration.current === o.composer.generation
+      const id = resume ? resumeId.current! : (library.composerDraftId() ?? randomId())
+      if (!resume) resumeId.current = null
+      active.current = id
+      saved.current = library.get(id) ?? saved.current
+      setActiveId(id)
+      library.claimComposer(id)
+    }
+    const id = active.current
+    const known = library.get(id)
+    if (known) saved.current = known
     const input = remoteDraftFromComposer(id, o.projectPath, snapshot, settingsKeepingSavedEnvironment(saved.current?.settings, o.settings), saved.current?.originSessionId)
     if (saved.current) input.createdAt = saved.current.createdAt
     const signature = JSON.stringify(input)
@@ -80,20 +95,57 @@ export function useRemoteDrafts(opts: {
   // visible object characters but refer to different files or sessions.
   const signature = JSON.stringify([opts.composer.exportSnapshot(), opts.attachments, opts.settings, opts.projectPath, opts.sessionId])
   useEffect(() => {
-    active.current = null; saved.current = null; setActiveId(null); lastSignature.current = ''
-    if (opts.pairingId) void library.refresh().catch(error)
+    let cancelled = false
+    const run = (async () => {
+      await library.ready
+      if (cancelled) return
+      // This library is a different desktop, or a fresh mount. Drop the previous
+      // composer's id before refresh decides whether the open text still owns one.
+      active.current = null
+      saved.current = null
+      resumeId.current = null
+      resumeGeneration.current = null
+      setActiveId(null)
+      lastSignature.current = ''
+      const o = current.current
+      const snapshot = o.composer.exportSnapshot()
+      const empty = !snapshot.text.trim() && o.attachments.length === 0
+      // A cold start has an empty composer. Forget the claim so the next note
+      // does not overwrite the draft left in the list. A reload that kept the
+      // text is still that draft.
+      if (empty) library.releaseComposer()
+      if (!cancelled && o.pairingId) await library.refresh().catch(error)
+      if (cancelled) return
+      const remembered = empty ? null : library.composerDraftId()
+      if (!remembered) return
+      active.current = remembered
+      saved.current = library.get(remembered) ?? null
+      setActiveId(remembered)
+      lastSignature.current = ''
+    })()
+    boot.current = run.then(() => {})
+    return () => { cancelled = true }
   }, [library])
   useEffect(() => {
-    const id = stage()
-    if (!id) return
-    const timer = setTimeout(() => { void library.flush(id).catch(error) }, 450)
-    return () => clearTimeout(timer)
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    void boot.current.then(() => {
+      if (cancelled) return
+      const id = stage()
+      if (!id) return
+      timer = setTimeout(() => { void library.flush(id).catch(error) }, 450)
+    })
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [signature, library, activeId])
 
   const park = async () => {
+    await library.ready
     const id = stage() ?? active.current
+    resumeId.current = id
+    resumeGeneration.current = current.current.composer.generation
     active.current = null; saved.current = null; setActiveId(null); lastSignature.current = ''
     suspended.current = true
+    if (id) library.releaseComposer(id)
     if (id) await library.close(id).catch(error)
   }
   return {
@@ -115,6 +167,8 @@ export function useRemoteDrafts(opts: {
         openedId = draft.id
         await current.current.apply(draft)
         saved.current = draft; active.current = draft.id; setActiveId(draft.id)
+        resumeId.current = null
+        library.claimComposer(draft.id)
         lastSignature.current = ''
       } catch (error) {
         if (openedId) await library.close(openedId).catch(() => {})
@@ -123,7 +177,9 @@ export function useRemoteDrafts(opts: {
     },
     consume: async () => {
       const id = active.current
+      resumeId.current = null
       active.current = null; saved.current = null; setActiveId(null); lastSignature.current = ''
+      if (id) library.releaseComposer(id)
       if (id) await library.remove(id).catch(error)
     },
     remove: async (row: DraftListEntry) => { await library.remove(row.id); if (active.current === row.id) current.current.onRevoked() },

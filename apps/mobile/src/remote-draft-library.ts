@@ -22,6 +22,12 @@ function entry(input: DraftUpsertRequest): DraftListEntry {
     createdAt: input.createdAt ?? now, updatedAt: now, pendingSync: true }
 }
 
+/** Identity of what the row shows. A second id with the same body is the
+ * composer losing its draft id, not a second note. */
+function draftBody(text: string, attachments: unknown, projectPath?: string | null): string {
+  return JSON.stringify([text, projectPath ?? null, attachments ?? []])
+}
+
 /** A durable outbox per paired desktop. Operations are serialized so a save
  * started before navigation cannot land after close/delete and resurrect it. */
 export class RemoteDraftLibrary {
@@ -30,6 +36,9 @@ export class RemoteDraftLibrary {
   private pending = new Map<string, Pending>()
   private leases = new Map<string, string>()
   private deleted = new Set<string>()
+  /** Draft id the open composer last claimed. Survives a reload so typing
+   * continues that row instead of minting a second one beside it. */
+  private composerId: string | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private writes: Promise<unknown> = Promise.resolve()
   readonly ready: Promise<void>
@@ -40,17 +49,62 @@ export class RemoteDraftLibrary {
     const raw = await this.ports.kv.get(this.ports.key)
     if (raw) {
       try {
-        const saved = JSON.parse(raw) as { pending: Pending[]; deleted: string[] }
+        const saved = JSON.parse(raw) as { pending: Pending[]; deleted: string[]; composerId?: string | null }
         for (const item of saved.pending ?? []) if (item.input?.id && !this.pending.has(item.input.id)) this.pending.set(item.input.id, item)
         for (const id of saved.deleted ?? []) this.deleted.add(id)
+        if (typeof saved.composerId === 'string' && !this.composerId) this.composerId = saved.composerId
       } catch { /* keep the running editor usable if an older outbox is malformed */ }
     }
+    this.discardShadowPending(false)
     this.ports.changed()
   }
-  get rows(): DraftListEntry[] {
+  /** Id of the draft the composer is in the middle of, if one was claimed. */
+  composerDraftId(): string | null { return this.composerId }
+  claimComposer(id: string): void {
+    if (this.composerId === id) return
+    this.composerId = id
+    void this.persist()
+  }
+  releaseComposer(id?: string | null): void {
+    if (!this.composerId || (id && this.composerId !== id)) return
+    this.composerId = null
+    void this.persist()
+  }
+  private merged(): DraftListEntry[] {
     const rows = new Map(this.records)
-    for (const [id, item] of this.pending) rows.set(id, { ...entry(item.input), createdAt: this.records.get(id)?.createdAt ?? item.input.createdAt ?? entry(item.input).createdAt })
-    return [...rows.values()].filter((row) => !this.deleted.has(row.id) && hasPersistableDraftContent(row)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    for (const [id, item] of this.pending) {
+      if (this.deleted.has(id)) continue
+      const built = entry(item.input)
+      rows.set(id, { ...built, createdAt: this.records.get(id)?.createdAt ?? item.input.createdAt ?? built.createdAt })
+    }
+    return [...rows.values()].filter((row) => !this.deleted.has(row.id) && hasPersistableDraftContent(row))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
+  }
+  /** A pending id whose body is already on screen under another id. */
+  private isShadowCopy(row: DraftListEntry, rows: DraftListEntry[]): boolean {
+    if (!row.pendingSync || row.id === this.composerId) return false
+    const key = draftBody(row.text, row.attachments, row.projectPath)
+    return rows.some((other) => other.id !== row.id && draftBody(other.text, other.attachments, other.projectPath) === key && (
+      !other.pendingSync || other.id === this.composerId || other.id < row.id))
+  }
+  /**
+   * Drop outbox copies of a draft the list already shows. Flushing them would
+   * make the duplicate permanent on the host.
+   */
+  private discardShadowPending(notify = true): void {
+    const rows = this.merged()
+    let changed = false
+    for (const row of rows) {
+      if (!this.isShadowCopy(row, rows) || !this.pending.delete(row.id)) continue
+      changed = true
+    }
+    if (!changed) return
+    void this.persist()
+    if (notify) this.ports.changed()
+  }
+  get rows(): DraftListEntry[] {
+    const rows = this.merged()
+    return rows.filter((row) => !this.isShadowCopy(row, rows))
   }
   get(id: string): DraftListEntry | undefined {
     if (this.deleted.has(id)) return undefined
@@ -58,7 +112,7 @@ export class RemoteDraftLibrary {
     return pending ? entry(pending.input) : this.records.get(id)
   }
   private persist(): Promise<unknown> {
-    const value = JSON.stringify({ pending: [...this.pending.values()], deleted: [...this.deleted] })
+    const value = JSON.stringify({ pending: [...this.pending.values()], deleted: [...this.deleted], composerId: this.composerId })
     this.writes = this.writes.catch(() => {}).then(() => this.ports.kv.set(this.ports.key, value))
     return this.writes
   }
@@ -77,6 +131,7 @@ export class RemoteDraftLibrary {
   stage(input: DraftUpsertRequest): Promise<unknown> {
     const previous = this.pending.get(input.id)
     this.pending.set(input.id, { input, baseUpdatedAt: previous?.baseUpdatedAt ?? this.records.get(input.id)?.updatedAt })
+    this.discardShadowPending(false)
     this.ports.changed()
     return this.ready.then(() => this.persist())
   }
@@ -88,6 +143,7 @@ export class RemoteDraftLibrary {
   refresh(): Promise<void> {
     return this.run(async () => {
       await this.loadRecords()
+      this.discardShadowPending(false)
       this.ports.changed()
     })
   }
@@ -139,6 +195,7 @@ export class RemoteDraftLibrary {
   }
   close(id: string): Promise<void> {
     return this.run(async () => {
+      this.discardShadowPending(false)
       await this.flushOne(id)
       const leaseId = this.leases.get(id)
       if (leaseId) await this.rpc('draft.close', { draftId: id, leaseId })
@@ -149,6 +206,7 @@ export class RemoteDraftLibrary {
     })
   }
   remove(id: string): Promise<void> {
+    this.releaseComposer(id)
     const pending = this.pending.get(id)
     this.pending.delete(id)
     this.deleted.add(id)
@@ -176,6 +234,10 @@ export class RemoteDraftLibrary {
     return this.run(async () => {
       this.leases.clear()
       for (const id of this.deleted) await this.deleteOne(id)
+      // Know the host's rows before uploading, so a copy of one is dropped
+      // instead of becoming a second draft.
+      await this.loadRecords()
+      this.discardShadowPending(false)
       for (const id of this.pending.keys()) {
         await this.flushOne(id)
         if (id !== activeId) {
@@ -186,6 +248,7 @@ export class RemoteDraftLibrary {
       // A `draft_changed` pushed while the phone was away (a draft sent or
       // deleted on the desktop) is gone; only the host's list still knows.
       await this.loadRecords()
+      this.discardShadowPending(false)
       if (activeId && !this.leases.has(activeId)) {
         const result = await this.rpc<DraftOpenResult>('draft.open', { draftId: activeId })
         this.leases.set(activeId, result.leaseId)
@@ -199,7 +262,11 @@ export class RemoteDraftLibrary {
     if (event.draft) this.records.set(event.draftId, event.draft)
     else this.records.delete(event.draftId)
     if (!event.draft?.controllerDeviceId) this.leases.delete(event.draftId)
-    if (event.reason === 'disconnected' || event.reason === 'deleted') this.ports.revoked(event.draftId)
+    if (event.reason === 'disconnected' || event.reason === 'deleted') {
+      this.releaseComposer(event.draftId)
+      this.ports.revoked(event.draftId)
+    }
+    this.discardShadowPending(false)
     this.ports.changed()
   }
 
@@ -217,7 +284,11 @@ export class RemoteDraftLibrary {
       }
     }
     this.records = next
-    for (const id of revoked) this.ports.revoked(id)
+    for (const id of revoked) {
+      this.releaseComposer(id)
+      this.ports.revoked(id)
+    }
+    this.discardShadowPending(false)
     this.ports.changed()
   }
 }

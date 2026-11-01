@@ -10,7 +10,7 @@ import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react
 import type { PinnedSessionEntry, SettledSessionPage } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 
-export const sessionFixtures = { byFolder: {} as Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; isPinned?: boolean; isSettled?: boolean; parentSessionId?: string }>> }
+export const sessionFixtures = { byFolder: {} as Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; isPinned?: boolean; isSettled?: boolean; parentSessionId?: string; provider?: string }>> }
 
 export const appState = {
   sidebarTab: 'sessions',

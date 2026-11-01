@@ -98,11 +98,12 @@ describe('environment sections', () => {
     expect(header?.className ?? '').not.toContain('sticky')
     expect(header?.className ?? '').not.toContain('bg-')
     const row = screen.getByText('This Mac').closest('.group')
+    expect(row).toBeInstanceOf(HTMLElement)
     expect(row?.className).toContain('hover:bg-sidebar-hover')
     expect(row?.className).toContain('data-[sidebar-hover-open=true]:bg-sidebar-hover')
     expect(row?.className).toContain('h-9')
     expect(row?.className).toContain('px-1.5')
-    expect(header).toContainElement(row)
+    expect(header).toContainElement(row as HTMLElement)
     const localSection = document.querySelector('[data-environment-id="desktop"]')
     expect(localSection?.querySelector(':scope > .pl-1')?.textContent).toContain('app')
     // List inset matches New Session (mx-2). The hover fill shares that edge; projects indent one step (pl-1).

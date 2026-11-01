@@ -35,14 +35,14 @@ import { continuationComposer } from '../session-continuation'
 import { SessionHandoffComposer } from '../prompts/SessionHandoffComposer'
 import { useKeyboardVisible } from '../ui/use-keyboard-visible'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
 import * as Haptics from 'expo-haptics'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
 import { BackHandler, Linking, Pressable, useWindowDimensions, View } from 'react-native'
 import { StatusBanner } from '../ui/status-banner'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import {
@@ -106,7 +106,8 @@ import {
   worktreeSelectionError,
   type NewSessionWorktreeSelection,
 } from '../worktree-state'
-import { shouldUseTabletMultiPane } from '../layout-state'
+import { foldGlassBottomInset, foldableContentInsets, isFoldedCoverWindow, isInnerFoldableWindow, shouldUseTabletMultiPane, workspaceSidebarWidth } from '../layout-state'
+import { useHingePosture } from '../hinge-state'
 import { WorkspaceSidebar } from './workspace-sidebar'
 import { projectListChanged, sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
 import { WorkspaceListCache } from '../workspace-list-cache'
@@ -153,7 +154,7 @@ import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
 import { ConnectedTerminal } from './connected-terminal'
 import { MobileNavigator, type AddProjectOrigin, type FilesOrigin, type MobileRoute as Screen, type SettingsOrigin } from './mobile-navigator'
-import { MobileHeader, mobileHeaderTitle } from './mobile-header'
+import { MobileHeader, mobileHeaderTitle, showsMobileHeader } from './mobile-header'
 import { useAddProject } from './use-add-project'
 import { MobileOverlays } from './mobile-overlays'
 import { MobileKeyboardFrame } from './mobile-keyboard-frame'
@@ -176,12 +177,24 @@ import { useDesktopUpgrade } from './use-desktop-upgrade'
 const kv = mobileKv
 /** Host-side `git worktree add` plus a transcript clone; comfortably past the 15 s read default. */
 const FORK_SESSION_TIMEOUT_MS = 60_000
+
+/**
+ * Pair and session search have no shell header. On a portrait Duo the pane
+ * only keeps a short top margin, so those screens take the rest of the clock
+ * inset themselves. Every other route renders its children unchanged.
+ */
+function HeaderlessFoldInset(props: { lift: number; children: ReactNode }) {
+  if (props.lift <= 0) return props.children
+  return <View style={{ flex: 1, paddingTop: props.lift }}>{props.children}</View>
+}
 export function MobileApp() {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
   const { locale, t } = useMobileLocale()
   const webViewTheme = useMemo(() => mobileWebViewTheme(tokens), [tokens])
   const { width, height, fontScale } = useWindowDimensions()
+  const hinge = useHingePosture()
+  const safeInsets = useSafeAreaInsets()
   // Read when a transcript window is requested, outside render.
   const viewportRef = useRef({ width, height })
   viewportRef.current = { width, height }
@@ -285,8 +298,12 @@ export function MobileApp() {
   const [workspaceCache, setWorkspaceCache] = useState(() => new WorkspaceListCache())
   // The same object, readable from async flows that started before a re-render.
   const workspaceCacheRef = useRef(workspaceCache)
-  /** Where a session goes when it ends, fails or is removed: the workspace, open. */
-  const returnToWorkspace = () => { setScreen('chat'); setSessionSwitcherOpen(true) }
+  /** Where a session goes when it ends, fails or is removed: the workspace, open.
+   *  A resident sidebar is already that workspace, so the drawer stays shut. */
+  const returnToWorkspace = () => {
+    setScreen('chat')
+    if (!shouldUseTabletMultiPane(width, height, 'chat', !!project, hinge)) setSessionSwitcherOpen(true)
+  }
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
@@ -371,7 +388,7 @@ export function MobileApp() {
   })
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
   const promptCollapse = usePromptCollapse()
-  useOrientationLock({ filePreviewOpen: filePreview.state != null })
+  useOrientationLock({ filePreviewOpen: filePreview.state != null, hinge })
   useDiagnosticUpload(workspaceClientRef.current, connectionState === 'connected')
   const workspaceActivity = useWorkspaceActivity(workspaceClientRef.current, connectionState === 'connected', !routedEnvironmentId && screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
@@ -1910,7 +1927,7 @@ export function MobileApp() {
    */
   const leaveToWorkspace = () => {
     setScreen('chat')
-    if (!shouldUseTabletMultiPane(width, height, 'chat', !!project)) setSessionSwitcherOpen(true)
+    if (!shouldUseTabletMultiPane(width, height, 'chat', !!project, hinge)) setSessionSwitcherOpen(true)
   }
 
   /**
@@ -2331,7 +2348,7 @@ export function MobileApp() {
     }
     // Chat is the root above the device list, so back opens the workspace the
     // way the desktop keeps its sidebar there — it must not end the session.
-    if (screen === 'chat') setSessionSwitcherOpen(true)
+    if (screen === 'chat' && !shouldUseTabletMultiPane(width, height, 'chat', !!project, hinge)) setSessionSwitcherOpen(true)
   }
 
   const openTerminal = () => {
@@ -2476,7 +2493,21 @@ export function MobileApp() {
     onAddProject: () => { setAddProjectOrigin('workspace'); setScreen('add-project') },
   }
 
-  const tabletMultiPane = shouldUseTabletMultiPane(width, height, screen, !!project)
+  const sidebarWidth = workspaceSidebarWidth(width, height, hinge)
+  // The Duo inner panel's window insets are the wrong size for this shell.
+  // Drop the vertical edges and put a short margin back. Portrait stays a
+  // drawer: the clock occupies only the top-right corner, so a header shares
+  // that band instead of leaving the left of it empty. A screen with no
+  // header still starts below the full inset. The landscape book keeps it.
+  // Phones and iPads keep the default.
+  const foldChrome = isInnerFoldableWindow(width, height) ? foldableContentInsets(safeInsets, height > width) : null
+  // The cover keeps the phone top inset. Its bottom inset is the home
+  // indicator, which holds the composer off the glass, so the pane reaches
+  // down to a 10pt margin while the keyboard is hidden.
+  const coverBottomPull = isFoldedCoverWindow(width, height) && !keyboardVisible
+    ? Math.max(0, safeInsets.bottom - foldGlassBottomInset(safeInsets.bottom))
+    : 0
+  const tabletMultiPane = shouldUseTabletMultiPane(width, height, screen, !!project, hinge)
 
   /**
    * The header is part of each scene rather than a bar above the navigator:
@@ -2487,8 +2518,8 @@ export function MobileApp() {
    * Inside the scene the frame is constant and the outgoing page keeps the bar
    * it had, so every gate here keys on the scene's `route`, not on `screen`.
    */
-  const renderHeader = (route: Screen) => (
-    <>
+  const renderHeader = (route: Screen) => {
+    const bar = (
       <MobileHeader
       pendingCount={workspaceActivity.pendingCount}
       route={route}
@@ -2503,7 +2534,7 @@ export function MobileApp() {
       git={sessionGit}
       onOpenBranch={openGitPage}
       onBack={back}
-      onSwitchSession={() => setSessionSwitcherOpen(true)}
+      onSwitchSession={() => { if (!tabletMultiPane) setSessionSwitcherOpen(true) }}
       onOpenTerminal={openTerminal}
       onFork={route === 'chat' && canForkSession ? forkSession : undefined}
       conversationView={route === 'chat' && transcriptSync.hasTimeline ? transcriptSync.view : undefined}
@@ -2561,9 +2592,17 @@ export function MobileApp() {
           ? additionalDirs.busy || !additionalDirs.resolvedPath
           : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
       />
-      <StatusBanner message={status} onDismiss={() => setStatus('')} />
-    </>
-  )
+    )
+    // Portrait Duo: the trailing control would otherwise sit under the clock.
+    return (
+      <>
+        {foldChrome?.headerTrailing
+          ? <View style={{ paddingRight: foldChrome.headerTrailing }}>{bar}</View>
+          : bar}
+        <StatusBanner message={status} onDismiss={() => setStatus('')} />
+      </>
+    )
+  }
 
   // Android's back button is the hardware twin of the swipe the navigator no
   // longer accepts on chat, so it opens the workspace for the same reason.
@@ -2573,6 +2612,12 @@ export function MobileApp() {
     const back = BackHandler.addEventListener('hardwareBackPress', () => { setSessionSwitcherOpen(true); return true })
     return () => back.remove()
   }, [screen, tabletMultiPane])
+
+  // Unfolding while the phone drawer is up would leave it painted over the
+  // pane that just replaced it.
+  useEffect(() => {
+    if (tabletMultiPane) setSessionSwitcherOpen(false)
+  }, [tabletMultiPane])
 
   // Registered after the handler above whenever a View opens, so it is asked first; an open
   // composer is put away before the View is left.
@@ -2619,7 +2664,7 @@ export function MobileApp() {
 
   return (
     <SessionActivityContext.Provider value={workspaceActivity.sessions}>
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView edges={foldChrome ? ['left', 'right'] : undefined} style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
       <MobileKeyboardFrame documentKeyboard={documentInputFocused}>
         {/* Scenes (and their headers) live in the detail column so the
@@ -2628,6 +2673,8 @@ export function MobileApp() {
         <View style={styles.contentRow}>
         {tabletMultiPane && project ? (
           <WorkspaceSidebar {...workspaceList}
+            width={sidebarWidth ?? undefined}
+            verticalInset={foldChrome?.sidebar}
             deviceName={deviceName}
             deviceStatus={deviceStatus}
             reconnect={reconnect}
@@ -2635,7 +2682,7 @@ export function MobileApp() {
             onOpenSettings={() => openSettings('chat')}
           />
         ) : null}
-          <View style={styles.mainPane}>
+          <View style={[styles.mainPane, foldChrome ? { paddingTop: foldChrome.detailTop - foldChrome.headerLift, paddingBottom: foldChrome.detailBottom } : null, coverBottomPull ? { marginBottom: -coverBottomPull } : null]}>
 
             <View style={styles.flex}>
             <MobileNavigator
@@ -2671,6 +2718,7 @@ export function MobileApp() {
             renderScene={(route) => (
               <View style={styles.flex}>
               {renderHeader(route)}
+              <HeaderlessFoldInset lift={showsMobileHeader(route) ? 0 : foldChrome?.headerLift ?? 0}>
               <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
       {route === 'pair' ? (
         <PairingsScreen
@@ -3045,6 +3093,7 @@ export function MobileApp() {
           writable={terminalUi.writable} onStatus={setStatus} />
       ) : null}
               </View>
+              </HeaderlessFoldInset>
               </View>
             )}
             />

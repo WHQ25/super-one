@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, BackHandler, Keyboard, PanResponder, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { foldableContentInsets, isInnerFoldableWindow } from '../layout-state'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 import { useMobileTheme } from '../theme/context'
 import { SwipeRevealProvider, useSwipeRevealScope } from '../ui/swipe-reveal-scope'
@@ -48,8 +49,12 @@ const CLOSE_MS = 160
 export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const { width } = useWindowDimensions()
+  const { width, height } = useWindowDimensions()
   const insets = useSafeAreaInsets()
+  // The inner panel's top inset is the clock over the session. Applying it
+  // inside this drawer leaves a blank band above search. A short margin is
+  // enough; the cover and every other phone keep the full inset.
+  const fold = isInnerFoldableWindow(width, height) ? foldableContentInsets(insets) : null
 
   const panelWidth = Math.min(width - 40, 360)
   // The panel's own offset, so the same drag that pulled it out can push it
@@ -134,7 +139,7 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
       <Pressable accessibilityRole="button" accessibilityLabel={t('Close workspace')} onPress={props.onDismiss} style={StyleSheet.absoluteFill} />
     </Animated.View>
     <Animated.View {...drag.panHandlers}
-      style={{ width: panelWidth, backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: insets.bottom,
+      style={{ width: panelWidth, backgroundColor: colors.surface, paddingTop: fold ? fold.sidebar : insets.top, paddingBottom: fold ? fold.detailBottom : insets.bottom,
         borderRightWidth: 1, borderRightColor: colors.border, transform: [{ translateX: slide }] }}>
       <SwipeRevealProvider scope={reveal}>
         {/* Search and new session sit at the top. The device readout stays at

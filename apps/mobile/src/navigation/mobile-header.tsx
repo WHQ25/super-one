@@ -20,6 +20,11 @@ import type { TerminalTabUi } from '../terminal-runtime'
 /** Width the confirm action and its balancing leading slot both reserve. */
 const CONFIRM_SLOT_WIDTH = 76
 
+/** Pair and session search draw their own top row, so the shell header stays out. */
+export function showsMobileHeader(route: MobileRoute): boolean {
+  return route !== 'pair' && route !== 'session-search'
+}
+
 export function mobileHeaderTitle(
   route: MobileRoute,
   projectName: string | undefined,
@@ -130,7 +135,7 @@ export function MobileHeader(props: {
     || (showConnectionStatus && !connected)
   // The device list carries its own wordmark inside the page, and session search
   // is a search field with a Cancel beside it — both own their whole screen.
-  if (props.route === 'pair' || props.route === 'session-search') return null
+  if (!showsMobileHeader(props.route)) return null
   if (chat && props.mcpApp) return <McpAppHeader {...props.mcpApp} />
   return (
     <View style={chat ? [styles.top, styles.topBorderless] : styles.top}>

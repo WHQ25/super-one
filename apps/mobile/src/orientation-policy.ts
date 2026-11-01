@@ -1,4 +1,4 @@
-import { TABLET_MIN_HEIGHT } from './layout-state'
+import { TABLET_MIN_HEIGHT, type HingePosture } from './layout-state'
 
 /**
  * Whether the device may rotate into landscape at all.
@@ -11,14 +11,23 @@ import { TABLET_MIN_HEIGHT } from './layout-state'
  * unfolded foldables. Pass `Dimensions.get('screen')`, not the window, so the
  * answer does not depend on the current orientation.
  *
+ * On a Duo the portrait lock exists only while the hinge is closed. Tent,
+ * laptop, and unfold have to drop it as soon as the hinge leaves closed.
+ * Waiting for the inner window to resize is too late: iOS 27 will not adopt
+ * landscape on a scene that already opened under the lock. A phone with no
+ * hinge probe stays on the size check.
+ *
  * File preview is the exception. A picture or listing is worth turning, and
  * there is no composer to cover, so `filePreviewOpen` unlocks rotation even
- * on a phone.
+ * on a phone or a closed cover.
  */
 export function shouldAllowLandscape(
   screen: { width: number; height: number },
   filePreviewOpen = false,
+  hinge: HingePosture = 'unknown',
 ): boolean {
   if (filePreviewOpen) return true
+  if (hinge === 'closed') return false
+  if (hinge === 'partial' || hinge === 'flat') return true
   return Math.min(screen.width, screen.height) >= TABLET_MIN_HEIGHT
 }

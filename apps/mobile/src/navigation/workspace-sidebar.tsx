@@ -10,11 +10,19 @@ export type WorkspaceSidebarProps = Omit<WorkspaceListProps, 'onLeave' | 'visibl
   reconnect?: ReconnectInfo | null
   onDisconnect: () => void
   onOpenSettings: () => void
+  /** Overrides the 280pt pane. A partly open Duo, held landscape, uses one leaf. */
+  width?: number
+  /**
+   * Pads the list off the glass without shrinking the pane. The background
+   * still runs to the edge, which is what removes the empty band on a Duo.
+   */
+  verticalInset?: number
 }
 
 /**
- * The workspace as a permanent pane, shown once the window is wide enough to
- * hold one beside the detail view — a tablet, or a phone turned landscape.
+ * The workspace as a permanent pane, shown once the window can hold one beside
+ * the detail view — a tablet, a phone turned landscape, or the Duo held as a
+ * book. Portrait on the inner panel stays a drawer.
  *
  * It is a sibling of the detail column (header + scene), not a child of it, so
  * the pane occupies the full window height. Anything shorter would leave the
@@ -26,10 +34,14 @@ export type WorkspaceSidebarProps = Omit<WorkspaceListProps, 'onLeave' | 'visibl
  * is what this pane used to be. Nothing here leaves a panel behind, so
  * `WorkspaceList` gets no `onLeave`.
  */
-export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ width, verticalInset, ...props }: WorkspaceSidebarProps) {
   const styles = useMobileStyles()
   return (
-    <View style={styles.tabletSidebar}>
+    <View style={[
+      styles.tabletSidebar,
+      width != null ? { width } : null,
+      verticalInset != null ? { paddingTop: verticalInset, paddingBottom: verticalInset } : null,
+    ]}>
       <WorkspaceList {...props} visible />
       <SidebarDeviceFooter
         deviceName={props.deviceName}

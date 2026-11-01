@@ -232,6 +232,38 @@ function LandscapeFrame(props: WorkspaceSidebarProps) {
   )
 }
 
+/** Partly open Duo, hinge vertical: the pane is one leaf and only 10pt off the glass. */
+export const DuoLeaf = {
+  render: (props: WorkspaceSidebarProps) => (
+    <MobileThemeProvider>
+      <View style={{ width: 951, height: 669, flexDirection: 'row', backgroundColor: '#000' }}>
+        <WorkspaceSidebar {...props} width={476} verticalInset={10} />
+        <View style={{ flex: 1, paddingTop: 59 }}>
+          <MobileHeader
+            route="chat"
+            title="Fix the drawer"
+            subtitle="repo"
+            provider="codex"
+            hasSession
+            sessionId="s1"
+            deviceStatus={props.deviceStatus}
+            reconnect={props.reconnect}
+            sidebarVisible
+            onBack={noop}
+            onSwitchSession={noop}
+            onOpenTerminal={noop}
+            onOpenFiles={noop}
+          />
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text>Chat</Text>
+          </View>
+        </View>
+      </View>
+    </MobileThemeProvider>
+  ),
+  name: 'Duo · one leaf when partly folded',
+}
+
 /** Header is a sibling of the pane, not a parent — the list fills the window height. */
 export const LandscapeSplit = {
   render: LandscapeFrame,

@@ -1,7 +1,7 @@
 import { expect, test } from '@jest/globals'
 import { screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
-import { MobileHeader, mobileHeaderTitle } from './mobile-header'
+import { MobileHeader, mobileHeaderTitle, showsMobileHeader } from './mobile-header'
 
 const noop = () => {}
 
@@ -19,6 +19,12 @@ function header(overrides: Partial<Parameters<typeof MobileHeader>[0]> = {}) {
     {...overrides}
   />
 }
+
+test('pair and session search draw their own top row', () => {
+  expect(showsMobileHeader('pair')).toBe(false)
+  expect(showsMobileHeader('session-search')).toBe(false)
+  expect(showsMobileHeader('chat')).toBe(true)
+})
 
 test('shows an offline connection on the second line of remote page headers', async () => {
   await renderWithTheme(header({ deviceStatus: 'offline' }))

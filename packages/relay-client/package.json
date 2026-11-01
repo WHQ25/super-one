@@ -22,14 +22,14 @@
   },
   "dependencies": {
     "@superone/chat-core": "workspace:*",
-    "@noble/ciphers": "2.3.0",
-    "@noble/hashes": "2.3.0",
+    "@noble/ciphers": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@superone/shared": "workspace:*",
     "fflate": "0.8.3"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=20"

@@ -1,7 +1,6 @@
 import type { ProjectSnapshot } from '@superone/shared/environment'
 import { repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { homePath } from '@superone/shared/path-display'
-import { isListedSession } from '@/lib/session-list-ops'
 
 export interface ProjectRepoLink {
   /** GitHub shows `owner/repo`. Every other host keeps `host/path`. */
@@ -53,14 +52,23 @@ export function projectHoverFolders(rootPath: string, extraDirs?: readonly strin
   return folders
 }
 
-/** Listed sessions, or null when the sidebar has not loaded the whole list. */
-export function knownSessionCount(input: {
-  loaded: boolean
-  hasMore: boolean
-  sessions: readonly { isHidden?: boolean; isSettled?: boolean }[]
-}): number | null {
-  if (!input.loaded || input.hasMore) return null
-  return input.sessions.reduce((count, session) => count + (isListedSession(session) ? 1 : 0), 0)
+/**
+ * Every user session in a full project list.
+ *
+ * The rows have to be the whole project (`includeSettled`, not a sidebar
+ * page). Active sessions, settled sessions, and spawn children each count
+ * once. Hidden rows are system mailboxes and stay out. `childCount` is not
+ * added: those children are already their own rows.
+ */
+export function countProjectSessions(
+  sessions: readonly { isHidden?: boolean; isSettled?: boolean }[],
+): number {
+  let count = 0
+  for (const session of sessions) {
+    if (session.isHidden === true) continue
+    count += 1
+  }
+  return count
 }
 
 const repoLists = new Map<string, Promise<Map<string, string | null>>>()

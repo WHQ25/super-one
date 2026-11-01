@@ -1078,7 +1078,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   listSessions(
     connectionId: string,
     projectId: string,
-    options: { limit: number; offset: number; includeSettled?: boolean },
+    options: { limit: number; offset: number; includeSettled?: boolean; rootsOnly?: boolean; parentSessionId?: string },
   ): Promise<
     Array<{
       sessionId: string
@@ -1092,6 +1092,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       worktreePath?: string | null
       isWorktree?: boolean
       parentSessionId?: string
+      childCount?: number
       gitBranch?: string
       isAutomation?: boolean
       automationId?: string

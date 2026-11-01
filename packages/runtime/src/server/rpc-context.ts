@@ -299,8 +299,12 @@ export interface SessionHostPort {
    */
   createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections & { continuesFrom?: string }, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>
   get(sessionId: string): NodeSessionRecord | null
-  /** Newest first; `limit`/`offset` paginate after sorting. No projectId spans every project. */
-  list(projectId?: string, options?: { limit?: number; offset?: number }): NodeSessionRecord[]
+  /**
+   * Newest first; `limit`/`offset` paginate after sorting. No projectId spans
+   * every project. `rootsOnly` pages parents and reports `childCount`.
+   * `parentSessionId` pages that parent's spawn children.
+   */
+  list(projectId?: string, options?: { limit?: number; offset?: number; rootsOnly?: boolean; parentSessionId?: string }): NodeSessionRecord[]
   setCwd(sessionId: string, cwd: string | null): NodeSessionRecord | Promise<NodeSessionRecord>
   patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord | Promise<NodeSessionRecord>
   /** Reject unsupported selections before create writes a session or starts a harness. */

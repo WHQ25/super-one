@@ -6,6 +6,7 @@ import { sidebarSectionPanelId, type SidebarSectionId } from './sidebar-section-
 /**
  * Heading for a sidebar group such as Pinned, Drafts, or a project's Settled list.
  * The section glyph sits in front of the title and becomes a chevron on hover.
+ * Settled keeps that chevron, pointing down, for as long as the group is open.
  * A count badge appears only while the group is folded.
  */
 export function SidebarSectionLabel({
@@ -15,6 +16,7 @@ export function SidebarSectionLabel({
   onToggle,
   controlsId,
   countTone = 'badge',
+  chevronWhenExpanded = false,
   children,
 }: {
   section: SidebarSectionId
@@ -25,6 +27,8 @@ export function SidebarSectionLabel({
   controlsId?: string
   /** Settled totals get plain muted text. Pinned and Drafts keep the filled badge. */
   countTone?: 'badge' | 'plain'
+  /** While open, leave the down chevron in the icon slot instead of the section glyph. */
+  chevronWhenExpanded?: boolean
   children: ReactNode
 }) {
   return (
@@ -38,6 +42,7 @@ export function SidebarSectionLabel({
     >
       <SidebarHoverChevron
         expanded={!collapsed}
+        forceChevron={chevronWhenExpanded && !collapsed}
         className="size-3"
         glyph={section === 'pinned'
           ? <Pin className="text-sidebar-foreground/45" />

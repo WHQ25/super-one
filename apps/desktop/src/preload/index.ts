@@ -489,7 +489,7 @@ const environmentAPI = {
   listSessions: (
     connectionId: string,
     projectId: string,
-    options: { limit: number; offset: number; includeSettled?: boolean },
+    options: { limit: number; offset: number; includeSettled?: boolean; rootsOnly?: boolean; parentSessionId?: string },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS,
@@ -509,6 +509,7 @@ const environmentAPI = {
         worktreePath?: string | null
         isWorktree?: boolean
         parentSessionId?: string
+        childCount?: number
         gitBranch?: string
         isAutomation?: boolean
         automationId?: string

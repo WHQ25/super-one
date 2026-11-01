@@ -17,6 +17,10 @@ export type ListSessionsPageOptions = {
   projectId?: string | null
   /** History and search include finished sessions. The active list leaves them out. */
   includeSettled?: boolean
+  /** Active sidebar pages. Children stay out until their parent is expanded. */
+  rootsOnly?: boolean
+  /** One parent's spawn children. */
+  parentSessionId?: string
 }
 
 type EnvironmentSessionRow = {
@@ -31,6 +35,7 @@ type EnvironmentSessionRow = {
   worktreePath?: string | null
   isWorktree?: boolean
   parentSessionId?: string
+  childCount?: number
   gitBranch?: string
   isAutomation?: boolean
   automationId?: string | null
@@ -58,6 +63,7 @@ export function mapEnvironmentSessionRow(row: EnvironmentSessionRow): SessionHis
     worktreePath: row.worktreePath ?? undefined,
     isWorktree: row.isWorktree ?? Boolean(row.worktreePath),
     ...(row.parentSessionId ? { parentSessionId: row.parentSessionId } : {}),
+    ...(typeof row.childCount === 'number' && row.childCount > 0 ? { childCount: row.childCount } : {}),
     ...(row.gitBranch ? { gitBranch: row.gitBranch } : {}),
     ...(row.isAutomation ? { isAutomation: true } : {}),
     ...(row.automationId ? { automationId: row.automationId } : {}),
@@ -68,6 +74,12 @@ export function mapEnvironmentSessionRow(row: EnvironmentSessionRow): SessionHis
       : {}),
   }
 }
+
+/**
+ * One page of root sessions, and one page of a parent's children.
+ * A full page means another page is waiting; the list loads it on scroll.
+ */
+export const ACTIVE_SESSION_PAGE_SIZE = 20
 
 /** Full-page hasMore heuristic shared by history / chat-store (page-size convention). */
 export function sessionsPageHasMore(page: SessionHistoryEntry[], pageSize: number): boolean {
@@ -122,6 +134,8 @@ export async function listSessionsPage(
     limit: options.limit,
     offset: options.offset,
     ...(options.includeSettled ? { includeSettled: true } : {}),
+    ...(options.rootsOnly ? { rootsOnly: true } : {}),
+    ...(options.parentSessionId ? { parentSessionId: options.parentSessionId } : {}),
   })
   return rows.map(mapEnvironmentSessionRow)
 }

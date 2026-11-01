@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect } from 'react'
+import { memo, useCallback, useEffect, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { Bot, ChevronDown, ChevronRight, CircleCheck, Clock, CornerDownRight, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone, Undo2, Unplug } from 'lucide-react'
@@ -14,7 +14,7 @@ import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { remoteControllerBadgeText } from '@/components/chat/RemoteControllerBanner'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
-import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { AgentStatus, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { getPendingReason } from './session-state-utils'
 import { useSessionDragOut } from './useSessionDragOut'
@@ -23,12 +23,13 @@ import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { canSettleSession } from '@/lib/session-menu-items'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
+import type { ProjectState } from '@/stores/chat-store/types'
 import { SessionHoverCard, SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
-/** Pin / expand occupy no width at rest. Padding lands on hover. */
+/** Pin, unsettle, and expand occupy no width at rest. Padding lands on hover. */
 const SESSION_ROW_HOVER_ACTION =
   'box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:p-0.5 group-hover/session:opacity-100'
 
@@ -56,6 +57,115 @@ function SessionStatusSpinner({ stallLevel }: { stallLevel: StallLevel }) {
   return <Loader2 className={cn('size-3 animate-spin', getStallColor(stallLevel, 'text-sidebar-foreground/70'))} />
 }
 
+function sessionRowStoreSlice(state: { projectSessions: Record<string, ProjectState> }, folderPath: string, sessionId: string) {
+  const proj = state.projectSessions[folderPath]
+  const entry = proj?._sessions?.[sessionId]
+  return {
+    activeSid: proj?._activeSessionId ?? null,
+    status: entry?.status,
+    isUnseen: proj?.unseenCompletedSessions?.has(sessionId) ?? false,
+    pendingPermissions: entry?.pendingPermissions,
+    pendingQuestion: entry?.pendingQuestion,
+    pendingPlanApproval: entry?.pendingPlanApproval,
+    animateInitialTitle: entry?._animateInitialTitle ?? false,
+  }
+}
+
+function sessionRowViewModel(input: {
+  hasRealProject: boolean
+  folderPath: string
+  currentFolder: string | null
+  provider: SessionHistoryEntry['provider']
+  realtimeSessionId: string | null
+  realtimeState: string
+  sessionId: string
+  activeSid: string | null
+  status: AgentStatus | undefined
+  isUnseen: boolean
+  isAutomation: boolean | undefined
+  stallLevel: StallLevel
+  isSettled: boolean | undefined
+  opening: boolean
+}) {
+  const isProjectActive = input.hasRealProject && input.folderPath === input.currentFolder
+  const isRealtimeVoiceSession = input.provider === 'codex'
+    && input.realtimeSessionId === input.sessionId
+    && input.realtimeState !== 'idle'
+  const isRunning = input.status === 'streaming'
+  const isBackground = input.status === 'background'
+  return {
+    isRealtimeVoiceSession,
+    isRunning,
+    isSessionActive: isProjectActive && input.activeSid === input.sessionId,
+    titleClassName: cn(
+      'text-[13px]',
+      isRunning && 'transition-colors duration-500',
+      isRunning && getStallColor(input.stallLevel, ''),
+    ),
+    harnessStatus: harnessGlyphStatus({
+      isRunning,
+      isBackground,
+      isUnseen: input.isUnseen,
+      isAutomation: input.isAutomation,
+    }),
+    settled: input.isSettled === true,
+    showLeadingSettle: !input.opening && input.isSettled !== true && canSettleSession(input.status, {
+      realtimeVoice: isRealtimeVoiceSession,
+    }),
+  }
+}
+
+function harnessGlyphStatus(input: {
+  isRunning: boolean
+  isBackground: boolean
+  isUnseen: boolean
+  isAutomation: boolean | undefined
+}): SessionIconProps['status'] {
+  if (input.isRunning) return 'running'
+  if (input.isBackground) return 'background'
+  if (input.isUnseen) return 'unseen'
+  if (input.isAutomation) return 'automation'
+  return 'default'
+}
+
+function sessionLeadingGlyph({
+  opening,
+  loadingLabel,
+  scheduledLabel,
+  voice,
+  HarnessIcon,
+  isSessionActive,
+  voiceGlyph,
+  remote,
+  harnessStatus,
+  isRunning,
+  stallLevel,
+}: {
+  opening: boolean
+  loadingLabel: string
+  scheduledLabel: string | null
+  voice: boolean
+  HarnessIcon: ReturnType<typeof resolveSessionIcon>
+  isSessionActive: boolean
+  voiceGlyph: ReactNode
+  remote: boolean
+  harnessStatus: SessionIconProps['status']
+  isRunning: boolean
+  stallLevel: StallLevel
+}) {
+  if (opening) return <Loader2 aria-label={loadingLabel} className="size-3 animate-spin text-sidebar-foreground/70" />
+  if (scheduledLabel) return <Clock className="size-3 text-warning" aria-label={scheduledLabel} />
+  if (voice && HarnessIcon) {
+    return <HarnessIcon status="running" active={isSessionActive} renderLevel="compact" runningGlyph={voiceGlyph} />
+  }
+  if (remote) return <Smartphone className="size-3 text-sidebar-foreground/70" />
+  if (HarnessIcon && harnessStatus !== 'default') {
+    return <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
+  }
+  if (isRunning) return <SessionStatusSpinner stallLevel={stallLevel} />
+  return <MessageSquare className="size-3 text-sidebar-foreground/70" />
+}
+
 function PlainSessionTitle({ projectPath, sessionId, fallback, className }: { projectPath: string; sessionId: string; fallback: string; className?: string }) {
   const title = useSessionTitle(projectPath, sessionId, fallback)
   const repaintKey = useEllipsisRepaintKey(className ?? '')
@@ -63,6 +173,83 @@ function PlainSessionTitle({ projectPath, sessionId, fallback, className }: { pr
     <MarqueeText key={repaintKey} className={cn('session-row-title min-w-0 flex-1 text-[13px]', className)}>
       {title}
     </MarqueeText>
+  )
+}
+
+function SessionRowTrailing({
+  settled,
+  pinned,
+  hasChildren,
+  childrenCollapsed,
+  remoteLabel,
+  onToggleChildren,
+  onPin,
+  onUnsettle,
+}: {
+  settled: boolean
+  pinned: boolean
+  hasChildren: boolean
+  childrenCollapsed: boolean
+  remoteLabel?: string
+  onToggleChildren?: () => void
+  onPin: () => void
+  onUnsettle: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="ml-auto flex shrink-0 items-center">
+      {/* Why this row is at the top of the list. Always visible — the
+          hover-revealed pin, unsettle, and expand buttons beside it are
+          actions, this is a state, and a state the user cannot see
+          explains nothing. */}
+      {remoteLabel !== undefined && (
+        <span
+          className="mr-1 inline-flex max-w-24 min-w-0 items-center gap-1 rounded bg-sidebar-foreground/10 px-1 py-px text-[10px] text-sidebar-foreground/70"
+          title={remoteControllerBadgeText(t, remoteLabel)}
+          aria-label={remoteControllerBadgeText(t, remoteLabel)}
+        >
+          <Laptop className="size-2.5 shrink-0" />
+          {remoteLabel && <span className="truncate">{remoteLabel}</span>}
+        </span>
+      )}
+      {hasChildren && onToggleChildren && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleChildren()
+          }}
+          title={childrenCollapsed ? t('sidebar.contextMenu.expandChildren') : t('sidebar.contextMenu.collapseChildren')}
+          className={SESSION_ROW_HOVER_ACTION}
+        >
+          {childrenCollapsed
+            ? <ChevronRight className="size-3" />
+            : <ChevronDown className="size-3" />}
+        </button>
+      )}
+      {settled ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onUnsettle()
+          }}
+          aria-label={t('sidebar.contextMenu.unsettle')}
+          className={SESSION_ROW_HOVER_ACTION}
+        >
+          <Undo2 className="size-3" />
+        </button>
+      ) : (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onPin()
+          }}
+          aria-label={pinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin')}
+          className={SESSION_ROW_HOVER_ACTION}
+        >
+          <Pin className="size-3" />
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -112,19 +299,9 @@ export const SessionRow = memo(function SessionRow({
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
   // Deliberately does NOT select `lastEventAt` — it changes on every content
   // delta; stall level reads it lazily via getState() once per second.
-  const { activeSid, status, isUnseen, pendingPermissions, pendingQuestion, pendingPlanApproval, animateInitialTitle } = useChatStore(useShallow((s) => {
-    const proj = s.projectSessions[folderPath]
-    const entry = proj?._sessions?.[session.sessionId]
-    return {
-      activeSid: proj?._activeSessionId ?? null,
-      status: entry?.status,
-      isUnseen: proj?.unseenCompletedSessions?.has(session.sessionId) ?? false,
-      pendingPermissions: entry?.pendingPermissions,
-      pendingQuestion: entry?.pendingQuestion,
-      pendingPlanApproval: entry?.pendingPlanApproval,
-      animateInitialTitle: entry?._animateInitialTitle ?? false,
-    }
-  }))
+  const { activeSid, status, isUnseen, pendingPermissions, pendingQuestion, pendingPlanApproval, animateInitialTitle } = useChatStore(useShallow((s) => (
+    sessionRowStoreSlice(s, folderPath, session.sessionId)
+  )))
   useEffect(() => {
     if (!animateTitle || !animateInitialTitle) return
     useChatStore.setState((state) => {
@@ -134,36 +311,33 @@ export const SessionRow = memo(function SessionRow({
     })
   }, [animateTitle, animateInitialTitle, folderPath, session.sessionId])
   const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
-
-  const isProjectActive = hasRealProject && folderPath === currentFolder
-  const isRealtimeVoiceSession = session.provider === 'codex'
-    && realtimeCall.sessionId === session.sessionId
-    && realtimeCall.state !== 'idle'
   const isRunning = status === 'streaming'
-  const isBackground = status === 'background'
-  const isSessionActive = isProjectActive && activeSid === session.sessionId
   // Stall color on the title (and fallback spinner) mirrors the chat turn
   // footer: amber after 60s without events, red after 120s. Harness icons no
   // longer carry this signal, so the title is the sidebar indicator.
   const stallLevel = useSessionStallLevel(folderPath, session.sessionId, isRunning)
-  const titleClassName = cn(
-    'text-[13px]',
-    isRunning && 'transition-colors duration-500',
-    // Empty normal color → inherit sidebar foreground while streaming is healthy.
-    isRunning && getStallColor(stallLevel, ''),
-  )
-  const harnessStatus: SessionIconProps['status'] = isRunning
-    ? 'running'
-    : isBackground
-      ? 'background'
-      : isUnseen
-        ? 'unseen'
-        : session.isAutomation
-          ? 'automation'
-          : 'default'
+  const view = sessionRowViewModel({
+    hasRealProject,
+    folderPath,
+    currentFolder,
+    provider: session.provider,
+    realtimeSessionId: realtimeCall.sessionId,
+    realtimeState: realtimeCall.state,
+    sessionId: session.sessionId,
+    activeSid,
+    status,
+    isUnseen,
+    isAutomation: session.isAutomation,
+    stallLevel,
+    isSettled: session.isSettled,
+    opening,
+  })
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
   const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, session.sessionId))
-  const voiceGlyph = isRealtimeVoiceSession
+  const scheduledLabel = scheduled
+    ? t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })
+    : null
+  const voiceGlyph = view.isRealtimeVoiceSession
     ? <Mic
         strokeWidth={2}
         className="text-white"
@@ -181,11 +355,6 @@ export const SessionRow = memo(function SessionRow({
     title: session.title,
   })
 
-  const showSettleControl = !opening && canSettleSession(status, {
-    realtimeVoice: isRealtimeVoiceSession,
-    isSettled: session.isSettled === true,
-  })
-
   const menuItems = useSessionMenuItems(session, folderPath, {
     onSwitchSession,
     onPinSession,
@@ -194,6 +363,99 @@ export const SessionRow = memo(function SessionRow({
     onDeleteSession,
   })
 
+  return (
+    <SessionRowFrame
+      session={session}
+      folderPath={folderPath}
+      opening={opening}
+      animateTitle={animateTitle}
+      childSession={childSession}
+      hasChildren={hasChildren}
+      childrenCollapsed={childrenCollapsed}
+      onToggleChildren={onToggleChildren}
+      hover={hover}
+      environmentOffline={environmentOffline}
+      onSwitchSession={onSwitchSession}
+      onPinSession={onPinSession}
+      onSettleSession={onSettleSession}
+      rowRef={rowRef}
+      dragHandlers={dragHandlers}
+      dragPreview={dragPreview}
+      pendingReason={pendingReason}
+      animateInitialTitle={animateInitialTitle}
+      view={view}
+      HarnessIcon={HarnessIcon}
+      scheduledLabel={scheduledLabel}
+      voiceGlyph={voiceGlyph}
+      remote={remoteSessionIds.includes(session.sessionId)}
+      stallLevel={stallLevel}
+      menuItems={menuItems}
+      settleLabel={t('sidebar.contextMenu.settle')}
+      loadingLabel={t('common.loading')}
+      offlineLabel={t('sidebar.sessionOffline')}
+    />
+  )
+})
+
+function SessionRowFrame({
+  session,
+  folderPath,
+  opening,
+  animateTitle,
+  childSession,
+  hasChildren,
+  childrenCollapsed,
+  onToggleChildren,
+  hover,
+  environmentOffline,
+  onSwitchSession,
+  onPinSession,
+  onSettleSession,
+  rowRef,
+  dragHandlers,
+  dragPreview,
+  pendingReason,
+  animateInitialTitle,
+  view,
+  HarnessIcon,
+  scheduledLabel,
+  voiceGlyph,
+  remote,
+  stallLevel,
+  menuItems,
+  settleLabel,
+  loadingLabel,
+  offlineLabel,
+}: {
+  session: SessionHistoryEntry
+  folderPath: string
+  opening: boolean
+  animateTitle: boolean
+  childSession: boolean
+  hasChildren: boolean
+  childrenCollapsed: boolean
+  onToggleChildren?: () => void
+  hover: SessionHoverModel | null
+  environmentOffline: boolean
+  onSwitchSession: SessionRowCallbacks['onSwitchSession']
+  onPinSession: SessionRowCallbacks['onPinSession']
+  onSettleSession: SessionRowCallbacks['onSettleSession']
+  rowRef: ReturnType<typeof useSessionDragOut>['rowRef']
+  dragHandlers: ReturnType<typeof useSessionDragOut>['dragHandlers']
+  dragPreview: ReturnType<typeof useSessionDragOut>['dragPreview']
+  pendingReason: string | null
+  animateInitialTitle: boolean
+  view: ReturnType<typeof sessionRowViewModel>
+  HarnessIcon: ReturnType<typeof resolveSessionIcon>
+  scheduledLabel: string | null
+  voiceGlyph: ReactNode
+  remote: boolean
+  stallLevel: StallLevel
+  menuItems: ReturnType<typeof useSessionMenuItems>
+  settleLabel: string
+  loadingLabel: string
+  offlineLabel: string
+}) {
   const rowInner = (
           <div
             ref={rowRef}
@@ -201,94 +463,57 @@ export const SessionRow = memo(function SessionRow({
             onClick={() => onSwitchSession(folderPath, session.sessionId)}
             className={cn(
               'group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-2.25 py-1.5 transition-colors',
-              isSessionActive ? 'bg-sidebar-accent sidebar-selected' : sidebarHoverCardRowClass,
+              view.isSessionActive ? 'bg-sidebar-accent sidebar-selected' : sidebarHoverCardRowClass,
               (session.isHidden || environmentOffline) && 'opacity-50',
             )}
           >
             {childSession && <CornerDownRight className="size-3 shrink-0 text-sidebar-foreground/45" />}
             <div className="relative flex size-4 shrink-0 items-center justify-center">
-              {showSettleControl && (
+              {view.showLeadingSettle && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    onSettleSession(session.sessionId, !session.isSettled, folderPath)
+                    onSettleSession(session.sessionId, true, folderPath)
                   }}
-                  aria-label={session.isSettled ? t('sidebar.contextMenu.unsettle') : t('sidebar.contextMenu.settle')}
+                  aria-label={settleLabel}
                   className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/session:opacity-100"
                 >
-                  {session.isSettled ? <Undo2 className="size-3" /> : <CircleCheck className="size-3" />}
+                  <CircleCheck className="size-3" />
                 </button>
               )}
-              <span className={cn('pointer-events-none', showSettleControl && 'group-hover/session:opacity-0')}>
-                {opening
-                  ? <Loader2 aria-label={t('common.loading')} className="size-3 animate-spin text-sidebar-foreground/70" />
-                  : scheduled
-                  ? <Clock
-                      className="size-3 text-warning"
-                      aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
-                    />
-                  : isRealtimeVoiceSession && HarnessIcon
-                  ? <HarnessIcon
-                      status="running"
-                      active={isSessionActive}
-                      renderLevel="compact"
-                      runningGlyph={voiceGlyph}
-                    />
-                  : remoteSessionIds.includes(session.sessionId)
-                    ? <Smartphone className="size-3 text-sidebar-foreground/70" />
-                    : HarnessIcon && harnessStatus !== 'default'
-                      ? <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
-                      : isRunning
-                        ? <SessionStatusSpinner stallLevel={stallLevel} />
-                        : <MessageSquare className="size-3 text-sidebar-foreground/70" />
-                }
+              <span className={cn('pointer-events-none', view.showLeadingSettle && 'group-hover/session:opacity-0')}>
+                {sessionLeadingGlyph({
+                  opening,
+                  loadingLabel,
+                  scheduledLabel,
+                  voice: view.isRealtimeVoiceSession,
+                  HarnessIcon,
+                  isSessionActive: view.isSessionActive,
+                  voiceGlyph,
+                  remote,
+                  harnessStatus: view.harnessStatus,
+                  isRunning: view.isRunning,
+                  stallLevel,
+                })}
               </span>
             </div>
             {animateTitle
-              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
-              : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={view.titleClassName} animateOnMount={animateInitialTitle} />
+              : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={view.titleClassName} />
             }
             {environmentOffline && (
-              <Unplug className="size-3 shrink-0 text-sidebar-foreground/70" aria-label={t('sidebar.sessionOffline')} />
+              <Unplug className="size-3 shrink-0 text-sidebar-foreground/70" aria-label={offlineLabel} />
             )}
-            <div className="ml-auto flex shrink-0 items-center">
-              {/* Why this row is at the top of the list. Always visible — the
-                  hover-revealed pin/expand buttons beside it are actions, this
-                  is a state, and a state the user cannot see explains nothing. */}
-              {session.remoteController && (
-                <span
-                  className="mr-1 inline-flex max-w-24 min-w-0 items-center gap-1 rounded bg-sidebar-foreground/10 px-1 py-px text-[10px] text-sidebar-foreground/70"
-                  title={remoteControllerBadgeText(t, session.remoteController.label)}
-                  aria-label={remoteControllerBadgeText(t, session.remoteController.label)}
-                >
-                  <Laptop className="size-2.5 shrink-0" />
-                  {session.remoteController.label && <span className="truncate">{session.remoteController.label}</span>}
-                </span>
-              )}
-              {hasChildren && onToggleChildren && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onToggleChildren()
-                  }}
-                  title={childrenCollapsed ? t('sidebar.contextMenu.expandChildren') : t('sidebar.contextMenu.collapseChildren')}
-                  className={SESSION_ROW_HOVER_ACTION}
-                >
-                  {childrenCollapsed
-                    ? <ChevronRight className="size-3" />
-                    : <ChevronDown className="size-3" />}
-                </button>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onPinSession(session.sessionId, !session.isPinned, folderPath)
-                }}
-                className={SESSION_ROW_HOVER_ACTION}
-              >
-                <Pin className="size-3" />
-              </button>
-            </div>
+            <SessionRowTrailing
+              settled={view.settled}
+              pinned={session.isPinned === true}
+              hasChildren={hasChildren}
+              childrenCollapsed={childrenCollapsed}
+              remoteLabel={session.remoteController ? (session.remoteController.label ?? '') : undefined}
+              onToggleChildren={onToggleChildren}
+              onPin={() => onPinSession(session.sessionId, !session.isPinned, folderPath)}
+              onUnsettle={() => onSettleSession(session.sessionId, false, folderPath)}
+            />
           </div>
   )
 
@@ -313,4 +538,4 @@ export const SessionRow = memo(function SessionRow({
       )}
     </div>
   )
-})
+}

@@ -42,12 +42,87 @@ export function projectPathOfSession(sessionId: string): string | null {
   return row?.path ?? null
 }
 
+type ListedSessionRow = {
+  id: string
+  title: string | null
+  created_at: string
+  last_user_msg_at: string
+  is_worktree: number | null
+  is_pinned: number | null
+  is_hidden: number | null
+  is_settled: number | null
+  git_branch: string | null
+  worktree_path: string | null
+  is_automation: number | null
+  automation_id: string | null
+  provider_session_id: string | null
+  provider_id: string | null
+  provider: string | null
+  acp_agent_id: string | null
+  selected_model: string | null
+  parent_session_id: string | null
+  tags_json: string | null
+  remote_controller_json: string | null
+  seen_completed_message_id: string | null
+  child_count?: number | null
+}
+
+function mapListedSession(r: ListedSessionRow): SessionHistoryEntry {
+  const tags = parseTagsJson(r.tags_json)
+  const harnessId = deriveHarnessId(r)
+  const selectedModel = storedSelectedModel(harnessId, r.selected_model)
+  const remoteController = remoteControllerInfo(r.remote_controller_json)
+  const childCount = typeof r.child_count === 'number' ? r.child_count : 0
+  return {
+    sessionId: r.id,
+    title: r.title ?? 'Untitled',
+    lastActiveAt: r.last_user_msg_at,
+    provider: harnessId,
+    messageCount: 0,
+    ...(r.is_worktree ? { isWorktree: true } : {}),
+    ...(r.is_pinned ? { isPinned: true } : {}),
+    ...(r.is_hidden ? { isHidden: true } : {}),
+    ...(r.is_settled ? { isSettled: true } : {}),
+    ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
+    ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
+    ...(r.is_automation ? { isAutomation: true } : {}),
+    ...(r.automation_id ? { automationId: r.automation_id } : {}),
+    ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
+    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+    ...(selectedModel ? { selectedModel } : {}),
+    ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
+    ...(childCount > 0 ? { childCount } : {}),
+    ...(tags.length ? { tags } : {}),
+    ...(remoteController ? { remoteController } : {}),
+    ...listedUnread(r.seen_completed_message_id),
+  }
+}
+
+/**
+ * Sessions joined to their spawn parent. A child whose session lives on another
+ * machine is only a mailbox row here, so the sidebar lists it on that machine.
+ */
+const RELATED_SESSIONS_CTE = `
+  WITH related_sessions AS (
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.is_settled, s.git_branch, s.worktree_path,
+           s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
+           s.selected_model, s.tags_json, s.remote_controller_json, s.seen_completed_message_id,
+           g.parent_session_id,
+           COALESCE(g.parent_session_id, s.id) AS root_session_id,
+           COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
+    FROM sessions s
+    LEFT JOIN session_collaboration_grants g
+      ON g.child_session_id = s.id
+      AND COALESCE(g.kind, 'spawn') = 'spawn'
+    WHERE s.project_id = ?
+      AND json_extract(g.config_json, '$.remote.environmentId') IS NULL`
+
 /** List sessions for a project id from DB (Environment API / local gateway path). */
 export function listSessionsForProjectId(
   projectId: string,
   limit?: number,
   offset?: number,
-  options?: { includeSettled?: boolean },
+  options?: { includeSettled?: boolean; rootsOnly?: boolean; parentSessionId?: string },
 ): SessionHistoryEntry[] {
   if (!projectId) return []
 
@@ -55,22 +130,30 @@ export function listSessionsForProjectId(
   // Settled sessions leave the active list. Search and history ask for them
   // back; the Settled group itself is loaded by listSettledSessions.
   const settledClause = options?.includeSettled ? '' : '\n        AND COALESCE(s.is_settled, 0) = 0'
-  const baseSql = `
-    WITH related_sessions AS (
-      SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.is_settled, s.git_branch, s.worktree_path,
-             s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
-             s.selected_model, s.tags_json, s.remote_controller_json, s.seen_completed_message_id,
-             g.parent_session_id,
-             COALESCE(g.parent_session_id, s.id) AS root_session_id,
-             COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
-      FROM sessions s
-      LEFT JOIN session_collaboration_grants g
-        ON g.child_session_id = s.id
-        AND COALESCE(g.kind, 'spawn') = 'spawn'
-      WHERE s.project_id = ?
-        -- A child on another machine keeps a row here only as its mailbox endpoint;
-        -- the sidebar lists it under that machine.
-        AND json_extract(g.config_json, '$.remote.environmentId') IS NULL${settledClause}
+  const parentSessionId = options?.parentSessionId?.trim() || ''
+  const rootsOnly = options?.rootsOnly === true && !parentSessionId
+  // A parent page counts direct spawn children so the row can offer expand
+  // before those children are read. The child page is that read.
+  const baseSql = parentSessionId
+    ? `${RELATED_SESSIONS_CTE}${settledClause}
+        AND g.parent_session_id = ?
+        AND COALESCE(s.is_hidden, 0) = 0
+    )
+    SELECT * FROM related_sessions
+    ORDER BY last_user_msg_at DESC`
+    : rootsOnly
+      ? `${RELATED_SESSIONS_CTE}${settledClause}
+    ), grouped_sessions AS (
+      SELECT related_sessions.*,
+             MAX(last_user_msg_at) OVER (PARTITION BY root_session_id) AS group_last_active_at,
+             SUM(CASE WHEN parent_session_id IS NOT NULL AND COALESCE(is_hidden, 0) = 0 THEN 1 ELSE 0 END)
+               OVER (PARTITION BY root_session_id) AS child_count
+      FROM related_sessions
+    )
+    SELECT * FROM grouped_sessions
+    WHERE parent_session_id IS NULL
+    ORDER BY group_last_active_at DESC, last_user_msg_at DESC`
+      : `${RELATED_SESSIONS_CTE}${settledClause}
     ), grouped_sessions AS (
       SELECT related_sessions.*,
              MAX(last_user_msg_at) OVER (PARTITION BY root_session_id) AS group_last_active_at
@@ -82,43 +165,17 @@ export function listSessionsForProjectId(
              CASE WHEN parent_session_id IS NULL THEN 0 ELSE 1 END,
              last_user_msg_at DESC`
   const safeOffset = Math.max(0, offset ?? 0)
+  const binds = parentSessionId ? [projectId, parentSessionId] : [projectId]
   // Match remote SessionRuntime.list: apply offset even when limit is omitted.
   // SQLite requires LIMIT with OFFSET; LIMIT -1 means "no upper bound".
   const rows = (limit != null
-    ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(projectId, limit, safeOffset)
+    ? db.prepare(`${baseSql} LIMIT ? OFFSET ?`).all(...binds, limit, safeOffset)
     : safeOffset > 0
-      ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(projectId, safeOffset)
-      : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; is_settled: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; selected_model: string | null; parent_session_id: string | null; tags_json: string | null; remote_controller_json: string | null; seen_completed_message_id: string | null }>
+      ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(...binds, safeOffset)
+      : db.prepare(baseSql).all(...binds)
+  ) as ListedSessionRow[]
 
-  return rows.map((r) => {
-    const tags = parseTagsJson(r.tags_json)
-    const harnessId = deriveHarnessId(r)
-    const selectedModel = storedSelectedModel(harnessId, r.selected_model)
-    const remoteController = remoteControllerInfo(r.remote_controller_json)
-    return {
-      sessionId: r.id,
-      title: r.title ?? 'Untitled',
-      lastActiveAt: r.last_user_msg_at,
-      provider: harnessId,
-      messageCount: 0,
-      ...(r.is_worktree ? { isWorktree: true } : {}),
-      ...(r.is_pinned ? { isPinned: true } : {}),
-      ...(r.is_hidden ? { isHidden: true } : {}),
-      ...(r.is_settled ? { isSettled: true } : {}),
-      ...(r.git_branch ? { gitBranch: r.git_branch } : {}),
-      ...(r.worktree_path ? { worktreePath: r.worktree_path } : {}),
-      ...(r.is_automation ? { isAutomation: true } : {}),
-      ...(r.automation_id ? { automationId: r.automation_id } : {}),
-      ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
-      ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
-      ...(selectedModel ? { selectedModel } : {}),
-      ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
-      ...(tags.length ? { tags } : {}),
-      ...(remoteController ? { remoteController } : {}),
-      ...listedUnread(r.seen_completed_message_id),
-    }
-  })
+  return rows.map(mapListedSession)
 }
 
 /**

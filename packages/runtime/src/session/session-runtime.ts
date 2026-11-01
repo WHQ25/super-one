@@ -879,12 +879,35 @@ export class SessionRuntime {
 
   list(
     projectId?: string,
-    options?: { limit?: number; offset?: number },
+    options?: { limit?: number; offset?: number; rootsOnly?: boolean; parentSessionId?: string },
   ): NodeSessionRecord[] {
-    const rows = [...this.live.values()]
-      .filter((s) => !projectId || s.projectId === projectId)
-      // Newest first — pagination must sort before slice (same idea as desktop history).
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    const inProject = [...this.live.values()].filter((s) => !projectId || s.projectId === projectId)
+    const byRecency = (a: NodeSessionRecord, b: NodeSessionRecord) =>
+      (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || (b.createdAt ?? 0) - (a.createdAt ?? 0)
+    const parentSessionId = options?.parentSessionId?.trim() || ''
+    const childCounts = new Map<string, number>()
+    let rows: NodeSessionRecord[]
+    if (parentSessionId) {
+      rows = inProject.filter((s) => s.parentSessionId === parentSessionId && s.isHidden !== true && s.isSettled !== true)
+      rows.sort(byRecency)
+    } else if (options?.rootsOnly) {
+      const familyUpdated = new Map<string, number>()
+      for (const session of inProject) {
+        if (session.parentSessionId && session.isHidden !== true && session.isSettled !== true) {
+          childCounts.set(session.parentSessionId, (childCounts.get(session.parentSessionId) ?? 0) + 1)
+          const ts = session.updatedAt ?? session.createdAt ?? 0
+          familyUpdated.set(session.parentSessionId, Math.max(familyUpdated.get(session.parentSessionId) ?? 0, ts))
+        }
+        if (!session.parentSessionId) {
+          const ts = session.updatedAt ?? session.createdAt ?? 0
+          familyUpdated.set(session.sessionId, Math.max(familyUpdated.get(session.sessionId) ?? 0, ts))
+        }
+      }
+      rows = inProject.filter((s) => !s.parentSessionId)
+      rows.sort((a, b) => (familyUpdated.get(b.sessionId) ?? 0) - (familyUpdated.get(a.sessionId) ?? 0) || byRecency(a, b))
+    } else {
+      rows = inProject.sort(byRecency)
+    }
     const offset = Math.max(0, options?.offset ?? 0)
     const limited =
       options?.limit != null && options.limit >= 0
@@ -892,7 +915,12 @@ export class SessionRuntime {
         : offset > 0
           ? rows.slice(offset)
           : rows
-    return limited.map((s) => this.clone(s))
+    return limited.map((s) => {
+      const cloned = this.clone(s)
+      const childCount = childCounts.get(s.sessionId) ?? 0
+      if (childCount > 0) cloned.childCount = childCount
+      return cloned
+    })
   }
 
   snapshotSequence(): string {

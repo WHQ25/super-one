@@ -261,6 +261,12 @@ describe('settle is only offered for an idle session', () => {
     expect(canSettleSession('streaming', { isSettled: true })).toBe(true)
     expect(canSettleSession('idle', { realtimeVoice: true, isSettled: true })).toBe(true)
   })
+
+  it('hides pin while the session is settled', () => {
+    expect(ids({ ...base, isSettled: true })).not.toContain('pin')
+    expect(ids({ ...base, isSettled: true, isPinned: true })).not.toContain('pin')
+    expect(ids(base)).toContain('pin')
+  })
 })
 
 describe('resolveSessionIdForCopy', () => {

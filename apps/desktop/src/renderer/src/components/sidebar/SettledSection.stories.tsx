@@ -33,6 +33,10 @@ const base: Omit<SettledSectionProps, 'sessions'> = {
   ...callbacks,
 }
 
+function classTokens(node: Element | null): string[] {
+  return (node?.getAttribute('class') ?? '').split(/\s+/)
+}
+
 function rememberOpen() {
   localStorage.setItem(PROJECT_SETTLED_COLLAPSE_KEY, JSON.stringify({ [FOLDER]: false }))
 }
@@ -67,6 +71,8 @@ export const Collapsed: Story = {
     const canvas = within(canvasElement)
     const header = canvas.getByRole('button', { name: /Settled/ })
     await expect(header).toHaveAttribute('aria-expanded', 'false')
+    await expect(classTokens(header.querySelector('.lucide-circle-check'))).not.toContain('hidden')
+    await expect(classTokens(header.querySelector('.lucide-chevron-right'))).toContain('hidden')
     await expect(header.querySelector('[data-slot="section-count"]')).toHaveTextContent('1')
     await expect(canvasElement.querySelector('[data-slot="settled-divider"]')).toBeNull()
     const panel = canvasElement.querySelector(`[id="${settledPanelId(FOLDER)}"]`)
@@ -111,6 +117,10 @@ export const Expanded: Story = {
     const header = within(canvasElement).getByRole('button', { name: /Settled/ })
     await expect(header).toHaveAttribute('aria-expanded', 'true')
     await expect(header.querySelector('[data-slot="section-count"]')).toBeNull()
+    const chevron = classTokens(header.querySelector('.lucide-chevron-right'))
+    await expect(chevron).toContain('rotate-90')
+    await expect(chevron).not.toContain('hidden')
+    await expect(classTokens(header.querySelector('.lucide-circle-check'))).toContain('hidden')
     await expect(canvasElement.querySelector('[data-slot="settled-divider"]')).toBeNull()
   },
 }
@@ -152,6 +162,28 @@ export const Narrow: Story = {
         <SettledSection {...args} />
       </Frame>
     )
+  },
+}
+
+/**
+ * More rows than the viewport. Only the window is mounted; the tail stays out of the document.
+ */
+export const VirtualWindow: Story = {
+  args: {
+    sessions: Array.from({ length: 40 }, (_, index) => entry(`set-${index}`, `Settled session ${index}`)),
+  },
+  render: (args) => {
+    rememberOpen()
+    return (
+      <Frame>
+        <SettledSection {...args} />
+      </Frame>
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Settled session 0')).toBeInTheDocument()
+    await expect(canvas.queryByText('Settled session 39')).toBeNull()
   },
 }
 

@@ -48,4 +48,31 @@ describe('SidebarSectionLabel', () => {
     expect(header.querySelector('.lucide-notebook-pen')).not.toBeNull()
     expect(header.querySelector('.lucide-chevron-right')?.getAttribute('class')).not.toContain('rotate-90')
   })
+
+  it('keeps the down chevron in the slot while a settled group is open', () => {
+    const { rerender } = render(
+      <SidebarSectionLabel section="settled" count={4} collapsed chevronWhenExpanded onToggle={() => {}}>
+        Settled
+      </SidebarSectionLabel>,
+    )
+    const folded = screen.getByRole('button')
+    expect(classTokens(folded.querySelector('.lucide-circle-check'))).not.toContain('hidden')
+    expect(classTokens(folded.querySelector('.lucide-chevron-right'))).toContain('hidden')
+
+    rerender(
+      <SidebarSectionLabel section="settled" count={4} collapsed={false} chevronWhenExpanded onToggle={() => {}}>
+        Settled
+      </SidebarSectionLabel>,
+    )
+    const open = screen.getByRole('button', { name: 'Settled' })
+    expect(classTokens(open.querySelector('.lucide-circle-check'))).toContain('hidden')
+    const chevron = classTokens(open.querySelector('.lucide-chevron-right'))
+    expect(chevron).toContain('rotate-90')
+    expect(chevron).toContain('block')
+    expect(chevron).not.toContain('hidden')
+  })
 })
+
+function classTokens(node: Element | null): string[] {
+  return (node?.getAttribute('class') ?? '').split(/\s+/)
+}

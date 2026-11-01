@@ -1685,6 +1685,7 @@ function mapSessionRow(s: NodeSessionRecord) {
     providerResume,
     ...(providerSessionId ? { providerSessionId } : {}),
     ...(s.parentSessionId ? { parentSessionId: s.parentSessionId } : {}),
+    ...(typeof s.childCount === 'number' && s.childCount > 0 ? { childCount: s.childCount } : {}),
     ...(typeof s.acpAgentId === 'string' && s.acpAgentId ? { acpAgentId: s.acpAgentId } : {}),
     tags: Array.isArray(s.tags) ? s.tags : [],
   }
@@ -1703,7 +1704,13 @@ function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
   }
   const limit = Math.min(Math.max(Math.floor(p.limit), 0), 500)
   const offset = Math.max(Math.floor(p.offset), 0)
-  const rows = ctx.sessions.list(projectId, { limit, offset })
+  const parentSessionId = typeof p.parentSessionId === 'string' ? p.parentSessionId.trim() : ''
+  const rows = ctx.sessions.list(projectId, {
+    limit,
+    offset,
+    ...(p.rootsOnly === true ? { rootsOnly: true } : {}),
+    ...(parentSessionId ? { parentSessionId } : {}),
+  })
   return { result: rows.map(mapSessionRow) }
 }
 

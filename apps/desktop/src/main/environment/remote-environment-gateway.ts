@@ -34,6 +34,7 @@ import type {
   ProjectSnapshot,
   QuestionResponseInput,
   SendMessageInput,
+  ListSessionsOptions,
   SessionGateway,
   SessionLoadResult,
   TranscriptFoldResult,
@@ -1421,12 +1422,15 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(ref.environmentId)
         return this.client.rpc('session.get', { sessionId: ref.sessionId, ...options })
       },
-      list: async (project: ProjectRef, options: { limit: number; offset: number }) => {
+      list: async (project: ProjectRef, options: ListSessionsOptions) => {
         this.assertEnv(project.environmentId)
+        const parentSessionId = options.parentSessionId?.trim() || ''
         return this.client.rpc('session.list', {
           projectId: project.projectId,
           limit: options.limit,
           offset: options.offset,
+          ...(options.rootsOnly ? { rootsOnly: true } : {}),
+          ...(parentSessionId ? { parentSessionId } : {}),
         })
       },
       listPinned: async (environmentId: string, options) => {

@@ -3200,6 +3200,11 @@ export interface SessionHistoryEntry {
   /** Parent SuperOne session when this entry was created through session_start. */
   parentSessionId?: string
   /**
+   * Spawn children this page did not include. The sidebar loads them when the
+   * row is expanded. Omitted when there are none.
+   */
+  childCount?: number
+  /**
    * Another device started this session through this host's node surface.
    * While it holds control this host only watches. Omitted for local sessions.
    */

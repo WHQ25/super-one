@@ -154,9 +154,16 @@ describe('SessionRow settle only while idle', () => {
     const session = { ...entry('set', 'Settled busy'), isSettled: true }
     render(<SessionRow session={session} folderPath={FOLDER} animateTitle={false} {...noop} />)
     const row = rowFor('Settled busy')
-    expect(row?.querySelector('.lucide-undo-2')).not.toBeNull()
+    const undo = row?.querySelector('.lucide-undo-2')
+    expect(undo).not.toBeNull()
+    expect(undo?.closest('button')?.className).toContain('w-0')
+    expect(row?.querySelector('.lucide-pin')).toBeNull()
     expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+    expect(row?.querySelector('.relative > span')?.className ?? '').not.toContain('group-hover/session:opacity-0')
     expect(menuIds(session)).toContain('settle')
+    expect(menuIds(session)).not.toContain('pin')
+    fireEvent.click(undo?.closest('button') as HTMLButtonElement)
+    expect(noop.onSettleSession).toHaveBeenCalledWith('set', false, FOLDER)
   })
 })
 

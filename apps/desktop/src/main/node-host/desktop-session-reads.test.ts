@@ -79,6 +79,25 @@ describe('DesktopSessionReads.list', () => {
     expect(page.find((entry) => entry.sessionId === 'child')?.parentSessionId).toBe('parent')
   })
 
+  it('pages roots without their children and lists one parent on request', () => {
+    const reads = new Reads({
+      environmentId: 'desktop',
+      sessions: { getSession: () => null, onSession: () => () => {} } as never,
+      rows: {
+        get: () => null,
+        list: () => family,
+        loadMessages: () => ({ messages: [], cursor: null, hasMore: false }),
+      },
+      events: {} as never,
+    })
+    const roots = reads.list('p1', { limit: 2, offset: 0, rootsOnly: true })
+    expect(roots.map((entry) => entry.sessionId)).toEqual(['a', 'b'])
+    expect(roots.find((entry) => entry.sessionId === 'parent')).toBeUndefined()
+    const parent = reads.list('p1', { limit: 20, offset: 2, rootsOnly: true }).find((entry) => entry.sessionId === 'parent')
+    expect(parent?.childCount).toBe(2)
+    expect(reads.list('p1', { limit: 20, offset: 0, parentSessionId: 'parent' }).map((entry) => entry.sessionId)).toEqual(['child', 'child-2'])
+  })
+
   it('serves the row harness and the session ACP agent', () => {
     const cursor = { ...row('cursor-1'), harnessId: 'cursor' as const, providerId: 'cursor-base' }
     const cold = { ...row('cold-grok'), harnessId: 'acp' as const, acpAgentId: 'grok-build' }

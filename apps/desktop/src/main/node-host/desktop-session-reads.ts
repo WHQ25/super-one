@@ -136,6 +136,13 @@ function sessionFamilyId(row: { sessionId: string; parentSessionId?: string | nu
  * includes them: the next offset is the number of rows already returned, so a
  * short page would look like the end of the list.
  */
+function sliceSessionRows<T>(rows: readonly T[], offset = 0, limit?: number): T[] {
+  const start = Math.max(0, offset)
+  if (start >= rows.length) return []
+  if (limit == null) return rows.slice(start)
+  return rows.slice(start, start + Math.max(0, limit))
+}
+
 export function pageSessionRows<T extends { sessionId: string; parentSessionId?: string | null }>(
   rows: readonly T[],
   offset = 0,
@@ -258,8 +265,28 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     return row ? this.record(row) : null
   }
 
-  list(projectId?: string, options?: { limit?: number; offset?: number }): NodeSessionRecord[] {
+  list(projectId?: string, options?: { limit?: number; offset?: number; rootsOnly?: boolean; parentSessionId?: string }): NodeSessionRecord[] {
     const rows = this.reads.rows.list(projectId)
+    const parentSessionId = options?.parentSessionId?.trim() || ''
+    if (parentSessionId) {
+      const children = rows.filter((row) => row.parentSessionId === parentSessionId && row.isHidden !== true && row.isSettled !== true)
+      // Siblings share one parent, so the family-extending page would return
+      // every remaining child. This page is a plain slice.
+      return sliceSessionRows(children, options?.offset ?? 0, options?.limit).map((row) => this.record(row))
+    }
+    if (options?.rootsOnly) {
+      const childCounts = new Map<string, number>()
+      for (const row of rows) {
+        if (!row.parentSessionId || row.isHidden === true || row.isSettled === true) continue
+        childCounts.set(row.parentSessionId, (childCounts.get(row.parentSessionId) ?? 0) + 1)
+      }
+      const roots = rows.filter((row) => !row.parentSessionId)
+      return sliceSessionRows(roots, options.offset ?? 0, options.limit).map((row) => {
+        const record = this.record(row)
+        const childCount = childCounts.get(row.sessionId) ?? 0
+        return childCount > 0 ? { ...record, childCount } : record
+      })
+    }
     return pageSessionRows(rows, options?.offset ?? 0, options?.limit).map((row) => this.record(row))
   }
 

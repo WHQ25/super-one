@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { appState, chatState, mockEnvironment, notifyChat, sessionFixtures } from '../AppSidebar.test-setup'
+import { ACTIVE_SESSION_PAGE_SIZE } from '@/lib/session-list-ops'
 import { useSidebarSessions } from './use-sidebar-sessions'
 
 const FOLDER = '/project-a'
@@ -21,7 +22,7 @@ function setup() {
   }))
 }
 
-it('loads every non-settled page and restarts an invalidated load at offset zero', async () => {
+it('loads one non-settled page and appends the next page when asked', async () => {
   const rows = Array.from({ length: 150 }, (_, index) => ({
     sessionId: `root-${index}`, title: `Session ${index}`,
     lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1,
@@ -29,26 +30,101 @@ it('loads every non-settled page and restarts an invalidated load at offset zero
   sessionFixtures.byFolder[FOLDER] = rows
   const { result } = setup()
   await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
-  expect(result.current.folderSessions[FOLDER]).toHaveLength(150)
-  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([0, 100])
+  expect(result.current.folderSessions[FOLDER]).toHaveLength(ACTIVE_SESSION_PAGE_SIZE)
+  expect(result.current.folderSessionsHasMore[FOLDER]).toBe(true)
+  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([0])
+
+  await act(async () => { await result.current.loadMoreFolderSessions(FOLDER) })
+  expect(result.current.folderSessions[FOLDER]).toHaveLength(ACTIVE_SESSION_PAGE_SIZE * 2)
+  expect(result.current.folderSessionsHasMore[FOLDER]).toBe(true)
+  expect(mockEnvironment.listSessions).toHaveBeenLastCalledWith('local', FOLDER, {
+    limit: ACTIVE_SESSION_PAGE_SIZE, offset: ACTIVE_SESSION_PAGE_SIZE, rootsOnly: true,
+  })
+})
+
+it('loads one page of children when a parent is expanded and appends the next page', async () => {
+  const children = Array.from({ length: 25 }, (_, index) => ({
+    sessionId: `child-${index}`,
+    parentSessionId: 'parent-0',
+    title: `Child ${index}`,
+    lastActiveAt: '2026-03-02T00:00:00.000Z',
+    messageCount: 1,
+  }))
+  sessionFixtures.byFolder[FOLDER] = [
+    { sessionId: 'parent-0', title: 'Parent', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1 },
+    ...children,
+  ]
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  expect(result.current.folderSessions[FOLDER]?.map((row) => row.sessionId)).toEqual(['parent-0'])
+  expect(result.current.folderSessions[FOLDER]?.[0]?.childCount).toBe(25)
+
+  await act(async () => { await result.current.loadChildSessions(FOLDER, 'parent-0') })
+  expect(result.current.folderChildSessions[FOLDER]?.['parent-0']).toHaveLength(ACTIVE_SESSION_PAGE_SIZE)
+  expect(result.current.folderChildHasMore[FOLDER]?.['parent-0']).toBe(true)
+  expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, {
+    limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, parentSessionId: 'parent-0',
+  })
+
+  await act(async () => { await result.current.loadMoreChildSessions(FOLDER, 'parent-0') })
+  expect(result.current.folderChildSessions[FOLDER]?.['parent-0']).toHaveLength(children.length)
+  expect(result.current.folderChildHasMore[FOLDER]?.['parent-0']).toBe(false)
+})
+
+it('restarts an invalidated load at offset zero instead of appending the stale page', async () => {
+  const rows = Array.from({ length: 40 }, (_, index) => ({
+    sessionId: `root-${index}`, title: `Session ${index}`,
+    lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1,
+  }))
+  sessionFixtures.byFolder[FOLDER] = rows
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
 
   const stale = deferred<typeof rows>()
   mockEnvironment.listSessions.mockImplementationOnce(() => stale.promise)
   let refresh!: Promise<unknown>
   await act(async () => { refresh = result.current.loadFolderSessions(FOLDER, 'refresh') })
-  await waitFor(() => expect(mockEnvironment.listSessions).toHaveBeenLastCalledWith('local', FOLDER, { limit: 100, offset: 0 }))
+  await waitFor(() => expect(mockEnvironment.listSessions).toHaveBeenLastCalledWith('local', FOLDER, {
+    limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, rootsOnly: true,
+  }))
   const extra = { ...rows[0]!, sessionId: 'extra', title: 'Extra' }
   sessionFixtures.byFolder[FOLDER] = [extra, ...rows]
   await act(async () => {
     result.current.refreshFolderSessions(FOLDER)
     result.current.refreshFolderSessions(FOLDER)
   })
-  await act(async () => { stale.resolve(rows.slice(0, 100)); await refresh })
+  await act(async () => { stale.resolve(rows.slice(0, ACTIVE_SESSION_PAGE_SIZE)); await refresh })
 
   const loaded = result.current.folderSessions[FOLDER]!
-  expect(loaded.map((row) => row.sessionId)).toEqual(sessionFixtures.byFolder[FOLDER]!.map((row) => row.sessionId))
+  expect(loaded.map((row) => row.sessionId)).toEqual(
+    sessionFixtures.byFolder[FOLDER]!.slice(0, ACTIVE_SESSION_PAGE_SIZE).map((row) => row.sessionId),
+  )
+  expect(loaded[0]?.sessionId).toBe('extra')
   expect(new Set(loaded.map((row) => row.sessionId)).size).toBe(loaded.length)
-  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([0, 100, 0, 0, 100])
+  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([0, 0, 0])
+})
+
+it('keeps pages already revealed when a refresh re-reads the list', async () => {
+  const rows = Array.from({ length: 25 }, (_, index) => ({
+    sessionId: `root-${index}`, title: `Session ${index}`,
+    lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1,
+  }))
+  sessionFixtures.byFolder[FOLDER] = rows
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  await act(async () => { await result.current.loadMoreFolderSessions(FOLDER) })
+  expect(result.current.folderSessions[FOLDER]).toHaveLength(rows.length)
+  expect(result.current.folderSessionsHasMore[FOLDER]).toBe(false)
+  rows[0] = { ...rows[0]!, title: 'Renamed' }
+  mockEnvironment.listSessions.mockClear()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'refresh') })
+  expect(result.current.folderSessions[FOLDER]?.map((row) => row.sessionId)).toEqual(
+    rows.map((row) => row.sessionId),
+  )
+  expect(result.current.folderSessions[FOLDER]?.[0]?.title).toBe('Renamed')
+  expect(mockEnvironment.listSessions.mock.calls.map((call) => call[2]?.offset)).toEqual([
+    0, ACTIVE_SESSION_PAGE_SIZE,
+  ])
 })
 
 it('pages settled sessions and appends the next page when asked', async () => {
@@ -123,7 +199,7 @@ it('refreshes a phone-created voice session in another cached project without se
   mockEnvironment.listSessions.mockClear()
   await act(async () => { changed(FOLDER) })
   await waitFor(() => expect(result.current.folderSessions[FOLDER][0]).toMatchObject(voice))
-  expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, { limit: 100, offset: 0 })
+  expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, { limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, rootsOnly: true })
 })
 
 it("re-reads only the paired machine's project its list notice names", async () => {
@@ -143,7 +219,7 @@ it("re-reads only the paired machine's project its list notice names", async () 
   sessionFixtures.byFolder.p1 = [{ ...sessionFixtures.byFolder.p1[0], title: 'Renamed on B' }]
   await act(async () => { changed(REMOTE) })
   await waitFor(() => expect(result.current.folderSessions[REMOTE][0]).toMatchObject({ sessionId: 'b-own', title: 'Renamed on B' }))
-  expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: 100, offset: 0 }]])
+  expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, rootsOnly: true }]])
 })
 
 it('keeps a cached folder quiet while a refresh is in flight', async () => {

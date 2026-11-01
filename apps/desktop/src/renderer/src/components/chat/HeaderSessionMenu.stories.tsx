@@ -13,7 +13,7 @@ import { HeaderSessionMenu } from './HeaderSessionMenu'
 const FOLDER = '/Users/me/project'
 const SESSION = 'story-session'
 
-function seed(floating: boolean, empty = false) {
+function seed(floating: boolean, empty = false, settled = false) {
   const project = createDefaultProjectState()
   project._activeSessionId = SESSION
   project._sessions = {
@@ -24,17 +24,26 @@ function seed(floating: boolean, empty = false) {
       messages: empty ? [] : [{ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hi' }] }] as never,
     },
   }
+  if (settled) {
+    project.sessions = [{
+      sessionId: SESSION,
+      title: 'Refactor the layout tools',
+      lastActiveAt: '0',
+      messageCount: 1,
+      isSettled: true,
+    }]
+  }
   useChatStore.setState({ projectSessions: { [FOLDER]: project }, activeProject: FOLDER })
   useAppStore.setState({ liquidGlass: false })
   useActivityPanelStore.setState({ showPanel: floating, maximized: false, chatFloating: floating })
 }
 
-function MenuPreview({ floating, empty = false }: { floating: boolean; empty?: boolean }) {
+function MenuPreview({ floating, empty = false, settled = false }: { floating: boolean; empty?: boolean; settled?: boolean }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    seed(floating, empty)
+    seed(floating, empty, settled)
     setReady(true)
-  }, [floating, empty])
+  }, [floating, empty, settled])
   if (!ready) return null
   return (
     <div className="group/htitle flex items-center gap-1 text-xs text-muted-foreground">
@@ -63,6 +72,18 @@ export const Docked: Story = {
   play: async ({ canvasElement }) => {
     await openMenu(canvasElement)
     await expect(await within(document.body).findByRole('menuitem', { name: 'Float Chat' })).toBeInTheDocument()
+    await expect(within(document.body).getByRole('menuitem', { name: 'Settle' })).toBeInTheDocument()
+    await expect(within(document.body).getByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
+  },
+}
+
+export const Settled: Story = {
+  name: 'settled · unsettle, no pin',
+  args: { settled: true },
+  play: async ({ canvasElement }) => {
+    await openMenu(canvasElement)
+    await expect(await within(document.body).findByRole('menuitem', { name: 'Unsettle' })).toBeInTheDocument()
+    await expect(within(document.body).queryByRole('menuitem', { name: 'Pin Session' })).toBeNull()
   },
 }
 

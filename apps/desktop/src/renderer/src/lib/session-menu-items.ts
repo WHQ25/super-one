@@ -12,7 +12,7 @@ export interface SessionMenuHandlers {
   onRename: () => void
   onPin: () => void
   onFork: (mode: SessionForkMode) => void
-  /** Sidebar-list affordance — omitted by the chat header menu (you settle a session from its row). */
+  /** Settle or unsettle. The chat header and the sidebar row both pass this. */
   onSettle?: () => void
   /** Sidebar-list affordance. `unread` picks Mark as Read versus Mark as Unread. */
   onMarkRead?: () => void
@@ -200,7 +200,11 @@ export function buildSessionMenuItems(
 
   const items: AdaptiveMenuEntry[] = [
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.rename'), icon: Pencil, onSelect: handlers.onRename },
-    { kind: 'item', id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin },
+    // A settled session already left the pin strip. Offering pin here would
+    // write a flag the list refuses to show.
+    ...(session.isSettled
+      ? []
+      : [{ kind: 'item' as const, id: 'pin', label: session.isPinned ? t('sidebar.contextMenu.unpin') : t('sidebar.contextMenu.pin'), icon: Pin, onSelect: handlers.onPin }]),
     ...(handlers.onMarkRead
       ? [{
           kind: 'item' as const,

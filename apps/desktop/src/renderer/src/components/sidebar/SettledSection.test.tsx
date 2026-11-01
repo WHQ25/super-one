@@ -6,6 +6,24 @@ import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import { PROJECT_SETTLED_COLLAPSE_KEY, settledPanelId } from './sidebar-section-collapse'
 import { SettledSection, type SettledSectionProps } from './SettledSection'
 
+// jsdom has no layout, so the real virtualizer would render zero rows.
+// The window is smaller than a loaded page, which is the point of virtualizing.
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count, getItemKey }: { count: number; getItemKey?: (index: number) => unknown }) => {
+    const visible = Math.min(count, 3)
+    return {
+      getTotalSize: () => count * 32,
+      getVirtualItems: () => Array.from({ length: visible }, (_, index) => ({
+        key: getItemKey?.(index) ?? index,
+        index,
+        start: index * 32,
+        size: 32,
+      })),
+      measureElement: () => {},
+    }
+  },
+}))
+
 const FOLDER = '/project-a'
 
 const props: SettledSectionProps = {
@@ -43,6 +61,8 @@ describe('SettledSection', () => {
     render(<SettledSection {...props} sessions={[session('Finished review')]} />)
     const header = screen.getByRole('button', { name: /Settled/ })
     expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(classTokens(header.querySelector('.lucide-circle-check'))).not.toContain('hidden')
+    expect(classTokens(header.querySelector('.lucide-chevron-right'))).toContain('hidden')
     const count = header.querySelector('[data-slot="section-count"]')
     expect(count).toHaveTextContent('1')
     expect(count).not.toHaveClass('rounded-full')
@@ -66,6 +86,10 @@ describe('SettledSection', () => {
     fireEvent.click(header)
     expect(header).toHaveAttribute('aria-expanded', 'true')
     expect(header.querySelector('[data-slot="section-count"]')).toBeNull()
+    const chevron = classTokens(header.querySelector('.lucide-chevron-right'))
+    expect(chevron).toContain('rotate-90')
+    expect(chevron).not.toContain('hidden')
+    expect(classTokens(header.querySelector('.lucide-circle-check'))).toContain('hidden')
     const panel = document.getElementById(settledPanelId(FOLDER))
     expect(panel).not.toHaveAttribute('hidden')
     expect(panel?.querySelector('.group\\/session')).not.toBeNull()
@@ -86,11 +110,25 @@ describe('SettledSection', () => {
     const list = document.querySelector('[data-settled-list] [data-slot="scroll-area-viewport"]')
     expect(list).not.toBeNull()
     expect(list).toHaveClass('scroll-edge-fade-y')
+    expect(document.querySelector('[data-settled-list]')).toHaveClass('max-h-64')
     fireEvent.scroll(list!)
     expect(onLoadMore).toHaveBeenCalledTimes(1)
     fireEvent.scroll(list!)
     expect(onLoadMore).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: 'Show More' })).toBeNull()
+  })
+
+  it('mounts only the virtual window, not every loaded row', () => {
+    const sessions = Array.from({ length: 8 }, (_, index) => ({
+      ...session(`Finished ${index}`),
+      sessionId: `sid-${index}`,
+    }))
+    render(<SettledSection {...props} sessions={sessions} />)
+    fireEvent.click(screen.getByRole('button', { name: /Settled/ }))
+    expect(screen.getByText('Finished 0')).toBeInTheDocument()
+    expect(screen.getByText('Finished 2')).toBeInTheDocument()
+    expect(screen.queryByText('Finished 3')).toBeNull()
+    expect(document.querySelectorAll('.group\\/session')).toHaveLength(3)
   })
 
   it('does not ask for another page when the list is complete', () => {
@@ -101,3 +139,7 @@ describe('SettledSection', () => {
     expect(onLoadMore).not.toHaveBeenCalled()
   })
 })
+
+function classTokens(node: Element | null): string[] {
+  return (node?.getAttribute('class') ?? '').split(/\s+/)
+}

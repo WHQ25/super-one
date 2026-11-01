@@ -10,7 +10,7 @@ import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react
 import type { PinnedSessionEntry, SettledSessionPage } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 
-export const sessionFixtures = { byFolder: {} as Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; isPinned?: boolean; isSettled?: boolean; parentSessionId?: string; provider?: string }>> }
+export const sessionFixtures = { byFolder: {} as Record<string, Array<{ sessionId: string; title: string; lastActiveAt: string; messageCount: number; isHidden?: boolean; isPinned?: boolean; isSettled?: boolean; parentSessionId?: string; provider?: string; childCount?: number; unread?: boolean }>> }
 
 export const appState = {
   sidebarTab: 'sessions',
@@ -79,11 +79,27 @@ export const mockEnvironment = {
   listSessions: vi.fn(async (
     _connectionId: string,
     projectId: string,
-    options?: { limit?: number; offset?: number; includeSettled?: boolean },
+    options?: { limit?: number; offset?: number; includeSettled?: boolean; rootsOnly?: boolean; parentSessionId?: string },
   ) => {
     // Local Environment API passes folder path as projectId during migration.
-    const rows = (sessionFixtures.byFolder[projectId] ?? [])
+    let rows = (sessionFixtures.byFolder[projectId] ?? [])
       .filter((row) => options?.includeSettled === true || row.isSettled !== true)
+    if (options?.parentSessionId) {
+      rows = rows.filter((row) => row.parentSessionId === options.parentSessionId && row.isHidden !== true)
+    } else if (options?.rootsOnly) {
+      const counts = new Map<string, number>()
+      for (const row of rows) {
+        if (!row.parentSessionId || row.isHidden === true || row.isSettled === true) continue
+        counts.set(row.parentSessionId, (counts.get(row.parentSessionId) ?? 0) + 1)
+      }
+      const roots: typeof rows = []
+      for (const row of rows) {
+        if (row.parentSessionId) continue
+        const childCount = counts.get(row.sessionId) ?? 0
+        roots.push(childCount > 0 ? { ...row, childCount } : row)
+      }
+      rows = roots
+    }
     if (options?.limit != null) {
       const offset = options.offset ?? 0
       return rows.slice(offset, offset + options.limit)

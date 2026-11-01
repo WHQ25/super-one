@@ -4,9 +4,10 @@ import { Folder, FolderOpen, GitBranch, Loader2, MessageSquare, Pencil } from 'l
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import { isListedSession, listAllSessions } from '@/lib/session-list-ops'
+import { listAllSessions } from '@/lib/session-list-ops'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import {
+  countProjectSessions,
   projectRepoLink,
   repoIdentityFor,
   type ProjectHoverFolder,
@@ -15,6 +16,16 @@ import {
 import { SessionHoverCardTrigger, SidebarHoverCard } from './SessionHoverCard'
 
 const sessionTotals = new Map<string, number>()
+
+function cachedSessionTotal(paths: readonly string[]): number | null {
+  if (paths.length === 0 || paths.some((path) => !sessionTotals.has(path))) return null
+  return paths.reduce((sum, path) => sum + (sessionTotals.get(path) ?? 0), 0)
+}
+
+/** Tests start from an empty total. */
+export function resetProjectHoverSessionTotals(): void {
+  sessionTotals.clear()
+}
 
 function useRepoLink(
   repoIdentity: string | null | undefined,
@@ -41,34 +52,43 @@ function useRepoLink(
   return projectRepoLink(resolved)
 }
 
-function useSessionTotal(paths: readonly string[], known: number | null, offline: boolean): number | null {
+/**
+ * Total sessions for these project keys.
+ *
+ * The sidebar list is only the active page, so a number taken from it leaves
+ * out settled sessions and anything not loaded yet. This reads the whole
+ * project, including settled sessions and spawn children.
+ */
+function useSessionTotal(paths: readonly string[], offline: boolean): number | null {
   const key = paths.join('\n')
   const pathsRef = useRef(paths)
   pathsRef.current = paths
-  const [fetched, setFetched] = useState<number | null>(null)
+  const [fetched, setFetched] = useState<number | null>(() => cachedSessionTotal(paths))
   useEffect(() => {
     const current = pathsRef.current
-    if (known != null || offline || current.length === 0) return
+    if (offline || current.length === 0) return
     let cancelled = false
-    if (current.every((path) => sessionTotals.has(path))) {
-      setFetched(current.reduce((sum, path) => sum + (sessionTotals.get(path) ?? 0), 0))
-      return
+    let ticket = 0
+    const load = () => {
+      const mine = ++ticket
+      void Promise.all(current.map(async (path) => {
+        const rows = await listAllSessions(path, { includeSettled: true })
+        const count = countProjectSessions(rows)
+        sessionTotals.set(path, count)
+        return count
+      })).then((counts) => {
+        if (cancelled || mine !== ticket) return
+        setFetched(counts.reduce((sum, count) => sum + count, 0))
+      }).catch(() => {
+        if (cancelled || mine !== ticket) return
+        if (cachedSessionTotal(current) == null) setFetched(null)
+      })
     }
-    void Promise.all(current.map(async (path) => {
-      const cached = sessionTotals.get(path)
-      if (cached != null) return cached
-      const rows = await listAllSessions(path)
-      const count = rows.reduce((sum, session) => sum + (isListedSession(session) ? 1 : 0), 0)
-      sessionTotals.set(path, count)
-      return count
-    })).then((counts) => {
-      if (!cancelled) setFetched(counts.reduce((sum, count) => sum + count, 0))
-    }).catch(() => {
-      if (!cancelled) setFetched(null)
-    })
+    setFetched(cachedSessionTotal(current))
+    load()
     return () => { cancelled = true }
-  }, [known, offline, key])
-  return known ?? fetched
+  }, [offline, key])
+  return fetched
 }
 
 export function ProjectHoverBody({
@@ -76,7 +96,7 @@ export function ProjectHoverBody({
   repoIdentity,
   repoLookup = null,
   folders,
-  sessionCount,
+  sessionCount = null,
   sessionPaths,
   offline = false,
   onEdit,
@@ -88,7 +108,8 @@ export function ProjectHoverBody({
   repoIdentity?: string | null
   repoLookup?: { connectionId: string; projectId: string; hostPath: string } | null
   folders: ProjectHoverFolder[]
-  sessionCount: number | null
+  /** Shown when `sessionPaths` is empty. A real project loads its own total. */
+  sessionCount?: number | null
   sessionPaths: readonly string[]
   offline?: boolean
   /** One checkout: the same action as the row's Edit Project item. */
@@ -100,7 +121,10 @@ export function ProjectHoverBody({
 }) {
   const { t } = useTranslation()
   const repo = useRepoLink(repoIdentity, repoLookup)
-  const total = useSessionTotal(sessionPaths, sessionCount, offline)
+  const fetched = useSessionTotal(sessionPaths, offline)
+  // An empty path list is a story or a row with nothing to ask. Production
+  // passes the project keys and ignores any sidebar page count.
+  const total = sessionPaths.length > 0 && !offline ? fetched : sessionCount
   return (
     <div className="flex flex-col gap-2 text-xs" data-project-hover>
       <div className="flex items-start gap-2">

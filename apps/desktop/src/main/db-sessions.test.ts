@@ -146,6 +146,52 @@ describe('db-sessions session query + mapping', () => {
     expect(sqls[1]).not.toContain('COALESCE(s.is_settled, 0) = 0')
   })
 
+  it('pages root sessions and counts the children left off the page', () => {
+    const sqls: string[] = []
+    const params: unknown[][] = []
+    getDbMock.mockReturnValue({
+      prepare: vi.fn((sql: string) => {
+        sqls.push(sql)
+        return {
+          all: (...args: unknown[]) => {
+            params.push(args)
+            return [{
+              id: 'parent',
+              title: 'Parent',
+              created_at: '2026-01-01T00:00:00.000Z',
+              last_user_msg_at: '2026-01-01T00:00:00.000Z',
+              child_count: 4,
+            }]
+          },
+        }
+      }),
+    })
+
+    const sessions = listSessionsForProjectId('proj-1', 20, 0, { rootsOnly: true })
+    expect(sqls[0]).toContain('WHERE parent_session_id IS NULL')
+    expect(sqls[0]).toContain('AS child_count')
+    expect(params[0]).toEqual(['proj-1', 20, 0])
+    expect(sessions[0]).toMatchObject({ sessionId: 'parent', childCount: 4 })
+    expect(sessions[0]?.parentSessionId).toBeUndefined()
+  })
+
+  it('pages the spawn children of one parent', () => {
+    const sqls: string[] = []
+    const params: unknown[][] = []
+    getDbMock.mockReturnValue({
+      prepare: vi.fn((sql: string) => {
+        sqls.push(sql)
+        return { all: (...args: unknown[]) => { params.push(args); return [] } }
+      }),
+    })
+
+    listSessionsForProjectId('proj-1', 20, 20, { parentSessionId: 'parent' })
+    expect(sqls[0]).toContain('g.parent_session_id = ?')
+    expect(sqls[0]).toContain('COALESCE(s.is_hidden, 0) = 0')
+    expect(sqls[0]).not.toContain('WHERE parent_session_id IS NULL')
+    expect(params[0]).toEqual(['proj-1', 'parent', 20, 20])
+  })
+
   it('pages settled sessions for one project', () => {
     const sqls: string[] = []
     const params: unknown[][] = []

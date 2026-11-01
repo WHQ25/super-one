@@ -226,7 +226,11 @@ export const Settled: Story = {
   play: async ({ canvasElement }) => {
     const row = canvasElement.querySelector('.group\\/session')
     await expect(row?.className ?? '').not.toContain('opacity-50')
-    await expect(row?.querySelector('.lucide-undo-2')).not.toBeNull()
+    const undo = row?.querySelector('.lucide-undo-2')
+    await expect(undo).not.toBeNull()
+    await expect(undo?.closest('button')?.className ?? '').toContain('w-0')
+    await expect(row?.querySelector('.lucide-pin')).toBeNull()
+    await expect(row?.querySelector('.relative > span')?.className ?? '').not.toContain('group-hover/session:opacity-0')
     await expect(within(canvasElement).getByText('Settled session')).toBeInTheDocument()
   },
 }

@@ -2,7 +2,8 @@ import { useLayoutEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { settledPanelId } from './sidebar-section-collapse'
+import { PROJECT_SETTLED_COLLAPSE_KEY, settledPanelId } from './sidebar-section-collapse'
+import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
@@ -192,5 +193,139 @@ export const OnlySettled: Story = {
     const panel = canvasElement.querySelector(`[id="${settledPanelId('/storybook/settled')}"]`)
     await expect(panel).toHaveAttribute('hidden')
     await expect(canvas.queryByText('Finished the opening review')).toBeNull()
+  },
+}
+
+const NESTED_FOLDER = '/storybook/nested-project'
+
+function session(sessionId: string, title: string, extra?: Partial<SessionHistoryEntry>): SessionHistoryEntry {
+  return {
+    sessionId,
+    title,
+    lastActiveAt: '2026-10-09T00:00:00.000Z',
+    messageCount: 2,
+    provider: 'claude',
+    ...extra,
+  }
+}
+
+function child(parentSessionId: string, sessionId: string, title: string): SessionHistoryEntry {
+  return session(sessionId, title, { parentSessionId })
+}
+
+const nestedRoots: SessionHistoryEntry[] = [
+  session('review', 'Release review', { childCount: 1 }),
+  session('digest', 'Send the weekly digest'),
+  session('opening', 'Account opening', { childCount: 2 }),
+  session('sidebar', 'Migrate the sidebar', { childCount: 40 }),
+  session('nightly', 'Nightly checks', { childCount: 6 }),
+  session('relay', 'Relay notes'),
+]
+
+const nestedChildren: Record<string, SessionHistoryEntry[]> = {
+  review: [child('review', 'review-upload', 'Fix the flaky upload')],
+  opening: [
+    child('opening', 'opening-phone', 'Bind the phone number'),
+    child('opening', 'opening-wizard', 'Build the opening wizard'),
+  ],
+  sidebar: Array.from({ length: 40 }, (_, index) => child('sidebar', `sidebar-${index}`, `Sidebar child ${index}`)),
+}
+
+const nestedSettled: PinnedSessionEntry[] = Array.from({ length: 36 }, (_, index) => ({
+  ...session(`settled-${index}`, `Settled session ${index}`),
+  isSettled: true,
+  folderPath: NESTED_FOLDER,
+  folderName: 'super-one',
+}))
+
+function rememberSettledOpen(folderPath: string) {
+  localStorage.setItem(PROJECT_SETTLED_COLLAPSE_KEY, JSON.stringify({ [folderPath]: false }))
+}
+
+/** One project: inline attention, a short child list, a paged child list, and Settled. */
+function AllNestingPreview() {
+  rememberSettledOpen(NESTED_FOLDER)
+  useLayoutEffect(() => {
+    const previousApp = useAppStore.getState()
+    const previousChat = useChatStore.getState()
+    const previousScheduled = useScheduledSendsStore.getState()
+    const project = createDefaultProjectState()
+    project._activeSessionId = 'opening-wizard'
+    const streaming = createDefaultPerSessionState()
+    streaming.status = 'streaming'
+    project._sessions['review-upload'] = streaming
+    project.unseenCompletedSessions.add('review-upload')
+    useAppStore.setState({ currentFolder: NESTED_FOLDER, tmpFolder: null })
+    useChatStore.setState({ activeProject: NESTED_FOLDER, projectSessions: { [NESTED_FOLDER]: project } })
+    useScheduledSendsStore.setState({
+      bySession: {
+        digest: {
+          sessionId: 'digest',
+          sendAt: Date.now() + 3_600_000,
+          message: 'Continue',
+          armed: true,
+          source: 'manual',
+        },
+      },
+    })
+    return () => {
+      useAppStore.setState(previousApp)
+      useChatStore.setState(previousChat)
+      useScheduledSendsStore.setState(previousScheduled)
+    }
+  }, [])
+
+  return (
+    <div className="w-[288px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <ProjectSidebarRow
+        {...callbacks}
+        folder={{
+          id: 'nested',
+          name: 'super-one',
+          path: NESTED_FOLDER,
+          addedAt: '2026-10-09T00:00:00.000Z',
+          lastOpened: '2026-10-09T00:00:00.000Z',
+        }}
+        sessions={nestedRoots}
+        childSessions={nestedChildren}
+        childSessionsHasMore={{ sidebar: true }}
+        initialExpandedChildIds={['opening', 'sidebar']}
+        sessionsHasMore
+        settledSessions={nestedSettled}
+        settledCount={40}
+        settledHasMore
+        isExpanded
+      />
+    </div>
+  )
+}
+
+export const AllNesting: Story = {
+  render: () => <AllNestingPreview />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const inline = canvas.getByText('Fix the flaky upload')
+    await expect(inline.closest('[data-child-session-list]')).toBeNull()
+    await expect(inline.closest('[data-active-session-list]')).not.toBeNull()
+    await expect(canvas.getByText('Send the weekly digest')).toBeInTheDocument()
+
+    const shortChild = canvas.getByText('Bind the phone number')
+    const shortList = shortChild.closest('[data-child-session-list]')
+    await expect(shortList).not.toBeNull()
+    await expect(shortList).toHaveClass('max-h-36')
+
+    const longChild = canvas.getByText('Sidebar child 0')
+    const longList = longChild.closest('[data-child-session-list]')
+    await expect(longList).not.toBeNull()
+    await expect(longList).not.toBe(shortList)
+    await expect(longList).toHaveClass('max-h-36')
+    await expect(canvas.queryByText('Sidebar child 39')).toBeNull()
+    await expect(canvas.queryByText('Nightly child')).toBeNull()
+
+    await expect(canvasElement.querySelector('[data-active-session-list]')).toHaveClass('max-h-64')
+    const settled = canvas.getByRole('button', { name: /Settled/ })
+    await expect(settled).toHaveAttribute('aria-expanded', 'true')
+    await expect(canvas.getByText('Settled session 0')).toBeInTheDocument()
+    await expect(canvas.queryByText('Settled session 35')).toBeNull()
   },
 }

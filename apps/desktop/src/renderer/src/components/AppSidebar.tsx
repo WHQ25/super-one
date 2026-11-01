@@ -183,9 +183,10 @@ export const AppSidebar = memo(function AppSidebar() {
     ? ['local', ...hostItems.map((host) => host.connectionId).filter((id) => id !== 'local')]
     : undefined
   const {
-    currentActiveSid, folderSessions, loadingFolders, folderSessionsRef,
+    currentActiveSid, folderSessions, folderSessionsHasMore, folderChildSessions, folderChildHasMore,
+    loadingFolders, folderSessionsRef,
     pinnedSessions, pinnedStatuses, settledSessions, settledHasMore, settledCounts, loadFolderSessions,
-    loadMoreSettledSessions, refreshFolderSessions, refreshPinned, handlePinSession,
+    loadMoreFolderSessions, loadChildSessions, loadMoreChildSessions, loadMoreSettledSessions, refreshFolderSessions, refreshPinned, handlePinSession,
     handleSettleSession, executeDeleteSession,
   } = useSidebarSessions({
     currentFolder,
@@ -816,6 +817,12 @@ export const AppSidebar = memo(function AppSidebar() {
                 expandedProjectKeys={expandedFolders}
                 collapsedEnvironmentIds={collapsedEnvironmentIds}
                 folderSessions={folderSessions}
+                sessionsHasMore={folderSessionsHasMore}
+                onLoadMoreSessions={loadMoreFolderSessions}
+                childSessions={folderChildSessions}
+                childSessionsHasMore={folderChildHasMore}
+                onLoadChildSessions={loadChildSessions}
+                onLoadMoreChildSessions={loadMoreChildSessions}
                 settledSessions={settledSessions}
                 settledHasMore={settledHasMore}
                 settledCounts={settledCounts}
@@ -873,13 +880,18 @@ export const AppSidebar = memo(function AppSidebar() {
                     folder={folder}
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
+                    sessionsHasMore={folderSessionsHasMore[folder.path] ?? false}
+                    onLoadMoreSessions={loadMoreFolderSessions}
+                    childSessions={folderChildSessions[folder.path]}
+                    childSessionsHasMore={folderChildHasMore[folder.path]}
+                    onLoadChildSessions={loadChildSessions}
+                    onLoadMoreChildSessions={loadMoreChildSessions}
                     settledSessions={settledSessions}
                     settledHasMore={settledHasMore[folder.path] ?? false}
                     settledCount={settledCounts[folder.path]}
                     onLoadMoreSettled={loadMoreSettledSessions}
                     sessionsLoading={loadingFolders[folder.path] === true}
                     openingSessionId={openingSession?.folderPath === folder.path ? openingSession.sessionId : null}
-                    sessionsLoaded={folder.path in folderSessions}
                     onToggleExpand={toggleExpand}
                     onSwitchSession={handleSwitchSession}
                     onPinSession={handlePinSession}

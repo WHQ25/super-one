@@ -124,6 +124,11 @@ export interface NodeSessionRecord {
    */
   parentSessionId?: string | null
   /**
+   * Non-settled spawn children omitted from a roots-only list page.
+   * Set on the listed copy, not stored on the session.
+   */
+  childCount?: number
+  /**
    * ACP agent this session runs (`grok-build`, a custom agent). Omitted by
    * hosts that do not record one. A null must not be treated as "generic ACP".
    */

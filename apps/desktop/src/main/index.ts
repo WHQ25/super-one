@@ -2087,7 +2087,7 @@ function registerIpcHandlers(): void {
       _e,
       connectionId: string,
       projectId: string,
-      options: { limit: number; offset: number; includeSettled?: boolean },
+      options: { limit: number; offset: number; includeSettled?: boolean; rootsOnly?: boolean; parentSessionId?: string },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().listSessions(connectionId, projectId, options)

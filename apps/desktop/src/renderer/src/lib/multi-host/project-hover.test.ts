@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  knownSessionCount,
+  countProjectSessions,
   projectHoverFolders,
   projectHostPath,
   projectRepoLink,
@@ -36,14 +36,14 @@ describe('project hover', () => {
     ])
   })
 
-  it('counts only a fully loaded list, and skips hidden and settled sessions', () => {
-    expect(knownSessionCount({ loaded: false, hasMore: false, sessions: [] })).toBeNull()
-    expect(knownSessionCount({ loaded: true, hasMore: true, sessions: [{}, {}] })).toBeNull()
-    expect(knownSessionCount({
-      loaded: true,
-      hasMore: false,
-      sessions: [{}, { isHidden: true }, { isSettled: true }, {}],
-    })).toBe(2)
+  it('counts every user session, including settled ones, and skips hidden rows', () => {
+    expect(countProjectSessions([])).toBe(0)
+    expect(countProjectSessions([
+      {},
+      { isHidden: true },
+      { isSettled: true },
+      { isHidden: true, isSettled: true },
+    ])).toBe(2)
   })
 
   it('reads the origin from one project list per connection', async () => {

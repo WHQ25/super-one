@@ -1,4 +1,4 @@
-import { useCallback, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
@@ -18,14 +18,33 @@ import {
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { setChatFloating } from '@/lib/layout-actions'
-import { buildChatFormItems, buildSessionMenuItems } from '@/lib/session-menu-items'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { buildChatFormItems, buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
+import { setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
 
 const NO_DRAG: CSSProperties = { WebkitAppRegion: 'no-drag' } as CSSProperties
+
+/**
+ * The active list omits settled rows, so an open settled session is not in
+ * `projectSessions[].sessions`. The host record still carries the flag.
+ * `null` means the host did not answer; the caller keeps the listed value.
+ */
+async function readSessionSettled(folderPath: string, sessionId: string): Promise<boolean | null> {
+  const connectionId = parseRemoteProjectKey(folderPath)?.connectionId ?? 'local'
+  try {
+    const snap = await window.environment?.getSession?.(connectionId, sessionId) as { isSettled?: boolean } | null | undefined
+    if (!snap || typeof snap !== 'object') return null
+    return snap.isSettled === true
+  } catch {
+    return null
+  }
+}
 
 function DropdownMenuEntries({ items }: { items: AdaptiveMenuEntry[] }) {
   return items.map((item, i) => {
@@ -87,8 +106,31 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   )
 
   const isLive = useChatStore((s) => !!s.projectSessions[folderPath]?._sessions[sessionId])
+  const status = useChatStore((s) => s.projectSessions[folderPath]?._sessions[sessionId]?.status)
+  const provider = useChatStore((s) => {
+    const proj = s.projectSessions[folderPath]
+    return proj?.sessions.find((e) => e.sessionId === sessionId)?.provider
+      ?? proj?._sessions[sessionId]?.sessionProvider
+  })
+  const realtimeVoice = useRealtimeCallStore((s) => (
+    provider === 'codex' && s.sessionId === sessionId && s.state !== 'idle'
+  ))
   const sideChatAvailable = useCanOpenSideChat(sessionId)
   const chatFloating = useActivityPanelStore(selectPanelFillsWindow)
+  // Listed rows omit a settled session. The host read fills that in, and a
+  // click in this menu wins over a read that was already in flight.
+  const localChoice = useRef<boolean | null>(null)
+  const [fetchedSettled, setFetchedSettled] = useState<boolean | null>(null)
+  useEffect(() => {
+    localChoice.current = null
+    setFetchedSettled(null)
+    let cancelled = false
+    void readSessionSettled(folderPath, sessionId).then((value) => {
+      if (cancelled || localChoice.current != null || value == null) return
+      setFetchedSettled(value)
+    })
+    return () => { cancelled = true }
+  }, [folderPath, sessionId])
 
   const afterMutate = useCallback(async () => {
     await useChatStore.getState().fetchSessions()
@@ -115,16 +157,18 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   if (!entry && !isLive) return null
 
   const chatView = { floating: chatFloating, onToggle: () => setChatFloating(!chatFloating) }
+  const isSettled = fetchedSettled ?? entry?.isSettled === true
 
   // Header menu acts on the session you are already reading, so it deliberately
-  // diverges from the sidebar row menu: no Hide (it would hide the open session),
-  // no Add to Chat (mentioning the session you are typing in is a no-op), and the
-  // mini window converts this window instead of spawning a second one.
-  // A new session with no message yet has nothing to rename, pin or fork, so it
-  // only offers the entries that change how the chat is shown.
-  const items = entry
+  // diverges from the sidebar row menu: no Add to Chat (mentioning the session
+  // you are typing in is a no-op), and the mini window converts this window
+  // instead of spawning a second one. Settle toggles here too. Pin stays off a
+  // settled session, matching the row. A new session with no message yet has
+  // nothing to rename, pin, settle or fork, so it only offers the entries that
+  // change how the chat is shown.
+  const itemsFor = (settled: boolean) => entry
     ? buildSessionMenuItems(
-        entry,
+        { ...entry, isSettled: settled || undefined },
         folderPath,
         t,
         {
@@ -134,6 +178,22 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
             await setSessionFlags(folderPath, entry.sessionId, { isPinned: !entry.isPinned })
             await afterMutate()
           },
+          onSettle: async () => {
+            const next = !settled
+            localChoice.current = next
+            setFetchedSettled(next)
+            const { setSessionFlags, setSessionRead } = await import('@/lib/session-client')
+            await setSessionFlags(folderPath, entry.sessionId, { isSettled: next })
+            if (next) {
+              useChatStore.setState((state) => setUnseenCompleted(state, folderPath, entry.sessionId, false))
+              try {
+                await setSessionRead(folderPath, entry.sessionId, true)
+              } catch (err) {
+                console.warn('[header] setSessionRead failed:', err)
+              }
+            }
+            await afterMutate()
+          },
           onFork: handleFork,
           // Only offered where a side chat can actually dock beside the session:
           // the foreground chat of a local project. `resolveSideChatTarget` owns the
@@ -141,9 +201,10 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
           onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
           chatView,
         },
-        { miniWindow: 'convert' },
+        { miniWindow: 'convert', allowSettle: canSettleSession(status, { realtimeVoice, isSettled: settled }) },
       )
     : buildChatFormItems({ sessionId, title: '' }, folderPath, t, chatView, { miniWindow: 'convert' })
+  const items = itemsFor(isSettled)
 
   const dialog = (
     <RenameSessionDialog target={renameTarget} onClose={() => setRenameTarget(null)} onRenamed={() => void afterMutate()} />
@@ -158,7 +219,17 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
           aria-label="Session actions"
           style={NO_DRAG}
           className="shrink-0 opacity-0 transition-opacity group-hover/htitle:opacity-100"
-          onClick={() => void showNativeContextMenu(toNativeMenu(items))}
+          onClick={() => {
+            void (async () => {
+              const value = await readSessionSettled(folderPath, sessionId)
+              const settledNow = value ?? entry?.isSettled === true
+              if (value != null) {
+                localChoice.current = null
+                setFetchedSettled(value)
+              }
+              void showNativeContextMenu(toNativeMenu(itemsFor(settledNow)))
+            })()
+          }}
         >
           <Ellipsis />
         </IconButton>
@@ -169,7 +240,15 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
 
   return (
     <>
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenu open={open} onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) return
+        void readSessionSettled(folderPath, sessionId).then((value) => {
+          if (value == null) return
+          localChoice.current = null
+          setFetchedSettled(value)
+        })
+      }}>
         <DropdownMenuTrigger asChild>
           <IconButton
             variant="nested"

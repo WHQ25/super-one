@@ -381,8 +381,9 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
 
 /* The pinned device name covers this viewport's top band. Start the fade at
    the visible edge (`scroll-edge-fade-y` in @superone/ui animations.css).
-   The selector stops at this viewport, so a Settled or history list inside a
-   project does not inherit the offset and hide its first row. */
+   Both the mask and the clip stay on this viewport only. A Settled list or
+   session search inside a project is a nested scrollport; inheriting the
+   inset punches out its first rows and leaves a blank band under the heading. */
 .device-name-clip > [data-slot="scroll-area"] > [data-slot="scroll-area-viewport"].scroll-edge-fade-y {
   mask-image: linear-gradient(
     to bottom,
@@ -396,7 +397,7 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
 
 /* The pinned device name floats above this list with no fill. Clip the
    scrollport's top band to the name's height so rows end at that edge. */
-.device-name-clip [data-slot="scroll-area-viewport"] {
+.device-name-clip > [data-slot="scroll-area"] > [data-slot="scroll-area-viewport"] {
   clip-path: inset(var(--device-name-clip, 0px) 0 0 0);
 }
 

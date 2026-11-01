@@ -33,8 +33,9 @@ export type SessionListGroup = { parent: SessionListRow; children: SessionListRo
 
 /**
  * How many session groups a phone project shows before "Show more", and how
- * many each reveal adds. Desktop now lists every non-settled session, so this
- * step is the phone's own display cap.
+ * many each reveal adds. Desktop pages root sessions in its own scroller and
+ * loads a parent's children when that row is expanded, so this step is the
+ * phone's own display cap.
  *
  * Deliberately unrelated to `SESSION_PAGE_SIZE`: reveal is a display step, the
  * page is a network one. Over a relay, one 30-row request covering five reveals

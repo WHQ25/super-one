@@ -14,7 +14,7 @@ import { SidebarHoverChevron, sidebarRowActionsClass } from './hover-disclosure'
 import { cn } from '@superone/ui/lib/utils'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { isListedSession } from '@/lib/session-list-ops'
-import { knownSessionCount, projectHostPath, projectHoverFolders } from '@/lib/multi-host/project-hover'
+import { projectHostPath, projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { Automation, PinnedSessionEntry, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -23,11 +23,33 @@ import { selectSessionTitle } from '@/lib/session-title'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
+import { ActiveSessionList } from './ActiveSessionList'
 import { ProjectHistoryList } from './ProjectHistoryList'
 import { SettledSection } from './SettledSection'
 import { foldProjectSettled } from './sidebar-section-collapse'
 
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
+
+function SessionGroupsFrame({
+  open,
+  hasMore,
+  onLoadMore,
+  children,
+}: {
+  open: boolean
+  hasMore: boolean
+  onLoadMore?: () => void | Promise<void>
+  children: React.ReactNode
+}) {
+  // A collapsed project only keeps attention rows. Those stay in the sidebar flow.
+  // The open list is its own scroller, same as search and Settled.
+  if (!open) return children
+  return (
+    <ActiveSessionList hasMore={hasMore} onLoadMore={onLoadMore}>
+      {children}
+    </ActiveSessionList>
+  )
+}
 
 function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphKey: unknown }) {
   const outerRef = useRef<HTMLDivElement>(null)
@@ -196,8 +218,6 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
    * the card asks the environment. `null` means there is no remote.
    */
   repoIdentity?: string | null
-  /** False until this project's session list has been read. Empty is then zero, not unknown. */
-  sessionsLoaded?: boolean
   /** Hover card fields. The row never fetches them. */
   sessionPresentation?: (session: SessionHistoryEntry) => {
     hover?: SessionHoverModel | null
@@ -212,6 +232,42 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   /** Settled sessions in this project, including pages not loaded yet. */
   settledCount?: number
   onLoadMoreSettled?: (folderPath: string) => void | Promise<void>
+  /** The active list has another page below the rows already shown. */
+  sessionsHasMore?: boolean
+  /** Scroll near the bottom of the active list loads the next page. */
+  onLoadMoreSessions?: (folderPath: string) => void | Promise<void>
+  /** Spawn children already loaded for each parent in this project. */
+  childSessions?: Record<string, SessionHistoryEntry[]>
+  /** parent id → that child's list has another page. */
+  childSessionsHasMore?: Record<string, boolean>
+  /**
+   * Parents whose child lists start open. Later toggles stay on this row.
+   * The sidebar itself starts every list collapsed.
+   */
+  initialExpandedChildIds?: readonly string[]
+  /** Expanding a parent loads its first page of children. */
+  onLoadChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
+  /** Scrolling a parent's child list loads the next page. */
+  onLoadMoreChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
+}
+
+const EMPTY_CHILD_SESSIONS: Record<string, SessionHistoryEntry[]> = {}
+const EMPTY_CHILD_HAS_MORE: Record<string, boolean> = {}
+
+function mergeListedSessions(
+  roots: SessionHistoryEntry[],
+  childrenByParent: Record<string, SessionHistoryEntry[]>,
+): SessionHistoryEntry[] {
+  const extra = Object.values(childrenByParent).flat()
+  if (extra.length === 0) return roots
+  const seen = new Set(roots.map((session) => session.sessionId))
+  const merged = roots.slice()
+  for (const session of extra) {
+    if (seen.has(session.sessionId)) continue
+    seen.add(session.sessionId)
+    merged.push(session)
+  }
+  return merged
 }
 
 export const ProjectSidebarRow = memo(function ProjectSidebarRow({
@@ -231,13 +287,19 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onNewSession,
   offline = false,
   repoIdentity,
-  sessionsLoaded = false,
   sessionPresentation,
   sessionsOnly = false,
   settledSessions = EMPTY_SETTLED_SESSIONS,
   settledHasMore = false,
   settledCount,
   onLoadMoreSettled,
+  sessionsHasMore = false,
+  onLoadMoreSessions,
+  childSessions = EMPTY_CHILD_SESSIONS,
+  childSessionsHasMore = EMPTY_CHILD_HAS_MORE,
+  initialExpandedChildIds,
+  onLoadChildSessions,
+  onLoadMoreChildSessions,
 }: ProjectSidebarRowProps) {
   // A disconnected environment has nothing to list. Ignore a stored expand so
   // the row collapses as soon as the connection drops.
@@ -297,7 +359,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   const [historyMode, setHistoryMode] = useState(false)
   /** Parent session ids whose collab child list is fully expanded. Default: collapsed. */
-  const [expandedChildrenIds, setExpandedChildrenIds] = useState<Set<string>>(() => new Set())
+  const [expandedChildrenIds, setExpandedChildrenIds] = useState<Set<string>>(
+    () => new Set(initialExpandedChildIds ?? []),
+  )
 
   const toggleChildrenExpanded = useCallback((sessionId: string) => {
     setExpandedChildrenIds((prev) => {
@@ -323,10 +387,15 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   const scheduledBySession = useScheduledSendsStore((s) => s.bySession)
 
+  const listedSessions = useMemo(
+    () => mergeListedSessions(allSessions, childSessions),
+    [allSessions, childSessions],
+  )
+
   const derived = useMemo(() => {
     const projectSession = useChatStore.getState().projectSessions[folder.path]
-    const dbVisibleSessions = allSessions.filter((session) => isListedSession(session))
-    const dbSessionById = new Map(allSessions.map((session) => [session.sessionId, session]))
+    const dbVisibleSessions = listedSessions.filter((session) => isListedSession(session))
+    const dbSessionById = new Map(listedSessions.map((session) => [session.sessionId, session]))
     const settledIds = new Set<string>()
     for (const session of settledSessions) {
       if (session.folderPath === folder.path) settledIds.add(session.sessionId)
@@ -404,8 +473,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       scheduledBySession,
       isAttention,
     )
-    // An open project shows every non-settled group. Collapsed rows still keep
-    // only attention, plus the session the user is already viewing.
+    // An open project shows every loaded non-settled group. Further pages arrive
+    // when that list scrolls. Collapsed rows still keep only attention, plus the
+    // session the user is already viewing.
     const displayLimit = sections.attention.length + sections.scheduled.length + sections.normal.length
     const groupsToShow = visibleSidebarSessionGroups(sections, open, displayLimit, isPinnedGroup)
     return {
@@ -413,7 +483,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       showSessions: open || groupsToShow.length > 0,
       isVisibleWhenCollapsed,
     }
-  }, [allSessions, settledSessions, folder.path, open, liveSessionSig, realtimeSessionSig, scheduledBySession, foregroundSessionId])
+  }, [listedSessions, settledSessions, folder.path, open, liveSessionSig, realtimeSessionSig, scheduledBySession, foregroundSessionId])
 
   const projectSettled = useMemo(
     () => settledSessions.filter((session) => session.folderPath === folder.path),
@@ -504,12 +574,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     if (!canOpenFolders) return listed
     return listed.map((item) => ({ ...item, openable: true }))
   }, [hostPath, folder.extraDirs, canOpenFolders])
-  const sessionCount = knownSessionCount({
-    loaded: sessionsLoaded,
-    // The active list is read through to a short page, so a loaded project is complete.
-    hasMore: false,
-    sessions: allSessions,
-  })
   const sessionPaths = useMemo(() => [folder.path], [folder.path])
   const repoLookup = repoIdentity === undefined
     ? { connectionId: remoteProject?.connectionId ?? 'local', projectId: folder.id, hostPath }
@@ -542,7 +606,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           repoIdentity={repoIdentity}
           repoLookup={repoLookup}
           folders={hoverFolders}
-          sessionCount={sessionCount}
           sessionPaths={sessionPaths}
           offline={offline}
           onEdit={folder.missing ? undefined : () => onEditProject(folder)}
@@ -700,32 +763,20 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
                 )
               ) : (
-                derived.groupsToShow.map(({ parent, children }) => {
-                  const hasChildren = children.length > 0
+                <SessionGroupsFrame
+                  open={open}
+                  hasMore={sessionsHasMore}
+                  onLoadMore={onLoadMoreSessions ? () => onLoadMoreSessions(folder.path) : undefined}
+                >
+                {derived.groupsToShow.map(({ parent, children }) => {
+                  const hasChildren = children.length > 0 || (parent.childCount ?? 0) > 0
                   const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
                   const childrenCollapsed = hasChildren && !childrenExpanded
                   const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isVisibleWhenCollapsed)
                   const parentPresentation = sessionPresentation?.(parent)
-                  return (
-                  <div key={parent.sessionId}>
-                    <SessionRow
-                      session={parent}
-                      folderPath={folder.path}
-                      opening={openingSessionId === parent.sessionId}
-                      hasChildren={hasChildren}
-                      childrenCollapsed={childrenCollapsed}
-                      onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
-                      onSwitchSession={switchSessionInPlace}
-                      onPinSession={onPinSession}
-                      onSettleSession={onSettleSession}
-                      onRenameSession={onRenameSession}
-                      onDeleteSession={onDeleteSession}
-                      {...(parentPresentation ?? {})}
-                      environmentOffline={offline || parentPresentation?.environmentOffline}
-                    />
-                    {childrenToShow.map((child) => {
-                      const childPresentation = sessionPresentation?.(child)
-                      return (
+                  const childRows = childrenToShow.map((child) => {
+                    const childPresentation = sessionPresentation?.(child)
+                    return (
                       <SessionRow
                         key={child.sessionId}
                         session={child}
@@ -740,11 +791,42 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                         {...(childPresentation ?? {})}
                         environmentOffline={offline || childPresentation?.environmentOffline}
                       />
-                      )
-                    })}
+                    )
+                  })
+                  return (
+                  <div key={parent.sessionId}>
+                    <SessionRow
+                      session={parent}
+                      folderPath={folder.path}
+                      opening={openingSessionId === parent.sessionId}
+                      hasChildren={hasChildren}
+                      childrenCollapsed={childrenCollapsed}
+                      onToggleChildren={hasChildren ? () => {
+                        const opening = !expandedChildrenIds.has(parent.sessionId)
+                        toggleChildrenExpanded(parent.sessionId)
+                        if (opening) void onLoadChildSessions?.(folder.path, parent.sessionId)
+                      } : undefined}
+                      onSwitchSession={switchSessionInPlace}
+                      onPinSession={onPinSession}
+                      onSettleSession={onSettleSession}
+                      onRenameSession={onRenameSession}
+                      onDeleteSession={onDeleteSession}
+                      {...(parentPresentation ?? {})}
+                      environmentOffline={offline || parentPresentation?.environmentOffline}
+                    />
+                    {childrenExpanded ? (
+                      <ActiveSessionList
+                        kind="child"
+                        hasMore={childSessionsHasMore[parent.sessionId] === true}
+                        onLoadMore={() => onLoadMoreChildSessions?.(folder.path, parent.sessionId)}
+                      >
+                        {childRows}
+                      </ActiveSessionList>
+                    ) : childRows}
                   </div>
                   )
-                })
+                })}
+                </SessionGroupsFrame>
               )}
             </div>
           ) : null}

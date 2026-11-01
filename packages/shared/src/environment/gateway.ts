@@ -105,6 +105,10 @@ export interface ListSessionsOptions {
   limit: number
   /** Rows to skip after sort. Required (use 0 for the first page). */
   offset: number
+  /** Page root sessions only. Each root may carry `childCount` for its spawn children. */
+  rootsOnly?: boolean
+  /** Page the spawn children of this session instead of the project list. */
+  parentSessionId?: string
 }
 
 export interface SessionGateway {

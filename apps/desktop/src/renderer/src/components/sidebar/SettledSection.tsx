@@ -1,4 +1,5 @@
-import { memo, useCallback, useRef } from 'react'
+import { memo, useCallback, useRef, type WheelEvent } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useTranslation } from 'react-i18next'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
@@ -6,9 +7,10 @@ import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { SessionRow } from './SessionRow'
 import { SidebarSectionLabel } from './SidebarSectionLabel'
 import { settledPanelId, useProjectSettledCollapsed } from './sidebar-section-collapse'
+import { chainSessionListWheel, measureSessionListRow, observeSessionListRect, SESSION_LIST_SCROLL_CLASS, SESSION_ROW_ESTIMATE } from './session-list-scroll'
 import type { SessionMenuCallbacks } from './useSessionMenuItems'
 
-/** Same near-bottom prefetch as project history. The settled list is shorter, so a full page still overflows it. */
+/** Same near-bottom prefetch as project history. The settled list is short, so a full page still overflows it. */
 const SETTLED_SCROLL_PREFETCH = 300
 
 export interface SettledSectionProps extends SessionMenuCallbacks {
@@ -35,9 +37,8 @@ export interface SettledSectionProps extends SessionMenuCallbacks {
  * Finished sessions inside one project. Folded until opened, and absent when
  * this project has nothing settled, so the group does not ask for attention.
  *
- * Rows stay unmounted while folded. A zero-height grid still lays out every
- * row, and a project with a long settled history was paying that cost on every
- * expand even though only the heading is visible.
+ * Rows stay unmounted while folded. Open rows are virtualized: scrolling loads
+ * further pages into memory, and reopening must not mount every loaded row.
  */
 export const SettledSection = memo(function SettledSection({
   folderPath,
@@ -63,6 +64,19 @@ export const SettledSection = memo(function SettledSection({
       loadingMoreRef.current = false
     })
   }, [collapsed, hasMore, onLoadMore])
+  const virtualizer = useVirtualizer({
+    count: sessions.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => SESSION_ROW_ESTIMATE,
+    overscan: 8,
+    getItemKey: (index) => sessions[index]?.sessionId ?? index,
+    observeElementRect: observeSessionListRect,
+    measureElement: measureSessionListRow,
+  })
+  const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current
+    if (el) chainSessionListWheel(el, event)
+  }, [])
   if (sessions.length === 0) return null
   const panelId = settledPanelId(folderPath)
   return (
@@ -76,6 +90,7 @@ export const SettledSection = memo(function SettledSection({
           onToggle={toggleCollapsed}
           controlsId={panelId}
           countTone="plain"
+          chevronWhenExpanded
         >
           {t('sidebar.settled')}
         </SidebarSectionLabel>
@@ -92,23 +107,34 @@ export const SettledSection = memo(function SettledSection({
             edgeFade
             viewportRef={scrollRef}
             onScroll={handleScroll}
+            onWheel={handleWheel}
             data-settled-list=""
-            className="sidebar-scroll max-h-64 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
+            className={SESSION_LIST_SCROLL_CLASS}
           >
-            {sessions.map((session) => {
-              const row = presentation?.(session)
-              return (
-                <SessionRow
-                  key={session.sessionId}
-                  session={session}
-                  folderPath={folderPath}
-                  opening={openingSessionId === session.sessionId}
-                  hover={row?.hover}
-                  environmentOffline={row?.environmentOffline}
-                  {...callbacks}
-                />
-              )
-            })}
+            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }} className="w-full">
+              {virtualizer.getVirtualItems().map((item) => {
+                const session = sessions[item.index]
+                if (!session) return null
+                const row = presentation?.(session)
+                return (
+                  <div
+                    key={item.key}
+                    data-index={item.index}
+                    ref={virtualizer.measureElement}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${item.start}px)` }}
+                  >
+                    <SessionRow
+                      session={session}
+                      folderPath={folderPath}
+                      opening={openingSessionId === session.sessionId}
+                      hover={row?.hover}
+                      environmentOffline={row?.environmentOffline}
+                      {...callbacks}
+                    />
+                  </div>
+                )
+              })}
+            </div>
           </ScrollArea>
         )}
       </div>

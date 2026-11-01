@@ -13,17 +13,22 @@ export const sidebarRowActionsClass =
  * One slot on a `group` row: the glyph shows at rest, and the chevron replaces
  * it on hover. Both paint in the same box (`className`, default `size-4`) so
  * the label does not shift. `locked` keeps the glyph (a missing folder or a
- * loading spinner). The default `size-4` is the sidebar icon slot: with the
- * rows' `px-2.5` and `gap-2`, every label starts at the same x.
+ * loading spinner). `forceChevron` keeps the expanded or collapsed arrow in
+ * the slot, for a group that should show it is open. The default `size-4` is
+ * the sidebar icon slot: with the rows' `px-2.5` and `gap-2`, every label
+ * starts at the same x.
  */
 export function SidebarHoverChevron({
   expanded,
   locked = false,
+  forceChevron = false,
   className,
   glyph,
 }: {
   expanded: boolean
   locked?: boolean
+  /** Paint the chevron instead of the glyph, including while the pointer is away. */
+  forceChevron?: boolean
   /** Box size. Match the glyph, otherwise the swap still shifts the label. */
   className?: string
   glyph: ReactElement<{ className?: string }>
@@ -32,14 +37,15 @@ export function SidebarHoverChevron({
     className: cn(
       glyph.props.className,
       'col-start-1 row-start-1 size-full',
-      !locked && 'group-hover:hidden',
+      forceChevron ? 'hidden' : !locked && 'group-hover:hidden',
     ),
   })
   return (
     <span className={cn('grid shrink-0', className ?? 'size-4')}>
       <ChevronRight
         className={cn(
-          'col-start-1 row-start-1 hidden size-full text-sidebar-foreground/70 transition-transform duration-200 group-hover:block',
+          'col-start-1 row-start-1 size-full text-sidebar-foreground/70 transition-transform duration-200',
+          forceChevron ? 'block' : 'hidden group-hover:block',
           expanded && 'rotate-90',
           locked && '!hidden',
         )}

@@ -10,7 +10,7 @@ import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { notifyEnvironmentListChanged } from '@/lib/environment-list'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { environmentSections, groupCheckoutsByRepo, sortProjectGroups } from '@/lib/multi-host/group-projects'
-import { knownSessionCount, projectHoverFolders } from '@/lib/multi-host/project-hover'
+import { projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
 import { AutomationDialog } from '@/components/AutomationDialog'
@@ -32,6 +32,16 @@ interface MultiHostProjectListProps {
   expandedProjectKeys: Set<string>
   collapsedEnvironmentIds: string[]
   folderSessions: Record<string, SessionHistoryEntry[]>
+  /** folder path → the active list has another page below the rows already shown. */
+  sessionsHasMore?: Record<string, boolean>
+  /** Scroll near the bottom of one project's active list loads its next page. */
+  onLoadMoreSessions?: (folderPath: string) => void | Promise<void>
+  /** folder path → parent id → children already loaded for that parent. */
+  childSessions?: Record<string, Record<string, SessionHistoryEntry[]>>
+  /** folder path → parent id → that child list has another page. */
+  childSessionsHasMore?: Record<string, Record<string, boolean>>
+  onLoadChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
+  onLoadMoreChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
   /** Finished sessions across the loaded hosts. Each project keeps its own folder. */
   settledSessions?: PinnedSessionEntry[]
   /** folder path → another settled page is waiting below the rows already shown. */
@@ -107,6 +117,12 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         sessionsOnly={sessionsOnly}
         isExpanded={expandedProjectKeys.has(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
+        sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey] ?? false}
+        onLoadMoreSessions={props.onLoadMoreSessions}
+        childSessions={props.childSessions?.[checkout.pathKey]}
+        childSessionsHasMore={props.childSessionsHasMore?.[checkout.pathKey]}
+        onLoadChildSessions={props.onLoadChildSessions}
+        onLoadMoreChildSessions={props.onLoadMoreChildSessions}
         settledSessions={props.settledSessions ?? EMPTY_SETTLED_SESSIONS}
         settledHasMore={props.settledHasMore?.[checkout.pathKey] ?? false}
         settledCount={props.settledCounts?.[checkout.pathKey]}
@@ -124,7 +140,6 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         onNewSession={props.onNewSession}
         offline={bucket.connection === 'offline'}
         repoIdentity={checkout.repoIdentity}
-        sessionsLoaded={checkout.pathKey in props.folderSessions}
         sessionPresentation={presenterFor(bucket, folder.name, folder.path)}
       />
     )
@@ -221,7 +236,6 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             locked={allOffline}
             checkouts={group.checkouts}
             environments={environments}
-            folderSessions={props.folderSessions}
             onToggle={() => {
               if (allOffline) return
               props.onToggleProject(groupKey)
@@ -316,7 +330,7 @@ export function EnvironmentHeader({
 }
 
 function RepoGroupHeader({
-  name, open, locked = false, checkouts, environments, folderSessions,
+  name, open, locked = false, checkouts, environments,
   onToggle, onNewSession, onEdit, onRemove,
   onSwitchSession, onPinSession, onSettleSession, onRenameSession, onDeleteSession,
   openingSessionId, initialSessions, children,
@@ -327,7 +341,6 @@ function RepoGroupHeader({
   locked?: boolean
   checkouts: HostCheckout[]
   environments: EnvironmentBucket[]
-  folderSessions: Record<string, SessionHistoryEntry[]>
   onToggle: () => void
   onNewSession: () => void
   onEdit: (folder: RecentFolder) => void
@@ -400,15 +413,6 @@ function RepoGroupHeader({
       })),
     },
   ]
-  const sessionCount = checkouts.reduce<number | null>((sum, checkout) => {
-    if (sum == null) return null
-    const count = knownSessionCount({
-      loaded: checkout.pathKey in folderSessions,
-      hasMore: false,
-      sessions: folderSessions[checkout.pathKey] ?? [],
-    })
-    return count == null ? null : sum + count
-  }, 0)
   const localFolderPaths = new Set(
     localCheckouts.flatMap((checkout) => [checkout.hostPath, ...(checkout.extraDirs ?? [])]),
   )
@@ -422,7 +426,6 @@ function RepoGroupHeader({
         name={name}
         repoIdentity={target.repoIdentity}
         folders={hoverFolders}
-        sessionCount={sessionCount}
         sessionPaths={checkouts.map((checkout) => checkout.pathKey)}
         offline={locked}
         onEdit={checkouts.length === 1 ? () => onEdit(checkoutToRecentFolder(target)) : undefined}

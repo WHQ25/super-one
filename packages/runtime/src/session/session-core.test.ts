@@ -156,6 +156,19 @@ describe('SessionRuntime.list pagination', () => {
     expect(rest.map((s) => s.sessionId)).toEqual(['s0'])
     expect(rt.list('p1').map((s) => s.sessionId)).toEqual(['s4', 's3', 's2', 's1', 's0'])
   })
+
+  it('pages roots ahead of their children, then pages one parent on its own', () => {
+    const { store, events, leases, rows } = memoryPorts()
+    rows.set('parent', session({ sessionId: 'parent', projectId: 'p1', updatedAt: 1 }))
+    rows.set('child', session({ sessionId: 'child', projectId: 'p1', parentSessionId: 'parent', updatedAt: 50 }))
+    rows.set('other', session({ sessionId: 'other', projectId: 'p1', updatedAt: 2 }))
+    const rt = new SessionRuntime(store, events, leases, 'env-list', createSimulatedTurnRunner())
+    const roots = rt.list('p1', { limit: 20, offset: 0, rootsOnly: true })
+    expect(roots.map((entry) => entry.sessionId)).toEqual(['parent', 'other'])
+    expect(roots.find((entry) => entry.sessionId === 'parent')?.childCount).toBe(1)
+    expect(roots.find((entry) => entry.sessionId === 'other')?.childCount).toBeUndefined()
+    expect(rt.list('p1', { limit: 20, offset: 0, parentSessionId: 'parent' }).map((entry) => entry.sessionId)).toEqual(['child'])
+  })
 })
 
 describe('SessionRuntime.fork', () => {

@@ -6,12 +6,10 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
-import { isListedSession } from '@/lib/session-list-ops'
+import { ACTIVE_SESSION_PAGE_SIZE, isListedSession } from '@/lib/session-list-ops'
 import { noteListedUnread, setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { traceSidebar } from './sidebar-trace'
 
-/** Active-list page. `session.list` allows up to 500; the loop stops on a short page. */
-const ACTIVE_PAGE_SIZE = 100
 /** Settled rows are numerous. One project page, then the list loads more as it scrolls. */
 const SETTLED_PAGE_SIZE = 20
 /** Local SQL refuses a larger settled page. A refresh that already revealed more walks in chunks. */
@@ -36,7 +34,7 @@ function settledListTarget(folderPath: string): { connectionId: string; projectP
   return { connectionId: 'local', projectPath: folderPath }
 }
 
-function dedupeSettled(rows: PinnedSessionEntry[]): PinnedSessionEntry[] {
+function dedupeSessions<T extends { sessionId: string }>(rows: T[]): T[] {
   const seen = new Set<string>()
   return rows.filter((row) => {
     if (seen.has(row.sessionId)) return false
@@ -58,6 +56,19 @@ function notePinnedUnread(rows: PinnedSessionEntry[]): void {
   }))))
 }
 
+function childKey(folderPath: string, parentSessionId: string): string {
+  return `${folderPath}\n${parentSessionId}`
+}
+
+function noteChildUnread(folderPath: string, page: SessionHistoryEntry[]): void {
+  const unread: Array<{ folderPath: string; sessionId: string }> = []
+  for (const session of page) {
+    if (session.unread && isListedSession(session)) unread.push({ folderPath, sessionId: session.sessionId })
+  }
+  if (!unread.length) return
+  useChatStore.setState((state) => noteListedUnread(state, unread))
+}
+
 export function useSidebarSessions({ currentFolder, selectedHostConnectionId, hostProjects, pinnedConnectionIds }: {
   currentFolder: string | null
   selectedHostConnectionId: string
@@ -70,6 +81,9 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
   const [settledByFolder, setSettledByFolder] = useState<Record<string, SettledFolderPage>>({})
   const folderSessionsRef = useRef(folderSessions)
+  const folderHasMoreRef = useRef<Record<string, boolean>>({})
+  const activeGeneration = useRef(new Map<string, number>())
+  const activeAppendFlight = useRef(new Set<string>())
   const settledByFolderRef = useRef(settledByFolder)
   const settledGeneration = useRef(new Map<string, number>())
   const settledAppendFlight = useRef(new Set<string>())
@@ -89,6 +103,161 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   // rebuild `load` and every row callback derived from it.
   const hostProjectsRef = useRef(hostProjects)
   useEffect(() => { hostProjectsRef.current = hostProjects }, [hostProjects])
+
+  const [folderSessionsHasMore, setFolderSessionsHasMore] = useState<Record<string, boolean>>({})
+  const [folderChildSessions, setFolderChildSessions] = useState<Record<string, Record<string, SessionHistoryEntry[]>>>({})
+  const [folderChildHasMore, setFolderChildHasMore] = useState<Record<string, Record<string, boolean>>>({})
+  const folderChildrenRef = useRef(folderChildSessions)
+  const folderChildHasMoreRef = useRef(folderChildHasMore)
+  const childGeneration = useRef(new Map<string, number>())
+  const childInFlight = useRef(new Set<string>())
+  const childAppendFlight = useRef(new Set<string>())
+
+  const publishActive = useCallback((folderPath: string, sessions: SessionHistoryEntry[], hasMore: boolean) => {
+    const previous = folderSessionsRef.current[folderPath]
+    const sameSessions = previous?.length === sessions.length
+      && previous.every((entry, index) => shallow(entry, sessions[index]))
+    const sameMore = folderHasMoreRef.current[folderPath] === hasMore
+    folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
+    folderHasMoreRef.current = { ...folderHasMoreRef.current, [folderPath]: hasMore }
+    if (!sameSessions) {
+      setFolderSessions((cachedMap) => {
+        const cached = cachedMap[folderPath]
+        if (cached?.length === sessions.length && cached.every((entry, index) => shallow(entry, sessions[index]))) return cachedMap
+        return { ...cachedMap, [folderPath]: sessions }
+      })
+    }
+    if (!sameMore) {
+      setFolderSessionsHasMore((cachedMap) => (
+        cachedMap[folderPath] === hasMore ? cachedMap : { ...cachedMap, [folderPath]: hasMore }
+      ))
+    }
+  }, [])
+
+  const publishChild = useCallback((folderPath: string, parentSessionId: string, sessions: SessionHistoryEntry[], hasMore: boolean) => {
+    const previous = folderChildrenRef.current[folderPath]?.[parentSessionId]
+    const sameSessions = previous?.length === sessions.length
+      && previous.every((entry, index) => shallow(entry, sessions[index]))
+    const sameMore = folderChildHasMoreRef.current[folderPath]?.[parentSessionId] === hasMore
+    folderChildrenRef.current = {
+      ...folderChildrenRef.current,
+      [folderPath]: { ...folderChildrenRef.current[folderPath], [parentSessionId]: sessions },
+    }
+    folderChildHasMoreRef.current = {
+      ...folderChildHasMoreRef.current,
+      [folderPath]: { ...folderChildHasMoreRef.current[folderPath], [parentSessionId]: hasMore },
+    }
+    if (!sameSessions) {
+      setFolderChildSessions((cached) => ({
+        ...cached,
+        [folderPath]: { ...cached[folderPath], [parentSessionId]: sessions },
+      }))
+    }
+    if (!sameMore) {
+      setFolderChildHasMore((cached) => (
+        cached[folderPath]?.[parentSessionId] === hasMore
+          ? cached
+          : { ...cached, [folderPath]: { ...cached[folderPath], [parentSessionId]: hasMore } }
+      ))
+    }
+  }, [])
+
+  const dropChildSessions = useCallback((folderPath: string, parentSessionId: string) => {
+    const current = folderChildrenRef.current[folderPath]
+    if (!current?.[parentSessionId]) return
+    const sessions = { ...current }
+    delete sessions[parentSessionId]
+    const hasMore = { ...folderChildHasMoreRef.current[folderPath] }
+    delete hasMore[parentSessionId]
+    folderChildrenRef.current = { ...folderChildrenRef.current, [folderPath]: sessions }
+    folderChildHasMoreRef.current = { ...folderChildHasMoreRef.current, [folderPath]: hasMore }
+    setFolderChildSessions((cached) => ({ ...cached, [folderPath]: sessions }))
+    setFolderChildHasMore((cached) => ({ ...cached, [folderPath]: hasMore }))
+  }, [])
+
+  const reloadChildSessions = useCallback((folderPath: string, parentSessionId: string) => {
+    const key = childKey(folderPath, parentSessionId)
+    const generation = (childGeneration.current.get(key) ?? 0) + 1
+    childGeneration.current.set(key, generation)
+    childInFlight.current.add(key)
+    const projectId = hostProjectsRef.current.find((project) => project.path === folderPath)?.id ?? null
+    const wanted = Math.max(ACTIVE_SESSION_PAGE_SIZE, folderChildrenRef.current[folderPath]?.[parentSessionId]?.length ?? 0)
+    return import('@/lib/session-list-ops').then(async ({ listSessionsPage }) => {
+      const sessions: SessionHistoryEntry[] = []
+      let hasMore = true
+      while (sessions.length < wanted && hasMore) {
+        if (childGeneration.current.get(key) !== generation) return
+        const page = await listSessionsPage(folderPath, {
+          limit: ACTIVE_SESSION_PAGE_SIZE,
+          offset: sessions.length,
+          projectId,
+          parentSessionId,
+        })
+        if (childGeneration.current.get(key) !== generation) return
+        sessions.push(...page)
+        hasMore = page.length >= ACTIVE_SESSION_PAGE_SIZE
+        if (page.length === 0) break
+      }
+      if (childGeneration.current.get(key) !== generation) return
+      const listed = dedupeSessions(sessions)
+      publishChild(folderPath, parentSessionId, listed, hasMore)
+      noteChildUnread(folderPath, listed)
+    }).catch(() => {
+      // Leave the previous page. The next expand or scroll can retry.
+    }).finally(() => {
+      if (childGeneration.current.get(key) === generation) childInFlight.current.delete(key)
+    })
+  }, [publishChild])
+
+  const loadChildSessions = useCallback((folderPath: string, parentSessionId: string) => {
+    const key = childKey(folderPath, parentSessionId)
+    if (folderChildrenRef.current[folderPath]?.[parentSessionId] || childInFlight.current.has(key)) return Promise.resolve()
+    return reloadChildSessions(folderPath, parentSessionId)
+  }, [reloadChildSessions])
+
+  const loadMoreChildSessions = useCallback((folderPath: string, parentSessionId: string) => {
+    const key = childKey(folderPath, parentSessionId)
+    const bucket = folderChildrenRef.current[folderPath]?.[parentSessionId]
+    if (!bucket || folderChildHasMoreRef.current[folderPath]?.[parentSessionId] !== true) return Promise.resolve()
+    if (childInFlight.current.has(key) || childAppendFlight.current.has(key)) return Promise.resolve()
+    const offset = bucket.length
+    const generation = childGeneration.current.get(key) ?? 0
+    const projectId = hostProjectsRef.current.find((project) => project.path === folderPath)?.id ?? null
+    childAppendFlight.current.add(key)
+    return import('@/lib/session-list-ops').then(({ listSessionsPage }) => (
+      listSessionsPage(folderPath, {
+        limit: ACTIVE_SESSION_PAGE_SIZE,
+        offset,
+        projectId,
+        parentSessionId,
+      })
+    )).then((page) => {
+      if ((childGeneration.current.get(key) ?? 0) !== generation) return
+      if (childInFlight.current.has(key)) return
+      const current = folderChildrenRef.current[folderPath]?.[parentSessionId]
+      if (!current || current.length !== offset) return
+      publishChild(folderPath, parentSessionId, dedupeSessions([...current, ...page]), page.length >= ACTIVE_SESSION_PAGE_SIZE)
+      noteChildUnread(folderPath, page)
+    }).catch(() => {
+      // Leave hasMore set so the next scroll can retry.
+    }).finally(() => {
+      childAppendFlight.current.delete(key)
+    })
+  }, [publishChild])
+
+  const pruneChildSessions = useCallback((folderPath: string, sessions: SessionHistoryEntry[]) => {
+    const bucket = folderChildrenRef.current[folderPath]
+    if (!bucket) return
+    const keep = new Set(sessions.map((session) => session.sessionId))
+    for (const parentId of Object.keys(bucket)) {
+      if (!keep.has(parentId)) dropChildSessions(folderPath, parentId)
+    }
+  }, [dropChildSessions])
+
+  const refreshLoadedChildren = useCallback((folderPath: string) => {
+    const parents = Object.keys(folderChildrenRef.current[folderPath] ?? {})
+    return Promise.all(parents.map((parentId) => reloadChildSessions(folderPath, parentId))).then(() => {})
+  }, [reloadChildSessions])
 
   const load = useCallback((folderPath: string, reason: LoadReason) => {
     // A text row would change the list height. Only an expand, or a fetch that
@@ -113,21 +282,27 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
 
     armFolderSpinner()
     const request: ListRequest = { promise: Promise.resolve([]), invalidated: false }
+    const generation = (activeGeneration.current.get(folderPath) ?? 0) + 1
+    activeGeneration.current.set(folderPath, generation)
     request.promise = (async () => {
       for (;;) {
         request.invalidated = false
         const sessions: SessionHistoryEntry[] = []
         let hasMore = true
+        // A refresh keeps every page the list has already revealed. It does not
+        // walk the rest of the project.
+        const wanted = Math.max(ACTIVE_SESSION_PAGE_SIZE, folderSessionsRef.current[folderPath]?.length ?? 0)
         const startedAt = performance.now()
-        traceSidebar('sessions_load:start', { folderPath, reason, pageSize: ACTIVE_PAGE_SIZE }, folderPath)
+        traceSidebar('sessions_load:start', { folderPath, reason, pageSize: ACTIVE_SESSION_PAGE_SIZE, wanted }, folderPath)
         try {
           const { listSessionsPage } = await import('@/lib/session-list-ops')
           const projectId = hostProjectsRef.current.find((project) => project.path === folderPath)?.id ?? null
-          while (hasMore) {
+          while (sessions.length < wanted && hasMore) {
             const offset = sessions.length
-            const page = await listSessionsPage(folderPath, { limit: ACTIVE_PAGE_SIZE, offset, projectId })
+            const page = await listSessionsPage(folderPath, { limit: ACTIVE_SESSION_PAGE_SIZE, offset, projectId, rootsOnly: true })
+            if (activeGeneration.current.get(folderPath) !== generation) return []
             sessions.push(...page)
-            hasMore = page.length >= ACTIVE_PAGE_SIZE
+            hasMore = page.length >= ACTIVE_SESSION_PAGE_SIZE
             traceSidebar('sessions_load:page', {
               folderPath, reason, offset, pageCount: page.length,
               visibleCount: visibleRootCount(sessions),
@@ -141,12 +316,10 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
             // or repeat rows when a create or settle changes the order mid-read.
             continue
           }
-          folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
-          setFolderSessions((previous) => {
-            const cached = previous[folderPath]
-            if (cached?.length === sessions.length && cached.every((entry, index) => shallow(entry, sessions[index]))) return previous
-            return { ...previous, [folderPath]: sessions }
-          })
+          if (activeGeneration.current.get(folderPath) !== generation) return []
+          publishActive(folderPath, sessions, hasMore)
+          pruneChildSessions(folderPath, sessions)
+          await refreshLoadedChildren(folderPath)
           replaceSettledRef.current(folderPath)
           const unread: Array<{ folderPath: string; sessionId: string }> = []
           for (const session of sessions) {
@@ -180,10 +353,42 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     })
     inFlight.current.set(folderPath, request)
     return request.promise
-  }, [])
+  }, [publishActive, pruneChildSessions, refreshLoadedChildren])
 
   const loadFolderSessions = useCallback((folderPath: string, reason: LoadReason) =>
     load(folderPath, reason), [load])
+
+  const loadMoreFolderSessions = useCallback((folderPath: string) => {
+    if (!folderHasMoreRef.current[folderPath] || activeAppendFlight.current.has(folderPath)) return Promise.resolve()
+    // A refresh re-reads the pages already on screen. Appending under it would
+    // write the next page onto a list that is about to be replaced.
+    if (inFlight.current.has(folderPath)) return Promise.resolve()
+    const offset = folderSessionsRef.current[folderPath]?.length ?? 0
+    const generation = activeGeneration.current.get(folderPath) ?? 0
+    const projectId = hostProjectsRef.current.find((project) => project.path === folderPath)?.id ?? null
+    activeAppendFlight.current.add(folderPath)
+    return import('@/lib/session-list-ops').then(({ listSessionsPage }) => (
+      listSessionsPage(folderPath, { limit: ACTIVE_SESSION_PAGE_SIZE, offset, projectId, rootsOnly: true })
+    )).then((page) => {
+      if ((activeGeneration.current.get(folderPath) ?? 0) !== generation) return
+      if (inFlight.current.has(folderPath)) return
+      const current = folderSessionsRef.current[folderPath] ?? []
+      if (current.length !== offset) return
+      const sessions = dedupeSessions([...current, ...page])
+      publishActive(folderPath, sessions, page.length >= ACTIVE_SESSION_PAGE_SIZE)
+      const unread = page.filter((session) => session.unread && isListedSession(session))
+      if (unread.length) {
+        useChatStore.setState((state) => noteListedUnread(state, unread.map((session) => ({
+          folderPath, sessionId: session.sessionId,
+        }))))
+      }
+    }).catch(() => {
+      // Leave hasMore set so the next scroll can retry.
+    }).finally(() => {
+      activeAppendFlight.current.delete(folderPath)
+    })
+  }, [publishActive])
+
 
   /**
    * Which host the rows currently in `pinnedSessions` came from. Read only when
@@ -265,7 +470,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
           if (page.sessions.length === 0) break
         }
         if (pinnedHostRef.current !== hostKey || settledGeneration.current.get(folderPath) !== generation) return
-        const sessions = dedupeSettled(collected)
+        const sessions = dedupeSessions(collected)
         publishSettled(folderPath, { sessions, hasMore, total: Math.max(sessions.length, total) })
       } catch {
         // Keep the page already on screen. A failed refresh must not hide finished work.
@@ -290,7 +495,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
       if (pinnedHostRef.current !== hostKey || (settledGeneration.current.get(folderPath) ?? 0) !== generation) return
       const existingPage = settledByFolderRef.current[folderPath]
       const existing = existingPage?.sessions ?? []
-      const sessions = dedupeSettled([...existing, ...page.sessions])
+      const sessions = dedupeSessions([...existing, ...page.sessions])
       publishSettled(folderPath, {
         sessions,
         hasMore: page.sessions.length >= SETTLED_PAGE_SIZE,
@@ -459,6 +664,20 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
         (s) => s.sessionId !== target.sessionId
       ),
     }))
+    const childBucket = folderChildrenRef.current[target.folderPath]
+    if (childBucket) {
+      const nextChildren: Record<string, SessionHistoryEntry[]> = {}
+      const nextHasMore: Record<string, boolean> = {}
+      for (const [parentId, sessions] of Object.entries(childBucket)) {
+        if (parentId === target.sessionId) continue
+        nextChildren[parentId] = sessions.filter((session) => session.sessionId !== target.sessionId)
+        if (folderChildHasMoreRef.current[target.folderPath]?.[parentId]) nextHasMore[parentId] = true
+      }
+      folderChildrenRef.current = { ...folderChildrenRef.current, [target.folderPath]: nextChildren }
+      folderChildHasMoreRef.current = { ...folderChildHasMoreRef.current, [target.folderPath]: nextHasMore }
+      setFolderChildSessions((prev) => ({ ...prev, [target.folderPath]: nextChildren }))
+      setFolderChildHasMore((prev) => ({ ...prev, [target.folderPath]: nextHasMore }))
+    }
     setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== target.sessionId))
     const settledPage = settledByFolderRef.current[target.folderPath]
     if (settledPage) {
@@ -484,9 +703,10 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
 
 
   return {
-    currentActiveSid, folderSessions, loadingFolders, folderSessionsRef,
+    currentActiveSid, folderSessions, folderSessionsHasMore, folderChildSessions, folderChildHasMore,
+    loadingFolders, folderSessionsRef,
     pinnedSessions, pinnedStatuses, settledSessions, settledHasMore, settledCounts, loadFolderSessions,
-    loadMoreSettledSessions, refreshFolderSessions, refreshPinned, handlePinSession,
+    loadMoreFolderSessions, loadChildSessions, loadMoreChildSessions, loadMoreSettledSessions, refreshFolderSessions, refreshPinned, handlePinSession,
     handleSettleSession, executeDeleteSession,
   }
 }

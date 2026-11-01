@@ -70,7 +70,7 @@ describe('HeaderSessionMenu item set', () => {
 
   // The header menu acts on the session already open, so it deliberately carries a
   // smaller set than the sidebar row menu it shares a builder with.
-  it('drops Settle and Add to Chat and converts this window instead of opening a new one', async () => {
+  it('offers Settle, drops Add to Chat, and converts this window instead of opening a new one', async () => {
     const persisted: SessionHistoryEntry = {
       sessionId: 'saved-1',
       title: 'Saved',
@@ -85,11 +85,54 @@ describe('HeaderSessionMenu item set', () => {
 
     expect(await screen.findByRole('menuitem', { name: 'Convert to Mini Window' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Open in Mini Window' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Settle' })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Settle' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Add to Chat' })).toBeNull()
     // Still the shared actions the sidebar row has.
     expect(screen.getByRole('menuitem', { name: 'Rename Session' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
+  })
+
+  it('hides pin and offers unsettle when the open session is settled', async () => {
+    const persisted: SessionHistoryEntry = {
+      sessionId: 'saved-1',
+      title: 'Saved',
+      lastActiveAt: '2026-01-01',
+      messageCount: 3,
+      isSettled: true,
+      isPinned: true,
+    }
+    seedProject({ active: 'saved-1', sessions: [persisted] })
+    const user = userEvent.setup()
+    const { container } = render(<HeaderSessionMenu sessionId="saved-1" folderPath={FOLDER} />)
+
+    await user.click(trigger(container) as HTMLElement)
+
+    expect(await screen.findByRole('menuitem', { name: 'Unsettle' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Pin Session' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Unpin Session' })).toBeNull()
+  })
+
+  it('hides settle while the open turn is streaming', async () => {
+    const persisted: SessionHistoryEntry = {
+      sessionId: 'saved-1',
+      title: 'Saved',
+      lastActiveAt: '2026-01-01',
+      messageCount: 3,
+    }
+    seedProject({ active: 'saved-1', sessions: [persisted] })
+    act(() => {
+      const project = useChatStore.getState().projectSessions[FOLDER]
+      const live = project._sessions['saved-1']
+      if (live) live.status = 'streaming'
+      useChatStore.setState({ projectSessions: { [FOLDER]: { ...project } } })
+    })
+    const user = userEvent.setup()
+    const { container } = render(<HeaderSessionMenu sessionId="saved-1" folderPath={FOLDER} />)
+
+    await user.click(trigger(container) as HTMLElement)
+
+    expect(await screen.findByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Settle' })).toBeNull()
   })
 
   it('offers only the chat form entries on a new session with no messages yet', async () => {

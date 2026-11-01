@@ -3,6 +3,7 @@ import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-l
 import { describe, expect, it } from 'vitest'
 import { settledPanelId } from '@/components/sidebar/sidebar-section-collapse'
 import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
+import { ACTIVE_SESSION_PAGE_SIZE } from '@/lib/session-list-ops'
 
 describe('AppSidebar interactions', () => {
   it('keeps project action anchors measurable while the row is not hovered', async () => {
@@ -596,25 +597,25 @@ describe('AppSidebar interactions', () => {
       expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
         'local',
         '/project-a',
-        { limit: 100, offset: 0 },
+        { limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, rootsOnly: true },
       )
     })
     expect(screen.queryByText('New session')).toBeNull()
   })
 
-  it('keeps paging until a short page so a child past the first page is included', async () => {
-    const roots = Array.from({ length: 100 }, (_, index) => ({
-      sessionId: `parent-${index}`,
-      title: `Parent ${index}`,
-      lastActiveAt: new Date(2026, 3, 7, 0, 0, 100 - index).toISOString(),
-      messageCount: 1,
-    }))
+  it('loads a child page when its parent is expanded', async () => {
+    const parentId = 'parent-0'
     sessionFixtures.byFolder = {
       '/project-a': [
-        ...roots,
+        {
+          sessionId: parentId,
+          title: 'Parent 0',
+          lastActiveAt: '2026-04-07T00:00:01.000Z',
+          messageCount: 1,
+        },
         {
           sessionId: 'boundary-child',
-          parentSessionId: 'parent-99',
+          parentSessionId: parentId,
           title: 'Boundary child',
           lastActiveAt: '2026-04-07T00:00:00.000Z',
           messageCount: 1,
@@ -623,18 +624,26 @@ describe('AppSidebar interactions', () => {
     }
 
     const { AppSidebar } = await import('./AppSidebar')
-    render(<AppSidebar />)
+    const { container } = render(<AppSidebar />)
 
-    await waitFor(() => {
-      expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
-        'local',
-        '/project-a',
-        { limit: 100, offset: 100 },
-      )
-    })
     fireEvent.click(screen.getByText('project-a'))
-    expect(await screen.findByText('Parent 99')).toBeInTheDocument()
+    expect(await screen.findByText('Parent 0')).toBeInTheDocument()
+    expect(screen.queryByText('Boundary child')).toBeNull()
     expect(screen.queryByText('Show More')).toBeNull()
+    expect(mockEnvironment.listSessions).not.toHaveBeenCalledWith(
+      'local',
+      '/project-a',
+      { limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, parentSessionId: parentId },
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand sub-sessions' }))
+    expect(await screen.findByText('Boundary child')).toBeInTheDocument()
+    expect(container.querySelector('[data-child-session-list]')).not.toBeNull()
+    expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
+      'local',
+      '/project-a',
+      { limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, parentSessionId: parentId },
+    )
   })
 
   it('does not spin the title while a local session opens', async () => {
@@ -808,7 +817,7 @@ describe('AppSidebar interactions', () => {
     expect(screen.queryByText('Show More')).toBeNull()
   })
 
-  it('shows every non-settled session and hides them again when the project collapses', async () => {
+  it('loads the next page of non-settled sessions when the list scrolls', async () => {
     chatState.activeProject = null
     sessionFixtures.byFolder = {
       '/project-a': Array.from({ length: 40 }, (_, index) => ({
@@ -827,22 +836,27 @@ describe('AppSidebar interactions', () => {
     }
 
     const { AppSidebar } = await import('./AppSidebar')
-    render(<AppSidebar />)
+    const { container } = render(<AppSidebar />)
 
     fireEvent.click(screen.getByText('project-a'))
     await screen.findByText('Paged session 0')
-    expect(screen.getByText('Paged session 39')).toBeInTheDocument()
+    expect(screen.getByText(`Paged session ${ACTIVE_SESSION_PAGE_SIZE - 1}`)).toBeInTheDocument()
+    expect(screen.queryByText('Paged session 39')).toBeNull()
     expect(screen.queryByText('Show More')).toBeNull()
     expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
       'local',
       '/project-a',
-      { limit: 100, offset: 0 },
+      { limit: ACTIVE_SESSION_PAGE_SIZE, offset: 0, rootsOnly: true },
     )
     expect(mockEnvironment.listSessions).not.toHaveBeenCalledWith(
       'local',
       '/project-a',
-      { limit: 100, offset: 100 },
+      { limit: ACTIVE_SESSION_PAGE_SIZE, offset: ACTIVE_SESSION_PAGE_SIZE, rootsOnly: true },
     )
+
+    fireEvent.scroll(container.querySelector('[data-active-session-list] [data-slot="scroll-area-viewport"]')!)
+    expect(await screen.findByText('Paged session 39')).toBeInTheDocument()
+    expect(screen.queryByText('Show More')).toBeNull()
 
     fireEvent.click(screen.getByText('project-a'))
     await waitFor(() => {

@@ -531,7 +531,7 @@ export class EnvironmentHost {
   async listSessions(
     connectionId: string,
     projectId: string,
-    options: { limit: number; offset: number; includeSettled?: boolean },
+    options: { limit: number; offset: number; includeSettled?: boolean; rootsOnly?: boolean; parentSessionId?: string },
   ): Promise<SessionHistoryEntry[]> {
     if (!projectId) {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
@@ -558,19 +558,30 @@ export class EnvironmentHost {
       // The window's own rows, not the local protocol's session records: those
       // are the phone/controller shape and carry no branch, worktree, spawn
       // parent or remote controller, and name the harness `harnessId`.
-      return options.includeSettled
-        ? listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset, { includeSettled: true })
-        : listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset)
+      return listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset, {
+        ...(options.includeSettled ? { includeSettled: true } : {}),
+        ...(options.rootsOnly ? { rootsOnly: true } : {}),
+        ...(options.parentSessionId ? { parentSessionId: options.parentSessionId } : {}),
+      })
     }
 
     const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const listed = await gateway.sessions.list({ environmentId, projectId }, pageOpts)
-    const rows = Array.isArray(listed) ? listed : []
-    // Node already sorts newest-first when paginating; stable sort within the page.
-    return rows
-      .map((r) => this.mapRemoteSessionEntry(r))
-      .filter((r) => r.sessionId)
-      .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+    const parentSessionId = options.parentSessionId?.trim() || ''
+    const listed = await gateway.sessions.list({ environmentId, projectId }, {
+      ...pageOpts,
+      ...(options.rootsOnly ? { rootsOnly: true } : {}),
+      ...(parentSessionId ? { parentSessionId } : {}),
+    })
+    const mapped: SessionHistoryEntry[] = []
+    for (const row of Array.isArray(listed) ? listed : []) {
+      const entry = this.mapRemoteSessionEntry(row)
+      if (entry.sessionId) mapped.push(entry)
+    }
+    // A roots or child page is already ordered by the host. Re-sorting a root
+    // by its own timestamp would drop a parent below a quieter one whose child
+    // just spoke. The mixed list keeps the previous within-page sort.
+    if (options.rootsOnly || parentSessionId) return mapped
+    return mapped.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
   }
 
   /**

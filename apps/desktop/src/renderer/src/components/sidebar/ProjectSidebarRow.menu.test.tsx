@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import { setExternalLinkHandler } from '@/lib/external-link'
 import { projectHoverFolders } from '@/lib/multi-host/project-hover'
-import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
+import { ProjectHoverBody, ProjectHoverCard, resetProjectHoverSessionTotals } from './multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
 
@@ -42,7 +42,6 @@ describe('project row menu', () => {
         {...callbacks}
         folder={local}
         sessions={[{ sessionId: 'a', title: 'A', lastActiveAt: '0', messageCount: 1 }]}
-        sessionsLoaded
         isExpanded={false}
         repoIdentity="git:https://github.com/acme/super-one.git"
       />,
@@ -152,5 +151,60 @@ describe('project hover card', () => {
     )
     expect(screen.getByText('/srv/app')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open Folder' })).toBeNull()
+  })
+
+  it('counts every session, including settled sessions and children', async () => {
+    resetProjectHoverSessionTotals()
+    const previous = window.environment.listSessions
+    const listSessions = vi.fn(async () => [
+      { sessionId: 'active', title: 'Active', lastActiveAt: '2026-01-01T00:00:00.000Z', messageCount: 1 },
+      { sessionId: 'settled', title: 'Settled', lastActiveAt: '2026-01-01T00:00:00.000Z', messageCount: 1, isSettled: true },
+      { sessionId: 'hidden', title: 'Hidden', lastActiveAt: '2026-01-01T00:00:00.000Z', messageCount: 0, isHidden: true },
+      { sessionId: 'child', title: 'Child', lastActiveAt: '2026-01-01T00:00:00.000Z', messageCount: 1, parentSessionId: 'active' },
+    ])
+    window.environment.listSessions = listSessions
+    try {
+      render(
+        <ProjectHoverBody
+          name="app"
+          repoIdentity={null}
+          folders={[]}
+          sessionCount={1}
+          sessionPaths={['/src/app']}
+        />,
+      )
+      expect(await screen.findByText('3 Sessions')).toBeInTheDocument()
+      expect(screen.queryByText('1 Session')).toBeNull()
+      expect(listSessions).toHaveBeenCalledWith('local', '/src/app', expect.objectContaining({
+        includeSettled: true,
+        limit: 100,
+        offset: 0,
+      }))
+    } finally {
+      window.environment.listSessions = previous
+      resetProjectHoverSessionTotals()
+    }
+  })
+
+  it('omits the session line while the project is offline', () => {
+    resetProjectHoverSessionTotals()
+    const previous = window.environment.listSessions
+    const listSessions = vi.fn(async () => [])
+    window.environment.listSessions = listSessions
+    try {
+      render(
+        <ProjectHoverBody
+          name="app"
+          repoIdentity={null}
+          folders={[]}
+          sessionPaths={['/src/app']}
+          offline
+        />,
+      )
+      expect(screen.queryByText(/Session/)).toBeNull()
+      expect(listSessions).not.toHaveBeenCalled()
+    } finally {
+      window.environment.listSessions = previous
+    }
   })
 })

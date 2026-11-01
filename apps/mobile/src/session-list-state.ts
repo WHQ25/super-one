@@ -20,6 +20,8 @@ export type SessionListRow = {
   /** Collaboration parent (`session_collab_start` spawn); groups the row on desktop. */
   parentSessionId?: string | null
   isPinned?: boolean
+  /** Finished. Leaves the active list and sits in that project's Settled group. */
+  isSettled?: boolean
   /** Started by an automation; the idle icon shows it, as on desktop. */
   isAutomation?: boolean
   /** Epoch ms for an armed scheduled send; absent on older hosts. */
@@ -30,18 +32,6 @@ export type SessionListRow = {
 }
 
 export type SessionListGroup = { parent: SessionListRow; children: SessionListRow[] }
-
-/**
- * How many session groups a phone project shows before "Show more", and how
- * many each reveal adds. Desktop pages root sessions in its own scroller and
- * loads a parent's children when that row is expanded, so this step is the
- * phone's own display cap.
- *
- * Deliberately unrelated to `SESSION_PAGE_SIZE`: reveal is a display step, the
- * page is a network one. Over a relay, one 30-row request covering five reveals
- * beats five requests, so the two must not be collapsed into a single number.
- */
-export const SESSION_REVEAL_STEP = 6
 
 /** A parent row, or one of its collaboration children, in render order. */
 export type SessionListItem = {
@@ -82,9 +72,9 @@ export function flattenSessionGroups(
   expandedIds: ReadonlySet<string>,
   activeSessionId?: string | null,
   /**
-   * Groups to render before "Show more". `0` is a collapsed project: only
-   * live, unseen, pending, and the active session stay visible, matching
-   * desktop. Unbounded when omitted.
+   * `0` is a collapsed project: only live, unseen, pending, and the active
+   * session stay visible, matching desktop. Unbounded when omitted — the
+   * expanded list scrolls every loaded row.
    */
   groupLimit?: number,
 ): SessionListItem[] {
@@ -109,8 +99,8 @@ const groupIsLive = (group: SessionListGroup) =>
 /**
  * Desktop partitions first: live, unseen, and pending work stays at the top of
  * the project, and a collapsed project still shows those groups. Next come
- * parents with an armed scheduled send, soonest first, so a queued message is
- * never paged out behind "Show more". The session the user is in is appended,
+ * parents with an armed scheduled send, soonest first, so a queued message
+ * stays ahead of ordinary rows. The session the user is in is appended,
  * not promoted, so switching never reshuffles the list.
  */
 export function partitionSessionGroups(groups: SessionListGroup[]): {

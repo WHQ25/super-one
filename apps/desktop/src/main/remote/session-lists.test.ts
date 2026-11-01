@@ -137,6 +137,18 @@ describe('mobile session list scheduled sends', () => {
       .toEqual([expect.objectContaining({ sessionId: 'one' })])
   })
 
+  it('pages settled sessions out of the active list and keeps hidden rows out of both', () => {
+    db.prepare('UPDATE sessions SET is_settled = 1 WHERE id = ?').run('two')
+    db.prepare(`INSERT INTO sessions (id, project_id, title, created_at, is_settled, is_hidden, provider_id)
+      VALUES ('three', 'project', 'Hidden finished', '2026-09-12', 1, 1, 'codex-base')`).run()
+    expect(projectList()).toMatchObject({ totalCount: 1, sessions: [{ sessionId: 'one' }] })
+    expect(readRemoteSessionList({ kind: 'settled', projectPath: '/repo', limit: 20, offset: 0 })).toMatchObject({
+      totalCount: 1,
+      sessions: [{ sessionId: 'two', title: 'Other session', isSettled: true, projectPath: '/repo', projectName: 'repo' }],
+    })
+    expect(readRemoteSessionList({ kind: 'settled', projectPath: '/missing' })).toMatchObject({ totalCount: 0, sessions: [] })
+  })
+
   it('finds one session by id with its project, and nothing for a hidden or unknown id', () => {
     expect(readRemoteSessionList({ kind: 'find', sessionId: 'two' })).toEqual({
       session: expect.objectContaining({ sessionId: 'two', title: 'Other session', provider: 'claude', projectPath: '/repo', projectName: 'repo' }),

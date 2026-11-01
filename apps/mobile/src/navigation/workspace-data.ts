@@ -1,4 +1,5 @@
 import type { RelayClient } from '@superone/relay-client'
+import { isUnservedMethod } from '@superone/shared/environment/transcript-window'
 import { projectRpc } from '../project-rpc'
 import type { SessionListRow } from '../session-list-state'
 
@@ -17,6 +18,34 @@ export async function readProjectSessions(
   const sessions = result.sessions ?? []
   // An older desktop omits totalCount; a full page then implies there is more.
   return { sessions, totalCount: result.totalCount ?? offset + sessions.length + (sessions.length === limit ? 1 : 0) }
+}
+
+/** One project's finished sessions. Desktop pages these at 20; the phone does the same. */
+export const SETTLED_PAGE_SIZE = 20
+
+/**
+ * Settled sessions for one project. A desktop older than `sessionList.settled`
+ * answers `unknown method`; that is an empty group, not a failure the row
+ * should surface under every project.
+ */
+export async function readSettledSessions(
+  client: RelayClient,
+  projectPath: string,
+  { limit = SETTLED_PAGE_SIZE, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<SessionPage> {
+  try {
+    const result = await projectRpc(client, projectPath, 'sessionList.settled', { limit, offset }) as {
+      sessions?: SessionListRow[]
+      totalCount?: number
+      error?: string
+    }
+    if (result.error) throw new Error(result.error)
+    const sessions = result.sessions ?? []
+    return { sessions, totalCount: result.totalCount ?? offset + sessions.length }
+  } catch (error) {
+    if (isUnservedMethod(error)) return { sessions: [], totalCount: 0 }
+    throw error
+  }
 }
 
 /** Every pinned session across the host's projects, most recent first. */

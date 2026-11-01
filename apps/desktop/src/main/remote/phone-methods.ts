@@ -124,6 +124,15 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       const { readRemoteSessionList } = await import('./session-lists')
       return readRemoteSessionList({ kind: 'pinned' })
     },
+    'sessionList.settled': async (p, ctx) => {
+      const { readRemoteSessionList, sessionListPageNumber } = await import('./session-lists')
+      return readRemoteSessionList({
+        kind: 'settled',
+        projectPath: projectPath(ctx, text(p, 'projectId')),
+        limit: sessionListPageNumber(p.limit, 'limit'),
+        offset: sessionListPageNumber(p.offset, 'offset'),
+      }, host.sessions)
+    },
     'sessionList.search': async (p) => {
       const projectPaths = parseSessionSearchProjectPaths(p.projectPaths)
       if (projectPaths === null) throw new InvalidArgument('projectPaths must be a short list of paths')

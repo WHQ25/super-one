@@ -25,7 +25,10 @@ jest.mock('react-native-mmkv', () => {
 jest.mock('@shopify/react-native-skia', () => ({
   BlendMode: {},
   Canvas: () => null,
+  LinearGradient: () => null,
   Picture: () => null,
+  Rect: () => null,
+  vec: (x: number, y: number) => ({ x, y }),
   Skia: {
     PictureRecorder: class {},
     PathBuilder: { Make: () => ({ moveTo() { return this }, lineTo() { return this }, close() { return this }, build() { return this } }) },

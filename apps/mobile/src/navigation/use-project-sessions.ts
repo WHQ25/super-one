@@ -2,7 +2,7 @@ import { SessionActivityContext } from './use-session-activity'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { Project } from '../project-types'
-import { flattenSessionGroups, groupSessionRows, mergeActivityIntoRows, SESSION_REVEAL_STEP, type SessionListItem, type SessionListRow } from '../session-list-state'
+import { flattenSessionGroups, mergeActivityIntoRows, type SessionListItem, type SessionListRow } from '../session-list-state'
 import type { WorkspaceListCache } from '../workspace-list-cache'
 import { readProjectSessions, SESSION_PAGE_SIZE } from './workspace-data'
 import { logSidebar } from '../relay-debug'
@@ -32,7 +32,9 @@ export type ProjectSessions = {
   loadingMore: boolean
   error: string
   hasMore: boolean
-  loadMore: () => void
+  /** Rows fetched, including collaboration children that are not on screen. */
+  loadedCount: number
+  loadMore: () => void | Promise<void>
   toggleChildren: (sessionId: string) => void
   /** Drop a row the caller just hid or deleted, without a round trip. */
   forget: (sessionId: string) => void
@@ -94,10 +96,6 @@ export function useProjectSessions({
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set())
-  // How many groups are revealed, which is *not* how many rows are loaded: the
-  // list shows six at a time the way the desktop sidebar does, over a network
-  // page five times that size.
-  const [revealed, setRevealed] = useState(SESSION_REVEAL_STEP)
   const generation = useRef(0)
   // How deep the user has paged, read by `refresh` without making it a
   // dependency — a callback that changed on every row change would re-fire the
@@ -106,6 +104,9 @@ export function useProjectSessions({
   // One background refresh at a time; a bump during one is picked up by the
   // staleness check when it lands, since `synced` changes then.
   const refreshing = useRef(false)
+  // Set before the loading flag commits, so the project list and an open child
+  // list cannot ask for the same page in one turn.
+  const paging = useRef(false)
 
   const read = useCallback(async (offset: number) => {
     if (!client || !path) throw new Error('Not connected')
@@ -121,7 +122,6 @@ export function useProjectSessions({
     setSynced(held?.revision ?? null)
     setError('')
     setExpandedIds(new Set())
-    setRevealed(SESSION_REVEAL_STEP)
     // Already read over this connection: nothing to ask for. The staleness
     // effect below runs a quiet refresh if the host has changed it since.
     if (held) { setBusy(false); setLoaded(true); return }
@@ -206,8 +206,7 @@ export function useProjectSessions({
           return [...current, ...page.sessions.filter((row) => !seen.has(row.sessionId))]
         })
         // A page with nothing new ends the list whatever the count said, so a
-        // host that over-reports its total cannot leave "Show more" stuck on
-        // screen, nor the group top-up below re-read the same offset forever.
+        // host that over-reports its total cannot keep the scroller asking.
         setTotal(grew ? page.totalCount : loadedCount)
       })
       .catch((cause: unknown) => {
@@ -218,42 +217,24 @@ export function useProjectSessions({
       .finally(() => { if (request === generation.current) setLoadingMore(false) })
   }, [read, rows, loadedCount])
 
-  const groupCount = useMemo(() => groupSessionRows(rows).length, [rows])
-  // Either there are groups held back from the list, or the host is still
-  // holding rows this client has never asked for.
-  const hasMore = groupCount > revealed || loadedCount < total
-
-  // The host pages rows, not groups, so a page can end inside a collaboration
-  // parent's children. A revealed group is whole only once the group after it
-  // has started, so read on until it has, or the host has nothing left.
-  const groupsCut = groupCount <= revealed && loadedCount < total
-  useEffect(() => {
-    if (!armed || !visible || !listExpanded || !loaded || busy || loadingMore || error || !groupsCut) return
-    void fetchPage()
-  }, [armed, visible, listExpanded, loaded, busy, loadingMore, error, groupsCut, fetchPage])
+  const hasMore = loadedCount < total
 
   const items = useMemo(
     () => flattenSessionGroups(
       mergeActivityIntoRows(rows, activity, path),
       expandedIds,
       activeSessionId,
-      listExpanded ? revealed : 0,
+      listExpanded ? undefined : 0,
     ),
-    [rows, activity, path, expandedIds, activeSessionId, listExpanded, revealed],
+    [rows, activity, path, expandedIds, activeSessionId, listExpanded],
   )
 
   return {
-    items, busy, loaded, loadingMore, error, hasMore: listExpanded && hasMore,
+    items, busy, loaded, loadingMore, error, hasMore: listExpanded && hasMore, loadedCount,
     loadMore: () => {
-      if (loadingMore || !hasMore) return
-      const next = revealed + SESSION_REVEAL_STEP
-      // Reveal is free until it runs past the loaded rows; only then does it
-      // cost a round trip, and the page it fetches covers several more reveals.
-      if (groupCount <= next && loadedCount < total) {
-        void fetchPage().then(() => setRevealed(next))
-        return
-      }
-      setRevealed(next)
+      if (paging.current || loadingMore || loadedCount >= total) return
+      paging.current = true
+      return Promise.resolve(fetchPage()).finally(() => { paging.current = false })
     },
     toggleChildren: useCallback((sessionId: string) => setExpandedIds((current) => {
       const next = new Set(current)

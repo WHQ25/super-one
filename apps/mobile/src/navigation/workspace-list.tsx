@@ -38,7 +38,7 @@ export type WorkspaceListProps = Partial<WorkspaceDraftsProps> & {
   onNewSession: (project: Project) => void | Promise<void>
   onOpenSession: (project: Project, session: SessionListRow) => void | Promise<void>
   onPinSession: (project: Project, session: SessionListRow, pinned: boolean) => Promise<boolean>
-  onArchiveSession: (project: Project, session: SessionListRow) => Promise<boolean>
+  onSettleSession: (project: Project, session: SessionListRow, settled: boolean) => Promise<boolean>
   onDeleteSession: (project: Project, session: SessionListRow) => Promise<boolean>
   onSearch: () => void
   onAddProject: () => void
@@ -117,13 +117,13 @@ export function WorkspaceList(props: WorkspaceListProps) {
       ? props.projects.find((item) => item.path === session.projectPath)
         ?? { path: session.projectPath, name: session.projectName ?? session.projectPath }
       : null
-  /** Pin, hide and delete also move rows in the Pinned section above. */
+  /** Pin, settle and delete also move rows in the Pinned section above. */
   const listActionsFor = (project: Project) => ({
     onOpenSession: (session: SessionListRow) => leave(() => void props.onOpenSession(project, session)),
     onPinSession: (session: SessionListRow, next: boolean) =>
       props.onPinSession(project, session, next).then((ok) => { if (ok) refreshPinned(); return ok }),
-    onArchiveSession: (session: SessionListRow) =>
-      props.onArchiveSession(project, session).then((ok) => { if (ok) refreshPinned(); return ok }),
+    onSettleSession: (session: SessionListRow, settled: boolean) =>
+      props.onSettleSession(project, session, settled).then((ok) => { if (ok) refreshPinned(); return ok }),
     onDeleteSession: (session: SessionListRow) =>
       props.onDeleteSession(project, session).then((ok) => { if (ok) refreshPinned(); return ok }),
   })
@@ -156,11 +156,12 @@ export function WorkspaceList(props: WorkspaceListProps) {
           const actions = listActionsFor(project)
           return <SwipeSessionRow
             key={session.sessionId}
+            sessionId={session.sessionId}
             title={session.title}
             pinned={session.isPinned ?? true}
             onPress={() => actions.onOpenSession(session)}
             onPin={() => { void actions.onPinSession(session, false) }}
-            onArchive={() => { void actions.onArchiveSession(session) }}
+            onSettle={() => { void actions.onSettleSession(session, true) }}
             onDelete={() => { void actions.onDeleteSession(session) }}
           >
             {({ revealed }) => <SessionRowContent

@@ -21,7 +21,7 @@ export function DraftsPreview({ empty = false, remote = false, cleared = false }
     projects={[{ path: '/workspace/super-one', name: 'SuperOne' }, { path: '/workspace/project', name: 'Project' }]}
     activeProject={null} activeSessionId={null} sessions={[]} cache={new WorkspaceListCache()} visible listRevision={0}
     onNewSession={() => {}} onOpenSession={() => {}} onPinSession={async () => true}
-    onArchiveSession={async () => true} onDeleteSession={async () => true} onSearch={() => {}} onAddProject={() => {}}
+    onSettleSession={async () => true} onDeleteSession={async () => true} onSearch={() => {}} onAddProject={() => {}}
     drafts={remote ? rows.map((row) => ({ ...row, controllerDeviceId: 'phone' })) : rows} activeDraftId={activeId}
     onOpenDraft={(row) => setActiveId(row.id)}
     onDeleteDraft={(row) => setRows((current) => current.filter((item) => item.id !== row.id))} /></View>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RelayClient } from '@superone/relay-client'
-import { readProjectSessions, SESSION_PAGE_SIZE } from './workspace-data'
+import { readProjectSessions, readSettledSessions, SESSION_PAGE_SIZE } from './workspace-data'
 import { resolveTestProject } from '../project-rpc.test-fixtures'
 
 function stubClient(reply: Record<string, unknown>): RelayClient {
@@ -35,5 +35,22 @@ describe('readProjectSessions', () => {
   it('ends the list on an empty page', async () => {
     const page = await readProjectSessions(stubClient({ sessions: [] }), '/p', { offset: 30 })
     expect(page.totalCount).toBe(30)
+  })
+})
+
+describe('readSettledSessions', () => {
+  it('reads the settled page and its total', async () => {
+    const page = await readSettledSessions(stubClient({ sessions: rows(2), totalCount: 9 }), '/p')
+    expect(page).toEqual({ sessions: rows(2), totalCount: 9 })
+  })
+
+  it('treats a desktop that does not serve the method as an empty group', async () => {
+    const client = {
+      resolveProject: resolveTestProject,
+      rpc: async () => {
+        throw Object.assign(new Error('unknown method: sessionList.settled'), { code: 'not_found' })
+      },
+    } as unknown as RelayClient
+    await expect(readSettledSessions(client, '/p')).resolves.toEqual({ sessions: [], totalCount: 0 })
   })
 })

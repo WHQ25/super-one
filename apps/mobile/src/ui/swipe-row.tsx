@@ -41,6 +41,12 @@ export function SwipeRow(props: {
   subject: string
   actions: SwipeAction[]
   variant?: SwipeVariant
+  /**
+   * `content` paints the first action nearest the title, so a destructive
+   * action declared last stays furthest from the resting edge. `start` paints
+   * the declared order left to right. Device rows keep the default.
+   */
+  alignActions?: 'content' | 'start'
   children: (state: { revealed: boolean }) => ReactNode
   onPress: () => void
 }) {
@@ -109,9 +115,8 @@ export function SwipeRow(props: {
     ])
   }
 
-  // Rendered outward from the row: the first declared action ends up nearest the
-  // content, so a destructive last action sits furthest from the resting edge.
-  const strip = [...props.actions].reverse()
+  // `content` (the default) reverses so the first action sits nearest the title.
+  const strip = props.alignActions === 'start' ? props.actions : [...props.actions].reverse()
 
   return (
     <View style={[styles.container, floating && styles.floatingContainer]}>
@@ -131,6 +136,7 @@ export function SwipeRow(props: {
           return (
             <Pressable
               key={action.key}
+              testID={`swipe-action-${action.key}`}
               accessibilityLabel={`${t(action.label)} ${props.subject}`}
               accessibilityRole="button"
               onPress={() => run(action)}

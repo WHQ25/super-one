@@ -162,6 +162,7 @@ for (const route of ['lan', 'relay'] as const) {
     const loaded = await one.rpc<{ cursor: { sequence: string; epoch: string; version: number } }>('session.load', { sessionId })
     for (const [method, payload] of [
       ['sessionList.page', { projectId: target.projectId }], ['sessionList.pinned', {}],
+      ['sessionList.settled', { projectId: target.projectId }],
       ['sessionList.find', { sessionId }], ['sessionList.search', { query: 'INITIAL' }],
       ['session.historyIndex', { sessionId }], ['session.activity', {}],
       ['session.linkMetadata', { refs: [session] }], ['session.linkResolve', { ref: session }],

@@ -20,10 +20,11 @@ const sessions: SessionListRow[] = [
   { sessionId: 's6', title: 'Relay reconnect backoff', provider: 'claude' },
 ]
 
-/** A seventh group tips the list past `SESSION_REVEAL_STEP`, so the footer shows. */
+/** Enough rows to pass the 256px cap, so the list scrolls instead of growing. */
 const moreSessions: SessionListRow[] = [
   ...sessions,
-  { sessionId: 's7', title: 'Sidebar Show more footer', provider: 'codex' },
+  { sessionId: 's7', title: 'Capped session scroll', provider: 'codex' },
+  { sessionId: 's8', title: 'Next page stays virtualized', provider: 'claude' },
 ]
 
 /** A host that never answers: the first read stays in flight for the whole story. */
@@ -41,7 +42,7 @@ const base: WorkspaceProjectRowProps = {
   listRevision: 0,
   onOpenSession: noop,
   onPinSession: confirmed,
-  onArchiveSession: confirmed,
+  onSettleSession: confirmed,
   onDeleteSession: confirmed,
 }
 
@@ -70,7 +71,7 @@ export const Expanded = {
 
 export const ExpandedWithMore = {
   render: () => <Frame><WorkspaceProjectRow {...base} seed={moreSessions} expanded /></Frame>,
-  name: 'Expanded · Show more footer',
+  name: 'Expanded · capped scroll',
 }
 
 export const Loading = {

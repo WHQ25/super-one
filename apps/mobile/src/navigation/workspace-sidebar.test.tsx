@@ -26,7 +26,7 @@ const sidebar = (overrides: Partial<WorkspaceSidebarProps> = {}) => (
     onNewSession={noop}
     onOpenSession={noop}
     onPinSession={confirmed}
-    onArchiveSession={confirmed}
+    onSettleSession={confirmed}
     onDeleteSession={confirmed}
     onSearch={noop}
     onAddProject={noop}
@@ -100,9 +100,11 @@ test('reports reconnecting under the device name, not in the project list', asyn
 
 /** A host answering by native method, counting each. */
 const host = () => {
-  const request = jest.fn(async (method: string) => method === 'sessionList.pinned'
-    ? { sessions: [{ sessionId: 'p1', title: 'Pinned one', projectPath: '/repo', projectName: 'repo', isPinned: true }] }
-    : { sessions: seed, totalCount: seed.length })
+  const request = jest.fn(async (method: string) => {
+    if (method === 'sessionList.pinned') return { sessions: [{ sessionId: 'p1', title: 'Pinned one', projectPath: '/repo', projectName: 'repo', isPinned: true }] }
+    if (method === 'sessionList.settled') return { sessions: [], totalCount: 0 }
+    return { sessions: seed, totalCount: seed.length }
+  })
   const calls = (type: string) => request.mock.calls.filter(([method]) => method === type).length
   return { client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, calls }
 }

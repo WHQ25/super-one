@@ -2,6 +2,7 @@ import { expect, test } from '@jest/globals'
 import { screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
 import { SessionListBody } from './session-list-body'
+import { SESSION_CHILD_LIST_MAX_HEIGHT } from './virtual-session-list'
 import type { ProjectSessions } from '../navigation/use-project-sessions'
 
 const noop = () => {}
@@ -9,7 +10,7 @@ const confirmed = () => Promise.resolve(true)
 
 function sessions(overrides: Partial<ProjectSessions> = {}): ProjectSessions {
   return {
-    items: [], busy: false, loaded: true, loadingMore: false, error: '', hasMore: false,
+    items: [], busy: false, loaded: true, loadingMore: false, error: '', hasMore: false, loadedCount: 0,
     loadMore: noop, toggleChildren: noop, forget: noop, patch: noop,
     ...overrides,
   }
@@ -20,7 +21,7 @@ const body = (state: ProjectSessions) => (
     sessions={state}
     onOpenSession={noop}
     onPinSession={confirmed}
-    onArchiveSession={confirmed}
+    onSettleSession={confirmed}
     onDeleteSession={confirmed}
   />
 )
@@ -50,10 +51,35 @@ test('shows the failure instead of an empty project when the read failed', async
   expect(screen.queryByText('No sessions yet')).toBeNull()
 })
 
-test('offers "Show more" as the muted chevron control the desktop sidebar uses', async () => {
-  await renderWithTheme(body(sessions({ hasMore: true })))
-  expect(screen.getByRole('button', { name: 'Show More Sessions' })).toBeTruthy()
-  // Secondary ink, not the accent: it is a quiet footer, not a link.
-  expect(screen.getByText('Show More')).toHaveStyle({ fontSize: 12, fontWeight: '500' })
-  expect(screen.getByText('Show More')).not.toHaveStyle({ color: '#1570d1' })
+test('scrolls loaded rows without a Show more control', async () => {
+  const items = Array.from({ length: 40 }, (_, index) => ({
+    session: { sessionId: `s${index}`, title: `Session ${index}` },
+    child: false, hasChildren: false, collapsed: false,
+  }))
+  await renderWithTheme(body(sessions({ hasMore: true, items })))
+  expect(screen.queryByRole('button', { name: 'Show More Sessions' })).toBeNull()
+  expect(screen.queryByText('Show More')).toBeNull()
+  expect(screen.getByText('Session 0')).toBeTruthy()
+  expect(screen.queryByText('Session 39')).toBeNull()
+})
+
+test('scrolls an expanded parent\'s children in their own faded list', async () => {
+  const children = Array.from({ length: 20 }, (_, index) => ({
+    session: { sessionId: `c${index}`, title: `Child ${index}` },
+    child: true, hasChildren: false, collapsed: false,
+  }))
+  await renderWithTheme(body(sessions({
+    items: [
+      { session: { sessionId: 'p', title: 'Parent' }, child: false, hasChildren: true, collapsed: false },
+      ...children,
+      { session: { sessionId: 'q', title: 'Next parent' }, child: false, hasChildren: false, collapsed: false },
+    ],
+  })))
+  expect(screen.getByText('Parent')).toBeTruthy()
+  expect(screen.getByText('Child 0')).toBeTruthy()
+  expect(screen.queryByText('Child 19')).toBeNull()
+  expect(screen.getByText('Next parent')).toBeTruthy()
+  expect(screen.getByTestId('child-session-list-p').props.style.height).toBe(SESSION_CHILD_LIST_MAX_HEIGHT)
+  expect(screen.getByTestId('session-list-fade-bottom')).toBeTruthy()
+  expect(screen.queryByTestId('session-list-fade-top')).toBeNull()
 })

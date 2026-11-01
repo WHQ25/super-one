@@ -3,6 +3,7 @@ import {
   countMessagesForSessions,
   findSessionAcrossProjects,
   listPinnedSessions,
+  listSettledSessions,
   listSessionsForFolder,
   searchSessionsByTitle,
 } from '../db-sessions'
@@ -12,6 +13,7 @@ import type { Session } from '../session/types'
 export type SessionListQuery =
   | { kind: 'page'; projectPath: string; limit?: number; offset?: number }
   | { kind: 'pinned' }
+  | { kind: 'settled'; projectPath: string; limit?: number; offset?: number }
   | { kind: 'search'; query: string; limit?: number; projectPaths?: readonly string[] }
   | { kind: 'find'; sessionId: string }
 
@@ -42,6 +44,42 @@ export function readRemoteSessionList(command: SessionListQuery, manager?: { get
   if (command.kind === 'find') {
     const row = findSessionAcrossProjects(command.sessionId)
     return { session: row ? crossProject(row) : null }
+  }
+  if (command.kind === 'settled') {
+    const page = listSettledSessions({
+      projectPath: command.projectPath,
+      limit: command.limit ?? 20,
+      offset: command.offset ?? 0,
+    })
+    const messageCounts = countMessagesForSessions(page.sessions.map((session) => session.sessionId))
+    return {
+      totalCount: page.total,
+      sessions: page.sessions.map((session) => {
+        const live = manager?.getSession(session.sessionId)
+        return {
+          sessionId: session.sessionId,
+          title: session.title,
+          lastActiveAt: session.lastActiveAt,
+          messageCount: messageCounts.get(session.sessionId) ?? 0,
+          provider: session.provider ?? 'claude',
+          acpAgentId: session.acpAgentId ?? null,
+          selectedModel: live?.snapshot.selectedModel || session.selectedModel || null,
+          status: live?.activityStatus() ?? 'idle',
+          tags: session.tags ?? [],
+          gitBranch: session.gitBranch ?? null,
+          isWorktree: session.isWorktree ?? false,
+          worktreePath: session.worktreePath ?? null,
+          isPinned: false,
+          isSettled: true,
+          parentSessionId: session.parentSessionId ?? null,
+          ...(session.unread ? { unread: true } : {}),
+          ...(session.isAutomation ? { isAutomation: true } : {}),
+          projectPath: session.folderPath,
+          projectName: session.folderName,
+          scheduledSendAt: scheduled.get(session.sessionId) ?? null,
+        }
+      }),
+    }
   }
   if (command.kind !== 'page') {
     const rows = command.kind === 'search'

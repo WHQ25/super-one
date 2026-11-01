@@ -34,7 +34,7 @@ const row = (overrides: Partial<WorkspaceProjectRowProps> = {}) => (
     listRevision={0}
     onOpenSession={noop}
     onPinSession={confirmed}
-    onArchiveSession={confirmed}
+    onSettleSession={confirmed}
     onDeleteSession={confirmed}
     {...overrides}
   />
@@ -136,6 +136,17 @@ test('still reports a host failure that is not a dropped transport', async () =>
   const request = jest.fn(() => Promise.reject(new Error('no such project')))
   await renderWithTheme(row({ expanded: true, client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, seed: [] }))
   await waitFor(() => expect(screen.getByText('no such project')).toBeTruthy())
+  expect(screen.getAllByText('no such project')).toHaveLength(1)
+})
+
+test('reports a settled read failure when the active list loaded', async () => {
+  const request = jest.fn(async (method: string) => {
+    if (method === 'sessionList.settled') throw new Error('settled store offline')
+    return { sessions: [{ sessionId: 's1', title: 'Fix the drawer' }], totalCount: 1 }
+  })
+  await renderWithTheme(row({ expanded: true, client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, seed: [] }))
+  expect(await screen.findByText('settled store offline')).toBeTruthy()
+  expect(screen.getByText('Fix the drawer')).toBeTruthy()
 })
 
 test('shows the first read beside the project name, not inside the list', async () => {
@@ -192,9 +203,14 @@ test('plays the unfold when the project row itself is tapped', async () => {
 
 /** A host that answers `sessionList.page` at once, and counts how often it was asked. */
 const answering = (rows: SessionListRow[]) => {
-  const request = jest.fn(async () => ({ sessions: rows, totalCount: rows.length }))
+  const request = jest.fn(async (method: string) => method === 'sessionList.settled'
+    ? { sessions: [], totalCount: 0 }
+    : { sessions: rows, totalCount: rows.length })
   return { client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, request }
 }
+
+const pageCalls = (request: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown>> } }) =>
+  request.mock.calls.filter((call) => call[0] === 'sessionList.page').length
 
 test('updates the scheduled icon from a host list invalidation without reopening the drawer', async () => {
   const scheduled = { sessionId: 'h1', title: 'Scheduled review', scheduledSendAt: Date.UTC(2026, 8, 15, 10) }
@@ -209,20 +225,29 @@ test('updates the scheduled icon from a host list invalidation without reopening
   expect(screen.getByText('Scheduled review')).toBeTruthy()
 })
 test('reads past a page that ends inside a collaboration parent\'s children', async () => {
-  // The host pages rows, not groups: a 30-row page can stop halfway through
-  // one parent's children, which expanded to show only that first half.
-  const children = Array.from({ length: 34 }, (_, index) => ({ sessionId: `c${index}`, title: `Child ${index}`, parentSessionId: 'p' }))
+  // The host pages rows, not groups. The first two pages add only hidden
+  // children, so the visible list stays one row and must keep asking from
+  // the fetched count until the family and the next parent are loaded.
+  const children = Array.from({ length: 60 }, (_, index) => ({ sessionId: `c${index}`, title: `Child ${index}`, parentSessionId: 'p' }))
   const hosted: SessionListRow[] = [{ sessionId: 'p', title: 'Parent' }, ...children, { sessionId: 'q', title: 'Next parent' }]
-  const request = jest.fn(async (_method: string, payload: { offset?: number; limit?: number }) => {
+  const request = jest.fn(async (method: string, payload: { offset?: number; limit?: number }) => {
+    if (method === 'sessionList.settled') return { sessions: [], totalCount: 0 }
     const offset = payload.offset ?? 0
     return { sessions: hosted.slice(offset, offset + (payload.limit ?? 30)), totalCount: hosted.length }
   })
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   await renderWithTheme(row({ expanded: true, client, seed: [] }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(pageCalls(request)).toBe(3))
   await act(async () => { fireEvent.press(await screen.findByRole('button', { name: 'Show sessions started by Parent' })) })
-  expect(screen.getByText('Child 33')).toBeTruthy()
+  // The family scrolls inside the parent's own short list, not the project list.
+  await act(async () => {
+    fireEvent.scroll(screen.getByTestId('child-session-list-p'), {
+      nativeEvent: { contentOffset: { y: 100000 }, contentSize: { height: 2400, width: 300 }, layoutMeasurement: { height: 144, width: 300 } },
+    })
+  })
+  expect(screen.getByText('Child 59')).toBeTruthy()
   expect(screen.getByText('Next parent')).toBeTruthy()
+  expect(pageCalls(request)).toBe(3)
 })
 
 test('nests a child the host has not listed yet under its parent once it runs again', async () => {
@@ -254,7 +279,7 @@ test('a remount paints the cached list without a request or a spinner', async ()
   const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
   const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client, seed: [] }))
   await waitFor(() => expect(screen.getByText('From the host')).toBeTruthy())
-  expect(request).toHaveBeenCalledTimes(1)
+  expect(pageCalls(request)).toBe(1)
   await rerender(remountable(false, { expanded: true, client, seed: [] }))
   expect(screen.queryByText('From the host')).toBeNull()
 
@@ -262,13 +287,13 @@ test('a remount paints the cached list without a request or a spinner', async ()
   expect(screen.getByText('From the host')).toBeTruthy()
   expect(screen.queryByTestId('project-list-loading')).toBeNull()
   await act(async () => {})
-  expect(request).toHaveBeenCalledTimes(1)
+  expect(pageCalls(request)).toBe(1)
 })
 
 test('a remount after the host invalidated this project re-reads in place', async () => {
   const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
   const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client, seed: [] }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(pageCalls(request)).toBe(1))
   await rerender(remountable(false, { expanded: true, client, seed: [] }))
 
   cache.invalidate('/repo')
@@ -276,53 +301,76 @@ test('a remount after the host invalidated this project re-reads in place', asyn
   // The stale rows stay up while the re-read is out — no wipe, no spinner.
   expect(screen.getByText('From the host')).toBeTruthy()
   expect(screen.queryByTestId('project-list-loading')).toBeNull()
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(pageCalls(request)).toBe(2))
 })
 
 test('a change in another project costs this one nothing', async () => {
   const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
   const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(pageCalls(request)).toBe(1))
 
   cache.invalidate('/elsewhere')
   await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
   await act(async () => {})
-  expect(request).toHaveBeenCalledTimes(1)
+  expect(pageCalls(request)).toBe(1)
 })
 
 test('a reconnect stales every list, so the next open re-reads it', async () => {
   const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
   const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(pageCalls(request)).toBe(1))
 
   cache.invalidateAll()
   await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(pageCalls(request)).toBe(2))
 })
 
 test('a collapsed list does not chase an invalidation until it is opened', async () => {
   const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
   const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(pageCalls(request)).toBe(1))
 
   await rerender(row({ expanded: false, client, seed: [] }))
   cache.invalidate('/repo')
   await rerender(row({ expanded: false, client, seed: [], listRevision: 1 }))
   await act(async () => {})
-  expect(request).toHaveBeenCalledTimes(1)
+  expect(pageCalls(request)).toBe(1)
 
   await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(pageCalls(request)).toBe(2))
 })
 
 test('a seed left standing by a failed read is not remembered as a read', async () => {
   const request = jest.fn(() => Promise.reject(new Error('not connected')))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(pageCalls(request)).toBe(1))
   await rerender(remountable(false, { expanded: true, client }))
 
   // Nothing cached: the next mount asks again rather than trusting the seed.
   await rerender(remountable(true, { expanded: true, client }))
-  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(pageCalls(request)).toBe(2))
+})
+
+test('folds a project\'s settled sessions until the heading is opened', async () => {
+  const request = jest.fn(async (method: string) => method === 'sessionList.settled'
+    ? { sessions: [{ sessionId: 'done', title: 'Finished thread', isSettled: true }], totalCount: 4 }
+    : { sessions: [{ sessionId: 's1', title: 'Fix the drawer' }], totalCount: 1 })
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
+  await renderWithTheme(row({ expanded: true, client, seed: [] }))
+  const heading = await screen.findByRole('button', { name: 'Settled, 4' })
+  expect(screen.queryByText('Finished thread')).toBeNull()
+  await act(async () => { fireEvent.press(heading) })
+  expect(screen.getByText('Finished thread')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Settled, 4' })).toBeNull()
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'Settled' })) })
+  expect(screen.queryByText('Finished thread')).toBeNull()
+})
+
+test('does not ask for settled sessions while the project is collapsed', async () => {
+  const request = jest.fn(async () => ({ sessions: [], totalCount: 0 }))
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
+  await renderWithTheme(row({ expanded: false, client }))
+  await act(async () => {})
+  expect(request.mock.calls.filter((call) => call[0] === 'sessionList.settled')).toHaveLength(0)
 })

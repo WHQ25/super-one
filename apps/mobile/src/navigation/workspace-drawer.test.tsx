@@ -30,7 +30,7 @@ const drawer = (overrides: Partial<WorkspaceDrawerProps> = {}) => (
     onNewSession={noop}
     onOpenSession={noop}
     onPinSession={confirmed}
-    onArchiveSession={confirmed}
+    onSettleSession={confirmed}
     onDeleteSession={confirmed}
     onSearch={noop}
     onAddProject={noop}

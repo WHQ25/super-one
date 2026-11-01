@@ -1775,11 +1775,11 @@ export function MobileApp() {
     }
   }
 
-  const removeSession = async (row: SessionRow, type: 'archive_session' | 'delete_session', targetProject = project) => {
+  const removeSession = async (row: SessionRow, targetProject = project) => {
     const client = workspaceClientRef.current
     const p = targetProject
     if (!client || !p) throw new Error('no active project')
-    await operateProjectSession(client, p.path, row.sessionId, type === 'archive_session' ? 'session.setUiFlags' : 'session.remove', type === 'archive_session' ? { isHidden: true } : {})
+    await operateProjectSession(client, p.path, row.sessionId, 'session.remove', {})
 
     if (p.path === project?.path) setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
     if (!routedEnvironmentIdRef.current && runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
@@ -1789,13 +1789,29 @@ export function MobileApp() {
     }
   }
 
+  /**
+   * Move a session into or out of the project's Settled group. The chat stays
+   * open: settling finishes the harness, it does not discard the transcript.
+   */
+  const settleSession = async (row: SessionRow, settled: boolean, targetProject = project) => {
+    const client = workspaceClientRef.current
+    const p = targetProject
+    if (!client || !p) throw new Error('no active project')
+    await operateProjectSession(client, p.path, row.sessionId, 'session.setUiFlags', { isSettled: settled })
+    if (p.path === project?.path) {
+      setSessions((current) => settled
+        ? current.filter((item) => item.sessionId !== row.sessionId)
+        : current.some((item) => item.sessionId === row.sessionId) ? current : [row, ...current])
+    }
+  }
+
   const sessionListActions = {
     onPinSession: (p: Project, row: SessionRow, pinned: boolean) =>
       runSessionOp(() => pinSession(row, pinned, p), `failed to ${pinned ? 'pin' : 'unpin'} session`),
-    onArchiveSession: (p: Project, row: SessionRow) =>
-      runSessionOp(() => removeSession(row, 'archive_session', p), 'failed to hide session'),
+    onSettleSession: (p: Project, row: SessionRow, settled: boolean) =>
+      runSessionOp(() => settleSession(row, settled, p), `failed to ${settled ? 'settle' : 'unsettle'} session`),
     onDeleteSession: (p: Project, row: SessionRow) =>
-      runSessionOp(() => removeSession(row, 'delete_session', p), 'failed to delete session'),
+      runSessionOp(() => removeSession(row, p), 'failed to delete session'),
   }
 
   /**

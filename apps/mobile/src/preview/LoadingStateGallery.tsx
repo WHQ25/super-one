@@ -56,13 +56,13 @@ const LIST_ROWS = [row('a', 'Review the mobile interface', 'claude'), row('b', '
 function projectSessions(overrides: Partial<ProjectSessions>): ProjectSessions {
   return {
     items: LIST_ROWS.map((session) => ({ session, child: false, hasChildren: false, collapsed: false })),
-    busy: false, loaded: true, loadingMore: false, error: '', hasMore: true,
+    busy: false, loaded: true, loadingMore: false, error: '', hasMore: true, loadedCount: LIST_ROWS.length,
     loadMore: () => {}, toggleChildren: () => {}, forget: () => {}, patch: () => {},
     ...overrides,
   }
 }
 const listActions = {
-  onOpenSession: () => {}, onPinSession: async () => false, onArchiveSession: async () => false, onDeleteSession: async () => false,
+  onOpenSession: () => {}, onPinSession: async () => false, onSettleSession: async () => false, onDeleteSession: async () => false,
 }
 
 const TODOS: Record<string, TodoItem> = {
@@ -97,10 +97,10 @@ export function LoadingStateGallery() {
       </View>
     </Section>
 
-    <Section title="Session list · more pages behind" note="The quiet 'Show more' footer of a settled page.">
+    <Section title="Session list · more pages behind" note="The capped list loads the next page as it scrolls. A clipped edge fades. There is no Show more control.">
       <SessionListBody {...listActions} sessions={projectSessions({})} surface="page" />
     </Section>
-    <Section title="Session list · loading the next page" note="The footer swaps to a spinner; rows on screen stay put.">
+    <Section title="Session list · loading the next page" note="A spinner sits under the visible rows; rows on screen stay put.">
       <SessionListBody {...listActions} sessions={projectSessions({ loadingMore: true })} surface="page" />
     </Section>
     <Section title="Session list · read failed" note="The error the hook reports for a page that never came.">

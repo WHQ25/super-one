@@ -5,6 +5,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import type { RelayClient } from '@superone/relay-client'
 import { Text } from '../ui/text'
 import { SessionListBody, type SessionListActions } from '../ui'
+import { SettledSessionSection } from '../ui/settled-session-section'
 import { SESSION_UNFOLD } from '../ui/session-unfold'
 import { SpinningIcon } from '../ui/spinning-icon'
 import { useIconMotion } from '../ui/use-icon-motion'
@@ -15,6 +16,7 @@ import type { WorkspaceListCache } from '../workspace-list-cache'
 import { useMobileTheme } from '../theme/context'
 import { SessionActivityContext } from './use-session-activity'
 import { useProjectSessions } from './use-project-sessions'
+import { useSettledSessions } from './use-settled-sessions'
 
 export type WorkspaceProjectRowProps = SessionListActions & {
   client: RelayClient | null
@@ -68,6 +70,23 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
     visible: props.visible,
     listRevision: props.listRevision,
   })
+  const settled = useSettledSessions({
+    client: props.client,
+    path: props.project.path,
+    cache: props.cache,
+    enabled: props.expanded,
+    visible: props.visible,
+    listRevision: props.listRevision,
+  })
+  const [settledOpen, setSettledOpen] = useState(() => props.cache.settledOpenPaths.has(props.project.path))
+  const toggleSettled = () => {
+    const next = !settledOpen
+    const paths = new Set(props.cache.settledOpenPaths)
+    if (next) paths.add(props.project.path)
+    else paths.delete(props.project.path)
+    props.cache.settledOpenPaths = paths
+    setSettledOpen(next)
+  }
   const { expanded } = props
 
   // The first read takes over the folder glyph rather than sitting inside the
@@ -96,9 +115,31 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
         activeSessionId={props.activeSessionId}
         onOpenSession={props.onOpenSession}
         onPinSession={props.onPinSession}
-        onArchiveSession={props.onArchiveSession}
+        onSettleSession={props.onSettleSession}
         onDeleteSession={props.onDeleteSession}
       />
+      {expanded ? <SettledSessionSection
+        rows={settled.rows}
+        total={settled.total}
+        open={settledOpen}
+        onToggle={toggleSettled}
+        busy={settled.busy}
+        loadingMore={settled.loadingMore}
+        // The active list already prints a project-wide host failure. Repeating
+        // it under Settled makes one outage look like two.
+        error={settled.error && settled.error !== sessions.error ? settled.error : undefined}
+        hasMore={settled.hasMore}
+        onLoadMore={settled.loadMore}
+        activeSessionId={props.activeSessionId}
+        surface="panel"
+        onOpenSession={props.onOpenSession}
+        onSettleSession={(session) => {
+          void props.onSettleSession(session, false).then((ok) => { if (ok) settled.forget(session.sessionId) })
+        }}
+        onDeleteSession={(session) => {
+          void props.onDeleteSession(session).then((ok) => { if (ok) settled.forget(session.sessionId) })
+        }}
+      /> : null}
     </View> : null}
   </View>
 }

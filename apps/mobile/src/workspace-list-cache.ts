@@ -43,6 +43,13 @@ export class WorkspaceListCache {
   pinnedRevision = 0
   /** Which project rows stand open — also lost on every drawer unmount otherwise. */
   expandedPaths: ReadonlySet<string> = new Set()
+  /**
+   * Projects whose Settled group the user opened. Missing means folded, the
+   * same default as the desktop sidebar. Memory only: the cache outlives the
+   * drawer, which is the remount that used to forget it.
+   */
+  settledOpenPaths: ReadonlySet<string> = new Set()
+  private readonly settledLists = new Map<string, CachedSessionList>()
 
   constructor(readonly persistence?: PersistedWorkspace) {
     const saved = persistence?.get<{ rows?: SessionListRow[] }>('pinned')
@@ -60,6 +67,15 @@ export class WorkspaceListCache {
   store(path: string, list: CachedSessionList): void {
     this.lists.set(path, list)
     this.persistence?.set(`sessions:${path}`, { ...list, rows: list.rows.slice(0, 30), revision: -1 })
+  }
+
+  /** Settled pages for one project. Not written to disk; the active list is the cold-start paint. */
+  getSettled(path: string): CachedSessionList | undefined {
+    return this.settledLists.get(path)
+  }
+
+  storeSettled(path: string, list: CachedSessionList): void {
+    this.settledLists.set(path, list)
   }
 
   /** The latest revision a list for `path` could reflect. */

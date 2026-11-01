@@ -253,7 +253,7 @@ const sessions = [
   { sessionId: 'preview-1-child', title: 'Port the tool rows to chat-view', provider: 'codex' as const, parentSessionId: 'preview-1' },
   { sessionId: 'preview-2', title: '检查长标题与中文输入', provider: 'codex' as const, tags: ['mobile', 'review'], isPinned: true, projectName: 'super-one' },
   { sessionId: 'preview-3', title: 'Audit theme tokens for the light scheme', provider: 'opencode' as const },
-  // Past SESSION_REVEAL_STEP so the drawer's "Show more" footer is reviewable.
+  // Long enough that an expanded project scrolls inside its own cap.
   { sessionId: 'preview-4', title: 'Wire the terminal resize handshake', provider: 'claude' as const },
   { sessionId: 'preview-5', title: 'Relay ACK buffer GC', provider: 'codex' as const },
   { sessionId: 'preview-6', title: 'Pinch-to-zoom in the image viewer', provider: 'claude' as const },
@@ -453,7 +453,7 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
     client: previewClient, projects: previewProjects, activeProject: project,
     activeSessionId: 'preview-1', sessions, cache: previewWorkspaceCache, listRevision: 0,
     onNewSession: () => setPage('New session'), onOpenSession: () => setPage('Chat'),
-    onPinSession: previewSessionOp, onArchiveSession: previewSessionOp, onDeleteSession: previewSessionOp,
+    onPinSession: previewSessionOp, onSettleSession: previewSessionOp, onDeleteSession: previewSessionOp,
     onSearch: () => setPage('Session search'), onAddProject: () => setPage('Add project'),
   }
   const tabletSidebar = shouldUseTabletMultiPane(width, height, route, true)

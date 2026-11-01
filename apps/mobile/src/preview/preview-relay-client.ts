@@ -17,6 +17,10 @@ export function previewRelayClient(sessions: SessionListRow[]): RelayClient {
     if (method === 'sessionList.pinned') {
       return { sessions: sessions.filter((row) => row.isPinned) }
     }
+    if (method === 'sessionList.settled') {
+      const settled = sessions.filter((row) => row.isSettled)
+      return { sessions: settled, totalCount: settled.length }
+    }
     if (method === 'sessionList.search') {
       const needle = (payload.query ?? '').trim().toLowerCase()
       return { sessions: sessions.filter((row) => row.title.toLowerCase().includes(needle)) }

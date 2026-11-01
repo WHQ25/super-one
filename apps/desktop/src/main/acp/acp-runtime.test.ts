@@ -31,6 +31,7 @@ import {
 import { setSuperoneMcpBridgeRuntime } from '../mcp/superone-mcp-stdio-state'
 import { deriveSuperoneMcpSessionToken } from '../mcp/superone-mcp-auth'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
+import { acpHostContextText } from './acp-host-context'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
 // Grok routes x.ai methods only under the `_` wire prefix; the bare name is
@@ -560,7 +561,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     })
     expect(captured.newSession?._meta).toMatchObject({
       pluginDirs: ['/abs/extra-plugins'],
-      rules: 'Be terse.',
+      rules: acpHostContextText('Be terse.'),
       clientIdentifier: 'superone',
     })
     await runtime.close()
@@ -1865,6 +1866,11 @@ describe('ACP host integration (MCP + system prompt)', () => {
       await runtime.prompt('hello', 'context-message', () => {})
       const text = captured.prompts.flat().map((block) => block.text ?? '').join('\n')
       expect(text.includes('Use the newly selected project instructions.')).toBe(appended)
+      if (agentId === 'grok-build' && !resumeSessionId) {
+        expect(text.includes('<superone-host-context>')).toBe(false)
+        expect((captured.newSession?._meta as { rules?: string } | undefined)?.rules)
+          .toBe(acpHostContextText('Use the newly selected project instructions.'))
+      }
     } finally {
       await runtime.close()
     }

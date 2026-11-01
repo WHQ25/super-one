@@ -287,7 +287,9 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
 
       const mcpServers =
         opts.getMcpServers?.(input.session.sessionId) ?? opts.mcpServers ?? []
-      const permissionMeta = grok ? grokNodePermissionMeta(input.permissionMode) : null
+      const permissionMeta = grok
+        ? { ...grokNodePermissionMeta(input.permissionMode), rules: superoneHostContext() }
+        : null
       const active = await connection.agent
         .buildSession({
           cwd,
@@ -315,7 +317,10 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       }
       pendingXaiNotifications.length = 0
       if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'streaming' })
-      const prompt = input.text.trimStart().startsWith('/')
+      // Grok reads `_meta.rules` on session/new. Other ACP agents only see the
+      // user prompt, so the host block is prepended there. A leading slash
+      // stays intact: some agents replace the whole first block.
+      const prompt = grok || input.text.trimStart().startsWith('/')
         ? input.text
         : `${superoneHostContext()}\n\n${input.text}`
       // session/prompt goes out here: from now the agent may act on the input.

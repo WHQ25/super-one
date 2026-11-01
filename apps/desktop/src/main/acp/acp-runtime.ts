@@ -819,7 +819,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       ),
       cwd: launch.cwd,
       extraPluginDirs: opts.extraPluginDirs,
-      rules: opts.systemPromptAppend,
+      // Grok appends `_meta.rules` to its system prompt. The host block goes
+      // there with any session append. Other agents ignore the field.
+      rules: launch.agentId === 'grok-build'
+        ? acpHostContextText(opts.systemPromptAppend)
+        : opts.systemPromptAppend,
     })
     const sessionMeta = { ...permissionMeta, ...sessionMetaOverlay }
     const sessionRequestBase = {
@@ -1509,14 +1513,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         throw err
       }
-      // ACP has no system-prompt field. Append (never prepend) so Grok's
-      // slash parser still sees `/goal` as the first text block. Defer on a
-      // leading slash: GoalSet replaces the whole prompt and would drop it.
-      if (!systemPromptSent && mcpAttached && !isLeadingSlashPrompt(text)) {
+      // Agents without a rules channel, and a resumed Grok session (rules are
+      // applied only at creation), get the block on the first non-slash prompt.
+      // Append so a leading `/goal` stays the first text block; GoalSet would
+      // drop a block that shared that prompt.
+      if (!stampedRules && !systemPromptSent && mcpAttached && !isLeadingSlashPrompt(text)) {
         systemPromptSent = true
         promptBlocks.push({
           type: 'text',
-          text: acpHostContextText(stampedRules ? undefined : opts.systemPromptAppend),
+          text: acpHostContextText(opts.systemPromptAppend),
         })
       }
       // ActiveSession.prompt() cannot stamp `_meta`. Grok's

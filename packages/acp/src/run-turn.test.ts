@@ -1,4 +1,4 @@
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
+import { SUPERONE_SYSTEM_PROMPT_APPEND, superoneHostContext } from '@superone/shared/superone-system-prompt'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { NodeSessionRecord } from '@superone/runtime/session'
@@ -276,8 +276,10 @@ describe('ACP production turn runner AgentEvents', () => {
         clientIdentifier: 'superone',
         yoloMode: false,
         autoMode: true,
+        rules: superoneHostContext(),
       },
     }))
+    expect(mocks.active.prompt).toHaveBeenCalledWith('go')
     mocks.connection.agent.request.mockImplementation(async () => ({}))
   })
 

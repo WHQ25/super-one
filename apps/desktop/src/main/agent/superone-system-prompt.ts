@@ -20,8 +20,10 @@ export const CODEX_REALTIME_START_INSTRUCTIONS = ''
 export const CODEX_REALTIME_END_INSTRUCTIONS = ''
 
 /**
- * ACP has no system-prompt field (`session/new` and `session/prompt` carry neither
- * `systemPrompt` nor `instructions`), so the text ships as a tagged block prepended
- * to the first prompt — the only channel the spec guarantees is delivered.
+ * Tagged SuperOne host instructions.
+ * Grok session/new folds this into `_meta.rules` (`<human_rules>` on the system
+ * prompt). Other ACP agents have no such field, so the same block is appended
+ * to the first non-slash prompt. A Grok session/load ignores `rules`, and that
+ * prompt fallback is used again.
  */
 export const ACP_SYSTEM_PROMPT_BLOCK = `<superone-host-context>\n${SUPERONE_SYSTEM_PROMPT_APPEND}\n</superone-host-context>`

@@ -91,7 +91,12 @@ a time with the latest target next. The emulator's posture ids stay as named sto
 - **Orientation follows the form.** Changing between closed, tent, open and laptop turns
   the device to that form's hold (`FOLD_FORM_ORIENTATION`): closed and open upright, the
   open inner panel then landscape; a tent and a laptop `landscape-right`. Within one form
-  a hinge move keeps the user's turn.
+  a hinge move keeps the user's turn. A boot records the hinge closed without a sweep,
+  so a rotation event still turns the device until the first one. Turning an open or
+  closed device sweeps again to the angle it is already at, and that sweep carries the hold. A tabletop pose of 0 is
+  not written: SpringBoard rewrites it back to portrait, so a turn at 180° only
+  sometimes landed. A laptop is stood again instead. A tent stays face down, and the
+  rotation event still turns its shell.
 
 - **Moving the hinge** is a guest call: SpringBoard's `SBSDisplayToolService`
   swap with `targetMode = 1` and an absolute position (0 closed, 0.5 = 90°, 1 open).

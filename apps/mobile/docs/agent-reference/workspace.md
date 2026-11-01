@@ -1,19 +1,35 @@
 # Mobile workspace and navigation
 
-At widths below 768 px the shell is single-pane. At 768 px and above a tablet
-keeps the workspace beside chat, terminal, settings, files, and the git pickers.
-A landscape phone is wide enough for that pane but only ~390 pt tall, so it
-keeps the sidebar on **chat only** — File Preview, Files, Terminal and the rest
-take the full width (`shouldUseTabletMultiPane`). The composer follows the same
-height gate (`shouldUseTabletComposer`): compact on a landscape phone, boxed
-card on a tablet.
+At widths below 768 px the shell is single-pane. The iPhone Duo inner panel
+(about 669×951 pt) is the same in portrait: the workspace is a drawer, not a
+column beside the session. Held landscape — the book — it keeps a resident
+sidebar, 280 pt when the hinge is flat or not yet known, and one leaf
+(`width / 2`) when it is only partly open. A portrait crease runs across the
+height, so that pose stays a drawer too. The cover (about 466×678) stays a
+phone drawer, and it is the only Duo pose that locks portrait: the lock drops
+as soon as the hinge leaves closed. It keeps its top inset. While the keyboard is down, the
+pane reaches through the home-indicator inset and leaves a 10 pt bottom
+margin, so the composer sits near the glass. On the inner
+panel the pane background runs to the glass and its content keeps a 10 pt
+margin, with only a 10 pt bottom margin. Held
+landscape, the session column keeps the full top inset so the clock stays
+clear. Held portrait, the clock sits in the top-right corner, so a session
+header shares that band and its trailing control stays left of the cluster;
+a screen with no header still starts below the full inset.
+At 768 px and above a tablet keeps the workspace beside chat, terminal,
+settings, files, and the git pickers. A landscape phone is wide enough for
+that pane but only ~390 pt tall, so it keeps the sidebar on **chat only** —
+File Preview, Files, Terminal and the rest take the full width
+(`shouldUseTabletMultiPane`). The composer follows the same height gate
+(`shouldUseTabletComposer`): compact on a landscape phone, boxed card on a
+tablet.
 **Projects and sessions are not screens.** `WorkspaceList` owns both lists the way
 the desktop sidebar does, so `routeHierarchy` stacks chat directly on `pair`; back
 from a chat opens the drawer and must not end the session. New entry points for
 project or session navigation belong in that list, not in a new route.
 **`WorkspaceDrawer` and `WorkspaceSidebar` are two mounts of one surface**, not two
-surfaces: the drawer adds a scrim, a slide and a close drag, the sidebar a 280 pt
-pane, and both render the same `WorkspaceList` from the same props object
+surfaces: the drawer adds a scrim, a slide and a close drag, the sidebar a pane
+(280 pt, or one Duo leaf when the hinge is partly open), and both render the same `WorkspaceList` from the same props object
 (`workspaceList` in `MobileApp`). **The drawer is an overlay in the shell's view
 tree, not an RN `Modal`.** A `Modal` is a second UIKit presentation, and inside
 one Reanimated's layout animations left a reordered session row stuck invisible

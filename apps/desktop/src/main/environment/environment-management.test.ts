@@ -481,7 +481,14 @@ describe('environment connect and disconnect', () => {
     const rt = await bootNode()
     const projectDir = temp('env-mgmt-project-')
     const opened = rt.projects.open(projectDir)
-    const listSpy = vi.spyOn(rt.projects, 'list')
+    const originalList = rt.projects.list.bind(rt.projects)
+    let snapshotReads = 0
+    const listSpy = vi.spyOn(rt.projects, 'list').mockImplementation((...args: Parameters<typeof originalList>) => {
+      // A session-list subscribe snapshots projects in-process. That read is not a project.list fetch.
+      if ((new Error().stack ?? '').includes('snapshotTopic')) snapshotReads += 1
+      return originalList(...args)
+    })
+    const projectFetches = () => listSpy.mock.calls.length - snapshotReads
     const host = newHost()
     const { connectionId } = await host.pairRemote({
       baseUrl: rt.server.url,
@@ -499,11 +506,11 @@ describe('environment connect and disconnect', () => {
         projects.some((project) => project.projectId === opened.projectId),
       ),
     ).toBe(true)
-    expect(listSpy).toHaveBeenCalledTimes(1)
+    expect(projectFetches()).toBe(1)
 
     await host.listProjects(connectionId, { refresh: true })
     await host.listProjects(connectionId)
-    expect(listSpy).toHaveBeenCalledTimes(2)
+    expect(projectFetches()).toBe(2)
 
     host.disconnect(connectionId)
     await host.connect(connectionId)
@@ -511,7 +518,7 @@ describe('environment connect and disconnect', () => {
       host.listProjects(connectionId),
       host.listProjects(connectionId),
     ])
-    expect(listSpy).toHaveBeenCalledTimes(3)
+    expect(projectFetches()).toBe(3)
     host.dispose()
   })
 

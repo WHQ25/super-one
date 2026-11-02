@@ -58,17 +58,22 @@ export function SidebarHoverCard({
 }) {
   const [hovered, setHovered] = useState(false)
   const shown = open ?? hovered
-  // A trackpad scroll keeps the pointer "inside" the row until the finger lifts,
-  // so the card would stay up for the whole gesture. The list moved; close now.
+  // A trackpad scroll keeps the pointer over the row until the finger lifts, so
+  // the card would stay up for the whole gesture. The sidebar moved; close now.
+  // Stay on this row's sidebar. The chat transcript also scrolls while it follows
+  // new content, and a window listener would dismiss the card for that too.
   useEffect(() => {
     if (!shown || open !== undefined) return
+    const row = document.querySelector('[data-sidebar-hover-open="true"]')
+    const sidebar = row?.closest('[data-sidebar-outer]')
+    if (!sidebar) return
     const dismiss = (event: Event) => {
       const target = event.target
       if (target instanceof Element && target.closest('[data-slot="hover-card-content"]')) return
       setHovered(false)
     }
-    window.addEventListener('scroll', dismiss, true)
-    return () => window.removeEventListener('scroll', dismiss, true)
+    sidebar.addEventListener('scroll', dismiss, true)
+    return () => sidebar.removeEventListener('scroll', dismiss, true)
   }, [shown, open])
   return (
     <HoverCard

@@ -7,6 +7,31 @@ import { useVirtualTranscript } from './virtual-transcript-context'
 
 export interface EdgeMargins { top: number; bottom: number }
 
+/** How close a virtual block gets before its content mounts. */
+export const BLOCK_MOUNT_MARGIN = 300
+/**
+ * How far a mounted block may leave before its content unmounts.
+ * Revealing a block changes its height, and the reading-anchor correction
+ * moves it by that change. With one margin, the correction pushes the block
+ * back across the mount line: it unmounts, shrinks, and mounts again. A slow
+ * wheel is smaller than that loop, so the viewport shakes and does not advance.
+ * Keeping the block mounted across the correction breaks the loop. The distance
+ * covers one tall segment whose estimate was short.
+ */
+export const BLOCK_KEEP_MARGIN = 1600
+
+/** Mount within {@link BLOCK_MOUNT_MARGIN}; once shown, stay until the observer's keep margin. */
+export function blockStaysVisible(
+  entry: Pick<IntersectionObserverEntry, 'isIntersecting' | 'boundingClientRect' | 'rootBounds'>,
+  wasVisible: boolean,
+): boolean {
+  const root = entry.rootBounds
+  const box = entry.boundingClientRect
+  if (!root || box.height === 0) return false
+  const near = box.bottom >= root.top - BLOCK_MOUNT_MARGIN && box.top <= root.bottom + BLOCK_MOUNT_MARGIN
+  return near || (wasVisible && entry.isIntersecting)
+}
+
 /** Adjoining margins combine as CSS collapses them: the largest positive plus the most negative. */
 const collapse = (margins: number[]) => Math.max(0, ...margins) + Math.min(0, ...margins)
 

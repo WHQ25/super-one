@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { Virtualizer } from '@tanstack/react-virtual'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createVirtualBlockAnchor } from './virtual-block-anchor'
+import { blockStaysVisible, createVirtualBlockAnchor } from './virtual-block-anchor'
 
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks() })
 
@@ -111,6 +111,25 @@ describe('virtual block reading anchor', () => {
     reveal([400, 400])
     await Promise.resolve()
     expect(viewport.scrollTop).toBe(3600)
+  })
+
+  it('keeps a revealed block mounted past the mount margin', () => {
+    const root = new DOMRect(0, 100, 640, 400)
+    const entry = (top: number, height: number, isIntersecting: boolean) => ({
+      isIntersecting,
+      boundingClientRect: new DOMRect(0, top, 640, height),
+      rootBounds: root,
+    })
+    // Inside the 300px mount margin, including just below the viewport.
+    expect(blockStaysVisible(entry(80, 40, true), false)).toBe(true)
+    expect(blockStaysVisible(entry(520, 40, true), false)).toBe(true)
+    // Prefetch range only. A block that has not been shown stays a placeholder.
+    expect(blockStaysVisible(entry(-280, 40, true), false)).toBe(false)
+    // The anchor correction can push a just-revealed block back across the mount line.
+    expect(blockStaysVisible(entry(-280, 40, true), true)).toBe(true)
+    expect(blockStaysVisible(entry(-800, 40, false), true)).toBe(false)
+    expect(blockStaysVisible(entry(80, 0, true), true)).toBe(false)
+    expect(blockStaysVisible({ ...entry(80, 40, true), rootBounds: null }, false)).toBe(false)
   })
 
   it('cancels queued corrections when the transcript is disposed', async () => {

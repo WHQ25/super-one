@@ -6,7 +6,7 @@ import { retainMcpAppTranscript } from '../mcp-apps/layout-store'
 import { McpAppTranscriptRetention } from '../mcp-apps/transcript-retention'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 import { transcriptInteractionSnapshot } from './transcript-interaction'
-import { createVirtualBlockAnchor } from './virtual-block-anchor'
+import { BLOCK_KEEP_MARGIN, blockStaysVisible, createVirtualBlockAnchor } from './virtual-block-anchor'
 
 export interface VirtualTranscriptItem {
   id: string
@@ -121,13 +121,17 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
       // batch instead of querying the browser for each of thousands of blocks.
       const hasInteraction = transcriptInteractionSnapshot(root.ownerDocument)
       for (const entry of entries) {
-        const intersecting = entry.isIntersecting || inTransientClip(entry)
-        intersections.set(entry.target, intersecting)
-        const visible = intersecting || hasInteraction(entry.target)
+        const wasVisible = intersections.get(entry.target) === true
+        // The observer watches the keep margin. Visibility is narrower: mount
+        // near the viewport, then stay mounted so the anchor correction cannot
+        // unload the block it just revealed.
+        const stay = blockStaysVisible(entry, wasVisible) || inTransientClip(entry)
+        intersections.set(entry.target, stay)
+        const visible = stay || hasInteraction(entry.target)
         if (visible) blockAnchor.prepare(entry.target as HTMLElement)
         blockCallbacks.get(entry.target)?.(visible)
       }
-    }, { root, rootMargin: '300px 0px' })
+    }, { root, rootMargin: `${BLOCK_KEEP_MARGIN}px 0px` })
     observer.current = io
     for (const element of blockCallbacks.keys()) io.observe(element)
     return () => { io.disconnect(); observer.current = null }

@@ -103,8 +103,8 @@ describe('compaction boundary cursor', () => {
     expect(rows.map((row) => row.id)).toEqual(['user', 'turn', 'c1', 'turn:after:c1', 'c2', 'turn:after:c2'])
     expect(rows.find((row) => row.id === 'turn:after:c2')?.message.status).toBe('streaming')
     expect(rows.find((row) => row.id === 'turn')?.message.status).toBe('complete')
-    const textOf = (id: string) => rows.find((row) => row.id === id)?.message.content
-      .flatMap((block) => block.type === 'text' ? [block.text] : []).join('')
+    const textOf = (id: string): string => rows.find((row) => row.id === id)?.message.content
+      .flatMap((block) => block.type === 'text' ? [block.text] : []).join('') ?? ''
     expect(textOf('turn')).toBe('Before the compaction.')
     expect(textOf('turn:after:c1')).toBe('Between the compactions.')
     expect(textOf('c1')).toContain('__compact__')

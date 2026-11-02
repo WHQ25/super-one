@@ -2,6 +2,7 @@
  * Question / plan interaction waiters (P0 remote node).
  */
 import { describe, expect, it } from 'vitest'
+import type { CodexPermissionPreset } from '@superone/shared/agent-types'
 import {
   SessionRuntime,
   createSimulatedTurnRunner,
@@ -183,7 +184,9 @@ describe('SessionRuntime question / plan', () => {
     await waitIdle(runtime, session.sessionId)
     expect(runtime.get(session.sessionId)?.permissionPreset).toBe('full-access')
     expect(store.loadAll()[0]?.permissionPreset).toBe('full-access')
-    await expect(runtime.send({ sessionId: session.sessionId, text: 'nope', permissionPreset: 'inherit', client, ...lease })).rejects.toThrow('does not support desktop harness settings')
+    // The send type only names real presets. A wire payload can still carry one the node rejects.
+    const rejectedPreset = 'inherit' as unknown as CodexPermissionPreset
+    await expect(runtime.send({ sessionId: session.sessionId, text: 'nope', permissionPreset: rejectedPreset, client, ...lease })).rejects.toThrow('does not support desktop harness settings')
     await runtime.dispose()
   })
 

@@ -60,6 +60,11 @@ function openDb() {
       automation_id TEXT,
       tags_json TEXT NOT NULL DEFAULT '[]'
     );
+    CREATE TABLE session_collaboration_grants (
+      child_session_id TEXT,
+      parent_session_id TEXT,
+      kind TEXT
+    );
     CREATE TABLE environment_events (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       event_id TEXT NOT NULL UNIQUE,

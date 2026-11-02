@@ -63,6 +63,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
 import { SidebarFocusView } from '@/components/sidebar/SidebarFocusView'
 import { useSidebarFocusStore } from '@/components/sidebar/sidebar-focus'
+import { startNewSessionFromFocus } from '@/lib/new-session-from-focus'
 import {
   draftScopeForFocus,
   focusContextKey,
@@ -748,7 +749,7 @@ export const AppSidebar = memo(function AppSidebar() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void createNewSession()}
+          onClick={() => void startNewSessionFromFocus()}
           className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar hover:border-sidebar-foreground/25"
         >
           <SquarePen className="size-3.5" />

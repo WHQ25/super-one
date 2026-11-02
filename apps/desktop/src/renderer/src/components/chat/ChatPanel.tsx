@@ -15,6 +15,7 @@ import { clearUnseenCompleted } from '@/stores/chat-store/helpers/unseen-complet
 import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
 import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 import { HeaderSessionMenu } from './HeaderSessionMenu'
+import { startNewSessionFromFocus } from '@/lib/new-session-from-focus'
 
 const OFFSET = 8
 const DEFAULT_PANEL_W = 360
@@ -101,8 +102,6 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
     const sid = proj._activeSessionId
     return sid ? proj.unseenCompletedSessions.has(sid) : false
   })
-  const resetSession = useChatStore((s) => s.resetSession)
-
   const isRunning = sessionStatus === 'streaming' || sessionStatus === 'background'
   const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
   // Collapsed, the bubble itself opens into the App's message approval; expanded,
@@ -459,7 +458,7 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
               ) : null}
             </div>
             <button
-              onClick={() => resetSession()}
+              onClick={() => void startNewSessionFromFocus()}
               className="shrink-0 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
             >
               <Plus className="size-3.5" />

@@ -64,19 +64,18 @@ export function useChatKeyboardShortcuts(enabled = true) {
     return () => window.removeEventListener('keydown', handler)
   }, [enabled, toggleTodos])
 
-  // Cmd/Ctrl+N creates a new session
-  const resetSession = useChatStore((s) => s.resetSession)
+  // Cmd/Ctrl+N creates a new session on the sidebar focus, same as the sidebar button.
   useEffect(() => {
     if (!enabled) return
     const handler = (e: KeyboardEvent): void => {
       if (e.key === 'n' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         e.preventDefault()
-        resetSession()
+        void import('@/lib/new-session-from-focus').then(({ startNewSessionFromFocus }) => startNewSessionFromFocus())
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [enabled, resetSession])
+  }, [enabled])
 
   // Seed the per-project session list so the Ctrl+Tab session switcher has data.
   const activeProject = useChatStore((s) => s.activeProject)

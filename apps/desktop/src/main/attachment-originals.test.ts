@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 
@@ -9,7 +9,7 @@ vi.mock('electron', () => ({ app: { getPath: () => f.root }, ipcMain: { handle: 
 vi.mock('./database', async () => (await import('../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('./environment/environment-host', () => ({ getEnvironmentHost: () => ({ getSession: f.session, artifactTransfers: { wake: f.wake } }) }))
 import { advanceDelivery, claimDelivery, findDeliveryByPath } from './db-session-deliveries'
-import { attachmentOriginalStatus, nodeAttachmentOriginal, stageAttachmentOriginal } from './attachment-originals'
+import { attachmentOriginalStatus, mirrorWindowMessageAttachments, nodeAttachmentOriginal, stageAttachmentOriginal } from './attachment-originals'
 import { mintHolder } from './environment/delivery-holders'
 import { resetDeliveryDatabase } from '../test/fixtures/delivery-db'
 
@@ -70,6 +70,33 @@ it('treats a remote zone file with no delivery as one that will never reach the 
   writeFileSync(stray, bytes)
   expect(attachmentOriginalStatus(stray)).toEqual({ state: 'failed', retryable: false })
   expect(() => nodeAttachmentOriginal('remote-session', stray, zone)).toThrow('still uploading')
+})
+
+it('maps a window attachment onto the local zone file and drops a path this desktop cannot read', async () => {
+  const { path } = await stageAttachmentOriginal({ projectPath: 'remote:node:/repo', sessionId: 'remote-session', name: 'photo.png', mimeType: 'image/png', bytes })
+  const nodePath = `/node/sync/remote-session/attachment/${basename(path)}`
+  const message = {
+    id: 'u', role: 'user' as const, status: 'complete' as const, createdAt: '', providerId: 'claude',
+    content: [{ type: 'image' as const, name: 'photo.png', id: 'a' }],
+    attachments: [{ id: 'a', name: 'photo.png', mimeType: 'image/png', base64: '', preview: true as const, originalPath: nodePath }],
+  }
+  const mirrored = mirrorWindowMessageAttachments(message, zone, 'remote-session')
+  expect(mirrored.attachments?.[0].originalPath).toBe(path)
+  expect(mirrorWindowMessageAttachments(mirrored, zone, 'remote-session').attachments?.[0].originalPath).toBe(path)
+
+  const missing = mirrorWindowMessageAttachments({
+    ...message,
+    attachments: [{ ...message.attachments[0], originalPath: '/node/sync/remote-session/attachment/missing.png' }],
+  }, zone, 'remote-session')
+  expect(missing.attachments?.[0].originalPath).toBeUndefined()
+
+  const foreign = mirrorWindowMessageAttachments({
+    ...message,
+    attachments: [{ ...message.attachments[0], originalPath: '/etc/passwd' }],
+  }, null, 'remote-session')
+  expect(foreign.attachments?.[0].originalPath).toBeUndefined()
+  const plain = { ...message, attachments: [{ id: 'a', name: 'photo.png', mimeType: 'image/png', base64: '' }] }
+  expect(mirrorWindowMessageAttachments(plain, zone, 'remote-session')).toBe(plain)
 })
 
 it('refuses to stage into a remote session the node does not have', async () => {

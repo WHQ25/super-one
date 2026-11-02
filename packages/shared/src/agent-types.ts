@@ -34,10 +34,11 @@ export interface ImageAttachment {
    */
   originalPath?: string
   /**
-   * Set on the copy a phone receives in a transcript: `base64` then holds a
-   * small JPEG thumbnail (or nothing, for a PDF or a picture the host could not
-   * decode) and `mimeType` describes that thumbnail. The original bytes stay on
-   * the host and come back through `get_attachment` when the picture is opened.
+   * Set on the copy a transcript window carries: `base64` then holds a small
+   * JPEG thumbnail, or nothing when that thumbnail would not fit (or the host
+   * could not decode the picture). `mimeType` describes the thumbnail. The
+   * original stays in the session zone; opening the picture fetches it, and
+   * the desktop that staged it previews its local mirror.
    */
   preview?: boolean
 }

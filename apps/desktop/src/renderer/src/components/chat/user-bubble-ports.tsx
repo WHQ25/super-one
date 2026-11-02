@@ -12,6 +12,7 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { tryCopy, tryCopyImage } from '@/lib/clipboard'
+import { toLocalFileUrl } from '@/lib/path-utils'
 import { hasTextSelection } from '@/lib/file-link'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { DesktopAppIcon } from './DesktopAppIcon'
@@ -90,13 +91,25 @@ function PdfAttachmentDialog({ attachment, onClose }: { attachment: ImageAttachm
   )
 }
 
-/** The image viewer, or a PDF's preview. The desktop holds every attachment's bytes. */
+/** A local zone file the window named, as a URL the renderer can paint. */
+function localZoneImageSrc(attachment: ImageAttachment): string | null {
+  const path = attachment.originalPath
+  if (!path || attachment.mimeType === 'application/pdf') return null
+  if (!path.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(path)) return null
+  return toLocalFileUrl(path)
+}
+
+/** The image viewer, or a PDF's preview. A remote original opens from the local zone file. */
 function DesktopAttachmentViewer({ attachment, isDocument, open, onOpenChange }: AttachmentViewerProps) {
-  if (!attachment.base64) return null
   if (isDocument) {
+    if (!attachment.base64) return null
     return open ? <PdfAttachmentDialog attachment={attachment} onClose={() => onOpenChange(false)} /> : null
   }
-  return <ImageLightbox src={`data:${attachment.mimeType};base64,${attachment.base64}`} alt={attachment.name} open={open} onOpenChange={onOpenChange} />
+  const inline = attachment.base64 ? `data:${attachment.mimeType};base64,${attachment.base64}` : null
+  // A window thumbnail is the small copy. Open the zone file when this machine has it.
+  const src = (!inline || attachment.preview) ? localZoneImageSrc(attachment) ?? inline : inline
+  if (!src) return null
+  return <ImageLightbox src={src} alt={attachment.name} open={open} onOpenChange={onOpenChange} />
 }
 
 const DESKTOP_USER_BUBBLE_PORTS: UserBubblePorts = {
@@ -108,6 +121,7 @@ const DESKTOP_USER_BUBBLE_PORTS: UserBubblePorts = {
   WebLink,
   copyText: tryCopy,
   copyImage: (attachment) => tryCopyImage(attachment.mimeType, attachment.base64),
+  localAttachmentSrc: localZoneImageSrc,
   AttachmentViewer: DesktopAttachmentViewer,
   QuoteBody: QuoteCodeBody,
   useIsDark,

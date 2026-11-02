@@ -9,15 +9,15 @@ const MAX_PIXELS = 8_000 * 8_000
  * PNG and JPEG thumbnails without Electron. Anything else (GIF, WebP) stays
  * an icon chip, the same as a picture the desktop decoder cannot read.
  */
-export function encodeNodeThumbnail(bytes: Buffer, mimeType: string): AttachmentThumbnail | null {
+export function encodeNodeThumbnail(bytes: Buffer, mimeType: string, limits?: { maxSide: number; quality: number }): AttachmentThumbnail | null {
   const decoded = mimeType === 'image/png' || bytes[0] === 0x89
     ? decodePng(bytes)
     : mimeType === 'image/jpeg' || (bytes[0] === 0xff && bytes[1] === 0xd8)
       ? decodeJpeg(bytes)
       : null
   if (!decoded) return null
-  const fitted = fit(decoded, ATTACHMENT_THUMBNAIL_MAX_SIDE)
-  const encoded = jpeg.encode({ data: fitted.data, width: fitted.width, height: fitted.height }, THUMBNAIL_JPEG_QUALITY)
+  const fitted = fit(decoded, limits?.maxSide ?? ATTACHMENT_THUMBNAIL_MAX_SIDE)
+  const encoded = jpeg.encode({ data: fitted.data, width: fitted.width, height: fitted.height }, limits?.quality ?? THUMBNAIL_JPEG_QUALITY)
   return { base64: Buffer.from(encoded.data).toString('base64'), mimeType: 'image/jpeg' }
 }
 

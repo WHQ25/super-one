@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, ImageAttachment } from '@superone/shared/agent-types'
+import { MAX_FRAGMENT_BYTES } from '@superone/shared/transcript-window/fragment-message'
 import { findAttachment, previewAttachment, withAttachmentPreviews, type ThumbnailEncoder } from './attachment-thumbnail'
 import { stripEventForRemote, stripMessagesForRemote } from '../remote-content'
 
@@ -24,6 +25,26 @@ describe('attachment thumbnails for the phone transcript', () => {
     // The blocks are untouched, and the host's own copy keeps its bytes.
     expect(message.content).toBe(original.content)
     expect(original.attachments?.[0].base64).toBe(FULL)
+  })
+
+  it('steps down a thumbnail that would not fit in one fragment, and keeps the zone path when none fit', () => {
+    const bulky: ImageAttachment = {
+      id: 'bulky', name: 'image.png', mimeType: 'image/png',
+      base64: Buffer.alloc(8000, 3).toString('base64'),
+      originalPath: '/node/sync/s1/attachment/full.png',
+    }
+    const stepped = vi.fn<ThumbnailEncoder>((_bytes, _mime, limits) => ({
+      base64: (limits?.maxSide ?? 256) >= 256 ? 'A'.repeat(MAX_FRAGMENT_BYTES) : 'small',
+      mimeType: 'image/jpeg',
+    }))
+    expect(previewAttachment(bulky, stepped)).toMatchObject({ base64: 'small', preview: true, originalPath: bulky.originalPath, mimeType: 'image/jpeg' })
+    expect(stepped).toHaveBeenCalledTimes(2)
+
+    const never: ImageAttachment = { ...bulky, id: 'never', base64: Buffer.alloc(8100, 4).toString('base64') }
+    const huge = vi.fn<ThumbnailEncoder>(() => ({ base64: 'A'.repeat(MAX_FRAGMENT_BYTES), mimeType: 'image/jpeg' }))
+    expect(previewAttachment(never, huge)).toEqual({
+      id: 'never', name: 'image.png', mimeType: 'image/png', base64: '', preview: true, originalPath: bulky.originalPath,
+    })
   })
 
   it('sends a picture it cannot decode as an icon chip rather than the full bytes', () => {

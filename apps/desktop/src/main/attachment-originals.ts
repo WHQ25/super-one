@@ -15,6 +15,8 @@ import { ipcMain } from 'electron'
 import {
   AgentIpcChannels,
   type AttachmentOriginalStatus,
+  type ChatMessage,
+  type ImageAttachment,
   type StageAttachmentOriginalRequest,
 } from '@superone/shared/agent-types'
 import { persistAttachmentBytes, safeFileBase } from '@superone/shared/attachment-store'
@@ -22,7 +24,7 @@ import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { findDeliveryByPath, retryGivenUpDeliveries } from './db-session-deliveries'
 import { sealZoneFile } from './environment/zone-delivery'
 import { ensureZoneDir, readZoneOwner } from './environment/zone-owner'
-import { nodeZonePath, type NodeSyncZone } from './environment/sync-zone-paths'
+import { desktopMirrorPath, nodeZonePath, parseNodeZonePath, type NodeSyncZone } from './environment/sync-zone-paths'
 import { assertZoneSessionId, producerDir, zoneRelativePath } from './media-output-paths'
 
 export async function stageAttachmentOriginal(request: StageAttachmentOriginalRequest): Promise<{ path: string }> {
@@ -80,6 +82,37 @@ async function retryAttachmentOriginal(path: string): Promise<void> {
   retryGivenUpDeliveries(zone.sessionId)
   const { getEnvironmentHost } = await import('./environment/environment-host')
   getEnvironmentHost().artifactTransfers?.wake(row.connectionId)
+}
+
+function withoutOriginalPath(attachment: ImageAttachment): ImageAttachment {
+  if (!attachment.originalPath) return attachment
+  const { originalPath: _path, ...rest } = attachment
+  return rest
+}
+
+/**
+ * Point one window attachment at this desktop's copy of the file, or drop a
+ * path this machine cannot read. The node names its own zone; the controlling
+ * desktop staged the same relative path under its mirror and previews that.
+ * A path that is not this session's `attachment/` file is removed so the
+ * renderer never treats a foreign path as a local image.
+ */
+export function mirrorWindowAttachment(attachment: ImageAttachment, zone: NodeSyncZone | null, sessionId: string): ImageAttachment {
+  const nodePath = attachment.originalPath
+  if (!nodePath) return attachment
+  const fromNode = zone ? parseNodeZonePath(zone, nodePath) : null
+  const fromDesktop = !fromNode ? zoneRelativePath(nodePath) : null
+  const located = fromNode ?? fromDesktop
+  if (!located || located.sessionId !== sessionId || !located.relativePath.startsWith('attachment/')) return withoutOriginalPath(attachment)
+  const local = desktopMirrorPath(sessionId, located.relativePath)
+  if (!existsSync(local)) return withoutOriginalPath(attachment)
+  return local === nodePath ? attachment : { ...attachment, originalPath: local }
+}
+
+/** {@link mirrorWindowAttachment} over a message. The same object when nothing names a zone file. */
+export function mirrorWindowMessageAttachments(message: ChatMessage, zone: NodeSyncZone | null, sessionId: string): ChatMessage {
+  if (!message.attachments?.some((attachment) => attachment.originalPath)) return message
+  return { ...message, attachments: message.attachments.map((attachment) => mirrorWindowAttachment(attachment, zone, sessionId)) }
 }
 
 /** The node's path for a landed original; refuses one from another session or still on its way. */

@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AttachmentChipPresenter } from './AttachmentChip'
+import { DEFAULT_USER_BUBBLE_PORTS, UserBubblePortsProvider } from './user-bubble-ports'
 
 /** Rendered text, ignoring markup: a chip's label is split around its icon. */
 const textOf = (html: string) => html.replace(/<[^>]*>/g, '')
@@ -30,6 +31,16 @@ describe('AttachmentChipPresenter', () => {
 
     expect(textOf(html)).toContain('spec.pdf')
     expect(html).not.toContain('<img')
+  })
+
+  it('paints a host-resolved file when the transcript carried no bytes', () => {
+    const html = renderToStaticMarkup(createElement(
+      UserBubblePortsProvider,
+      { value: { ...DEFAULT_USER_BUBBLE_PORTS, localAttachmentSrc: () => 'local-file:///sync/s1/attachment/shot.png' } },
+      createElement(AttachmentChipPresenter, { att: { name: 'image.png', mimeType: 'image/png', base64: '', originalPath: '/sync/s1/attachment/shot.png' } }),
+    ))
+    expect(html).toContain('src="local-file:///sync/s1/attachment/shot.png"')
+    expect(textOf(html)).toContain('image.png')
   })
 
   it('shows an icon for a picture that came without bytes', () => {

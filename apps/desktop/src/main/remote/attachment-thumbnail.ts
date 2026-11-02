@@ -34,15 +34,16 @@ interface ThumbnailNativeImage {
 function nativeEncoder(): ThumbnailEncoder {
   // Lazy so unit tests can run the projection without loading Electron.
   const { nativeImage } = requireElectron('electron') as typeof import('electron')
-  return (bytes) => {
+  return (bytes, _mime, limits) => {
     const image = nativeImage.createFromBuffer(bytes) as unknown as ThumbnailNativeImage
     if (image.isEmpty()) return null
+    const maxSide = limits?.maxSide ?? ATTACHMENT_THUMBNAIL_MAX_SIDE
     const { width, height } = image.getSize()
-    const scale = Math.min(1, ATTACHMENT_THUMBNAIL_MAX_SIDE / Math.max(width, height, 1))
+    const scale = Math.min(1, maxSide / Math.max(width, height, 1))
     const small = scale < 1
       ? image.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), quality: 'good' })
       : image
-    return { base64: small.toJPEG(THUMBNAIL_JPEG_QUALITY).toString('base64'), mimeType: 'image/jpeg' }
+    return { base64: small.toJPEG(limits?.quality ?? THUMBNAIL_JPEG_QUALITY).toString('base64'), mimeType: 'image/jpeg' }
   }
 }
 

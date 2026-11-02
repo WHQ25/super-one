@@ -73,6 +73,7 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
+import { mirrorWindowMessageAttachments } from '../attachment-originals'
 import { DESKTOP_FOLD_BUDGET, presentDesktopWindowPatch, readDesktopSessionWindow } from './remote-transcript-window'
 import { desktopWindowHolder } from '@superone/shared/environment/transcript-window'
 import type { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
@@ -1904,7 +1905,16 @@ export class EnvironmentHost {
       if (typeof announced === 'string' && announced) input.providerId = announced
       return loaded.cursor.version
     })
-    return snapshot ?? await read()
+    return this.withMirroredAttachments(connectionId, input.sessionId, snapshot ?? await read())
+  }
+
+  /**
+   * A remote window names attachment originals with the node's zone path. The
+   * desktop that staged them still has the bytes; point the bubble at that file.
+   */
+  private withMirroredAttachments(connectionId: string, sessionId: string, loaded: SessionLoadResult): SessionLoadResult {
+    const zone = this.getSyncZone(connectionId)
+    return { ...loaded, messages: loaded.messages.map((message) => mirrorWindowMessageAttachments(message, zone, sessionId)) }
   }
 
   /**
@@ -1937,7 +1947,7 @@ export class EnvironmentHost {
       this.resyncFollowed(connectionId, key)
       throw Object.assign(new Error('History changed'), { code: 'not_found' })
     }
-    return message
+    return mirrorWindowMessageAttachments(message, this.getSyncZone(connectionId), input.sessionId)
   }
 
   /** The fold the chat holds is gone. Read the session again, the way the phone does. */
@@ -1987,7 +1997,12 @@ export class EnvironmentHost {
               const sync = this.remoteWindows.get(key)
               const presented = sync && presentDesktopWindowPatch(sync, agentEvent)
               if (sync && !presented) this.resync(connectionId, input)
-              else if (presented) this.agentEventSink?.(presented)
+              else if (presented) {
+                const zone = this.getSyncZone(connectionId)
+                this.agentEventSink?.(presented.rows
+                  ? { ...presented, rows: presented.rows.map((message) => mirrorWindowMessageAttachments(message, zone, input.sessionId)) }
+                  : presented)
+              }
               continue
             }
             this.agentEventSink?.(agentEvent)

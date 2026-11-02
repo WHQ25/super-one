@@ -59,6 +59,11 @@ export interface UserBubblePorts {
   copyText: (text: string) => Promise<boolean>
   /** Copies an image attachment; absent where the host cannot. */
   copyImage?: (attachment: ImageAttachment) => Promise<boolean>
+  /**
+   * A picture the transcript did not carry, resolved by the host. The desktop
+   * returns its local sync-zone copy of an attachment the user uploaded.
+   */
+  localAttachmentSrc?: (attachment: ImageAttachment) => string | null
   /** Shows an attachment in full while `open`; a host with its own viewer opens it and closes again. */
   AttachmentViewer: ComponentType<AttachmentViewerProps>
   /** The code of a quoted file selection. */

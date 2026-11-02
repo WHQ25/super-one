@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage, ImageAttachment } from '@superone/shared/agent-types'
 import { PortableMessage } from './PortableMessage'
+import { AttachmentChipPresenter } from './presenters/AttachmentChip'
+import { DEFAULT_USER_BUBBLE_PORTS, UserBubblePortsProvider } from './presenters/user-bubble-ports'
 
 const RED = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGO4FmcDAAN+AXFyCQ1WAAAAAElFTkSuQmCC'
 const BLUE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNwa9oCAAKOAX3Ic40cAAAAAElFTkSuQmCC'
@@ -44,4 +46,20 @@ export const LongFileName: Story = { args: { message: sent('summarize this', [{ 
 export const HostThumbnail: Story = { args: { message: sent('what is in this photo', [{ ...photo, preview: true }]) } }
 /** A picture the host could not cut a thumbnail for (GIF, WebP), or a PDF: the icon stands in, the tap still fetches. */
 export const WithoutBytes: Story = { args: { message: sent('what is in this photo', [{ ...photo, base64: '', preview: true }, { ...pdf, base64: '', preview: true }]) } }
+/**
+ * The window dropped the thumbnail, but this machine staged the file in the
+ * session zone. The host resolves that path and the chip paints it. Rendered
+ * on the chip itself: the phone bubble installs its own ports and would hide
+ * the resolved picture.
+ */
+export const LocalZoneMirror: Story = {
+  args: { message: sent('', []) },
+  render: () => (
+    <UserBubblePortsProvider value={{ ...DEFAULT_USER_BUBBLE_PORTS, localAttachmentSrc: () => `data:image/png;base64,${RED}` }}>
+      <div className="p-4">
+        <AttachmentChipPresenter att={{ ...photo, name: 'image.png', base64: '', preview: true, originalPath: '/sync/s1/attachment/shot.png' }} />
+      </div>
+    </UserBubblePortsProvider>
+  ),
+}
 export const NoText: Story = { args: { message: sent('', [photo, pdf]) } }

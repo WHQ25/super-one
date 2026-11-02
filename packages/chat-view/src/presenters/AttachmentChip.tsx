@@ -35,13 +35,13 @@ export function AttachmentChipPresenter({ att, document, messageId, selectable, 
   original?: AttachmentOriginalUpload
 }) {
   const { t } = useTranslation()
-  const { ChipCard, AttachmentViewer, copyImage } = useUserBubblePorts()
+  const { ChipCard, AttachmentViewer, copyImage, localAttachmentSrc } = useUserBubblePorts()
   const [open, setOpen] = useState(false)
   const { copied, run } = useCopiedFlag()
   const isPdf = document || att.mimeType === 'application/pdf'
-  // A picture can arrive without bytes (the host could not cut a thumbnail):
-  // its icon stands in, and opening still fetches the original.
-  const src = att.base64 ? `data:${att.mimeType};base64,${att.base64}` : null
+  // Bytes when the window carried a thumbnail. Otherwise the host may still
+  // have the file (the desktop mirror of a picture this machine uploaded).
+  const src = isPdf ? null : att.base64 ? `data:${att.mimeType};base64,${att.base64}` : localAttachmentSrc?.(att) ?? null
   const upload = original?.status
   const uploading = upload?.state === 'uploading'
   const failed = upload?.state === 'failed'

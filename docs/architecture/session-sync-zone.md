@@ -444,6 +444,10 @@ Attachment originals (`apps/desktop/src/main/attachment-originals.ts`):
 - The composer holds Send until the row has landed. `session.send` carries
   the desktop path, `EnvironmentHost.sendSessionMessage` maps it to the node
   path, and the node accepts only an existing file in that session's zone.
+- The transcript window carries a thumbnail of that picture. When the
+  thumbnail does not fit in one fragment, the fragment keeps the name, id
+  and zone path instead of an omitted notice. The controlling desktop maps
+  the node path back to its local mirror and previews that file.
 - On failure the chip offers Retry (`retryGivenUp`). A give-up at
   `committing` cannot be retried (E090-3), so the user removes the attachment
   and adds it again. Send stays held in every failed state.

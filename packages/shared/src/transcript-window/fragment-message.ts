@@ -13,6 +13,24 @@ import { textCuts, textSlices, type TextCuts } from './text-cuts'
 
 /** Serialized ceiling of one fragment body; an atomic block above it is sent as `omitted`. */
 export const MAX_FRAGMENT_BYTES = 32 * 1024
+
+/**
+ * An attachment whose bytes do not fit in one fragment. The name, id and zone
+ * path stay, so a host that already has the file (the desktop that staged it)
+ * can still preview it. `preview` tells everyone else to fetch the original.
+ */
+export function attachmentFragmentShell(attachment: ImageAttachment): ImageAttachment {
+  const shell: ImageAttachment = { mimeType: attachment.mimeType, base64: '', name: attachment.name, preview: true }
+  if (attachment.id) shell.id = attachment.id
+  if (attachment.originalPath) shell.originalPath = attachment.originalPath
+  return shell
+}
+
+/** Serialized size of an attachment fragment body, the same object the window sends. */
+export function attachmentFragmentBytes(attachment: ImageAttachment): number {
+  return utf8Length(JSON.stringify({ kind: 'attachment', attachment }))
+}
+
 /** Serialized ceiling of a message's meta; heavier metadata is dropped field by field. */
 export const MAX_META_BYTES = 16 * 1024
 /** Visible characters credited to a non-text fragment when filling a viewport. */
@@ -130,8 +148,28 @@ function atomicEntry(key: string, block: ContentBlock): FragmentEntry {
   return boundedEntry(key, { kind: 'block', block }, block.type)
 }
 
+function packAttachment(key: string, attachment: ImageAttachment): FragmentEntry | null {
+  const body: TranscriptFragmentBody = { kind: 'attachment', attachment }
+  const json = JSON.stringify(body)
+  const bytes = utf8Length(json)
+  if (bytes > MAX_FRAGMENT_BYTES) return null
+  return { key, digest: contentDigest(json), body, bytes, chars: BLOCK_CHARS }
+}
+
+/**
+ * A picture travels whole when it fits. When it does not, the fragment keeps
+ * the shell (name, id, zone path) instead of an `omitted` notice: the notice
+ * would throw away the only handle the controlling desktop has on the file
+ * it already stored in the session zone.
+ */
 function attachmentEntry(index: number, attachment: ImageAttachment): FragmentEntry {
-  return boundedEntry(`attachment:${index}`, { kind: 'attachment', attachment }, 'attachment')
+  const key = `attachment:${index}`
+  const whole = packAttachment(key, attachment)
+  if (whole) return whole
+  const shell = attachmentFragmentShell(attachment)
+  const packed = packAttachment(key, shell) ?? packAttachment(key, { mimeType: shell.mimeType, base64: '', name: shell.name, preview: true, ...(shell.id ? { id: shell.id } : {}) })
+  if (packed) return packed
+  return entry(key, { kind: 'omitted', blockType: 'attachment', bytes: attachmentFragmentBytes(attachment) }, BLOCK_CHARS)
 }
 
 function boundedEntry(key: string, body: TranscriptFragmentBody, blockType: string): FragmentEntry {

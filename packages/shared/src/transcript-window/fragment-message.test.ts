@@ -66,6 +66,22 @@ describe('fragmentMessage', () => {
     expect(result.fragments.map((f) => f.body.kind)).toEqual(['attachment', 'text', 'omitted'])
   })
 
+  it('keeps an oversized picture as a named zone file instead of an omitted notice', () => {
+    const originalPath = '/node/sync/s1/attachment/full.png'
+    const message: ChatMessage = {
+      id: 'u1', role: 'user', status: 'complete', createdAt: '2026-10-13T00:00:00.000Z', providerId: 'claude',
+      content: [{ type: 'image', name: 'image.png', id: 'img' }],
+      attachments: [{ id: 'img', name: 'image.png', mimeType: 'image/png', base64: 'a'.repeat(MAX_FRAGMENT_BYTES), originalPath }],
+    }
+    const result = fragmentMessage(message)
+    expect(result.fragments.map((fragment) => fragment.body.kind)).toEqual(['attachment', 'block'])
+    expect(result.fragments[0]).toMatchObject({
+      bytes: expect.any(Number),
+      body: { kind: 'attachment', attachment: { id: 'img', name: 'image.png', base64: '', preview: true, originalPath } },
+    })
+    expect(result.fragments[0].bytes).toBeLessThanOrEqual(MAX_FRAGMENT_BYTES)
+  })
+
   it('drops reply copies from the meta and turns legacy Codex items into content', () => {
     const message = reply('final', {
       status: 'complete',

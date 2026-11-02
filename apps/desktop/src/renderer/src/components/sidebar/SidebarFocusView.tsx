@@ -17,7 +17,7 @@ import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
 import { ActiveSessionList } from './ActiveSessionList'
-import { EnvironmentKindIcon } from './multi-host/EnvironmentKindIcon'
+import { EnvironmentKindIcon, EnvironmentUpgradingIcon } from './multi-host/EnvironmentKindIcon'
 import { EnvironmentRowActions } from './multi-host/EnvironmentSectionHeader'
 import { MultiHostProjectList, type MultiHostProjectListProps } from './multi-host/MultiHostProjectList'
 import { ProjectSidebarRow, type ProjectFocusActions } from './ProjectSidebarRow'
@@ -65,6 +65,7 @@ export interface SidebarFocusViewProps extends Pick<
   | 'onSort'
   | 'connectionBusyId'
   | 'refreshingConnectionId'
+  | 'upgradingLabels'
 > {
   folders: RecentFolder[]
   localHostLabel: string
@@ -102,9 +103,14 @@ export function focusLevelIcon(level: {
   id: string
   environment?: Pick<EnvironmentBucket, 'kind' | 'connection' | 'path'> | null
   projectMissing?: boolean
+  /** Sentence for the loading bars that replace this environment's glyph during a CLI install. */
+  upgradingLabel?: string
 }): ReactNode | undefined {
   if (level.id === 'root') return <LogOut className="size-4 shrink-0" aria-hidden />
   if (level.id === 'environment') {
+    if (level.upgradingLabel) {
+      return <EnvironmentUpgradingIcon label={level.upgradingLabel} className="size-4 shrink-0" />
+    }
     if (!level.environment) return <Monitor className="size-4 shrink-0" aria-hidden />
     return (
       <EnvironmentKindIcon
@@ -289,6 +295,7 @@ function focusSiblingItems(args: {
   currentProjectName?: string
   currentProjectMissing?: boolean
   loadingFolders: Record<string, boolean>
+  upgradingLabels?: Readonly<Record<string, string>>
 }): FocusSwitchItem[] {
   const { target } = args
   if (target.kind === 'environment') {
@@ -296,7 +303,11 @@ function focusSiblingItems(args: {
       id: bucket.environmentId,
       label: bucket.label,
       current: bucket.environmentId === target.environmentId,
-      icon: focusLevelIcon({ id: 'environment', environment: bucket }),
+      icon: focusLevelIcon({
+        id: 'environment',
+        environment: bucket,
+        upgradingLabel: args.upgradingLabels?.[bucket.connectionId],
+      }),
       onSelect: () => focusEnvironment(bucket.environmentId),
     }))
   }
@@ -394,6 +405,7 @@ function FocusResidentActions({
         onAddProject={() => props.onAddProject(bucket.connectionId)}
         onRefresh={remote ? () => props.onRefreshEnvironment(bucket.connectionId) : undefined}
         onToggleConnection={remote ? () => props.onToggleConnection(bucket.connectionId, bucket.connection) : undefined}
+        upgrading={Boolean(props.upgradingLabels?.[bucket.connectionId])}
       />
     )
   }
@@ -533,6 +545,7 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
         id: crumb.id,
         environment: bucket,
         projectMissing: folder?.missing,
+        upgradingLabel: crumb.id === 'environment' ? props.upgradingLabels?.[bucket?.connectionId ?? ''] : undefined,
       }),
       onSelect: () => applySidebarFocus(crumb.target),
     }))
@@ -546,6 +559,7 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
     currentProjectName: folder?.name,
     currentProjectMissing: folder?.missing,
     loadingFolders: props.loadingFolders,
+    upgradingLabels: props.upgradingLabels,
   })
 
   let body: ReactNode

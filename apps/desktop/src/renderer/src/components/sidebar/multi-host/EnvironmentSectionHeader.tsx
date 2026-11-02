@@ -13,7 +13,7 @@ import { cn } from '@superone/ui/lib/utils'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus, SidebarSort } from '@/lib/multi-host/types'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
-import { EnvironmentKindIcon } from './EnvironmentKindIcon'
+import { EnvironmentKindIcon, EnvironmentUpgradingIcon } from './EnvironmentKindIcon'
 import { EnvironmentHoverCard, type EnvironmentHoverDetails } from './EnvironmentHoverCard'
 import { sidebarHoverCardRowClass } from './SidebarHoverCard'
 
@@ -30,6 +30,7 @@ export function EnvironmentRowActions({
   onAddProject,
   onRefresh,
   onToggleConnection,
+  upgrading = false,
   resident = false,
 }: {
   offline: boolean
@@ -42,11 +43,14 @@ export function EnvironmentRowActions({
   onAddProject?: () => void
   onRefresh?: () => void
   onToggleConnection?: () => void
+  /** The CLI install owns this node. Hide connect, refresh, and add until it finishes. */
+  upgrading?: boolean
   /** Focus mode keeps these icons on screen. The row still reveals them on hover. */
   resident?: boolean
 }) {
   const { t } = useTranslation()
   const [sortOpen, setSortOpen] = useState(false)
+  const unavailable = offline || upgrading
   return (
     <div
       data-slot="environment-row-actions"
@@ -56,7 +60,7 @@ export function EnvironmentRowActions({
         !resident && sortOpen && 'pointer-events-auto visible w-auto opacity-100',
       )}
     >
-      {!offline && onSort && (
+      {!unavailable && onSort && (
         <DropdownMenu open={sortOpen} onOpenChange={setSortOpen}>
           <DropdownMenuTrigger asChild>
             <IconButton size="sm" variant="nested" tooltip={t('sidebar.sort.title')}>
@@ -73,12 +77,12 @@ export function EnvironmentRowActions({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {!offline && onAddProject && (
+      {!unavailable && onAddProject && (
         <IconButton size="sm" variant="nested" tooltip={t('sidebar.addProject.title')} onClick={onAddProject}>
           <Plus />
         </IconButton>
       )}
-      {remote && !offline && onRefresh && (
+      {remote && !unavailable && onRefresh && (
         <IconButton
           size="sm"
           variant="nested"
@@ -89,7 +93,7 @@ export function EnvironmentRowActions({
           <RotateCw className={cn(refreshing && 'animate-spin')} />
         </IconButton>
       )}
-      {remote && onToggleConnection && (
+      {remote && !upgrading && onToggleConnection && (
         <HostConnectionToggle
           variant="nested"
           connected={!offline && (connection === 'connected' || connection === 'needs-upgrade' || connection === 'connecting')}
@@ -125,6 +129,7 @@ export function EnvironmentSectionHeader({
   onRename,
   cardOpen,
   details,
+  upgradingLabel,
 }: {
   label: string
   kind: EnvironmentKind
@@ -154,9 +159,12 @@ export function EnvironmentSectionHeader({
   cardOpen?: boolean
   /** Skips the environment-list read. Stories pass the lines they draw. */
   details?: EnvironmentHoverDetails
+  /** Set while this desktop is installing the node's CLI. The leading glyph becomes the loading bars. */
+  upgradingLabel?: string
 }) {
   const { t } = useTranslation()
   const offline = connection === 'offline'
+  const upgrading = Boolean(upgradingLabel)
   const remote = kind !== 'local'
   const open = expanded && !offline
   const labelClass = 'flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left text-sm font-medium text-sidebar-foreground'
@@ -164,11 +172,13 @@ export function EnvironmentSectionHeader({
     <>
       <SidebarHoverChevron
         expanded={open}
-        locked={offline}
-        glyph={<EnvironmentKindIcon kind={kind} connection={connection} path={path} />}
+        locked={offline || upgrading}
+        glyph={upgradingLabel
+          ? <EnvironmentUpgradingIcon label={upgradingLabel} />
+          : <EnvironmentKindIcon kind={kind} connection={connection} path={path} />}
       />
       <span className="truncate">{label}</span>
-      {connection === 'needs-upgrade' && (
+      {connection === 'needs-upgrade' && !upgrading && (
         <TriangleAlert className="size-3 shrink-0 text-warning" aria-label={t('sidebar.hover.needsUpgrade')} />
       )}
     </>
@@ -178,7 +188,7 @@ export function EnvironmentSectionHeader({
     <div
       data-slot="environment-section-header"
       data-environment-connection={connection}
-      className={cn(offline && 'opacity-70', obscured && 'invisible')}
+      className={cn(offline && !upgrading && 'opacity-70', obscured && 'invisible')}
       aria-hidden={obscured || undefined}
       inert={obscured ? true : undefined}
     >
@@ -192,6 +202,7 @@ export function EnvironmentSectionHeader({
         connectionId={connectionId}
         details={details}
         onRename={onRename}
+        statusLabel={upgrading ? t('sidebar.hover.upgrading') : undefined}
       >
       <div
         onDoubleClick={(event) => {
@@ -223,6 +234,7 @@ export function EnvironmentSectionHeader({
           onAddProject={onAddProject}
           onRefresh={onRefresh}
           onToggleConnection={onToggleConnection}
+          upgrading={upgrading}
         />
       </div>
       </EnvironmentHoverCard>

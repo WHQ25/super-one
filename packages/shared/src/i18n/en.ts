@@ -387,6 +387,7 @@ export type Messages = {
       worktree: string
       offline: string
       needsUpgrade: string
+      upgrading: string
     }
     environmentSection: {
       empty: string
@@ -5060,6 +5061,7 @@ export const en: Messages = {
       worktree: 'Worktree',
       offline: 'Offline',
       needsUpgrade: 'Needs Upgrade',
+      upgrading: 'Upgrading',
     },
     environmentSection: {
       empty: 'No projects on this environment.',

@@ -193,6 +193,7 @@ export function EnvironmentHoverBody({
   details,
   waiting = false,
   onEdit,
+  statusLabel: statusOverride,
 }: {
   label: string
   kind: EnvironmentKind
@@ -204,6 +205,8 @@ export function EnvironmentHoverBody({
   /** System, memory, and CPU are still being read. */
   waiting?: boolean
   onEdit?: () => void
+  /** Replaces the connection word. An install stays "Upgrading" after the socket drops. */
+  statusLabel?: string
 }) {
   const { t } = useTranslation()
   const kindLabel = kind === 'local'
@@ -211,13 +214,13 @@ export function EnvironmentHoverBody({
     : kind === 'remote-desktop'
       ? t('sidebar.environmentHover.kindDesktop')
       : t('sidebar.environmentHover.kindNode')
-  const statusLabel = connection === 'offline'
+  const statusLabel = statusOverride ?? (connection === 'offline'
     ? t('sidebar.hover.offline')
     : connection === 'needs-upgrade'
       ? t('sidebar.hover.needsUpgrade')
       : connection === 'connecting'
         ? t('settings.environments.state.connecting')
-        : t('settings.environments.state.connected')
+        : t('settings.environments.state.connected'))
   // This computer is always here. "Connected" only means something for a remote host.
   const kindLine = kind === 'local' && connection === 'connected'
     ? kindLabel
@@ -291,6 +294,7 @@ export function EnvironmentHoverCard({
   connectionId,
   details,
   onRename,
+  statusLabel,
   children,
 }: {
   /** Stories pin the card open. */
@@ -304,6 +308,8 @@ export function EnvironmentHoverCard({
   /** Skips the list read. Stories pass the lines they draw. */
   details?: EnvironmentHoverDetails
   onRename?: (name: string) => Promise<void>
+  /** Replaces the connection word in the card, for example while the CLI is installing. */
+  statusLabel?: string
   children: ReactNode
 }) {
   const [hovered, setHovered] = useState(false)
@@ -329,6 +335,7 @@ export function EnvironmentHoverCard({
             details={facts}
             waiting={waiting}
             onEdit={onRename ? () => setSettingsOpen(true) : undefined}
+            statusLabel={statusLabel}
           />
         )}
       >

@@ -154,12 +154,13 @@ export const mockEnvironment = {
 export const toastWarning = vi.fn()
 export const toastSuccess = vi.fn()
 export const toastError = vi.fn()
+export const toastLoading = vi.fn(() => 'toast-id')
 vi.mock('sonner', () => ({
   toast: {
     warning: (...args: unknown[]) => toastWarning(...args),
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
-    loading: () => 'toast-id',
+    loading: (...args: unknown[]) => toastLoading(...args),
   },
 }))
 

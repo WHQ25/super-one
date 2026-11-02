@@ -151,15 +151,32 @@ export const AppSidebar = memo(function AppSidebar() {
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
   const [editProjectTarget, setEditProjectTarget] = useState<RecentFolder | null>(null)
   const [hostItems, setHostItems] = useState<EnvironmentListItem[]>([])
-  /** Connection whose node is being upgraded — its socket is about to bounce. */
-  const [upgradingHostId, setUpgradingHostId] = useState<string | null>(null)
+  /**
+   * Nodes whose CLI is installing. The environment row's leading icon shows
+   * the loading bars. `disconnect` drops the socket first, so project loads wait.
+   */
+  const [upgradingNodes, setUpgradingNodes] = useState<Readonly<Record<string, {
+    label: string
+    remoteVersion: string | null
+    targetVersion: string
+  }>>>({})
+  const upgradingLabels = useMemo(() => {
+    const labels: Record<string, string> = {}
+    for (const [connectionId, node] of Object.entries(upgradingNodes)) {
+      labels[connectionId] = t('sidebar.hostUpgrading', {
+        label: node.label,
+        ...nodeUpgradeVersions(node, t),
+      })
+    }
+    return labels
+  }, [upgradingNodes, t])
   // Shared with ChatSuggestions / ProjectSelector — never re-implement this fetch.
   const {
     projects: hostProjects,
     loading: hostProjectsLoading,
     error: hostProjectsError,
     refresh: refreshHostProjectsRaw,
-  } = useHostProjects({ paused: upgradingHostId === selectedHostConnectionId })
+  } = useHostProjects({ paused: upgradingNodes[selectedHostConnectionId] != null })
   /**
    * Nodes already handled this app run. An upgrade restarts the node, so
    * retrying on every render would take the host down repeatedly. Failures are
@@ -431,8 +448,8 @@ export const AppSidebar = memo(function AppSidebar() {
   )
 
   // Keep the node on the desktop's CLI version without asking. Releases are
-  // frequent and a stale node breaks model discovery and agent turns outright,
-  // so the user is told what is happening rather than asked to approve it.
+  // frequent and a stale node breaks model discovery and agent turns outright.
+  // The install shows on the environment row; a toast only reports the outcome.
   useEffect(() => {
     for (const host of remoteHosts) {
       const upgrade = host.nodeUpgrade
@@ -448,16 +465,23 @@ export const AppSidebar = memo(function AppSidebar() {
       }
 
       const connectionId = host.connectionId
-      setUpgradingHostId(connectionId)
-      const toastId = toast.loading(
-        t('sidebar.hostUpgrading', { label: host.label, ...nodeUpgradeVersions(upgrade, t) }),
-      )
+      setUpgradingNodes((current) => (
+        current[connectionId]
+          ? current
+          : {
+              ...current,
+              [connectionId]: {
+                label: host.label,
+                remoteVersion: upgrade.remoteVersion,
+                targetVersion: upgrade.targetVersion,
+              },
+            }
+      ))
       void (async () => {
         try {
           const result = await window.environment.upgradeNode(connectionId)
           toast.success(
             t('sidebar.hostUpgraded', { label: host.label, version: result.version }),
-            { id: toastId },
           )
           for (const w of result.warnings) toast.warning(w)
         } catch (err) {
@@ -467,10 +491,13 @@ export const AppSidebar = memo(function AppSidebar() {
               label: host.label,
               error: err instanceof Error ? err.message : String(err),
             }),
-            { id: toastId },
           )
         } finally {
-          setUpgradingHostId((current) => (current === connectionId ? null : current))
+          setUpgradingNodes((current) => {
+            if (!current[connectionId]) return current
+            const { [connectionId]: _, ...next } = current
+            return next
+          })
           // Node restarted underneath us — reload its project list on the new socket.
           refreshHostProjectsRaw({ force: true })
           void refreshEnvironmentCheckouts(connectionId).catch(() => {})
@@ -818,6 +845,7 @@ export const AppSidebar = memo(function AppSidebar() {
           onSort={setSortMode}
           connectionBusyId={connectionBusyId}
           refreshingConnectionId={refreshingConnectionId}
+          upgradingLabels={upgradingLabels}
           onLoadFolderSessions={(folderPath) => { void loadFolderSessions(folderPath, 'expand') }}
         />
       ) : (
@@ -923,6 +951,7 @@ export const AppSidebar = memo(function AppSidebar() {
                 }}
                 connectionBusyId={connectionBusyId}
                 refreshingConnectionId={refreshingConnectionId}
+                upgradingLabels={upgradingLabels}
               />
           )
         ) : selectedHostConnectionId !== 'local' && hostProjectsError && !hostTurnedOff ? (

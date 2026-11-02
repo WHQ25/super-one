@@ -68,6 +68,8 @@ export interface MultiHostProjectListProps {
   onSort?: (sort: SidebarSort) => void
   connectionBusyId: string | null
   refreshingConnectionId: string | null
+  /** connectionId → sentence for the leading spinner while that node's CLI installs. */
+  upgradingLabels?: Readonly<Record<string, string>>
   /** In-flow names hidden while the unpainted pin shows them. */
   obscuredEnvironmentIds?: readonly string[]
   /** Focus mode: one environment's projects, with no environment header of their own. */
@@ -203,6 +205,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                 onAddProject={() => props.onAddProject(bucket.connectionId)}
                 onSort={props.onSort}
                 obscured={props.obscuredEnvironmentIds?.includes(bucket.environmentId) ?? false}
+                upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
               />
               {/* Projects sit one step inside their environment, hover fill included. */}
               <div className="pl-1">
@@ -323,7 +326,7 @@ async function renameEnvironment(connectionId: string, name: string): Promise<vo
 }
 
 export function EnvironmentHeader({
-  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort, obscured = false,
+  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort, obscured = false, upgradingLabel,
 }: {
   bucket: EnvironmentBucket
   expanded: boolean
@@ -336,6 +339,8 @@ export function EnvironmentHeader({
   onAddProject: () => void
   onSort?: (sort: SidebarSort) => void
   obscured?: boolean
+  /** Sentence announced by the leading spinner while this node's CLI installs. */
+  upgradingLabel?: string
 }) {
   return (
     <EnvironmentSectionHeader
@@ -359,6 +364,7 @@ export function EnvironmentHeader({
       projectCount={bucket.projectsStatus === 'ready' ? bucket.checkouts.length : null}
       onRename={(name) => renameEnvironment(bucket.connectionId, name)}
       onEnterFocus={() => focusEnvironment(bucket.environmentId)}
+      upgradingLabel={upgradingLabel}
     />
   )
 }

@@ -2,7 +2,7 @@
 import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { settledPanelId } from '@/components/sidebar/sidebar-section-collapse'
-import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
+import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess, toastLoading } from './AppSidebar.test-setup'
 import { ACTIVE_SESSION_PAGE_SIZE } from '@/lib/session-list-ops'
 
 describe('AppSidebar interactions', () => {
@@ -61,6 +61,11 @@ describe('AppSidebar interactions', () => {
       },
     ])
 
+    let resolveUpgrade: (value: { version: string; warnings: string[] }) => void = () => {}
+    mockEnvironment.upgradeNode.mockImplementation(
+      () => new Promise((resolve) => { resolveUpgrade = resolve }),
+    )
+
     const { AppSidebar } = await import('./AppSidebar')
     const { rerender } = render(<AppSidebar />)
 
@@ -68,10 +73,22 @@ describe('AppSidebar interactions', () => {
       expect(mockEnvironment.upgradeNode).toHaveBeenCalledWith('env-stale')
     })
     await waitFor(() => {
+      const match = [...document.querySelectorAll('[data-slot="environment-section-header"]')]
+        .find((row) => row.textContent?.includes('vps') && row.querySelector('[data-slot="environment-upgrading"]'))
+      expect(match?.querySelector('[data-slot="environment-upgrading"]')?.getAttribute('aria-label')).toMatch(/0\.50\.3-alpha/)
+      expect(match?.querySelector('.lucide-cloud')).toBeNull()
+    })
+    expect(toastLoading).not.toHaveBeenCalled()
+
+    resolveUpgrade({ version: '0.50.3-alpha', warnings: [] })
+    await waitFor(() => {
       expect(toastSuccess).toHaveBeenCalledTimes(1)
     })
-    // Informed, not asked: no confirmation prompt stands between the two toasts.
+    // Informed, not asked: the outcome is a toast. The install itself stays on the row.
     expect(toastSuccess.mock.calls[0]![0]).toMatch(/0\.50\.3-alpha/)
+    await waitFor(() => {
+      expect(document.querySelector('[data-slot="environment-section-header"] [data-slot="environment-upgrading"]')).toBeNull()
+    })
 
     // An upgrade bounces the node, so a re-render must not start a second one.
     rerender(<AppSidebar />)

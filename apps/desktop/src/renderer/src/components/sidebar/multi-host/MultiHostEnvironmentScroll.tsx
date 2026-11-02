@@ -133,6 +133,7 @@ function PinnedHeader({ bucket, ...props }: ListProps & { bucket: EnvironmentBuc
       onToggleConnection={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}
       onAddProject={() => props.onAddProject(bucket.connectionId)}
       onSort={props.onSort}
+      upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
     />
   )
 }

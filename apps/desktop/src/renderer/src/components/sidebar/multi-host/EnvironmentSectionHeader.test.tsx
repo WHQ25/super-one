@@ -71,6 +71,58 @@ describe('disconnected environment header', () => {
   })
 })
 
+describe('environment upgrade', () => {
+  it('replaces the leading icon with loading bars and keeps connect hidden after the socket drops', () => {
+    const { rerender } = render(
+      <EnvironmentSectionHeader
+        label="vps"
+        kind="cli-node"
+        connection="needs-upgrade"
+        expanded
+        projectsStatus="ready"
+        projectsError={null}
+        onToggle={() => {}}
+        onRefresh={() => {}}
+        onToggleConnection={() => {}}
+        onAddProject={() => {}}
+        onSort={() => {}}
+        upgradingLabel="Upgrading vps from SuperOne CLI 0.76.0-alpha.2 to 0.76.0-alpha.3…"
+        cardOpen
+      />,
+    )
+    const header = document.querySelector('[data-slot="environment-section-header"]')
+    const spinner = header?.querySelector('[data-slot="environment-upgrading"]')
+    expect(spinner?.querySelectorAll('.environment-upgrading-bar')).toHaveLength(12)
+    expect(spinner?.getAttribute('aria-label')).toContain('0.76.0-alpha.3')
+    expect(header?.querySelector('.lucide-cloud')).toBeNull()
+    expect(header?.querySelector('.lucide-triangle-alert')).toBeNull()
+    expect(header?.querySelector('.lucide-chevron-right')?.getAttribute('class')).toContain('!hidden')
+    expect(screen.queryByRole('button', { name: 'Connect', hidden: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
+    expect(screen.getByText('Node · Upgrading')).toBeInTheDocument()
+    expect(header?.className).not.toContain('opacity-70')
+
+    rerender(
+      <EnvironmentSectionHeader
+        label="vps"
+        kind="cli-node"
+        connection="offline"
+        expanded
+        projectsStatus="idle"
+        projectsError={null}
+        onToggle={() => {}}
+        onToggleConnection={() => {}}
+        upgradingLabel="Upgrading vps from SuperOne CLI 0.76.0-alpha.2 to 0.76.0-alpha.3…"
+      />,
+    )
+    const dropped = document.querySelector('[data-slot="environment-section-header"]')
+    expect(dropped?.querySelector('[data-slot="environment-upgrading"]')).not.toBeNull()
+    expect(dropped?.querySelector('.lucide-cloud')).toBeNull()
+    expect(dropped?.className).not.toContain('opacity-70')
+    expect(screen.queryByRole('button', { name: 'Connect', hidden: true })).toBeNull()
+  })
+})
+
 describe('environment hover card', () => {
   it('shows the environment and opens settings from the pencil', () => {
     const onRename = vi.fn(async () => {})

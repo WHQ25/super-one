@@ -108,6 +108,30 @@ export const NeedsUpgrade: Story = {
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
 }
 
+/** The install replaces the kind icon with the toast's fading bars. The socket is already down, so this is not the red cloud. */
+export const Upgrading: Story = {
+  args: {
+    connection: 'offline',
+    projectsStatus: 'idle',
+    upgradingLabel: 'Upgrading dev-server from SuperOne CLI 0.76.0-alpha.2 to 0.76.0-alpha.3…',
+  },
+  render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const spinner = canvasElement.querySelector('[data-slot="environment-upgrading"]')
+    await expect(spinner?.querySelectorAll('.environment-upgrading-bar')).toHaveLength(12)
+    await expect(spinner).toHaveAttribute('aria-label', expect.stringContaining('0.76.0-alpha.3'))
+    await expect(canvasElement.querySelector('.lucide-cloud')).toBeNull()
+    await expect(within(canvasElement).queryByRole('button', { name: 'Connect', hidden: true })).not.toBeInTheDocument()
+  },
+}
+
+export const UpgradingDark: Story = {
+  globals: { theme: 'dark' },
+  args: Upgrading.args,
+  render: Upgrading.render,
+  play: Upgrading.play,
+}
+
 export const LongLabel: Story = {
   args: { label: 'studio-macbook-pro-16-inch-in-the-other-room' },
   render: (args) => <Frame width={220}><EnvironmentSectionHeader {...args} /></Frame>,

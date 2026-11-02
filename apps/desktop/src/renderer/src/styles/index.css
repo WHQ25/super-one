@@ -70,6 +70,44 @@
   animation: breathe 1.8s ease-in-out infinite;
 }
 
+/* Loading-toast activity mark. The bars sit on a box whose top-left is the
+   slot center, matching Sonner's loader, and fade in place. */
+.environment-upgrading {
+  position: relative;
+  display: block;
+}
+
+.environment-upgrading-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: 100%;
+  width: 100%;
+}
+
+.environment-upgrading-bar {
+  position: absolute;
+  top: -3.9%;
+  left: -10%;
+  width: 24%;
+  height: 8%;
+  border-radius: 6px;
+  background: currentColor;
+  animation: environment-upgrading-fade 1.2s linear infinite;
+}
+
+@keyframes environment-upgrading-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .environment-upgrading-bar {
+    animation: none;
+    opacity: 0.65;
+  }
+}
+
 .image-skeleton {
   position: relative;
   overflow: hidden;

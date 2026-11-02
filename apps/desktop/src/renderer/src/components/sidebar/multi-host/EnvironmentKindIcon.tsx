@@ -24,3 +24,39 @@ export function EnvironmentKindIcon({
   if (path === 'lan') return <Wifi className={className} aria-hidden />
   return <Cloud className={className} aria-hidden />
 }
+
+const UPGRADING_BARS = 12
+
+/**
+ * Replaces the kind glyph while this desktop is installing the node's CLI.
+ * Same 12 fading bars as the loading toast, sized to the sidebar icon slot.
+ */
+export function EnvironmentUpgradingIcon({
+  label,
+  className,
+}: {
+  label: string
+  className?: string
+}) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      data-slot="environment-upgrading"
+      className={cn('environment-upgrading size-4 shrink-0 text-sidebar-foreground/70', className)}
+    >
+      <span className="environment-upgrading-spinner">
+        {Array.from({ length: UPGRADING_BARS }, (_, index) => (
+          <span
+            key={index}
+            className="environment-upgrading-bar"
+            style={{
+              animationDelay: `${(-1.2 + index * 0.1).toFixed(1)}s`,
+              transform: `rotate(${index === 0 ? 0.0001 : index * 30}deg) translate(146%)`,
+            }}
+          />
+        ))}
+      </span>
+    </span>
+  )
+}

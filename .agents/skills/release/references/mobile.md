@@ -109,9 +109,11 @@ Run for `android` and `ios`, each on channel `alpha` with tag prefix
    Do not bump `build-code.js`. A non-empty diff is **native**: an OTA would
    publish to a runtime nobody runs.
 
-   `update-mobile.yml` repeats this. An EAS miss falls through to the published
-   native tag and the same fingerprint-input diff. An empty diff is OTA onto
-   that build; a non-empty diff fails the run.
+   `update-mobile.yml` repeats this. An EAS miss falls through to the newest
+   `mobile/<platform>[-alpha]/v*-build<N>` tag — runners get 403 from
+   `dl.super-one.dev`, so the guard cannot read `latest.json` — and the same
+   fingerprint-input diff. An empty diff is OTA onto that build; a non-empty
+   diff fails the run.
 
 Report one line per platform: `android: OTA (runtime = build 29, 6 commits since
 a7729d22)`, `ios: native → build 30 (fingerprint 8171a5f1 not shipped)`, or

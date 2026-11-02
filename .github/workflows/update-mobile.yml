@@ -195,10 +195,10 @@ jobs:
               # EAS build. The installed binary still runs this runtime when
               # the fingerprint inputs are unchanged since that tag.
               case "${PLATFORM}:${CHANNEL}" in
-                android:alpha)      MANIFEST="https://dl.super-one.dev/mobile/android/alpha/latest.json"; PREFIX="android-alpha" ;;
-                android:internal)   MANIFEST="https://dl.super-one.dev/mobile/android/latest.json";       PREFIX="android" ;;
-                ios:alpha)          MANIFEST="https://dl.super-one.dev/mobile/ios/alpha/latest.json";     PREFIX="ios-alpha" ;;
-                ios:production)     MANIFEST="https://dl.super-one.dev/mobile/ios/latest.json";           PREFIX="ios" ;;
+                android:alpha)      PREFIX="android-alpha" ;;
+                android:internal)   PREFIX="android" ;;
+                ios:alpha)          PREFIX="ios-alpha" ;;
+                ios:production)     PREFIX="ios" ;;
                 *)
                   echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH}, and ${CHANNEL} has no published manifest to compare"
                   echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
@@ -206,17 +206,23 @@ jobs:
                   continue
                   ;;
               esac
-              META="$(curl -fsS "${MANIFEST}")"
-              VERSION="$(printf '%s' "${META}" | jq -r '.version // empty')"
-              CODE="$(printf '%s' "${META}" | jq -r '.buildCode // empty')"
-              TAG="mobile/${PREFIX}/v${VERSION}-build${CODE}"
+              # Runners get 403 from dl.super-one.dev, so the published build
+              # comes from its tag. The workflow creates that tag only after
+              # the binary is public; the highest build number is the one
+              # installed apps are on.
               ROOT="$(git rev-parse --show-toplevel)"
-              if [ -z "${VERSION}" ] || [ -z "${CODE}" ] || ! git -C "${ROOT}" fetch --depth=1 origin "refs/tags/${TAG}"; then
-                echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH}, and ${TAG} could not be fetched"
+              TAG="$(git -C "${ROOT}" ls-remote --tags origin "refs/tags/mobile/${PREFIX}/v*" \
+                | awk '{print $2}' | sed -e 's#refs/tags/##' -e 's/\^{}$//' \
+                | sort -uV | tail -n 1)"
+              if [ -z "${TAG}" ] || ! git -C "${ROOT}" fetch --depth=1 origin "refs/tags/${TAG}"; then
+                echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH}, and no mobile/${PREFIX} tag could be fetched"
                 echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
                 FAILED=1
                 continue
               fi
+              VERSION="${TAG#mobile/${PREFIX}/v}"
+              CODE="${VERSION##*-build}"
+              VERSION="${VERSION%-build*}"
               if git -C "${ROOT}" diff --quiet FETCH_HEAD HEAD -- apps/mobile \
                 ':!apps/mobile/src' ':!apps/mobile/build-code.js' \
                 ':!apps/mobile/**/*.md' ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'

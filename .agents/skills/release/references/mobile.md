@@ -327,9 +327,10 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 
 ## Invariants
 
-- **OTA never ships a native change.** The fingerprint guard in
-  `update-mobile.yml` is the enforcement; **Decide** runs the same check locally so
-  the answer precedes the confirmation, not the CI failure.
+- **OTA never ships a native change.** `update-mobile.yml` still looks only
+  at finished EAS builds. **Decide** does that lookup, then treats a published
+  local APK as shipped when fingerprint inputs are unchanged since its tag.
+  Update that guard before an OTA onto the local APK, or the run fails closed.
 - **One build code counter, bumped by hand** in `build-code.js`, always past
   the highest published code on either platform. Never turn `autoIncrement` back
   on. A platform only gets a binary when its fingerprint moved; the other takes

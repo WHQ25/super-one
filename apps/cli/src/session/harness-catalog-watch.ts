@@ -37,15 +37,19 @@ export function watchHarnessCatalogStamp(opts: {
     })
   })
   let watcher: FSWatcher | null = null
+  let closed = false
   try {
     // Present before the watch starts so the first CLI rewrite is a change,
     // not the creation of an unwatched path. The sample above is unchanged.
     writeFileSync(path, '', { flag: 'a' })
     watcher = watch(opts.nodeHome, { persistent: false }, (_event, filename) => {
-      if (!isHarnessCatalogStamp(filename ?? null)) return
+      // fs.watch can deliver a stamp after close(), which is after the node
+      // database is gone. Reading it then throws out of the process.
+      if (closed || !isHarnessCatalogStamp(filename ?? null)) return
       notifier.note()
     })
     watcher.on('error', () => {
+      closed = true
       watcher?.close()
       watcher = null
     })
@@ -54,6 +58,7 @@ export function watchHarnessCatalogStamp(opts: {
   }
   return {
     close() {
+      closed = true
       watcher?.close()
       watcher = null
     },

@@ -42,4 +42,24 @@ describe('watchHarnessCatalogStamp', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('does not read the catalog after close', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-watch-closed-'))
+    let reads = 0
+    const watch = watchHarnessCatalogStamp({
+      nodeHome: dir,
+      environmentId: 'env-1',
+      readIds: () => {
+        reads += 1
+        return ['claude']
+      },
+      append: () => {},
+    })
+    const opened = reads
+    watch.close()
+    writeFileSync(nodePaths(dir).harnessCatalogStamp, `${Date.now()}\n`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(reads).toBe(opened)
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

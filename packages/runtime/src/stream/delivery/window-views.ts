@@ -12,8 +12,8 @@ import type {
 import { boundaryCursor } from '@superone/shared/transcript-boundary'
 import { contentDigest, utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { foldMessageFragments, foldRevision, selectFoldPage, type FoldedFragments } from '@superone/shared/transcript-window/folds'
-import { fragmentDigest, MessageFragmenter, textBody, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
-import { selectTranscriptWindow, type SelectedWindow, type WindowSource } from '@superone/shared/transcript-window/select-window'
+import { fragmentDigest, MessageFragmenter, textBody, type FragmentEntry, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
+import { selectTranscriptWindow, windowAnchor, type SelectedWindow, type WindowSource } from '@superone/shared/transcript-window/select-window'
 import { planProcessFolds, type ProcessFoldPlan } from '@superone/chat-core/turn-process/process-folds'
 import { projectWindowMessage } from './window-projection'
 import { arrayTranscript, type TranscriptAccess } from './transcript-access'
@@ -111,8 +111,9 @@ class SessionFragments {
     const cutKey = foldCutKey(cuts)
     const cached = this.foldedCache.get(message)
     // A page read omits the cuts and keeps the plan the window was cut with.
-    // A new cut on the same object plans again.
-    if (cached && (cuts === undefined || cached.cutKey === cutKey)) return cached.view
+    // A new cut on the same object plans again. A streaming object can grow in
+    // place, so its tail is folded again instead of reusing the first view.
+    if (cached && message.status !== 'streaming' && (cuts === undefined || cached.cutKey === cutKey)) return cached.view
     const contentKey = foldContentKey(message)
     const stored = this.bySignature.get(message.id)
     if (stored && stored.contentKey === contentKey && (cuts === undefined || stored.cutKey === cutKey)) {
@@ -125,7 +126,12 @@ class SessionFragments {
     const content = readableContent(projected)
     const planning = content === projected.content ? projected : { ...projected, content: [...content] }
     const plan = planProcessFolds(planning, cuts?.length ? { cuts } : undefined)
-    const view = { fragments: foldMessageFragments(fragments, plan.ranges), plan }
+    const folded = foldMessageFragments(fragments, plan.ranges)
+    if (plan.liveFrom !== undefined && plan.liveFrom > 0) {
+      const at = folded.blocks.findIndex((block) => block >= plan.liveFrom!)
+      folded.livePin = at < 0 ? folded.fragments.length : at
+    }
+    const view = { fragments: folded, plan }
     this.bySignature.set(message.id, { contentKey, cutKey, view })
     this.foldedCache.set(message, { cutKey, view })
     return view
@@ -212,6 +218,25 @@ export class WindowViews {
     const previous = session.holders.get(input.holder)
     const held: HeldWindow = extend && previous?.folds === folds ? previous
       : { messages: new Map(), order: [], atTail: false, total: 0, seen: new Map(), folds }
+    // A fresh tail keeps each streaming turn's closed intervals. A page the
+    // user asked for stays the contiguous range they anchored. The newest-first
+    // walk can fill the budget with the reply before it reaches the compact
+    // rows stored ahead of it; those rows are put back so a cold open matches
+    // the live patch.
+    const liveBudget = Math.min(input.budget.maxBytes, LIVE_MESSAGE_BUDGET.maxBytes)
+    if (!extend) {
+      selected.messages = selected.messages.map((message) => {
+        const source = transcript.messageAt(message.index)
+        return clipWindowMessage(message, session.fragments.of(source, folds, cuts.get(source.id)), liveBudget)
+      })
+      selected.messages = withCuttingRows(selected.messages, transcript, session.fragments, folds, cuts)
+      const first = selected.messages[0]
+      const last = selected.messages[selected.messages.length - 1]
+      if (first && last) {
+        selected.older = first.index === 0 && first.omittedBefore === 0 ? null : windowAnchor(first, 'first')
+        selected.newer = last.index === transcript.count - 1 && last.omittedAfter === 0 ? null : windowAnchor(last, 'last')
+      }
+    }
     for (const message of selected.messages) {
       const source = transcript.messageAt(message.index)
       const fragments = session.fragments.of(source, folds, cuts.get(source.id))
@@ -458,6 +483,10 @@ function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments:
 }
 
 function diffMessage(previous: HeldMessage | undefined, current: MessageFragments, index: number, maxBytes: number): { message: TranscriptWindowMessage | null; record: HeldMessage } {
+  // A streaming turn with compactions keeps its closed prefix. A paged window
+  // (something still follows the held range) stays on the contiguous path.
+  const pin = livePin(current)
+  if (pin > 0 && !(previous && previous.omittedAfter > 0)) return diffClipped(previous, current, index, maxBytes, pin)
   const all = current.fragments
   let start: number
   let end = all.length
@@ -506,17 +535,156 @@ function diffMessage(previous: HeldMessage | undefined, current: MessageFragment
   }
 }
 
+/** Fragment index of a streaming suffix. `0` when this message is not a closed-prefix view. */
+function livePin(fragments: MessageFragments): number {
+  const pin = (fragments as FoldedFragments).livePin ?? 0
+  if (pin <= 0) return 0
+  return Math.min(pin, fragments.fragments.length)
+}
+
+/**
+ * Closed prefix plus the newest suffix fragments that fit. The prefix is the
+ * detail before and between compactions; the suffix is what is still streaming.
+ * A gap in the suffix is not a contiguous index, so `omittedBefore` only marks
+ * the message partial (copy still fetches the whole turn).
+ */
+function clipLive(current: MessageFragments, pin: number, maxBytes: number): { entries: FragmentEntry[]; omittedBefore: number } {
+  const all = current.fragments
+  const closedEnd = Math.min(pin, all.length)
+  const room = Math.max(0, maxBytes - current.metaBytes)
+  const suffix = all.slice(closedEnd)
+  const reserve = suffix.length ? Math.min(suffix[suffix.length - 1].bytes, room) : 0
+  const closedBudget = Math.max(0, room - reserve)
+  let closedStart = closedEnd
+  let closedBytes = 0
+  while (closedStart > 0) {
+    const next = all[closedStart - 1]
+    if (closedBytes + next.bytes > closedBudget && closedEnd - closedStart > 0) break
+    closedBytes += next.bytes
+    closedStart--
+  }
+  const suffixBudget = Math.max(0, room - closedBytes)
+  let suffixStart = suffix.length
+  let suffixBytes = 0
+  let suffixCount = 0
+  while (suffixStart > 0) {
+    const next = suffix[suffixStart - 1]
+    if (suffixCount > 0 && (suffixCount >= LIVE_MESSAGE_BUDGET.maxFragments || suffixBytes + next.bytes > suffixBudget)) break
+    suffixBytes += next.bytes
+    suffixCount++
+    suffixStart--
+  }
+  const gapped = suffixStart > 0
+  return {
+    entries: [...all.slice(closedStart, closedEnd), ...suffix.slice(suffixStart)],
+    omittedBefore: gapped ? Math.max(closedStart, 1) : closedStart,
+  }
+}
+
+function wireFragment(fragment: FragmentEntry): TranscriptWindowFragment {
+  return {
+    key: fragment.key,
+    digest: fragment.digest,
+    ...(fragment.contentKey ? { contentKey: fragment.contentKey } : {}),
+    body: fragment.body,
+  }
+}
+
+/**
+ * Compact rows of a live-pinned reply that the budget walk never reached.
+ * They are one fragment each and name the cuts. A settled tail does not pull
+ * them back: chips above an omitted head stay hidden until the user pages up.
+ */
+function withCuttingRows(
+  messages: TranscriptWindowMessage[],
+  transcript: TranscriptAccess,
+  fragments: SessionFragments,
+  folds: boolean,
+  cuts: ReadonlyMap<string, readonly ChatMessage[]>,
+): TranscriptWindowMessage[] {
+  const held = new Set(messages.map((message) => message.id))
+  const added: TranscriptWindowMessage[] = []
+  for (const message of messages) {
+    const source = transcript.messageAt(message.index)
+    if (!livePin(fragments.of(source, folds, cuts.get(source.id)))) continue
+    for (const cut of cuts.get(source.id) ?? []) {
+      if (held.has(cut.id)) continue
+      const index = transcript.indexOf(cut.id)
+      if (index < 0) continue
+      const row = transcript.messageAt(index)
+      const view = fragments.of(row, folds, cuts.get(row.id))
+      added.push({
+        id: view.id,
+        index,
+        metaDigest: view.metaDigest,
+        meta: view.meta,
+        fragments: view.fragments.map(wireFragment),
+        omittedBefore: 0,
+        omittedAfter: 0,
+      })
+      held.add(cut.id)
+    }
+  }
+  if (!added.length) return messages
+  return [...messages, ...added].sort((a, b) => a.index - b.index)
+}
+
+/** A fresh tail replaces a streaming turn's selected slice with its closed prefix and live suffix. */
+function clipWindowMessage(message: TranscriptWindowMessage, fragments: MessageFragments, maxBytes: number): TranscriptWindowMessage {
+  const pin = livePin(fragments)
+  if (!pin) return message
+  const clip = clipLive(fragments, pin, maxBytes)
+  return { ...message, fragments: clip.entries.map(wireFragment), omittedBefore: clip.omittedBefore, omittedAfter: 0 }
+}
+
+function diffClipped(
+  previous: HeldMessage | undefined,
+  current: MessageFragments,
+  index: number,
+  maxBytes: number,
+  pin: number,
+): { message: TranscriptWindowMessage | null; record: HeldMessage } {
+  const clip = clipLive(current, pin, maxBytes)
+  const sent = diffFragments(previous, clip.entries)
+  const metaHeld = previous?.metaDigest === current.metaDigest
+  const omittedBefore = clip.omittedBefore
+  const unchanged = previous && metaHeld && previous.omittedBefore === omittedBefore && previous.omittedAfter === 0
+    && previous.keys.length === sent.length
+    && sent.every((fragment, i) => !fragment.body && fragment.append === undefined && previous.keys[i] === fragment.key)
+  const record: HeldMessage = {
+    metaDigest: current.metaDigest,
+    keys: sent.map((fragment) => fragment.key),
+    fragments: new Map(clip.entries.map((fragment) => [fragment.key, heldFragment(fragment.digest, fragment.body)])),
+    omittedBefore,
+    omittedAfter: 0,
+  }
+  if (unchanged) return { message: null, record }
+  return {
+    record,
+    message: {
+      id: current.id,
+      index,
+      metaDigest: current.metaDigest,
+      ...(metaHeld ? {} : { meta: current.meta }),
+      fragments: sent,
+      omittedBefore,
+      omittedAfter: 0,
+    },
+  }
+}
+
 /** Each fragment as a reference, an appended tail, or a new body, against what the client holds. */
 function diffFragments(previous: HeldMessage | undefined, fragments: MessageFragments['fragments']): TranscriptWindowFragment[] {
   return fragments.map((fragment) => {
     const heldFragment = previous?.fragments.get(fragment.key)
-    if (heldFragment?.digest === fragment.digest) return { key: fragment.key, digest: fragment.digest }
+    const contentKey = fragment.contentKey ? { contentKey: fragment.contentKey } : {}
+    if (heldFragment?.digest === fragment.digest) return { key: fragment.key, digest: fragment.digest, ...contentKey }
     const body = fragment.body
     if (heldFragment?.textLength !== undefined && body.kind === 'text' && body.text.length > heldFragment.textLength
       && fragmentDigest(textBody(body.head, body.offset, body.text.slice(0, heldFragment.textLength), body.context)) === heldFragment.digest) {
-      return { key: fragment.key, digest: fragment.digest, append: body.text.slice(heldFragment.textLength) }
+      return { key: fragment.key, digest: fragment.digest, append: body.text.slice(heldFragment.textLength), ...contentKey }
     }
-    return { key: fragment.key, digest: fragment.digest, body }
+    return { key: fragment.key, digest: fragment.digest, body, ...contentKey }
   })
 }
 

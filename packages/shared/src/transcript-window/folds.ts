@@ -24,6 +24,11 @@ export interface FoldInner {
 /** A message's fragments with each folded range cut down to one `fold` fragment. */
 export interface FoldedFragments extends MessageFragments {
   folds: ReadonlyMap<string, FoldInner>
+  /**
+   * Fragment index where a streaming suffix starts. Fragments before it are
+   * the closed intervals and stay in the live window while the suffix is tailed.
+   */
+  livePin?: number
 }
 
 /** A fold's revision: its inner keys and digests, so a client can check fragments it already holds. */

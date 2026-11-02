@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '../agent-types'
+import { contentKeys } from '../transcript-boundary'
 import { contentDigest, utf8Length } from './content-digest'
 import { MAX_FRAGMENT_BYTES, MessageFragmenter, blockKeys, fragmentMessage } from './fragment-message'
 import { FRAGMENT_TEXT_CHARS } from './text-cuts'
@@ -39,13 +40,16 @@ describe('fragmentMessage', () => {
   })
 
   it('keys tools by id and text by provider id or ordinal', () => {
-    expect(blockKeys([
-      { type: 'text', text: 'a' },
-      { type: 'tool_use', toolName: 'Bash', toolUseId: 't1', input: '{}' },
-      { type: 'tool_result', toolUseId: 't1', summary: 'ok' },
-      { type: 'text', id: 'item_1', text: 'b' },
-      { type: 'text', text: 'c' },
-    ])).toEqual(['text::0', 'tool:t1', 'tool_result:t1', 'text#item_1', 'text::1'])
+    const content = [
+      { type: 'text' as const, text: 'a' },
+      { type: 'tool_use' as const, toolName: 'Bash', toolUseId: 't1', input: '{}' },
+      { type: 'tool_result' as const, toolUseId: 't1', summary: 'ok' },
+      { type: 'text' as const, id: 'item_1', text: 'b' },
+      { type: 'text' as const, text: 'c' },
+    ]
+    expect(blockKeys(content)).toEqual(['text::0', 'tool:t1', 'tool_result:t1', 'text#item_1', 'text::1'])
+    const fragments = fragmentMessage({ ...reply(''), content })
+    expect(fragments.fragments.map((fragment) => fragment.contentKey)).toEqual(contentKeys(content))
   })
 
   it('splits attachments out of the meta and omits a block too large for a fragment', () => {

@@ -1,5 +1,6 @@
 import type { ChatMessage, ContentBlock, ImageAttachment, MessageMetadata } from '../agent-types'
 import { readableContent } from '../codex-content'
+import { contentKeys } from '../transcript-boundary'
 import type {
   TextFragmentContext,
   TextFragmentHead,
@@ -24,6 +25,11 @@ export interface FragmentEntry {
   bytes: number
   /** Visible characters, to fill a viewport estimate. */
   chars: number
+  /**
+   * Content key of this fragment's block in the whole message. A tail window
+   * repeats it so the client does not renumber `text::N` from the slice.
+   */
+  contentKey?: string
 }
 
 export interface MessageFragments {
@@ -59,9 +65,12 @@ export class MessageFragmenter {
     const fragments: FragmentEntry[] = (message.attachments ?? []).map((attachment, index) => attachmentEntry(index, attachment))
     const blocks: number[] = fragments.map(() => -1)
     const keys = blockKeys(content)
+    const contentKeyList = contentKeys(content)
     content.forEach((block, index) => {
       const key = keys[index]
       const memo = blockFragments(block, key, previous?.get(key))
+      const contentKey = contentKeyList[index]
+      for (const entry of memo.entries) if (entry.contentKey !== contentKey) entry.contentKey = contentKey
       next.set(key, memo)
       fragments.push(...memo.entries)
       for (let i = 0; i < memo.entries.length; i++) blocks.push(index)

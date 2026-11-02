@@ -123,10 +123,12 @@ export function selectTranscriptWindow(
     const message = source.at(index)
     const range = selected.get(index)!
     const held = have.get(message.id)
-    const fragments = message.fragments.slice(range.first, range.last + 1).map((fragment): TranscriptWindowFragment =>
-      held?.f.get(fragment.key) === fragment.digest
-        ? { key: fragment.key, digest: fragment.digest }
-        : { key: fragment.key, digest: fragment.digest, body: fragment.body })
+    const fragments = message.fragments.slice(range.first, range.last + 1).map((fragment): TranscriptWindowFragment => ({
+      key: fragment.key,
+      digest: fragment.digest,
+      ...(fragment.contentKey ? { contentKey: fragment.contentKey } : {}),
+      ...(held?.f.get(fragment.key) === fragment.digest ? {} : { body: fragment.body }),
+    }))
     const total = message.fragments.length
     return {
       id: message.id,

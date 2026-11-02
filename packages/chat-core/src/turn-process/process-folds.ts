@@ -2,7 +2,7 @@ import type { ChatMessage, ContentBlock, ProcessFoldSummary } from '@superone/sh
 import { isToolResultBlock } from '@superone/shared/content-delta'
 import { isLegacyCodexMessage } from '@superone/shared/codex-content'
 import { MAX_FOLD_FILES } from '@superone/shared/environment/transcript-window'
-import { contentKeys, contentKeySpan } from '@superone/shared/transcript-boundary'
+import { blockText, boundaryCursor, contentKeys, contentKeySpan } from '@superone/shared/transcript-boundary'
 import { transcriptView } from '@superone/shared/transcript-segments'
 import type { FoldRange } from '@superone/shared/transcript-window/folds'
 import {
@@ -25,6 +25,12 @@ export interface ProcessFoldPlan {
   ranges: FoldRange[]
   /** What the foldable blocks of `start`..`end` (content indexes, inclusive) add to the Detail header. */
   summarize(start: number, end: number): Omit<ProcessFoldSummary, 'fragments'>
+  /**
+   * Content index where a streaming turn's open suffix starts. Fragments
+   * before it are the closed intervals (before and between compactions) and
+   * stay in the live window; the suffix keeps the streaming render.
+   */
+  liveFrom?: number
 }
 
 const NO_FOLDS: ProcessFoldPlan = { ranges: [], summarize: () => ({ segments: 0, toolCalls: 0, files: [], added: 0, removed: 0, contentKey: '' }) }
@@ -52,10 +58,69 @@ type FoldMessage = Pick<ChatMessage, 'role' | 'status'> & {
  * cross it.
  */
 export function planProcessFolds(message: FoldMessage, context?: ProcessFoldContext): ProcessFoldPlan {
-  if (message.role !== 'assistant' || message.status === 'streaming') return NO_FOLDS
+  if (message.role !== 'assistant') return NO_FOLDS
   const cuts = (context?.cuts ?? []).filter((cut) => cut.metadata?.transcriptBoundary?.messageId === message.id)
+  // A streaming turn stays open, except the intervals a compaction has already
+  // closed: those collapse the same way a settled slice does, and the suffix
+  // after the latest cut keeps streaming.
+  if (message.status === 'streaming') {
+    if (!cuts.length || !message.id || isLegacyCodexMessage(message)) return NO_FOLDS
+    return planStreamingCuts(message, cuts)
+  }
   if (cuts.length > 0 && message.id && !isLegacyCodexMessage(message)) return planSliced(message, cuts)
   return planContent(message, message.content)
+}
+
+/** Plans for one closed prefix. The tail text grows every token; the prefix does not. */
+const streamingPlans = new Map<string, ProcessFoldPlan>()
+
+/**
+ * Fold only what a compaction has closed. `liveFrom` is the first block of
+ * the open suffix, so a live window can keep the closed prefix and tail the rest.
+ */
+function planStreamingCuts(message: FoldMessage, cuts: readonly ChatMessage[]): ProcessFoldPlan {
+  const liveFrom = openSuffixStart(message, cuts)
+  if (liveFrom <= 0) return NO_FOLDS
+  const closedKeys = contentKeys(message.content.slice(0, liveFrom)).join('\n')
+  const cacheKey = `${message.id}:${liveFrom}:${closedKeys}:${cuts.map((cut) => `${cut.id}:${cut.metadata?.transcriptBoundary?.order ?? ''}`).join('|')}`
+  const cached = streamingPlans.get(cacheKey)
+  if (cached) return cached
+  const planned = planSliced({ ...message, status: 'complete' }, cuts)
+  const ranges: FoldRange[] = []
+  for (const range of planned.ranges) {
+    if (range.start >= liveFrom) continue
+    const end = Math.min(range.end, liveFrom - 1)
+    if (end - range.start + 1 < MIN_FOLD_BLOCKS) continue
+    ranges.push(end === range.end ? range : { ...range, end, summary: planned.summarize(range.start, end) })
+  }
+  const plan: ProcessFoldPlan = { ranges, summarize: planned.summarize, liveFrom }
+  streamingPlans.set(cacheKey, plan)
+  if (streamingPlans.size > 32) streamingPlans.delete(streamingPlans.keys().next().value!)
+  return plan
+}
+
+/** First block of the open suffix: the latest cut's block, or the end when the cut is past every block. */
+function openSuffixStart(message: FoldMessage, cuts: readonly ChatMessage[]): number {
+  const latest = cuts.reduce((best, cut) =>
+    (cut.metadata!.transcriptBoundary!.order > best.metadata!.transcriptBoundary!.order ? cut : best))
+  const boundary = latest.metadata?.transcriptBoundary
+  if (!boundary) return message.content.length
+  const source = message as ChatMessage
+  const cursor = boundary.cursor ? boundary : boundaryCursor(boundary, source)
+  const keys = contentKeys(message.content)
+  if (cursor.at) {
+    const index = keys.indexOf(cursor.at)
+    return index < 0 ? message.content.length : index
+  }
+  if (cursor.cursor) return message.content.length
+  const map = boundary.content ?? {}
+  for (let index = 0; index < keys.length; index++) {
+    const saved = map[keys[index]]
+    const text = blockText(message.content[index])
+    if (saved === undefined) return index
+    if (text !== undefined && saved < text.length) return index
+  }
+  return message.content.length
 }
 
 function planSliced(message: FoldMessage, cuts: readonly ChatMessage[]): ProcessFoldPlan {
@@ -76,19 +141,32 @@ function planSliced(message: FoldMessage, cuts: readonly ChatMessage[]): Process
   const anchored = new Map<number, RenderSegment>()
   const calls = new Set<string>()
   const sliceEnds = new Set<number>()
+  const spans: number[][] = []
   for (const row of transcriptView([source, ...cuts]).rows) {
     if (row.source.id !== source.id) continue
-    let last = -1
+    const indexes: number[] = []
     for (const block of row.message.content) {
       const index = indexOf.get(block)
-      if (index !== undefined) last = Math.max(last, index)
+      if (index !== undefined) indexes.push(index)
     }
-    if (last >= 0) sliceEnds.add(last)
+    spans.push(indexes)
     const slice = groupTurn(turnDisplayContent(row.message))
     const following = row.following ? groupTurn(turnDisplayContent(row.following)) : undefined
     const runs = compactTurnRuns(slice.segments, isPortablePinnedSegment, { source: grouped.segments, following: following?.segments })
     markFoldable(runs, (block) => indexOf.get(block), foldable, anchored, calls)
   }
+  // A tool result captured before the cut can be rewritten later in the message.
+  // Those copies stay on the earlier slice, so its highest index sits past the
+  // next slice. The fold stops at the last block that is still before that slice.
+  spans.forEach((indexes, span) => {
+    let nextStart = Number.POSITIVE_INFINITY
+    for (let later = span + 1; later < spans.length; later++) {
+      for (const index of spans[later]) if (index < nextStart) nextStart = index
+    }
+    let end = -1
+    for (const index of indexes) if (index < nextStart && index > end) end = index
+    if (end >= 0) sliceEnds.add(end)
+  })
   for (const block of message.content) {
     const index = indexOf.get(block)
     if (index !== undefined && isToolResultBlock(block) && calls.has(block.toolUseId)) foldable[index] = block

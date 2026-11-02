@@ -1,5 +1,5 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
-import { blockText, contentKeys, expandBoundaryCursor, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
+import { blockText, boundaryInWindow, contentKeys, expandBoundaryCursor, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
 import { isDismissedCodexAsyncAnswer } from './codex-async-question'
 import { isLegacyCodexMessage, withCodexContent } from './codex-content'
@@ -155,7 +155,11 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
       rows.push({ id: source.id, message: source, source, final: true })
       continue
     }
-    const cuts = (boundaries.get(source.id) ?? []).sort((a, b) => a.metadata!.transcriptBoundary!.order - b.metadata!.transcriptBoundary!.order)
+    // A tail that starts after a cut leaves the marker out. Drawing it here would
+    // pin every earlier compaction to the start of the live slice.
+    const cuts = (boundaries.get(source.id) ?? [])
+      .filter(cut => boundaryInWindow(cut.metadata!.transcriptBoundary!, source))
+      .sort((a, b) => a.metadata!.transcriptBoundary!.order - b.metadata!.transcriptBoundary!.order)
     const cached = cachedSegments.get(source)
     if (cached && cached.cuts.length === cuts.length && cached.cuts.every((cut, index) => cut === cuts[index])) {
       result.push(...cached.segments)

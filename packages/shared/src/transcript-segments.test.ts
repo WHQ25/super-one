@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from './agent-types'
 import { buildCompactBoundaryMessage } from './compact-boundary'
-import { anchorAsyncAnswer, boundaryCursor } from './transcript-boundary'
+import { anchorAsyncAnswer, boundaryCursor, stampContentKey } from './transcript-boundary'
 import { transcriptSegments, transcriptView } from './transcript-segments'
 import { extractTurnOutline } from './turn-outline'
 import { extendHistoryIndex } from './session-history-index'
@@ -200,6 +200,46 @@ describe('transcript segmentation at live boundaries', () => {
     expect(transcriptSegments([empty])).toMatchObject([{ id: 'failed', final: true, message: { status: 'error' } }])
   })
 
+  it('keeps a compaction marker out of a tail that starts after the cut', () => {
+    const source = message('turn', 'Before')
+    const marker = compact('c1', source)
+    source.content = [...source.content, { type: 'text', text: 'After the cut. ' + 'tail '.repeat(20) }]
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, source)
+    expect(cursor.at).toBe('text::1')
+    const tail: ChatMessage = {
+      ...source,
+      content: [{ type: 'text', text: 'tail tail tail' }],
+      metadata: { window: { omittedBefore: 3, omittedAfter: 0 } },
+    }
+    stampContentKey(tail.content[0], 'text::1', 'After the cut. '.length)
+    const rows = transcriptView([{ ...marker, metadata: { transcriptBoundary: cursor } }, tail]).rows
+    expect(rows.map(row => row.id)).toEqual(['turn'])
+    expect(rows[0].message.content).toEqual(tail.content)
+  })
+
+  it('splits a partial window at the stamped block the compaction cut', () => {
+    const source = message('turn', 'Before')
+    const first = compact('c1', source)
+    source.content = [...source.content, { type: 'text', text: 'Between' }]
+    const second = compact('c2', source)
+    source.content = [...source.content, { type: 'text', text: 'After' }]
+    const partial: ChatMessage = {
+      ...source,
+      content: [{ type: 'text', text: 'Between' }, { type: 'text', text: 'After' }],
+      metadata: { window: { omittedBefore: 2, omittedAfter: 0 } },
+    }
+    stampContentKey(partial.content[0], 'text::1')
+    stampContentKey(partial.content[1], 'text::2')
+    const rows = transcriptView([
+      { ...first, metadata: { transcriptBoundary: boundaryCursor(first.metadata!.transcriptBoundary!, source) } },
+      { ...second, metadata: { transcriptBoundary: boundaryCursor(second.metadata!.transcriptBoundary!, source) } },
+      partial,
+    ]).rows
+    expect(rows.map(row => row.id)).toEqual(['c1', 'turn:after:c1', 'c2', 'turn:after:c2'])
+    expect(rows.map(row => row.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')))
+      .toEqual(['__compact__:auto:100::', 'Between', '__compact__:auto:100::', 'After'])
+  })
+
   it('places a window cursor where the full compaction boundary sat', () => {
     const source = message('turn', 'Before')
     source.content.push({ type: 'tool_use', toolName: 'Read', toolUseId: 't', input: '{}', status: 'complete' },
@@ -237,6 +277,83 @@ describe('transcript segmentation at live boundaries', () => {
     source.content = [{ type: 'text', text: 'Hi there' }, source.content[1]]
     const boundary = marker.metadata!.transcriptBoundary!
     expect(boundaryCursor(boundary, source)).toBe(boundary)
+  })
+
+  it('collapses a prefix cut when a tool result key repeats after the hole', () => {
+    const source = message('turn', '')
+    source.content = [
+      { type: 'thinking', thinking: 'Before' },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'acp-plan:turn', input: '{}', status: 'complete' },
+      { type: 'tool_result', toolUseId: 'acp-plan:turn', summary: 'plan' },
+    ]
+    const marker = compact('c1', source)
+    source.content = [...source.content,
+      { type: 'thinking', thinking: 'After the cut' },
+      { type: 'tool_result', toolUseId: 'acp-plan:turn', summary: 'plan again' },
+      { type: 'thinking', thinking: 'Later' }]
+    const boundary = marker.metadata!.transcriptBoundary!
+    expect(boundaryCursor(boundary, source)).toMatchObject({ cursor: true, at: 'thinking::1', offset: 0, content: {}, items: {} })
+  })
+
+  it('keeps the full map when a key first appears after the hole and is still captured', () => {
+    const source = message('turn', 'Before')
+    source.content.push({ type: 'tool_use', toolName: 'Read', toolUseId: 'early', input: '{}', status: 'complete' })
+    const marker = compact('c1', source)
+    source.content = [source.content[0], { type: 'thinking', thinking: 'Inserted' }, source.content[1]]
+    const boundary = marker.metadata!.transcriptBoundary!
+    expect(boundaryCursor(boundary, source)).toBe(boundary)
+  })
+
+  it('places a compaction cursor after a detail fold when the anchor block was tailed off', () => {
+    const source = message('turn', '')
+    source.content = [{ type: 'thinking', thinking: 'Before' }]
+    const marker = compact('c1', source)
+    const grown = { ...source, content: [...source.content, { type: 'thinking', thinking: 'After' }] }
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, grown)
+    expect(cursor.at).toBe('thinking::1')
+    const folded: ChatMessage = {
+      ...source,
+      content: [
+        { type: 'notice', id: 'fold', level: 'info', kind: 'fold', text: '', fold: {
+          fragments: 4, segments: 3, toolCalls: 2, files: [], added: 0, removed: 0,
+          contentKey: 'thinking::0', messageId: 'turn', key: 'fold:thinking::0', revision: '1',
+          keyCounts: { 'thinking:': 1 },
+        } },
+        { type: 'thinking', thinking: 'Much later' },
+      ],
+      metadata: { window: { omittedBefore: 4, omittedAfter: 0 } },
+    }
+    stampContentKey(folded.content[1], 'thinking::4')
+    const { rows } = transcriptView([{ ...marker, metadata: { transcriptBoundary: cursor } }, folded])
+    expect(rows.map(row => row.id)).toEqual(['turn', 'c1', 'turn:after:c1'])
+    expect(rows[0].message.content.map(block => block.type)).toEqual(['notice'])
+    expect(rows[2].message.content.map(block => block.type)).toEqual(['thinking'])
+  })
+
+  it('hides a compaction cursor when the tail no longer holds the prefix before the cut', () => {
+    const source = message('turn', '')
+    source.content = [{ type: 'thinking', thinking: 'Before' }]
+    const marker = compact('c1', source)
+    const cursor = boundaryCursor(marker.metadata!.transcriptBoundary!, { ...source, content: [...source.content, { type: 'thinking', thinking: 'After' }] })
+    const tail: ChatMessage = {
+      ...source,
+      content: [{ type: 'thinking', thinking: 'Much later' }],
+      metadata: { window: { omittedBefore: 4, omittedAfter: 0 } },
+    }
+    stampContentKey(tail.content[0], 'thinking::4')
+    const toolFold: ChatMessage = {
+      ...tail,
+      content: [
+        { type: 'notice', id: 'tools', level: 'info', kind: 'fold', text: '', fold: {
+          fragments: 2, segments: 1, toolCalls: 1, files: [], added: 0, removed: 0,
+          contentKey: 'tool:late', messageId: 'turn', key: 'fold:tool:late', revision: '1',
+        } },
+        tail.content[0],
+      ],
+    }
+    const slim = { ...marker, metadata: { transcriptBoundary: cursor } }
+    expect(transcriptView([slim, tail]).rows.map(row => row.id)).toEqual(['turn'])
+    expect(transcriptView([slim, toolFold]).rows.map(row => row.id)).toEqual(['turn'])
   })
 
   it('places a Codex item cursor on the first item past the cut', () => {

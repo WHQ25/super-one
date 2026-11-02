@@ -91,6 +91,44 @@ describe('planProcessFolds', () => {
     expect(rest.segments).toBeGreaterThan(0)
   })
 
+  it('folds a streaming turn only up to its latest compaction', () => {
+    const bash = (id: string) => [call('Bash', id, { command: `echo ${id}` }), result(id)]
+    const first = ['s1', 's2', 's3', 's4'].flatMap(bash)
+    const second = ['s5', 's6', 's7', 's8'].flatMap(bash)
+    const third = ['s9', 's10', 's11', 's12'].flatMap(bash)
+    const opened = turn(first, 'streaming')
+    const cut1 = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 10 }, 'c1', '', opened)
+    const mid = turn([...first, ...second], 'streaming')
+    const cut2 = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 20 }, 'c2', '', mid, [cut1])
+    const streaming = turn([...first, ...second, ...third, { type: 'text', text: 'still going' }], 'streaming')
+    const plan = planProcessFolds(streaming, { cuts: [cut1, cut2] })
+    expect(plan.liveFrom).toBe(first.length + second.length)
+    expect(plan.ranges.map(({ start, end }) => [start, end])).toEqual([[0, 7], [8, 15]])
+    expect(plan.ranges.every((range) => range.end < plan.liveFrom!)).toBe(true)
+  })
+
+  it('does not let a rewritten tool result pull a fold across the compaction', () => {
+    const bash = (id: string) => [call('Bash', id, { command: `echo ${id}` }), result(id)]
+    const planId = 'acp-plan:turn'
+    const before: ContentBlock[] = [
+      { type: 'thinking', thinking: 'Before' },
+      call('Read', planId),
+      result(planId, 'plan'),
+      ...['b1', 'b2', 'b3', 'b4'].flatMap(bash),
+    ]
+    const cut = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 10 }, 'cut', '', turn(before))
+    const after: ContentBlock[] = [
+      { type: 'thinking', thinking: 'After' },
+      result(planId, 'plan again'),
+      ...['b5', 'b6', 'b7', 'b8'].flatMap(bash),
+      { type: 'text', text: 'done' },
+    ]
+    const plan = planProcessFolds(turn([...before, ...after]), { cuts: [cut] })
+    const cutAt = before.length
+    expect(plan.ranges.some((range) => range.start < cutAt && range.end >= cutAt)).toBe(false)
+    expect(plan.ranges.some((range) => range.start === cutAt)).toBe(true)
+  })
+
   it('does not fold across a transcript cut, and leaves the tail after a pin visible', () => {
     const bash = (id: string) => [call('Bash', id, { command: `echo ${id}` }), result(id)]
     const first = ['b1', 'b2', 'b3', 'b4'].flatMap(bash)

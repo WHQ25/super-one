@@ -8,6 +8,7 @@ import type {
   TranscriptWindowPatch,
   TranscriptWindowResult,
 } from '../environment/transcript-window'
+import { contentKeyStamp, stampContentKey } from '../transcript-boundary'
 import { utf8Length } from './content-digest'
 import { fragmentDigest } from './fragment-message'
 import { MAX_COVERAGE_PAIRS, windowAnchor } from './select-window'
@@ -19,6 +20,8 @@ export interface WindowStoreFragment {
   body: TranscriptFragmentBody
   /** A fold shown past its first pages: the last inner fragment it follows. */
   after?: string
+  /** Content key of this fragment's block in the whole message. */
+  contentKey?: string
 }
 
 /** A message as a client holds it: a contiguous run of its fragments. */
@@ -164,7 +167,10 @@ function resolveMessage(message: TranscriptWindowMessage, existing: WindowStoreM
     if (!body && held?.digest === fragment.digest) body = held.body
     body ??= lookup.body(message.id, fragment.key, fragment.digest)
     if (!body) return null
-    fragments.push(held?.digest === fragment.digest ? held : { key: fragment.key, digest: fragment.digest, body })
+    const reused = held?.digest === fragment.digest ? held : undefined
+    const contentKey = fragment.contentKey ?? reused?.contentKey
+    fragments.push(reused && reused.contentKey === contentKey ? reused
+      : { ...(reused ?? { key: fragment.key, digest: fragment.digest, body }), ...(contentKey ? { contentKey } : {}) })
   }
   const unchanged = existing && existing.metaDigest === message.metaDigest && existing.index === message.index
     && existing.omittedBefore === message.omittedBefore && existing.omittedAfter === message.omittedAfter
@@ -183,6 +189,11 @@ function resolveMessage(message: TranscriptWindowMessage, existing: WindowStoreM
 
 const materialized = new WeakMap<WindowStoreMessage, ChatMessage>()
 
+function copyContentKey(from: ContentBlock, to: ContentBlock): void {
+  const stamp = contentKeyStamp(from)
+  if (stamp) stampContentKey(to, stamp.key, stamp.start, stamp.prefix)
+}
+
 /**
  * The renderable message for a held one. A partial message is marked with
  * `metadata.window` and never mistaken for the complete one: copy and export
@@ -198,7 +209,13 @@ export function materializeWindowMessage(message: WindowStoreMessage): ChatMessa
   for (const fragment of message.fragments) {
     const body = fragment.body
     if (body.kind === 'attachment') { attachments.push(body.attachment); textBlock = null; continue }
-    if (body.kind === 'block') { content.push(body.block); textBlock = null; continue }
+    if (body.kind === 'block') {
+      const block = fragment.contentKey ? { ...body.block } as ContentBlock : body.block
+      if (fragment.contentKey) stampContentKey(block, fragment.contentKey)
+      content.push(block)
+      textBlock = null
+      continue
+    }
     if (body.kind === 'omitted') {
       content.push({ type: 'notice', id: `window:${fragment.key}`, level: 'info', kind: 'omitted', text: '' })
       textBlock = null
@@ -213,9 +230,14 @@ export function materializeWindowMessage(message: WindowStoreMessage): ChatMessa
     const block = fragment.key.slice(0, fragment.key.lastIndexOf('~'))
     const last = content[content.length - 1]
     if (textBlock === block && last && (last.type === 'text' || last.type === 'plan')) {
-      content[content.length - 1] = { ...last, text: last.text + body.text }
+      const merged = { ...last, text: last.text + body.text }
+      content[content.length - 1] = merged
+      copyContentKey(last, merged)
     } else {
-      content.push({ ...body.head, text: textContextPrefix(body.context) + body.text } as ContentBlock)
+      const prefix = textContextPrefix(body.context)
+      const created = { ...body.head, text: prefix + body.text } as ContentBlock
+      content.push(created)
+      if (fragment.contentKey) stampContentKey(created, fragment.contentKey, body.offset, prefix.length)
       textBlock = block
     }
   }

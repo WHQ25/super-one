@@ -88,6 +88,8 @@ export interface TranscriptWindowFragment {
   body?: TranscriptFragmentBody
   /** Live patches only: text appended to the held body of this key; the result hashes to `digest`. */
   append?: string
+  /** Content key of this fragment's block in the whole message. Not part of the body digest. */
+  contentKey?: string
 }
 
 /** A message without content or attachments, heavy duplicates removed. */

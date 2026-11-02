@@ -1,12 +1,57 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { isBuiltin } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildPublishPackageJson, packNpm, PUBLIC_CLI_PACKAGE } from '../scripts/pack-npm'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
+function npmPackageName(specifier: string): string | null {
+  if (specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('node:')) {
+    return null
+  }
+  const name = specifier.startsWith('@')
+    ? specifier.split('/').slice(0, 2).join('/')
+    : specifier.split('/')[0]!
+  if (isBuiltin(name) || isBuiltin(`node:${name}`)) return null
+  return name
+}
+
+/** Package names the bundled CLI still `require()`s that npm will not install. */
+function undeclaredRuntimeRequires(
+  bundle: string,
+  pkg: { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> },
+): string[] {
+  const declared = new Set([
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.optionalDependencies ?? {}),
+  ])
+  const undeclared = new Set<string>()
+  // Banner `require` is renamed to require2/require3 when the source also
+  // binds `require`. Quoted `require("…")` inside Ajv codegen strings is data.
+  const call = /(?<!['"`])\brequire\d*\(\s*(["'])([^"']+)\1\s*\)/g
+  for (const match of bundle.matchAll(call)) {
+    const name = npmPackageName(match[2]!)
+    if (name && !declared.has(name)) undeclared.add(name)
+  }
+  return [...undeclared].sort()
+}
+
 describe('pack-npm', () => {
+  it('flags a leftover require of a package npm will not install', () => {
+    const bundle = [
+      'var jpeg = require2("jpeg-js");',
+      'const sqlite = require("better-sqlite3");',
+      'const fs = require("fs");',
+      'uri.code = \'require("ajv/dist/runtime/uri").default\';',
+      '(0, codegen_1._)`require("ajv/dist/runtime/validation_error").default`',
+    ].join('\n')
+    expect(
+      undeclaredRuntimeRequires(bundle, { dependencies: { 'better-sqlite3': '^13.0.1' } }),
+    ).toEqual(['jpeg-js'])
+  })
+
   it('declares the dependency node floor on the publish manifest', () => {
     const pkg = buildPublishPackageJson('0.0.0-test') as {
       engines: { node: string }
@@ -72,6 +117,7 @@ describe('pack-npm', () => {
     // Bundled CLI should not leave monorepo package names as bare imports.
     expect(bundle.includes('from "@superone/runtime"')).toBe(false)
     expect(bundle.includes('from "@superone/shared"')).toBe(false)
+    expect(undeclaredRuntimeRequires(bundle, pkg)).toEqual([])
     // Cursor SDK must stay external (native/platform package, not rebundled).
     // It is loaded on first use, so the bundle references it by dynamic import.
     expect(bundle).toMatch(/(?:from |import\()["']@cursor\/sdk["']/)

@@ -1,12 +1,7 @@
-import { createRequire } from 'node:module'
 import { inflateSync } from 'node:zlib'
 import { ATTACHMENT_THUMBNAIL_MAX_SIDE, THUMBNAIL_JPEG_QUALITY, type AttachmentThumbnail } from '@superone/runtime/stream/delivery/attachment-preview'
-
-const require = createRequire(import.meta.url)
-const jpeg = require('jpeg-js') as {
-  decode(buf: Buffer, opts?: { useTArray?: boolean; formatAsRGBA?: boolean }): { width: number; height: number; data: Uint8Array }
-  encode(img: { data: Uint8Array; width: number; height: number }, quality: number): { data: Buffer | Uint8Array }
-}
+// Static import so esbuild inlines this CJS package into the published CLI.
+import jpeg from 'jpeg-js'
 
 const MAX_PIXELS = 8_000 * 8_000
 

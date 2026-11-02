@@ -43,10 +43,15 @@ export function watchHarnessCatalogStamp(opts: {
     // not the creation of an unwatched path. The sample above is unchanged.
     writeFileSync(path, '', { flag: 'a' })
     watcher = watch(opts.nodeHome, { persistent: false }, (_event, filename) => {
-      // fs.watch can deliver a stamp after close(), which is after the node
-      // database is gone. Reading it then throws out of the process.
+      // fs.watch can deliver a stamp after close(), and a crash-style shutdown
+      // closes the database without closing this watch. Either way the read
+      // throws. A stamp event must not take the process down with it.
       if (closed || !isHarnessCatalogStamp(filename ?? null)) return
-      notifier.note()
+      try {
+        notifier.note()
+      } catch {
+        // The database is already closed.
+      }
     })
     watcher.on('error', () => {
       closed = true

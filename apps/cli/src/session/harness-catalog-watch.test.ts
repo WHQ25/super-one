@@ -43,6 +43,25 @@ describe('watchHarnessCatalogStamp', () => {
     }
   })
 
+  it('does not surface a catalog read that fails after the database is gone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-watch-closed-db-'))
+    let live = true
+    const watch = watchHarnessCatalogStamp({
+      nodeHome: dir,
+      environmentId: 'env-1',
+      readIds: () => {
+        if (!live) throw new Error('The database connection is not open')
+        return ['claude']
+      },
+      append: () => {},
+    })
+    live = false
+    writeFileSync(nodePaths(dir).harnessCatalogStamp, `${Date.now()}\n`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    watch.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('does not read the catalog after close', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-watch-closed-'))
     let reads = 0

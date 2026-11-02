@@ -26,6 +26,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - An appearance setting auto-expands reasoning while it streams. It is on by default. A manual collapse still wins, and the block closes again when it finishes.
 - Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
 - A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts. A session starts only on a harness that node has enabled and ready, and a change on the node updates a desktop that is already connected. Claude usage, models, and effort come from that node. An empty draft keeps the harness already picked. Claude is offered only after that node has been enabled once.
+- A node upgrade plays on that environment's icon. Success and failure still toast. A node without SSH still warns with the npm command.
+- A new session follows the sidebar focus. A focused project opens that project and records its environment. An environment alone keeps the current project when it already runs there, and otherwise switches to that host.
 - The phone app is built with Expo SDK 58, so it launches on iOS 27.
 - iPhone Duo stands closed, as a tent (hinge on top, from 31°), as a laptop (81–120°, one half flat), or open (61–80° and 121–180°). A fold through 30° stays shut. Dragging scrubs the clip and holds the pose until the drag ends, then turns once, by the smallest angle, to that form. A click moves at 180° per second. Letting go off a stop in a tent or a laptop only bends the body. Sweeping the hinge again turns a simulator SpringBoard left facing the wrong way; a closed reading taken at boot is not that sweep. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
 - A landscape iPhone Duo keeps a sidebar: 280pt when the book is open, one leaf when the hinge is only partly open. Portrait stays a drawer. The portrait lock drops as soon as the hinge leaves closed.
@@ -46,7 +48,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Computer Use's picture-in-picture paints the JPEG frames.
 - Markdown toolbars sit clear of the scroll rail.
 - A started location popover hides rows that no longer apply, and a refresh keeps the branch list already on screen. A pending worktree chip names only the branch. A removed worktree is named in the banner, not again beside the title. Worktree and git-status labels are translated.
-- Session hover cards close when the list scrolls, and the row keeps its fill until the card closes. Drafts and pinned rows keep their place when remote nodes are off.
+- Session hover cards close when the list scrolls and stay open while the transcript scrolls. The row keeps its fill until the card closes. Drafts and pinned rows keep their place when remote nodes are off.
 - With remote nodes on, a new session keeps its own checkout, and git init runs on the environment that owns the folder.
 - Two screenshots or recordings taken in the same millisecond no longer share a filename.
 - Desktop usage, probes, and other short external HTTP follow the macOS system proxy. Streaming chat, relay uploads, and loopback calls stay on Node fetch, and the CLI keeps Bun's proxy environment.
@@ -69,10 +71,37 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A revealed transcript block stays mounted through the scroll correction, so a slow wheel advances instead of shaking.
 - A streaming compaction marker stays between the closed prefix and the open tail. A later copy of the same result no longer stacks the chips in front of the reply or folds the cut away.
 - When an SSH node does not become healthy, the installer shows the tail of bootstrap.log.
+- A remote image whose thumbnail does not fit the window keeps its name and the file this desktop already staged.
+- A remote send paints the user bubble before the node session exists. It is marked failed only when create or send is refused.
+- A terminal opened from a new-session page on a remote project opens at that project. The draft id is omitted until the node owns the session.
+- A remote Codex turn with no stored preset uses auto-review and keeps it on the node. Full access still never asks. A spawned child is nested under its parent.
+- Enabling or probing a harness on a node reads that machine's own Claude or Codex login.
+- A node shutdown no longer crashes when a harness catalog stamp arrives after its database watch has closed.
 
 ### Performance
 
 - Opening a local session no longer rebuilds every sidebar row.
+
+## [0.76.0-alpha.4] - 2026-11-03
+
+### Added
+
+- A node upgrade plays on that environment's icon. Success and failure still toast. A node without SSH still warns with the npm command.
+- A new session follows the sidebar focus. A focused project opens that project and records its environment. An environment alone keeps the current project when it already runs there, and otherwise switches to that host.
+
+### Fixed
+
+- The session hover card stays open while the transcript scrolls.
+- A remote image whose thumbnail does not fit the window keeps its name and the file this desktop already staged.
+- A remote send paints the user bubble before the node session exists. It is marked failed only when create or send is refused.
+- A terminal opened from a new-session page on a remote project opens at that project. The draft id is omitted until the node owns the session.
+- A remote Codex turn with no stored preset uses auto-review and keeps it on the node. Full access still never asks. A spawned child records its parent, and the node publishes session list and activity.
+- Enabling or probing a harness reads that machine's own Claude or Codex login. A present SDK is not treated as a sign-in.
+- Closing the node no longer crashes when a harness catalog stamp arrives after the database watch has closed.
+
+### Tests
+
+- Host-action tests include the collaboration grants table the session store reads. The project-list coalescing check ignores the in-process session-list snapshot.
 
 ## [0.76.0-alpha.3] - 2026-11-02
 

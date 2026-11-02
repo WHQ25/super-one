@@ -62,6 +62,10 @@ function wheelUp(el: HTMLElement, deltaY = -50, deltaX = 0) {
   el.dispatchEvent(new WheelEvent('wheel', { deltaY, deltaX }))
 }
 
+function wheelDown(el: HTMLElement, deltaY = 40) {
+  el.dispatchEvent(new WheelEvent('wheel', { deltaY, deltaX: 0 }))
+}
+
 function touchDrag(el: HTMLElement, fromY: number, toY: number) {
   const start = new Event('touchstart')
   Object.defineProperty(start, 'touches', { value: [{ clientY: fromY }] })
@@ -628,13 +632,274 @@ describe('useChatScroll', () => {
     })
 
     act(() => {
+      wheelDown(el)
       state.scrollTop = state.scrollHeight - state.clientHeight
       el.dispatchEvent(new Event('scroll'))
     })
 
     state.scrollHeight = 800
-    fireResize()
+    act(() => { fireResize() })
     expect(state.scrollTop).toBe(500)
+  })
+
+  it('stays paused when streaming nudges scrollTop back into the bottom band', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    const { result, rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el, -10)
+      state.scrollTop -= 10
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    // A virtualizer end-adjust or scroll anchor adds a few pixels while the
+    // reader is still inside the 24px band. That is not the user coming back.
+    act(() => {
+      state.scrollTop += 6
+      el.dispatchEvent(new Event('scroll'))
+    })
+    const nudgedTo = state.scrollTop
+
+    state.scrollHeight = 800
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [{ id: '1', role: 'assistant', content: [{ type: 'text', text: 'more' }] }],
+    }
+    rerender()
+
+    expect(state.scrollTop).toBe(nudgedTo)
+    expect(result.current.showScrollButton).toBe(true)
+  })
+
+  it('does not resume when the viewport is moved to the bottom without a downward gesture', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    const { result } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(200)
+    expect(result.current.showScrollButton).toBe(true)
+  })
+
+  it('resumes when downward momentum lands inside the bottom band', () => {
+    vi.useFakeTimers()
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    act(() => {
+      wheelDown(el)
+      state.scrollTop = 40
+      el.dispatchEvent(new Event('scroll'))
+    })
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(40)
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+    state.scrollHeight = 1000
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(700)
+    vi.useRealTimers()
+  })
+
+  it('does not resume on a later arrival at the bottom after the downward gesture goes quiet', () => {
+    vi.useFakeTimers()
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+    act(() => { wheelDown(el) })
+    act(() => { vi.advanceTimersByTime(81) })
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(200)
+    vi.useRealTimers()
+  })
+
+  it('does not resume after the downward gesture ends, even inside the hold window', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+    act(() => {
+      wheelDown(el)
+      el.dispatchEvent(new Event('scrollend'))
+    })
+
+    act(() => {
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(200)
+  })
+
+  it('pauses when a vertical wheel reports a downward delta but the viewport moves up', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelDown(el, 20)
+      state.scrollTop -= 20
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(180)
+  })
+
+  it('resumes when a pressed pointer drags back to the bottom', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+    act(() => {
+      el.dispatchEvent(new Event('pointerdown'))
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+      window.dispatchEvent(new Event('pointerup'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(500)
+  })
+
+  it('resumes when a touch drag toward the bottom lands in the band', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+    act(() => {
+      touchDrag(el, 180, 100)
+      state.scrollTop = state.scrollHeight - state.clientHeight
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(500)
+  })
+
+  it('jumps once when a new user message becomes the tail, then respects a later pause', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 700
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [
+        { id: '1', role: 'assistant', content: [] },
+        { id: 'u1', role: 'user', content: [] },
+      ],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(400)
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 50
+      el.dispatchEvent(new Event('scroll'))
+    })
+    state.scrollHeight = 900
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [
+        { id: '1', role: 'assistant', content: [] },
+        { id: 'u1', role: 'user', content: [{ type: 'text', text: 'still the same send' }] },
+      ],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(50)
+  })
+
+  it('does not re-arm follow when the trailing user message updates after a wheel-up', () => {
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [{ id: 'u1', role: 'user', content: [] }],
+    }
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    const { rerender } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 40
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    mockSessionState = {
+      ...mockSessionState,
+      messages: [{ id: 'u1', role: 'user', content: [{ type: 'text', text: 'edited' }] }],
+    }
+    rerender()
+    expect(state.scrollTop).toBe(40)
+  })
+
+  it('opts the chat viewport out of browser scroll anchoring', () => {
+    const { el } = createMockViewport()
+    const ref = { current: el }
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    expect(el.style.getPropertyValue('overflow-anchor')).toBe('none')
   })
 
   it('still pins on late resize after the turn is idle when following', () => {

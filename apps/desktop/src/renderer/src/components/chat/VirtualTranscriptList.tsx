@@ -172,13 +172,15 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   // Virtual rows and useChatScroll own every offset correction. Native anchoring
   // would pick a node outside the list and keep the end pinned while a taller
   // composer shrinks the viewport, pushing history up instead of covering it.
-  // The host attaches the viewport ref after this list's layout effects.
+  // Short lists are not virtualized, and a streamed row grows after the
+  // user-scroll frame, so the opt-out covers them too. The host attaches the
+  // viewport ref after this list's layout effects.
   useEffect(() => {
     const viewport = viewportRef.current
-    if (small || !viewport) return
-    viewport.style.overflowAnchor = 'none'
-    return () => { viewport.style.overflowAnchor = '' }
-  }, [small, viewportRef])
+    if (!viewport) return
+    viewport.style.setProperty('overflow-anchor', 'none')
+    return () => { viewport.style.removeProperty('overflow-anchor') }
+  }, [viewportRef])
 
   // A new session initially opens at the end, even when no useChatScroll host is mounted (stories).
   useLayoutEffect(() => {
@@ -216,7 +218,7 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   return (
     <McpAppTranscriptRetention.Provider value={retention}>
       <VirtualTranscriptContext.Provider value={context}>
-        <div ref={listRef} data-virtual-transcript className="relative w-full" style={small ? undefined : { height: virtualizer.getTotalSize(), overflowAnchor: 'none' }}>
+        <div ref={listRef} data-virtual-transcript className="relative w-full" style={small ? { overflowAnchor: 'none' } : { height: virtualizer.getTotalSize(), overflowAnchor: 'none' }}>
           {small ? items.map((item, index) => (
             <div key={item.id} data-virtual-message={item.id} style={{ paddingBottom: ROW_GAP }}>
               {renderItem(index)}

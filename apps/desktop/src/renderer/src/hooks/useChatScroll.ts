@@ -14,6 +14,8 @@ interface UseChatScrollReturn {
 }
 
 const RESUME_AT_BOTTOM_PX = 24
+/** A wheel or touch keeps counting as the user's gesture across momentum, until scrollend or this much quiet. */
+const GESTURE_HOLD_MS = 80
 
 function isPauseFollowWheel(event: WheelEvent): boolean {
   if (event.deltaY >= 0) return false
@@ -100,10 +102,15 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const sessionKey = scope ? `${scope.projectPath}\0${scope.sessionId}` : activeSessionId
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
 
-  // Explicit upward input pauses following. It resumes only when the user moves
-  // back toward the bottom, or a deliberate tick jump lands there.
+  // Explicit upward input pauses following. It resumes only from a downward
+  // wheel, touch, or pressed drag that lands in the bottom band, or a tick jump.
+  // Growth that increases scrollTop is not the user coming back.
   const followRef = useRef(true)
   const pausedScrollTopRef = useRef(0)
+  const gestureRef = useRef<'up' | 'down' | null>(null)
+  const gestureTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const scrollHeightRef = useRef(0)
+  const seenUserTailRef = useRef<string | null>(null)
   // Scrolled past the follow line while a taller composer covers the tail.
   const revealedRef = useRef(false)
   // Space held below the content when the viewport grew at the end, so history
@@ -164,6 +171,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   useLayoutEffect(() => {
     followRef.current = true
     allowStationaryBottomResumeRef.current = false
+    seenUserTailRef.current = null
     sessionSwitchRef.current = true
     revealedRef.current = false
     setShowScrollButton(false)
@@ -205,6 +213,9 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     revealedRef.current = false
     pausedScrollTopRef.current = el?.scrollTop ?? 0
     allowStationaryBottomResumeRef.current = allowStationaryBottomResume
+    // Drop a stale downward latch. The caller arms a new one when this pause is itself a gesture.
+    gestureRef.current = null
+    clearTimeout(gestureTimerRef.current)
     sessionSwitchRef.current = false
     clearTimeout(sessionSwitchTimerRef.current)
     setShowScrollButton(true)
@@ -220,15 +231,35 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const view = el.ownerDocument.defaultView ?? window
     let pointerDown = false
     let touchY = 0
+    const holdGesture = (direction: 'up' | 'down'): void => {
+      gestureRef.current = direction
+      clearTimeout(gestureTimerRef.current)
+      gestureTimerRef.current = setTimeout(() => { gestureRef.current = null }, GESTURE_HOLD_MS)
+    }
+    const clearGesture = (): void => {
+      gestureRef.current = null
+      clearTimeout(gestureTimerRef.current)
+    }
     const handleWheel = (e: WheelEvent): void => {
-      if (isPauseFollowWheel(e)) pauseAutoScroll(false)
+      if (isPauseFollowWheel(e)) {
+        pauseAutoScroll(false)
+        // A wheel that did not pause (the transcript does not overflow) leaves follow on.
+        if (!followRef.current) holdGesture('up')
+      } else if (e.deltaY > 0 && Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
+        holdGesture('down')
+      }
     }
     const handleTouchStart = (e: TouchEvent): void => {
       touchY = e.touches[0]?.clientY ?? 0
     }
     const handleTouchMove = (e: TouchEvent): void => {
       const y = e.touches[0]?.clientY ?? 0
-      if (y > touchY) pauseAutoScroll(false)
+      if (y > touchY) {
+        pauseAutoScroll(false)
+        if (!followRef.current) holdGesture('up')
+      } else if (y < touchY) {
+        holdGesture('down')
+      }
       touchY = y
     }
     const handleKeyDown = (e: KeyboardEvent): void => {
@@ -240,25 +271,42 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       settleTail(el)
       if (followRef.current && el.scrollTop > followTop(el, false) + AT_BOTTOM_EPSILON_PX) revealedRef.current = true
       const remaining = followTop(el, revealedRef.current) - el.scrollTop
+      const movedUp = el.scrollTop < pausedScrollTopRef.current - 1
+      const movedTowardBottom = el.scrollTop > pausedScrollTopRef.current + 1
+      // A shrink that clamps scrollTop is layout, even when a wheel just fired.
+      const heightShrank = el.scrollHeight + 1 < scrollHeightRef.current
+      scrollHeightRef.current = el.scrollHeight
+      pausedScrollTopRef.current = el.scrollTop
       if (followRef.current) {
         // A drag that scrolls (text selection, middle-click autoscroll) fires
-        // only scroll events. Without a pressed pointer a decrease is layout: the
-        // browser clamping after rows shrank, whose event can land after they
-        // grew again. Jumps pause through stopAutoScroll; the bar is hidden.
-        const movedUp = el.scrollTop < pausedScrollTopRef.current - 1
-        pausedScrollTopRef.current = el.scrollTop
+        // only scroll events. Without a pressed pointer or a fresh wheel, a
+        // decrease is layout: the browser clamping after rows shrank, whose
+        // event can land after they grew again. Jumps pause through stopAutoScroll.
+        const clampedToEnd = remaining <= AT_BOTTOM_EPSILON_PX
         if (pointerDown && movedUp && remaining > RESUME_AT_BOTTOM_PX) pauseAutoScroll(false)
+        else if (gestureRef.current && movedUp && !clampedToEnd && !heightShrank) {
+          // deltaY can disagree with the direction the viewport actually moved.
+          pauseAutoScroll(false)
+          if (!followRef.current) holdGesture('up')
+        }
       } else {
-        const movedTowardBottom = el.scrollTop > pausedScrollTopRef.current + 1
-        pausedScrollTopRef.current = el.scrollTop
-        if ((movedTowardBottom || allowStationaryBottomResumeRef.current) && remaining <= RESUME_AT_BOTTOM_PX) {
+        const userDown = pointerDown || gestureRef.current === 'down'
+        if (((userDown && movedTowardBottom) || allowStationaryBottomResumeRef.current) && remaining <= RESUME_AT_BOTTOM_PX) {
           followRef.current = true
+          clearGesture()
         }
         allowStationaryBottomResumeRef.current = false
       }
+      if (gestureRef.current === 'down' && movedTowardBottom) holdGesture('down')
+      else if (gestureRef.current === 'up' && movedUp) holdGesture('up')
       setShowScrollButton(!followRef.current)
     }
+    // Native anchoring is suppressed only for the user-scroll frame. The next
+    // streamed row would drag a near-bottom viewport back down, including lists
+    // too short to virtualize. The transcript owns its own offset corrections.
+    el.style.setProperty('overflow-anchor', 'none')
     el.addEventListener('scroll', handleScroll, { passive: true })
+    el.addEventListener('scrollend', clearGesture)
     el.addEventListener('wheel', handleWheel, { passive: true })
     el.addEventListener('touchstart', handleTouchStart, { passive: true })
     el.addEventListener('touchmove', handleTouchMove, { passive: true })
@@ -269,11 +317,14 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const following = (): boolean => followRef.current && reserveRef.current === 0
     followByViewport.set(el, following)
     return () => {
+      clearGesture()
+      el.style.removeProperty('overflow-anchor')
       if (followByViewport.get(el) === following) followByViewport.delete(el)
       el.removeEventListener('pointerdown', handlePointerDown)
       view.removeEventListener('pointerup', handlePointerUp, true)
       view.removeEventListener('pointercancel', handlePointerUp, true)
       el.removeEventListener('scroll', handleScroll)
+      el.removeEventListener('scrollend', clearGesture)
       el.removeEventListener('wheel', handleWheel)
       el.removeEventListener('touchstart', handleTouchStart)
       el.removeEventListener('touchmove', handleTouchMove)
@@ -281,12 +332,17 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     }
   }, [sessionKey, viewKey, viewportMounted, scrollViewportRef, pauseAutoScroll, settleTail])
 
-  const lastMsgIsUser = !showRealtime && messages.length > 0 && messages[messages.length - 1].role === 'user'
+  const tail = messages.length > 0 ? messages[messages.length - 1] : undefined
+  const lastMsgIsUser = !showRealtime && tail !== undefined && tail.role === 'user'
+  // Sending jumps once. Later patches of that same user message, including the
+  // gap before the assistant row, must not turn follow back on.
+  const newUserSend = tail !== undefined && lastMsgIsUser && tail.id !== seenUserTailRef.current
 
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
     if (!el) return
-    const shouldScroll = followRef.current || lastMsgIsUser
+    if (newUserSend && tail) seenUserTailRef.current = tail.id
+    const shouldScroll = followRef.current || newUserSend
     // DEV-only: `messages` churns on every streaming delta, so this effect runs
     // ~30x/s. Reading scrollHeight from a layout effect forces a synchronous
     // full-list reflow — O(messages) — and it would run even when we are not
@@ -296,13 +352,15 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       window.app.trace?.('scroll', 'msg_change', { msgLen: messages.length, shouldScroll, follow: followRef.current, lastMsgIsUser, sessionSwitch: sessionSwitchRef.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight })
     }
     if (shouldScroll) {
-      followTail(el)
-      pausedScrollTopRef.current = el.scrollTop
+      // Arm follow before the pin. Assigning scrollTop fires scroll on the same
+      // turn, and that handler must not treat the jump as a paused viewport.
       followRef.current = true
       allowStationaryBottomResumeRef.current = false
+      followTail(el)
+      pausedScrollTopRef.current = el.scrollTop
       setShowScrollButton(false)
     }
-  }, [messages, showRealtime ? realtime : null, viewKey, lastMsgIsUser, scrollViewportRef, followTail])
+  }, [messages, showRealtime ? realtime : null, viewKey, lastMsgIsUser, newUserSend, scrollViewportRef, followTail])
 
   useEffect(() => {
     const viewport = scrollViewportRef.current

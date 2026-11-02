@@ -25,12 +25,13 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A message can name a machine with @env or that machine's name, without moving the current session. The agent omits environmentId on this machine and passes it for any other. Paired phones are not targets.
 - An appearance setting auto-expands reasoning while it streams. It is on by default. A manual collapse still wins, and the block closes again when it finishes.
 - Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
-- A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts.
+- A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts. A session starts only on a harness that node has enabled and ready, and a change on the node updates a desktop that is already connected. Claude usage, models, and effort come from that node. An empty draft keeps the harness already picked. Claude is offered only after that node has been enabled once.
 - The phone app is built with Expo SDK 58, so it launches on iOS 27.
 - iPhone Duo stands closed, as a tent (hinge on top, from 31°), as a laptop (81–120°, one half flat), or open (61–80° and 121–180°). A fold through 30° stays shut. Dragging scrubs the clip and holds the pose until the drag ends, then turns once, by the smallest angle, to that form. A click moves at 180° per second. Letting go off a stop in a tent or a laptop only bends the body. Sweeping the hinge again turns a simulator SpringBoard left facing the wrong way; a closed reading taken at boot is not that sweep. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
 - A landscape iPhone Duo keeps a sidebar: 280pt when the book is open, one leaf when the hinge is only partly open. Portrait stays a drawer. The portrait lock drops as soon as the hinge leaves closed.
 - On the phone, finished sessions sit in a folded Settled group. Settling from the row leaves the chat open, and capped lists page as they scroll.
 - Phone pinned sessions and drafts fold from their headings and keep their rows mounted. A draft that arrives on a resident sidebar flies in from the right. Opening one stays out of the list until the composer claims it.
+- On the phone, a draft that wraps while the keyboard is down stacks Send under Stop, so the text keeps the column. One line stays beside Stop. The keyboard-up row is unchanged.
 
 ### Changed
 
@@ -65,10 +66,27 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Opening a parked draft whose id was never saved as a session opens the draft instead of an IPC error.
 - An iOS simulator preview restarts when the helper's video socket, the helper process, or the renderer port dies, and stops after three failures that never paint a frame.
 - Losing the open draft on the phone reuses that draft instead of listing a second pending copy of the same text.
+- A revealed transcript block stays mounted through the scroll correction, so a slow wheel advances instead of shaking.
+- A streaming compaction marker stays between the closed prefix and the open tail. A later copy of the same result no longer stacks the chips in front of the reply or folds the cut away.
+- When an SSH node does not become healthy, the installer shows the tail of bootstrap.log.
 
 ### Performance
 
 - Opening a local session no longer rebuilds every sidebar row.
+
+## [0.76.0-alpha.3] - 2026-11-02
+
+### Added
+
+- On the phone, a draft that wraps while the keyboard is down stacks Send under Stop, so the text keeps the column. One line stays beside Stop. The keyboard-up row is unchanged.
+
+### Fixed
+
+- A streaming compaction marker stays between the closed prefix and the open tail. A later copy of the same result no longer stacks the chips in front of the reply or folds the cut away.
+- A revealed transcript block stays mounted through the scroll correction, so a slow wheel advances instead of shaking.
+- A remote session starts only on a harness the node has enabled and ready. A catalog change on the node updates a desktop that is already connected. Claude usage, models, and effort come from that node. An empty draft keeps the harness already picked. Claude is offered only after that node has been enabled once.
+- A host install of the CLI can decode JPEG screenshots. jpeg-js is bundled instead of required from a package the install does not depend on.
+- When an SSH node does not become healthy, the installer shows the tail of bootstrap.log.
 
 ## [0.76.0-alpha.2] - 2026-11-02
 

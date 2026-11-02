@@ -36,10 +36,10 @@ export interface RemoteSessionListener {
 }
 
 /**
- * What a session-list observer hears from a node. A desktop node pushes its
- * list topics as notices (every create, rename, flag, tag, removal and
- * sidebar activity, whoever made it); a CLI node's `sessionList` topic is its
- * durable list events.
+ * What a session-list observer hears from a node. A desktop node, and a CLI
+ * node that publishes session-list notices, push every create, rename, flag,
+ * tag, removal and sidebar activity. An older CLI node's `sessionList` topic
+ * is its durable list events.
  */
 export interface RemoteListObserver {
   /** A durable session-list event (`SESSION_LIST_EVENT_TYPES`), from a node that pushes no list notices. */

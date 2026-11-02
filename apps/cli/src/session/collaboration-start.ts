@@ -8,6 +8,7 @@ import {
   type SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
+import { codexPresetForPermissionMode } from '@superone/shared/harness/harness-sandbox'
 import { launchedSessionPromptAppend } from './collaboration-profiles'
 import { profileLaunchConfig } from '@superone/shared/agent-profile-launch'
 import type { HarnessId } from '@superone/shared/session-types'
@@ -272,6 +273,11 @@ export async function startCollaboration(
       sandboxMode: config.sandboxMode ?? null,
       claudeFastMode: config.claudeFastMode ?? null,
       apiProviderId: config.apiProviderId ?? null,
+      permissionPreset: harnessId === 'codex'
+        ? config.codexPermissionPreset ?? (config.permissionMode ? codexPresetForPermissionMode(config.permissionMode) : null)
+        : null,
+      // A spawn nests under its parent. A handoff session stays a root.
+      ...(isHandoff ? {} : { parentSessionId: grant.parent_session_id }),
       // The one profile option this node's runtime takes (see NODE_APPLIABLE_OPTIONS).
       agent: config.options?.agent ?? null,
       controllerClientSessionId: input.controllerClientSessionId ?? parent.controllerClientSessionId,

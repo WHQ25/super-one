@@ -55,6 +55,8 @@ export interface NodeServerOptions {
   bindPort: number
   startedAt?: number
   simulatedHarness?: boolean
+  /** Sidebar list notices. Absent on a host that still publishes durable list events only. */
+  topicNotices?: RpcContext['topicNotices']
 }
 
 /** CLI host wrapper: injects RPC dispatch, watch cleanup, and harness hooks. */
@@ -102,6 +104,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       hooks,
       startedAt,
       simulatedHarness: opts.simulatedHarness,
+      ...(opts.topicNotices ? { topicNotices: opts.topicNotices } : {}),
     }),
   })
   // A revoked or suspended client loses its sessions and terminals now, not when its leases expire.

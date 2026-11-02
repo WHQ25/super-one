@@ -11,6 +11,7 @@ function parseSettingsJson(raw: string | null | undefined): {
   effort: string | null
   agent: string | null
   apiProviderId: string | null
+  permissionPreset: string | null
   externalParent: { sessionId: string } | null
 } {
   const empty = {
@@ -21,6 +22,7 @@ function parseSettingsJson(raw: string | null | undefined): {
     effort: null as string | null,
     agent: null as string | null,
     apiProviderId: null as string | null,
+    permissionPreset: null as string | null,
     externalParent: null as { sessionId: string } | null,
   }
   if (!raw) return empty
@@ -40,6 +42,7 @@ function parseSettingsJson(raw: string | null | undefined): {
       effort: str('effort'),
       agent: str('agent'),
       apiProviderId: str('apiProviderId'),
+      permissionPreset: str('permissionPreset'),
       externalParent: externalParentOf(obj.externalParent),
     }
   } catch {
@@ -61,6 +64,7 @@ function serializeSettingsJson(session: NodeSessionRecord): string {
     effort: session.effort ?? null,
     ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
     apiProviderId: session.apiProviderId ?? null,
+    ...(session.harnessId === 'codex' && session.permissionPreset ? { permissionPreset: session.permissionPreset } : {}),
     ...(session.externalParent ? { externalParent: session.externalParent } : {}),
   })
 }
@@ -82,7 +86,11 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
                   settings_json,
                   COALESCE(is_automation, 0) AS is_automation,
                   automation_id,
-                  COALESCE(tags_json, '[]') AS tags_json
+                  COALESCE(tags_json, '[]') AS tags_json,
+                  (SELECT parent_session_id FROM session_collaboration_grants
+                    WHERE child_session_id = sessions.session_id
+                      AND COALESCE(kind, 'spawn') = 'spawn'
+                    LIMIT 1) AS spawn_parent_session_id
            FROM sessions`,
         )
         .all() as Array<{
@@ -110,6 +118,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
         is_automation: number
         automation_id: string | null
         tags_json: string
+        spawn_parent_session_id: string | null
       }>
       const parseStringArray = (raw: string | null | undefined): string[] => {
         try {
@@ -141,6 +150,8 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           effort: settings.effort,
           ...(r.harness_id === 'opencode' ? { agent: settings.agent } : {}),
           apiProviderId: settings.apiProviderId,
+          ...(settings.permissionPreset ? { permissionPreset: settings.permissionPreset } : {}),
+          ...(r.spawn_parent_session_id ? { parentSessionId: r.spawn_parent_session_id } : {}),
           ...(settings.externalParent ? { externalParent: settings.externalParent } : {}),
           createdAt: r.created_at,
           updatedAt: r.updated_at,

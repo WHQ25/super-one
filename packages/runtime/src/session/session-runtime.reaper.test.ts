@@ -186,6 +186,47 @@ describe('SessionRuntime settle', () => {
       db.close()
     }
   })
+
+  it('restores a spawn parent after reload and leaves a link or handoff at the root', async () => {
+    const db = openNodeDatabase(':memory:')
+    const open = () => new SessionRuntime(
+      createSqliteSessionStore(db),
+      new EventLog(db, 'env-spawn-parent'),
+      new ControlLeaseService(db),
+      'env-spawn-parent',
+      async () => ({ finalText: 'ok' }),
+      { runtimeReaperIntervalMs: 0 },
+    )
+    const runtime = open()
+    let restored: SessionRuntime | undefined
+    try {
+      const parent = runtime.create({ projectId: 'p', harnessId: 'claude' })
+      const child = runtime.create({ projectId: 'p', harnessId: 'codex' })
+      const peer = runtime.create({ projectId: 'p', harnessId: 'claude' })
+      const handoff = runtime.create({ projectId: 'p', harnessId: 'claude' })
+      const insert = db.prepare(`
+        INSERT INTO session_collaboration_grants (
+          credential_hash, credential_hint, parent_session_id, child_session_id, agent_id, task, config_json, created_at, kind
+        ) VALUES (?, 'hint', ?, ?, 'agent', 'task', '{}', '2026-01-01', ?)
+      `)
+      insert.run('spawn-grant', parent.sessionId, child.sessionId, 'spawn')
+      insert.run('link-grant', parent.sessionId, peer.sessionId, 'link')
+      insert.run('handoff-grant', parent.sessionId, handoff.sessionId, 'handoff')
+      await runtime.dispose()
+
+      restored = open()
+      expect(restored.get(child.sessionId)?.parentSessionId).toBe(parent.sessionId)
+      expect(restored.get(peer.sessionId)?.parentSessionId).toBeUndefined()
+      expect(restored.get(handoff.sessionId)?.parentSessionId).toBeUndefined()
+      const roots = restored.list('p', { rootsOnly: true })
+      expect(roots.map((row) => row.sessionId)).not.toContain(child.sessionId)
+      expect(roots.find((row) => row.sessionId === parent.sessionId)?.childCount).toBe(1)
+    } finally {
+      await restored?.dispose()
+      await runtime.dispose()
+      db.close()
+    }
+  })
 })
 
 describe('SessionRuntime idle harness reaper', () => {

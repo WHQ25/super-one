@@ -521,9 +521,12 @@ phones read them: every list change whoever made it, and `session_activity`
 summaries for the sidebar (running, unread). A notice snapshot (a fresh
 subscribe, or changes the node no longer holds) re-reads the lists and
 replaces the summaries; a row it leaves out goes idle and keeps its unread
-dot (`remote-list-observer.ts`). A CLI node's `sessionList` topic carries its
-durable list events instead. A controller window showing a remote session
-reports the read with `client.markSeen`, as a phone does.
+dot (`remote-list-observer.ts`). A CLI node pushes `sessionList` the same way:
+`session_list_changed` for membership, including a spawn child's parent, and
+`session_activity` for the row's running state. Its `projects` topic stays on
+the durable project log, and composer drafts stay on the draft stream. A
+controller window showing a remote session reports the read with
+`client.markSeen`, as a phone does.
 
 Each node connection has a delivery policy (`ConnectionDelivery`,
 `@superone/runtime/stream/delivery`) from the socket it came in on: a relay

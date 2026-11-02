@@ -3507,6 +3507,10 @@ export const DEFAULT_CODEX_PERMISSION_PRESET: CodexPermissionPreset = 'auto-revi
 export const DEFAULT_CODEX_PERMISSION_PROFILE: CodexPermissionProfile =
   CODEX_PERMISSION_PRESETS[DEFAULT_CODEX_PERMISSION_PRESET]
 
+export function isCodexPermissionPreset(value: string | null | undefined): value is CodexPermissionPreset {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(CODEX_PERMISSION_PRESETS, value)
+}
+
 export interface CodexAuthStatus {
   mode: CodexAuthMode
   resolvedMode: 'chatgpt' | 'apiKey'

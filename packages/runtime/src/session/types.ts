@@ -32,6 +32,7 @@ export interface NodeSessionSettings {
   ultracode?: boolean | null
   contextWindow?: number | null
   serviceTier?: string | null
+  /** Codex permission preset. Other harnesses refuse an explicit patch. */
   permissionPreset?: string | null
   collaborationMode?: string | null
   agent?: string | null
@@ -59,6 +60,11 @@ export interface NodeSessionRecord {
    */
   permissionMode?: string | null
   sandboxMode?: string | null
+  /**
+   * Codex permission preset. Absent means the turn uses the desktop default
+   * (`auto-review`).
+   */
+  permissionPreset?: string | null
   claudeFastMode?: boolean | null
   model?: string | null
   effort?: string | null

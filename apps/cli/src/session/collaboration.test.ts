@@ -353,6 +353,10 @@ describe('collaboration grants + mailbox', () => {
     expect(started.sessionId).toBeTruthy()
     expect(taskOf().task).toBe('Do the work')
     expect(sessions.getSystemPromptAppend(started.sessionId)).toContain(parent.sessionId)
+    expect(sessions.get(started.sessionId)?.parentSessionId).toBe(parent.sessionId)
+    const roots = sessions.list(project.projectId, { rootsOnly: true })
+    expect(roots.some((row) => row.sessionId === started.sessionId)).toBe(false)
+    expect(roots.find((row) => row.sessionId === parent.sessionId)?.childCount).toBe(1)
     // The brief reads as a task from the parent session, as on the desktop.
     expect(sessions.listMessages({ sessionId: started.sessionId }).messages[0]).toMatchObject({
       role: 'user',
@@ -439,6 +443,53 @@ describe('collaboration grants + mailbox', () => {
       )
       .get(grantId, started.sessionId) as { last_sequence: number }
     expect(cursor.last_sequence).toBe(1)
+  })
+
+  it('nests a Codex spawn under its parent and keeps a handoff at the root', async () => {
+    const { collab, sessions, projects } = bootCollab()
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-codex-'))
+    dirs.push(projectDir)
+    writeFileSync(join(projectDir, 'f'), '1')
+    const project = projects.open(projectDir)
+    const parent = sessions.create({ projectId: project.projectId, harnessId: 'codex', title: 'parent' })
+    const requested = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{
+        agentId: 'codex-base',
+        name: 'Worker',
+        role: 'Implementer',
+        summary: 'Do the work.',
+        config: { cwd: projectDir, permissionMode: 'bypassPermissions' },
+      }],
+    })
+    if (requested.status !== 'approved') throw new Error('expected approved')
+    const started = await collab.start({
+      callerSessionId: parent.sessionId,
+      launchId: requested.launches[0].launchId,
+      task: 'Do the work',
+    })
+    const child = sessions.get(started.sessionId)
+    expect(child?.harnessId).toBe('codex')
+    expect(child?.parentSessionId).toBe(parent.sessionId)
+    // A requested bypass is stripped, so the child keeps the safe preset rather than full access.
+    expect(child?.permissionPreset).toBe('default')
+    expect(child?.permissionMode).not.toBe('bypassPermissions')
+
+    const handoff = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ mode: 'handoff', agentId: 'codex-base', name: 'Handoff', role: 'Implementer', summary: 'Take it.', config: { cwd: projectDir } }],
+    })
+    if (handoff.status !== 'approved') throw new Error('expected approved')
+    const handed = await collab.start({
+      callerSessionId: parent.sessionId,
+      launchId: handoff.launches[0].launchId,
+      task: 'Take it',
+    })
+    expect(sessions.get(handed.sessionId)?.parentSessionId).toBeUndefined()
+    const roots = sessions.list(project.projectId, { rootsOnly: true }).map((row) => row.sessionId)
+    expect(roots).toContain(parent.sessionId)
+    expect(roots).toContain(handed.sessionId)
+    expect(roots).not.toContain(started.sessionId)
   })
 
   it('keeps new mail queued after a native turn error and resumes only on confirmed completion', async () => {

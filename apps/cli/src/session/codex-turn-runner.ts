@@ -399,6 +399,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             cwd,
             threadId: priorThread ?? conn.threadId,
             threadConfig,
+            permissionPreset: input.session.permissionPreset,
             signal: input.signal,
           })
         }
@@ -413,6 +414,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             cwd,
             additionalDirectories: input.additionalDirectories,
             threadId: conn.threadId!,
+            permissionPreset: input.session.permissionPreset,
             model: input.model && input.model.trim() ? input.model.trim() : undefined,
             reasoningEffort,
             collaborationMode: input.collaborationMode,
@@ -447,6 +449,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           cwd,
           additionalDirectories: input.additionalDirectories,
           threadId: conn.threadId,
+          permissionPreset: input.session.permissionPreset,
           model: input.model && input.model.trim() ? input.model.trim() : undefined,
           reasoningEffort,
           turnKind,
@@ -509,7 +512,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if (binding.configFingerprint !== mcpServerConfigFingerprint(prepared.mcpServers[binding.server])) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
     const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
     if (!live.threadId) live.threadId = await ensureCodexThread({ client: live.client, cwd: prepared.cwd, threadId: origin.providerSessionId,
-      threadConfig: prepared.threadConfig, signal: new AbortController().signal })
+      threadConfig: prepared.threadConfig, permissionPreset: session.permissionPreset, signal: new AbortController().signal })
     if (live.threadId !== origin.providerSessionId) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
     live.lastActivityAt = Date.now()
     const provider = createCodexMcpAppsProvider(binding, live.threadId, live.client.request.bind(live.client), live.client.request)

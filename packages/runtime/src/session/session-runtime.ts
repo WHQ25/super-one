@@ -13,7 +13,7 @@ import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import { SESSION_SEND_SELECTION_KEYS, type SessionSendSelections } from '@superone/shared/environment/session-send'
-import type { AgentEvent, ChatMessage, ChatMessageSource } from '@superone/shared/agent-types'
+import { isCodexPermissionPreset, type AgentEvent, type ChatMessage, type ChatMessageSource } from '@superone/shared/agent-types'
 import { isAgentOutputEvent } from '@superone/shared/send-failure'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
@@ -527,6 +527,13 @@ export class SessionRuntime {
     effort?: string | null
     agent?: string | null
     apiProviderId?: string | null
+    /** Codex permission preset stored for later turns. */
+    permissionPreset?: string | null
+    /**
+     * Spawn parent on this host. Kept in memory and restored from the spawn
+     * grant; a handoff or link is not a parent.
+     */
+    parentSessionId?: string | null
     /**
      * Collaboration / host system-prompt append (credential instructions).
      * Ephemeral in-memory; durable grants reconstruct it after restart.
@@ -565,6 +572,8 @@ export class SessionRuntime {
       model: input.model ?? null,
       effort: input.effort ?? null,
       ...(input.harnessId === 'opencode' ? { agent: input.agent ?? null } : {}),
+      ...(input.harnessId === 'codex' && isCodexPermissionPreset(input.permissionPreset) ? { permissionPreset: input.permissionPreset } : {}),
+      ...(input.parentSessionId?.trim() ? { parentSessionId: input.parentSessionId.trim() } : {}),
       apiProviderId: input.apiProviderId ?? this.defaultApiProviderId?.(input.harnessId ?? 'claude') ?? null,
       createdAt: now,
       updatedAt: now,
@@ -731,6 +740,9 @@ export class SessionRuntime {
     apply('apiProviderId')
 
     if (patch.claudeFastMode !== undefined && session.harnessId === 'claude') session.claudeFastMode = patch.claudeFastMode
+    if (session.harnessId === 'codex' && patch.permissionPreset !== undefined) {
+      session.permissionPreset = patch.permissionPreset
+    }
     session.updatedAt = Date.now()
     this.persist(session)
     this.events.appendSession({
@@ -743,6 +755,7 @@ export class SessionRuntime {
         model: session.model ?? null,
         effort: session.effort ?? null,
         ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
+        ...(session.harnessId === 'codex' ? { permissionPreset: session.permissionPreset ?? null } : {}),
         apiProviderId: session.apiProviderId ?? null,
       },
     })
@@ -750,9 +763,11 @@ export class SessionRuntime {
   }
 
   validateSettings(patch: NodeSessionSettings, harnessId?: string): void {
+    const codexPreset = patch.permissionPreset !== undefined && harnessId === 'codex'
+      && (patch.permissionPreset === null || isCodexPermissionPreset(patch.permissionPreset))
     if (patch.mode !== undefined || patch.agentPreset !== undefined || patch.additionalDirectories !== undefined
       || patch.ultracode !== undefined || patch.contextWindow !== undefined || patch.serviceTier !== undefined
-      || patch.permissionPreset !== undefined || patch.collaborationMode !== undefined || (patch.agent !== undefined && harnessId !== 'opencode')) {
+      || (patch.permissionPreset !== undefined && !codexPreset) || patch.collaborationMode !== undefined || (patch.agent !== undefined && harnessId !== 'opencode')) {
       throw Object.assign(new Error('This node does not support desktop harness settings'), { code: 'unsupported' })
     }
   }
@@ -826,6 +841,7 @@ export class SessionRuntime {
       // Fork inherits durable turn defaults so the child keeps model/effort/etc.
       permissionMode: source.permissionMode ?? null,
       sandboxMode: source.sandboxMode ?? null,
+      ...(source.permissionPreset ? { permissionPreset: source.permissionPreset } : {}),
       model: source.model ?? null,
       effort: source.effort ?? null,
       agent: source.agent ?? null,
@@ -1135,8 +1151,14 @@ export class SessionRuntime {
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
-    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer')))) {
+    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer')) && !(session.harnessId === 'codex' && key === 'permissionPreset'))) {
       throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
+    }
+    if (session.harnessId === 'codex' && input.permissionPreset !== undefined) {
+      if (input.permissionPreset !== null && !isCodexPermissionPreset(input.permissionPreset)) {
+        throw Object.assign(new Error('This node does not support desktop harness settings'), { code: 'unsupported' })
+      }
+      session.permissionPreset = input.permissionPreset
     }
     if (session.harnessId === 'opencode' && input.steer !== undefined && input.steer !== 'now')
       throw Object.assign(new Error('OpenCode only supports immediate steering'), { code: 'unsupported' })

@@ -13,6 +13,7 @@ import type {
   SessionMessagesListResult,
   WorkspaceEntry,
 } from '@superone/shared/environment'
+import type { TopicKind } from '@superone/shared/environment/topics'
 import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
@@ -511,8 +512,13 @@ export interface RpcContext {
 
   projects?: ProjectsPort
   terminals?: TerminalsPort
-  /** Workspace notices whose host already owns a snapshot and versioned change log. */
+  /**
+   * Workspace notices whose host already owns a snapshot and versioned change log.
+   * Absent `covers` means the publisher replaces the draft stream too (the desktop).
+   * A host that lists only `sessionList` keeps composer drafts on the draft stream.
+   */
   topicNotices?: {
+    covers?: readonly TopicKind[]
     open(input: {
       topics: TopicRef[]
       policy?: DeliveryPolicy

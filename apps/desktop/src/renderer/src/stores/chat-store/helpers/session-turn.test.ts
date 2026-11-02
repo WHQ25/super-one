@@ -300,7 +300,7 @@ describe('sessionTurnRequest', () => {
     })
   })
 
-  it('leaves the choices a node refuses out of its turns', () => {
+  it('sends the Codex permission preset to a node and keeps the desktop-only choices local', () => {
     codexSession(NODE)
 
     const request = sessionTurnRequest(useChatStore.getState(), NODE, 'codex-sid', {
@@ -309,8 +309,8 @@ describe('sessionTurnRequest', () => {
       inputRequest: { requestId: 'form-1', values: {} },
     })
 
-    expect(request).toMatchObject({ sessionId: 'codex-sid', projectPath: NODE, providerId: 'codex', turnKind: 'run', additionalDirectories: [] })
-    for (const key of ['priority', 'inputRequest', 'permissionPreset', 'serviceTier', 'threadId', 'agent', 'modelParams']) {
+    expect(request).toMatchObject({ sessionId: 'codex-sid', projectPath: NODE, providerId: 'codex', turnKind: 'run', additionalDirectories: [], permissionPreset: 'auto-review' })
+    for (const key of ['priority', 'inputRequest', 'serviceTier', 'threadId', 'agent', 'modelParams']) {
       expect(request).not.toHaveProperty(key)
     }
   })

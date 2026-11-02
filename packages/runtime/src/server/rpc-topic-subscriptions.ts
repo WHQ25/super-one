@@ -64,7 +64,9 @@ export function handleTopicSubscribe(payload: unknown, ctx: RpcContext, servesMe
         push: (event) => streams.push({ type: 'terminal', subscriptionId, event: ctx.terminals?.eventForClient?.(event, ctx.client.clientSessionId) ?? event }),
       })
     : null
-  const drafts = !ctx.topicNotices && ctx.drafts?.watch && servesMethod('draft.list')
+  const notices = ctx.topicNotices
+  const noticesReplaceDrafts = !!notices && (!notices.covers || notices.covers.includes('drafts'))
+  const drafts = !noticesReplaceDrafts && ctx.drafts?.watch && servesMethod('draft.list')
     ? openDraftStream({
         source: { watch: (listener) => ctx.drafts!.watch!(listener) },
         environmentId: ctx.identity.environmentId,

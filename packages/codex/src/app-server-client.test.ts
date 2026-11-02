@@ -189,7 +189,9 @@ describe('codex app-server client (Stage 4)', () => {
 
     await pump()
     const threadReq = JSON.parse(lines.find((l) => l.includes('"thread/start"'))!)
-    expect(threadReq.params.approvalPolicy).toBe('never')
+    expect(threadReq.params.approvalPolicy).toBe('on-request')
+    expect(threadReq.params.approvalsReviewer).toBe('auto_review')
+    expect(threadReq.params.sandbox).toBe('workspace-write')
     expect(threadReq.params.config.developer_instructions).toBe(`${SUPERONE_SYSTEM_PROMPT_APPEND}\n\ncaller extra`)
     expect(threadReq.params.config.mcp_servers.superone.url).toBe('http://127.0.0.1:9/mcp')
     child.stdout.write(
@@ -202,7 +204,10 @@ describe('codex app-server client (Stage 4)', () => {
 
     await pump()
     const turnReq = JSON.parse(lines.find((l) => l.includes('"turn/start"'))!)
+    expect(turnReq.params.approvalPolicy).toBe('on-request')
+    expect(turnReq.params.approvalsReviewer).toBe('auto_review')
     expect(turnReq.params.sandboxPolicy.writableRoots).toEqual([dir, join(dir, 'shared')])
+    expect(turnReq.params.sandboxPolicy.networkAccess).toBe(false)
     // Real ordering: turn/start result first (turn id only), then deltas, then completed.
     child.stdout.write(
       `${JSON.stringify({

@@ -2,6 +2,7 @@ import { installNodeRemoteContent } from './session/remote-content'
 import { nodeCodexAccountStore } from './session/codex-accounts'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { watchHarnessCatalogStamp } from './session/harness-catalog-watch'
+import { createNodeSessionListNotices } from './session/session-list-notices'
 import { AuthService } from './auth/auth-service'
 import { resolveRuntimeConfig, nodePaths, type NodeRuntimeConfig } from './config'
 import { openNodeDatabase, type NodeDatabase } from './db/database'
@@ -255,6 +256,13 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     },
   )
   sessionsRef = sessions
+  const sessionListNotices = createNodeSessionListNotices({
+    environmentId: identity.environmentId,
+    listSessions: () => sessions.list(),
+    getSession: (sessionId) => sessions.get(sessionId),
+    projectPath: (projectId) => projects.get(projectId)?.path ?? null,
+  })
+  const stopSessionListNotices = sessions.onEventsAppended((envelope) => sessionListNotices.onSessionEvent(envelope))
   const sessionProviders = createSessionProviderStore(db)
   const collaboration = new CollaborationService({
     db,
@@ -315,6 +323,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     bindPort: config.bindPort,
     startedAt,
     simulatedHarness,
+    topicNotices: sessionListNotices.topicNotices,
   })
 
   const catalogWatch = watchHarnessCatalogStamp({
@@ -370,6 +379,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     server,
     startedAt,
     async stop() {
+      stopSessionListNotices()
+      sessionListNotices.close()
       catalogWatch.close()
       // 1) Refuse new turns immediately (even while sockets still open).
       // 2) Stop accepting new RPC connections.

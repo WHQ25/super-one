@@ -71,9 +71,10 @@ export const codexStrategy: HarnessStrategy = {
     portable: {
       turnKind: turn.turnKind ?? 'run',
       ...(session.selectedCodexCollaborationMode ? { collaborationMode: session.selectedCodexCollaborationMode } : {}),
+      // A node applies this on the turn. Service tier and thread id stay on this desktop.
+      ...(session.selectedCodexPermissionPreset ? { permissionPreset: session.selectedCodexPermissionPreset } : {}),
     },
     desktop: {
-      ...(session.selectedCodexPermissionPreset ? { permissionPreset: session.selectedCodexPermissionPreset } : {}),
       serviceTier: session.selectedCodexServiceTier,
       ...(current._providerSessionId ? { threadId: current._providerSessionId } : {}),
     },

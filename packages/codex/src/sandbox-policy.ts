@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path'
+import type { CodexSandboxMode } from '@superone/shared/agent-types'
 
 export interface CodexWorkspaceWriteSandboxOptions {
   readOnlyAccess?: Record<string, unknown>
@@ -12,6 +13,22 @@ export function resolveCodexWritableRoots(cwd: string, additionalDirectories: re
     .filter((dir) => dir.trim().length > 0)
     .map((dir) => isAbsolute(dir) ? resolve(dir) : resolve(cwd, dir))
   return Array.from(new Set(roots))
+}
+
+/** Sandbox object for turn/start and thread/settings/update, matching the desktop turn. */
+export function buildCodexSandboxPolicy(
+  cwd: string,
+  profile: { sandboxMode: CodexSandboxMode; networkAccessEnabled: boolean },
+  additionalDirectories: readonly string[] = [],
+): Record<string, unknown> {
+  if (profile.sandboxMode === 'danger-full-access') return { type: 'dangerFullAccess' }
+  if (profile.sandboxMode === 'read-only') return { type: 'readOnly', access: { type: 'fullAccess' } }
+  return buildCodexWorkspaceWriteSandboxPolicy(cwd, additionalDirectories, {
+    readOnlyAccess: { type: 'fullAccess' },
+    networkAccess: profile.networkAccessEnabled,
+    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: false,
+  })
 }
 
 export function buildCodexWorkspaceWriteSandboxPolicy(

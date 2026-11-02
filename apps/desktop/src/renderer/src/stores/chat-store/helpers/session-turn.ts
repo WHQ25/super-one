@@ -285,8 +285,9 @@ export interface SessionTurnOptions {
 /**
  * The turn a session sends: its text and the selections it runs with, read
  * from the composer's session. A node remembers only its own defaults, so
- * every turn names them; the desktop's own choices (queue, harness pickers)
- * go only to this desktop's host, which a node refuses. `choices` preserves the
+ * every turn names them. Queue, service tier, and thread id stay on this
+ * desktop. The Codex permission preset travels with the turn, because a node
+ * applies it. `choices` preserves the
  * composer's selections across activation replay; thread identity stays live.
  */
 export function sessionTurnRequest(state: ChatStore, projectPath: string, sessionId: string, turn: SessionTurnOptions, choices?: PerSessionState): SessionSendRequest {

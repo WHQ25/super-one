@@ -19,10 +19,12 @@ export {
   type CodexSpawnFn,
 } from './app-server-client'
 export {
+  buildCodexSandboxPolicy,
   buildCodexWorkspaceWriteSandboxPolicy,
   resolveCodexWritableRoots,
   type CodexWorkspaceWriteSandboxOptions,
 } from './sandbox-policy'
+export { resolveCodexPermissionProfile } from './permission-profile'
 export {
   applySetAuth,
   cancelAccountLogin,

@@ -2,7 +2,7 @@ import { readAgentProfile } from '@superone/shared/agent-profile'
 import { isAbsolute } from 'node:path'
 import { normalizeSessionHarnessId, OPERATION_SCOPES } from '@superone/shared/environment'
 import { loadNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
-import { settingsFromSessionProviderConfig } from '../session/index'
+import { settingsFromSessionProviderConfig, type NodeSessionSettings } from '../session/index'
 import type { RpcContext, RpcResult } from './rpc-context'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { parseSessionSettings } from './session-settings'
@@ -143,7 +143,7 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
     )
     // A credential id on this node; null follows the node's provider binding.
     const apiProviderId = pick(options.apiProviderId, p.apiProviderId, undefined, null)
-    const extras = Object.fromEntries(['mode', 'agentPreset', 'additionalDirectories', 'ultracode', 'claudeFastMode', 'contextWindow', 'serviceTier', 'permissionPreset', 'collaborationMode', 'agent'].filter(key => Object.hasOwn(selectedSettings, key)).map(key => [key, selectedSettings[key as keyof typeof selectedSettings]]))
+    const extras = Object.fromEntries(['mode', 'agentPreset', 'additionalDirectories', 'ultracode', 'claudeFastMode', 'contextWindow', 'serviceTier', 'permissionPreset', 'collaborationMode', 'agent'].filter(key => Object.hasOwn(selectedSettings, key)).map(key => [key, selectedSettings[key as keyof typeof selectedSettings]])) as NodeSessionSettings
     if (Object.keys(extras).length) {
       if (!ctx.sessions.validateSettings) throw Object.assign(new Error('This host does not support desktop harness settings'), { code: 'unsupported' })
       ctx.sessions.validateSettings(extras, harnessId)
@@ -161,7 +161,10 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
       // clientSessionId; re-pair does not — acquireControl rebinds (see above).
       controllerClientSessionId: ctx.client.clientSessionId,
     }
-    const initialSettings = { ...extras, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permissionMode ? { permissionMode } : {}), ...(sandboxMode ? { sandboxMode } : {}) }
+    const codexPermissionPreset = harnessId === 'codex'
+      ? (extras.permissionPreset !== undefined ? extras.permissionPreset : defaults.permissionPreset)
+      : undefined
+    const initialSettings = { ...extras, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permissionMode ? { permissionMode } : {}), ...(sandboxMode ? { sandboxMode } : {}), ...(codexPermissionPreset !== undefined ? { permissionPreset: codexPermissionPreset } : {}) }
     const assertCreate = () => {
       if (!selections.draftId) return
       if (!ctx.drafts?.assertControl) throw Object.assign(new Error('Draft control is not supported on this host'), { code: 'unsupported' })
@@ -185,13 +188,14 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
     if (continuesFrom && continuation) continuation.continueSession!(continuesFrom, session.sessionId)
     // Seed durable settings from create-time options / profile / agent defaults so later
     // session.send without options reuses the same model/effort/etc.
-    if (!ctx.sessions.createOnHost && (model || effort || permissionMode || sandboxMode || Object.keys(extras).length)) {
+    if (!ctx.sessions.createOnHost && (model || effort || permissionMode || sandboxMode || codexPermissionPreset !== undefined || Object.keys(extras).length)) {
       session = await ctx.sessions.patchSettings(session.sessionId, {
         ...extras,
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
         ...(permissionMode ? { permissionMode } : {}),
         ...(sandboxMode ? { sandboxMode } : {}),
+        ...(codexPermissionPreset !== undefined ? { permissionPreset: codexPermissionPreset } : {}),
       })
     }
     return {

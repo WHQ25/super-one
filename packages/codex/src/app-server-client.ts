@@ -32,7 +32,8 @@ import { existsSync } from 'node:fs'
 import { buildSafeEnv } from '@superone/runtime/spawn-env'
 import { redactHarnessDiagnosticText } from '@superone/shared/environment'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { buildCodexWorkspaceWriteSandboxPolicy } from './sandbox-policy'
+import { resolveCodexPermissionProfile } from './permission-profile'
+import { buildCodexSandboxPolicy } from './sandbox-policy'
 import {
   createCodexAgentEventMapper,
   deriveCodexFinalResponse,
@@ -484,9 +485,12 @@ export async function ensureCodexThread(opts: {
   cwd: string
   threadId?: string | null
   threadConfig?: Record<string, unknown>
+  /** Codex permission preset. Unset uses the desktop default (`auto-review`). */
+  permissionPreset?: string | null
   signal?: AbortSignal
 }): Promise<string> {
   if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
+  const profile = resolveCodexPermissionProfile(opts.permissionPreset)
   const configPayload = { config: {
     ...opts.threadConfig,
     developer_instructions: superoneSystemPrompt(
@@ -499,8 +503,9 @@ export async function ensureCodexThread(opts: {
     const resumed = await opts.client.request('thread/resume', {
       threadId,
       cwd: opts.cwd,
-      approvalPolicy: 'never',
-      sandbox: 'workspace-write',
+      approvalPolicy: profile.approvalPolicy,
+      approvalsReviewer: profile.approvalsReviewer,
+      sandbox: profile.sandboxMode,
       ...configPayload,
     })
     const thread = asRecord(resumed.thread)
@@ -508,8 +513,9 @@ export async function ensureCodexThread(opts: {
   } else {
     const started = await opts.client.request('thread/start', {
       cwd: opts.cwd,
-      approvalPolicy: 'never',
-      sandbox: 'workspace-write',
+      approvalPolicy: profile.approvalPolicy,
+      approvalsReviewer: profile.approvalsReviewer,
+      sandbox: profile.sandboxMode,
       ...configPayload,
     })
     const thread = asRecord(started.thread)
@@ -596,6 +602,8 @@ export async function runCodexAppServerTurn(opts: {
    * Applied on both thread/start and thread/resume so SuperOne MCP attaches every turn.
    */
   threadConfig?: Record<string, unknown>
+  /** Codex permission preset. Unset uses the desktop default (`auto-review`). */
+  permissionPreset?: string | null
   /**
    * Called just before the request that submits the input (turn/start,
    * turn/steer, review/start, thread/compact/start): from then Codex may act
@@ -619,6 +627,7 @@ export async function runCodexAppServerTurn(opts: {
       cwd: opts.cwd,
       threadId,
       threadConfig: opts.threadConfig,
+      permissionPreset: opts.permissionPreset,
       signal: opts.signal,
     })
   } else if (!threadId) {
@@ -642,19 +651,24 @@ export async function runCodexAppServerTurn(opts: {
   let turnId: string | null = null
   let initialTurn: Record<string, unknown> | null = null
 
+  const profile = resolveCodexPermissionProfile(opts.permissionPreset)
+  const sandboxPolicy = buildCodexSandboxPolicy(opts.cwd, profile, opts.additionalDirectories)
+
   if (turnKind === 'compact') {
     await opts.client.request('thread/settings/update', {
       threadId,
-      approvalPolicy: 'never',
-      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
+      approvalPolicy: profile.approvalPolicy,
+      approvalsReviewer: profile.approvalsReviewer,
+      sandboxPolicy,
     })
     opts.onInputAccepted?.()
     await opts.client.request('thread/compact/start', { threadId })
   } else if (turnKind === 'review') {
     await opts.client.request('thread/settings/update', {
       threadId,
-      approvalPolicy: 'never',
-      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
+      approvalPolicy: profile.approvalPolicy,
+      approvalsReviewer: profile.approvalsReviewer,
+      sandboxPolicy,
     })
     opts.onInputAccepted?.()
     const reviewStartResult = await opts.client.request('review/start', compactRecord({
@@ -680,8 +694,9 @@ export async function runCodexAppServerTurn(opts: {
       ...(opts.reasoningEffort
         ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort, summary: 'concise' }
         : {}),
-      approvalPolicy: 'never',
-      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
+      approvalPolicy: profile.approvalPolicy,
+      approvalsReviewer: profile.approvalsReviewer,
+      sandboxPolicy,
       ...(collaborationMode ? { collaborationMode } : {}),
     }))
 

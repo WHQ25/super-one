@@ -96,9 +96,10 @@ describe('codex app-server client (Stage 4)', () => {
 
     await pump()
     const threadReq = JSON.parse(lines.find((l) => l.includes('"thread/start"'))!)
-    expect(JSON.parse(lines.find((l) => l.includes('thread/start'))!).params.approvalPolicy).toBe(
-      'never',
-    )
+    const threadParams = JSON.parse(lines.find((l) => l.includes('thread/start'))!).params
+    expect(threadParams.approvalPolicy).toBe('on-request')
+    expect(threadParams.approvalsReviewer).toBe('auto_review')
+    expect(threadParams.sandbox).toBe('workspace-write')
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',

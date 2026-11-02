@@ -25,9 +25,9 @@ function providerOptions(deps: CollaborationDeps) {
 }
 
 /**
- * The profile options a session on this node can start with: its runtime
- * takes the OpenCode agent at create and refuses every other harness setting
- * (`SessionRuntime.validateSettings`), so the rest never reach a launch here.
+ * The profile options a session on this node can start with. Codex permission
+ * presets are stored on the session itself. Other desktop harness settings are
+ * still refused (`SessionRuntime.validateSettings`).
  */
 const NODE_APPLIABLE_OPTIONS: readonly AgentProfileOptionKey[] = ['agent']
 

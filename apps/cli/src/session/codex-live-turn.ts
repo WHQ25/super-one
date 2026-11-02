@@ -11,7 +11,8 @@ import {
   deriveCodexFinalResponse,
   type CodexAppServerHandle,
   type CodexAppServerTurnResult,
-  buildCodexWorkspaceWriteSandboxPolicy,
+  buildCodexSandboxPolicy,
+  resolveCodexPermissionProfile,
 } from '@superone/codex'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
@@ -78,6 +79,8 @@ export async function openTurnAndStream(opts: {
   parentTurnId?: string
   rootTurnId?: string
   model?: string
+  /** Codex permission preset. Unset uses the desktop default (`auto-review`). */
+  permissionPreset?: string | null
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   collaborationMode?: Record<string, unknown> | string | null
   mcpAppBinding?: (server: string) => McpAppsBinding
@@ -96,6 +99,7 @@ export async function openTurnAndStream(opts: {
     opts.model,
     opts.reasoningEffort,
   )
+  const profile = resolveCodexPermissionProfile(opts.permissionPreset)
 
   // From here Codex may run the input, even if the turn/start response is lost.
   opts.onInputAccepted?.()
@@ -114,8 +118,9 @@ export async function openTurnAndStream(opts: {
             summary: 'concise',
           }
         : {}),
-      approvalPolicy: 'never',
-      sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
+      approvalPolicy: profile.approvalPolicy,
+      approvalsReviewer: profile.approvalsReviewer,
+      sandboxPolicy: buildCodexSandboxPolicy(opts.cwd, profile, opts.additionalDirectories),
       ...(collaborationMode ? { collaborationMode } : {}),
     }),
   )

@@ -171,6 +171,22 @@ describe('SessionRuntime question / plan', () => {
     expect(runtime.get(session.sessionId)?.model).toBe('original')
   })
 
+  it('persists a Codex permission preset from settings and from the turn', async () => {
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner({ delayMs: 5, chunks: ['ok'] }))
+    const session = runtime.create({ projectId: 'p1', harnessId: 'codex', permissionPreset: 'read-only' })
+    expect(runtime.get(session.sessionId)?.permissionPreset).toBe('read-only')
+    expect(store.loadAll()[0]?.permissionPreset).toBe('read-only')
+    runtime.patchSettings(session.sessionId, { permissionPreset: 'auto-review' })
+    expect(store.loadAll()[0]?.permissionPreset).toBe('auto-review')
+    await runtime.send({ sessionId: session.sessionId, text: 'go', permissionPreset: 'full-access', client, ...lease })
+    await waitIdle(runtime, session.sessionId)
+    expect(runtime.get(session.sessionId)?.permissionPreset).toBe('full-access')
+    expect(store.loadAll()[0]?.permissionPreset).toBe('full-access')
+    await expect(runtime.send({ sessionId: session.sessionId, text: 'nope', permissionPreset: 'inherit', client, ...lease })).rejects.toThrow('does not support desktop harness settings')
+    await runtime.dispose()
+  })
+
   it('persists OpenCode agent selection and an early native resume id even when preparation later fails', async () => {
     const { store, events, leases } = memoryPorts()
     const runtime = new SessionRuntime(store, events, leases, 'env-q', async (input) => {

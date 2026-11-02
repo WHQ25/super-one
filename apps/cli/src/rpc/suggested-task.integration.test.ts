@@ -81,7 +81,8 @@ describe('suggested tasks stay on their source execution environment', () => {
     const restored = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true }); runtimes.push(restored)
     expect(restored.sessions.get(sessionId)?.claudeFastMode).toBe(true)
     expect(findSuggestedTask(restored.sessions.messages(sessionId), taskId)?.state).toEqual({ status: 'launched', sessionId: launched.sessionId })
-  })
+    // Boot, launch, and a second runtime start exceed the 5s default on CI.
+  }, 20_000)
 
   it('creates the node task worktree from the source checkout HEAD and fences a stale proof', async () => {
     const { rt, rpc, sessionId, root, projectId } = await boot(true)

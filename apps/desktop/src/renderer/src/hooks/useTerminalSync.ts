@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
-import { parseRemoteTerminalKey } from '@superone/shared/remote-resource-key'
+import { parseRemoteProjectKey, parseRemoteTerminalKey } from '@superone/shared/remote-resource-key'
 import { useAppStore } from '@/stores/app'
 import { useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from './useTerminalPanel'
@@ -21,6 +21,22 @@ export function tabBelongsToProject(item: Pick<TerminalListItem, 'cwd' | 'projec
  */
 export function tabShowsInTerminalPanel(item: Pick<TerminalListItem, 'cwd' | 'projectPath' | 'agentSessionId' | 'openedInActivity'>, projectPath: string): boolean {
   return !item.agentSessionId && !item.openedInActivity && tabBelongsToProject(item, projectPath)
+}
+
+/**
+ * Session id to pass to `terminal.create`. A remote draft id is not a session
+ * on the node; passing it makes create fail and the panel stays empty. Omit
+ * it and the node opens at the project path. A local id is always passed:
+ * this machine resolves a missing session to the project path itself.
+ */
+export function terminalCreateSessionId(
+  projectPath: string,
+  sessionId: string | null | undefined,
+  hostSessionOwned: boolean,
+): string | undefined {
+  if (!sessionId) return undefined
+  if (parseRemoteProjectKey(projectPath) && !hostSessionOwned) return undefined
+  return sessionId
 }
 
 /**

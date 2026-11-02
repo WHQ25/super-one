@@ -207,6 +207,17 @@ describe('terminal control delegates', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
+  it('opens a session the host does not have yet at the project path', async () => {
+    const create = vi.fn(input => ({ terminalId: 'new', ...input }))
+    const ctx = projectsOnlyHost({
+      terminals: { create } as unknown as RpcContext['terminals'],
+      sessions: { get: () => null } as unknown as SessionHostPort,
+    })
+    const payload = { projectId: 'p1', sessionId: 'draft' }
+    expect(await dispatchRpc('terminal.create', payload, ctx)).toMatchObject({ result: { cwd: '/tmp/p1' } })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/tmp/p1', projectPath: '/tmp/p1' }))
+  })
+
   it('passes delegate through acquire and yields only to the caller\'s own delegates, as session control does', async () => {
     const acquire = vi.fn(() => ({ leaseId: 'lease' }))
     const ctx = projectsOnlyHost({

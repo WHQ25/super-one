@@ -11,7 +11,7 @@ import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
-import { tabShowsInTerminalPanel } from '@/hooks/useTerminalSync'
+import { tabShowsInTerminalPanel, terminalCreateSessionId } from '@/hooks/useTerminalSync'
 import { TerminalRemoteBanner } from './TerminalRemoteBanner'
 import { TERMINAL_HEADER_ITEM as HEADER_ITEM, TerminalTabStrip } from './TerminalTabStrip'
 import { terminalHolder } from './terminal-holder'
@@ -141,7 +141,11 @@ export function TerminalPanel() {
     if (!projectPath || creatingRef.current) return
     creatingRef.current = true
     try {
-      const item = await window.terminal.create({ projectPath, sessionId: sessionId ?? undefined })
+      const owned = useChatStore.getState().projectSessions[projectPath]?._sessions[sessionId ?? '']?.hostSessionOwned === true
+      const item = await window.terminal.create({
+        projectPath,
+        sessionId: terminalCreateSessionId(projectPath, sessionId, owned),
+      })
       upsertTab(projectPath, item, true)
       creatingRef.current = false
     } catch (e) {

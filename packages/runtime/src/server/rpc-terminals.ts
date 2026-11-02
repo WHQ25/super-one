@@ -54,7 +54,11 @@ function terminalWorkspace(payload: Record<string, unknown>, ctx: RpcContext): {
   if (payload.sessionId === undefined) return { projectPath: project.path, cwd: project.path }
   if (typeof payload.sessionId !== 'string' || !payload.sessionId) throw Object.assign(new Error('sessionId must be a nonempty string'), { code: 'invalid_argument' })
   const session = ctx.sessions?.get(payload.sessionId)
-  if (!session || session.projectId !== project.projectId) throw Object.assign(new Error('session not found in project'), { code: 'not_found' })
+  // A composer draft id is not a session here yet. Open at the project, as a
+  // local terminal does when that session is not running. A session that
+  // belongs to another project is still refused.
+  if (!session) return { projectPath: project.path, cwd: project.path }
+  if (session.projectId !== project.projectId) throw Object.assign(new Error('session not found in project'), { code: 'not_found' })
   return { projectPath: project.path, cwd: session.cwd ?? project.path }
 }
 

@@ -38,9 +38,11 @@ row instead of taking a 44 pt row of their own: dismiss is drawn at 28 pt with
 the end rather than offering a Load more row (`ui/composer-suggestions.tsx`).
 Phone layout: status row above a bordered input, Return inserts a newline.
 With the keyboard down, voice and Send share the input's right edge, voice first.
-With it up, both move together to the upper action row; attachment/slash/mention
-actions scroll horizontally on narrow phones. Send stays hidden for an empty draft
-without attachments. During a call in the voice view, the compact bottom voice
+A draft that wraps past one line while Stop is outside the box moves that
+delivery cluster under Stop, so the text keeps the column; one line leaves Send
+inside. With the keyboard up, both stay together on the upper action row;
+attachment/slash/mention actions scroll horizontally on narrow phones. Send
+stays hidden for an empty draft without attachments. During a call in the voice view, the compact bottom voice
 Composer replaces the text surface while retaining its mounted draft editor;
 pending native decisions have priority. The top-right session menu switches between
 voice and backing Codex histories. Outside the live voice view, a circular audio-driven

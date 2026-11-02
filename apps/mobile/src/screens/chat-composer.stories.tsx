@@ -247,6 +247,28 @@ export const PhoneFocusedStop = {
   name: 'Phone · focused send and stop',
 }
 
+const wrappedDraft = '修复远程节点 harness 状态是这个 session，用真实数据实测，桌面端和移动端的渲染，先测试复现问题，然后修复'
+
+export const PhoneCollapsedOneLineStop = {
+  args: { tablet: false, focused: false, streaming: true, draft: '短草稿' },
+  name: 'Phone · collapsed one-line send stays in the field',
+}
+
+export const PhoneCollapsedWrappedStop = {
+  args: { tablet: false, focused: false, streaming: true, draft: wrappedDraft },
+  name: 'Phone · collapsed wrapped send sits under stop',
+}
+
+export const PhoneCollapsedWrappedStopLight = {
+  args: { tablet: false, focused: false, streaming: true, draft: wrappedDraft, frameWidth: 320, colorScheme: 'light', locale: 'zh' },
+  name: 'Phone · collapsed wrapped send under stop, narrow light Chinese',
+}
+
+export const PhoneFocusedWrappedStop = {
+  args: { tablet: false, focused: true, streaming: true, draft: wrappedDraft },
+  name: 'Phone · keyboard up keeps wrapped send on the action row',
+}
+
 function StreamingScheduledSendPreview({ focused = true, tablet = false, light = false }: {
   focused?: boolean; tablet?: boolean; light?: boolean
 }) {

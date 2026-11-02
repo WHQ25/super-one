@@ -505,6 +505,105 @@ test('a special next turn draws its mode border on the phone and tablet input, a
   expect(screen.queryByTestId('composer-mode-border')).toBeNull()
 })
 
+const buttonLabels = (id: string) => within(screen.getByTestId(id)).getAllByRole('button').map((button) => button.props.accessibilityLabel)
+
+async function measureComposerColumn(width: number) {
+  await act(async () => {
+    fireEvent(screen.getByTestId('composer-text-column'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width, height: 42 } },
+    })
+  })
+}
+
+async function reportComposerLines(count: number) {
+  const measure = screen.getByTestId('phone-composer-line-measure', { includeHiddenElements: true })
+  await act(async () => {
+    fireEvent(measure, 'textLayout', {
+      nativeEvent: { lines: Array.from({ length: count }, () => ({ text: 'x' })) },
+    })
+  })
+}
+
+test('a collapsed one-line phone keeps Send inside the field and Stop outside', async () => {
+  await renderWithTheme(composer({ tablet: false, streaming: true, draft: '短' }))
+  await measureComposerColumn(220)
+  await reportComposerLines(1)
+
+  expect(screen.queryByTestId('phone-composer-side-actions')).toBeNull()
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Send')).toBeTruthy()
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Stop')).toBeNull()
+  expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test('a collapsed phone puts Send under Stop once the draft wraps, and keeps that width when the field grows', async () => {
+  const onSend = jest.fn()
+  const onStop = jest.fn()
+  const view = await renderWithTheme(composer({ tablet: false, streaming: true, draft: '修复远程节点 harness 状态，用真实数据实测桌面端和移动端', onSend, onStop }))
+  await measureComposerColumn(200)
+  await reportComposerLines(2)
+
+  expect(buttonLabels('phone-composer-side-actions')).toEqual(['Stop', 'Send'])
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Send')).toBeNull()
+  expect(screen.getByTestId('phone-composer-line-measure', { includeHiddenElements: true }).props.style.width).toBe(200)
+
+  await measureComposerColumn(246)
+  expect(screen.getByTestId('phone-composer-line-measure', { includeHiddenElements: true }).props.style.width).toBe(200)
+  expect(screen.getByTestId('phone-composer-side-actions')).toBeTruthy()
+
+  await act(async () => { fireEvent.press(screen.getByLabelText('Send')) })
+  await act(async () => { fireEvent.press(screen.getByLabelText('Stop')) })
+  expect(onSend).toHaveBeenCalledTimes(1)
+  expect(onStop).toHaveBeenCalledTimes(1)
+
+  await view.rerender(composer({ tablet: false, streaming: true, draft: '短', onSend, onStop }))
+  await reportComposerLines(1)
+  expect(screen.queryByTestId('phone-composer-side-actions')).toBeNull()
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Send')).toBeTruthy()
+})
+
+test('a collapsed multiline phone stacks voice with Send under Stop', async () => {
+  await renderWithTheme(composer({
+    tablet: false, streaming: true, draft: '第一行\n第二行',
+    voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} />,
+  }))
+
+  expect(buttonLabels('phone-composer-side-actions')).toEqual(['Stop', 'Start voice', 'Send'])
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Send')).toBeNull()
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Start voice')).toBeNull()
+})
+
+test('a hard line break stacks Send under Stop before the field is measured', async () => {
+  await renderWithTheme(composer({ tablet: false, streaming: true, draft: '第一行\n第二行' }))
+
+  expect(buttonLabels('phone-composer-side-actions')).toEqual(['Stop', 'Send'])
+  expect(screen.queryByTestId('phone-composer-line-measure', { includeHiddenElements: true })).toBeNull()
+})
+
+test('keyboard up keeps a wrapped draft on the action row', async () => {
+  await renderWithTheme(composer({ tablet: false, focused: true, streaming: true, draft: '第一行\n第二行' }))
+
+  expect(screen.queryByTestId('phone-composer-side-actions')).toBeNull()
+  expect(within(screen.getByTestId('phone-composer-actions')).getByLabelText('Send')).toBeTruthy()
+  expect(within(screen.getByTestId('phone-composer-actions')).getByLabelText('Stop')).toBeTruthy()
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Send')).toBeNull()
+})
+
+test('a wrapped draft without Stop keeps Send inside the field', async () => {
+  await renderWithTheme(composer({ tablet: false, streaming: false, draft: '第一行\n第二行' }))
+
+  expect(screen.queryByTestId('phone-composer-side-actions')).toBeNull()
+  expect(screen.queryByLabelText('Stop')).toBeNull()
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Send')).toBeTruthy()
+})
+
+test('a tablet keeps a wrapped draft in the boxed row', async () => {
+  await renderWithTheme(composer({ tablet: true, streaming: true, draft: '第一行\n第二行' }))
+
+  expect(screen.queryByTestId('phone-composer-side-actions')).toBeNull()
+  expect(within(screen.getByTestId('tablet-composer')).getByLabelText('Send')).toBeTruthy()
+  expect(within(screen.getByTestId('tablet-composer')).getByLabelText('Stop')).toBeTruthy()
+})
+
 test('the model trigger carries Ultracode\'s mark while the switch is on, as the desktop selector does', async () => {
   const selection = (on: boolean): ChatComposerProps['selection'] => ({
     model: 'opus', models: [{ id: 'opus', name: 'Opus', description: '', supportedEffortLevels: ['high', 'xhigh'] }],

@@ -18,7 +18,7 @@ import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { shouldUseTabletComposer } from '../layout-state'
 import { useKeyboardVisible } from '../ui/use-keyboard-visible'
-import { COMPOSER_HORIZONTAL_INSET, COMPOSER_TOP_GAP, PHONE_COMPOSER_RADIUS, composerBottomGap } from '../ui/composer-frame'
+import { COMPOSER_HORIZONTAL_INSET, COMPOSER_TOP_GAP, PHONE_COMPOSER_RADIUS, collapsedPhoneStacksDelivery, composerBottomGap } from '../ui/composer-frame'
 import type {
   HarnessId, ModelOption, ImageAttachment, RemoteActiveProvider, RemoteAgentOption,
   RemoteEffortOption, RemoteModeOption, RemoteProviderOption, SandboxInfo, SandboxMode,
@@ -38,6 +38,7 @@ import { isSessionMentionQuery } from '../session-mention'
 import { isGitMentionQuery } from '../git-mention'
 import type { MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
+import { Text } from '../ui/text'
 import { AdditionalDirsChip, ContextRing, GoalChip, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
 import type { UsageMeterProps } from '../ui/usage-panel'
 import { CHIP_HEIGHT } from '../ui/chip-metrics'
@@ -173,6 +174,11 @@ export function ChatComposer(props: ChatComposerProps) {
   const mode = props.loadingConversation ? null : props.composerMode ?? null
   const { width, height } = useWindowDimensions()
   const tablet = props.tablet ?? shouldUseTabletComposer(width, height)
+  // Line count counts only with a column width from this window, measured while
+  // Send is still inside the field. After a rotation the sample is stale until
+  // the next collapsed layout records the new width.
+  const [lineSample, setLineSample] = useState({ windowWidth: width, columnWidth: 0, lines: 1 })
+  const lineSampleReady = lineSample.windowWidth === width && lineSample.columnWidth > 0
   const [inputFocused, setInputFocused] = useState(false)
   const [schedulePanelOpen, setSchedulePanelOpen] = useState(false)
   const [mcpPreview, setMcpPreview] = useState<{ value: string; anchor: AnchorRect } | null>(null)
@@ -249,6 +255,17 @@ export function ChatComposer(props: ChatComposerProps) {
   // Move both delivery modes together without remounting the native editor.
   const phoneDelivery = voiceEntry || send ? <View testID="phone-composer-delivery"
     style={{ flexDirection: 'row', alignItems: 'center' }}>{voiceEntry}{send}</View> : null
+  const collapsedPhone = !tablet && !phoneActions
+  // Stop is already a column beside the field. A second line of draft puts
+  // voice and Send under it instead of spending that column twice.
+  const stackDelivery = collapsedPhoneStacksDelivery({
+    collapsed: collapsedPhone,
+    hasStop: stop !== null,
+    hasDelivery: phoneDelivery !== null,
+    draft: props.draft,
+    measuredWidth: lineSampleReady ? lineSample.columnWidth : 0,
+    measuredLines: lineSampleReady ? lineSample.lines : 1,
+  })
   const sendCluster = <>{steerSoon}{steer}{tablet ? send : phoneDelivery}{stop}</>
   const actionBar = phoneActions ? <View testID="phone-composer-actions" style={{ flexDirection: 'row', alignItems: 'center' }}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
@@ -268,6 +285,14 @@ export function ChatComposer(props: ChatComposerProps) {
   // `keyboardShouldPersistTaps` keeps `/` and `@` from dismissing the keyboard
   // before they can write into the still-focused field.
   return <View style={{ paddingHorizontal: COMPOSER_HORIZONTAL_INSET, paddingTop: COMPOSER_TOP_GAP, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
+    {/* Outside the field: its border clips overflow, and a clipped measure can miss a wrap. */}
+    {!tablet && lineSampleReady && props.draft ? <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={{ position: 'absolute', opacity: 0, left: 0, top: 0, width: lineSample.columnWidth }}>
+      <Text key={props.draft} testID="phone-composer-line-measure" onTextLayout={(event) => {
+        const next = Math.max(1, event.nativeEvent.lines.length)
+        setLineSample((current) => current.lines === next ? current : { ...current, lines: next })
+      }} style={{ width: lineSample.columnWidth, fontSize: 15, lineHeight: 22, paddingHorizontal: 12 }}>{props.draft}</Text>
+    </View> : null}
     {!tablet && !props.loadingConversation ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: CHIP_HEIGHT }}>{controls}</View> : null}
     {props.overlay ?? <>
       {/* Only while there is nothing to send: a draft, or a typed `/` or `@`, is an
@@ -300,7 +325,18 @@ export function ChatComposer(props: ChatComposerProps) {
               {props.previewMcpMention ? <McpMentionPreviewMenu press={mcpPreview} read={props.previewMcpMention} onDismiss={() => setMcpPreview(null)} /> : null}
               {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
               <View testID="composer-input-row" style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                <View style={{ flex: 1 }}>
+                <View testID="composer-text-column" collapsable={false} style={{ flex: 1 }} onLayout={(event) => {
+                  // The stacked field is wider by the delivery cluster. Recording
+                  // that width would decide the draft fits on one line and put
+                  // Send back inside, which wraps it again.
+                  if (!collapsedPhone || stackDelivery) return
+                  const columnWidth = Math.round(event.nativeEvent.layout.width)
+                  if (columnWidth <= 0) return
+                  setLineSample((current) => {
+                    if (current.windowWidth === width && Math.abs(current.columnWidth - columnWidth) <= 1) return current
+                    return { windowWidth: width, columnWidth, lines: current.windowWidth === width ? current.lines : 1 }
+                  })
+                }}>
                   {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
                     editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
                     promptKeywords={HARNESS_CAPABILITIES[props.provider].promptKeywords}
@@ -320,11 +356,12 @@ export function ChatComposer(props: ChatComposerProps) {
                     onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
                   />}
                 </View>
-                {!tablet && !phoneActions && phoneDelivery ? <View style={{ paddingRight: 2, paddingBottom: 2 }}>{phoneDelivery}</View> : null}
+                {!tablet && !phoneActions && !stackDelivery && phoneDelivery ? <View style={{ paddingRight: 2, paddingBottom: 2 }}>{phoneDelivery}</View> : null}
               </View>
             </View>
           </View>
           {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{sendCluster}{voiceEntry}</View>
+            : stackDelivery ? <View testID="phone-composer-side-actions" style={{ alignItems: 'center' }}>{stop}{phoneDelivery}</View>
             : phoneActions ? null : stop}
         </View>
       </View>

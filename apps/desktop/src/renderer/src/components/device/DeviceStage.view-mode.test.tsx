@@ -20,6 +20,7 @@ vi.mock('./DeviceModelView', () => ({
   },
 }))
 
+import { HINGE_DWELL_MS } from './DeviceHingeControl'
 import { resetDeviceSurfaces } from './device-surface'
 import { deviceModelKey } from './device-3d'
 import { DeviceStage } from './DeviceStage'
@@ -184,12 +185,76 @@ describe('device view mode switch', () => {
     const slider = await screen.findByRole('slider', { name: 'Hinge Angle' })
     // Dragged through, a form only bends the body: it stays open, as held.
     for (const value of ['100', '45']) fireEvent.change(slider, { target: { value } })
-    expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45 })
+    expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45, hold: true })
     expect(modelViews.rotations.at(-1)).toBe(270)
     // Sent there, a tent: the cover turned to the camera and held a quarter clockwise, as the host will.
     fireEvent.pointerUp(slider)
     expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45, facing: 'cover' })
     expect(modelViews.rotations.at(-1)).toBe((90 + 270) % 360)
+  })
+
+  it('holds an opening past the laptop as a book, inner screen to the camera', async () => {
+    localStorage.setItem('superone.device.view3d', 'true')
+    const device = simulator('iPhone 17 Pro')
+    const closed = { hingeDegrees: 0, tent: false, laptop: false, panel: 'cover' as const, panelRotation: 0 as const }
+    renderStage(device, { ...ready(device), ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true, fold: closed } })
+    window.environment.deviceConfigure = vi.fn(() => new Promise<never>(() => {}))
+    await screen.findByTestId('device-model-view')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hinge Angle' }))
+    const slider = await screen.findByRole('slider', { name: 'Hinge Angle' })
+    const rotation = modelViews.rotations.at(-1)
+    fireEvent.change(slider, { target: { value: '150' } })
+    // Still dragging: the clip follows, and the body stays the closed cover where it stands.
+    expect(modelViews.folds.at(-1)).toEqual({ ...closed, hingeDegrees: 150, hold: true })
+    expect(modelViews.rotations.at(-1)).toBe(rotation)
+
+    fireEvent.pointerUp(slider)
+    expect(window.environment.deviceConfigure).toHaveBeenCalledWith(device.id, { kind: 'hinge', degrees: 150 })
+    expect(modelViews.folds.at(-1)).toEqual({ ...closed, hingeDegrees: 150, facing: 'inner' })
+  })
+
+  it('holds an opening between the tent and the laptop as the same book', async () => {
+    localStorage.setItem('superone.device.view3d', 'true')
+    const device = simulator('iPhone 17 Pro')
+    const closed = { hingeDegrees: 0, tent: false, laptop: false, panel: 'cover' as const, panelRotation: 0 as const }
+    renderStage(device, { ...ready(device), ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true, fold: closed } })
+    window.environment.deviceConfigure = vi.fn(() => new Promise<never>(() => {}))
+    await screen.findByTestId('device-model-view')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hinge Angle' }))
+    const slider = await screen.findByRole('slider', { name: 'Hinge Angle' })
+    fireEvent.change(slider, { target: { value: '70' } })
+    expect(modelViews.folds.at(-1)).toEqual({ ...closed, hingeDegrees: 70, hold: true })
+
+    fireEvent.pointerUp(slider)
+    expect(window.environment.deviceConfigure).toHaveBeenCalledWith(device.id, { kind: 'hinge', degrees: 70 })
+    expect(modelViews.folds.at(-1)).toEqual({ ...closed, hingeDegrees: 70, facing: 'inner' })
+  })
+
+  it('keeps the pose while a rest has already sent the guest', async () => {
+    localStorage.setItem('superone.device.view3d', 'true')
+    const device = simulator('iPhone 17 Pro')
+    const open = { hingeDegrees: 180, tent: false, laptop: false, panel: 'inner' as const, panelRotation: 270 as const }
+    renderStage(device, { ...ready(device), ios: { previewMode: 'native-h264', hardwareKeyboardConnected: true, hardwareKeyboardAvailable: true, fold: open } })
+    window.environment.deviceConfigure = vi.fn(() => new Promise<never>(() => {}))
+    await screen.findByTestId('device-model-view')
+    fireEvent.click(screen.getByRole('button', { name: 'Hinge Angle' }))
+    const slider = await screen.findByRole('slider', { name: 'Hinge Angle' })
+    vi.useFakeTimers()
+    try {
+      fireEvent.change(slider, { target: { value: '45' } })
+      act(() => { vi.advanceTimersByTime(HINGE_DWELL_MS) })
+      expect(window.environment.deviceConfigure).toHaveBeenCalledWith(device.id, { kind: 'hinge', degrees: 45 })
+      expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45, hold: true })
+      expect(modelViews.rotations.at(-1)).toBe(270)
+
+      fireEvent.pointerUp(slider)
+      expect(modelViews.folds.at(-1)).toEqual({ ...open, hingeDegrees: 45, facing: 'cover' })
+      expect(modelViews.rotations.at(-1)).toBe((90 + 270) % 360)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('offers no switch for a device this machine has no 3D body for', async () => {

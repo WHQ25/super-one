@@ -290,7 +290,13 @@ export function DeviceStage({
   const [fold, setFold] = useState<IosSimulatorFoldState | null>(null)
   // The angle the hinge slider is being dragged to; the 3D body runs ahead of the guest to it.
   const [hingePreview, setHingePreview] = useState<number | null>(null)
+  // True only while that drag is held. The pose and the camera wait until it ends;
+  // `hingePreview` stays on after a release that does not send the guest.
+  const [hingeScrubbing, setHingeScrubbing] = useState(false)
   const [formPreview, setFormPreview] = useState<number | null>(null)
+  // The stage turn on screen before a drag. Kept as state, not a ref written while
+  // rendering: a drag must not follow a form the guest adopts underneath it.
+  const [pinnedRotation, setPinnedRotation] = useState(0)
   const ready = sessionState?.phase === 'ready'
   // The preview is look-only, and the input pipeline has to know it: a hidden keyboard
   // sink that can still take focus, or a touch pointer drawn over a device nobody can
@@ -513,6 +519,12 @@ export function DeviceStage({
   const panel = fold?.panel
   const held = formPreview === null ? null : iosSimulatorFoldAt(formPreview)!
   const heldPanel = held && iosSimulatorFoldPanel(held)
+  // An unfold, on either side of a laptop, is a book. Pose it that way once the drag
+  // ends, before the guest arrives: kept in the form it left, the body stays tipped
+  // over. While the pointer is down the body only scrubs, so this waits.
+  const scrubbing = hingeScrubbing && hingePreview !== null
+  const aimed = hingePreview === null ? null : iosSimulatorFoldAt(hingePreview)
+  const book = aimed && iosSimulatorFoldForm(aimed.hingeDegrees) === 'open' ? aimed : null
   const [litPanel, setLitPanel] = useState(panel)
   const [panelSwap, setPanelSwap] = useState(false)
   // Adjusted during render: an effect would leave one unblurred frame between the
@@ -537,18 +549,34 @@ export function DeviceStage({
   }, [panelSwap, panel, deviceId])
   const blurred = panelSwap || (heldPanel !== null && panel !== undefined && heldPanel !== panel)
   /**
-   * The 3D body bends with the drag, and takes the form the device is sent to ahead of
-   * the guest: laid down, and turned the way the host holds a new form, so it is in
-   * place before the new panel's picture lands. A send past the other panel's angle
-   * turns that panel to the camera, dark until the guest swaps to it.
+   * While the hinge is held — a drag, or a click still travelling — the body only scrubs
+   * its clip, and the half without the cover stays where it stands: no pose, no tilt, no
+   * camera angle. The frame slides so the phone stays centered, and pulls back only when
+   * that centered phone does not fit. When the hold ends the view turns once, by the
+   * smallest angle, to the form the device is sent to —
+   * an unfold, the book — ahead of the guest.
+   * Laid down, and turned the way the host holds that form, so it is in place before the
+   * new panel's picture lands. A send past the other panel's angle turns that panel to
+   * the camera, dark until the guest swaps to it.
    */
-  const heldForm = held && iosSimulatorFoldForm(held.hingeDegrees)
+  const shown = scrubbing ? null : (book ?? held)
+  const shownPanel = shown ? iosSimulatorFoldPanel(shown) : null
+  const shownForm = shown && iosSimulatorFoldForm(shown.hingeDegrees)
   const modelFold = fold && hingePreview !== null
-    ? { ...fold, hingeDegrees: hingePreview, ...(held ? { laptop: held.laptop, facing: heldPanel! } : {}) }
+    ? {
+        ...fold,
+        hingeDegrees: hingePreview,
+        ...(shown ? { laptop: shown.laptop, facing: shownPanel! } : {}),
+        ...(scrubbing ? { hold: true } : {}),
+      }
     : fold
-  const modelRotation = fold && heldForm && heldForm !== iosSimulatorFoldForm(fold.hingeDegrees)
-    ? deviceLayoutRotation(provider, IOS_SIMULATOR_FOLD_FORM_ORIENTATION[heldForm], fold)
+  const posedRotation = fold && shownForm && shownForm !== iosSimulatorFoldForm(fold.hingeDegrees)
+    ? deviceLayoutRotation(provider, IOS_SIMULATOR_FOLD_FORM_ORIENTATION[shownForm], fold)
     : layoutRotation
+  // Remember the turn while nothing is dragging, the same way a panel swap is recorded
+  // above. The drag then keeps that turn: the guest, or the book, can change it underneath.
+  if (!scrubbing && pinnedRotation !== posedRotation) setPinnedRotation(posedRotation)
+  const modelRotation = scrubbing ? pinnedRotation : posedRotation
 
   // Unplugging the simulated hardware keyboard is the only way to raise the guest's
   // on-screen one -- iOS shows that exactly when a field has focus and no hardware
@@ -912,7 +940,16 @@ export function DeviceStage({
           </>
         )}
         {/* Hinge, like rotation, is a guest setting rather than input. */}
-        {fold && <DeviceHingeControl deviceId={deviceId} fold={fold} disabled={busy || !ready} onPreview={setHingePreview} onFormPreview={setFormPreview} />}
+        {fold && (
+          <DeviceHingeControl
+            deviceId={deviceId}
+            fold={fold}
+            disabled={busy || !ready}
+            onPreview={setHingePreview}
+            onFormPreview={setFormPreview}
+            onScrubbing={setHingeScrubbing}
+          />
+        )}
         {/* Capture only needs the device running, not interactive: both platforms
             read the display directly rather than through the input transport. */}
         <DeviceCaptureControls

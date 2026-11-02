@@ -58,12 +58,15 @@ screen 1 is the cover (chrome `phone15`) and screen 3 the inner panel (`phone14`
 `nativeRotation` 270). It boots closed. Screen power does not follow the fold, so the
 host tracks the hinge angle itself (`IosSimulatorManager`, closed on boot) and streams,
 captures and touches the lit panel by screen id. The angle alone picks the form
-(`iosSimulatorFoldAt`): 0° closed on the cover, up to 60° a tent on the cover, 90-120°
-a laptop on the inner screen, any other opening open on the inner screen. The toolbar's
+(`iosSimulatorFoldAt`): 0–30° closed on the cover, 31–60° a tent on the cover, 61–80°
+an open book on the inner screen, 81–120° a laptop, and 121–180° an open book again. The toolbar's
 hinge control is one 0-180° slider whose stops are the named postures' angles (0, 45,
-90, 180); a drag snaps to a stop within 3°. The 3D body follows the drag across every
-form; the guest moves on release, or when the drag rests on a stop for 0.5s, one move at
-a time with the latest target next. The emulator's posture ids stay as named stops for
+90, 180); a drag snaps to a stop within 3°. While the slider is held, the 3D body only
+scrubs its fold clip and leaves the half without the cover where it stands. The view does not turn.
+It slides so the body stays centered, and the distance changes only to fit that centered size.
+Clicking a mark or the track is that same hold, travelling at 180°/s, and lets go when it arrives;
+a wider click takes longer. It finishes in the form that angle belongs to, so 55° is a tent as 45° then 55° would be, and it does not adopt the stops it only passes. Letting go turns once, by the smallest angle, to that form's view. The guest moves on release, or when the drag rests on a stop
+for 0.5s, one move at a time with the latest target next. The emulator's posture ids stay as named stops for
 `device_configure`.
 - **Tent** (posture 5, 45° by default) is not an angle to the guest, which reads any
   tent as half open; its angle is the host's, for the 3D body. SpringBoard lights the cover at a partial
@@ -80,7 +83,7 @@ a time with the latest target next. The emulator's posture ids stay as named sto
   first. The hinge runs down the cover's left edge, so a tent is also turned
   `landscape-right` to put it on top, whether or not the foreground app turns.
 - **Laptop** (posture 6, 90° by default; Android has no such id) is, like the tent, a
-  pose the angle picks: 90-120°. The fold tool's `laptop` mode sets CoreMotion's tabletop
+  pose the angle picks: 81-120°. The fold tool's `laptop` mode sets CoreMotion's tabletop
   pose `PartiallyOpen<hold>` for the way the host holds it (`Guest/FoldTool.m`; tabletop
   3-6 are portrait, upside down, landscape left, landscape right) after the sweep;
   SpringBoard keeps the inner panel lit and apps lay out for the panel turned upright.
@@ -115,8 +118,13 @@ a time with the latest target next. The emulator's posture ids stay as named sto
   sized from its own box. `phone14` draws button art across its anchored edge; the
   loader turns such art a quarter.
 - **3D** uses Xcode's skinned `V68.usdz` (DeviceKit's `CoreDevicePopDeviceKitExtension`)
-  in place, nothing copied. Its `book_close` clip is scrubbed to the hinge angle, the lit
-  glass is turned to the camera in each pose, and touches raycast the skinned glass by UV
+  in place, nothing copied. Its `book_close` clip is scrubbed to the hinge angle. A drag
+  scrubs that clip alone and keeps the half without the cover where it stands. A click does
+  the same, at 180°/s, and lets go in the form that angle belongs to. The frame slides to
+  keep the body centered and pulls back only when that centered body does not fit. Letting go turns
+  the view once, by the smallest angle, to that form's stance and refits the frame. Through 30° that
+  stance stays the shut phone and only the clip opens; aiming the cover there is the tent's lean.
+  Touches raycast the skinned glass by UV
   (`device-model-body.ts`). Apple maps the inner glass landscape, so the picture turns
   onto it and the stage does not. A laptop is the open pose with the hinge levelled by
   the stage's turn, then tipped about the view's horizontal so the lower half lies flat

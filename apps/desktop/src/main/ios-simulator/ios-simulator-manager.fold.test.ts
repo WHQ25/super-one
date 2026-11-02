@@ -83,10 +83,12 @@ describe('IosSimulatorManager foldable', () => {
 
     expect(native.fold).toHaveBeenCalledWith(0.9, expect.any(Number), 3, 'portrait', undefined)
     expect(await manager.foldPosition('device-a')).toEqual(open(162))
-    // 90-120 is a laptop's, never a book held open.
-    await expect(manager.setFoldPosition('device-a', open(100))).rejects.toThrow(/laptop is any opening from 90 to 120/)
-    // Up to 60 the angle is a tent's, never an inner opening.
-    await expect(manager.setFoldPosition('device-a', open(45))).rejects.toThrow(/up to 60/)
+    // 81-120 is a laptop's, never a book held open.
+    await expect(manager.setFoldPosition('device-a', open(100))).rejects.toThrow(/laptop is any opening from 81 to 120/)
+    // 31-60 is a tent's, never an inner opening. 61-80 is a book, on the inner panel.
+    await expect(manager.setFoldPosition('device-a', open(45))).rejects.toThrow(/from 31 to 60/)
+    await manager.setFoldPosition('device-a', open(70))
+    expect(await manager.foldPosition('device-a')).toEqual(open(70))
     await expect(manager.setFoldPosition('device-a', open(181))).rejects.toThrow(/between 0 and 180/)
   })
 
@@ -136,13 +138,13 @@ describe('IosSimulatorManager foldable', () => {
     native.fold.mockClear()
 
     await manager.setFoldPosition('device-a', { hingeDegrees: 60, tent: true, laptop: false })
-    await manager.setFoldPosition('device-a', { hingeDegrees: 30, tent: true, laptop: false })
+    await manager.setFoldPosition('device-a', { hingeDegrees: 40, tent: true, laptop: false })
 
     // From open the switch to the tent would be a cover swap that never finishes; a
     // tent's angle after that is the host's alone, since the guest pose has none.
     expect(native.fold.mock.calls.map((call) => [call[0], call[1], call[2], call[4]])).toEqual([[0, 600, 1, 'tent']])
-    expect(await manager.foldPosition('device-a')).toEqual({ hingeDegrees: 30, tent: true, laptop: false })
-    await expect(manager.setFoldPosition('device-a', { hingeDegrees: 90, tent: true, laptop: false })).rejects.toThrow(/up to 60/)
+    expect(await manager.foldPosition('device-a')).toEqual({ hingeDegrees: 40, tent: true, laptop: false })
+    await expect(manager.setFoldPosition('device-a', { hingeDegrees: 90, tent: true, laptop: false })).rejects.toThrow(/from 31 to 60/)
   })
 
   it('holds each new form its own way, and leaves a turn alone within one', async () => {
@@ -225,7 +227,7 @@ describe('IosSimulatorManager foldable', () => {
       fold: { hingeDegrees: 100, tent: false, laptop: true, panel: 'inner', panelRotation: 90 },
     }))
     await expect(manager.setFoldPosition('device-a', { hingeDegrees: 180, tent: false, laptop: true }))
-      .rejects.toThrow(/laptop is any opening from 90 to 120/)
+      .rejects.toThrow(/laptop is any opening from 81 to 120/)
   })
 
   it('opens a laptop wider without the guest, and sweeps out of it upright', async () => {

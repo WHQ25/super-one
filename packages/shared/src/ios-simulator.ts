@@ -53,8 +53,8 @@ export type IosSimulatorPreviewMode = 'native-framebuffer' | 'native-h264'
  */
 export const IOS_SIMULATOR_FOLD_POSTURES = [
   { id: 1, posture: 'closed', label: 'closed', hingeDegrees: 0 },
-  // Short of the laptop's range, so it reads as a book held half open.
-  { id: 2, posture: 'half-opened', label: 'half opened', hingeDegrees: 75 },
+  // Past the laptop and short of flat, so it reads as a book held part way open.
+  { id: 2, posture: 'half-opened', label: 'half opened', hingeDegrees: 150 },
   { id: 3, posture: 'opened', label: 'opened', hingeDegrees: 180 },
   // Half open and stood on its edges, the cover facing out: what lights the cover
   // with the hinge open. Not an angle; see `IosSimulatorFoldState.tent`.
@@ -65,17 +65,20 @@ export const IOS_SIMULATOR_FOLD_POSTURES = [
   { id: 6, posture: 'laptop', label: 'laptop', hingeDegrees: 90 },
 ] as const
 
-/** The widest opening that still stands as a tent; any wider is the inner screen. */
+/** The last whole degree that still folds shut on the cover. The next degree stands as a tent. */
+export const IOS_SIMULATOR_FOLD_MAX_DEGREES = 30
+/** The last whole degree that still stands as a tent. The next degree opens as a book. */
 export const IOS_SIMULATOR_TENT_MAX_DEGREES = 60
-/** The openings that lie as a laptop; either side of them the device is open as a book. */
-export const IOS_SIMULATOR_LAPTOP_MIN_DEGREES = 90
+/** The openings that lie as a laptop. Either side of these, past a tent, the device is open as a book. */
+export const IOS_SIMULATOR_LAPTOP_MIN_DEGREES = 81
 export const IOS_SIMULATOR_LAPTOP_MAX_DEGREES = 120
 
 /**
  * Where an angle puts the hinge; null off 0-180. The angle alone picks the form:
- * 0 closed on the cover, up to `IOS_SIMULATOR_TENT_MAX_DEGREES` a tent on the cover,
- * `IOS_SIMULATOR_LAPTOP_MIN_DEGREES`-`IOS_SIMULATOR_LAPTOP_MAX_DEGREES` a laptop on
- * the inner screen, any other opening open on the inner screen.
+ * through `IOS_SIMULATOR_FOLD_MAX_DEGREES` closed on the cover, from the next degree
+ * through `IOS_SIMULATOR_TENT_MAX_DEGREES` a tent on the cover, from there up to the
+ * laptop an open book, `IOS_SIMULATOR_LAPTOP_MIN_DEGREES`-`IOS_SIMULATOR_LAPTOP_MAX_DEGREES`
+ * a laptop on the inner screen, and any wider opening an open book again.
  */
 export function iosSimulatorFoldAt(hingeDegrees: number): IosSimulatorFoldPosition | null {
   if (!Number.isFinite(hingeDegrees) || hingeDegrees < 0 || hingeDegrees > 180) return null
@@ -83,14 +86,14 @@ export function iosSimulatorFoldAt(hingeDegrees: number): IosSimulatorFoldPositi
   return { hingeDegrees, tent: form === 'tent', laptop: form === 'laptop' }
 }
 
-/** A foldable's four forms, by the angle that picks them. Open spans both sides of a laptop. */
+/** A foldable's four forms, by the angle that picks them. */
 export type IosSimulatorFoldForm = 'closed' | 'tent' | 'open' | 'laptop'
 
 export function iosSimulatorFoldForm(hingeDegrees: number): IosSimulatorFoldForm {
-  if (hingeDegrees <= 0) return 'closed'
-  if (hingeDegrees <= IOS_SIMULATOR_TENT_MAX_DEGREES) return 'tent'
-  return hingeDegrees >= IOS_SIMULATOR_LAPTOP_MIN_DEGREES && hingeDegrees <= IOS_SIMULATOR_LAPTOP_MAX_DEGREES
-    ? 'laptop' : 'open'
+  if (hingeDegrees < IOS_SIMULATOR_FOLD_MAX_DEGREES + 1) return 'closed'
+  if (hingeDegrees < IOS_SIMULATOR_TENT_MAX_DEGREES + 1) return 'tent'
+  if (hingeDegrees < IOS_SIMULATOR_LAPTOP_MIN_DEGREES) return 'open'
+  return hingeDegrees <= IOS_SIMULATOR_LAPTOP_MAX_DEGREES ? 'laptop' : 'open'
 }
 
 /**
@@ -117,20 +120,22 @@ export function iosSimulatorFoldPosture(posture: IosSimulatorFoldPosture) {
   return IOS_SIMULATOR_FOLD_POSTURES.find((entry) => entry.posture === posture)!
 }
 
-/** The posture a fold reads as: a pose, else by angle, where only the two ends are exact. */
+/** The posture a fold reads as. The angle picks it, the same way it picks the form. */
 export function iosSimulatorFoldPostureOf(fold: IosSimulatorFoldPosition) {
-  const { hingeDegrees, tent, laptop } = fold
-  return iosSimulatorFoldPosture(tent ? 'tent' : laptop ? 'laptop'
-    : hingeDegrees <= 0 ? 'closed' : hingeDegrees >= 180 ? 'opened' : 'half-opened')
+  const form = iosSimulatorFoldForm(fold.hingeDegrees)
+  if (form === 'tent' || form === 'laptop') return iosSimulatorFoldPosture(form)
+  if (form === 'closed') return iosSimulatorFoldPosture('closed')
+  return iosSimulatorFoldPosture(fold.hingeDegrees >= 180 ? 'opened' : 'half-opened')
 }
 
 /**
- * The panel the guest paints: the cover while closed or standing as a tent, else the
- * inner panel. The guest swaps only when a sweep crosses its swap point, so leaving a
+ * The panel the guest paints: the cover while folded shut or standing as a tent, else
+ * the inner panel. The guest swaps only when a sweep crosses its swap point, so leaving a
  * tent for another angle closes first to keep this true; see `IosSimulatorManager`.
  */
 export function iosSimulatorFoldPanel(fold: IosSimulatorFoldPosition): IosSimulatorFoldState['panel'] {
-  return fold.tent || fold.hingeDegrees <= 0 ? 'cover' : 'inner'
+  const form = iosSimulatorFoldForm(fold.hingeDegrees)
+  return form === 'closed' || form === 'tent' ? 'cover' : 'inner'
 }
 
 /** Where a foldable's hinge is: its angle, and whether it stands as a tent or a laptop. */

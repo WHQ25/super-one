@@ -115,7 +115,7 @@ function Scenario({
 
 const FOLD_POSTURES: Record<'closed' | 'half opened' | 'opened' | 'tent' | 'laptop', DeviceModelFold> = {
   'closed': { hingeDegrees: 0, panel: 'cover', panelRotation: 0, laptop: false },
-  'half opened': { hingeDegrees: 75, panel: 'inner', panelRotation: 90, laptop: false },
+  'half opened': { hingeDegrees: 150, panel: 'inner', panelRotation: 90, laptop: false },
   'opened': { hingeDegrees: 180, panel: 'inner', panelRotation: 90, laptop: false },
   // Half open with the cover lit, and the device turned a quarter so the hinge is on top.
   'tent': { hingeDegrees: 45, panel: 'cover', panelRotation: 0, laptop: false },

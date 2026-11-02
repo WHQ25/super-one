@@ -22,6 +22,7 @@ import type {
 import {
   DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
   IOS_SIMULATOR_FOLD_FORM_ORIENTATION,
+  IOS_SIMULATOR_FOLD_MAX_DEGREES,
   IOS_SIMULATOR_INPUT_ERROR,
   IOS_SIMULATOR_LAPTOP_MAX_DEGREES,
   IOS_SIMULATOR_LAPTOP_MIN_DEGREES,
@@ -336,7 +337,7 @@ export class IosSimulatorManager {
       throw new Error('The hinge angle must be between 0 and 180 degrees.')
     }
     if (target.tent !== (iosSimulatorFoldForm(target.hingeDegrees) === 'tent')) {
-      throw new Error(`A tent is any opening above 0 up to ${IOS_SIMULATOR_TENT_MAX_DEGREES} degrees, and only those.`)
+      throw new Error(`A tent is any opening from ${IOS_SIMULATOR_FOLD_MAX_DEGREES + 1} to ${IOS_SIMULATOR_TENT_MAX_DEGREES} degrees, and only those.`)
     }
     if (target.laptop !== (iosSimulatorFoldForm(target.hingeDegrees) === 'laptop')) {
       throw new Error(`A laptop is any opening from ${IOS_SIMULATOR_LAPTOP_MIN_DEGREES} to ${IOS_SIMULATOR_LAPTOP_MAX_DEGREES} degrees, and only those.`)

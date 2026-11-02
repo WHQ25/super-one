@@ -1,5 +1,6 @@
 import {
   AnimationMixer,
+  Bone,
   Box3,
   Matrix4,
   MeshBasicMaterial,
@@ -12,7 +13,9 @@ import {
   type Texture,
 } from 'three'
 import type { DeviceModelScreenPick } from '@superone/shared/device'
+import { iosSimulatorFoldForm } from '@superone/shared/ios-simulator'
 import { normalizeFramePoint, type NormalizedFramePoint } from './device-input'
+import { HINGE_DEGREES_PER_SECOND, HINGE_MAX_MOVE_MS } from './device-hinge-motion'
 import {
   fitScreenFrame,
   foldPose,
@@ -22,6 +25,8 @@ import {
   transformFrame,
   type DeviceScreenFrame,
 } from './device-model-scene'
+
+export { HINGE_DEGREES_PER_SECOND, HINGE_MAX_MOVE_MS }
 
 /** A foldable's hinge, 0 closed to 180 open, and the screen the device has lit. */
 export interface DeviceModelFold {
@@ -40,6 +45,12 @@ export interface DeviceModelFold {
    * panel's angle, before the guest has swapped. Its glass stays dark until it lights.
    */
   facing?: 'cover' | 'inner'
+  /**
+   * A drag is on the hinge. Scrub the clip to `hingeDegrees` and leave the half
+   * without the cover and the lit panel where they are. The view turns when this
+   * is clear.
+   */
+  hold?: boolean
 }
 
 /**
@@ -67,6 +78,11 @@ export interface DeviceBody {
   step(now: number): boolean
   /** Bends to `state` when `animate`, at `HINGE_DEGREES_PER_SECOND` within `HINGE_MAX_MOVE_MS`; else at once. */
   fold(state: DeviceModelFold, animate: boolean): void
+  /**
+   * Bends the clip to `degrees` and keeps the half without the cover where it stands.
+   * A drag: the pose waits until the drag ends.
+   */
+  scrub(degrees: number): void
   dispose(): void
 }
 
@@ -105,18 +121,77 @@ export function rigidBody(object: Object3D, pick: DeviceModelScreenPick, screenM
     hinge: () => 0,
     step: () => false,
     fold: () => {},
+    scrub: () => {},
     dispose: () => {},
   }
 }
 
+/** How strongly each bone pulls on a skinned mesh, summed over its vertices. */
+function skinWeights(mesh: SkinnedMesh): Map<Bone, number> {
+  const index = mesh.geometry.getAttribute('skinIndex')
+  const weight = mesh.geometry.getAttribute('skinWeight')
+  const sums = new Map<Bone, number>()
+  if (!index || !weight) return sums
+  const bones = mesh.skeleton.bones
+  for (let i = 0; i < index.count; i++) {
+    for (let k = 0; k < index.itemSize; k++) {
+      const influence = weight.getComponent(i, k)
+      if (influence <= 0) continue
+      const bone = bones[index.getComponent(i, k)]
+      if (!bone) continue
+      sums.set(bone, (sums.get(bone) ?? 0) + influence)
+    }
+  }
+  return sums
+}
+
+function heaviestBone(mesh: SkinnedMesh): Bone | null {
+  let best: Bone | null = null
+  let weight = 0
+  for (const [bone, sum] of skinWeights(mesh)) {
+    if (sum > weight) {
+      best = bone
+      weight = sum
+    }
+  }
+  return best
+}
+
 /**
- * How fast the 3D body's hinge turns toward where it is sent, from the guest or from a
- * drag: a short move at this rate, so it is as smooth as a long one. The renderer stands
- * a tent or a laptop at this rate too.
+ * The joint the cover does not ride on.
+ *
+ * The stand-in parents the cover on one hinge bone, whose only sibling is the plain
+ * half. V68 skins the cover to one joint and the other half of the inner glass to
+ * another, among a spine of hinge joints, so the plain half is the inner joint that
+ * pulls hardest once the cover's own joint is set aside.
  */
-export const HINGE_DEGREES_PER_SECOND = 45
-/** The longest a move takes; a wider one turns faster to finish in this. */
-export const HINGE_MAX_MOVE_MS = 1000
+function plainHalfBone(cover: Mesh, inner: Mesh): Bone | null {
+  let coverBone: Bone | null = null
+  if (cover instanceof SkinnedMesh) coverBone = heaviestBone(cover)
+  if (!coverBone) {
+    let node: Object3D | null = cover.parent
+    while (node && !(node instanceof Bone)) node = node.parent
+    coverBone = node
+  }
+  if (!coverBone) return null
+  const others = coverBone.parent?.children.filter((child): child is Bone => child instanceof Bone && child !== coverBone) ?? []
+  // A parented cover with one sibling is the two-bone book. A skinned cover's parent
+  // is the whole spine, so the sibling there is not the other half.
+  if (!(cover instanceof SkinnedMesh) && others.length === 1) return others[0]
+  if (inner instanceof SkinnedMesh) {
+    let best: Bone | null = null
+    let weight = 0
+    for (const [bone, sum] of skinWeights(inner)) {
+      if (bone === coverBone || bone.name === coverBone.name) continue
+      if (sum > weight) {
+        best = bone
+        weight = sum
+      }
+    }
+    if (best) return best
+  }
+  return others.length === 1 ? others[0] : null
+}
 
 /**
  * A skinned foldable whose hinge is scrubbed along its baked `book_close` clip.
@@ -124,8 +199,10 @@ export const HINGE_MAX_MOVE_MS = 1000
  * Each pose is placed with the lit screen facing the camera — the closed cover, the
  * open inner panel, or the half-open one looked at along its fold — so the picture
  * stays readable without the user orbiting round to find it; the renderer stands a
- * tent or a laptop on the table from there. A fold eases the hinge and that placement
- * together.
+ * tent or a laptop on the table from there. An opening that is still a fold keeps
+ * that shut placement and only moves the clip: aiming the cover at the opened angle
+ * leans the body back the way a tent stands. A fold eases the hinge and that
+ * placement together.
  */
 export function foldableBody(
   object: Object3D,
@@ -151,8 +228,9 @@ export function foldableBody(
   /**
    * The move under way. Hinge and placement travel together, linearly in time: the
    * leg lasts as long as the larger of the two turns takes at the set rate, capped so a
-   * wide move speeds up. A new target, as a drag sends, starts a new leg from wherever
-   * the body is, so the motion never jumps.
+   * wide move speeds up. A new target starts a new leg from wherever the body is, so
+   * the motion never jumps. A drag does not start one: it scrubs the clip and the
+   * plain half stays until the drag ends.
    */
   let leg: {
     from: number
@@ -190,20 +268,49 @@ export function foldableBody(
     paintMaterial(materials[panel === 'cover' ? 'inner' : 'cover'], null)
   }
 
+  // World pose of the plain half at the start of a drag. The root moves to keep it.
+  const plainHalf = plainHalfBone(prepared.cover, prepared.inner)
+  const heldPlain = new Matrix4()
+  const plainDelta = new Matrix4()
+  const rooted = new Matrix4()
+  const parentInverse = new Matrix4()
+  let plainHeld = false
+  const pinPlainHalf = () => {
+    if (!plainHalf) return
+    plainHalf.updateWorldMatrix(true, false)
+    // One rigid move of the root: the same move that carries this joint back.
+    plainDelta.copy(plainHalf.matrixWorld).invert().premultiply(heldPlain)
+    prepared.root.updateWorldMatrix(true, false)
+    rooted.copy(prepared.root.matrixWorld).premultiply(plainDelta)
+    const parent = prepared.root.parent
+    if (parent) {
+      parent.updateWorldMatrix(true, false)
+      parentInverse.copy(parent.matrixWorld).invert()
+      rooted.premultiply(parentInverse)
+    }
+    rooted.decompose(prepared.root.position, prepared.root.quaternion, prepared.root.scale)
+    prepared.root.updateMatrixWorld(true)
+  }
+
   const fold = (state: DeviceModelFold, animate: boolean) => {
+    plainHeld = false
     const target = Math.min(180, Math.max(0, state.hingeDegrees))
     panel = state.panel
     panelRotation = state.panelRotation
     facing = state.facing ?? state.panel
     repaint()
     lastPoint = null
-    setHinge(target)
+    // Through the fold range the phone stays shut. Aiming the cover at this opening
+    // tips the whole body back by half the gap, which is how a tent stands.
+    const posedAt = iosSimulatorFoldForm(target) === 'closed' ? 0 : target
+    setHinge(posedAt)
     const to = foldPose(prepared, facing === 'cover' ? prepared.cover : prepared.inner)
     const turn = (prepared.root.quaternion.angleTo(to.quaternion) * 180) / Math.PI
     const travel = Math.max(Math.abs(target - hinge), turn)
     if (!animate || travel < 1e-3) {
       leg = null
       hinge = target
+      if (posedAt !== target) setHinge(target)
       place(to)
       return
     }
@@ -215,6 +322,19 @@ export function foldableBody(
       duration: Math.min(HINGE_MAX_MOVE_MS, (travel / HINGE_DEGREES_PER_SECOND) * 1000),
       pose: { from: { quaternion: prepared.root.quaternion.clone(), position: prepared.root.position.clone() }, to },
     }
+  }
+  /** The clip, then a root correction that puts the plain half back where the drag began. */
+  const scrub = (degrees: number) => {
+    leg = null
+    if (plainHalf && !plainHeld) {
+      plainHalf.updateWorldMatrix(true, false)
+      heldPlain.copy(plainHalf.matrixWorld)
+      plainHeld = true
+    }
+    hinge = Math.min(180, Math.max(0, degrees))
+    setHinge(hinge)
+    pinPlainHalf()
+    bounds = null
   }
   fold(initial, false)
 
@@ -252,6 +372,7 @@ export function foldableBody(
       return bounds.clone()
     },
     hinge: () => hinge,
+    scrub,
     step(now) {
       if (!leg) return false
       const progress = Math.min(1, Math.max(0, (now - leg.start) / leg.duration))

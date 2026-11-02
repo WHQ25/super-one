@@ -15,7 +15,7 @@ const iosFoldable: DeviceEnvironmentState = {
   deviceId: 'ios-sim:duo',
   postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
   posture: 2,
-  hingeDegrees: 75,
+  hingeDegrees: 150,
 }
 const android: DeviceEnvironmentState = {
   deviceId: 'android:avd:Pixel_Fold', appearance: 'dark', locationReadable: false,

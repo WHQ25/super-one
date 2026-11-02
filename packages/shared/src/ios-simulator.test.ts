@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { isIosSimulatorTextTypeable, splitIosSimulatorText } from './ios-simulator'
+import {
+  IOS_SIMULATOR_FOLD_MAX_DEGREES,
+  IOS_SIMULATOR_LAPTOP_MIN_DEGREES,
+  IOS_SIMULATOR_TENT_MAX_DEGREES,
+  iosSimulatorFoldAt,
+  iosSimulatorFoldForm,
+  iosSimulatorFoldPanel,
+  iosSimulatorFoldPosture,
+  iosSimulatorFoldPostureOf,
+  isIosSimulatorTextTypeable,
+  splitIosSimulatorText,
+} from './ios-simulator'
 
 describe('splitIosSimulatorText', () => {
   it('sends plain text as one insertion, whatever its length or script', () => {
@@ -42,6 +53,53 @@ describe('splitIosSimulatorText', () => {
 
   it('keeps an emoji whole rather than splitting its surrogate pair', () => {
     expect(splitIosSimulatorText('🎉')).toEqual([{ kind: 'insert', text: '🎉' }])
+  })
+})
+
+describe('iosSimulatorFoldForm', () => {
+  it('keeps the whole-degree cuts on one boundary each', () => {
+    expect(IOS_SIMULATOR_FOLD_MAX_DEGREES + 1).toBe(31)
+    expect(IOS_SIMULATOR_TENT_MAX_DEGREES).toBe(60)
+    expect(IOS_SIMULATOR_LAPTOP_MIN_DEGREES).toBe(81)
+    expect(IOS_SIMULATOR_TENT_MAX_DEGREES + 1).toBeLessThan(IOS_SIMULATOR_LAPTOP_MIN_DEGREES)
+  })
+
+  it('reads 0-30 as fold, 31-60 as tent, 61-80 and 121-180 as open, and 81-120 as laptop', () => {
+    const form = (degrees: number) => iosSimulatorFoldForm(degrees)
+    expect(form(0)).toBe('closed')
+    expect(form(30)).toBe('closed')
+    expect(form(30.9)).toBe('closed')
+    expect(form(31)).toBe('tent')
+    expect(form(60)).toBe('tent')
+    expect(form(60.9)).toBe('tent')
+    expect(form(61)).toBe('open')
+    expect(form(80)).toBe('open')
+    expect(form(80.9)).toBe('open')
+    expect(form(81)).toBe('laptop')
+    expect(form(120)).toBe('laptop')
+    expect(form(120.1)).toBe('open')
+    expect(form(180)).toBe('open')
+  })
+
+  it('lights the cover for a fold and a tent, and the inner panel for a laptop and a book', () => {
+    const panel = (degrees: number) => iosSimulatorFoldPanel(iosSimulatorFoldAt(degrees)!)
+    expect(panel(15)).toBe('cover')
+    expect(panel(30)).toBe('cover')
+    expect(panel(55)).toBe('cover')
+    expect(panel(70)).toBe('inner')
+    expect(panel(100)).toBe('inner')
+    expect(panel(150)).toBe('inner')
+  })
+
+  it('names a part-open book half opened, and a fold closed, from the angle alone', () => {
+    expect(iosSimulatorFoldPosture('half-opened').hingeDegrees).toBe(150)
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(15)!).posture).toBe('closed')
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(30)!).posture).toBe('closed')
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(45)!).posture).toBe('tent')
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(70)!).posture).toBe('half-opened')
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(90)!).posture).toBe('laptop')
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(150)!).posture).toBe('half-opened')
+    expect(iosSimulatorFoldPostureOf(iosSimulatorFoldAt(180)!).posture).toBe('opened')
   })
 })
 

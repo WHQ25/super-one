@@ -116,10 +116,15 @@ export function DeviceModelView({
   const panelRotation = fold?.panelRotation
   const laptop = fold?.laptop
   const facing = fold?.facing
+  const hold = fold?.hold
   useEffect(() => {
     if (status !== 'ready' || hinge === undefined || !panel || panelRotation === undefined || laptop === undefined) return
-    sceneRef.current?.setFold({ hingeDegrees: hinge, panel, panelRotation, laptop, ...(facing ? { facing } : {}) })
-  }, [hinge, panel, panelRotation, laptop, facing, status])
+    sceneRef.current?.setFold({
+      hingeDegrees: hinge, panel, panelRotation, laptop,
+      ...(facing ? { facing } : {}),
+      ...(hold ? { hold } : {}),
+    })
+  }, [hinge, panel, panelRotation, laptop, facing, hold, status])
 
   return (
     <div className="relative size-full min-h-0" data-testid="device-model-view">

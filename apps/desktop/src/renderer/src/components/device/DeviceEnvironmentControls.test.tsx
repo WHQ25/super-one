@@ -102,7 +102,7 @@ describe('device environment controls', () => {
     show({
       ...ios,
       postures: [{ id: 1, label: 'closed' }, { id: 2, label: 'half opened' }, { id: 3, label: 'opened' }],
-      posture: 2, hingeDegrees: 75,
+      posture: 2, hingeDegrees: 150,
     })
     await userEvent.click(screen.getByRole('button', { name: 'Device Environment' }))
     expect(await screen.findByRole('tab', { name: 'Dark' })).toBeInTheDocument()

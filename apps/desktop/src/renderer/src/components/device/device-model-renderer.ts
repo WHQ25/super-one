@@ -15,10 +15,12 @@ import {
   type Object3D,
 } from 'three'
 import type { DeviceModelScreenPick, LoadedDeviceModel } from '@superone/shared/device'
+import { iosSimulatorFoldForm } from '@superone/shared/ios-simulator'
 import { disposeModel, parseModel, updateModelCameraClipPlanes } from '../coding/model-loader'
 import { addModelFillLights, lightModel } from '../coding/model-environment'
 import { rotateFrameDelta, type DeviceFrameProjector } from './device-input'
 import { HINGE_DEGREES_PER_SECOND, foldableBody, rigidBody, type DeviceModelFold } from './device-model-body'
+import { frameBounds, viewCorrection } from './device-model-framing'
 import { attachDeviceModelTurntable } from './device-model-turntable'
 
 export type { DeviceModelFold }
@@ -65,10 +67,9 @@ export async function loadDesktopDeviceModel(model: string, color?: string): Pro
 
 type FoldForm = 'closed' | 'tent' | 'open' | 'laptop'
 
-/** Closed, standing as a tent, open, or laid as a laptop, by the screen turned to the camera. */
+/** The form the angle belongs to. Which screen is lit does not pick it. */
 function foldForm(fold: DeviceModelFold): FoldForm {
-  if (fold.laptop) return 'laptop'
-  return (fold.facing ?? fold.panel) === 'inner' ? 'open' : fold.hingeDegrees > 0 ? 'tent' : 'closed'
+  return iosSimulatorFoldForm(fold.hingeDegrees)
 }
 
 /** How far above the base half a laptop is looked at, in degrees. */
@@ -108,6 +109,8 @@ const TURN_MS = 300
 /** Air around the device when the camera frames it. */
 const FIT_MARGIN = 1.12
 const FOV = 30
+const ORIGIN = new Vector3()
+const IDENTITY_QUATERNION = new Quaternion()
 
 /** Shortest signed angle from `from` to `to`. */
 function turnBetween(from: number, to: number): number {
@@ -141,9 +144,13 @@ export async function mountDeviceModel(
   const tilt = new Group()
   tilt.add(stage)
   tilt.quaternion.copy(foldTilt(form, initialFold.hingeDegrees))
+  // Identity except for the one turn after a drag. Under the user's orbit, so that
+  // orbit stays put when the hinge moves inside one form.
+  const align = new Group()
+  align.add(tilt)
   // Turned by the user's drag, around the stage's orientation turn: the camera stays put.
   const view = new Group()
-  view.add(tilt)
+  view.add(align)
   const scene = new Scene()
   scene.add(view)
 
@@ -170,43 +177,92 @@ export async function mountDeviceModel(
   const raycaster = new Raycaster()
   const pointer = new Vector2()
   let frameRequest = 0
-  // `distance` is where the camera stood when the turn began, before the user's zoom.
-  let turn: { from: number; to: number; start: number; distance: number } | null = null
+  // Where the camera stood when the turn began, before the user's zoom.
+  let turn: { from: number; to: number; start: number; distance: number; aim: Vector3 } | null = null
   // When the tilt last stepped toward the form's stance; null while it stands there.
   let tippedAt: number | null = null
   // The user's own turn easing back to face on, from where it was and how far zoomed.
   let settle: { from: Quaternion; zoom: number; start: number } | null = null
   // The camera's framing distance as last drawn, before the user's zoom; 0 until then.
   let framed = 0
+  // Where that frame was aimed, so a turn eases the aim as well as the distance.
+  const framedAim = new Vector3()
+  // A drag holds the pose, the tilt, and the stage. The framing distance still follows.
+  let holding = false
+  // One rigid correction from the pose a drag held to that form's view.
+  let orient: {
+    fromPosition: Vector3
+    fromQuaternion: Quaternion
+    zoomFrom: number
+    zoomTo: number
+    start: number
+  } | null = null
+  // The glass a release turned toward, so a later republish of that stance does not turn again.
+  let releaseAimed: 'cover' | 'inner' | null = null
+  // Zoom a paused release turn was showing. Null while the turntable's own zoom is on screen.
+  let heldZoom: number | null = null
+  // View orientation last drawn, so a zoom wheel is not mistaken for a turn of the body.
+  const viewed = new Quaternion()
   const requestRender = () => { if (!frameRequest) frameRequest = requestAnimationFrame(draw) }
 
-  // Measured in the stage's own space, so only the turn is applied here; a turned
-  // box's corners are exact at the quarter turns the camera is fitted at, so a turn
-  // under way is fitted where it is headed. Framing leaves out the user's own turn,
-  // so a drag never moves the camera in or out.
+  const zeroAlign = () => {
+    align.position.set(0, 0, 0)
+    align.quaternion.identity()
+    align.scale.set(1, 1, 1)
+  }
+  const clearOrient = () => {
+    orient = null
+    zeroAlign()
+    align.updateMatrixWorld(true)
+  }
+  // Leave the correction where it is on screen and drop its clock. A new drag pins that pose.
+  const freezeOrient = () => {
+    if (!orient) return
+    const progress = Math.min(1, (performance.now() - orient.start) / TURN_MS)
+    const eased = 1 - (1 - progress) ** 3
+    align.position.lerpVectors(orient.fromPosition, ORIGIN, eased)
+    align.quaternion.slerpQuaternions(orient.fromQuaternion, IDENTITY_QUATERNION, eased)
+    heldZoom = orient.zoomFrom + (orient.zoomTo - orient.zoomFrom) * eased
+    orient = null
+    align.updateMatrixWorld(true)
+  }
+
+  // Measured in the stage's own space. A turn under way is fitted where it is headed.
+  // The one-shot correction is included; the user's orbit is not, so turning the body
+  // by hand never dollies. A centered body matches the old size fit.
   const bodyBounds = () => body.bounds().applyMatrix4(stage.matrixWorld)
   const fittedBounds = () => {
+    tilt.updateMatrix()
+    align.updateMatrix()
     const turned = new Matrix4().makeRotationZ(turn ? turn.from + turn.to : stage.rotation.z)
-    return body.bounds().applyMatrix4(turned.premultiply(tilt.matrix))
+    turned.premultiply(tilt.matrix).premultiply(align.matrix)
+    return body.bounds().applyMatrix4(turned)
   }
   const bodyRadius = () => body.bounds().getBoundingSphere(new Sphere()).radius
 
-  const fitDistance = () => {
-    const size = fittedBounds().getSize(new Vector3())
-    const vertical = Math.tan((camera.fov * Math.PI) / 360)
-    const horizontal = vertical * camera.aspect
-    return Math.max(size.y / 2 / vertical, size.x / 2 / horizontal) * FIT_MARGIN + size.z / 2
+  // The view sits at the origin, so its quaternion carries the fit into the world.
+  // The camera still looks along −Z: recentering is a slide, not a turn.
+  const placeFrame = () => {
+    const fit = frameBounds(fittedBounds(), camera.fov, camera.aspect, FIT_MARGIN)
+    fit.target.applyQuaternion(view.quaternion)
+    return fit
   }
   /**
-   * The camera looks straight at the body; only the framing distance changes. Fitted
-   * on every frame, so a fold reframes as it bends rather than jumping once it settles,
-   * and a turn eases from where the camera stood by the turn's own curve.
+   * The camera looks along −Z. It slides so the body stays centered, and its distance
+   * fits that centered size — a shift off the origin does not, by itself, pull it back.
+   * A turn eases from where the camera stood by the turn's own curve.
    */
   const frameCamera = (turnEased: number, zoom: number) => {
-    const fit = fitDistance()
-    framed = turn ? turn.distance + (fit - turn.distance) * turnEased : fit
-    camera.position.set(0, 0, framed * zoom)
-    camera.lookAt(0, 0, 0)
+    const fit = placeFrame()
+    if (turn) {
+      framed = turn.distance + (fit.distance - turn.distance) * turnEased
+      framedAim.lerpVectors(turn.aim, fit.target, turnEased)
+    } else {
+      framed = fit.distance
+      framedAim.copy(fit.target)
+    }
+    camera.position.set(framedAim.x, framedAim.y, framedAim.z + Math.max(framed, 1e-3) * zoom)
+    camera.lookAt(framedAim)
   }
 
   const hitsGlass = (event: PointerEvent) =>
@@ -219,8 +275,14 @@ export async function mountDeviceModel(
   // A press on the glass is a touch; anywhere else it turns the body.
   const turntable = attachDeviceModelTurntable(renderer.domElement, view, {
     canStart: (event) => !hitsGlass(event),
-    // A drag takes the body from wherever an easing back has got it to.
-    onChange: () => { settle = null; requestRender() },
+    // A drag takes the body from wherever an easing back has got it to. Turning the
+    // body drops a release's correction; a wheel only changes zoom.
+    onChange: () => {
+      settle = null
+      heldZoom = null
+      if (view.quaternion.angleTo(viewed) > 1e-4) clearOrient()
+      requestRender()
+    },
   })
 
   const projector: DeviceFrameProjector = {
@@ -251,7 +313,7 @@ export async function mountDeviceModel(
   function draw(now: number) {
     frameRequest = 0
     let turnEased = 1
-    if (turn) {
+    if (turn && !holding) {
       const progress = Math.min(1, (now - turn.start) / TURN_MS)
       turnEased = 1 - (1 - progress) ** 3
       stage.rotation.z = turn.from + turn.to * turnEased
@@ -261,16 +323,19 @@ export async function mountDeviceModel(
     }
     let moving = body.step(now)
     // The form's stance follows whatever angle the hinge has reached; a change of form
-    // turns toward its stance at the hinge's own rate.
-    const stance = foldTilt(form, body.hinge())
-    if (!tilt.quaternion.equals(stance)) {
-      tilt.quaternion.rotateTowards(stance, TILT_RADIANS_PER_MS * (now - (tippedAt ?? now)))
-      tilt.updateMatrixWorld(true)
-      tippedAt = tilt.quaternion.angleTo(stance) < 1e-6 ? null : now
-      moving ||= tippedAt !== null
+    // turns toward its stance at the hinge's own rate. A drag holds the stance it began
+    // in. A released drag has already snapped there and turns once, as `orient`.
+    if (!holding && !orient) {
+      const stance = foldTilt(form, body.hinge())
+      if (!tilt.quaternion.equals(stance)) {
+        tilt.quaternion.rotateTowards(stance, TILT_RADIANS_PER_MS * (now - (tippedAt ?? now)))
+        tilt.updateMatrixWorld(true)
+        tippedAt = tilt.quaternion.angleTo(stance) < 1e-6 ? null : now
+        moving ||= tippedAt !== null
+      }
     }
-    let zoom = turntable.zoom()
-    if (settle) {
+    let zoom = heldZoom ?? turntable.zoom()
+    if (!holding && settle && !orient) {
       const progress = Math.min(1, (now - settle.start) / TURN_MS)
       const eased = 1 - (1 - progress) ** 3
       view.quaternion.slerpQuaternions(settle.from, new Quaternion(), eased)
@@ -279,7 +344,18 @@ export async function mountDeviceModel(
       if (progress < 1) moving = true
       else settle = null
     }
+    if (orient && !holding) {
+      const progress = Math.min(1, (now - orient.start) / TURN_MS)
+      const eased = 1 - (1 - progress) ** 3
+      align.position.lerpVectors(orient.fromPosition, ORIGIN, eased)
+      align.quaternion.slerpQuaternions(orient.fromQuaternion, IDENTITY_QUATERNION, eased)
+      align.updateMatrixWorld(true)
+      zoom = orient.zoomFrom + (orient.zoomTo - orient.zoomFrom) * eased
+      if (progress < 1) moving = true
+      else clearOrient()
+    }
     if (moving) requestRender()
+    viewed.copy(view.quaternion)
     frameCamera(turnEased, zoom)
     updateModelCameraClipPlanes(camera, bodyBounds(), bodyRadius())
     renderer.render(scene, camera)
@@ -306,9 +382,11 @@ export async function mountDeviceModel(
     const zoom = turntable.zoom()
     turntable.reset()
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (reduced || (from.angleTo(view.quaternion) < 1e-6 && zoom === 1)) return
-    view.quaternion.copy(from)
-    settle = { from, zoom, start: performance.now() }
+    if (!(reduced || (from.angleTo(view.quaternion) < 1e-6 && zoom === 1))) {
+      view.quaternion.copy(from)
+      settle = { from, zoom, start: performance.now() }
+    }
+    viewed.copy(view.quaternion)
     requestRender()
   }
   // The glass's own mapping may already show part of the turn; the stage does the rest.
@@ -320,15 +398,85 @@ export async function mountDeviceModel(
   function turnTo(degrees: number) {
     const target = stageTurn(degrees)
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (reduced) {
+    const delta = turnBetween(stage.rotation.z, target)
+    // No angle to turn: drop a turn the effect just armed and let the fit follow live.
+    if (reduced || Math.abs(delta) < 1e-4) {
+      turn = null
       stage.rotation.z = target
       stage.updateMatrixWorld(true)
       requestRender()
       return
     }
     // Read before the new turn is set: until first drawn, the old target's fit stands in.
-    const distance = framed || fitDistance()
-    turn = { from: stage.rotation.z, to: turnBetween(stage.rotation.z, target), start: performance.now(), distance }
+    const fit = placeFrame()
+    const distance = framed || fit.distance
+    const aim = framed ? framedAim.clone() : fit.target.clone()
+    turn = { from: stage.rotation.z, to: delta, start: performance.now(), distance, aim }
+    requestRender()
+  }
+
+  /** The stage angle `fold` lands on, once its panel offset is the one in the fold. */
+  const stageTarget = (fold: DeviceModelFold) =>
+    -((latest.current.rotationDegrees - fold.panelRotation) * Math.PI) / 180
+
+  const sameReleasedView = (fold: DeviceModelFold) =>
+    foldForm(fold) === form
+    && Math.abs(fold.hingeDegrees - body.hinge()) <= 0.5
+    && (fold.facing ?? fold.panel) === releaseAimed
+    && Math.abs(turnBetween(stage.rotation.z, stageTarget(fold))) < 1e-3
+
+  /**
+   * After a drag, one short turn from the pose being shown to the form's final view:
+   * the pose, the tilt, and the stage already at their ends. A new form, or a return
+   * to face that the drag interrupted, is included. The camera's distance follows the
+   * swing so the phone does not clip, and lands on the form's fit.
+   */
+  function releaseToForm(fold: DeviceModelFold) {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    view.updateMatrixWorld(true)
+    const seen = body.root.matrixWorld.clone()
+    let zoomFrom = heldZoom ?? turntable.zoom()
+    if (orient) {
+      const progress = Math.min(1, (performance.now() - orient.start) / TURN_MS)
+      const eased = 1 - (1 - progress) ** 3
+      zoomFrom = orient.zoomFrom + (orient.zoomTo - orient.zoomFrom) * eased
+    }
+    heldZoom = null
+    const faceOn = foldForm(fold) !== form || settle !== null
+    settle = null
+    orient = null
+    zeroAlign()
+    // Snap the orbit. The scene reset eases it on its own clock; this turn includes it.
+    if (faceOn) turntable.reset()
+    viewed.copy(view.quaternion)
+    form = foldForm(fold)
+    body.fold(fold, false)
+    tilt.quaternion.copy(foldTilt(form, body.hinge()))
+    turn = null
+    stage.rotation.z = stageTurn(latest.current.rotationDegrees)
+    view.updateMatrixWorld(true)
+    const arrived = body.root.matrixWorld.clone()
+    const correction = viewCorrection(seen, arrived, view.matrixWorld)
+    correction.decompose(align.position, align.quaternion, align.scale)
+    align.scale.set(1, 1, 1)
+    align.updateMatrixWorld(true)
+    releaseAimed = fold.facing ?? fold.panel
+    const zoomTo = faceOn ? 1 : zoomFrom
+    const moving = align.position.lengthSq() > 1e-10
+      || align.quaternion.angleTo(IDENTITY_QUATERNION) > 1e-4
+      || Math.abs(zoomFrom - zoomTo) > 1e-4
+    if (reduced || !moving) {
+      clearOrient()
+      requestRender()
+      return
+    }
+    orient = {
+      fromPosition: align.position.clone(),
+      fromQuaternion: align.quaternion.clone(),
+      zoomFrom,
+      zoomTo,
+      start: performance.now(),
+    }
     requestRender()
   }
 
@@ -366,6 +514,38 @@ export async function mountDeviceModel(
     },
     turn: turnTo,
     setFold(fold) {
+      // A drag scrubs the clip and leaves the half without the cover where it stands:
+      // no pose, no tilt, no stage turn, no camera angle. The frame slides to keep the
+      // body centered, and the distance changes only to fit that size. Letting go turns
+      // once, by the smallest angle, to that form.
+      if (fold.hold) {
+        if (!holding) {
+          holding = true
+          turn = null
+          freezeOrient()
+          tippedAt = null
+        }
+        body.scrub(fold.hingeDegrees)
+        requestRender()
+        return
+      }
+      if (holding) {
+        holding = false
+        releaseToForm(fold)
+        return
+      }
+      // The guest catching up republishes the stance this release is already turning to.
+      // A real change of stance retargets the same one turn instead of starting another.
+      if (orient && sameReleasedView(fold)) {
+        turn = null
+        body.fold(fold, false)
+        return
+      }
+      if (orient || heldZoom !== null) {
+        releaseToForm(fold)
+        return
+      }
+      holding = false
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
       // A new form is a new way of holding the device; start it facing the camera,
       // as the guest starts it upright. A hinge move within one keeps the user's view.

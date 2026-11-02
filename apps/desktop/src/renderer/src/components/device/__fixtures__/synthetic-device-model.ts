@@ -139,3 +139,52 @@ export function syntheticFoldableScene(): Group {
   scene.animations = [clip]
   return scene
 }
+
+/**
+ * The Duo's own arrangement, unlike the parented book above. The cover is skinned to
+ * one joint, the other half of the inner glass to another, and a hinge joint sits
+ * beside them under the same parent. Only the plain half is keyed.
+ */
+export function syntheticSkinnedFoldableScene(): Group {
+  const spine = new Bone()
+  spine.name = 'SpnRootJoint'
+  const coverBone = new Bone()
+  coverBone.name = 'CvrHalfJoint'
+  const plainBone = new Bone()
+  plainBone.name = 'PlnHalfJoint'
+  const strip = new Bone()
+  strip.name = 'HngStripJoint'
+  spine.add(coverBone, plainBone, strip)
+
+  const sheet = (name: string, width: number, height: number, widthSegments: number, jointAt: (x: number) => number) => {
+    const geometry = new PlaneGeometry(width, height, widthSegments, 1)
+    const position = geometry.getAttribute('position')
+    const indices: number[] = []
+    const weights: number[] = []
+    for (let i = 0; i < position.count; i++) {
+      indices.push(jointAt(position.getX(i)), 0, 0, 0)
+      weights.push(1, 0, 0, 0)
+    }
+    geometry.setAttribute('skinIndex', new Uint16BufferAttribute(indices, 4))
+    geometry.setAttribute('skinWeight', new Float32BufferAttribute(weights, 4))
+    const mesh = new SkinnedMesh(geometry, glassMaterial())
+    mesh.name = name
+    return mesh
+  }
+  // The cover is the smaller sheet, so it is chosen as the cover. On the inner sheet
+  // the positive-x columns outweigh the cover's joint.
+  const cover = sheet('coverGlass', 0.06, 0.09, 1, () => 0)
+  const inner = sheet('innerGlass', 0.15, 0.105, 4, (x) => (x < 0 ? 0 : 1))
+  const scene = new Group()
+  scene.add(inner, cover)
+  inner.add(spine)
+  scene.updateMatrixWorld(true)
+  inner.bind(new Skeleton([coverBone, plainBone, strip]))
+  cover.bind(new Skeleton([coverBone]))
+
+  const turn = (angle: number) => new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), angle).toArray()
+  scene.animations = [new AnimationClip('Animation', 1, [
+    new QuaternionKeyframeTrack('PlnHalfJoint.quaternion', [0, 1], [...turn(0), ...turn(-Math.PI / 2)]),
+  ])]
+  return scene
+}

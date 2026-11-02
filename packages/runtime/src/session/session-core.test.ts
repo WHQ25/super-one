@@ -164,6 +164,8 @@ describe('SessionRuntime.list pagination', () => {
     rows.set('other', session({ sessionId: 'other', projectId: 'p1', updatedAt: 2 }))
     const rt = new SessionRuntime(store, events, leases, 'env-list', createSimulatedTurnRunner())
     const roots = rt.list('p1', { limit: 20, offset: 0, rootsOnly: true })
+    expect(rt.get('parent')?.updatedAt).toBe(1)
+    expect(rt.get('child')?.updatedAt).toBe(50)
     expect(roots.map((entry) => entry.sessionId)).toEqual(['parent', 'other'])
     expect(roots.find((entry) => entry.sessionId === 'parent')?.childCount).toBe(1)
     expect(roots.find((entry) => entry.sessionId === 'other')?.childCount).toBeUndefined()

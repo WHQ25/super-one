@@ -402,10 +402,16 @@ export class SessionRuntime {
   private reconcileAfterRestart(): void {
     for (const session of this.live.values()) {
       let changed = false
+      // Only a real restart outcome moves the session in the recency list.
+      // Schema backfill below must persist without stamping Date.now(): rows
+      // loaded in one pass would otherwise reorder wherever a millisecond
+      // boundary falls.
+      let recencyChanged = false
       // Recorded as events so the read model shows the interruption, not a message streaming forever.
       if (session.status === 'streaming') {
         session.status = 'interrupted'
         changed = true
+        recencyChanged = true
         this.events.appendSession({
           sessionId: session.sessionId,
           eventType: SESSION_DURABLE_EVENT.turnInterrupted,
@@ -416,13 +422,17 @@ export class SessionRuntime {
       // message becomes a failed row the user can resend, rather than work the
       // node starts on its own after the turn ahead of it was interrupted.
       for (const block of session.transcript) {
-        if (block.queued && this.markSendFailed(session, block.id, QUEUED_SEND_LOST_ON_RESTART)) changed = true
+        if (block.queued && this.markSendFailed(session, block.id, QUEUED_SEND_LOST_ON_RESTART)) {
+          changed = true
+          recencyChanged = true
+        }
       }
       // No live permissionWaiters after restart — drop sticky pending UI or clients hang.
       if (session.pendingInteraction != null) {
         const { interactionId, kind } = session.pendingInteraction
         session.pendingInteraction = null
         changed = true
+        recencyChanged = true
         this.events.appendSession({
           sessionId: session.sessionId,
           eventType: kind === 'question' ? SESSION_DURABLE_EVENT.questionAborted
@@ -486,7 +496,7 @@ export class SessionRuntime {
         changed = true
       }
       if (!changed) continue
-      session.updatedAt = Date.now()
+      if (recencyChanged) session.updatedAt = Date.now()
       this.persist(session)
       this.events.appendSession({
         sessionId: session.sessionId,

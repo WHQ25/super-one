@@ -18,6 +18,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. The choice is stored as the session service tier. Ultrafast's trigger is two overlapping bolts; Fast stays one bolt.
 - With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion. The device name floats above the list. An environment card names the machine, its OS, chip, and memory; a connected host adds free memory and one CPU sample. The chip and installed memory stay after disconnect.
 - Finished sessions settle into a project group. The first launch keeps the ten newest non-child sessions in each project and settles the rest. Settling stops that session's harness and, for a parent, its direct children. Collaboration children and scheduled-send shells stay hidden. Opening a settled session leaves it in that group. Pinned and draft sections fold, and the count shows how many rows are hidden. Folded settled rows stay unmounted until the group opens.
+- Double-click an environment, project, or session to give it the sidebar pane. Pinned sessions and drafts for that environment or project stay under the focus bar and start folded.
+- Project session lists page and virtualize. Root sessions stay paged, children load when their parent expands, and a wheel already at the edge continues into the parent scroller. Settled sessions cannot be pinned; the pin slot offers unsettle, and settling does not clear the stored pin. The project hover count includes settled sessions and children.
 - Scroll areas fade their clipped edges. Settled sessions, history, the file tree, the project menu, tab strips, and markdown tables share that treatment.
 - Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
 - A message can name a machine with @env or that machine's name, without moving the current session. The agent omits environmentId on this machine and passes it for any other. Paired phones are not targets.
@@ -25,7 +27,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
 - A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts.
 - The phone app is built with Expo SDK 58, so it launches on iOS 27.
-- iPhone Duo stands as a laptop (90–120°, one half flat, hinge across the inner screen) beside closed, tent, and open. A tent stands with the hinge on top. The hinge snaps to one stop per form; only resting on that stop, letting go on it, or pressing its label changes the form. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
+- iPhone Duo stands closed, as a tent (hinge on top, from 31°), as a laptop (81–120°, one half flat), or open (61–80° and 121–180°). A fold through 30° stays shut. Dragging scrubs the clip and holds the pose until the drag ends, then turns once, by the smallest angle, to that form. A click moves at 180° per second. Letting go off a stop in a tent or a laptop only bends the body. Sweeping the hinge again turns a simulator SpringBoard left facing the wrong way; a closed reading taken at boot is not that sweep. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
+- A landscape iPhone Duo keeps a sidebar: 280pt when the book is open, one leaf when the hinge is only partly open. Portrait stays a drawer. The portrait lock drops as soon as the hinge leaves closed.
+- On the phone, finished sessions sit in a folded Settled group. Settling from the row leaves the chat open, and capped lists page as they scroll.
+- Phone pinned sessions and drafts fold from their headings and keep their rows mounted. A draft that arrives on a resident sidebar flies in from the right. Opening one stays out of the list until the composer claims it.
 
 ### Changed
 
@@ -56,10 +61,33 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A collaboration child keeps the account it was launched with when its session row is still a placeholder (Fixes #94).
 - An angle-bracket absolute file path stays absolute (Fixes #92).
 - The default Claude account stays listed when another login shares its identity (Fixes #89).
+- Streaming no longer pulls a paused transcript back to the tail. Resume follows a downward gesture or a tick jump. Short lists opt out of scroll anchoring.
+- Opening a parked draft whose id was never saved as a session opens the draft instead of an IPC error.
+- An iOS simulator preview restarts when the helper's video socket, the helper process, or the renderer port dies, and stops after three failures that never paint a frame.
+- Losing the open draft on the phone reuses that draft instead of listing a second pending copy of the same text.
 
 ### Performance
 
 - Opening a local session no longer rebuilds every sidebar row.
+
+## [0.76.0-alpha.2] - 2026-11-02
+
+### Added
+
+- Double-click an environment, project, or session to give it the sidebar pane. Pinned sessions and drafts for that environment or project stay under the focus bar and start folded.
+- Project session lists page and virtualize. Root sessions stay paged, children load when their parent expands, and a wheel already at the edge continues into the parent scroller. Settled sessions cannot be pinned; the pin slot offers unsettle, and settling does not clear the stored pin. The project hover count includes settled sessions and children.
+- On the phone, finished sessions sit in a folded Settled group. Settling from the row leaves the chat open, and capped lists page as they scroll.
+- A landscape iPhone Duo keeps a sidebar: 280pt when the book is open, one leaf when the hinge is only partly open. Portrait stays a drawer. The portrait lock drops as soon as the hinge leaves closed.
+- Phone pinned sessions and drafts fold from their headings and keep their rows mounted. A draft that arrives on a resident sidebar flies in from the right. Opening one stays out of the list until the composer claims it.
+- Dragging a foldable hinge scrubs the clip and holds the pose until the drag ends. The camera stays put while the view slides to center the phone, and only changes distance if the centered body still does not fit. Letting go turns once, by the smallest angle, to the form that angle belongs to. A fold through 30° stays shut. A tent starts at 31°. 61–80° and 121–180° are the open book, and 81–120° is the laptop. A click travels at 180° per second and finishes in the form it lands in. Letting go off a stop in a tent or a laptop only bends the body.
+
+### Fixed
+
+- Streaming no longer pulls a paused transcript back to the tail. Resume follows a downward gesture or a tick jump. Short lists opt out of scroll anchoring.
+- Opening a parked draft whose id was never saved as a session opens the draft instead of an IPC error.
+- An iOS simulator preview restarts when the helper's video socket, the helper process, or the renderer port dies, and stops after three failures that never paint a frame.
+- Sweeping the hinge again turns a simulator that SpringBoard left facing the wrong way after the previous sweep. Recording the device closed at boot is not that sweep, and a tabletop pose of 0 no longer rewrites an open device back to portrait.
+- Losing the open draft on the phone reuses that draft instead of listing a second pending copy of the same text.
 
 ## [0.76.0-alpha.1] - 2026-11-01
 

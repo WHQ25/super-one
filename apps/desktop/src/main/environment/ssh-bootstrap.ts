@@ -176,7 +176,7 @@ export function buildBootstrapCommand(input: {
       `mkdir -p ${nodeHome}/secrets ${nodeHome}/logs`,
       `chmod 700 ${nodeHome} ${nodeHome}/secrets || true`,
       `if ! curl -fsS ${healthUrl} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${input.remotePort} >${nodeHome}/logs/bootstrap.log 2>&1 & fi`,
-      `healthy=0; i=0; while [ "$i" -lt 50 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not become healthy" >&2; exit 1; fi`,
+      `healthy=0; i=0; while [ "$i" -lt 50 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not become healthy" >&2; tail -n 80 ${nodeHome}/logs/bootstrap.log >&2 2>/dev/null || true; exit 1; fi`,
       `${execPath} pair-create --home ${nodeHome}`,
     ].join(' && ')
   )

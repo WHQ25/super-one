@@ -78,6 +78,7 @@ describe('ssh-bootstrap helpers', () => {
     expect(command).toContain('mkdir -p')
     expect(command).toContain('while [ "$i" -lt 50 ]')
     expect(command).toContain('pair-create')
+    expect(command).toContain('bootstrap.log')
     expect(command.split(' && ').length).toBeGreaterThan(3)
   })
 

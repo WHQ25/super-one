@@ -236,6 +236,19 @@ describe('ensureHostSession', () => {
     expect(activateSession).toHaveBeenCalledWith(LOCAL, 'sid-history', LOCAL)
   })
 
+  it('still materializes a node draft whose only row is an optimistic local bubble', async () => {
+    seed(NODE, 'draft-1', {
+      preferredProvider: 'claude',
+      messages: [{ ...historyMessage, id: 'u-local', providerId: 'local' }],
+    })
+
+    await expect(ensure(NODE).done).resolves.toBe('node-new')
+
+    expect(getSession).toHaveBeenCalledWith('env-1', 'draft-1')
+    expect(createSession).toHaveBeenCalledTimes(1)
+    expect(project(NODE)._sessions['node-new'].messages.map((message) => message.id)).toEqual(['u-local'])
+  })
+
   it('explains a create the host refuses because the harness is not ready', async () => {
     seed(NODE, 'draft-1', { preferredProvider: 'claude' })
     createSession.mockRejectedValueOnce(new Error('harness not ready: claude'))

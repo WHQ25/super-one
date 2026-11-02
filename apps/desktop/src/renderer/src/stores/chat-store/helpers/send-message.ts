@@ -1,11 +1,10 @@
-import { toast } from 'sonner'
 import { createSendWriteScope } from './send-write-scope'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { isRecapSlashSend } from '@superone/shared/recap-row'
 import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/shared/agent-types'
-import { pendingSlashCommandFrom } from '@superone/chat-core'
+import { pendingSlashCommandFrom, reduceUserMessageSendFailed } from '@superone/chat-core'
 import { newMessageId } from '@superone/shared/message-id'
 import { buildBrowserAnnotationText } from './browser-annotation'
 import { buildReplyCommentsText, replyCommentSelection } from './reply-comments'
@@ -486,13 +485,6 @@ export async function sendMessageImpl(
   // Activation can replay an older host selection. This turn keeps the choices
   // the composer displayed when it was sent; later turns use subsequent picks.
   const turnChoices = getScopedPerSession(get(), writeScope.target)
-  try {
-    await ensureHostSession(set, get, projectPath, writeScope)
-  } catch (error) {
-    patchSession(() => ({ _pendingSlashCommand: '' }))
-    toast.error(error instanceof Error ? error.message : String(error))
-    return
-  }
 
   const attachmentBlock = (att: ImageAttachment): ContentBlock =>
     att.mimeType === 'application/pdf'
@@ -561,6 +553,19 @@ export async function sendMessageImpl(
     })),
     isOpen: true,
   }))
+  // The bubble is on screen before the host session exists, the way a phone
+  // stages a turn. A create the host refuses marks that same bubble failed.
+  try {
+    await ensureHostSession(set, get, projectPath, writeScope)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    patchSession((s) => ({
+      _pendingSlashCommand: '',
+      ...reduceUserMessageSendFailed(s, { type: 'user_message_send_failed', clientMessageId: userMessageId, error: message }),
+      ...(startsStreaming ? { status: 'idle' as const } : {}),
+    }))
+    return
+  }
   // First send consumes any visibility/leave-promoted draft for this origin.
   {
     const consumeSid = resolveWriteSid()

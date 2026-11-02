@@ -178,6 +178,11 @@ function markContinued(set: ChatStoreSet, projectPath: string, from: string, to:
   })
 }
 
+/** A row the host accepted. A local optimistic bubble is not one. */
+function sessionHasHostedTurn(session: { messages: readonly { providerId?: string }[] }): boolean {
+  return session.messages.some((message) => message.providerId !== 'local')
+}
+
 /** Move the composer's draft entry to the id its host gave the session. */
 function adoptSessionId(set: ChatStoreSet, projectPath: string, from: string | null, to: string): void {
   set((s) => {
@@ -207,7 +212,8 @@ function adoptSessionId(set: ChatStoreSet, projectPath: string, from: string | n
 /**
  * Make the composer's session real on its host and point `writeScope` at it.
  *
- * A session that has carried a turn exists there. An empty one is looked up:
+ * A session that has carried a host turn exists there. An optimistic local
+ * bubble does not count. An empty one is looked up:
  * missing, or on another harness than the composer picked, it is created with
  * the draft's settings, and an empty one it replaces is removed. This
  * desktop's host keeps the draft's id; a node names its own.
@@ -224,7 +230,9 @@ export async function ensureHostSession(
   const harness = resolveProvider(session)
   const connectionId = connectionIdForProjectKey(projectPath)
   let sid = candidate
-  if (!candidate || session.messages.length === 0) {
+  // An optimistic bubble is not a turn the host has taken. Treating it as one
+  // would send a remote draft id the node has never created.
+  if (!candidate || !sessionHasHostedTurn(session)) {
     const record = candidate
       ? await window.environment.getSession(connectionId, candidate) as { harnessId?: string } | null
       : null

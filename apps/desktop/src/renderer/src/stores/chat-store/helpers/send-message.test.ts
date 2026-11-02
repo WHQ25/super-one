@@ -166,6 +166,52 @@ beforeEach(() => {
 describe('sendMessageImpl: remote node', () => {
   const remotePath = 'remote:env-1:/work/app'
 
+  it('paints the user bubble before the node creates the session', async () => {
+    seedProject(remotePath, 'local-draft-sid', {
+      preferredProvider: 'claude',
+      sessionProvider: null,
+    })
+    let releaseCreate!: (value: { sessionId: string; title: null; lastActiveAt: string; messageCount: number }) => void
+    mockEnvCreateSession.mockReturnValueOnce(new Promise((resolve) => { releaseCreate = resolve }))
+
+    const sending = useChatStore.getState().sendMessage('hello')
+
+    await vi.waitFor(() => {
+      const draft = useChatStore.getState().projectSessions[remotePath]._sessions['local-draft-sid']
+      expect(draft.messages).toHaveLength(1)
+      expect(draft.messages[0]).toMatchObject({ role: 'user', providerId: 'local' })
+      expect(draft.messages[0].metadata?.sendFailure).toBeUndefined()
+      expect(draft.awaitingAssistantReply).toBe(true)
+    })
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+
+    releaseCreate({ sessionId: 'node-sid-1', title: null, lastActiveAt: '', messageCount: 0 })
+    await sending
+
+    const sess = useChatStore.getState().projectSessions[remotePath]._sessions['node-sid-1']
+    expect(sess.messages).toHaveLength(1)
+    expect(sess.messages[0].metadata?.sendFailure).toBeUndefined()
+    expect(sess.awaitingAssistantReply).toBe(true)
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks the painted bubble failed when the node refuses to create the session, without a toast', async () => {
+    seedProject(remotePath, 'local-draft-sid', {
+      preferredProvider: 'claude',
+      sessionProvider: null,
+    })
+    mockEnvCreateSession.mockRejectedValueOnce(new Error('harness not ready: claude'))
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const sess = getActiveSession(remotePath)
+    expect(sess.messages).toHaveLength(1)
+    expect(sess.messages[0].metadata?.sendFailure?.error).toContain('not ready')
+    expect(sess.awaitingAssistantReply).toBe(false)
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+    expect(mockToastError).not.toHaveBeenCalled()
+  })
+
   it('materializes a node session when the active id is only a local draft', async () => {
     // Default preferredProvider is claude (Claude Code tab); must not force codex.
     seedProject(remotePath, 'local-draft-sid', {

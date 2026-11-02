@@ -24,6 +24,7 @@ const dirs: string[] = []
 const prevHome = process.env.SUPERONE_NODE_HOME
 const prevHarnessHome = process.env.SUPERONE_HARNESS_HOME
 const prevCli = process.env.SUPERONE_CLI_VERSION
+const prevCodexHome = process.env.CODEX_HOME
 
 afterEach(() => {
   if (prevHome === undefined) delete process.env.SUPERONE_NODE_HOME
@@ -32,6 +33,8 @@ afterEach(() => {
   else process.env.SUPERONE_HARNESS_HOME = prevHarnessHome
   if (prevCli === undefined) delete process.env.SUPERONE_CLI_VERSION
   else process.env.SUPERONE_CLI_VERSION = prevCli
+  if (prevCodexHome === undefined) delete process.env.CODEX_HOME
+  else process.env.CODEX_HOME = prevCodexHome
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
@@ -44,6 +47,10 @@ function withNodeHome() {
   const harnessHome = join(dir, 'harness')
   mkdirSync(harnessHome, { recursive: true })
   process.env.SUPERONE_HARNESS_HOME = harnessHome
+  // Codex login is the node user's own store. Keep it off the developer home.
+  const codexHome = join(dir, 'codex-home')
+  mkdirSync(codexHome, { recursive: true })
+  process.env.CODEX_HOME = codexHome
   return dir
 }
 
@@ -161,6 +168,46 @@ describe('harness CLI (Stage 2)', () => {
     expect(detail.installationPath).toBe(status.command)
     expect(detail.configSummary?.source).toBe('offline-artifact')
     expect(detail.configSummary?.digestSha256).toBe(digest)
+  })
+
+  it('enable codex applies the node user CLI login and probe checks it again', async () => {
+    const home = withNodeHome()
+    const bytes = Buffer.from('fake-codex-runtime')
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    writeManagedManifest(home, 'codex', digest)
+    const artifact = join(home, 'codex-artifact.bin')
+    writeFileSync(artifact, bytes)
+
+    const signedOut = await runHarnessCli(['enable', 'codex', '--artifact', artifact, '--json'])
+    expect(signedOut.ok).toBe(true)
+    expect((signedOut.json as HarnessInstallationStatus).state).toBe('needs_auth')
+
+    writeFileSync(
+      join(home, 'codex-home', 'auth.json'),
+      JSON.stringify({ tokens: { access_token: 'node-user-token' } }),
+    )
+    const probed = await runHarnessCli(['probe', 'codex', '--json'])
+    expect(probed.ok).toBe(true)
+    const again = probed.json as {
+      state: string
+      transitioned: boolean
+      reason: string
+      status: HarnessInstallationStatus
+    }
+    expect(again.transitioned).toBe(true)
+    expect(again.state).toBe('ready')
+    expect(again.status.state).toBe('ready')
+    expect(again.reason).toMatch(/codex host CLI login/)
+
+    const loggedInHome = withNodeHome()
+    writeManagedManifest(loggedInHome, 'codex', digest)
+    writeFileSync(
+      join(loggedInHome, 'codex-home', 'auth.json'),
+      JSON.stringify({ tokens: { access_token: 'node-user-token' } }),
+    )
+    const loggedIn = await runHarnessCli(['enable', 'codex', '--artifact', artifact, '--json'])
+    expect(loggedIn.ok).toBe(true)
+    expect((loggedIn.json as HarnessInstallationStatus).state).toBe('ready')
   })
 
   it('repair restores a corrupted managed payload', async () => {

@@ -221,8 +221,8 @@ export function desktopHarnessAuthProbe(): HarnessAuthProbe {
       if (listCredentials().length > 0) {
         return { ok: true, reason: 'desktop has provider credentials' }
       }
-      // Claude/Codex may also auth via host CLI login (~/.claude / chatgpt) —
-      // leave null so the kernel keeps needs_auth rather than fabricating ready.
+      // No SuperOne provider credential. Null lets the kernel read the host
+      // CLI login instead of treating a present runtime as authentication.
       return null
     },
   }

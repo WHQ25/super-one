@@ -10,6 +10,8 @@ import type { NodeHarnessId } from '@superone/shared/environment'
 import type { HarnessManager } from './manager'
 import type { HarnessAuthProbe, HarnessRuntimeResolver } from './types'
 import { resolveCursorApiKeyPlain } from './cursor-availability'
+import { loadClaudeCredentials } from '../usage/claude'
+import { readCodexLogin } from '../usage/codex'
 
 export type RuntimeReadyResult =
   | { ok: true; reason: string }
@@ -101,7 +103,7 @@ export interface ProbeDeps {
  * Probe a harness and optionally promote needs_auth → ready when:
  * - managed binary (or SDK for claude) is present, and
  * - auth is satisfied: not requiresAuth, or a provider binding/credential exists,
- *   or SUPERONE_HARNESS_MARK_READY=1 (lab escape hatch).
+ *   a host CLI login exists, or SUPERONE_HARNESS_MARK_READY=1 (lab escape hatch).
  *
  * Also demotes ready → error when the runtime binary has disappeared.
  */
@@ -224,7 +226,21 @@ function isAuthSatisfied(
   const fromProvider = deps.auth?.hasCredentialFor(id)
   if (fromProvider?.ok) return fromProvider
 
-  // Bundled SDK / env-pinned binary implies host credentials in $HOME.
+  // CLI login belongs to the host user, independently of where the executable
+  // came from. Managed installs use the same credential stores as system CLIs.
+  if (id === 'claude' || id === 'codex') {
+    try {
+      const loggedIn = id === 'claude'
+        ? Boolean(loadClaudeCredentials(null)?.oauth.accessToken?.trim())
+        : Boolean(readCodexLogin()?.accessToken)
+      if (loggedIn) return { ok: true, reason: `${id} host CLI login` }
+    } catch {
+      // Unreadable credentials must leave the harness awaiting authentication.
+    }
+    return { ok: false, reason: `needs_auth: complete ${id} CLI login as the node user` }
+  }
+
+  // Other runtimes may have environment-based authentication.
   if (deps.resolver.isRunnableWithoutCatalog(id)) {
     if (id === 'dsh') {
       return {
@@ -241,13 +257,6 @@ function isAuthSatisfied(
         ok: false,
         reason: 'needs_auth: set CURSOR_API_KEY or complete Cursor API key setup',
       }
-    }
-    return {
-      ok: true,
-      reason:
-        id === 'claude'
-          ? 'claude Agent SDK / host credentials assumed'
-          : 'SUPERONE_CODEX_BINARY host credentials assumed',
     }
   }
   return {

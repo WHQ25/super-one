@@ -63,7 +63,7 @@ export interface HarnessRuntimeResolver {
   resolveBinary(id: NodeHarnessId, harnesses: HarnessCatalogReader): string | null
   /**
    * Runtime usable even without a catalog command — a bundled SDK platform
-   * package or an env pin. Drives the `needs_auth → ready` host-login path.
+   * package or an env pin. Runtime availability is separate from authentication.
    */
   isRunnableWithoutCatalog(id: NodeHarnessId): boolean
   /** Detect an already-installed managed runtime when enabling. */
@@ -72,7 +72,7 @@ export interface HarnessRuntimeResolver {
 
 /**
  * Provider-credential check. Returns null when the host has no provider store,
- * letting the kernel fall back to host-login heuristics.
+ * letting the kernel check the host CLI login stores.
  */
 export interface HarnessAuthProbe {
   hasCredentialFor(id: NodeHarnessId): { ok: true; reason: string } | null

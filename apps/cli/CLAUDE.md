@@ -13,6 +13,11 @@ control leases, sessions, and harness execution. Root repository rules apply.
 - `HarnessManager` persists installation readiness. The advertised harness list
   includes enabled, ready harnesses; `session.create` checks readiness.
   Catalog id `acp-grok` and session id `acp` are different contracts.
+- Claude/Codex readiness recognizes CLI login stores belonging to the node
+  user on that machine, including custom config homes and macOS Keychain.
+  `superone harness enable claude|codex` applies that login. `superone harness
+  probe <id>` checks it again. This is not a controller credential. Managed
+  executable installation does not require a separate SuperOne provider login.
 - `@superone/runtime/session` owns lifecycle, leases, event persistence, and
   permission waiters. CLI supplies SQLite and environment ports. Structured
   events and legacy deltas must not emit the same text twice.

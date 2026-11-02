@@ -93,6 +93,9 @@ Commands:
 Notes:
   Catalog/state: $SUPERONE_HOME/node (SUPERONE_NODE_HOME for tests).
   Managed binaries: $SUPERONE_HOME/harness (SUPERONE_HARNESS_HOME for tests; shared with desktop).
+  enable claude|codex reads this node's own CLI login (the node user's store on
+  this machine, not a controller's credentials) and may mark the harness ready.
+  probe <HARNESS_ID> runs that login check again.
   No public --home / --data-dir.
   Stage 2 deferred (rejected if passed): --env-file, --server-password-stdin,
   --clear-server-password, --clear-env, --startup-timeout, --initialize-timeout,
@@ -121,7 +124,7 @@ function subUsage(sub: string): string {
     case 'doctor':
       return 'Usage: superone harness doctor [<HARNESS_ID>] [--json]'
     case 'probe':
-      return 'Usage: superone harness probe <HARNESS_ID> [--json]'
+      return 'Usage: superone harness probe <HARNESS_ID> [--json]\nRe-reads this node user\'s Claude/Codex CLI login and updates readiness.'
     case 'repair':
       return 'Usage: superone harness repair claude|codex --artifact <FILE> [--json]'
     default:
@@ -180,9 +183,9 @@ async function dispatchHarnessCommand(
     case 'show':
       return cmdShow(manager, rest)
     case 'enable':
-      return await cmdEnable(manager, rest, /*configure*/ false)
+      return await cmdEnable(manager, rest, /*configure*/ false, db)
     case 'configure':
-      return await cmdEnable(manager, rest, /*configure*/ true)
+      return await cmdEnable(manager, rest, /*configure*/ true, db)
     case 'disable':
       return cmdDisable(manager, rest)
     case 'doctor':
@@ -236,6 +239,7 @@ async function cmdEnable(
   manager: HarnessManager,
   args: string[],
   configure: boolean,
+  db: NodeDatabase,
 ): Promise<HarnessCliResult> {
   // Peek positional harness id first so we can use a per-target option schema.
   const idPeek = args.find((a) => !a.startsWith('-'))
@@ -263,8 +267,10 @@ async function cmdEnable(
   try {
     if (id === 'claude' || id === 'codex') {
       const artifact = parsed.values['--artifact']
-      const status = await enableManaged(manager, id, artifact)
-      return okStatus(status, parsed.json, `enabled ${id} (state=${status.state})`)
+      await enableManaged(manager, id, artifact)
+      const login = refreshNodeCliLogin(manager, id, db)
+      const status = manager.get(id)
+      return okStatus(status, parsed.json, `enabled ${id} (state=${status.state}; ${login.reason})`)
     }
 
     if (id === 'opencode') {
@@ -386,14 +392,7 @@ function cmdProbe(
   if (!id || !isNodeHarnessId(id)) {
     return fail(`unknown or missing harness id: ${id ?? '(none)'}`, parsed.json)
   }
-  let providers: ProviderStore | null = null
-  try {
-    const nodeHome = resolveNodeHome(undefined)
-    providers = new ProviderStore(db, nodePaths(nodeHome).providerSecretsKey)
-  } catch {
-    providers = null
-  }
-  const result = probeHarnessReadiness(manager, id, providers)
+  const result = probeHarnessReadiness(manager, id, nodeProviders(db))
   const status = manager.get(id)
   if (parsed.json) {
     return {
@@ -471,6 +470,28 @@ async function cmdRepair(manager: HarnessManager, args: string[]): Promise<Harne
     return okStatus(status, parsed.json, `repaired ${id} (state=${status.state})`)
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err), parsed.json)
+  }
+}
+
+function nodeProviders(db: NodeDatabase): ProviderStore | null {
+  try {
+    const nodeHome = resolveNodeHome(undefined)
+    return new ProviderStore(db, nodePaths(nodeHome).providerSecretsKey)
+  } catch {
+    return null
+  }
+}
+
+/** Re-read this node user's own CLI login. Does not use a controller's credentials. */
+function refreshNodeCliLogin(
+  manager: HarnessManager,
+  id: NodeHarnessId,
+  db: NodeDatabase,
+): { reason: string } {
+  try {
+    return probeHarnessReadiness(manager, id, nodeProviders(db))
+  } catch {
+    return { reason: 'login check failed' }
   }
 }
 

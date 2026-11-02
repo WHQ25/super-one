@@ -27,7 +27,7 @@ describe('SidebarFocusView', () => {
       <SidebarFocusView
         environments={[environment]}
         sort="recent"
-        expandedProjectKeys={[]}
+        expandedProjectKeys={new Set()}
         folders={[]}
         localHostLabel="This Mac"
         folderSessions={{}}
@@ -57,8 +57,12 @@ describe('SidebarFocusView', () => {
     const bar = focus?.querySelector('[data-sidebar-focus-bar]')
     const context = focus?.querySelector('[data-sidebar-focus-context]')
     const projects = focus?.querySelector('[data-environment-id]')
+    expect(bar).toBeTruthy()
+    expect(context).toBeTruthy()
+    expect(projects).toBeTruthy()
+    if (!bar || !context || !projects) return
     expect(context).toHaveTextContent('Pinned and drafts')
-    expect(bar?.compareDocumentPosition(context!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(context?.compareDocumentPosition(projects!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(bar.compareDocumentPosition(context) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(context.compareDocumentPosition(projects) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

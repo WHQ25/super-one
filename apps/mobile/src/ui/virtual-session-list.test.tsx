@@ -1,4 +1,4 @@
-import { expect, test } from '@jest/globals'
+import { expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { Text } from 'react-native'
 import { renderWithTheme } from '../test-render'
@@ -29,7 +29,7 @@ test('mounts the visible window, not every row', async () => {
 })
 
 test('asks once when the loaded rows do not fill the cap and another page exists', async () => {
-  const onLoadMore = jest.fn()
+  const onLoadMore = jest.fn<() => void>()
   await renderWithTheme(
     <VirtualSessionList count={2} hasMore getKey={(index) => index} renderItem={row} onLoadMore={onLoadMore} />,
   )
@@ -37,7 +37,7 @@ test('asks once when the loaded rows do not fill the cap and another page exists
 })
 
 test('does not ask again when the list is complete', async () => {
-  const onLoadMore = jest.fn()
+  const onLoadMore = jest.fn<() => void>()
   await renderWithTheme(
     <VirtualSessionList count={2} getKey={(index) => index} renderItem={row} onLoadMore={onLoadMore} />,
   )
@@ -47,7 +47,7 @@ test('does not ask again when the list is complete', async () => {
 })
 
 test('asks again when a hidden page arrives and the visible count stays put', async () => {
-  const onLoadMore = jest.fn()
+  const onLoadMore = jest.fn<() => void>()
   const list = (loadToken: number) => (
     <VirtualSessionList count={1} loadToken={loadToken} hasMore getKey={(index) => index} renderItem={row} onLoadMore={onLoadMore} />
   )
@@ -68,7 +68,7 @@ test('fades an edge only while it still hides rows', () => {
 })
 
 test('loads the next page once when scrolled near the bottom', async () => {
-  const onLoadMore = jest.fn()
+  const onLoadMore = jest.fn<() => void>()
   await renderWithTheme(
     <VirtualSessionList
       testID="active-session-list"

@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
@@ -113,7 +114,8 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
       ?? proj?._sessions[sessionId]?.sessionProvider
   })
   const realtimeVoice = useRealtimeCallStore((s) => (
-    provider === 'codex' && s.sessionId === sessionId && s.state !== 'idle'
+    !!provider && HARNESS_CAPABILITIES[provider].supportsRealtimeVoice === true
+      && s.sessionId === sessionId && s.state !== 'idle'
   ))
   const sideChatAvailable = useCanOpenSideChat(sessionId)
   const chatFloating = useActivityPanelStore(selectPanelFillsWindow)

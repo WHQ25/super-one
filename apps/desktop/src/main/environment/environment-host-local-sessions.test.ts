@@ -43,7 +43,7 @@ describe('EnvironmentHost local session list', () => {
     rows.list.mockReturnValue([row])
 
     expect(await host.listSessions('local', '/repo', { limit: 13, offset: 26 })).toEqual([row])
-    expect(rows.list).toHaveBeenCalledWith('p1', 13, 26)
+    expect(rows.list).toHaveBeenCalledWith('p1', 13, 26, {})
     expect(protocolList).not.toHaveBeenCalled()
     host.dispose()
   })

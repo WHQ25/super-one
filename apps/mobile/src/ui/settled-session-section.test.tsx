@@ -1,4 +1,4 @@
-import { expect, test } from '@jest/globals'
+import { expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
 import { SettledSessionSection } from './settled-session-section'

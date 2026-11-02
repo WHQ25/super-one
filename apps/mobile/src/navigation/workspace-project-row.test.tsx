@@ -368,7 +368,7 @@ test('folds a project\'s settled sessions until the heading is opened', async ()
 })
 
 test('does not ask for settled sessions while the project is collapsed', async () => {
-  const request = jest.fn(async () => ({ sessions: [], totalCount: 0 }))
+  const request = jest.fn(async (_method: string) => ({ sessions: [], totalCount: 0 }))
   const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   await renderWithTheme(row({ expanded: false, client }))
   await act(async () => {})

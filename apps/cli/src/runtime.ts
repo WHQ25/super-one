@@ -1,6 +1,7 @@
 import { installNodeRemoteContent } from './session/remote-content'
 import { nodeCodexAccountStore } from './session/codex-accounts'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { watchHarnessCatalogStamp } from './session/harness-catalog-watch'
 import { AuthService } from './auth/auth-service'
 import { resolveRuntimeConfig, nodePaths, type NodeRuntimeConfig } from './config'
 import { openNodeDatabase, type NodeDatabase } from './db/database'
@@ -316,6 +317,15 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     simulatedHarness,
   })
 
+  const catalogWatch = watchHarnessCatalogStamp({
+    nodeHome: config.nodeHome,
+    environmentId: identity.environmentId,
+    readIds: () => harnesses.readySessionHarnessIds(),
+    append: (input) => {
+      events.append(input)
+    },
+  })
+
   writeFileSync(
     paths.runtimeJson,
     JSON.stringify(
@@ -360,6 +370,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     server,
     startedAt,
     async stop() {
+      catalogWatch.close()
       // 1) Refuse new turns immediately (even while sockets still open).
       // 2) Stop accepting new RPC connections.
       // 3) Drain in-flight turns (Codex SIGTERM→SIGKILL) before closing DB.

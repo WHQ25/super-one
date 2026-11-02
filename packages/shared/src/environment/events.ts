@@ -17,6 +17,17 @@ export type EnvironmentAggregateType =
   | 'access'
   | 'node'
 
+/**
+ * Environment-log event: the set of enabled, ready harnesses changed.
+ * Payload is `{ harnessIds: string[] }` (session wire ids).
+ */
+export const HARNESS_CATALOG_CHANGED = 'harness_catalog_changed'
+
+/** Stable comparison of advertised harness ids. Order on the wire does not matter. */
+export function harnessAdvertisementKey(ids: readonly string[] | undefined): string {
+  return [...(ids ?? [])].sort().join('\0')
+}
+
 export interface EnvironmentEventEnvelope<T = unknown> {
   eventId: string
   /** Monotonic environment-wide sequence as decimal string. */

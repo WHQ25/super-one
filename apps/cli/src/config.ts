@@ -41,6 +41,11 @@ export function nodePaths(nodeHome: string) {
     providerSecretsKey: join(nodeHome, 'secrets', 'provider-secrets.key'),
     logsDir: join(nodeHome, 'logs'),
     runtimeJson: join(nodeHome, 'runtime.json'),
+    /**
+     * Touched by `harness enable` in another process. The running node watches
+     * this file and pushes `harness_catalog_changed` when the advertised set changes.
+     */
+    harnessCatalogStamp: join(nodeHome, 'harness-catalog.stamp'),
     /** Session sync zone root — mirrors the desktop's `<userData>/sync` layout. */
     syncRoot: join(nodeHome, 'sync'),
   }

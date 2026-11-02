@@ -1818,6 +1818,11 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
     if (snapshot.state === 'connected') remoteTerminalController.resume(snapshot.connectionId)
   })
+  // `harness enable` on the node does not change supervisor state. Reuse the
+  // status event the renderer already uses to drop its environment-list cache.
+  host.onHarnessCatalogChanged((snapshot) => {
+    safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
+  })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
   host.setFollowListener((ref, followed) => rendererInterest.follow(ref, followed))

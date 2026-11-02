@@ -96,11 +96,13 @@ describe('isPickerHarnessEnabled', () => {
     expect(isPickerHarnessEnabled(catalog, 'opencode', null, { ...off, legacyExperimentalAgentsEnabled: true })).toBe(true)
   })
 
-  it('gates ACP agents by the Grok row or experimental opt-in, and keeps an unresolved agent pickable', () => {
+  it('gates ACP agents by the Grok row or experimental opt-in, and keeps an unresolved agent pickable only while the catalog is unknown or the row is on', () => {
     expect(isPickerHarnessEnabled(catalog, 'acp', 'grok-build', off)).toBe(true)
     expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', off)).toBe(false)
     expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', { enabledExperimentalAgents: ['gemini'] })).toBe(true)
-    expect(isPickerHarnessEnabled([], 'acp', null, off)).toBe(true)
+    expect(isPickerHarnessEnabled(catalog, 'acp', null, off)).toBe(true)
+    expect(isPickerHarnessEnabled(null, 'acp', null, off)).toBe(true)
+    expect(isPickerHarnessEnabled([], 'acp', null, off)).toBe(false)
   })
 })
 

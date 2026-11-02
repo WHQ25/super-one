@@ -291,3 +291,21 @@ describe('remote-resources codex admin helpers', () => {
     expect(codexPluginsList).toHaveBeenCalledWith('proj-1', undefined)
   })
 })
+
+describe('RemoteEnvironmentGateway advertised harness ids', () => {
+  it('replaces harness ids on the cached descriptor and leaves a cold cache alone', () => {
+    const gw = new RemoteEnvironmentGateway({ rpc: vi.fn() } as unknown as NodeRpcClient)
+    expect(gw.cachedDescriptor).toBeNull()
+    gw.replaceAdvertisedHarnesses(['acp'])
+    expect(gw.cachedDescriptor).toBeNull()
+    gw.rememberDescriptor({
+      environmentId: 'env-1',
+      capabilities: { harnessIds: ['claude'] },
+    } as unknown as import('@superone/shared/environment').ExecutionEnvironmentDescriptor)
+    gw.replaceAdvertisedHarnesses(['claude'])
+    expect(gw.cachedDescriptor?.capabilities.harnessIds).toEqual(['claude'])
+    gw.replaceAdvertisedHarnesses(['acp', 'claude'])
+    expect(gw.cachedDescriptor?.capabilities.harnessIds).toEqual(['acp', 'claude'])
+    expect(gw.cachedDescriptor?.environmentId).toBe('env-1')
+  })
+})

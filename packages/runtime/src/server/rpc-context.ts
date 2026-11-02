@@ -1,5 +1,6 @@
 import type {
   ClaimHostActionResult,
+  EnvironmentAggregateType,
   EnvironmentCapabilities,
   EnvironmentEventEnvelope,
   HostActionsPollResult,
@@ -547,6 +548,21 @@ export interface RpcContext {
   extensionMethods?: ReadonlySet<string>
   /** Host knowledge for `environment.usage`; without it the node reads each CLI's default login. */
   subscriptionUsage?: SubscriptionUsagePort
+
+  /**
+   * Durable environment log. A node with it publishes `harness_catalog_changed`
+   * when an RPC enable, disable, or probe changes the advertised set. A host
+   * without it still serves the mutation; the caller applies the result locally.
+   */
+  events?: {
+    append(input: {
+      aggregateType: EnvironmentAggregateType
+      aggregateId: string
+      eventType: string
+      payload: unknown
+      causationRequestId?: string
+    }): unknown
+  }
 
   /** The connection's push streams; absent outside a socket (tests, in-process calls). */
   streams?: RpcStreams

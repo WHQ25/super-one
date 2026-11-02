@@ -8,7 +8,9 @@ import { parseMessageDisplay } from '@superone/shared/message-display'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import {
   DATABASE_SCHEMA_GENERATION,
+  HARNESS_CATALOG_CHANGED,
   PROTOCOL_GENERATION,
+  harnessAdvertisementKey,
   isNodeHarnessId,
   nodeProjectsDir,
   OPERATION_SCOPES,
@@ -539,15 +541,11 @@ function handleProviderImportBundle(payload: unknown, ctx: RpcContext): RpcResul
 async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  // Advertise enabled + ready catalog entries plus directly runnable bundled/
-  // binary overrides. Simulated test mode pre-marks the catalog ready.
+  // Enabled + ready catalog entries only. A bundled SDK or PATH binary does
+  // not advertise a harness the administrator has not enabled; `harness enable`
+  // is what records that intent and can still bind the SDK binary. Simulated
+  // test mode pre-marks the catalog ready.
   const harnessIds = ctx.harnesses ? [...ctx.harnesses.readySessionHarnessIds()] : []
-  if (ctx.harnesses && ctx.hooks.isCodexBinaryOverrideRunnable() && !harnessIds.includes('codex')) {
-    harnessIds.push('codex')
-  }
-  if (ctx.harnesses && ctx.hooks.isClaudeBinaryOverrideRunnable() && !harnessIds.includes('claude')) {
-    harnessIds.push('claude')
-  }
   let cliVersion: string | undefined
   try {
     cliVersion = ctx.hooks.resolveReleaseVersion()
@@ -611,8 +609,10 @@ function handleHarnessProbe(payload: unknown, ctx: RpcContext): RpcResult {
   if (!isNodeHarnessId(id)) {
     return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
   }
+  const before = advertisedHarnessKey(ctx)
   try {
     const result = ctx.hooks.probeHarnessReadiness(ctx.harnesses, id, ctx.providers ?? null)
+    publishHarnessCatalogIfChanged(ctx, before)
     return { result: { ...result, status: ctx.harnesses.get(id) } }
   } catch (err) {
     return mapThrown(err)
@@ -628,6 +628,7 @@ async function handleHarnessEnable(payload: unknown, ctx: RpcContext): Promise<R
   if (!isNodeHarnessId(id)) {
     return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
   }
+  const before = advertisedHarnessKey(ctx)
   try {
     const args = Array.isArray(p.args)
       ? p.args.filter((a): a is string => typeof a === 'string')
@@ -643,6 +644,7 @@ async function handleHarnessEnable(payload: unknown, ctx: RpcContext): Promise<R
       },
       ctx.providers ?? null,
     )
+    publishHarnessCatalogIfChanged(ctx, before)
     return { result: status }
   } catch (err) {
     return mapThrown(err)
@@ -657,10 +659,41 @@ function handleHarnessDisable(payload: unknown, ctx: RpcContext): RpcResult {
   if (!isNodeHarnessId(id)) {
     return { error: { code: 'invalid_argument', message: `unknown harnessId: ${id}` } }
   }
+  const before = advertisedHarnessKey(ctx)
   try {
-    return { result: ctx.hooks.disableHarness(ctx.harnesses, id) }
+    const status = ctx.hooks.disableHarness(ctx.harnesses, id)
+    publishHarnessCatalogIfChanged(ctx, before)
+    return { result: status }
   } catch (err) {
     return mapThrown(err)
+  }
+}
+
+/** Advertised harness ids before a catalog mutation, when this host can publish. */
+function advertisedHarnessKey(ctx: RpcContext): string | null {
+  if (!ctx.events || !ctx.harnesses) return null
+  return harnessAdvertisementKey(ctx.harnesses.readySessionHarnessIds())
+}
+
+/**
+ * Tell connected controllers the advertised set changed. A no-op probe or an
+ * enable that stays unready does not append. A failed append does not fail
+ * the mutation the caller already committed.
+ */
+function publishHarnessCatalogIfChanged(ctx: RpcContext, before: string | null): void {
+  if (!ctx.events || !ctx.harnesses || before == null) return
+  const harnessIds = [...ctx.harnesses.readySessionHarnessIds()]
+  if (harnessAdvertisementKey(harnessIds) === before) return
+  try {
+    ctx.events.append({
+      aggregateType: 'environment',
+      aggregateId: ctx.identity.environmentId,
+      eventType: HARNESS_CATALOG_CHANGED,
+      payload: { harnessIds },
+      causationRequestId: ctx.requestId,
+    })
+  } catch {
+    // The next connect reads environment.descriptor.
   }
 }
 

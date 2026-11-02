@@ -13,8 +13,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
-import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
-import { isClaudeRuntimeRunnable } from '../session/claude-turn-runner'
 import { connectAuthedRpc } from '../test/ws-rpc'
 
 const dirs: string[] = []
@@ -268,12 +266,8 @@ describe('Phase 2 workspace integration', () => {
       capabilities: { methods: string[]; harnessIds: string[] }
     }
     expect(desc.capabilities.methods).toContain('session.get')
-    // Catalog entries fail closed, while directly runnable binary/SDK overrides are advertised.
-    const runtimeOverrides = [
-      ...(isCodexBinaryOverrideRunnable() ? ['codex'] : []),
-      ...(isClaudeRuntimeRunnable() ? ['claude'] : []),
-    ]
-    expect(desc.capabilities.harnessIds).toEqual(runtimeOverrides)
+    // A bundled binary is not advertised until harness enable marks the row ready.
+    expect(desc.capabilities.harnessIds).toEqual([])
 
     const opened = (await rpc('project.open', { path: projectDir })) as { projectId: string }
     await expect(rpc('session.create', {

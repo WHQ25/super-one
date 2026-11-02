@@ -499,3 +499,77 @@ describe('sandbox probes on a GUI-launched host', () => {
     }
   })
 })
+
+describe('harness catalog notice', () => {
+  function adminHost(over: Partial<RpcContext> = {}): RpcContext {
+    const base = projectsOnlyHost()
+    return projectsOnlyHost({
+      client: { ...base.client, scopes: [...base.client.scopes, 'node:admin'] },
+      ...over,
+    })
+  }
+
+  it('appends harness_catalog_changed when enable changes the advertised set', async () => {
+    const append = vi.fn()
+    let ids: string[] = []
+    const ctx = adminHost({
+      events: { append },
+      harnesses: {
+        readySessionHarnessIds: () => ids,
+        get: () => ({ id: 'acp-grok' }),
+      } as unknown as RpcContext['harnesses'],
+      hooks: {
+        ...projectsOnlyHost().hooks,
+        enableHarness: async () => {
+          ids = ['acp']
+          return { id: 'acp-grok' }
+        },
+      } as unknown as RpcHostHooks,
+    })
+    const res = await dispatchRpc('harness.enable', { harnessId: 'acp-grok' }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(append).toHaveBeenCalledWith({
+      aggregateType: 'environment',
+      aggregateId: 'env-1',
+      eventType: 'harness_catalog_changed',
+      payload: { harnessIds: ['acp'] },
+      causationRequestId: undefined,
+    })
+  })
+
+  it('does not append when disable leaves the advertised set unchanged', async () => {
+    const append = vi.fn()
+    const ctx = adminHost({
+      events: { append },
+      harnesses: {
+        readySessionHarnessIds: () => [],
+      } as unknown as RpcContext['harnesses'],
+      hooks: {
+        ...projectsOnlyHost().hooks,
+        disableHarness: () => ({ id: 'claude' }),
+      } as unknown as RpcHostHooks,
+    })
+    const res = await dispatchRpc('harness.disable', { harnessId: 'claude' }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(append).not.toHaveBeenCalled()
+  })
+
+  it('does not append when the host has no event log', async () => {
+    let ids: string[] = []
+    const ctx = adminHost({
+      harnesses: {
+        readySessionHarnessIds: () => ids,
+      } as unknown as RpcContext['harnesses'],
+      hooks: {
+        ...projectsOnlyHost().hooks,
+        enableHarness: async () => {
+          ids = ['claude']
+          return { id: 'claude' }
+        },
+      } as unknown as RpcHostHooks,
+    })
+    const res = await dispatchRpc('harness.enable', { harnessId: 'claude' }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(ids).toEqual(['claude'])
+  })
+})

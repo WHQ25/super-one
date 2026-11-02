@@ -1,3 +1,4 @@
+import type { HarnessId } from '@superone/shared/agent-types'
 import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
@@ -12,6 +13,10 @@ import { COMPOSER_CALL_METHODS, type ComposerCallMethod, type ComposerCallMethod
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
+import {
+  harnessAdvertisementChanged,
+  harnessAdvertisementKey,
+} from './harness-catalog-refresh'
 import { app } from 'electron'
 import { join } from 'node:path'
 import { ensureShellPath } from '../shell-path'
@@ -31,6 +36,7 @@ import type {
   WorkspaceEntry,
   EnvironmentInstallProgress,
   EnvironmentListItem,
+  EnvironmentUsageReport,
   ExecutionEnvironmentDescriptor,
   NodeUpgradeAvailability,
   ProjectRef,
@@ -263,6 +269,9 @@ export class EnvironmentHost {
   private readonly statusListeners = new Set<(snapshot: SupervisorSnapshot) => void>()
   /** Last snapshot per connection, so list() reports state without a live socket. */
   private readonly lastStatus = new Map<string, SupervisorSnapshot>()
+  /** Advertised harness ids last applied for a connected node. */
+  private readonly advertisedHarnessKeys = new Map<string, string>()
+  private readonly harnessCatalogListeners = new Set<(snapshot: SupervisorSnapshot) => void>()
   /** One remote project snapshot per live connection generation. */
   private readonly remoteProjectCache = new Map<
     string,
@@ -468,6 +477,15 @@ export class EnvironmentHost {
   onStatusChange(listener: (snapshot: SupervisorSnapshot) => void): () => void {
     this.statusListeners.add(listener)
     return () => this.statusListeners.delete(listener)
+  }
+
+  /**
+   * A connected node's advertised harness set changed. The snapshot is the
+   * current supervisor state, not a reconnect.
+   */
+  onHarnessCatalogChanged(listener: (snapshot: SupervisorSnapshot) => void): () => void {
+    this.harnessCatalogListeners.add(listener)
+    return () => this.harnessCatalogListeners.delete(listener)
   }
 
   /**
@@ -1269,6 +1287,11 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).harnessResources(input)
   }
 
+  /** Logins on the node. A remote chat must not substitute this desktop's Claude quota. */
+  async getUsage(connectionId: string, force?: boolean): Promise<EnvironmentUsageReport> {
+    return this.asRemoteProviderGw(connectionId).getUsage(force)
+  }
+
   async listRemoteCollabProfiles(connectionId: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).collaborationListProfiles()
   }
@@ -1754,6 +1777,9 @@ export class EnvironmentHost {
         const known = this.connections.listKnown().find((item) => item.connectionId === connectionId)
         if (known) this.connections.getGateway(known.environmentId)?.invalidateHostCatalog()
         for (const listener of [...this.catalogListeners]) listener(connectionId)
+      },
+      harnessCatalogChanged: (harnessIds) => {
+        this.noteAdvertisedHarnesses(connectionId, harnessIds)
       },
       activity: (event) => {
         for (const listener of [...this.sessionActivityListeners]) listener(event)
@@ -3575,6 +3601,9 @@ export class EnvironmentHost {
       /* ignore log failures */
     }
     if (snapshot.state === 'connected') {
+      // Record the set connect already loaded. A later catalog event compares
+      // against it; this transition itself does not refresh suggestions.
+      if (previous?.state !== 'connected') this.rememberAdvertisedHarnesses(snapshot.connectionId)
       // Supervisor-only recovery (backoff / wake) never goes through host.connect;
       // attach Host Action here so remote tools work without a manual Connect.
       this.startHostActionConsumer(snapshot.connectionId)
@@ -3587,6 +3616,7 @@ export class EnvironmentHost {
       // idempotent by draft id, so a partially-applied earlier flush is safe.
       void this.flushPendingDrafts(snapshot.connectionId).catch(() => {})
     } else {
+      this.advertisedHarnessKeys.delete(snapshot.connectionId)
       this.remoteProjectCache.delete(snapshot.connectionId)
       this.remoteProjectLoads.delete(snapshot.connectionId)
       // Keep the descriptor through connecting/synchronizing: connect just
@@ -3630,9 +3660,43 @@ export class EnvironmentHost {
     }
     this.connections.disconnectAll()
     this.tunnels.closeAll()
+    this.harnessCatalogListeners.clear()
+    this.advertisedHarnessKeys.clear()
     this.statusListeners.clear()
     this.remoteProjectCache.clear()
     this.remoteProjectLoads.clear()
+  }
+
+  /**
+   * Apply a new advertised harness set for a connected node.
+   *
+   * A controller that enabled the harness itself calls this with the full
+   * advertised set it already has. A `harness_catalog_changed` event from the
+   * node (CLI `harness enable` on that machine, or RPC enable, disable, or
+   * probe) calls it with the payload. The set recorded at connect does not
+   * notify. The same ids notify once.
+   */
+  noteAdvertisedHarnesses(connectionId: string, harnessIds: readonly HarnessId[]): void {
+    const current = this.lastStatus.get(connectionId)
+    if (current?.state !== 'connected') return
+    const next = harnessAdvertisementKey(harnessIds)
+    const previous = this.advertisedHarnessKeys.get(connectionId)
+    this.advertisedHarnessKeys.set(connectionId, next)
+    this.gatewayForConnection(connectionId)?.replaceAdvertisedHarnesses(harnessIds)
+    if (!harnessAdvertisementChanged(previous, next)) return
+    for (const listener of this.harnessCatalogListeners) listener(current)
+  }
+
+  /** Remember the descriptor connect already showed, without notifying. */
+  private rememberAdvertisedHarnesses(connectionId: string): void {
+    const ids = this.gatewayForConnection(connectionId)?.cachedDescriptor?.capabilities.harnessIds
+    this.advertisedHarnessKeys.set(connectionId, harnessAdvertisementKey(ids))
+  }
+
+  private gatewayForConnection(connectionId: string): RemoteEnvironmentGateway | null {
+    const known = this.connections.listKnown().find((row) => row.connectionId === connectionId)
+    if (!known) return null
+    return this.connections.getGateway(known.environmentId)
   }
 
   private startHostActionConsumer(connectionId: string): void {

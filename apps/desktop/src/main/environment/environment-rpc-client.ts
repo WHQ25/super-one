@@ -30,8 +30,8 @@ export abstract class EnvironmentRpcClient {
     return this.rpc('environment.status', options?.sampleCpu ? { sampleCpu: true } : undefined)
   }
 
-  async usage(): Promise<EnvironmentUsageReport> {
-    return this.rpc('environment.usage')
+  async usage(force?: boolean): Promise<EnvironmentUsageReport> {
+    return this.rpc('environment.usage', force ? { force: true } : undefined)
   }
 
   async terminalCreate(input: {

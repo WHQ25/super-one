@@ -154,7 +154,12 @@ export function isPickerHarnessEnabled(
   const catalogId = catalogIdForSessionProvider(provider, agentId)
   // A non-Grok ACP agent is opted into one by one.
   if (!catalogId) return !!agentId && isExperimentalAcpAgentEnabled(agentId, opts)
-  if (!agentId && catalogId === 'acp-grok') return true
+  // Grok's agent id arrives after the harness. An unknown catalog may still
+  // resolve it; a catalog that has the row off must not keep the chip.
+  if (!agentId && catalogId === 'acp-grok') {
+    if (catalog == null) return true
+    return catalogEntryOn(catalog, catalogId)
+  }
   if (catalog != null && catalogEntryOn(catalog, catalogId)) return true
   // The legacy experimental switch still enables OpenCode.
   return !!opts.legacyExperimentalAgentsEnabled && isExperimentalAgentProvider(provider, agentId)

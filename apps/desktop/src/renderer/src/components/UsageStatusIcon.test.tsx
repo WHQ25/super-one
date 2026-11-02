@@ -119,6 +119,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.sessionState.preferredProvider = 'claude'
     hoisted.sessionState.acpAgentId = null
     hoisted.sessionState.apiProviderId = null
+    hoisted.chatState.activeProject = '/tmp/project'
     hoisted.chatState.harnessResources.claude.account.apiProvider = 'firstParty'
     hoisted.sessionState._activeSessionId = 'session-a'
     hoisted.sessionState.session = null
@@ -194,6 +195,33 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(3)
     await act(async () => { vi.advanceTimersByTime(5 * 60_000) })
     expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads a remote Claude session from the node and does not use this desktop login', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.chatState.harnessResources.claude.account.apiProvider = 'gateway'
+    const getUsage = vi.fn(async () => ({
+      accounts: [
+        { harness: 'claude', account: 'node@anthropic.test', apiProviderId: null, planType: 'max', windows: [{ label: '5h', usedPercent: 60, resetsAt: null }] },
+      ],
+    }))
+    vi.stubGlobal('environment', { getUsage })
+    render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve() })
+    expect(getUsage).toHaveBeenCalledWith('node-1', false)
+    expect(window.app.claudeGetRateLimits).not.toHaveBeenCalled()
+    expect(window.app.claudeListAccounts).not.toHaveBeenCalled()
+    expect(screen.getByText('node@anthropic.test')).toBeInTheDocument()
+    expect(screen.getByText('40% left')).toBeInTheDocument()
+  })
+
+  it('shows the node gauge as unavailable when environment.usage is rejected', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    vi.stubGlobal('environment', { getUsage: vi.fn(async () => { throw new Error('unsupported method') }) })
+    render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve() })
+    expect(window.app.claudeGetRateLimits).not.toHaveBeenCalled()
+    expect(screen.getByRole('status')).toHaveTextContent('settings.harnesses.codexAccount.usageUnavailable')
   })
 
   it('names the ChatGPT account in the Codex gauge, but not when a third-party key is in use', async () => {

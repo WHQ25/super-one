@@ -80,10 +80,13 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     }),
     [platforms, credentials, bindings, activeProvider, sessionApiProviderId, experimentalClaudeOpenAiChatEnabled],
   )
+  // A remote session runs the node's catalog. This desktop's provider mapping
+  // would rename those models and drop their effort list.
   const activeModelEnv = useMemo(() => {
+    if (isRemoteProject) return null
     const mapping = effective?.modelMapping
     return mapping && Object.keys(mapping).length > 0 ? mapping : null
-  }, [effective])
+  }, [effective, isRemoteProject])
 
   const fastModeState = useActiveSession((s) => s.session?.fastModeState)
   const providerProps = useSelectorProviders(activeProvider)
@@ -129,13 +132,21 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     [entries],
   )
 
-  const effortOptions = useMemo<SelectorEffortOption[]>(() => {
+  const effortLevels = useMemo((): readonly string[] => {
     if (activeModelEnv) return []
-    return (currentModel?.supportedEffortLevels ?? []).map((level) => ({ value: level, label: formatEffortLabel(level) }))
-  }, [activeModelEnv, currentModel])
+    if (currentModel?.supportedEffortLevels?.length) return currentModel.supportedEffortLevels
+    // The node's provider table omits effort. Claude Code still accepts these.
+    if (isRemoteProject && currentModel) return ['low', 'medium', 'high', 'xhigh', 'max']
+    return []
+  }, [activeModelEnv, currentModel, isRemoteProject])
+
+  const effortOptions = useMemo<SelectorEffortOption[]>(
+    () => effortLevels.map((level) => ({ value: level, label: formatEffortLabel(level) })),
+    [effortLevels],
+  )
 
   // Claude Code offers Ultracode where dynamic workflows run on a model with xhigh effort.
-  const ultracodeAvailable = !activeModelEnv && !!currentModel?.supportedEffortLevels?.includes('xhigh')
+  const ultracodeAvailable = effortLevels.includes('xhigh')
   useEffect(() => {
     // Switching to a model or provider without it turns it off, as Claude Code
     // refuses it there. Wait for the catalog: no model yet is not "unsupported".

@@ -1,4 +1,6 @@
-import type { EnvironmentEventEnvelope, SessionStreamFrame, TopicInterest, TopicNoticeFrame, TopicSubscribeInput } from '@superone/shared/environment'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { HARNESS_CATALOG_CHANGED, type EnvironmentEventEnvelope, type SessionStreamFrame, type TopicInterest, type TopicNoticeFrame, type TopicSubscribeInput } from '@superone/shared/environment'
+import { harnessIdsFromCatalogEvent } from './harness-catalog-refresh'
 import { SESSION_LIST_EVENT_TYPES, topicKey, type TopicRef } from '@superone/shared/environment/topics'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import { RemoteTopicFollowers, type RemoteTopicStream } from './remote-topic-followers'
@@ -44,6 +46,8 @@ export interface RemoteListObserver {
   event?(envelope: EnvironmentEventEnvelope): void
   /** A `sessionList`, `projects`, or `environment` notice: change events, or a snapshot that stands in for missed ones. */
   notice?(frame: TopicNoticeFrame): void
+  /** The node's advertised harness set changed (`harness_catalog_changed`). */
+  harnessCatalog?(harnessIds: readonly HarnessId[]): void
 }
 
 const LIST_NOTICE_KINDS: ReadonlySet<string> = new Set(['sessionList', 'projects', 'environment'])
@@ -247,6 +251,13 @@ export class RemoteSessionFeed {
         onUpdateQueued: (topics: TopicRef[]) => this.noteUpdateQueued(topics),
       }
       for await (const envelope of this.source.subscribe(after, this.abort.signal, handlers)) {
+        if (envelope.aggregateType === 'environment' && envelope.eventType === HARNESS_CATALOG_CHANGED) {
+          const harnessIds = harnessIdsFromCatalogEvent(envelope.payload)
+          if (harnessIds) {
+            for (const observer of [...this.observers]) observer.harnessCatalog?.(harnessIds)
+          }
+          continue
+        }
         if (envelope.aggregateType !== 'session') continue
         if (!this.listNotices && SESSION_LIST_EVENT_TYPES.has(envelope.eventType)) {
           for (const observer of [...this.observers]) observer.event?.(envelope)

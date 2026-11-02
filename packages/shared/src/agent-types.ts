@@ -5138,6 +5138,8 @@ export const AgentIpcChannels = {
   /** Sign a View's MCP server in through its harness (browser + optional loopback relay). */
   ENVIRONMENT_MCP_APPS_AUTHENTICATE: 'environment:mcpApps.authenticate',
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
+  /** Node `environment.usage`: the logins on that machine, not this desktop. */
+  ENVIRONMENT_USAGE: 'environment:usage',
   /** Node session_providers CRUD. */
   /** Node-side collaboration agent profiles — authoritative agentIds for @-mentions on a remote session. */
   ENVIRONMENT_COLLAB_LIST_PROFILES: 'environment:collabListProfiles',

@@ -53,4 +53,19 @@ describe('remoteListObserver', () => {
     })
     expect(catalogs).toBe(1)
   })
+
+  it('forwards a harness catalog change without treating it as a provider catalog', () => {
+    let catalogs = 0
+    const harnesses: string[][] = []
+    const observer = remoteListObserver('conn-b', new Map(), {
+      sessionListChanged: () => { throw new Error('session list') },
+      projectsChanged: () => { throw new Error('projects') },
+      activity: () => { throw new Error('activity') },
+      catalogChanged: () => { catalogs += 1 },
+      harnessCatalogChanged: (ids) => harnesses.push([...ids]),
+    })
+    observer.harnessCatalog?.(['acp', 'claude'])
+    expect(harnesses).toEqual([['acp', 'claude']])
+    expect(catalogs).toBe(0)
+  })
 })

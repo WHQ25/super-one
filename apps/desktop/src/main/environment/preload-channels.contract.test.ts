@@ -193,6 +193,7 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_DELETE_REMOTE_SKILL',
       'ENVIRONMENT_INSTALL_REMOTE_SKILL',
       'ENVIRONMENT_HARNESS_RESOURCES',
+      'ENVIRONMENT_USAGE',
       'ENVIRONMENT_SESSION_PROVIDERS_LIST',
       'ENVIRONMENT_SESSION_PROVIDERS_CREATE',
     ]) {
@@ -207,6 +208,9 @@ describe('environment preload ↔ Main IPC contract', () => {
     const preload = readFileSync(join(ROOT, 'src/preload/index.ts'), 'utf8')
     expect(preload).toContain('getRemoteHarnessResources')
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES')
+    expect(preload).toContain('getUsage:')
+    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_USAGE')
+    expect(AgentIpcChannels.ENVIRONMENT_USAGE).toBe('environment:usage')
     expect(preload).toContain('listRemoteSessionProviders')
     expect(preload).toContain('createRemoteSessionProvider')
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_LIST')

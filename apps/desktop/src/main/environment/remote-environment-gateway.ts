@@ -1,4 +1,5 @@
-import { ARTIFACT_RPC_METHODS, servesMethod, TRANSCRIPT_FOLD_METHOD } from '@superone/shared/environment'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { ARTIFACT_RPC_METHODS, harnessAdvertisementKey, servesMethod, TRANSCRIPT_FOLD_METHOD } from '@superone/shared/environment'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -104,9 +105,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   readonly artifacts: ArtifactGateway
 
   /**
-   * B rebuilds harness ids when the descriptor is read and does not push a
-   * capability change. Reuse one descriptor across a burst of session switches,
-   * then read it again. A push from B would retire the timer.
+   * Reuse one descriptor across a burst of session switches, then read it again.
+   * Advertised harness ids are replaced in place when the node pushes
+   * `harness_catalog_changed`. This TTL covers the rest of the descriptor.
    */
   private static readonly DESCRIPTOR_TTL_MS = 60_000
   private static readonly CLAUDE_ACCOUNTS_TTL_MS = 60_000
@@ -263,6 +264,21 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   rememberDescriptor(descriptor: ExecutionEnvironmentDescriptor): void {
     this.fixedEnvironmentId = descriptor.environmentId
     this.descriptors.remember(RemoteEnvironmentGateway.DESCRIPTOR_KEY, descriptor)
+  }
+
+  /**
+   * Patch advertised harness ids from a `harness_catalog_changed` event.
+   * No descriptor is dialed. A missing cache waits for the next `getDescriptor`.
+   */
+  replaceAdvertisedHarnesses(harnessIds: readonly HarnessId[]): void {
+    const current = this.cachedDescriptor
+    if (!current) return
+    const next = [...harnessIds]
+    if (harnessAdvertisementKey(current.capabilities.harnessIds) === harnessAdvertisementKey(next)) return
+    this.rememberDescriptor({
+      ...current,
+      capabilities: { ...current.capabilities, harnessIds: next },
+    })
   }
 
   /** Drop the cached descriptor. The environment binding stays so a late call still fails closed. */
@@ -460,8 +476,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.liveStatus(options)
   }
 
-  async getUsage() {
-    return this.client.usage()
+  async getUsage(force?: boolean) {
+    return this.client.usage(force)
   }
 
   async openProject(

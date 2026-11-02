@@ -346,4 +346,22 @@ describe('RemoteSessionFeed', () => {
     expect(source.subscribe).toHaveBeenCalledTimes(1)
     feed.close()
   })
+
+  it('delivers a harness catalog event and ignores other environment rows', async () => {
+    const source = pushSource()
+    const feed = new RemoteSessionFeed(source, 'env')
+    const catalogs: string[][] = []
+    const events: string[] = []
+    await feed.observe({
+      event: (envelope) => events.push(envelope.aggregateId),
+      harnessCatalog: (ids) => catalogs.push([...ids]),
+    })
+    source.push({ ...envelope(8, 'env', 'environment', 'harness_catalog_changed'), payload: { harnessIds: ['claude', 'acp'] } })
+    source.push({ ...envelope(9, 'env', 'environment', 'provider_changed'), payload: { harnessId: 'claude' } })
+    source.push({ ...envelope(10, 'env', 'environment', 'harness_catalog_changed'), payload: { harnessIds: 'acp' } })
+    await flush()
+    expect(catalogs).toEqual([['claude', 'acp']])
+    expect(events).toEqual([])
+    feed.close()
+  })
 })

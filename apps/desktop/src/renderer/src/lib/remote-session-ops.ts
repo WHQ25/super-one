@@ -48,18 +48,24 @@ function applyRemoteSessionRow(
   snap: NodeSessionSnapshot | null,
   opts?: { adoptSession?: boolean },
 ): PerSessionState {
-  const providerId = nodeHarnessToProviderId(snap?.harnessId || snap?.providerId)
+  const namedHarness = snap?.harnessId || snap?.providerId
+  const providerId = namedHarness ? nodeHarnessToProviderId(namedHarness) : null
   const base = previous ?? createDefaultPerSessionState()
-  const chatProvider = (Object.hasOwn(HARNESS_CAPABILITIES, providerId)
+  // A draft the node has never seen keeps the harness this window already picked.
+  // Forcing Claude here is what snapped a Grok click back before the first send.
+  const fallbackProvider = previous?.sessionProvider ?? previous?.preferredProvider ?? 'claude'
+  const chatProvider = (providerId && Object.hasOwn(HARNESS_CAPABILITIES, providerId)
     ? providerId
-    : 'claude') as ChatProvider
+    : fallbackProvider) as ChatProvider
   return {
     ...base,
     selectedModel: previous?.modelUserChosen ? previous.selectedModel : snap?.model ?? previous?.selectedModel ?? base.selectedModel,
     selectedEffort: previous?.effortUserChosen ? previous.selectedEffort : (snap?.effort as PerSessionState['selectedEffort']) ?? previous?.selectedEffort ?? base.selectedEffort,
     ...(snap?.sessionId ? { hostSessionOwned: true, remoteControlReleased: snap.controlReleased === true, controlHolder: snap.controlHolder ?? null } : {}),
     ...(opts?.adoptSession ? {
-      harnessUserChosen: true, modelUserChosen: !!snap?.model, effortUserChosen: !!snap?.effort,
+      harnessUserChosen: true,
+      modelUserChosen: !!previous?.modelUserChosen || !!snap?.model,
+      effortUserChosen: !!previous?.effortUserChosen || !!snap?.effort,
       ...(snap?.permissionMode ? { permissionMode: snap.permissionMode } : {}),
       ...(snap?.sandboxMode ? { sandboxInfo: { enabled: snap.sandboxMode !== 'off', autoAllowBash: snap.sandboxMode === 'auto' } } : {}),
       apiProviderId: snap?.apiProviderId ?? null,
@@ -227,8 +233,22 @@ export function keepRendererOwnedState(
   hydrated: PerSessionState,
 ): PerSessionState {
   if (!current) return hydrated
+  // An empty draft's harness click can land while this read is in flight.
+  // The node row is still the previous harness; do not paint that back over
+  // a conversation that has no messages on either side.
+  const pendingHarness = current.harnessUserChosen
+    && (current.messages?.length ?? 0) === 0
+    && (hydrated.messages?.length ?? 0) === 0
+    && !!current.sessionProvider
+    && current.sessionProvider !== hydrated.sessionProvider
   return {
     ...hydrated,
+    ...(pendingHarness ? {
+      sessionProvider: current.sessionProvider,
+      preferredProvider: current.preferredProvider,
+      acpAgentId: current.acpAgentId,
+      harnessUserChosen: true,
+    } : {}),
     draftText: current.draftText,
     draftJson: current.draftJson,
     draftId: current.draftId,

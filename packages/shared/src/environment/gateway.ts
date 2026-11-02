@@ -39,8 +39,11 @@ export interface EnvironmentGateway {
    * `sampleCpu` asks the node for one CPU sample and waits out that window.
    */
   getLiveStatus?(options?: { sampleCpu?: boolean }): Promise<EnvironmentLiveStatus>
-  /** Subscription usage of the node's logins (`environment.usage`); older nodes reject it as unsupported. */
-  getUsage?(): Promise<EnvironmentUsageReport>
+  /**
+   * Subscription usage of the node's logins (`environment.usage`); older nodes reject it as unsupported.
+   * `force` skips the node's short cache, for an explicit refresh.
+   */
+  getUsage?(force?: boolean): Promise<EnvironmentUsageReport>
   subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope>
   readonly sessions: SessionGateway
   readonly interactions: InteractionGateway

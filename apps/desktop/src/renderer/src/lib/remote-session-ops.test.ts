@@ -238,6 +238,26 @@ describe('hydrateRemoteSession', () => {
     expect(hydrated.sessionProvider).toBe('acp')
   })
 
+  it('keeps the harness a draft picked when the node has no row yet', async () => {
+    openRemoteSession.mockClear()
+    getSession.mockResolvedValueOnce(null)
+    const previous = {
+      messages: [],
+      status: 'idle',
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      harnessUserChosen: true,
+    }
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'draft', previous as never)
+    expect(hydrated).toMatchObject({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+    })
+    expect(openRemoteSession).not.toHaveBeenCalled()
+  })
+
   it('does not open a draft the node has never seen', async () => {
     openRemoteSession.mockClear()
     getSession.mockResolvedValueOnce(null)
@@ -285,5 +305,21 @@ describe('keepRendererOwnedState', () => {
   it("keeps the composer typed while the snapshot loaded", () => {
     const applied = keepRendererOwnedState({ draftText: 'typed', queuedMessages: ['q'], messages: [] } as never, { draftText: '', queuedMessages: [], messages: ['node'] } as never)
     expect(applied).toMatchObject({ draftText: 'typed', queuedMessages: ['q'], messages: ['node'] })
+  })
+
+  it('keeps an empty draft harness click that raced the node row', () => {
+    const applied = keepRendererOwnedState(
+      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build', harnessUserChosen: true } as never,
+      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'claude', preferredProvider: 'claude', acpAgentId: null } as never,
+    )
+    expect(applied).toMatchObject({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build' })
+  })
+
+  it('does not retarget a node session that already has messages', () => {
+    const applied = keepRendererOwnedState(
+      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'acp', preferredProvider: 'acp', harnessUserChosen: true } as never,
+      { messages: [{ id: 'a1' }], draftText: '', queuedMessages: [], sessionProvider: 'claude', preferredProvider: 'claude' } as never,
+    )
+    expect(applied.sessionProvider).toBe('claude')
   })
 })

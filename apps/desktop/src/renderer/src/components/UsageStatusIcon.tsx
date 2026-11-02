@@ -11,6 +11,8 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores/chat'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { claudeLimitsFromSubscription, claudeSubscriptionFromReport, unavailableNodeLimits } from '@/lib/remote-subscription-usage'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
 import type { ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
@@ -438,7 +440,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip:
   )
 }
 
-function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credentialDir: string | null; status: string; tip: RateLimitTipInfo | null }) {
+function ClaudeRateLimitIcon({ credentialDir, remoteConnectionId, apiProviderId, status, tip: liveTip }: { credentialDir: string | null; remoteConnectionId: string | null; apiProviderId: string | null; status: string; tip: RateLimitTipInfo | null }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<ClaudeRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -455,19 +457,37 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credenti
     const version = ++requestVersion.current
     if (force) setRefreshing(true)
     try {
-      const next = await window.app.claudeGetRateLimits(force, credentialDir)
-      if (version === requestVersion.current) setLimits(next)
-    } catch { /* The retry control remains available. */ }
+      if (remoteConnectionId) {
+        const report = await window.environment.getUsage(remoteConnectionId, force)
+        if (version !== requestVersion.current) return
+        const row = claudeSubscriptionFromReport(report, apiProviderId)
+        setAccountEmail(row?.account ?? null)
+        setLimits(row ? claudeLimitsFromSubscription(row) : unavailableNodeLimits(remoteConnectionId))
+      } else {
+        const next = await window.app.claudeGetRateLimits(force, credentialDir)
+        if (version === requestVersion.current) setLimits(next)
+      }
+    } catch {
+      // A remote read that fails stays on the node. Falling back would show this desktop's quota.
+      if (remoteConnectionId && version === requestVersion.current) {
+        setAccountEmail(null)
+        setLimits(unavailableNodeLimits(remoteConnectionId))
+      }
+    }
     finally {
       if (version === requestVersion.current) { setLoaded(true); setRefreshing(false) }
     }
-  }, [credentialDir])
+  }, [apiProviderId, credentialDir, remoteConnectionId])
   const fetchLimits = useCallback(() => { void requestLimits(false) }, [requestLimits])
   const refresh = useCallback(() => { void requestLimits(true) }, [requestLimits])
 
   useEffect(() => {
     setLimits(null)
     setLoaded(false)
+    if (remoteConnectionId) {
+      setAccountEmail(null)
+      return
+    }
     let cancelled = false
     window.app.claudeListAccounts()
       .then((accounts) => {
@@ -480,7 +500,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credenti
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [credentialDir])
+  }, [credentialDir, remoteConnectionId])
 
   const refreshIfStale = useCallback(() => {
     const fetchedAt = limits?.fetchedAt
@@ -489,7 +509,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credenti
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || limits.windows.length === 0) {
+  if (!limits || (limits.windows.length === 0 && !limits.error)) {
     return (
       <RateLimitTipHost tip={tip}>
         {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
@@ -667,6 +687,7 @@ export function UsageStatusIcon() {
     : null
 
   if (!activeProject) return null
+  const remoteProject = parseRemoteProjectKey(activeProject)
 
   if (activeProvider === 'codex') {
     return <CodexRateLimitIcon key={`${activeProject}:${apiProviderId ?? 'default'}`} projectPath={activeProject} apiProviderId={apiProviderId ?? null} threadId={codexThreadId} status={status} tip={rateLimitInfo} />
@@ -677,8 +698,20 @@ export function UsageStatusIcon() {
   // meter instead of sending them down the provider path, which would ask a usage endpoint that
   // does not exist for them and silently drop the gauge.
   const claudeAccountDir = claudeAccountCredentialDir(apiProviderId)
-  if (activeProvider === 'claude' && (isClaudeAccountProvider(apiProviderId) || (!apiProviderId && claudeApiProvider === 'firstParty'))) {
-    return <ClaudeRateLimitIcon key={claudeAccountDir ?? 'default'} credentialDir={claudeAccountDir} status={status} tip={rateLimitInfo} />
+  const thirdPartyClaude = Boolean(apiProviderId) && !isClaudeAccountProvider(apiProviderId)
+  // A remote Claude session spends the node's login. The local first-party flag must not hide that
+  // gauge, and it must not be what the gauge reads.
+  if (activeProvider === 'claude' && !thirdPartyClaude && (remoteProject || isClaudeAccountProvider(apiProviderId) || (!apiProviderId && claudeApiProvider === 'firstParty'))) {
+    return (
+      <ClaudeRateLimitIcon
+        key={remoteProject ? `remote:${remoteProject.connectionId}` : (claudeAccountDir ?? 'default')}
+        credentialDir={claudeAccountDir}
+        remoteConnectionId={remoteProject?.connectionId ?? null}
+        apiProviderId={apiProviderId ?? null}
+        status={status}
+        tip={rateLimitInfo}
+      />
+    )
   }
 
   if (activeProvider === 'claude' && apiProviderId && !isClaudeAccountProvider(apiProviderId)) {

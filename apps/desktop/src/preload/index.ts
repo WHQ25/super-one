@@ -13,7 +13,7 @@ import type { TerminalCommandRule } from '@superone/shared/terminal-command-rule
 import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, SettledSessionPage, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
+import type { DraftListEntry, DraftUpsertRequest, EnvironmentUsageReport, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
@@ -779,6 +779,14 @@ const environmentAPI = {
       connectionId,
       input,
     ),
+
+  /** Subscription usage of the node's own logins (`environment.usage`). */
+  getUsage: (connectionId: string, force?: boolean) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_USAGE,
+      connectionId,
+      force,
+    ) as Promise<EnvironmentUsageReport>,
 
   listRemoteCollabProfiles: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, connectionId),

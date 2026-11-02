@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -17,6 +18,7 @@ import {
   type HarnessInstallationStatus,
 } from '@superone/shared/environment'
 import { currentHostArch, currentHostPlatform } from './managed-harness-release'
+import { nodePaths } from '../config'
 
 const dirs: string[] = []
 const prevHome = process.env.SUPERONE_NODE_HOME
@@ -87,6 +89,17 @@ function abs(path: string): string {
 }
 
 describe('harness CLI (Stage 2)', () => {
+  it('signals a running node after a catalog write and not after a read', async () => {
+    const home = withNodeHome()
+    const stamp = nodePaths(home).harnessCatalogStamp
+    const listed = await runHarnessCli(['list', '--json'])
+    expect(listed.ok).toBe(true)
+    expect(existsSync(stamp)).toBe(false)
+    const disabled = await runHarnessCli(['disable', 'claude', '--json'])
+    expect(disabled.ok).toBe(true)
+    expect(existsSync(stamp)).toBe(true)
+  })
+
   it('lists all first-party harnesses as disabled by default (json)', async () => {
     withNodeHome()
     const result = await runHarnessCli(['list', '--json'])

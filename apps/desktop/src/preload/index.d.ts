@@ -1298,6 +1298,12 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     },
   ): Promise<unknown>
 
+  /** Subscription usage of the node's own logins. `force` skips the node's short cache. */
+  getUsage(
+    connectionId: string,
+    force?: boolean,
+  ): Promise<import('@superone/shared/environment').EnvironmentUsageReport>
+
   /** Agents a collaboration child can run on another machine, from that machine's catalog. */
   remoteAgentProfiles(environmentId: string): Promise<import('@superone/shared/agent-types').RemoteAgentProfiles>
 

@@ -163,6 +163,12 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_USAGE,
+    async (_e, connectionId: string, force?: boolean) => {
+      return (await host()).getUsage(connectionId, force === true)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES,
     async (_e, connectionId: string) => {
       return (await host()).listRemoteCollabProfiles(connectionId)

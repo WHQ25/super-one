@@ -27,13 +27,10 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
       },
     }
   }
-  // Catalog ready OR a bundled/binary runtime that can launch without catalog install.
+  // The catalog is the only permission to create. A bundled binary still
+  // satisfies the runtime check below once `harness enable` has marked the row ready.
   const catalogReady = ctx.harnesses.isSessionHarnessRunnable(harnessId)
-  const codexOverride =
-    harnessId === 'codex' && ctx.hooks.isCodexBinaryOverrideRunnable()
-  const claudeOverride =
-    harnessId === 'claude' && ctx.hooks.isClaudeBinaryOverrideRunnable()
-  if (!catalogReady && !codexOverride && !claudeOverride) {
+  if (!catalogReady) {
     return {
       error: {
         code: 'failed_precondition',

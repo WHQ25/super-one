@@ -31,6 +31,7 @@ import { resolveHarnessHomeRoot } from '@superone/runtime/harness'
 import { openNodeDatabase } from '../db/database'
 import { HarnessManager } from './harness-manager'
 import { probeHarnessReadiness } from './harness-runtime-ready'
+import { signalHarnessCatalogChanged } from './harness-catalog-stamp'
 import { ProviderStore } from '../provider/provider-store'
 import {
   loadHarnessReleaseManifest,
@@ -159,29 +160,52 @@ export async function runHarnessCli(argv: string[]): Promise<HarnessCliResult> {
   const db = openNodeDatabase(nodePaths(nodeHome).stateDb)
   try {
     const manager = new HarnessManager(db)
-    switch (sub) {
-      case 'list':
-        return cmdList(manager, rest)
-      case 'show':
-        return cmdShow(manager, rest)
-      case 'enable':
-        return await cmdEnable(manager, rest, /*configure*/ false)
-      case 'configure':
-        return await cmdEnable(manager, rest, /*configure*/ true)
-      case 'disable':
-        return cmdDisable(manager, rest)
-      case 'doctor':
-        return cmdDoctor(manager, rest)
-      case 'probe':
-        return cmdProbe(manager, rest, db)
-      case 'repair':
-        return await cmdRepair(manager, rest)
-      default:
-        return fail(`unknown harness command: ${sub}`, false)
-    }
+    const result = await dispatchHarnessCommand(sub, manager, rest, db)
+    if (signalsHarnessCatalog(sub, result)) signalHarnessCatalogChanged(nodeHome)
+    return result
   } finally {
     db.close()
   }
+}
+
+async function dispatchHarnessCommand(
+  sub: string,
+  manager: HarnessManager,
+  rest: string[],
+  db: ReturnType<typeof openNodeDatabase>,
+): Promise<HarnessCliResult> {
+  switch (sub) {
+    case 'list':
+      return cmdList(manager, rest)
+    case 'show':
+      return cmdShow(manager, rest)
+    case 'enable':
+      return await cmdEnable(manager, rest, /*configure*/ false)
+    case 'configure':
+      return await cmdEnable(manager, rest, /*configure*/ true)
+    case 'disable':
+      return cmdDisable(manager, rest)
+    case 'doctor':
+      return cmdDoctor(manager, rest)
+    case 'probe':
+      return cmdProbe(manager, rest, db)
+    case 'repair':
+      return await cmdRepair(manager, rest)
+    default:
+      return fail(`unknown harness command: ${sub}`, false)
+  }
+}
+
+/**
+ * Mutations that can change the advertised set. A failed probe can still move
+ * ready ↔ needs_auth, so it signals whenever the probe itself ran. Usage
+ * errors and read-only commands do not.
+ */
+function signalsHarnessCatalog(sub: string, result: HarnessCliResult): boolean {
+  if (sub === 'enable' || sub === 'configure' || sub === 'disable' || sub === 'repair') return result.ok
+  if (sub !== 'probe') return false
+  if (result.json && typeof result.json === 'object' && 'status' in result.json) return true
+  return result.text.includes('→')
 }
 
 function cmdList(manager: HarnessManager, args: string[]): HarnessCliResult {

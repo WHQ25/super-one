@@ -86,9 +86,12 @@ node host 7794 (A's dev default is 7793), CDP 9334, renderer 5174.
 | Clones of repositories B lacks | — | `instance-node-b/lab/projects` |
 | Dev log, event trace | `dev.log`, `event-trace.db` | `instance-node-b-dev.log`, `instance-node-b-event-trace.db` |
 
-There is no single-instance lock, and the phone LAN server and other local
-listeners take ephemeral ports. B's node host starts when it mints a code and
-then runs while A is paired; delete `.dev-data/instance-node-b` for a fresh node. A child
+The single-instance lock is the userData directory, taken after that path is
+set. A second launch of the same profile exits and the first process brings
+its main window forward. B's separate profile can run beside A. The phone LAN
+server and other local listeners take ephemeral ports. B's node host starts
+when it mints a code and then runs while A is paired; delete
+`.dev-data/instance-node-b` for a fresh node. A child
 on B needs its harness enabled and signed in on B (Settings → Harnesses);
 A's composer offers B's enabled harnesses, so a fresh B offers none.
 

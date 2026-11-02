@@ -35,6 +35,7 @@ import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest, PairRemoteInput, RepairPairingInput } from '@superone/shared/environment'
 import log from './logger'
 import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-path'
+import { revealPrimaryWindow, takeSingleInstanceLock, watchSecondInstance } from './single-instance'
 import { variant, variantId, variantDownloadUrl } from './variant'
 import { getMobileAppDownloads, mobileTrackForVariant } from './mobile-app-downloads'
 import { startMediaServer, getMediaServerPort } from './media-server'
@@ -361,6 +362,13 @@ if (is.dev) {
     if (userData.action === 'kept-legacy') log.warn(line)
     else log.info(line)
   }
+}
+
+// The lock file lives in userData, so this has to follow setPath. A second
+// launch of this profile exits here, before the database and port listeners.
+if (!takeSingleInstanceLock(app)) {
+  log.info('[startup] another instance owns this profile; exiting')
+  app.exit(0)
 }
 
 const chromiumFeatures = ['PlatformHEVCDecoderSupport']
@@ -788,6 +796,13 @@ const remoteCallbacks: RemoteControlCallbacks = {
 declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
 let mainWindow: BrowserWindow | null = null
+watchSecondInstance(app, () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  revealPrimaryWindow(app, mainWindow)
+})
 const miniAppSessionRefs = new Map<string, Set<string>>()
 const allWindows = new Set<BrowserWindow>()
 const sessionWindows = new Map<string, BrowserWindow>()
@@ -1412,6 +1427,10 @@ function attachRendererDiagnostics(win: BrowserWindow, role: string): void {
 }
 
 function createWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    revealPrimaryWindow(app, mainWindow)
+    return
+  }
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,

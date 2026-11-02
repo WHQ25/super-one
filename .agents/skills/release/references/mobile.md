@@ -92,8 +92,26 @@ Run for `android` and `ios`, each on channel `alpha` with tag prefix
      --fingerprint-hash "$HASH" --limit 1 --json --non-interactive \
      | jq -r '.[0].appBuildVersion // "NOT SHIPPED"'
    ```
-   A build number → **OTA** onto that build. `NOT SHIPPED` → **native**: an OTA
-   would publish to a runtime nobody runs.
+   A build number → **OTA** onto that build. `NOT SHIPPED` is not yet native.
+   `eas build --local` publishes an APK to R2 and tags
+   `mobile/<platform>-alpha/v<version>-build<N>`, but it does not create an EAS
+   build, so `build:list` cannot see that runtime. Before choosing native,
+   resolve the published `buildCode` from `latest.json` to its tag and compare
+   fingerprint inputs with the checkout:
+   ```bash
+   git diff --quiet <tag>..HEAD -- apps/mobile \
+     ':!apps/mobile/src' ':!apps/mobile/build-code.js' \
+     ':!apps/mobile/**/*.md' ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'
+   ```
+   An empty diff means the published binary already runs this fingerprint
+   (`build-code.js` is ignored by `fingerprint.config.js`; JS under `src` is
+   what an OTA ships). That platform is **OTA** onto the published build code.
+   Do not bump `build-code.js`. A non-empty diff is **native**: an OTA would
+   publish to a runtime nobody runs.
+
+   `update-mobile.yml` repeats only the EAS lookup. An OTA onto a local APK
+   fails that step until the guard accepts an unchanged fingerprint since the
+   published native tag. Do not dispatch that OTA before the guard is updated.
 
 Report one line per platform: `android: OTA (runtime = build 29, 6 commits since
 a7729d22)`, `ios: native → build 30 (fingerprint 8171a5f1 not shipped)`, or

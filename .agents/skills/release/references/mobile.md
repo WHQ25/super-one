@@ -109,9 +109,9 @@ Run for `android` and `ios`, each on channel `alpha` with tag prefix
    Do not bump `build-code.js`. A non-empty diff is **native**: an OTA would
    publish to a runtime nobody runs.
 
-   `update-mobile.yml` repeats only the EAS lookup. An OTA onto a local APK
-   fails that step until the guard accepts an unchanged fingerprint since the
-   published native tag. Do not dispatch that OTA before the guard is updated.
+   `update-mobile.yml` repeats this. An EAS miss falls through to the published
+   native tag and the same fingerprint-input diff. An empty diff is OTA onto
+   that build; a non-empty diff fails the run.
 
 Report one line per platform: `android: OTA (runtime = build 29, 6 commits since
 a7729d22)`, `ios: native → build 30 (fingerprint 8171a5f1 not shipped)`, or
@@ -327,10 +327,9 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 
 ## Invariants
 
-- **OTA never ships a native change.** `update-mobile.yml` still looks only
-  at finished EAS builds. **Decide** does that lookup, then treats a published
-  local APK as shipped when fingerprint inputs are unchanged since its tag.
-  Update that guard before an OTA onto the local APK, or the run fails closed.
+- **OTA never ships a native change.** `update-mobile.yml` looks up finished
+  EAS builds, then a published local APK whose fingerprint inputs are unchanged
+  since its tag. **Decide** runs the same check. A non-empty diff fails closed.
 - **One build code counter, bumped by hand** in `build-code.js`, always past
   the highest published code on either platform. Never turn `autoIncrement` back
   on. A platform only gets a binary when its fingerprint moved; the other takes

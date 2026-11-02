@@ -13,8 +13,10 @@ name: Update Mobile (OTA)
 # publishes regardless of whether any shipped build has that runtime -- an
 # update for a runtime nobody runs succeeds, lands nowhere, and looks shipped.
 # So before publishing, each platform's fingerprint is looked up among the
-# finished builds on its channel, and a miss fails the run: the change needs a
-# native release first.
+# finished builds on its channel. A local APK (`eas build --local`) is not an
+# EAS build: if the lookup misses, the published native tag is fetched and the
+# fingerprint inputs are compared with this checkout. An empty diff means that
+# binary already runs this runtime. Any other miss fails the run.
 #
 # Channels are per platform: each platform has an `alpha` app on channel
 # `alpha` and a stable app on `internal` (Android APK) or `production` (iOS
@@ -189,10 +191,43 @@ jobs:
               --json --non-interactive > "builds-${PLATFORM}.json"
             BUILD="$(jq -r '(if type=="array" then . else [.] end) | .[0] | select(. != null) | "\(.appVersion) (\(.appBuildVersion))"' "builds-${PLATFORM}.json")"
             if [ -z "${BUILD}" ]; then
-              echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH} — this change needs a native release (release-mobile.yml) before it can go out over the air"
-              echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
-              FAILED=1
-              continue
+              # eas build --local publishes an APK and a mobile/* tag, but no
+              # EAS build. The installed binary still runs this runtime when
+              # the fingerprint inputs are unchanged since that tag.
+              case "${PLATFORM}:${CHANNEL}" in
+                android:alpha)      MANIFEST="https://dl.super-one.dev/mobile/android/alpha/latest.json"; PREFIX="android-alpha" ;;
+                android:internal)   MANIFEST="https://dl.super-one.dev/mobile/android/latest.json";       PREFIX="android" ;;
+                ios:alpha)          MANIFEST="https://dl.super-one.dev/mobile/ios/alpha/latest.json";     PREFIX="ios-alpha" ;;
+                ios:production)     MANIFEST="https://dl.super-one.dev/mobile/ios/latest.json";           PREFIX="ios" ;;
+                *)
+                  echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH}, and ${CHANNEL} has no published manifest to compare"
+                  echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
+                  FAILED=1
+                  continue
+                  ;;
+              esac
+              META="$(curl -fsS "${MANIFEST}")"
+              VERSION="$(printf '%s' "${META}" | jq -r '.version // empty')"
+              CODE="$(printf '%s' "${META}" | jq -r '.buildCode // empty')"
+              TAG="mobile/${PREFIX}/v${VERSION}-build${CODE}"
+              ROOT="$(git rev-parse --show-toplevel)"
+              if [ -z "${VERSION}" ] || [ -z "${CODE}" ] || ! git -C "${ROOT}" fetch --depth=1 origin "refs/tags/${TAG}"; then
+                echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH}, and ${TAG} could not be fetched"
+                echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
+                FAILED=1
+                continue
+              fi
+              if git -C "${ROOT}" diff --quiet FETCH_HEAD HEAD -- apps/mobile \
+                ':!apps/mobile/src' ':!apps/mobile/build-code.js' \
+                ':!apps/mobile/**/*.md' ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'
+              then
+                BUILD="${VERSION} (${CODE}), local tag ${TAG}"
+              else
+                echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH} — fingerprint inputs changed since ${TAG}; this needs a native release (release-mobile.yml)"
+                echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
+                FAILED=1
+                continue
+              fi
             fi
             echo "${PLATFORM}: runtime ${HASH} is shipped as ${BUILD} on ${CHANNEL}"
             echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | ${BUILD} |" >> "$GITHUB_STEP_SUMMARY"

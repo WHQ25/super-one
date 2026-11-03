@@ -55,9 +55,13 @@ const defaultLogin: UsageSource = { label: null }
 
 function row(harness: SubscriptionHarness, source: UsageSource, reading: UsageReading<ClaudeRateLimits>): SubscriptionUsage[] {
   if (!reading.value && !reading.error) return []
+  // Managed Claude and Codex logins pass their label in. Grok has one CLI login
+  // and puts that login's email on the reading itself.
+  const reported = (reading.value as { account?: unknown } | null | undefined)?.account
+  const account = source.label ?? (typeof reported === 'string' && reported.trim() ? reported.trim() : null)
   return [{
     harness,
-    account: source.label,
+    account,
     apiProviderId: source.apiProviderId ?? null,
     planType: reading.value?.planType ?? null,
     windows: reading.value?.windows.map(({ label, usedPercent, resetsAt }) => ({ label, usedPercent, resetsAt })) ?? [],

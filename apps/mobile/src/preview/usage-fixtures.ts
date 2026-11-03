@@ -30,7 +30,7 @@ export const USAGE_FIXTURES = {
     },
   },
   grok: {
-    kind: 'acp', title: 'Grok Build', account: null, planType: 'SuperGrok', extraUsage: { usedDollars: 0.8, limitDollars: 10 },
+    kind: 'acp', title: 'Grok Build', account: 'dev@x.ai', planType: 'SuperGrok', extraUsage: { usedDollars: 0.8, limitDollars: 10 },
     creditBalanceDollars: 14.2, fetchedAt: now - 45 * 60_000,
     windows: [{ label: 'Weekly limit', usedPercent: 93, resetsAt: inSeconds(86_400) }],
   },

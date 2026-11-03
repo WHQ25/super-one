@@ -437,6 +437,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
         windows: [{ label: 'Weekly limit', usedPercent: 100, resetsAt: null }],
         extraUsage: null,
         creditBalanceDollars: 12.34,
+        account: 'dev@x.ai',
         fetchedAt: Date.now(),
       })),
     })
@@ -450,6 +451,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(screen.getByRole('button', { name: 'Grok Build' })).toBeInTheDocument()
     expect(screen.queryByText('Grok Build')).toBeNull()
     expect(screen.getByText('SuperGrok Heavy')).toBeInTheDocument()
+    expect(screen.getByText('dev@x.ai')).toBeInTheDocument()
     expect(screen.getByText('Weekly limit')).toBeInTheDocument()
     // Fully spent pool reads as 0% left, and the badge mirrors it.
     expect(screen.getAllByText('0% left').length).toBeGreaterThan(0)

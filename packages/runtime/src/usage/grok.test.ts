@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseGrokBilling } from './grok'
+import { grokAuthAccount, parseGrokBilling } from './grok'
 
 /** Verbatim `_x.ai/billing` response from `grok agent stdio` 1.0.0. */
 const REAL_RESPONSE = {
@@ -156,5 +156,27 @@ describe('parseGrokBilling', () => {
       config: { ...REAL_RESPONSE.config, onDemandCap: { val: 500 }, onDemandUsed: {} },
     })
     expect(limits?.extraUsage).toEqual({ usedDollars: 0, limitDollars: 5 })
+  })
+})
+
+function jwt(payload: Record<string, unknown>): string {
+  return `h.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.s`
+}
+
+describe('grokAuthAccount', () => {
+  it('uses the email the CLI stored on the auth entry', () => {
+    expect(grokAuthAccount({ email: ' dev@x.ai ' })).toBe('dev@x.ai')
+  })
+
+  it('falls back to the OIDC id_token when the entry has no email field', () => {
+    expect(grokAuthAccount({ id_token: jwt({ email: 'dev@x.ai' }) })).toBe('dev@x.ai')
+  })
+
+  it('ignores a blank, spaced, or non-address value', () => {
+    expect(grokAuthAccount({ email: '   ' })).toBeNull()
+    expect(grokAuthAccount({ email: 'not an email' })).toBeNull()
+    expect(grokAuthAccount({ email: `${'a'.repeat(250)}@x.ai` })).toBeNull()
+    expect(grokAuthAccount({ id_token: jwt({ email: 'not-an-email' }) })).toBeNull()
+    expect(grokAuthAccount(null)).toBeNull()
   })
 })

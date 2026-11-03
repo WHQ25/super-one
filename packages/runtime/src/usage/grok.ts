@@ -12,6 +12,8 @@
  *
  * Refreshing rotates the refresh token, so a refreshed login is written back
  * into the same entry of `auth.json`; the other entries are kept as they are.
+ * The entry's `email` (the same field `x.ai/auth/info` returns) is copied onto
+ * the reading. Billing itself does not name the account.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -125,9 +127,39 @@ interface GrokAuthEntry {
   refresh_token?: string
   refresh?: string
   id_token?: string
+  /** Display identity persisted by the Grok CLI. Billing does not repeat it. */
+  email?: string
   expires_at?: string
   expires?: string
   oidc_client_id?: string
+}
+
+/** An address safe to show on a usage meter. Rejects blank, spaced, or token-length values. */
+function emailLabel(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const email = value.trim()
+  if (!email || email.length > 254 || /\s/.test(email) || !email.includes('@')) return null
+  return email
+}
+
+function jwtEmail(token: string | null): string | null {
+  const payload = token?.split('.')[1]
+  if (!payload) return null
+  try {
+    const email = (JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { email?: unknown }).email
+    return emailLabel(email)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Email of one `auth.json` entry. The CLI stores it on the entry; an older file
+ * may only have it inside the OIDC `id_token`, which Grok itself treats as display info.
+ */
+export function grokAuthAccount(entry: GrokAuthEntry | null | undefined): string | null {
+  if (!entry) return null
+  return emailLabel(entry.email) ?? jwtEmail(typeof entry.id_token === 'string' ? entry.id_token : null)
 }
 
 export function grokAuthPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -176,6 +208,7 @@ async function refresh(path: string, entryKey: string, entry: GrokAuthEntry, log
   // Re-read so a write by the Grok CLI since our read is not undone; refuse to rebuild a file we cannot parse.
   const current = readAuth(path)
   if (!current) return body.access_token
+  // Spread the stored entry so `email` and the other identity fields survive a token rotation.
   const next: GrokAuthEntry = { ...current[entryKey], key: body.access_token }
   if (body.refresh_token) next.refresh_token = body.refresh_token
   if (body.id_token) next.id_token = body.id_token
@@ -225,6 +258,8 @@ export async function readGrokRateLimits(opts: { force?: boolean; log?: UsageLog
       .then(async (r) => r.ok ? asRecord(parseJson(await r.text())) : null)
       .catch(() => null)
     const limits = parseGrokBilling({ ...asRecord(parseJson(await resp.text())), subscription_tier: settings?.subscription_tier_display ?? settings?.subscription_tier })
-    return limits ? { value: limits } : { error: 'Grok billing response changed.' }
+    if (!limits) return { error: 'Grok billing response changed.' }
+    const account = grokAuthAccount(entry)
+    return { value: account ? { ...limits, account } : limits }
   })
 }

@@ -46,7 +46,7 @@ test('the Codex meter carries its account stats and a redeemable reset credit', 
 
 test('the Grok meter wears the Grok brand lockup instead of the globe fallback', async () => {
   const grok: RemoteUsage = {
-    kind: 'acp', title: 'Grok Build', account: null, planType: 'SuperGrok', extraUsage: null, fetchedAt: now,
+    kind: 'acp', title: 'Grok Build', account: 'dev@x.ai', planType: 'SuperGrok', extraUsage: null, fetchedAt: now,
     windows: [{ label: 'Weekly limit', usedPercent: 40, resetsAt: null }],
   }
   await renderWithTheme(<UsagePanel usage={grok} />)
@@ -54,6 +54,7 @@ test('the Grok meter wears the Grok brand lockup instead of the globe fallback',
   expect(screen.getByLabelText('Grok Build')).toBeTruthy()
   expect(screen.queryByText('Grok Build')).toBeNull()
   expect(screen.getByText('SuperGrok')).toBeTruthy()
+  expect(screen.getByText('dev@x.ai')).toBeTruthy()
 })
 
 test('a live rejection is spelled out above the windows, and stands alone without a reading', async () => {

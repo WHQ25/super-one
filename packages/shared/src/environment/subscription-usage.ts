@@ -6,7 +6,11 @@ export type SubscriptionHarness = 'claude' | 'codex' | 'grok' | 'opencode' | 'cu
 /** One signed-in subscription on a node (`environment.usage`). */
 export interface SubscriptionUsage {
   harness: SubscriptionHarness
-  /** Account label when the node knows one (email, account id); null for the harness's own default login. */
+  /**
+   * Account email or id when the node knows one.
+   * Null when that login has no stored identity. Grok's default login still
+   * carries the email from its CLI auth file.
+   */
   account: string | null
   /**
    * The launch `apiProviderId` that runs on this subscription

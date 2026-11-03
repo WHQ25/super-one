@@ -307,6 +307,7 @@ function GrokCreditsPreview() {
       windows: [{ label: 'Weekly limit', usedPercent: 64, resetsAt: Math.floor(Date.now() / 1000) + 2 * 86400 }],
       extraUsage: null,
       creditBalanceDollars: 12.34,
+      account: 'dev@x.ai',
       fetchedAt: Date.now(),
     }))
     const project = createDefaultProjectState()

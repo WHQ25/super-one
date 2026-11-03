@@ -106,7 +106,7 @@ export async function readHarnessUsage(request: HarnessUsageRequest, deps: Harne
   if (provider === 'acp' && request.acpAgentId && isGrokAcpAgent(request.acpAgentId)) {
     const limits = await deps.acpRateLimits(request.acpAgentId, request, force)
     if (!limits || limits.windows.length === 0) return null
-    return { ...limits, kind: 'acp', account: null }
+    return { ...limits, kind: 'acp', account: limits.account ?? null }
   }
 
   return null

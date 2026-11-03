@@ -6,12 +6,13 @@ const mocks = vi.hoisted(() => {
     reading,
     claude: vi.fn(async (_dir: string | null) => reading('Max')),
     codex: vi.fn(async (_opts: { home?: string }) => reading('Pro')),
+    grok: vi.fn(async () => ({ value: null as { planType: string; account?: string; windows: { label: string; usedPercent: number; resetsAt: null }[]; extraUsage: null } | null })),
   }
 })
 
 vi.mock('./claude', () => ({ readClaudeRateLimits: mocks.claude }))
 vi.mock('./codex', () => ({ readCodexRateLimits: mocks.codex }))
-vi.mock('./grok', () => ({ readGrokRateLimits: async () => ({ value: null }) }))
+vi.mock('./grok', () => ({ readGrokRateLimits: mocks.grok }))
 vi.mock('./opencode', () => ({ readOpenCodeGoRateLimits: async () => ({ value: null }) }))
 vi.mock('./cursor', () => ({ readCursorRateLimits: async () => ({ value: null }) }))
 
@@ -21,6 +22,7 @@ describe('readSubscriptionUsage', () => {
   beforeEach(() => {
     mocks.claude.mockClear()
     mocks.codex.mockClear()
+    mocks.grok.mockReset().mockResolvedValue({ value: null })
   })
 
   it('reads every managed account and names the launch id that runs on it', async () => {
@@ -49,5 +51,19 @@ describe('readSubscriptionUsage', () => {
       { harness: 'claude', account: null, apiProviderId: null },
       { harness: 'codex', account: null, apiProviderId: null },
     ])
+  })
+
+  it('names the Grok login from the email on its usage reading', async () => {
+    mocks.grok.mockResolvedValue({
+      value: { planType: 'SuperGrok', account: 'dev@x.ai', windows: [{ label: 'Weekly limit', usedPercent: 1, resetsAt: null }], extraUsage: null },
+    })
+
+    const rows = await readSubscriptionUsage({ codexAccounts: [] })
+
+    expect(rows.find((row) => row.harness === 'grok')).toMatchObject({
+      account: 'dev@x.ai',
+      apiProviderId: null,
+      planType: 'SuperGrok',
+    })
   })
 })

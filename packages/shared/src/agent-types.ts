@@ -3763,6 +3763,11 @@ export interface ProviderRateLimits extends ClaudeRateLimits {
   title: string
   /** Remaining prepaid ("bought") credit balance in USD, when the provider reports one. */
   creditBalanceDollars?: number
+  /**
+   * Signed-in email when this reading already identified a first-party login.
+   * Grok fills it from the CLI auth file. Gateway meters leave it unset.
+   */
+  account?: string | null
 }
 
 /** Which subscription meter a session's credential draws on. */

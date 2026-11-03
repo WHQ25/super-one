@@ -23,6 +23,7 @@ const grokLimits: ProviderRateLimits = {
   extraUsage: null,
   planType: 'SuperGrok',
   creditBalanceDollars: 12,
+  account: 'g@x.ai',
 }
 
 function deps(overrides: Partial<HarnessUsageDeps> = {}): HarnessUsageDeps {
@@ -110,7 +111,7 @@ describe('readHarnessUsage', () => {
   it('reads Grok billing through ACP and skips every other ACP agent', async () => {
     const d = deps()
     const grok = await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'grok', sessionId: 's1' }, d)
-    expect(grok).toMatchObject({ kind: 'acp', title: 'Grok Build', creditBalanceDollars: 12 })
+    expect(grok).toMatchObject({ kind: 'acp', title: 'Grok Build', account: 'g@x.ai', creditBalanceDollars: 12 })
     expect(await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'gemini' }, d)).toBeNull()
     expect(d.acpRateLimits).toHaveBeenCalledTimes(1)
   })

@@ -6,7 +6,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { useActiveHarness } from '@/hooks/useHarnessTheme'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
-import { BrandColorPopover } from './BrandColorPopover'
+import { AppearancePopover } from './AppearancePopover'
 
 function Preview({ width = 360, customized = false, glass = false }) {
   const harness = useActiveHarness()
@@ -30,14 +30,14 @@ function Preview({ width = 360, customized = false, glass = false }) {
 
   return (
     <div className="flex min-h-[640px] items-end gap-3 rounded-xl bg-sidebar p-4 text-sidebar-foreground" style={{ width }} data-sidebar-inner>
-      <BrandColorPopover />
+      <AppearancePopover />
       <Button size="sm">Primary Action</Button>
     </div>
   )
 }
 
 const meta = {
-  title: 'Sidebar/BrandColorPopover',
+  title: 'Sidebar/AppearancePopover',
   component: Preview,
   parameters: { layout: 'centered' },
   decorators: [(Story, context) => {

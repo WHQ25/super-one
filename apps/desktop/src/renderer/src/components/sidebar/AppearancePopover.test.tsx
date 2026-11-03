@@ -9,7 +9,7 @@ import { HARNESS_DEFAULT_BRAND_HUE, lchToCss, resolveDarkPrimary } from '@supero
 import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useHarnessTheme, usePaneHarnessTheme } from '@/hooks/useHarnessTheme'
-import { BrandColorPopover } from './BrandColorPopover'
+import { AppearancePopover } from './AppearancePopover'
 
 const initial = useAppStore.getState()
 let themeListeners: Set<(state: { mode: ThemeMode; dark: boolean }) => void>
@@ -19,7 +19,7 @@ function Surface() {
   useHarnessTheme()
   const ref = useRef<HTMLDivElement>(null)
   usePaneHarnessTheme(ref)
-  return <div ref={ref} data-testid="pane"><BrandColorPopover /></div>
+  return <div ref={ref} data-testid="pane"><AppearancePopover /></div>
 }
 
 function selectHarness(harness: HarnessId) {

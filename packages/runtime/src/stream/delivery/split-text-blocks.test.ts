@@ -132,7 +132,7 @@ describe('splitTextIntoBlocks', () => {
         '',
         '## `★ Insight ─────────────────────────────────────`',
         '- **basename 选择是个 UX 平衡**：相对/绝对路径的"最短路径"算法虽然信息量大，但视觉密度高',
-        '- **Tooltip 的延迟选 300ms**：跟 `BrandColorPopover` 一致',
+        '- **Tooltip 的延迟选 300ms**：跟 `AppearancePopover` 一致',
         '- **"messages.length === 0" 是天然的一次性触发器**：不需要单独的 dismissed 状态',
         '`─────────────────────────────────────────────────`',
         '',

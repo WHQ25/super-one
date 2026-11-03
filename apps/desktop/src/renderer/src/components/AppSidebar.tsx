@@ -70,7 +70,7 @@ import {
   pinnedSessionsForFocus,
   useFocusContextCollapsed,
 } from '@/components/sidebar/sidebar-focus-context'
-import { BrandColorPopover } from '@/components/sidebar/BrandColorPopover'
+import { AppearancePopover } from '@/components/sidebar/AppearancePopover'
 import { UsageStatusIcon } from '@/components/UsageStatusIcon'
 import { UpdateStatusIcon } from '@/components/UpdateStatusIcon'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -1033,7 +1033,7 @@ export const AppSidebar = memo(function AppSidebar() {
             <TooltipContent side="top"><span>{t('sidebar.settings')}</span> <CommandShortcut>{isMac ? '⌘,' : 'Ctrl+,'}</CommandShortcut></TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <BrandColorPopover />
+        <AppearancePopover />
         <RemoteStatusIcon />
         <UsageStatusIcon />
         <UpdateStatusIcon />

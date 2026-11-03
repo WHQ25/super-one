@@ -61,7 +61,7 @@ const HUE_GRADIENT = (() => {
 
 type Mode = 'basic' | 'advanced'
 
-export function BrandColorPopover(): React.JSX.Element {
+export function AppearancePopover(): React.JSX.Element {
   const { t } = useTranslation()
   const dark = useDarkClass()
   const scheme = dark ? 'dark' : 'light'

@@ -234,8 +234,8 @@ vi.mock('@/components/AdaptiveContextMenu', () => ({
   ),
 }))
 
-vi.mock('@/components/sidebar/BrandColorPopover', () => ({
-  BrandColorPopover: () => null,
+vi.mock('@/components/sidebar/AppearancePopover', () => ({
+  AppearancePopover: () => null,
 }))
 
 vi.mock('@/components/sidebar/AnimatedSessionTitle', () => ({

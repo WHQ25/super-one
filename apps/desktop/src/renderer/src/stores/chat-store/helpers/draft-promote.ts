@@ -752,6 +752,31 @@ export function claimDraftForSession(sessionId: string, draftId: string): void {
 }
 
 /**
+ * A node names its own session id. The composer's draft was saved under the
+ * renderer id, and the sidebar hides that row only while this map or
+ * `session.draftId` still points at it. Move the link before the store commit
+ * that adopts the new id, or the row is listed for the frames until send
+ * consumes it.
+ */
+export function rekeyDraftForSession(fromSessionId: string, toSessionId: string, projectPath?: string): string | undefined {
+  if (!fromSessionId || fromSessionId === toSessionId) return draftIdBySession.get(toSessionId)
+  let draftId = draftIdBySession.get(fromSessionId)
+  if (!draftId && projectPath) {
+    try {
+      const { connectionId } = resolveDraftTarget(projectPath)
+      draftId = useDraftsStore.getState().byConnection?.[connectionId]
+        ?.find((row) => row.originSessionId === fromSessionId)?.id
+    } catch {
+      /* drafts store unavailable in some unit tests */
+    }
+  }
+  if (!draftId) return undefined
+  draftIdBySession.delete(fromSessionId)
+  draftIdBySession.set(toSessionId, draftId)
+  return draftId
+}
+
+/**
  * True when this draft is the open origin of the active empty session.
  * Sidebar must hide those rows — visibility/quit flush still persists them,
  * but replaying the snapshot over live keystrokes would clobber newer text.

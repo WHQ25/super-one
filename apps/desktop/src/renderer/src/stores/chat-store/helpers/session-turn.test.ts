@@ -52,6 +52,9 @@ const { createDefaultPerSessionState, createDefaultProjectState } = await import
 const { prepareComposerSession } = await import('@/lib/prepare-composer-session')
 const { ensureHostSession, sessionTurnRequest, queuesBehindTurn } = await import('./session-turn')
 const { createSendWriteScope } = await import('./send-write-scope')
+const { _resetDraftSessionMap, claimDraftForSession, getDraftIdForSession } = await import('./draft-promote')
+const { useDraftsStore } = await import('@/stores/drafts')
+const { selectVisibleDrafts } = await import('@/components/sidebar/draft-visibility')
 
 type SessionPatch = Partial<ReturnType<typeof createDefaultPerSessionState>>
 
@@ -168,6 +171,57 @@ describe('ensureHostSession', () => {
     expect(scope.target).toEqual({ projectPath: NODE, sessionId: 'node-new' })
     expect(removeSession).not.toHaveBeenCalled()
     expect(activateSession).toHaveBeenCalledWith(NODE, 'node-new', NODE)
+  })
+
+  it('keeps the composer draft hidden when a node names the session', async () => {
+    _resetDraftSessionMap()
+    const row = {
+      id: 'draft-row',
+      text: 'kept',
+      docJson: null,
+      attachments: [],
+      projectPath: '/work/app',
+      title: 'kept',
+      harness: null,
+      model: null,
+      permissionMode: null,
+      settings: null,
+      originSessionId: 'draft-1',
+      updatedAt: '',
+      pendingSync: false,
+      controllerDeviceId: null,
+    }
+    useDraftsStore.setState({ byConnection: { 'env-1': [row] } })
+    seed(NODE, 'draft-1', { preferredProvider: 'claude', draftText: 'kept', draftId: null })
+    try {
+      await ensure(NODE).done
+
+      const session = project(NODE)._sessions['node-new']
+      expect(getDraftIdForSession('node-new')).toBe('draft-row')
+      expect(getDraftIdForSession('draft-1')).toBeUndefined()
+      expect(session.draftId).toBe('draft-row')
+      expect(selectVisibleDrafts([row], {
+        activeSessionId: 'node-new',
+        activeDraftId: session.draftId,
+        resumingDraftId: null,
+      })).toEqual([])
+    } finally {
+      _resetDraftSessionMap()
+      useDraftsStore.setState({ byConnection: {} })
+    }
+  })
+
+  it('moves an autosaved draft id onto the session the node created', async () => {
+    _resetDraftSessionMap()
+    claimDraftForSession('draft-1', 'autosaved')
+    seed(NODE, 'draft-1', { preferredProvider: 'claude', draftId: null })
+    try {
+      await ensure(NODE).done
+      expect(project(NODE)._sessions['node-new'].draftId).toBe('autosaved')
+      expect(getDraftIdForSession('draft-1')).toBeUndefined()
+    } finally {
+      _resetDraftSessionMap()
+    }
   })
 
   it('removes an empty local session on another harness before creating its replacement under the same id', async () => {

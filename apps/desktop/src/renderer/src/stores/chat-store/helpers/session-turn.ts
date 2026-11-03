@@ -24,6 +24,7 @@ import { isUnsentSession, sessionDirectoryHint } from './session-liveness'
 import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { deliverUserSend, type UserSendDelivery } from './send-replay'
 import type { SendWriteScope } from './send-write-scope'
+import { rekeyDraftForSession } from './draft-promote'
 import { getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
 import { environmentIdForProjectKey } from '@superone/shared/session-location'
 import type { SessionEnvironmentSelection } from '@superone/shared/session-location'
@@ -185,12 +186,15 @@ function sessionHasHostedTurn(session: { messages: readonly { providerId?: strin
 
 /** Move the composer's draft entry to the id its host gave the session. */
 function adoptSessionId(set: ChatStoreSet, projectPath: string, from: string | null, to: string): void {
+  // Rekey before the commit. The sidebar reads the new id and this draft id
+  // from the same state, so the row never becomes a listed draft in between.
+  const carriedDraftId = from && from !== to ? rekeyDraftForSession(from, to, projectPath) : undefined
   set((s) => {
     const project = getProject(s, projectPath)
     const sessions = { ...project._sessions }
     const base = (from ? sessions[from] : undefined) ?? sessions[to]
     if (from && from !== to) delete sessions[from]
-    if (base) sessions[to] = base
+    if (base) sessions[to] = carriedDraftId && !base.draftId ? { ...base, draftId: carriedDraftId } : base
     return {
       projectSessions: {
         ...s.projectSessions,

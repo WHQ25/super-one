@@ -22,6 +22,7 @@ import {
   captureOpenDraft,
   claimDraftForSession,
   consumeDraftForSession,
+  rekeyDraftForSession,
   discardDeletedDraft,
   getDraftIdForSession,
   getParkedDraft,
@@ -457,6 +458,15 @@ describe('consumeDraftForSession', () => {
   it('is a no-op when the session was never promoted to a draft', async () => {
     await consumeDraftForSession('/repo', 'sid-none')
     expect(removeDraft).not.toHaveBeenCalled()
+  })
+
+  it('follows a session id the node assigned, so the first send still removes the row', async () => {
+    claimDraftForSession('renderer-sid', 'draft-1')
+    expect(rekeyDraftForSession('renderer-sid', 'node-sid')).toBe('draft-1')
+    expect(getDraftIdForSession('renderer-sid')).toBeUndefined()
+    await consumeDraftForSession('remote:env:/repo', 'node-sid')
+    expect(removeDraft).toHaveBeenCalledWith('env', 'draft-1')
+    expect(getDraftIdForSession('node-sid')).toBeUndefined()
   })
 })
 

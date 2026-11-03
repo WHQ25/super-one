@@ -198,6 +198,15 @@ describe('brand palette appearance controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Customize Claude Color' }))
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
   })
+
+  it('opens aligned towards the left sidebar edge', () => {
+    render(<Surface />)
+    fireEvent.click(screen.getByRole('button', { name: 'Customize Claude Color' }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAttribute('data-slot', 'popover-content')
+    expect(dialog).toHaveAttribute('data-side', 'top')
+    expect(dialog).toHaveAttribute('data-align', 'start')
+  })
 })
 
 function initialOverrides() {

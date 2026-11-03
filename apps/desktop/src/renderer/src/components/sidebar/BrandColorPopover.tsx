@@ -106,7 +106,14 @@ export function BrandColorPopover(): React.JSX.Element {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <PopoverContent side="top" align="start" className="w-80 p-3">
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        alignOffset={-32}
+        collisionPadding={8}
+        className="w-80 p-3"
+      >
         {mode === 'basic' ? (
           <>
             <BrandAppearanceControls />

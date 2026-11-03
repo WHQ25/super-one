@@ -23,6 +23,7 @@ export {
   type SessionTurnEvent,
   type TranscriptBlock,
   type TurnRunner,
+  type CodexVoiceConnection,
   type ActiveHarnessRuntime,
   type LeaseGuard,
   type SessionEventLog,

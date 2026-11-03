@@ -470,6 +470,52 @@ describe('AgentService Realtime Voice', () => {
     expect(createSession).not.toHaveBeenCalled()
   })
 
+  it('routes a remote project voice start through the node', async () => {
+    const service = new AgentService()
+    const createSession = vi.fn()
+    const start = vi.fn()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => null),
+      createSession,
+      realtimeVoice: { start },
+    }
+    service.setup()
+    const projectPath = 'remote:env-1:/work/app'
+    const status = {
+      protocol: 1,
+      supported: true,
+      call: { owned: true, attemptId: 'a1', hostEpoch: 'e', callId: 'c', generation: 1, state: 'starting', projectPath, sessionId: 'sid-voice' },
+    }
+    remoteDshMcpMocks.host.callVoice.mockResolvedValue(status)
+    const currentSettings = appSettings.readAppSettings()
+    vi.mocked(appSettings.readAppSettings).mockReturnValue({
+      ...currentSettings,
+      agentPreference: {
+        ...currentSettings.agentPreference,
+        codex: { ...currentSettings.agentPreference.codex, realtimeVoice: 'juniper' },
+      },
+    })
+
+    try {
+      const handler = getRegisteredIpcHandler(AgentIpcChannels.START_REALTIME_VOICE)!
+      const request = { sdp: 'v=0\r\na=offer', attemptId: 'a1' }
+      await expect(handler({ sender: { id: 1 } }, projectPath, 'sid-voice', request)).resolves.toEqual(status)
+      expect(createSession).not.toHaveBeenCalled()
+      expect(start).not.toHaveBeenCalled()
+      expect(remoteDshMcpMocks.host.callVoice).toHaveBeenCalledWith(
+        'env-1',
+        'sid-voice',
+        'session.voiceStart',
+        { attemptId: 'a1', request: { ...request, voice: 'juniper' } },
+        projectPath,
+      )
+    } finally {
+      vi.mocked(appSettings.readAppSettings).mockReturnValue(currentSettings)
+      remoteDshMcpMocks.host.callVoice.mockReset()
+    }
+  })
+
   it('creates a Codex session from the renderer draft before starting voice', async () => {
     const service = new AgentService()
     const startRealtimeVoice = vi.fn().mockResolvedValue(undefined)

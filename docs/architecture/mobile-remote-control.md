@@ -289,11 +289,12 @@ answer/error/closed state. Session snapshots expose optional `realtimeVoice`;
 with account eligibility checked against the phone's current selection. Landing
 voice creates an empty session through the ordinary creation path before capture.
 Creation/restore snapshots refresh the entry after optimistic session-ID races;
-missing capability hides the entry on older desktops. Routed CLI environments
-report unsupported without falling back to another agent or account.
+missing capability hides the entry on older desktops. A CLI node serves the same
+methods on its own Codex app-server. A non-official account or a busy session is
+refused on that node, with no fallback to another agent or account.
 
-`RealtimeVoiceHost` in the desktop SessionManager admits one endpoint including
-pending starts. Phone identity comes from the authenticated native connection,
+`VoiceAdmissionHost` admits one call, directs the answer, and tears the call down. The desktop `RealtimeVoiceHost` adds the session lease and phone disconnect grace. A CLI node uses the same host with its own Codex app-server. Notification mapping and the v3 WebRTC start parameters, including the developer instructions, are shared.
+Phone identity comes from the authenticated native connection,
 never request payload. Mutations require that endpoint's exact session lease
 proof. The SDK retains a call's grant independently of its chat feed. The host
 renews only the admitted proof, including a window's grant, without reacquiring

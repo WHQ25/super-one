@@ -92,4 +92,23 @@ describe('RpcConnection', () => {
     conn.receive({ type: 'rpc_result', requestId: 'r1', result: [] })
     await expect(Promise.all([a, b])).resolves.toEqual([[], []])
   })
+
+  it('delivers directed client events and keeps control loss on its own callback', () => {
+    const onClientEvent = vi.fn()
+    const onControlLost = vi.fn()
+    const conn = new RpcConnection(() => {}, {
+      protocolVersion: 3,
+      newId: () => 'r',
+      responseError: (error) => new Error(error.message),
+      timeoutError: () => new Error('late'),
+      onClientEvent,
+      onControlLost,
+    })
+    const signal = { type: 'realtime_call_signal', sessionId: 'sid', signal: { kind: 'answer', sdp: 'v=0\r\na=answer', attemptId: 'a', hostEpoch: 'e', callId: 'c', generation: 1 } }
+    expect(conn.receive({ type: 'client', event: signal })).toBe(true)
+    expect(conn.receive({ type: 'client', event: { type: 'control_lost', resource: { environmentId: 'env', sessionId: 'sid' }, leaseId: 'l', generation: '1' } })).toBe(true)
+    expect(onClientEvent).toHaveBeenCalledWith(signal)
+    expect(onControlLost).toHaveBeenCalledOnce()
+    expect(onClientEvent).toHaveBeenCalledOnce()
+  })
 })

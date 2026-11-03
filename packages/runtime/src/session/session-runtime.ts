@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { SESSION_SEND_SELECTION_KEYS, type SessionSendSelections } from '@superone/shared/environment/session-send'
 import { isCodexPermissionPreset, type AgentEvent, type ChatMessage, type ChatMessageSource } from '@superone/shared/agent-types'
 import { isAgentOutputEvent } from '@superone/shared/send-failure'
+import { isVoiceSignalingEvent } from '@superone/shared/realtime-voice'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
 import {
@@ -101,6 +102,7 @@ export type {
   SessionTurnEvent,
   TranscriptBlock,
   TurnRunner,
+  CodexVoiceConnection,
 } from './types'
 export type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 
@@ -1474,6 +1476,28 @@ export class SessionRuntime {
     })
   }
   get servedOperations(): ReadonlySet<string> { return this.turnRunner.servedOperations ?? new Set() }
+
+  /** Live Codex app-server for a voice call on this node. */
+  codexVoice(): TurnRunner['codexVoice'] {
+    return this.turnRunner.codexVoice
+  }
+
+  /**
+   * Ambient harness output during a voice call. SDP and call signals stay off
+   * the durable log; the voice host pushes those on the initiating connection.
+   */
+  publishHarnessEvent(sessionId: string, event: AgentEvent): void {
+    if (isVoiceSignalingEvent(event)) return
+    this.handleAmbientEvent(sessionId, event)
+  }
+
+  /** Remember a Codex thread voice opened, so a later turn resumes it. */
+  noteProviderResume(sessionId: string, threadId: string): void {
+    const session = this.live.get(sessionId)
+    if (!session || session.closed || session.providerResume || !threadId) return
+    session.providerResume = threadId.startsWith('thread:') ? threadId : `thread:${threadId}`
+    this.persist(session)
+  }
 
   private publishComposerQueue(session: NodeSessionRecord) {
     const messages = session.transcript.filter(row => row.queuedInComposer).map(row => nodeUserMessage(

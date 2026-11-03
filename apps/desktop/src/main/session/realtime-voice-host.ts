@@ -1,179 +1,106 @@
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { randomUUID } from 'node:crypto'
-import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
-import { assertVoiceAccount, validateVoiceAttempt, validateVoiceStart, sameVoice, redactVoiceText, VoiceCleanupPendingError, VOICE_DISCONNECT_GRACE_MS, VOICE_START_TIMEOUT_MS, type VoiceCapability, type VoiceIdentity, type VoiceSignal, type VoiceStatus } from '@superone/shared/realtime-voice'
-import type { AgentEvent, RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
+import { VoiceAdmissionHost, voiceSupport, type VoiceSeat } from '@superone/shared/realtime-voice-admission'
+import { VOICE_DISCONNECT_GRACE_MS, type VoiceIdentity, type VoiceSignal, type VoiceStatus } from '@superone/shared/realtime-voice'
+import type { RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
 import type { Session } from './types'
-import { VOICE_SESSION_BUSY_REASON } from '@superone/shared/realtime-voice'
 import { runHostReaction } from './control-context'
 
 export type VoiceEndpoint = { id: string; deviceId?: string; onDisconnect?: (listener: () => void) => () => void; send(signal: VoiceSignal): void }
-type Call = VoiceIdentity & {
-  session: Session; endpoint: VoiceEndpoint; state: 'starting' | 'active' | 'stopping'
-  settled: boolean; ended: boolean; cancelled: boolean; stopSent: boolean
-  release: () => void; unsubscribe: () => void; lifecycle: () => void
-  windowCleanup?: () => void
-  timer?: ReturnType<typeof setTimeout>; disconnect?: ReturnType<typeof setTimeout>
+
+export function voiceCapability(session: { snapshot: Pick<Session['snapshot'], 'harnessId'>; getApiProviderId: Session['getApiProviderId'] } | null | undefined) {
+  if (!session) return voiceSupport(null)
+  return voiceSupport({ harnessId: session.snapshot.harnessId, apiProviderId: session.getApiProviderId(true) })
 }
 
-export function voiceCapability(session: { snapshot: Pick<Session['snapshot'], 'harnessId'>; getApiProviderId: Session['getApiProviderId'] } | null | undefined): VoiceCapability {
-  if (!session || !HARNESS_CAPABILITIES[session.snapshot.harnessId]?.supportsRealtimeVoice) return { protocol: 1, supported: false, reason: 'Voice is unavailable for this agent.' }
-  const provider = session.getApiProviderId(true)
-  if (provider && !isCodexAccountProvider(provider)) return { protocol: 1, supported: false, reason: 'Voice requires an official Codex account.' }
-  return { protocol: 1, supported: true }
-}
-
-/** Host-wide admission. Session remains the owner of authorization and interests. */
+/**
+ * Desktop admission over the shared host. Session remains the owner of the
+ * Codex call, the lease, and phone disconnect grace.
+ */
 export class RealtimeVoiceHost {
-  readonly epoch = randomUUID()
-  private generation = 0
-  private call: Call | null = null
-  private retired = new Set<string>()
+  private readonly admission = new VoiceAdmissionHost()
+  private bound: { session: Session; endpoint: VoiceEndpoint; attemptId: string } | null = null
+  private disconnectTimer?: ReturnType<typeof setTimeout>
 
-  private key(endpoint: VoiceEndpoint, attemptId: string): string { return JSON.stringify([endpoint.id, attemptId]) }
-  private retire(key: string): void {
-    this.retired.add(key)
-    if (this.retired.size > 128) this.retired.delete(this.retired.values().next().value!)
+  get epoch(): string { return this.admission.epoch }
+
+  private clearDisconnect(): void {
+    clearTimeout(this.disconnectTimer)
+    this.disconnectTimer = undefined
   }
+
+  private seat(session: Session, endpoint: VoiceEndpoint): VoiceSeat {
+    return {
+      endpointId: endpoint.id,
+      sessionId: session.id,
+      projectPath: session.projectPath,
+      capability: voiceCapability(session),
+      busy: session.snapshot.status === 'streaming',
+      apiProviderId: session.getApiProviderId(true),
+      send: (signal) => endpoint.send(signal),
+    }
+  }
+
   status(session: Session, endpoint: VoiceEndpoint): VoiceStatus {
-    const call = this.call
-    return { ...voiceCapability(session), ...(session.snapshot.status === 'streaming' ? { startBlockedReason: VOICE_SESSION_BUSY_REASON } : {}), call: call ? {
-      ...this.identity(call), projectPath: call.session.projectPath, sessionId: call.session.id,
-      state: call.state, owned: call.endpoint.id === endpoint.id,
-    } : null }
-  }
-  private identity(call: Call): VoiceIdentity {
-    return { hostEpoch: call.hostEpoch, callId: call.callId, generation: call.generation, attemptId: call.attemptId }
-  }
-  private emit(call: Call, signal: Omit<Extract<VoiceSignal, { kind: 'state' }>, keyof VoiceIdentity> | { kind: 'answer'; sdp: string } | { kind: 'closed'; reason?: string } | { kind: 'error'; error: string }): void {
-    if (this.call !== call) return
-    try { call.endpoint.send({ ...this.identity(call), ...signal }) } catch { /* disconnect cleanup owns delivery failure */ }
+    return this.admission.status(this.seat(session, endpoint))
   }
 
   start(session: Session, endpoint: VoiceEndpoint, attemptId: string, request: RealtimeVoiceStartRequest): VoiceStatus {
-    validateVoiceAttempt(attemptId)
-    validateVoiceStart(request)
-    const key = this.key(endpoint, attemptId)
-    if (this.retired.has(key)) throw new Error('Voice attempt already ended. Start a new call.')
-    if (this.call) {
-      if (this.call.endpoint.id === endpoint.id && this.call.attemptId === attemptId && this.call.session === session) return this.status(session, endpoint)
-      throw new Error('Another voice call is already starting or active on this desktop.')
-    }
-    const capability = voiceCapability(session)
-    if (!capability.supported) throw new Error(capability.reason)
-    if (session.snapshot.status === 'streaming') throw new Error(VOICE_SESSION_BUSY_REASON)
-    assertVoiceAccount(session.getApiProviderId(true), request.selection?.apiProviderId)
-    const release = session.retainRealtimeVoice(endpoint.deviceId)
-    const call: Call = {
-      hostEpoch: this.epoch, callId: randomUUID(), generation: ++this.generation, attemptId,
-      session, endpoint, state: 'starting', settled: false, ended: false, cancelled: false, stopSent: false,
-      release, unsubscribe: () => {}, lifecycle: () => {},
-    }
-    this.call = call
-    const proof = session.lease.current
-    call.windowCleanup = endpoint.onDisconnect?.(() => { void this.stop(session, endpoint, attemptId) })
-    call.unsubscribe = session.onRealtimeSignal(event => this.event(call, event))
-    call.lifecycle = session.onLifecycle(event => {
-      if (event.type === 'closed') { call.ended = true; call.settled = true; this.finish(call, 'Session closed') }
-      else if (event.type === 'control_changed' && (!event.lease || event.lease.leaseId !== proof?.leaseId || event.lease.generation !== proof?.generation)) {
-        void runHostReaction(() => this.stop(session, endpoint, attemptId))
+    return this.admission.start(this.seat(session, endpoint), attemptId, request, (control) => {
+      this.bound = { session, endpoint, attemptId }
+      const release = session.retainRealtimeVoice(endpoint.deviceId)
+      const proof = session.lease.current
+      const unsubscribe = session.onRealtimeSignal((event) => control.receive(event))
+      const lifecycle = session.onLifecycle((event) => {
+        if (event.type === 'closed') this.admission.end('Session closed')
+        else if (event.type === 'control_changed' && (!event.lease || event.lease.leaseId !== proof?.leaseId || event.lease.generation !== proof?.generation)) {
+          void runHostReaction(() => this.stop(session, endpoint, attemptId))
+        }
+      })
+      const windowCleanup = endpoint.onDisconnect?.(() => { void this.stop(session, endpoint, attemptId) })
+      return {
+        start: (next) => session.startRealtimeVoice(next),
+        stop: () => runHostReaction(() => session.stopRealtimeVoice()),
+        release: () => {
+          this.clearDisconnect()
+          this.bound = null
+          unsubscribe()
+          lifecycle()
+          windowCleanup?.()
+          release()
+        },
       }
     })
-    call.timer = setTimeout(() => {
-      this.emit(call, { kind: 'error', error: 'Voice connection timed out.' })
-      void this.stop(session, endpoint, attemptId)
-    }, VOICE_START_TIMEOUT_MS)
-    void this.begin(call, request)
-    return this.status(session, endpoint)
   }
-  private async begin(call: Call, request: RealtimeVoiceStartRequest): Promise<void> {
-    try {
-      await call.session.startRealtimeVoice(request)
-    } catch (error) {
-      this.emit(call, { kind: 'error', error: error instanceof Error ? redactVoiceText(error.message) : 'Voice could not start.' })
-      // An explicit start failure is cleaned up by the backend before rejection.
-      call.ended ||= !(error instanceof VoiceCleanupPendingError)
-      if (!call.ended) {
-        call.cancelled = true; call.state = 'stopping'; clearTimeout(call.timer)
-      }
-    } finally {
-      call.settled = true
-      if (call.ended) this.finish(call)
-      else if (call.cancelled) await this.stopUpstream(call)
-    }
-  }
-  private event(call: Call, event: AgentEvent): void {
-    if (this.call !== call) return
-    if (event.type === 'realtime_sdp' && !call.cancelled) this.emit(call, { kind: 'answer', sdp: event.sdp })
-    else if (event.type === 'realtime_closed') { call.ended = true; if (call.settled) this.finish(call, event.reason ? redactVoiceText(event.reason) : undefined) }
-    else if (event.type === 'realtime_error') {
-      this.emit(call, { kind: 'error', error: redactVoiceText(event.error) })
-      void this.stop(call.session, call.endpoint, call.attemptId)
-    }
-  }
+
   ready(session: Session, endpoint: VoiceEndpoint, identity: VoiceIdentity): VoiceStatus {
-    const call = this.call
-    if (!call || call.session !== session || call.endpoint.id !== endpoint.id || !sameVoice(call, identity) || call.cancelled) throw new Error('Voice call is no longer current.')
-    call.state = 'active'
-    clearTimeout(call.timer)
-    this.emit(call, { kind: 'state', state: 'active' })
-    return this.status(session, endpoint)
+    return this.admission.ready(this.seat(session, endpoint), identity)
   }
-  async stop(session: Session, endpoint: VoiceEndpoint, attemptId: string): Promise<VoiceStatus> {
-    validateVoiceAttempt(attemptId)
-    const call = this.call
-    if (call?.attemptId === attemptId && (call.endpoint.id !== endpoint.id || call.session !== session)) throw new Error('Voice call belongs to another endpoint or session.')
-    if (!call || call.attemptId !== attemptId || call.endpoint.id !== endpoint.id || call.session !== session) {
-      this.retire(this.key(endpoint, attemptId))
-      return this.status(session, endpoint)
-    }
-    call.cancelled = true
-    call.state = 'stopping'
-    clearTimeout(call.timer)
-    this.emit(call, { kind: 'state', state: 'stopping' })
-    if (call.settled) await this.stopUpstream(call)
-    return this.status(session, endpoint)
+
+  stop(session: Session, endpoint: VoiceEndpoint, attemptId: string): Promise<VoiceStatus> {
+    return this.admission.stop(this.seat(session, endpoint), attemptId)
   }
-  private async stopUpstream(call: Call): Promise<void> {
-    if (this.call !== call || call.stopSent) return
-    call.stopSent = true
-    try {
-      await runHostReaction(() => call.session.stopRealtimeVoice())
-      // The stop receipt is a teardown barrier; the backend drains closed before returning.
-      call.ended = true
-      this.finish(call)
-    } catch {
-      call.stopSent = false
-      this.emit(call, { kind: 'error', error: 'Voice cleanup pending. Reconnect before starting another call.' })
-    }
-  }
-  private finish(call: Call, reason?: string): void {
-    if (this.call !== call) return
-    this.emit(call, { kind: 'closed', ...(reason ? { reason } : {}) })
-    clearTimeout(call.timer); clearTimeout(call.disconnect)
-    call.unsubscribe(); call.lifecycle(); call.windowCleanup?.(); call.release()
-    this.retire(this.key(call.endpoint, call.attemptId))
-    this.call = null
-  }
+
   disconnected(deviceId: string): void {
-    const call = this.call
-    if (!call || call.endpoint.deviceId !== deviceId || call.disconnect) return
-    call.disconnect = setTimeout(() => {
-      void runHostReaction(() => this.stop(call.session, call.endpoint, call.attemptId))
-      runHostReaction(() => call.session.lease.releaseDelegate(`phone:${deviceId}`))
+    const bound = this.bound
+    if (!bound || bound.endpoint.deviceId !== deviceId || this.disconnectTimer || !this.admission.current()) return
+    this.disconnectTimer = setTimeout(() => {
+      const active = this.bound
+      const current = this.admission.current()
+      if (!active || !current) return
+      void runHostReaction(() => this.stop(active.session, active.endpoint, current.attemptId))
+      runHostReaction(() => active.session.lease.releaseDelegate(`phone:${deviceId}`))
     }, VOICE_DISCONNECT_GRACE_MS)
   }
+
   kicked(deviceId: string): void {
-    const call = this.call
-    if (!call || call.endpoint.deviceId !== deviceId) return
-    void runHostReaction(() => this.stop(call.session, call.endpoint, call.attemptId))
-    runHostReaction(() => call.session.lease.releaseDelegate(`phone:${deviceId}`))
+    const bound = this.bound
+    if (!bound || bound.endpoint.deviceId !== deviceId) return
+    void runHostReaction(() => this.stop(bound.session, bound.endpoint, bound.attemptId))
+    runHostReaction(() => bound.session.lease.releaseDelegate(`phone:${deviceId}`))
   }
+
   reconnect(session: Session, endpoint: VoiceEndpoint): void {
-    const call = this.call
-    if (call?.session !== session || call.endpoint.id !== endpoint.id) return
-    // The call retains its grant independently of the chat topic and socket.
-    clearTimeout(call.disconnect); call.disconnect = undefined
-    call.endpoint = endpoint
+    if (!this.admission.retarget(endpoint.id, session.id, (signal) => endpoint.send(signal))) return
+    this.clearDisconnect()
+    if (this.bound) this.bound = { ...this.bound, session, endpoint }
   }
 }

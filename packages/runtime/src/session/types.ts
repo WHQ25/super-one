@@ -365,6 +365,21 @@ export type TurnRunner = ((input: {
   disposeAll?: () => void | Promise<void>
   /** Snapshot long-lived harness state for the host's idle runtime reaper. */
   listActiveRuntimes?: () => ActiveHarnessRuntime[]
+  /**
+   * The session's live Codex app-server, for a voice call placed on this node.
+   * Absent when the runner has no Codex process.
+   */
+  codexVoice?: {
+    open(session: NodeSessionRecord): Promise<CodexVoiceConnection>
+  }
+}
+
+/** A live Codex app-server the node voice host can drive without owning the process. */
+export interface CodexVoiceConnection {
+  threadId: string
+  request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
+  subscribe(listener: (notification: { method: string; params: Record<string, unknown> }) => void): () => void
+  setVoiceActive(active: boolean): void
 }
 
 export interface HarnessOperationHost {

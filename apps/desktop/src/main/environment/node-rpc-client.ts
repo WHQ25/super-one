@@ -151,6 +151,12 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     this.controlListeners.add(listener)
     return () => { this.controlListeners.delete(listener) }
   }
+  private readonly clientEventListeners = new Set<(event: Exclude<import('@superone/shared/environment').ClientStreamMessage['event'], import('@superone/shared/environment').ControlLostEvent>) => void>()
+  /** Directed pushes other than `control_lost`, including a voice SDP answer. */
+  onClientEvent(listener: (event: Exclude<import('@superone/shared/environment').ClientStreamMessage['event'], import('@superone/shared/environment').ControlLostEvent>) => void): () => void {
+    this.clientEventListeners.add(listener)
+    return () => { this.clientEventListeners.delete(listener) }
+  }
   private baseUrl: string
   private ws: NodeSocket | null = null
   private wsSocketId = 0
@@ -387,6 +393,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
               timeoutError: (method) => transportError(`rpc timeout: ${method}`),
               coalesces: (method) => COALESCED_READS.has(method),
               onControlLost: event => { for (const listener of this.controlListeners) listener(event) },
+              onClientEvent: event => { for (const listener of this.clientEventListeners) listener(event) },
             })
             this.conn = conn
             ws.on('message', (data) => {

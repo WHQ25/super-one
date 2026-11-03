@@ -1,3 +1,4 @@
+import { codexThreadSettingsParams } from '@superone/shared/realtime-voice-codex'
 import type { AppServerConnection } from './app-server-connection'
 import type { CodexSession } from './codex-session'
 
@@ -7,11 +8,9 @@ export async function syncCodexThreadSelection(
   threadId: string,
   session: Pick<CodexSession, 'model' | 'modelReasoningEffort' | 'serviceTier'>,
 ): Promise<void> {
-  await connection.request('thread/settings/update', {
-    threadId,
-    ...(session.model ? { model: session.model } : {}),
-    ...(session.modelReasoningEffort ? { effort: session.modelReasoningEffort, summary: 'concise' } : {}),
-    // Omission retains the old tier; explicit null turns Fast off.
+  await connection.request('thread/settings/update', codexThreadSettingsParams(threadId, {
+    model: session.model,
+    effort: session.modelReasoningEffort,
     serviceTier: session.serviceTier,
-  })
+  }))
 }

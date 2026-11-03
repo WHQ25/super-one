@@ -171,6 +171,17 @@ interface LiveCodexConnection {
   onElicitation?: Parameters<TurnRunner>[0]['onElicitation']
   promptPrediction: CodexPromptPrediction
   onPromptSuggestion?: (suggestion: string) => void
+  /** True while a voice call must drain every app-server notification. */
+  voiceActive: boolean
+  voiceListeners: Set<(notification: { method: string; params: Record<string, unknown> }) => void>
+}
+
+/** Realtime notifications, and every notification during a voice call, must not enter the turn queue. */
+export function codexVoiceConsumesNotification(
+  live: { voiceActive: boolean } | null | undefined,
+  method: string,
+): boolean {
+  return Boolean(live && (live.voiceActive || method.startsWith('thread/realtime/')))
 }
 
 function parseTurnKind(raw: unknown): CodexTurnKind {
@@ -216,7 +227,14 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       env: authEnv,
       cliArgs: authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER ? nodeCodexAccountStore(opts.nodeHome).cliOverrides(authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER) : undefined,
       spawnFn: opts.spawnFn,
-      onNotification: notification => promptPrediction.observe(notification),
+      onNotification: notification => {
+        const live = liveBySession.get(sessionId)
+        if (live && codexVoiceConsumesNotification(live, notification.method)) {
+          for (const listener of live.voiceListeners) listener(notification)
+          return true
+        }
+        return (live?.promptPrediction ?? promptPrediction).observe(notification)
+      },
       onServerRequest: async (request, signal) => {
         const live = liveBySession.get(sessionId)
         if (live) {
@@ -248,6 +266,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       busyCount: 0,
       lastActivityAt: Date.now(),
       promptPrediction,
+      voiceActive: false,
+      voiceListeners: new Set(),
     }
     liveBySession.set(sessionId, live)
     return live
@@ -537,6 +557,40 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     lastActivityAt: live.lastActivityAt,
     busy: live.busyCount > 0,
   }))
+  runner.codexVoice = {
+    async open(session) {
+      if ((session.harnessId || 'codex') !== 'codex') {
+        throw Object.assign(new Error('Voice is unavailable for this agent.'), { code: 'failed_precondition' })
+      }
+      const binary = resolveCodexBinaryPath(opts)
+      if (!binary) throw Object.assign(new Error('Codex binary unavailable'), { code: 'failed_precondition' })
+      const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
+      const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
+      if (!live.threadId) {
+        const prior = session.providerResume?.startsWith('thread:') ? session.providerResume.slice('thread:'.length) : null
+        live.threadId = await ensureCodexThread({
+          client: live.client,
+          cwd: prepared.cwd,
+          threadId: prior,
+          threadConfig: prepared.threadConfig,
+          permissionPreset: session.permissionPreset,
+          signal: new AbortController().signal,
+        })
+      }
+      live.lastActivityAt = Date.now()
+      if (!live.threadId) throw Object.assign(new Error('Codex thread unavailable'), { code: 'failed_precondition' })
+      const threadId = live.threadId
+      return {
+        threadId,
+        request: (method, params) => live.client.request(method, params),
+        subscribe: (listener) => {
+          live.voiceListeners.add(listener)
+          return () => { live.voiceListeners.delete(listener) }
+        },
+        setVoiceActive: (active) => { live.voiceActive = active },
+      }
+    },
+  }
 
   return runner
 }
@@ -632,6 +686,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     ...(codex.listActiveRuntimes?.() ?? []),
     ...(acpOpenCode.listActiveRuntimes?.() ?? []),
   ]
+  runner.codexVoice = codex.codexVoice
 
   return runner
 }

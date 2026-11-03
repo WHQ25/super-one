@@ -24,6 +24,8 @@ export interface RpcConnectionOptions {
   /** Reads that identical concurrent calls may share. */
   coalesces?(method: string): boolean
   onControlLost?(event: ControlLostEvent): void
+  /** Directed client pushes other than `control_lost` (voice signaling). */
+  onClientEvent?(event: Exclude<ClientStreamMessage['event'], ControlLostEvent>): void
 }
 
 export interface RpcRequestOptions {
@@ -100,8 +102,10 @@ export class RpcConnection {
   /** Handles a decoded message from the server; false when it is not a reply or a push. */
   receive(message: unknown): boolean {
     const msg = message as { type?: string; requestId?: string; result?: unknown; error?: RpcError }
-    if (this.opts.onControlLost && msg.type === 'client' && (message as ClientStreamMessage).event?.type === 'control_lost') {
-      this.opts.onControlLost((message as ClientStreamMessage).event as ControlLostEvent)
+    if (msg.type === 'client') {
+      const event = (message as ClientStreamMessage).event
+      if (event?.type === 'control_lost') this.opts.onControlLost?.(event)
+      else if (event) this.opts.onClientEvent?.(event)
       return true
     }
     if (!msg || typeof msg !== 'object') return false

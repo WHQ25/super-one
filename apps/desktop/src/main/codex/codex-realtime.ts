@@ -13,17 +13,15 @@ import type {
 import { isRealtimeDelegationText } from '@superone/shared/realtime-timeline'
 import { restoreHostWakeSource } from '@superone/shared/host-wake'
 import {
-  CODEX_REALTIME_END_INSTRUCTIONS,
-  CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS,
-  CODEX_REALTIME_PROMPT_OVERRIDE,
-  CODEX_REALTIME_START_INSTRUCTIONS,
-} from '../agent/superone-system-prompt'
+  buildCodexRealtimeStartParams,
+  createRealtimeStartClock,
+  mapCodexRealtimeNotification,
+} from '@superone/shared/realtime-voice-codex'
 import {
   asRecord,
   readString,
   resolvePermissionProfile,
   type AppServerConnection,
-  type AppServerNotification,
   type CodexProjectAuth,
 } from './app-server-connection'
 import type { NotificationDispatcher, NotificationInbox } from './codex-notification-dispatcher'
@@ -37,6 +35,8 @@ import {
   withThreadConnection,
   type CodexRunStreamCallbacks,
 } from './codex-turn'
+
+export { buildCodexRealtimeStartParams, createRealtimeStartClock, mapCodexRealtimeNotification }
 
 export interface CodexRealtimeHandle {
   readonly threadId: string
@@ -55,38 +55,6 @@ export interface CodexRealtimeDelegatedTurnHandler {
   callbacks: CodexRunStreamCallbacks
   onCompleted(result: CodexRunResult): void
   onError(error: Error): void
-}
-
-const CODEX_REALTIME_VERSION = 'v3'
-
-function nonBlankInstruction(value: string): string | undefined {
-  return value.trim() ? value : undefined
-}
-
-export function buildCodexRealtimeStartParams(
-  threadId: string,
-  request: RealtimeVoiceStartRequest,
-) {
-  const prompt = nonBlankInstruction(CODEX_REALTIME_PROMPT_OVERRIDE)
-  const initialDeveloperInstructions = nonBlankInstruction(CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS)
-  const startInstructions = nonBlankInstruction(CODEX_REALTIME_START_INSTRUCTIONS)
-  const endInstructions = nonBlankInstruction(CODEX_REALTIME_END_INSTRUCTIONS)
-  return {
-    threadId,
-    version: CODEX_REALTIME_VERSION,
-    outputModality: 'audio',
-    codexResponseHandoffMode: 'bemTags',
-    includeStartupContext: true,
-    ...(prompt ? { prompt } : {}),
-    ...(initialDeveloperInstructions
-      ? { initialItems: [{ role: 'developer', text: initialDeveloperInstructions }] }
-      : {}),
-    ...(startInstructions ? { realtimeStartInstructions: startInstructions } : {}),
-    ...(endInstructions ? { realtimeEndInstructions: endInstructions } : {}),
-    flushTranscriptTailOnSessionEnd: true,
-    ...(request.voice ? { voice: request.voice } : {}),
-    transport: { type: 'webrtc', sdp: request.sdp },
-  }
 }
 
 function readVoiceList(value: unknown): string[] {
@@ -134,99 +102,6 @@ function mapTimelineRealtimeSegment(entry: unknown): RealtimeTimelineResult['seg
     text,
     provenance: role === 'assistant' ? 'realtime-assistant' : 'realtime-user',
     ...(position === undefined ? {} : { position }),
-  }
-}
-
-/**
- * Map a realtime item lifecycle notification. Only transcript segments are
- * surfaced; the other realtime item kinds (session started/closed, promoted BEM
- * items) already arrive through dedicated notifications.
- */
-function mapRealtimeTranscriptItem(
-  params: Record<string, unknown>,
-  phase: 'started' | 'completed',
-): AgentEvent | null {
-  const item = asRecord(params.item)
-  if (readString(item?.type) !== 'transcriptSegment') return null
-  const itemId = readString(item?.id)
-  const realtimeSessionId = readString(item?.realtimeSessionId)
-  if (!itemId || !realtimeSessionId) return null
-  return {
-    type: 'realtime_transcript_item',
-    phase,
-    itemId,
-    realtimeSessionId,
-    role: transcriptRole(item?.role),
-    text: typeof item?.text === 'string' ? item.text : '',
-  }
-}
-
-/**
- * Codex publishes realtime items without any timestamp, so the timeline has no scale
- * unless SuperOne stamps one. A call keeps its own clock: `started` records when the
- * speaker opened the item, and its `completed` event inherits that stamp rather than
- * the later moment transcription finished. The map lives for one call and drops each
- * item as it completes.
- */
-export function createRealtimeStartClock(): (event: AgentEvent) => AgentEvent {
-  const startedAt = new Map<string, number>()
-  return (event) => {
-    if (event.type !== 'realtime_transcript_item') return event
-    if (event.phase === 'started') {
-      const startedAtMs = Date.now()
-      startedAt.set(event.itemId, startedAtMs)
-      return { ...event, startedAtMs }
-    }
-    if (event.phase !== 'completed') return event
-    const startedAtMs = startedAt.get(event.itemId)
-    startedAt.delete(event.itemId)
-    // An item this connection never saw start stays unstamped: order is still known,
-    // an invented start time would not be.
-    return startedAtMs === undefined ? event : { ...event, startedAtMs }
-  }
-}
-
-export function mapCodexRealtimeNotification(notification: AppServerNotification): AgentEvent | null {
-  const { method, params } = notification
-  switch (method) {
-    case 'thread/realtime/started':
-      return {
-        type: 'realtime_started',
-        ...(readString(params.realtimeSessionId) ? { realtimeSessionId: readString(params.realtimeSessionId)! } : {}),
-        version: readString(params.version) ?? 'v3',
-      }
-    case 'thread/realtime/sdp': {
-      const sdp = readString(params.sdp)
-      return sdp ? { type: 'realtime_sdp', sdp } : null
-    }
-    case 'thread/realtime/item/started':
-      return mapRealtimeTranscriptItem(params, 'started')
-    case 'thread/realtime/item/completed':
-      return mapRealtimeTranscriptItem(params, 'completed')
-    case 'thread/realtime/item/transcript/delta': {
-      const itemId = readString(params.itemId)
-      const text = typeof params.delta === 'string' ? params.delta : ''
-      return itemId && text
-        ? { type: 'realtime_transcript_item', phase: 'delta', itemId, text }
-        : null
-    }
-    case 'thread/realtime/transcript/delta': {
-      const text = typeof params.delta === 'string' ? params.delta : ''
-      return text ? { type: 'realtime_transcript', role: transcriptRole(params.role), text, final: false } : null
-    }
-    case 'thread/realtime/transcript/done': {
-      const text = typeof params.text === 'string' ? params.text : ''
-      return text ? { type: 'realtime_transcript', role: transcriptRole(params.role), text, final: true } : null
-    }
-    case 'thread/realtime/error':
-      return { type: 'realtime_error', error: redactVoiceText(readString(params.message) ?? 'Realtime voice failed.') }
-    case 'thread/realtime/closed':
-      return {
-        type: 'realtime_closed',
-        ...(readString(params.reason) ? { reason: redactVoiceText(readString(params.reason)!) } : {}),
-      }
-    default:
-      return null
   }
 }
 

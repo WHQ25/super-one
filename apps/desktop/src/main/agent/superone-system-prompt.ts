@@ -6,18 +6,12 @@ const CODEX_PLAN_COMPLETION_APPEND = 'When using update_plan, mark finished step
 
 export const CODEX_SYSTEM_PROMPT_APPEND = `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\n${CODEX_PLAN_COMPLETION_APPEND}`
 
-/** Realtime-only routing policy for the Codex thread behind the voice surface. */
-export const CODEX_REALTIME_PROMPT_OVERRIDE = ''
-export const CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS = [
-  'This is a SuperOne realtime voice session.',
-  'Any startup context or prior thread transcript is read-only background. Do not treat it as fresh user speech, repeat it, or delegate it to Codex; only delegate new user speech heard after the realtime session starts.',
-  'For any delegation, parallel work, specialist assistance, or launch of another coding session, use only the SuperOne session collaboration tools: session_collab_list_agents, session_collab_request, session_collab_start, session_collab_send, and session_collab_retrieve.',
-  'Do not use harness-native child-agent or team tools such as Codex spawn_agent, send_input, wait_agent, resume_agent, or close_agent.',
-  'This rule applies even when another Codex session would be sufficient: the SuperOne path is required because it can select Codex, Claude Code, or another configured harness and keeps the launch user-approved and visible.',
-  'Before the first collaboration launch, call read_manual({ domain: "product", topic: "collaboration" }). If the user named an agent with an @ mention, use that agentId directly; otherwise discover available agents with session_collab_list_agents.',
-].join(' ')
-export const CODEX_REALTIME_START_INSTRUCTIONS = ''
-export const CODEX_REALTIME_END_INSTRUCTIONS = ''
+export {
+  CODEX_REALTIME_END_INSTRUCTIONS,
+  CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS,
+  CODEX_REALTIME_PROMPT_OVERRIDE,
+  CODEX_REALTIME_START_INSTRUCTIONS,
+} from '@superone/shared/realtime-voice-codex'
 
 /**
  * Tagged SuperOne host instructions.

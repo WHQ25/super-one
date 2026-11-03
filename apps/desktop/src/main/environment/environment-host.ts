@@ -76,6 +76,7 @@ import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-
 import { mirrorWindowMessageAttachments } from '../attachment-originals'
 import { DESKTOP_FOLD_BUDGET, presentDesktopWindowPatch, readDesktopSessionWindow } from './remote-transcript-window'
 import { desktopWindowHolder } from '@superone/shared/environment/transcript-window'
+import { desktopVoiceSignal } from './voice-signal-route'
 import type { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import { MAX_HELD } from '@superone/runtime/stream/delivery/window-views'
 import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
@@ -2161,6 +2162,10 @@ export class EnvironmentHost {
   private agentEventSink: ((event: import('@superone/shared/agent-types').AgentEvent) => void) | null =
     null
 
+  /** Desktop remote key for a voice call, so its SDP is published on that session's topic. */
+  private readonly voiceProjectKeys = new Map<string, string>()
+  private readonly voiceSignalClients = new WeakSet<object>()
+
   /**
    * Expand a summarized row of a remote session. The machine holding the
    * session serves it; packets after the snapshot go to `onUpdate`.
@@ -2214,6 +2219,43 @@ export class EnvironmentHost {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
     return gateway.sessions.patchSettings!({ session: { environmentId, sessionId }, ...patch, ...control })
+  }
+
+  /**
+   * Codex realtime voice on the node that owns the session. The renderer stays
+   * on `window.agent`; this is the main-process route for a remote project key.
+   */
+  async callVoice(
+    connectionId: string,
+    sessionId: string,
+    method: 'session.voiceStatus' | 'session.voiceStart' | 'session.voiceStop' | 'session.voiceReady',
+    payload: Record<string, unknown>,
+    projectPath?: string,
+  ): Promise<unknown> {
+    const { environmentId } = this.resolveRemote(connectionId)
+    const client = this.connections.getClient(connectionId)
+    if (!client) throw Object.assign(new Error('Remote environment is disconnected'), { code: 'unavailable' })
+    this.watchVoiceSignals(client)
+    if (projectPath) this.voiceProjectKeys.set(sessionId, projectPath)
+    if (method === 'session.voiceStart' && projectPath) {
+      await this.followRemoteSession(connectionId, { sessionId, projectPath })
+    }
+    const control = method === 'session.voiceStatus' ? {} : await this.ensureSessionLease(connectionId, sessionId)
+    return client.rpc(method, { sessionId, ...payload, ...control }, environmentId)
+  }
+
+  /** One subscription per live client. A reconnect builds a new socket on the same client. */
+  private watchVoiceSignals(client: NonNullable<ReturnType<NodeConnectionManager['getClient']>>): void {
+    if (this.voiceSignalClients.has(client)) return
+    this.voiceSignalClients.add(client)
+    client.onClientEvent((event) => {
+      if (event.type !== 'realtime_call_signal' || !event.sessionId) return
+      const routed = desktopVoiceSignal(event, this.voiceProjectKeys.get(event.sessionId))
+      if (routed?.type === 'realtime_call_signal' && routed.signal.kind === 'closed') {
+        this.voiceProjectKeys.delete(event.sessionId)
+      }
+      if (routed) this.agentEventSink?.(routed)
+    })
   }
 
   /** A session operation outside the shared node family (`SessionCallMethods`). */

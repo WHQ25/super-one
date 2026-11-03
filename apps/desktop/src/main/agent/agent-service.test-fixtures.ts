@@ -39,7 +39,7 @@ const dshMcpMocks = vi.hoisted(() => ({
 }))
 
 const remoteDshMcpMocks = vi.hoisted(() => ({
-  host: {} as object,
+  host: { callVoice: vi.fn() },
   list: vi.fn(),
   save: vi.fn(),
   toggle: vi.fn(),

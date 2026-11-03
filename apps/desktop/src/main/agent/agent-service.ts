@@ -110,6 +110,22 @@ import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
+/**
+ * A remote project key is executed by its node. Null means this desktop owns
+ * the session and the local Codex voice host should run.
+ */
+async function forwardRemoteVoice(
+  projectPath: string,
+  sessionId: string,
+  method: 'session.voiceStart' | 'session.voiceStop' | 'session.voiceReady',
+  payload: Record<string, unknown>,
+): Promise<unknown | null> {
+  const remote = parseRemoteProjectKey(projectPath)
+  if (!remote) return null
+  const { getEnvironmentHost } = await import('../environment')
+  return getEnvironmentHost().callVoice(remote.connectionId, sessionId, method, payload, projectPath)
+}
+
 export class AgentService {
   private prepareDraftOpen?: (draftId: string) => Promise<void>
   setPrepareDraftOpen(prepare: (draftId: string) => Promise<void>): void { this.prepareDraftOpen = prepare }
@@ -1126,8 +1142,13 @@ export class AgentService {
     })
 
     windowIpc.handle(AgentIpcChannels.START_REALTIME_VOICE, async (event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
-      const mgr = this.requireSessionManager()
       if (!request.attemptId) throw new Error('Voice attempt is required.')
+      const remoteVoice = await forwardRemoteVoice(projectPath, sessionId, 'session.voiceStart', {
+        attemptId: request.attemptId,
+        request: preferredVoiceRequest(request, readAppSettings().agentPreference.codex.realtimeVoice),
+      })
+      if (remoteVoice !== null) return remoteVoice
+      const mgr = this.requireSessionManager()
       const existing = mgr.getSession(sessionId)
       if (existing && existing.projectPath !== projectPath) throw new Error('Session project mismatch.')
       const session = existing ?? await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
@@ -1136,14 +1157,18 @@ export class AgentService {
       return mgr.realtimeVoice.start(session, endpoint, request.attemptId, preferredVoiceRequest(request, readAppSettings().agentPreference.codex.realtimeVoice))
     })
 
-    windowIpc.handle(AgentIpcChannels.STOP_REALTIME_VOICE, (event, projectPath: string, sessionId: string, attemptId: string) => {
+    windowIpc.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (event, projectPath: string, sessionId: string, attemptId: string) => {
+      const remoteVoice = await forwardRemoteVoice(projectPath, sessionId, 'session.voiceStop', { attemptId })
+      if (remoteVoice !== null) return remoteVoice
       const mgr = this.requireSessionManager()
       const session = mgr.getSession(sessionId)
       if (!session || session.projectPath !== projectPath) return
       session.lease.assertMutation()
       return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
     })
-    windowIpc.handle(AgentIpcChannels.READY_REALTIME_VOICE, (event, projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity) => {
+    windowIpc.handle(AgentIpcChannels.READY_REALTIME_VOICE, async (event, projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity) => {
+      const remoteVoice = await forwardRemoteVoice(projectPath, sessionId, 'session.voiceReady', { attemptId: identity.attemptId, identity })
+      if (remoteVoice !== null) return remoteVoice
       const mgr = this.requireSessionManager()
       const session = mgr.getSession(sessionId)
       if (!session || session.projectPath !== projectPath) throw new Error('Session unavailable.')

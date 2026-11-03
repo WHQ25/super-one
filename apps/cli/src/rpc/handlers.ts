@@ -32,6 +32,7 @@ import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@super
 import { dispatchHarnessResourcesRpc, HARNESS_RESOURCES_RPC_METHODS } from './harness-resources-handlers'
 import { createClaudeAccountMethods } from '@superone/runtime/server/rpc-claude-accounts'
 import { listNodeClaudeAccounts } from '../session/claude-accounts'
+import { dispatchVoiceRpc, VOICE_RPC_METHODS } from './voice-handlers'
 
 const claudeAccounts = createClaudeAccountMethods(listNodeClaudeAccounts)
 
@@ -98,6 +99,7 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
   ...HARNESS_RESOURCES_RPC_METHODS,
   ...CODEX_RPC_METHODS,
   ...claudeAccounts.methods,
+  ...VOICE_RPC_METHODS,
 ])
 
 /** Serve one node RPC with the shared families plus the CLI's own. */
@@ -131,6 +133,8 @@ function cliResourceHost(ctx: RpcContext): ResourceHost {
 
 /** Method families only the CLI node serves; null hands the method to the shared families. */
 async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
+  const voice = await dispatchVoiceRpc(method, payload, ctx)
+  if (voice) return voice
   const suggestedTask = await dispatchSuggestedTaskRpc(method, payload, ctx)
   if (suggestedTask) return suggestedTask
   const archive = dispatchSessionArchiveRpc(method, payload, ctx)

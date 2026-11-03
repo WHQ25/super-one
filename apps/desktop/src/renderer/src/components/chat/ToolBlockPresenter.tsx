@@ -626,7 +626,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       }
       // Subagent card: never mount the full widget UI — header-only stub.
       if (!allowExpand) return <WidgetToolRow title={widgetData?.title} streaming={isStreaming} />
-      if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
+      if (widgetData) return <WidgetBlock data={widgetData} toolUseId={toolUseId} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
       return <WidgetToolRow streaming={isStreaming} />
     }
   }

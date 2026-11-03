@@ -1,5 +1,6 @@
 import { useRef, useState, useMemo, useLayoutEffect, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '@superone/shared/generative-ui/svg-styles'
 import { buildWidgetSrcdoc, widgetBodyStyle, WIDGET_FRAME_WIDTH } from '@superone/shared/generative-ui/widget-srcdoc'
@@ -217,6 +218,8 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady, onRequestI
 
 interface WidgetBlockProps {
   data: WidgetData
+  /** Call identity. The transcript unmounts offscreen blocks, so the fold is stored by this id. */
+  toolUseId?: string
   streaming?: boolean
   onRequestInput?: (spec: unknown) => Promise<void>
   composerPorts?: ComposerViewPorts
@@ -233,14 +236,14 @@ function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): v
   URL.revokeObjectURL(url)
 }
 
-export function WidgetBlock({ data, streaming, onRequestInput, composerPorts }: WidgetBlockProps) {
+export function WidgetBlock({ data, toolUseId, streaming, onRequestInput, composerPorts }: WidgetBlockProps) {
   const { t } = useTranslation()
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
   const finalSrcdoc = useMemo(() => buildWidgetSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
   const [mountIframe, setMountIframe] = useState(!streaming)
   const [saveOpen, setSaveOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useTranscriptState(`widget-collapsed-${toolUseId || data.title}`, false)
   const gateNotifiedRef = useRef(false)
 
   useEffect(() => {

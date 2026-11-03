@@ -39,6 +39,24 @@ describe('ReasoningBlock', () => {
     expect(screen.getByText('hello')).toBeInTheDocument()
   })
 
+  it('fades each new reasoning suffix once while streaming', () => {
+    const { container, rerender } = render(
+      <ReasoningBlock text="first" blockDone={false} showContent autoExpand />,
+    )
+    const faded = () => [...container.querySelectorAll('.stream-fade')].map(node => node.textContent)
+    expect(faded()).toEqual(['first'])
+
+    rerender(<ReasoningBlock text="first more" blockDone={false} showContent autoExpand />)
+    expect(faded()).toEqual(['first', ' more'])
+
+    rerender(<ReasoningBlock text="replaced" blockDone={false} showContent autoExpand />)
+    expect(faded()).toEqual(['replaced'])
+
+    rerender(<ReasoningBlock text="replaced" blockDone showContent autoExpand collapseOnDone={false} />)
+    expect(container.querySelector('.stream-fade')).toBeNull()
+    expect(container.querySelector('.thinking-content')?.textContent).toContain('replaced')
+  })
+
   it('opens streaming content when the appearance setting is on', () => {
     useAppStore.setState({ autoExpandReasoning: true })
     render(<ReasoningBlock text="hello" blockDone={false} showContent />)
@@ -95,7 +113,7 @@ describe('ReasoningBlock', () => {
   })
 
   it('keeps a manual expand open as more text streams', () => {
-    const { rerender } = render(
+    const { container, rerender } = render(
       <ReasoningBlock text="first chunk" blockDone={false} showContent={true} />,
     )
     fireEvent.click(screen.getByText('Thinking...'))
@@ -104,7 +122,7 @@ describe('ReasoningBlock', () => {
     rerender(
       <ReasoningBlock text="first chunk more" blockDone={false} showContent={true} />,
     )
-    expect(screen.getByText('first chunk more')).toBeInTheDocument()
+    expect(container.querySelector('.thinking-content')?.textContent).toBe('first chunk more')
   })
 
   it('keeps a manual collapse closed as more text streams', () => {

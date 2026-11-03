@@ -1,4 +1,4 @@
-import { type ComponentType, type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentType, type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { bindScrollEdgeFades, TABLE_SCROLL_EDGE_SELECTOR } from '@superone/ui/lib/scroll-edge-fade'
 import { Check, Copy } from 'lucide-react'
 import {
@@ -10,6 +10,8 @@ import {
   type MathPlugin,
   type PluginConfig,
 } from 'streamdown'
+import { StreamFadeBlock } from './stream-fade-block'
+import { createStreamFadePlugin, FadeBlockInnerContext } from './stream-fade'
 import type { PluggableList } from 'unified'
 import { splitByInsightBlocks } from '@superone/shared/insight-markers'
 
@@ -43,6 +45,46 @@ function markdownBlockOptions(text: string, runtime: CopyableMarkdownRuntime) {
 }
 
 export { splitByInsightBlocks }
+
+function ChatMarkdown({ text, isStreaming, components, runtime, plugins }: {
+  text: string
+  isStreaming: boolean
+  components: Components
+  runtime: CopyableMarkdownRuntime
+  plugins: PluginConfig
+}) {
+  const options = markdownBlockOptions(text, runtime)
+  const [staticFade] = useState(() => createStreamFadePlugin())
+  const staticStreaming = isStreaming && options.mode === 'static'
+  if (staticStreaming) staticFade.bind()
+  useLayoutEffect(() => {
+    if (staticStreaming) staticFade.commit()
+    else staticFade.reset()
+  }, [text, staticStreaming, staticFade])
+  const rehypePlugins = staticStreaming
+    ? [...runtime.rehypePlugins, staticFade.rehype]
+    : runtime.rehypePlugins
+  return (
+    <FadeBlockInnerContext.Provider value={options.BlockComponent}>
+      <Streamdown
+        BlockComponent={isStreaming && options.mode !== 'static' ? StreamFadeBlock : options.BlockComponent}
+        mode={options.mode}
+        className="chat-md"
+        plugins={plugins}
+        remarkPlugins={runtime.remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={components}
+        controls={runtime.controls}
+        linkSafety={runtime.linkSafety}
+        tableMaxHeight={runtime.tableMaxHeight}
+        remend={REMEND_OPTIONS}
+        isAnimating={isStreaming}
+      >
+        {text}
+      </Streamdown>
+    </FadeBlockInnerContext.Provider>
+  )
+}
 
 const MATH_TRIGGER_RE = /\$\$|\\\(|\\\[|\\begin\{/
 
@@ -223,21 +265,7 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
         </button>
       </div>
       <ScrollEdgeFadeRoot>
-        <Streamdown
-          {...markdownBlockOptions(normalized, runtime)}
-          className="chat-md"
-          plugins={plugins}
-          remarkPlugins={runtime.remarkPlugins}
-          rehypePlugins={runtime.rehypePlugins}
-          components={merged}
-          controls={runtime.controls}
-          linkSafety={runtime.linkSafety}
-          tableMaxHeight={runtime.tableMaxHeight}
-          remend={REMEND_OPTIONS}
-          isAnimating={isStreaming}
-        >
-          {normalized}
-        </Streamdown>
+        <ChatMarkdown text={normalized} isStreaming={isStreaming} components={merged} runtime={runtime} plugins={plugins} />
       </ScrollEdgeFadeRoot>
     </div>
   )
@@ -259,21 +287,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
 
   return (
     <ScrollEdgeFadeRoot>
-      <Streamdown
-        {...markdownBlockOptions(normalized, runtime)}
-        className="chat-md"
-        plugins={plugins}
-        remarkPlugins={runtime.remarkPlugins}
-        rehypePlugins={runtime.rehypePlugins}
-        components={merged}
-        controls={runtime.controls}
-        linkSafety={runtime.linkSafety}
-        tableMaxHeight={runtime.tableMaxHeight}
-        remend={REMEND_OPTIONS}
-        isAnimating={isStreaming}
-      >
-        {normalized}
-      </Streamdown>
+      <ChatMarkdown text={normalized} isStreaming={isStreaming} components={merged} runtime={runtime} plugins={plugins} />
     </ScrollEdgeFadeRoot>
   )
 })

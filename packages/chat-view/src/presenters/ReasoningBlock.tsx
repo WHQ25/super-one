@@ -3,6 +3,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Brain, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { StreamFadeText } from './stream-fade-block'
 
 export interface ReasoningBlockProps {
   onRetry?: () => void
@@ -126,7 +127,7 @@ export const ReasoningBlock = memo(function ReasoningBlock({
           ref={scrollRef}
           className="thinking-content mt-1 max-h-32 overflow-y-auto pl-2 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
         >
-          {text}
+          <StreamFadeText text={text} active={active} />
           {onRetry && <button type="button" className="ml-2 underline" onClick={onRetry}>{t('common.retry')}</button>}
         </div>
       )}

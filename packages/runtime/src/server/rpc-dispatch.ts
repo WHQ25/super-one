@@ -34,6 +34,7 @@ import { probeSandboxRpc } from '../sandbox/index'
 import { getMachineInfo, readLiveStatus, sampleCpuPercent } from '../machine/index'
 import { readSubscriptionUsage } from '../usage/index'
 import { type NodeSessionRecord } from '../session/index'
+import { runSessionCleanup } from '../session/session-cleanup'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
 import { streamFilterMatcher, type EventStreamFilter } from './event-stream'
@@ -125,6 +126,9 @@ function serves(ctx: HostRpcContext, method: string): boolean {
   if (ctx.unservedMethods?.has(method)) return false
   if (Object.hasOwn(SESSION_OPERATION_HANDLERS, method) && !ctx.sessions?.servedOperations?.has(method)) return false
   if (method === 'session.fork' && !ctx.sessions?.forkOnHost && !ctx.hooks.forkHarnessResume) return false
+  // Desktop sessions stay on the local MCP handler. Only a host that can open
+  // the node delete card serves this method.
+  if (method === 'session.cleanup' && typeof ctx.sessions?.requestCleanupConfirm !== 'function') return false
   // A partial port (`servedMethods`) serves only the methods it names.
   return requiredPorts(method).every((port) => {
     const served = ctx[port] as { readonly servedMethods?: ReadonlySet<string> } | undefined
@@ -337,6 +341,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.rename': (payload, ctx) => handleSessionRename(payload, ctx),
   'session.setTags': (payload, ctx) => handleSessionSetTags(payload, ctx),
   'session.setUiFlags': (payload, ctx) => handleSessionSetUiFlags(payload, ctx),
+  'session.cleanup': (payload, ctx) => handleSessionCleanup(payload, ctx),
   'collaboration.listProfiles': (_payload, ctx) => handleCollaborationListProfiles(ctx),
   'collaboration.request': (payload, ctx) => handleCollaborationRequest(payload, ctx),
   'collaboration.start': (payload, ctx) => handleCollaborationStart(payload, ctx),
@@ -2046,6 +2051,28 @@ function handleSessionSetTags(payload: unknown, ctx: RpcContext): RpcResult {
       return { error: { code: 'failed_precondition', message: next.error } }
     }
     return { result: ctx.sessions.setTags(sessionId, next) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleSessionCleanup(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  if (typeof ctx.sessions.requestCleanupConfirm !== 'function') return unsupported('session.cleanup')
+  const p = asRecord(payload)
+  const sourceSessionId = typeof p.sourceSessionId === 'string' ? p.sourceSessionId : ''
+  if (!sourceSessionId) return { error: { code: 'invalid_argument', message: 'sourceSessionId required' } }
+  try {
+    return {
+      result: await runSessionCleanup(ctx.sessions, {
+        action: p.action,
+        sessionIds: p.sessionIds,
+        sourceSessionId,
+        includePinned: p.includePinned === true,
+        maxDelete: p.maxDelete,
+      }),
+    }
   } catch (err) {
     return mapThrown(err)
   }

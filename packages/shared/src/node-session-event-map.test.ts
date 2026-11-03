@@ -225,6 +225,30 @@ describe('mapNodeSessionEvents (text-only)', () => {
     expect(events).toEqual([])
   })
 
+  it('copies a session_cleanup delete card onto the permission request', () => {
+    const sessions = [{ id: 's1', title: 'Old chat', harness: 'acp', messageCount: 2, projectId: 'p' }]
+    const events = mapNodeSessionEvents([envelope({
+      eventType: 'session.permission_requested',
+      payload: {
+        interactionId: 'c1',
+        toolName: 'mcp__superone__session_cleanup',
+        requestKind: 'session_cleanup_confirm',
+        allowAlwaysAllow: true,
+        message: 'Permanently delete 1 session(s)?',
+        sessionCleanupConfirm: { sessions },
+      },
+    })], ctx)
+    expect(events).toMatchObject([{
+      type: 'permission_request',
+      request: {
+        requestId: 'c1',
+        requestKind: 'session_cleanup_confirm',
+        allowAlwaysAllow: false,
+        sessionCleanupConfirm: { sessions },
+      },
+    }])
+  })
+
   it('maps permission request/response and renames', () => {
     const events = mapNodeSessionEvents(
       [

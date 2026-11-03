@@ -2348,6 +2348,20 @@ export class EnvironmentHost {
     return gateway.setSessionUiFlags(sessionId, flags)
   }
 
+  async cleanupSession(
+    connectionId: string,
+    input: {
+      action: unknown
+      sessionIds: unknown
+      sourceSessionId: string
+      includePinned?: boolean
+      maxDelete?: unknown
+    },
+  ): Promise<unknown> {
+    const { gateway } = this.resolveSession(connectionId)
+    return gateway.cleanupSession(input)
+  }
+
   /** The sidebar marked a completion read or unread. The host receipt is what every other client follows. */
   async setSessionRead(connectionId: string, sessionId: string, read: boolean): Promise<void> {
     const { gateway } = this.resolveSession(connectionId)

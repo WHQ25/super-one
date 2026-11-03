@@ -37,6 +37,7 @@ import {
   pageSessionMessageCatalog,
 } from './message-catalog'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { SESSION_CLEANUP_CONFIRM_TIMEOUT_MS } from '@superone/shared/session-cleanup'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
@@ -48,11 +49,13 @@ import { collaborationSystemPrompt } from '../collaboration/text'
 import {
   type ActiveHarnessRuntime,
   type AgentsConfirmOutcome,
+  type CleanupConfirmOutcome,
   type ElicitationDecision,
   type NodeSessionRecord,
   type NodeSessionSettings,
   type PendingInteraction,
   type PermissionDecision,
+  type SessionCleanupConfirmInput,
   type PlanDecisionResult,
   type QuestionAnswers,
   type SessionStatus,
@@ -196,6 +199,7 @@ export class SessionRuntime {
   private readonly agentsConfirmWaiters = new Map<string, AgentsConfirmWaiter>()
   private readonly defaultApiProviderId?: (harnessId: string) => string | null
   private readonly agentsConfirmTimeoutMs: number
+  private readonly cleanupConfirmTimeoutMs: number
   private readonly mcpAppResources?: McpAppResourceStore
   private readonly mcpAppGc?: ReturnType<typeof createMcpAppResourceGc>
   private readonly hostActions: HostActionStore | null
@@ -269,6 +273,7 @@ export class SessionRuntime {
     opts?: {
       defaultApiProviderId?: (harnessId: string) => string | null
       agentsConfirmTimeoutMs?: number
+      cleanupConfirmTimeoutMs?: number
       hostActions?: HostActionStore | null
       mcpAppResources?: McpAppResourceStore
       /** Tests may disable or shorten the runtime sweep; production uses 30s. */
@@ -286,6 +291,8 @@ export class SessionRuntime {
     this.defaultApiProviderId = opts?.defaultApiProviderId
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
+    this.cleanupConfirmTimeoutMs =
+      opts?.cleanupConfirmTimeoutMs ?? SESSION_CLEANUP_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
     this.artifactWakes = new ArtifactWakes(this.hostActions)
     this.hostActionChannel = this.hostActions
@@ -2126,8 +2133,8 @@ export class SessionRuntime {
       throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
     }
 
-    // Multi-launch agent collaboration confirm (session_collab_request).
-    if (pending.kind === 'session_agents_confirm') {
+    // Multi-launch collab and session_cleanup delete share one confirm waiter.
+    if (pending.kind === 'session_agents_confirm' || pending.kind === 'session_cleanup_confirm') {
       const waiter = this.agentsConfirmWaiters.get(input.interactionId)
       if (!waiter || waiter.sessionId !== input.sessionId) {
         throw Object.assign(new Error('no matching pending agents confirm'), {
@@ -2318,6 +2325,108 @@ export class SessionRuntime {
     })
   }
 
+  /**
+   * Block until the control-lease holder accepts permanent session deletion.
+   * The card is a permission_request on this session; the desktop follow feed
+   * already renders sessionCleanupConfirm. No desktop session row is created.
+   */
+  requestCleanupConfirm(input: SessionCleanupConfirmInput): Promise<CleanupConfirmOutcome> {
+    const session = this.live.get(input.sessionId)
+    if (!session) {
+      return Promise.reject(Object.assign(new Error('session not found'), { code: 'not_found' }))
+    }
+    if (session.pendingInteraction) this.rejectPendingPermission(session)
+
+    const interaction: PendingInteraction = {
+      interactionId: `sessioncleanup_${Date.now()}_${randomUUID().slice(0, 8)}`,
+      kind: 'session_cleanup_confirm',
+      toolName: 'mcp__superone__session_cleanup',
+      toolUseId: undefined,
+      input: { action: 'delete', sessionIds: input.finalIds },
+      createdAt: Date.now(),
+      requestKind: 'session_cleanup_confirm',
+      serverName: 'superone',
+      message: input.message,
+      allowAlwaysAllow: false,
+      sessionCleanupConfirm: { sessions: input.sessions },
+    }
+
+    return new Promise<CleanupConfirmOutcome>((resolve) => {
+      let settled = false
+      session.pendingInteraction = interaction
+      session.updatedAt = Date.now()
+      this.persist(session)
+      this.events.appendSession({
+        sessionId: session.sessionId,
+        eventType: SESSION_DURABLE_EVENT.permissionRequested,
+        payload: interaction,
+      })
+
+      const finish = (result: {
+        action: CleanupConfirmOutcome['action']
+        reason: CleanupConfirmOutcome['reason']
+      }): void => {
+        if (settled) return
+        settled = true
+        const waiter = this.agentsConfirmWaiters.get(interaction.interactionId)
+        if (waiter) {
+          clearTimeout(waiter.timer)
+          this.agentsConfirmWaiters.delete(interaction.interactionId)
+        }
+        if (session.pendingInteraction?.interactionId === interaction.interactionId) {
+          session.pendingInteraction = null
+          session.updatedAt = Date.now()
+          this.persist(session)
+        }
+        if (result.reason === 'responded') {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.permissionResponded,
+            payload: {
+              interactionId: interaction.interactionId,
+              decision: result.action === 'accept' ? 'allow' : result.action === 'cancel' ? 'cancel' : 'deny',
+              action: result.action,
+            },
+          })
+        } else {
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: result.reason === 'timeout'
+              ? SESSION_DURABLE_EVENT.permissionTimeout
+              : SESSION_DURABLE_EVENT.permissionAborted,
+            payload: { interactionId: interaction.interactionId, decision: 'deny' },
+          })
+        }
+        resolve(result)
+      }
+
+      const timer = setTimeout(() => {
+        finish({ action: 'cancel', reason: 'timeout' })
+      }, this.cleanupConfirmTimeoutMs)
+
+      this.agentsConfirmWaiters.set(interaction.interactionId, {
+        sessionId: session.sessionId,
+        settle: (result) => {
+          const action = result.action === 'accept' || result.action === 'decline' || result.action === 'cancel'
+            ? result.action
+            : 'cancel'
+          finish({
+            action,
+            reason: result.reason === 'timeout' || result.reason === 'aborted' ? result.reason : 'responded',
+          })
+        },
+        timer,
+      })
+
+      const signal = input.signal
+      if (signal?.aborted) {
+        finish({ action: 'cancel', reason: 'aborted' })
+        return
+      }
+      signal?.addEventListener('abort', () => finish({ action: 'cancel', reason: 'aborted' }), { once: true })
+    })
+  }
+
   respondQuestion(input: {
     sessionId: string
     interactionId: string
@@ -2481,7 +2590,7 @@ export class SessionRuntime {
       else session.pendingInteraction = null
       return
     }
-    if (pending.kind === 'session_agents_confirm') {
+    if (pending.kind === 'session_agents_confirm' || pending.kind === 'session_cleanup_confirm') {
       const aw = this.agentsConfirmWaiters.get(pending.interactionId)
       if (aw) aw.settle({ action: 'cancel', reason: 'aborted' })
       else session.pendingInteraction = null

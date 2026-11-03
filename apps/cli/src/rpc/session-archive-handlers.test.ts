@@ -45,6 +45,35 @@ describe('environment archive RPC', () => {
     vi.mocked(ctx.sessions.listMessages).mockReturnValue({ sessionId: 'one', cursor: null, hasMore: false, messages: [{ id: 'm', role: 'assistant', text: 'result', createdAt: 2, sortOrder: 0, content: [{ type: 'tool_use', toolUseId: 't', toolName: 'Bash', input: '{"command":"pwd"}', status: 'complete' }] }] })
     expect(archive(ctx, { sessionId: 'one', view: 'tools' }, 'session_read').content[0].text).toContain('Bash')
   })
+  it('lists tags from this node archive, not another project, and keeps refs out by default', () => {
+    const ctx = context([
+      session('one', { tags: ['oauth', 'pr-9'] }),
+      session('two', { tags: ['oauth', 'auth'] }),
+      session('hidden', { tags: ['secret'], isHidden: true }),
+      session('other', { projectId: 'q', tags: ['elsewhere'] }),
+    ])
+    const listed = decode(archive(ctx, {}, 'session_tag_list').content[0].text) as {
+      environmentId: string
+      projectId: string
+      allProjects: boolean
+      kind: string
+      total: number
+      tags: Array<{ tag: string; sessions: number }>
+    }
+    expect(listed.environmentId).toBe('node-A')
+    expect(listed).toMatchObject({ projectId: 'p', allProjects: false, kind: 'label', total: 2 })
+    expect(listed.tags).toEqual([{ tag: 'oauth', sessions: 2 }, { tag: 'auth', sessions: 1 }])
+    const refs = decode(archive(ctx, { kind: 'ref' }, 'session_tag_list').content[0].text) as { tags: Array<{ tag: string }> }
+    expect(refs.tags.map(row => row.tag)).toEqual(['pr-9'])
+    const queried = decode(archive(ctx, { query: 'PR', kind: 'all' }, 'session_tag_list').content[0].text) as { tags: Array<{ tag: string }> }
+    expect(queried.tags.map(row => row.tag)).toEqual(['pr-9'])
+    const page = decode(archive(ctx, { kind: 'all', limit: 100, offset: 1 }, 'session_tag_list').content[0].text) as { limit: number; count: number; total: number }
+    expect(page).toMatchObject({ limit: 100, total: 3, count: 2 })
+    expect(archive(ctx, { kind: 'bogus' }, 'session_tag_list').isError).toBe(true)
+    const everywhere = decode(archive(ctx, { allProjects: true, includeHidden: true, kind: 'all' }, 'session_tag_list').content[0].text) as { allProjects: boolean; tags: Array<{ tag: string }> }
+    expect(everywhere.allProjects).toBe(true)
+    expect(everywhere.tags.map(row => row.tag).sort()).toEqual(['auth', 'elsewhere', 'oauth', 'pr-9', 'secret'])
+  })
   it('pages assistant text blocks within one native message', () => {
     const ctx = context()
     vi.mocked(ctx.sessions.listMessages).mockReturnValue({

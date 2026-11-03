@@ -118,6 +118,19 @@ describe('session_rename tags', () => {
     _resetMainThreadSessionGuardForTests()
   })
 
+  it('denies session_rename from a live subagent before writing tags or the title', async () => {
+    vi.useFakeTimers()
+    noteAcpTaskLifecycle('self-session', { type: 'task_started', taskId: 'sa-1', taskType: 'general-purpose' })
+    const pending = sessionRenameHandler({ title: 'Subagent title', tags: ['desktop'] }, makeDeps())
+    await vi.advanceTimersByTimeAsync(PARENT_CALL_WAIT_MS)
+    const result = await pending
+    vi.useRealTimers()
+    expect(result.isError).toBe(true)
+    expect(textResult(result)).toMatch(/main thread/i)
+    expect(setSessionTagsMock).not.toHaveBeenCalled()
+    expect(dbRenameSessionMock).not.toHaveBeenCalled()
+  })
+
   it('does not apply tags when the title is empty', async () => {
     const result = await sessionRenameHandler({ title: '   ', tags: ['desktop'] }, makeDeps())
     expect(result.isError).toBe(true)

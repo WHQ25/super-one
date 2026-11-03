@@ -87,7 +87,7 @@ export const SESSION_TAG_DESCRIPTION =
   'Only the top-level agent may call this; subagents must not. Not session_rename (titles) and not live collab.'
 
 export const SESSION_TAG_LIST_DESCRIPTION =
-  "List session tags and counts. Default: current project; projectId or allProjects changes scope. kind: label (default) = topic labels to reuse; ref = issue-N / pr-N tracker references; all = both. Use query for a tag substring. Discover unknown label tags here before filtering session_list/session_search; reuse known tags, and a known ref tag (pr-456) needs no lookup. Filter with tagMatch any or all. Hidden sessions are omitted unless includeHidden."
+  "List session tags and counts. Default: current project; projectId or allProjects changes scope. kind: label (default) = topic labels to reuse; ref = issue-N / pr-N tracker references; all = both. Use query for a tag substring. Discover unknown label tags here before filtering session_list/session_search; reuse known tags, and a known ref tag (pr-456) needs no lookup. Filter with tagMatch any or all. Hidden sessions are omitted unless includeHidden. Omit environmentId for the calling host."
 
 export const PROJECT_LIST_DESCRIPTION =
   'List SuperOne projects (id, name, path, lastActiveAt). ' +

@@ -534,6 +534,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         query: { type: 'string', description: 'Case-insensitive substring filter on tag name.' },
         kind: {
           type: 'string',

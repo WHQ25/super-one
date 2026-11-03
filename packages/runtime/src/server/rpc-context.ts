@@ -32,6 +32,7 @@ import type {
   SessionProviderStore,
   SessionRuntime,
 } from '../session/index'
+import type { CleanupConfirmOutcome, SessionCleanupConfirmInput } from '../session/types'
 import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage, DraftStreamMessage, ClientStreamMessage, TopicNoticeMessage, TopicNoticeFrame } from '@superone/shared/environment'
 import type { TopicRef, TopicVersionCursor } from '@superone/shared/environment/topics'
 import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
@@ -317,6 +318,10 @@ export interface SessionHostPort {
   rename(sessionId: string, title: string, source?: 'user' | 'agent'): NodeSessionRecord
   setTags(sessionId: string, tags: string[]): NodeSessionRecord
   setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }): NodeSessionRecord
+  /** Live rows including hidden and settled sessions. Omitted by hosts that page through list(). */
+  archiveEntries?(): Iterable<Readonly<NodeSessionRecord>>
+  /** Opens the session_cleanup delete card. Omitted by the desktop session host. */
+  requestCleanupConfirm?(input: SessionCleanupConfirmInput): Promise<CleanupConfirmOutcome>
   close(sessionId: string): void | Promise<void>
   remove(sessionId: string): NodeSessionRecord | null | Promise<NodeSessionRecord | null>
 

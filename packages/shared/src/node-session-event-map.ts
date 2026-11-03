@@ -525,6 +525,10 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           payload.sessionAgentsConfirm && typeof payload.sessionAgentsConfirm === 'object'
             ? (payload.sessionAgentsConfirm as PermissionRequest['sessionAgentsConfirm'])
             : undefined
+        const sessionCleanupConfirm =
+          payload.sessionCleanupConfirm && typeof payload.sessionCleanupConfirm === 'object'
+            ? (payload.sessionCleanupConfirm as PermissionRequest['sessionCleanupConfirm'])
+            : undefined
         // Rebuilt field-by-field, so every prompt payload has to be let through explicitly or
         // the remote client renders an empty shell.
         const webmcpTrustConfirm =
@@ -537,7 +541,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           toolUseId: asString(payload.toolUseId),
           input: asRecord(payload.input),
           allowAlwaysAllow:
-            requestKind === 'session_agents_confirm'
+            requestKind === 'session_agents_confirm' || requestKind === 'session_cleanup_confirm'
               ? false
               : payload.allowAlwaysAllow !== false,
           ...(requestKind
@@ -551,6 +555,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
             ? { permissionDetails: payload.permissionDetails as PermissionRequest['permissionDetails'] }
             : {}),
           ...(sessionAgentsConfirm ? { sessionAgentsConfirm } : {}),
+          ...(sessionCleanupConfirm ? { sessionCleanupConfirm } : {}),
           ...(webmcpTrustConfirm ? { webmcpTrustConfirm } : {}),
           ...(payload.inputRequest && typeof payload.inputRequest === 'object'
             ? { inputRequest: payload.inputRequest as PermissionRequest['inputRequest'] }

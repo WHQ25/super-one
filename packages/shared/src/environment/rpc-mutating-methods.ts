@@ -93,6 +93,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'session.rename',
   'session.setTags',
   'session.setUiFlags', // pin/hide/settle
+  'session.cleanup', // settle / unsettle / delete; delete waits on a user confirm
   'session.setArchived',
   'terminal.acquireControl',
   'terminal.renewControl',

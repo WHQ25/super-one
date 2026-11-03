@@ -352,7 +352,9 @@ export async function executeBuiltInSuperoneTool(
     case 'session_tag':
       return sessionTagHandler(args as unknown as SessionTagArgs, deps)
     case 'session_tag_list':
-      return sessionTagListHandler(args as unknown as SessionTagListArgs, deps)
+      return deps.archiveRead
+        ? deps.archiveRead('session_tag_list', args, () => sessionTagListHandler(args as unknown as SessionTagListArgs, deps))
+        : sessionTagListHandler(args as unknown as SessionTagListArgs, deps)
     case 'environment_get_info':
       return deps.environmentGetInfo?.(args as import('./environment-archive-tools').EnvironmentGetInfoArgs) ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true }
     case 'project_list':
@@ -682,6 +684,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_TAG_LIST_DESCRIPTION,
       inputSchema: {
+        environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         query: z.string().optional().describe('Case-insensitive substring filter on tag name.'),
         kind: z.enum(['label', 'ref', 'all']).optional()
           .describe('label (default) = topic labels; ref = issue-N / pr-N references; all = both.'),
@@ -698,7 +701,9 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
       },
     },
-    (args) => sessionTagListHandler(args, deps),
+    async (args) => deps.archiveRead
+      ? deps.archiveRead('session_tag_list', args, () => sessionTagListHandler(args, deps))
+      : sessionTagListHandler(args, deps),
   )
 
   server.registerTool('environment_get_info', { description: ENVIRONMENT_GET_INFO_DESCRIPTION, inputSchema: jsonSchemaToZodShape(ENVIRONMENT_GET_INFO_INPUT_SCHEMA) }, async (args) => deps.environmentGetInfo?.(args) ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true })

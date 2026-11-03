@@ -29,6 +29,7 @@ import { readWidgetShowArgs, widgetShowShortContent } from '@superone/shared/gen
 import { NESTED_COLLABORATION_UNSUPPORTED } from '@superone/runtime/collaboration'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import { collabAgentDetail, collabAgentSummary, unknownCollabAgentMessage } from '@superone/shared/collab-agent-catalog'
+import { SESSION_CLEANUP_HOST_ACTION_DEADLINE_MS } from '@superone/shared/session-cleanup'
 import { jsonSchemaToZodShape } from './json-schema-to-zod'
 
 /** Public MCP server name harnesses attach as. */
@@ -164,6 +165,9 @@ export function registerHostActionTools(
           toolGroup: tool.toolGroup,
           args: args ?? {},
           replayPolicy: tool.replayPolicy,
+          // Delete confirmation waits on the user. The default 2 minute action
+          // deadline would cancel the card before that window closes.
+          ...(tool.name === 'session_cleanup' ? { deadlineMs: SESSION_CLEANUP_HOST_ACTION_DEADLINE_MS } : {}),
           signal: extra?.signal,
         })
         const reply = terminalToMcpContent(terminal)

@@ -106,6 +106,7 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
     "inputSchema": {
       "type": "object",
       "properties": {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         "query": {
           "type": "string",
           "description": "Case-insensitive substring filter on tag name."

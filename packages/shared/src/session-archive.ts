@@ -1,5 +1,6 @@
 /** Compact environment-scoped archive contract shared by tools and authenticated RPC. */
-export type SessionArchiveTool = 'project_list' | 'session_list' | 'session_search' | 'session_read'
+const SESSION_ARCHIVE_READ_TOOLS = ['project_list', 'session_list', 'session_search', 'session_read', 'session_tag_list'] as const
+export type SessionArchiveTool = (typeof SESSION_ARCHIVE_READ_TOOLS)[number]
 export interface SessionArchiveRequest {
   tool: SessionArchiveTool
   args: Record<string, unknown>
@@ -12,5 +13,5 @@ export interface ArchiveToolResult {
   isError?: boolean
 }
 export function isSessionArchiveReadTool(name: string): name is SessionArchiveTool {
-  return ['project_list', 'session_list', 'session_search', 'session_read'].includes(name)
+  return (SESSION_ARCHIVE_READ_TOOLS as readonly string[]).includes(name)
 }

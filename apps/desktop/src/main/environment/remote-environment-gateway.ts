@@ -1613,6 +1613,20 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   }
 
   /**
+   * Settle, unsettle, or delete sessions on this node. Delete blocks until the
+   * user answers the confirm card, so the RPC itself has no client deadline.
+   */
+  async cleanupSession(input: {
+    action: unknown
+    sessionIds: unknown
+    sourceSessionId: string
+    includePinned?: boolean
+    maxDelete?: unknown
+  }): Promise<unknown> {
+    return this.client.rpc('session.cleanup', input)
+  }
+
+  /**
    * Fork a remote session on the node (worktree = new detached wt + cwd;
    * local = same cwd). Returns SessionForkResult shape.
    */

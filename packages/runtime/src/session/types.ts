@@ -1,7 +1,7 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { SessionControlHolder, SessionTurnEvent } from '@superone/shared/environment'
 import type { MessageDisplayFields } from '@superone/shared/message-display'
-import type { AgentEvent, ChatMessageSource, PermissionRequest, SendFailure } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessageSource, PermissionRequest, SendFailure, SessionCleanupConfirmPayload } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest, ModUiResult } from '@superone/shared/mod-ui'
 
 export type SessionStatus =
@@ -170,7 +170,7 @@ export interface TranscriptBlock extends MessageDisplayFields {
 
 export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> {
   interactionId: string
-  kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
+  kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm' | 'session_cleanup_confirm'
   toolName?: string
   toolUseId?: string
   input?: Record<string, unknown>
@@ -183,6 +183,8 @@ export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm'
     launches: unknown[]
     profiles: unknown[]
   }
+  /** Permanent-delete confirm when kind === 'session_cleanup_confirm'. */
+  sessionCleanupConfirm?: SessionCleanupConfirmPayload
   /** Rich permission requestKind for desktop UI (e.g. session_agents_confirm). */
   requestKind?: string
   message?: string
@@ -194,6 +196,20 @@ export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm'
 export type AgentsConfirmOutcome = {
   action: 'accept' | 'decline' | 'cancel'
   content?: Record<string, unknown>
+}
+
+/** Outcome of a session_cleanup delete confirmation on the node. */
+export type CleanupConfirmOutcome = {
+  action: 'accept' | 'decline' | 'cancel'
+  reason: 'responded' | 'timeout' | 'aborted'
+}
+
+export interface SessionCleanupConfirmInput {
+  sessionId: string
+  sessions: NonNullable<PendingInteraction['sessionCleanupConfirm']>['sessions']
+  message: string
+  finalIds: string[]
+  signal?: AbortSignal
 }
 
 export type PermissionDecision = 'allow' | 'deny'

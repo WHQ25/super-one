@@ -6,12 +6,12 @@
 
 import { encode as toonEncode } from '@toon-format/toon'
 import {
-  SESSION_TAG_BULK_MAX,
   applySessionTagOp,
   isSessionRefTag,
   normalizeSessionTagList,
   parseSessionTagKind,
-  parseSessionTagOp,
+  planSessionTagUpdate,
+  sessionTagUpdateBody,
 } from '@superone/shared/session-tags'
 import { getDb } from '../database'
 import { getSessionTags, isSessionUserRenamed, renameSession as dbRenameSession, setSessionTags } from '../db-sessions'
@@ -49,53 +49,20 @@ export async function sessionTagHandler(args: SessionTagArgs, deps: BuiltInSuper
   const denied = await denyMainThreadOnlyIfSubagent(deps.sessionId, 'session_tag')
   if (denied) return toolResult(denied, true)
 
-  const op = parseSessionTagOp(args)
-  if ('error' in op) return toolResult({ status: 'error', message: op.error }, true)
-
-  const hasIds = Array.isArray(args.sessionIds) && args.sessionIds.length > 0
-  const single = typeof args.sessionId === 'string' ? args.sessionId.trim() : ''
-  if (hasIds && single) {
-    return toolResult({
-      status: 'error',
-      message: 'Pass sessionId or sessionIds, not both.',
-    }, true)
-  }
-
-  let targets: string[]
-  if (hasIds) {
-    if (op.kind !== 'add') {
-      return toolResult({
-        status: 'error',
-        message: 'sessionIds only works with add (not set or remove).',
-      }, true)
-    }
-    targets = args.sessionIds!
-      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-      .map((id) => id.trim())
-    if (targets.length === 0) {
-      return toolResult({ status: 'error', message: 'sessionIds is empty.' }, true)
-    }
-    if (targets.length > SESSION_TAG_BULK_MAX) {
-      return toolResult({
-        status: 'error',
-        message: `sessionIds is capped at ${SESSION_TAG_BULK_MAX}.`,
-      }, true)
-    }
-  } else {
-    targets = [single || deps.sessionId]
-  }
+  const plan = planSessionTagUpdate(args, deps.sessionId)
+  if ('error' in plan) return toolResult({ status: 'error', message: plan.error }, true)
 
   const sessions: Array<{ sessionId: string; tags: string[] }> = []
   const missing: string[] = []
   const failed: Array<{ sessionId: string; message: string }> = []
 
-  for (const sessionId of targets) {
+  for (const sessionId of plan.targets) {
     const current = getSessionTags(sessionId)
     if (current == null) {
       missing.push(sessionId)
       continue
     }
-    const next = applySessionTagOp(current, op)
+    const next = applySessionTagOp(current, plan.op)
     if ('error' in next) {
       failed.push({ sessionId, message: next.error })
       continue
@@ -107,21 +74,8 @@ export async function sessionTagHandler(args: SessionTagArgs, deps: BuiltInSuper
     sessions.push({ sessionId, tags: next })
   }
 
-  if (sessions.length === 0 && missing.length === 0 && failed.length === 0) {
-    return toolResult({ status: 'error', message: 'No sessions updated.' }, true)
-  }
-
-  if (targets.length === 1 && sessions.length === 1 && missing.length === 0 && failed.length === 0) {
-    return toolResult({ status: 'ok', sessionId: sessions[0].sessionId, tags: sessions[0].tags })
-  }
-
-  return toolResult({
-    status: failed.length > 0 || missing.length > 0 ? 'partial' : 'ok',
-    count: sessions.length,
-    sessions,
-    ...(missing.length > 0 ? { missing } : {}),
-    ...(failed.length > 0 ? { failed } : {}),
-  })
+  const body = sessionTagUpdateBody(plan.targets, sessions, missing, failed)
+  return toolResult(body, body.status === 'error')
 }
 
 export const SESSION_TAG_LIST_DEFAULT_LIMIT = 50

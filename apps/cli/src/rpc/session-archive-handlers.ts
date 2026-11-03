@@ -1,7 +1,7 @@
 import { encode } from '@toon-format/toon'
 import { hasAllScopes, OPERATION_SCOPES } from '@superone/shared/environment'
 import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
-import { normalizeSessionTagList } from '@superone/shared/session-tags'
+import { normalizeSessionTagList, pageSessionTagCounts } from '@superone/shared/session-tags'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { isSessionArchiveReadTool, type ArchiveToolResult, type SessionArchiveRequest } from '@superone/shared/session-archive'
 import { countTools, extractToolIndex, findToolDetail, formatTextBlocks, formatToolIndex, messageSearchText, pageItems, pageTextBlocks, type SessionTextView } from '@superone/shared/session-transcript-view'
@@ -86,6 +86,14 @@ function readArchive(request: SessionArchiveRequest, ctx: RpcContext): ArchiveTo
   const projectId = typeof args.projectId === 'string' ? args.projectId : args.allProjects === true ? null : source?.projectId
   if (!projectId && args.allProjects !== true) return result({ status: 'error', message: 'Pass projectId or allProjects: true for this environment' }, true)
   if (projectId && !ctx.projects.get(projectId)) return result({ status: 'error', message: 'Project not found in this environment' }, true)
+  if (request.tool === 'session_tag_list') {
+    const page = pageSessionTagCounts(
+      all.filter(row => !projectId || row.projectId === projectId).map(row => ({ tags: row.tags, hidden: row.isHidden === true })),
+      args,
+    )
+    if ('error' in page) return result({ status: 'error', message: page.error }, true)
+    return table({ environmentId, ...(projectId ? { projectId, allProjects: false } : { allProjects: true }), ...page })
+  }
   const parsedTags = normalizeSessionTagList(args.tags ?? [])
   if ('error' in parsedTags) return result({ status: 'error', message: parsedTags.error }, true)
   const tags = parsedTags.tags

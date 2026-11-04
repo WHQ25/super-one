@@ -1130,7 +1130,7 @@ const appAPI = {
   codexGetAuthStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),
 
-  codexListAccounts: (projectPath: string) => ipcRenderer.invoke(CodexAccountIpcChannels.LIST, projectPath),
+  codexListAccounts: (projectPath: string, force?: boolean) => ipcRenderer.invoke(CodexAccountIpcChannels.LIST, projectPath, force),
 
   codexSetDefaultAccount: (projectPath: string, accountId: string) => ipcRenderer.invoke(CodexAccountIpcChannels.SET_DEFAULT, projectPath, accountId),
   codexRemoveAccount: (projectPath: string, apiProviderId: string) => ipcRenderer.invoke(CodexAccountIpcChannels.REMOVE, projectPath, apiProviderId),

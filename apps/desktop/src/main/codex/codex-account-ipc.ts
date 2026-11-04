@@ -55,12 +55,16 @@ export function registerCodexAccountIpc(codexService: CodexExperimentService): v
   })
 
 
-  ipcMain.handle(CodexAccountIpcChannels.LIST, async (_event, projectPath: string) => {
+  ipcMain.handle(CodexAccountIpcChannels.LIST, async (_event, projectPath: string, force?: boolean) => {
     if (parseRemoteProjectKey(projectPath)) {
       const { getEnvironmentHost, remoteCodexListAccounts } = await import('../environment')
       const result = await remoteCodexListAccounts(getEnvironmentHost(), projectPath)
       if (!result) throw new Error('Remote Codex accounts unavailable')
       return result
+    }
+    if (force === false) {
+      const stored = codexService.accounts.store.list()
+      if (stored.length > 0) return stored
     }
     return codexService.accounts.list()
   })

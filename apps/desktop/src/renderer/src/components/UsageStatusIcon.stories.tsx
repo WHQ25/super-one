@@ -23,19 +23,86 @@ type RateLimitTipSeed = {
 } | null
 
 function mockRateLimitIpc(): void {
-  mockIpc('app', 'claudeGetRateLimits', async () => ({
-    planType: 'Max',
-    windows: [
-      { label: '5h', usedPercent: 82, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 },
-      { label: '7d', usedPercent: 41, resetsAt: Math.floor(Date.now() / 1000) + 4 * 24 * 3600 },
-    ],
-    extraUsage: { usedDollars: 1.2, limitDollars: 25 },
-    resetGrants: [{ resetsLeft: 2, expiresAt: Math.floor(Date.now() / 1000) + 3 * 24 * 3600 }],
+  mockIpc('app', 'claudeListAccounts', async () => [
+    { credentialDir: null, loggedIn: true, isDefault: true, email: 'personal@example.com', orgName: 'Personal', subscriptionType: 'Max' },
+    { credentialDir: '/domains/work', loggedIn: true, isDefault: false, email: 'work@company.io', orgName: 'SuperOne Team', subscriptionType: 'Team' },
+    { credentialDir: '/domains/studio', loggedIn: true, isDefault: false, email: 'studio@creative.dev', orgName: 'Creative Studio', subscriptionType: 'Pro' },
+  ])
+  mockIpc('app', 'claudeGetRateLimits', async (_force, dir) => ({
+    planType: dir === '/domains/work' ? 'Team' : dir === '/domains/studio' ? 'Pro' : 'Max',
+    windows: dir === '/domains/work'
+      ? [
+          { label: '5h', usedPercent: 12, resetsAt: Math.floor(Date.now() / 1000) + 4 * 3600 },
+          { label: '7d', usedPercent: 18, resetsAt: Math.floor(Date.now() / 1000) + 5 * 24 * 3600 },
+        ]
+      : dir === '/domains/studio'
+        ? [
+            { label: '5h', usedPercent: 55, resetsAt: Math.floor(Date.now() / 1000) + 2 * 3600 },
+            { label: '7d', usedPercent: 30, resetsAt: Math.floor(Date.now() / 1000) + 6 * 24 * 3600 },
+          ]
+        : [
+            { label: '5h', usedPercent: 82, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 },
+            { label: '7d', usedPercent: 41, resetsAt: Math.floor(Date.now() / 1000) + 4 * 24 * 3600 },
+          ],
+    extraUsage: dir ? null : { usedDollars: 1.2, limitDollars: 25 },
+    resetGrants: dir ? [] : [{ resetsLeft: 2, expiresAt: Math.floor(Date.now() / 1000) + 3 * 24 * 3600 }],
     fetchedAt: Date.now(),
   }))
-  mockIpc('app', 'codexGetRateLimits', async () => null)
+  mockIpc('app', 'codexListAccounts', async () => [
+    { id: '11111111-1111-4111-8111-111111111111', signedIn: true, isDefault: true, email: 'personal@openai.com', planType: 'plus', authMode: 'chatgpt', requiresOpenaiAuth: true },
+    { id: '22222222-2222-4222-8222-222222222222', signedIn: true, isDefault: false, email: 'work@openai.com', planType: 'pro', authMode: 'chatgpt', requiresOpenaiAuth: true },
+    { id: '33333333-3333-4333-8333-333333333333', signedIn: true, isDefault: false, email: 'research@openai.com', planType: 'free', authMode: 'chatgpt', requiresOpenaiAuth: true },
+  ])
+  mockIpc('app', 'codexGetRateLimits', async (_path, providerId) => {
+    const id = String(providerId ?? '')
+    const isWork = id.includes('2222')
+    const isFree = id.includes('3333')
+    return {
+      planType: isWork ? 'pro' : isFree ? 'free' : 'plus',
+      primary: {
+        usedPercent: isWork ? 64 : isFree ? 0 : 28,
+        windowDurationMins: isFree ? 43200 : 300,
+        resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600,
+      },
+      secondary: isFree
+        ? null
+        : {
+            usedPercent: isWork ? 45 : 41,
+            windowDurationMins: 10080,
+            resetsAt: Math.floor(Date.now() / 1000) + 4 * 86400,
+          },
+      fetchedAt: Date.now(),
+    }
+  })
   mockIpc('app', 'codexGetAccountUsage', async () => null)
   mockIpc('app', 'providerGetRateLimits', async () => null)
+  mockIpc('app', 'acpGetRateLimits', async (_path, agentId) => {
+    if (agentId === 'grok-build') {
+      return {
+        title: 'Grok Build',
+        planType: 'SuperGrok Heavy',
+        windows: [{ label: 'Weekly limit', usedPercent: 48, resetsAt: Math.floor(Date.now() / 1000) + 2 * 86400 }],
+        extraUsage: null,
+        creditBalanceDollars: 12.34,
+        account: 'kevin@x.ai',
+        fetchedAt: Date.now(),
+      }
+    }
+    if (agentId === 'antigravity') {
+      return {
+        title: 'Antigravity',
+        planType: 'AI Ultra',
+        windows: [
+          { label: 'Gemini · 5 Hours', usedPercent: 28, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 },
+          { label: 'Gemini · Weekly', usedPercent: 15, resetsAt: Math.floor(Date.now() / 1000) + 5 * 86400 },
+        ],
+        extraUsage: null,
+        account: 'dev@gmail.com',
+        fetchedAt: Date.now(),
+      }
+    }
+    return null
+  })
 }
 
 function seedSession(rateLimitInfo: RateLimitTipSeed): void {
@@ -217,6 +284,12 @@ export const IdleGauge: Story = {
   render: () => <Playground />,
 }
 
+/** Multi-account subscriptions hub (3 Claude + 3 OpenAI + Grok + Antigravity) to preview scrolling, edge fade, and collapsible groups. */
+export const MultiAccountSubscriptionsHub: Story = {
+  name: 'Multi-account subscriptions hub',
+  render: () => <Playground />,
+}
+
 /** Approaching limit tip + amber highlight for 6s. */
 export const ApproachingRateLimit: Story = {
   name: 'Approaching rate limit',
@@ -324,3 +397,26 @@ function GrokCreditsPreview() {
 
 /** Grok Build credits — the title is the Grok brand lockup, like Claude / Codex. */
 export const GrokCredits: Story = { name: 'Grok credits', render: () => <GrokCreditsPreview /> }
+
+function UntrackedProviderPreview() {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    mockRateLimitIpc()
+    const project = createDefaultProjectState()
+    project._activeSessionId = SB_SESSION
+    project._sessions = {
+      [SB_SESSION]: {
+        ...createDefaultPerSessionState(),
+        preferredProvider: 'cursor',
+        sessionProvider: 'cursor',
+        apiProviderId: null,
+        status: 'idle',
+      },
+    }
+    useChatStore.setState({ activeProject: SB_PROJECT, projectSessions: { [SB_PROJECT]: project } })
+    setReady(true)
+  }, [])
+  return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
+}
+
+export const UntrackedProvider: Story = { name: 'Untracked provider (resident icon)', render: () => <UntrackedProviderPreview /> }

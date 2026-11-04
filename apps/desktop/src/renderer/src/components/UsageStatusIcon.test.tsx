@@ -55,6 +55,12 @@ vi.mock('react-i18next', () => ({
       if (key === 'usageGauge.updating') return 'Updating…'
       if (key === 'usageGauge.threadTokens') return 'Thread Tokens'
       if (key === 'usageGauge.estimatedCredits') return 'Estimated Credits'
+      if (key === 'usageGauge.noUsageInfo') return 'No usage information available'
+      if (key === 'usageGauge.switchAccount') return 'Switch Subscription Account'
+      if (key === 'usageGauge.allAccounts') return 'Subscriptions'
+      if (key === 'usageGauge.accountCount') return `${opts?.n} accounts`
+      if (key === 'usageGauge.currentSession') return 'Current'
+      if (key === 'usageGauge.otherAccount') return 'Viewing'
       return key
     },
   }),
@@ -62,6 +68,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useReducedMotion: () => false,
   motion: {
     div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) => (
       <div {...props}>{children}</div>
@@ -569,5 +576,106 @@ describe('UsageStatusIcon rate-limit tip', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'common.refresh' })); await Promise.resolve() })
     expect(limits).toHaveBeenLastCalledWith('/tmp/project', null, true)
     expect(screen.getByText('Updating…')).toBeInTheDocument()
+  })
+
+  it('keeps the gauge icon resident without percentage for untracked providers and shows no-usage state', async () => {
+    hoisted.sessionState.sessionProvider = 'cursor'
+    hoisted.sessionState.preferredProvider = 'cursor'
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const trigger = screen.getByRole('button', { name: 'Cursor' })
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).not.toHaveTextContent('%')
+    expect(screen.getByText('No usage information available')).toBeInTheDocument()
+  })
+
+  it('switches to grouped account cards when clicking the header and inspects another account on card click', async () => {
+    ;(window.app.claudeListAccounts as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { credentialDir: null, loggedIn: true, email: 'personal@example.com', orgName: 'Personal', subscriptionType: 'max' },
+      { credentialDir: '/domains/work', loggedIn: true, email: 'work@company.io', orgName: 'Company', subscriptionType: 'team' },
+    ])
+    ;(window.app.claudeGetRateLimits as ReturnType<typeof vi.fn>).mockImplementation(async (_force?: boolean, dir?: string | null) => ({
+      planType: dir === '/domains/work' ? 'Team' : 'Max',
+      windows: [
+        { label: '5h', usedPercent: dir === '/domains/work' ? 10 : 82, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+        { label: '7d', usedPercent: dir === '/domains/work' ? 20 : 40, resetsAt: Math.floor(Date.now() / 1000) + 86400 },
+      ],
+      fetchedAt: Date.now(),
+      extraUsage: null,
+    }))
+    window.app.codexListAccounts = vi.fn(async () => [
+      { id: 'codex-1', signedIn: true, isDefault: true, email: 'dev@openai.test', planType: 'pro', authMode: 'chatgpt' as const, requiresOpenaiAuth: true },
+    ])
+    ;(window.app.codexGetRateLimits as ReturnType<typeof vi.fn>).mockResolvedValue({
+      planType: 'pro',
+      primary: { windowDurationMins: 300, usedPercent: 35, resetsAt: null },
+      secondary: { windowDurationMins: 10080, usedPercent: 50, resetsAt: null },
+      fetchedAt: Date.now(),
+    })
+    ;(window.app.acpGetRateLimits as ReturnType<typeof vi.fn>).mockImplementation(async (_path: string, agentId: string) => {
+      if (agentId === 'grok-build') {
+        return {
+          title: 'Grok Build',
+          account: 'grok@x.ai',
+          planType: 'Pro',
+          windows: [{ label: 'Monthly limit', usedPercent: 25, resetsAt: null }],
+          extraUsage: null,
+          fetchedAt: Date.now(),
+        }
+      }
+      return null
+    })
+
+    const { container } = render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // Sidebar badge reflects active session (82% used -> 18% remaining)
+    const trigger = screen.getByRole('button', { name: 'Claude Usage' })
+    expect(trigger).toHaveTextContent('18%')
+
+    // Click header to open grouped multi-account card list view
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Subscriptions')).toBeInTheDocument()
+    expect(screen.queryByText('Current')).not.toBeInTheDocument()
+    expect(screen.getByText('work@company.io')).toBeInTheDocument()
+    expect(screen.getByText('dev@openai.test')).toBeInTheDocument()
+    expect(screen.getByText('grok@x.ai')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="scroll-area-viewport"]')).toHaveClass('scroll-edge-fade-y')
+
+    // Provider group header shows '2 accounts' and can collapse and expand its cards
+    expect(screen.getByText('2 accounts')).toBeInTheDocument()
+    const groupButtons = container.querySelectorAll('button[aria-expanded]')
+    expect(groupButtons.length).toBeGreaterThan(0)
+    expect(groupButtons[0]).toHaveAttribute('aria-expanded', 'true')
+    await act(async () => {
+      fireEvent.click(groupButtons[0]!)
+    })
+    expect(groupButtons[0]).toHaveAttribute('aria-expanded', 'false')
+    await act(async () => {
+      fireEvent.click(groupButtons[0]!)
+    })
+    expect(groupButtons[0]).toHaveAttribute('aria-expanded', 'true')
+
+    // Click the second Claude account card to switch back to detail view for that account
+    await act(async () => {
+      fireEvent.click(screen.getByText('work@company.io').closest('button')!)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('work@company.io · Company')).toBeInTheDocument()
+    expect(screen.getByText('90% left')).toBeInTheDocument()
+    // Sidebar trigger badge stays bound to the active session (18%)
+    expect(trigger).toHaveTextContent('18%')
   })
 })

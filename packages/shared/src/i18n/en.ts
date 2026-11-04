@@ -4648,6 +4648,12 @@ export type Messages = {
     refreshUsage: string
     codexTitle: string
     windowFallback: string
+    noUsageInfo: string
+    switchAccount: string
+    allAccounts: string
+    accountCount: string
+    currentSession: string
+    otherAccount: string
     fiveHours: string
     weekly: string
     percentLeft: string
@@ -9429,6 +9435,12 @@ export const en: Messages = {
     refreshUsage: 'Refresh Usage',
     codexTitle: 'Codex Usage',
     windowFallback: 'Usage',
+    noUsageInfo: 'No usage information available',
+    switchAccount: 'Switch Subscription Account',
+    allAccounts: 'Subscriptions',
+    accountCount: '{{n}} accounts',
+    currentSession: 'Current',
+    otherAccount: 'Viewing',
     fiveHours: '5 Hours',
     weekly: 'Weekly',
     percentLeft: '{{percent}}% left',

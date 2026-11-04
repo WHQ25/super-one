@@ -1,12 +1,13 @@
 import { useResolvedProviderId } from './chat/model-selector/useSelectorProviders'
-import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { codexAccountProviderId, isCodexAccountProvider, type CodexAccount } from '@superone/shared/codex-accounts'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { AlertTriangle, Gauge, OctagonX, RefreshCw } from 'lucide-react'
-import { motion } from 'motion/react'
+import { AlertTriangle, ChevronDown, ChevronLeft, Gauge, OctagonX, RefreshCw } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
 import { toast } from 'sonner'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
@@ -14,15 +15,18 @@ import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { claudeLimitsFromSubscription, claudeSubscriptionFromReport, unavailableNodeLimits } from '@/harness-ui/claude/remote-subscription-usage'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
-import type { ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
+import type { ClaudeAccount, ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, CodexRateLimits, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
 import { ExtraUsageBar, formatCreditExpiry, formatTokens, formatWindowLabel, GroupedWindowBars, ResetGrantsRow, WindowBar as WindowRow } from './provider-usage'
-import { USAGE_POLL_MS, type UsageWindow } from '@superone/shared/subscription-usage'
+import { USAGE_POLL_MS, usageWindowTone, type UsageWindow } from '@superone/shared/subscription-usage'
 import { formatUsageDuration } from '@superone/shared/subscription-usage-presentation'
 import { useSubscriptionAlert } from './use-subscription-alert'
 import type { SubscriptionAlert } from '@superone/shared/subscription-alerts'
 import { useCodexUsage } from './use-codex-usage'
+
+const TAB_PANEL_SPRING = { type: 'spring', bounce: 0.15, duration: 0.3 } as const
+const TONE_BAR_CLASS = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500' } as const
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 const RATE_LIMIT_TIP_MS = 6_000
@@ -275,7 +279,155 @@ function RateLimitTipHost({ tip, children }: { tip: RateLimitTipInfo | null; chi
   )
 }
 
-function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
+const UNTRACKED_PROVIDER_BRAND: Record<string, { brandKey?: string; title: string }> = {
+  claude: { brandKey: 'claude', title: 'Claude' },
+  codex: { brandKey: 'openai', title: 'Codex' },
+  cursor: { brandKey: 'cursor', title: 'Cursor' },
+  opencode: { title: 'OpenCode' },
+  dsh: { title: 'DSH' },
+}
+
+const ACP_HUB_AGENTS = [
+  { agentId: 'grok-build', key: 'acp:grok-build', brandKey: 'grok', fallbackTitle: 'Grok Build' },
+  { agentId: 'antigravity', key: 'acp:antigravity', brandKey: 'antigravity', fallbackTitle: 'Antigravity' },
+] as const
+
+function claudeHubKey(credentialDir: string | null | undefined): string {
+  return `claude:${credentialDir ?? '__default__'}`
+}
+
+function codexHubKey(apiProviderId: string | null | undefined): string {
+  return `codex:${apiProviderId ?? '__default__'}`
+}
+
+function PanelHeight({ open, children }: { open: boolean; children: ReactNode }) {
+  const reduceMotion = useReducedMotion()
+  return (
+    <motion.div
+      initial={false}
+      animate={{ height: open ? 'auto' : 0 }}
+      transition={reduceMotion ? { duration: 0 } : TAB_PANEL_SPRING}
+      className="overflow-hidden"
+      data-slot="usage-hub-panel"
+    >
+      <div inert={!open ? true : undefined} aria-hidden={!open}>
+        {children}
+      </div>
+    </motion.div>
+  )
+}
+
+function AccountCardWindows({ windows, loading }: { windows: UsageWindow[]; loading?: boolean }) {
+  const { t } = useTranslation()
+  const [now] = useState(Date.now)
+  const primary = windows.find((w) => w.label === '5h') ?? windows[0]
+  if (primary) {
+    const remaining = remainingPercent(primary.usedPercent)
+    const tone = usageWindowTone(primary, now)
+    return (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex h-4 items-center justify-between gap-2 text-[11px]">
+          <span className="opacity-70">{primary.label}</span>
+          <span className="font-medium tabular-nums">{remaining}%</span>
+        </div>
+        <div className="h-1 w-full overflow-hidden rounded-full bg-border/60">
+          <div className={cn('h-full rounded-full transition-all', TONE_BAR_CLASS[tone])} style={{ width: `${remaining}%` }} />
+        </div>
+      </div>
+    )
+  }
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-0.5" aria-label={t('usageGauge.updating')}>
+        <div className="flex h-4 items-center justify-between gap-2">
+          <div className="h-2.5 w-16 animate-pulse rounded bg-muted-foreground/20" />
+          <div className="h-2.5 w-8 animate-pulse rounded bg-muted-foreground/20" />
+        </div>
+        <div className="h-1 w-full animate-pulse rounded-full bg-muted-foreground/20" />
+      </div>
+    )
+  }
+  return (
+    <div className="flex h-[22px] items-center text-[11px] text-muted-foreground">
+      {t('usageGauge.noUsageInfo')}
+    </div>
+  )
+}
+
+function EmptyUsageState() {
+  const { t } = useTranslation()
+  return (
+    <div className="rounded-md bg-muted/40 px-3 py-4 text-center text-xs text-muted-foreground">
+      {t('usageGauge.noUsageInfo')}
+    </div>
+  )
+}
+
+function SubscriptionGroup({
+  title,
+  count,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  title: ReactNode
+  count: number
+  collapsed: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+        className="-mx-1.5 flex items-center justify-between gap-2 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          {title}
+          {count > 1 && (
+            <span className="text-[10px] tabular-nums opacity-60">
+              {t('usageGauge.accountCount', { n: count })}
+            </span>
+          )}
+        </span>
+        <ChevronDown
+          className={cn(
+            'size-3.5 shrink-0 opacity-60 transition-transform duration-200',
+            collapsed && '-rotate-90',
+          )}
+        />
+      </button>
+      <PanelHeight open={!collapsed}>
+        <div className="flex flex-col gap-1.5 pt-1">
+          {children}
+        </div>
+      </PanelHeight>
+    </div>
+  )
+}
+
+let cachedClaudeAccounts: ClaudeAccount[] = []
+let cachedCodexAccounts: CodexAccount[] = []
+
+function RateLimitGauge({
+  title,
+  label,
+  subtitle,
+  planType,
+  badgeRemaining,
+  hasUsage = true,
+  activeAccountKey = 'session:current',
+  sessionWindows = [],
+  onOpen,
+  onRefresh,
+  refreshing,
+  fetchedAt,
+  highlight,
+  children,
+}: {
   /** Text, or a brand lockup for providers we ship an icon for. */
   title: ReactNode
   /** Accessible name for the trigger. Required because `title` may render as artwork only. */
@@ -284,23 +436,231 @@ function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOp
   subtitle?: string | null
   planType: string | null
   badgeRemaining: number | null
+  hasUsage?: boolean
+  activeAccountKey?: string
+  sessionWindows?: UsageWindow[]
   onOpen?: () => void
   onRefresh?: () => void
   refreshing?: boolean
   fetchedAt?: number | null
   highlight?: GaugeHighlight
-  children: ReactNode
+  children?: ReactNode
 }) {
   const { t } = useTranslation()
+  const activeProject = useChatStore((s) => s.activeProject)
+  const remoteProject = activeProject ? parseRemoteProjectKey(activeProject) : null
+  const isRemoteProject = Boolean(remoteProject)
+  const localProjectPath = !isRemoteProject ? activeProject : null
+
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<'detail' | 'list'>('detail')
+  const [hasOpenedList, setHasOpenedList] = useState(false)
+  const [selectedAccountKey, setSelectedAccountKey] = useState<string | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const [claudeAccounts, setClaudeAccounts] = useState<ClaudeAccount[]>(() => (
+    !isRemoteProject && typeof window !== 'undefined' && typeof window.app?.claudeListAccounts === 'function'
+      ? cachedClaudeAccounts
+      : []
+  ))
+  const [claudeMeters, setClaudeMeters] = useState<Record<string, { loading?: boolean; limits?: ClaudeRateLimits | null }>>({})
+  const [codexAccounts, setCodexAccounts] = useState<CodexAccount[]>(() => (
+    !isRemoteProject && typeof window !== 'undefined' && typeof window.app?.codexListAccounts === 'function'
+      ? cachedCodexAccounts
+      : []
+  ))
+  const [codexMeters, setCodexMeters] = useState<Record<string, { loading?: boolean; limits?: CodexRateLimits | null; usage?: CodexAccountUsage | null }>>({})
+  const [acpMeters, setAcpMeters] = useState<Record<string, { loading?: boolean; limits?: ProviderRateLimits | null }>>({})
   const [now, setNow] = useState(() => Date.now())
+  const prefetchedRef = useRef(false)
+
+  const toggleGroup = useCallback((groupKey: string) => {
+    setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }))
+  }, [])
+
+  const loadClaudeMeter = useCallback(async (credentialDir: string | null, force: boolean, preferCached: boolean) => {
+    const key = claudeHubKey(credentialDir)
+    setClaudeMeters((prev) => ({ ...prev, [key]: { ...prev[key], loading: true } }))
+    try {
+      const limits = await window.app?.claudeGetRateLimits?.(force, credentialDir, preferCached) ?? null
+      setClaudeMeters((prev) => ({ ...prev, [key]: { loading: false, limits } }))
+    } catch {
+      setClaudeMeters((prev) => ({ ...prev, [key]: { ...prev[key], loading: false } }))
+    }
+  }, [])
+
+  const loadCodexMeter = useCallback(async (accountId: string, force: boolean, preferCached: boolean, includeUsage = false) => {
+    if (!localProjectPath) return
+    const providerId = codexAccountProviderId(accountId)
+    const key = codexHubKey(providerId)
+    setCodexMeters((prev) => ({ ...prev, [key]: { ...prev[key], loading: true } }))
+    try {
+      const limitsPromise = window.app?.codexGetRateLimits?.(localProjectPath, providerId, force, preferCached) ?? Promise.resolve(null)
+      const usagePromise = includeUsage
+        ? (window.app?.codexGetAccountUsage?.(localProjectPath, providerId, null, force, preferCached) ?? Promise.resolve(null))
+        : Promise.resolve(undefined)
+      const limits = await limitsPromise.catch(() => null)
+      setCodexMeters((prev) => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          loading: false,
+          limits: limits ?? prev[key]?.limits ?? null,
+        },
+      }))
+      if (includeUsage) {
+        const usage = await usagePromise.catch(() => null)
+        if (usage !== undefined) {
+          setCodexMeters((prev) => ({
+            ...prev,
+            [key]: {
+              ...prev[key],
+              usage: usage ?? prev[key]?.usage ?? null,
+            },
+          }))
+        }
+      }
+    } catch {
+      setCodexMeters((prev) => ({ ...prev, [key]: { ...prev[key], loading: false } }))
+    }
+  }, [localProjectPath])
+
+  const loadAcpMeter = useCallback(async (agentId: string, force: boolean) => {
+    const key = `acp:${agentId}`
+    setAcpMeters((prev) => ({ ...prev, [key]: { ...prev[key], loading: true } }))
+    try {
+      const limits = await window.app?.acpGetRateLimits?.(localProjectPath ?? '', agentId, force) ?? null
+      setAcpMeters((prev) => ({ ...prev, [key]: { loading: false, limits } }))
+    } catch {
+      setAcpMeters((prev) => ({ ...prev, [key]: { ...prev[key], loading: false } }))
+    }
+  }, [localProjectPath])
+
+  // Preload account lists on mount so all subscription cards render immediately when opening the list view.
+  useEffect(() => {
+    if (isRemoteProject) {
+      setClaudeAccounts((prev) => (prev.length === 0 ? prev : []))
+      setCodexAccounts((prev) => (prev.length === 0 ? prev : []))
+      return
+    }
+    let cancelled = false
+    const refreshClaude = () => {
+      if (typeof window.app?.claudeListAccounts !== 'function') {
+        cachedClaudeAccounts = []
+        setClaudeAccounts((prev) => (prev.length === 0 ? prev : []))
+        return
+      }
+      window.app.claudeListAccounts(false)
+        .then((accounts) => {
+          if (cancelled) return
+          const signedIn = (accounts ?? []).filter((a) => a.loggedIn)
+          cachedClaudeAccounts = signedIn
+          setClaudeAccounts(signedIn)
+        })
+        .catch(() => {})
+    }
+    const refreshCodex = () => {
+      if (typeof window.app?.codexListAccounts !== 'function') {
+        cachedCodexAccounts = []
+        setCodexAccounts((prev) => (prev.length === 0 ? prev : []))
+        return
+      }
+      window.app.codexListAccounts(localProjectPath ?? '', false)
+        .then((accounts) => {
+          if (cancelled) return
+          const signedIn = (accounts ?? []).filter((a) => a.signedIn && !a.unavailable)
+          cachedCodexAccounts = signedIn
+          setCodexAccounts(signedIn)
+        })
+        .catch(() => {})
+    }
+    refreshClaude()
+    refreshCodex()
+    window.addEventListener('codex-accounts-changed', refreshCodex)
+    return () => {
+      cancelled = true
+      window.removeEventListener('codex-accounts-changed', refreshCodex)
+    }
+  }, [isRemoteProject, localProjectPath])
+
+  const prefetchSubscriptions = useCallback(() => {
+    if (isRemoteProject) return
+    prefetchedRef.current = true
+    for (const account of claudeAccounts) {
+      void loadClaudeMeter(account.credentialDir, false, true)
+    }
+    for (const account of codexAccounts) {
+      void loadCodexMeter(account.id, false, true, false)
+    }
+    window.app?.claudeListAccounts?.(false)
+      .then((accounts) => {
+        const signedIn = (accounts ?? []).filter((a) => a.loggedIn)
+        cachedClaudeAccounts = signedIn
+        setClaudeAccounts(signedIn)
+        for (const account of signedIn) {
+          const key = claudeHubKey(account.credentialDir)
+          if (!claudeMeters[key]) {
+            void loadClaudeMeter(account.credentialDir, false, true)
+          }
+        }
+      })
+      .catch(() => {})
+    if (typeof window.app?.codexListAccounts === 'function') {
+      window.app.codexListAccounts(localProjectPath ?? '', false)
+        .then((accounts) => {
+          const signedIn = (accounts ?? []).filter((a) => a.signedIn && !a.unavailable)
+          cachedCodexAccounts = signedIn
+          setCodexAccounts(signedIn)
+          for (const account of signedIn) {
+            const key = codexHubKey(codexAccountProviderId(account.id))
+            if (!codexMeters[key]) {
+              void loadCodexMeter(account.id, false, true, false)
+            }
+          }
+        })
+        .catch(() => {})
+    }
+    for (const agent of ACP_HUB_AGENTS) {
+      void loadAcpMeter(agent.agentId, false)
+    }
+  }, [isRemoteProject, localProjectPath, claudeAccounts, codexAccounts, claudeMeters, codexMeters, loadClaudeMeter, loadCodexMeter, loadAcpMeter])
+
+  const handleOpenList = useCallback(() => {
+    setHasOpenedList(true)
+    setView('list')
+    if (!prefetchedRef.current) {
+      prefetchSubscriptions()
+    }
+  }, [prefetchSubscriptions])
+
+  const selectedClaudeAccount = selectedAccountKey?.startsWith('claude:')
+    ? claudeAccounts.find((a) => claudeHubKey(a.credentialDir) === selectedAccountKey) ?? null
+    : null
+  const selectedClaudeMeter = selectedAccountKey ? claudeMeters[selectedAccountKey] : undefined
+
+  const selectedCodexAccount = selectedAccountKey?.startsWith('codex:')
+    ? codexAccounts.find((a) => codexHubKey(codexAccountProviderId(a.id)) === selectedAccountKey) ?? null
+    : null
+  const selectedCodexMeter = selectedAccountKey ? codexMeters[selectedAccountKey] : undefined
+
+  const selectedAcpAgent = selectedAccountKey?.startsWith('acp:')
+    ? ACP_HUB_AGENTS.find((a) => a.key === selectedAccountKey) ?? null
+    : null
+  const selectedAcpMeter = selectedAccountKey ? acpMeters[selectedAccountKey] : undefined
+
+  const activeFetchedAt = selectedClaudeAccount
+    ? (selectedClaudeMeter?.limits?.fetchedAt ?? null)
+    : selectedCodexAccount
+      ? (selectedCodexMeter?.limits?.fetchedAt ?? null)
+      : selectedAcpAgent
+        ? (selectedAcpMeter?.limits?.fetchedAt ?? null)
+        : fetchedAt
 
   useEffect(() => {
-    if (!open || fetchedAt == null) return
+    if (!open || activeFetchedAt == null) return
     setNow(Date.now())
     const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
-  }, [open, fetchedAt])
+  }, [open, activeFetchedAt])
 
   useEffect(() => {
     if (!open || !onOpen) return
@@ -310,8 +670,127 @@ function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOp
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next)
-    if (next) onOpen?.()
-  }, [onOpen])
+    if (next) {
+      onOpen?.()
+      prefetchSubscriptions()
+    } else {
+      setView('detail')
+      setHasOpenedList(false)
+      setSelectedAccountKey(null)
+    }
+  }, [onOpen, prefetchSubscriptions])
+
+  const detailTitle = selectedClaudeAccount
+    ? <ProviderLabel brandKey="claude" size={14} />
+    : selectedCodexAccount
+      ? <ProviderLabel brandKey="openai" size={14} />
+      : selectedAcpAgent
+        ? <ProviderLabel brandKey={selectedAcpAgent.brandKey} size={14} />
+        : title
+  const detailPlan = selectedClaudeAccount
+    ? (selectedClaudeMeter?.limits?.planType ?? selectedClaudeAccount.subscriptionType ?? null)
+    : selectedCodexAccount
+      ? (selectedCodexMeter?.limits?.planType ?? selectedCodexAccount.planType ?? null)
+      : selectedAcpAgent
+        ? (selectedAcpMeter?.limits?.planType ?? null)
+        : planType
+  const detailSubtitle = selectedClaudeAccount
+    ? [selectedClaudeAccount.email, selectedClaudeAccount.orgName].filter(Boolean).join(' · ')
+    : selectedCodexAccount
+      ? (selectedCodexAccount.email ?? null)
+      : selectedAcpAgent
+        ? (selectedAcpMeter?.limits?.account ?? selectedAcpMeter?.limits?.email ?? null)
+        : subtitle
+  const detailRefreshing = selectedClaudeAccount
+    ? Boolean(selectedClaudeMeter?.loading)
+    : selectedCodexAccount
+      ? Boolean(selectedCodexMeter?.loading)
+      : selectedAcpAgent
+        ? Boolean(selectedAcpMeter?.loading)
+        : refreshing
+  const detailOnRefresh = selectedClaudeAccount
+    ? () => { void loadClaudeMeter(selectedClaudeAccount.credentialDir, true, false) }
+    : selectedCodexAccount
+      ? () => { void loadCodexMeter(selectedCodexAccount.id, true, false, true) }
+      : selectedAcpAgent
+        ? () => { void loadAcpMeter(selectedAcpAgent.agentId, true) }
+        : onRefresh
+
+  const renderDetailBody = (): ReactNode => {
+    if (selectedClaudeAccount) {
+      const limits = selectedClaudeMeter?.limits
+      const hasData = Boolean(limits && (limits.windows.length > 0 || limits.extraUsage || limits.error))
+      if (!hasData) {
+        return <EmptyUsageState />
+      }
+      return (
+        <>
+          {limits!.windows.map((w) => (
+            <WindowRow key={w.id ?? w.label} {...w} />
+          ))}
+          {limits!.extraUsage && <ExtraUsageBar extra={limits!.extraUsage} />}
+          <ResetGrantsRow grants={limits!.resetGrants} />
+          {limits!.error && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+        </>
+      )
+    }
+    if (selectedCodexAccount) {
+      const limits = selectedCodexMeter?.limits
+      const usage = selectedCodexMeter?.usage
+      const hasData = Boolean((limits && (limits.primary || limits.secondary || limits.error)) || usage)
+      if (!hasData) {
+        return <EmptyUsageState />
+      }
+      const providerId = codexAccountProviderId(selectedCodexAccount.id)
+      return (
+        <>
+          {limits?.primary && (
+            <WindowRow {...limits.primary} label={formatWindowLabel(limits.primary.windowDurationMins, t)} />
+          )}
+          {limits?.secondary && (
+            <WindowRow {...limits.secondary} label={formatWindowLabel(limits.secondary.windowDurationMins, t)} />
+          )}
+          {limits?.resetCredits != null && limits.resetCredits > 0 && localProjectPath && (
+            <ResetCreditsRow
+              count={limits.resetCredits}
+              credits={limits.resetCreditList}
+              projectPath={localProjectPath}
+              apiProviderId={providerId}
+              onConsumed={() => { void loadCodexMeter(selectedCodexAccount.id, true, false, true) }}
+            />
+          )}
+          {usage && <AccountUsageSection usage={usage} />}
+          {(limits?.error || usage?.error) && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+        </>
+      )
+    }
+    if (selectedAcpAgent) {
+      const limits = selectedAcpMeter?.limits
+      const hasData = Boolean(limits && (limits.windows.length > 0 || limits.extraUsage || limits.creditBalanceDollars != null))
+      if (!hasData) {
+        return <EmptyUsageState />
+      }
+      return (
+        <>
+          <GroupedWindowBars windows={limits!.windows} />
+          {limits!.extraUsage && <ExtraUsageBar extra={limits!.extraUsage} />}
+          {limits!.creditBalanceDollars != null && (
+            <CreditBalanceRow dollars={limits!.creditBalanceDollars} />
+          )}
+        </>
+      )
+    }
+    return hasUsage ? children : <EmptyUsageState />
+  }
+
+  const isClaudeActiveInList = claudeAccounts.some((a) => claudeHubKey(a.credentialDir) === activeAccountKey)
+  const isCodexActiveInList = codexAccounts.some(
+    (a) => codexHubKey(codexAccountProviderId(a.id)) === activeAccountKey || (activeAccountKey === 'codex:__default__' && a.isDefault),
+  )
+  const isAcpActiveInList = ACP_HUB_AGENTS.some(
+    (agent) => activeAccountKey === agent.key && (Boolean(acpMeters[agent.key]?.limits) || Boolean(acpMeters[agent.key]?.loading) || hasUsage),
+  )
+  const showCurrentSessionGroup = !isClaudeActiveInList && !isCodexActiveInList && !isAcpActiveInList
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -332,31 +811,270 @@ function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOp
           )}
         </IconButton>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-auto p-3" onOpenAutoFocus={(event) => event.preventDefault()}>
+      <PopoverContent side="top" align="end" className="w-auto p-0" onOpenAutoFocus={(event) => event.preventDefault()}>
         {/* Wide enough that every gauge sits at the same width. Codex's labels ("5h") are far
             shorter than Claude's ("Fable weekly"), so a lower floor left the two popovers
             visibly different sizes depending on which harness the session ran. */}
-        <div className="flex min-w-64 flex-col gap-2 text-xs">
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center font-medium">{title}</span>
-              {planType && <span className="opacity-50">{planType}</span>}
-            </div>
-            {subtitle && <span className="truncate opacity-50">{subtitle}</span>}
-          </div>
-          {children}
-          {(onRefresh || refreshing || fetchedAt != null) && (
-            <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
-              <span className="text-[10px] tabular-nums opacity-50">
-                {refreshing ? t('usageGauge.updating') : fetchedAt != null ? formatUpdatedAgo(fetchedAt, now, t) : ''}
-              </span>
-              {onRefresh && (
-                <IconButton size="xs" variant="ghost" tooltip={t('common.refresh')} aria-label={t('common.refresh')} disabled={refreshing} onClick={onRefresh}>
-                  <RefreshCw className={cn(refreshing && 'animate-spin')} />
-                </IconButton>
+        <div className="flex w-76 min-w-76 flex-col text-xs">
+          <PanelHeight open={view === 'detail'}>
+            <div className="flex flex-col gap-2 p-3">
+              <button
+                type="button"
+                aria-label={t('usageGauge.switchAccount')}
+                onClick={handleOpenList}
+                className="-mx-1.5 -mt-1.5 flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                    {detailTitle}
+                  </span>
+                  {detailPlan && <span className="shrink-0 opacity-50">{detailPlan}</span>}
+                </div>
+                {detailSubtitle && <span className="truncate opacity-50">{detailSubtitle}</span>}
+              </button>
+              {renderDetailBody()}
+              {(detailOnRefresh || detailRefreshing || activeFetchedAt != null) && (
+                <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
+                  <span className="text-[10px] tabular-nums opacity-50">
+                    {detailRefreshing ? t('usageGauge.updating') : activeFetchedAt != null ? formatUpdatedAgo(activeFetchedAt, now, t) : ''}
+                  </span>
+                  {detailOnRefresh && (
+                    <IconButton size="xs" variant="ghost" tooltip={t('common.refresh')} aria-label={t('common.refresh')} disabled={detailRefreshing} onClick={detailOnRefresh}>
+                      <RefreshCw className={cn(detailRefreshing && 'animate-spin')} />
+                    </IconButton>
+                  )}
+                </div>
               )}
             </div>
-          )}
+          </PanelHeight>
+
+          <PanelHeight open={view === 'list'}>
+            {hasOpenedList && (
+              <div className="flex flex-col gap-2.5 p-3">
+                <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setView('detail')}
+                    className="-mx-1.5 -mt-1 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-muted/60"
+                  >
+                    <ChevronLeft className="size-3.5 shrink-0 opacity-70" />
+                    <span>{t('usageGauge.allAccounts')}</span>
+                  </button>
+                </div>
+
+                <ScrollArea
+                  type="scroll"
+                  edgeFade
+                  className="sidebar-scroll -mx-2 max-h-104 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]]:px-2 [&_[data-slot=scroll-area-viewport]>div]:block!"
+                >
+                  <div className="flex flex-col gap-3">
+                    {claudeAccounts.length > 0 && (
+                      <SubscriptionGroup
+                        title={<ProviderLabel brandKey="claude" size={12} />}
+                        count={claudeAccounts.length}
+                        collapsed={Boolean(collapsedGroups.claude)}
+                        onToggle={() => toggleGroup('claude')}
+                      >
+                        {claudeAccounts.map((account) => {
+                          const key = claudeHubKey(account.credentialDir)
+                          const isCurrent = activeAccountKey === key
+                          const isSelected = selectedAccountKey ? selectedAccountKey === key : isCurrent
+                          const meter = claudeMeters[key]
+                          const meterLoading = meter ? Boolean(meter.loading) : !(isCurrent && sessionWindows.length > 0)
+                          const windows = isCurrent && sessionWindows.length > 0 && !meter?.limits
+                            ? sessionWindows
+                            : (meter?.limits?.windows ?? [])
+                          const plan = meter?.limits?.planType ?? account.subscriptionType ?? (isCurrent ? planType : null)
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                if (isCurrent) {
+                                  setSelectedAccountKey(null)
+                                } else {
+                                  setSelectedAccountKey(key)
+                                  const fetched = meter?.limits?.fetchedAt
+                                  if (fetched == null || Date.now() - fetched > FORCE_REFRESH_ON_OPEN_STALE_MS) {
+                                    void loadClaudeMeter(account.credentialDir, false, false)
+                                  }
+                                }
+                                setView('detail')
+                              }}
+                              className={cn(
+                                'flex w-full flex-col gap-1.5 rounded-md border p-2 text-left transition-colors',
+                                isSelected
+                                  ? 'border-primary/50 bg-accent/50'
+                                  : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
+                              )}
+                            >
+                              <div className="flex h-4 items-center justify-between gap-2">
+                                <span className="truncate font-medium">
+                                  {account.email || t('resources.providers.claudePendingAccount')}
+                                </span>
+                                {plan ? (
+                                  <span className="shrink-0 text-[11px] capitalize opacity-50">{plan}</span>
+                                ) : meterLoading ? (
+                                  <div className="h-2.5 w-10 animate-pulse rounded bg-muted-foreground/20" />
+                                ) : null}
+                              </div>
+                              <AccountCardWindows windows={windows} loading={meterLoading} />
+                            </button>
+                          )
+                        })}
+                      </SubscriptionGroup>
+                    )}
+
+                    {codexAccounts.length > 0 && (
+                      <SubscriptionGroup
+                        title={<ProviderLabel brandKey="openai" size={12} />}
+                        count={codexAccounts.length}
+                        collapsed={Boolean(collapsedGroups.openai)}
+                        onToggle={() => toggleGroup('openai')}
+                      >
+                        {codexAccounts.map((account) => {
+                          const providerId = codexAccountProviderId(account.id)
+                          const key = codexHubKey(providerId)
+                          const isCurrent = activeAccountKey === key || (activeAccountKey === 'codex:__default__' && account.isDefault)
+                          const isSelected = selectedAccountKey ? selectedAccountKey === key : isCurrent
+                          const meter = codexMeters[key]
+                          const meterLoading = meter ? Boolean(meter.loading) : !(isCurrent && sessionWindows.length > 0)
+                          const meterWindows: UsageWindow[] = [meter?.limits?.primary, meter?.limits?.secondary].flatMap(
+                            (w) => w ? [{ ...w, label: formatWindowLabel(w.windowDurationMins, t) }] : [],
+                          )
+                          const windows = isCurrent && sessionWindows.length > 0 && meterWindows.length === 0
+                            ? sessionWindows
+                            : meterWindows
+                          const plan = meter?.limits?.planType ?? account.planType ?? (isCurrent ? planType : null)
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                if (isCurrent) {
+                                  setSelectedAccountKey(null)
+                                } else {
+                                  setSelectedAccountKey(key)
+                                  const fetched = meter?.limits?.fetchedAt
+                                  if (fetched == null || Date.now() - fetched > FORCE_REFRESH_ON_OPEN_STALE_MS || meter?.usage === undefined) {
+                                    void loadCodexMeter(account.id, false, false, true)
+                                  }
+                                }
+                                setView('detail')
+                              }}
+                              className={cn(
+                                'flex w-full flex-col gap-1.5 rounded-md border p-2 text-left transition-colors',
+                                isSelected
+                                  ? 'border-primary/50 bg-accent/50'
+                                  : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
+                              )}
+                            >
+                              <div className="flex h-4 items-center justify-between gap-2">
+                                <span className="truncate font-medium">
+                                  {account.email || t('usageGauge.codexTitle')}
+                                </span>
+                                {plan ? (
+                                  <span className="shrink-0 text-[11px] capitalize opacity-50">{plan}</span>
+                                ) : meterLoading ? (
+                                  <div className="h-2.5 w-10 animate-pulse rounded bg-muted-foreground/20" />
+                                ) : null}
+                              </div>
+                              <AccountCardWindows windows={windows} loading={meterLoading} />
+                            </button>
+                          )
+                        })}
+                      </SubscriptionGroup>
+                    )}
+
+                    {ACP_HUB_AGENTS.map((agent) => {
+                      const isCurrent = activeAccountKey === agent.key
+                      const meter = acpMeters[agent.key]
+                      const limits = meter?.limits
+                      const isInitialLoading = Boolean(meter?.loading) && !limits && !isCurrent
+                      if (!limits && !meter?.loading && !(isCurrent && hasUsage)) return null
+                      const isSelected = selectedAccountKey ? selectedAccountKey === agent.key : isCurrent
+                      const windows = limits?.windows?.length ? limits.windows : (isCurrent ? sessionWindows : [])
+                      const plan = limits?.planType ?? (isCurrent ? planType : null)
+                      const identity = limits?.account ?? limits?.email ?? (isCurrent ? subtitle : null) ?? limits?.title ?? agent.fallbackTitle
+                      return (
+                        <SubscriptionGroup
+                          key={agent.key}
+                          title={<ProviderLabel brandKey={agent.brandKey} size={12} />}
+                          count={1}
+                          collapsed={Boolean(collapsedGroups[agent.key])}
+                          onToggle={() => toggleGroup(agent.key)}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isCurrent) {
+                                setSelectedAccountKey(null)
+                              } else {
+                                setSelectedAccountKey(agent.key)
+                                const fetched = limits?.fetchedAt
+                                if (fetched == null || Date.now() - fetched > FORCE_REFRESH_ON_OPEN_STALE_MS) {
+                                  void loadAcpMeter(agent.agentId, false)
+                                }
+                              }
+                              setView('detail')
+                            }}
+                            className={cn(
+                              'flex w-full flex-col gap-1.5 rounded-md border p-2 text-left transition-colors',
+                              isSelected
+                                ? 'border-primary/50 bg-accent/50'
+                                : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
+                            )}
+                          >
+                            {isInitialLoading ? (
+                              <div className="flex h-4 items-center justify-between gap-2">
+                                <div className="h-3 w-32 animate-pulse rounded bg-muted-foreground/20" />
+                                <div className="h-2.5 w-12 animate-pulse rounded bg-muted-foreground/20" />
+                              </div>
+                            ) : (
+                              <div className="flex h-4 items-center justify-between gap-2">
+                                <span className="truncate font-medium">{identity}</span>
+                                {plan && <span className="shrink-0 text-[11px] capitalize opacity-50">{plan}</span>}
+                              </div>
+                            )}
+                            <AccountCardWindows windows={windows} loading={meter?.loading} />
+                          </button>
+                        </SubscriptionGroup>
+                      )
+                    })}
+
+                    {showCurrentSessionGroup && (
+                      <SubscriptionGroup
+                        title={title}
+                        count={1}
+                        collapsed={Boolean(collapsedGroups.current)}
+                        onToggle={() => toggleGroup('current')}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAccountKey(null)
+                            setView('detail')
+                          }}
+                          className={cn(
+                            'flex w-full flex-col gap-1.5 rounded-md border p-2 text-left transition-colors',
+                            selectedAccountKey === null
+                              ? 'border-primary/50 bg-accent/50'
+                              : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
+                          )}
+                        >
+                          <div className="flex h-4 items-center justify-between gap-2">
+                            <span className="truncate font-medium">{subtitle || label}</span>
+                            {planType && <span className="shrink-0 text-[11px] capitalize opacity-50">{planType}</span>}
+                          </div>
+                          <AccountCardWindows windows={sessionWindows} />
+                        </button>
+                      </SubscriptionGroup>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </PanelHeight>
         </div>
       </PopoverContent>
     </Popover>
@@ -410,31 +1128,41 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip:
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || (!limits.primary && !limits.secondary)) {
-    return (
-      <RateLimitTipHost tip={tip}>
-        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
-      </RateLimitTipHost>
-    )
-  }
-
-  const badgeWindow = limits.primary ?? limits.secondary
+  const badgeWindow = limits?.primary ?? limits?.secondary
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
+  const hasUsage = Boolean(limits && (limits.primary || limits.secondary))
+  const activeAccountKey = !apiProviderId || isCodexAccountProvider(apiProviderId)
+    ? codexHubKey(apiProviderId)
+    : 'session:current'
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
-        {limits.primary && (
+      <RateLimitGauge
+        title={<ProviderLabel brandKey="openai" size={14} />}
+        label={t('usageGauge.codexTitle')}
+        subtitle={accountEmail}
+        planType={limits?.planType ?? null}
+        badgeRemaining={badgeRemaining}
+        hasUsage={hasUsage}
+        activeAccountKey={activeAccountKey}
+        sessionWindows={windows}
+        onOpen={refreshIfStale}
+        onRefresh={hasUsage ? refresh : undefined}
+        refreshing={refreshing}
+        fetchedAt={limits?.fetchedAt ?? null}
+        highlight={highlight}
+      >
+        {limits?.primary && (
           <WindowRow {...limits.primary} label={formatWindowLabel(limits.primary.windowDurationMins, t)} />
         )}
-        {limits.secondary && (
+        {limits?.secondary && (
           <WindowRow {...limits.secondary} label={formatWindowLabel(limits.secondary.windowDurationMins, t)} />
         )}
-        {limits.resetCredits != null && limits.resetCredits > 0 && (
+        {limits?.resetCredits != null && limits.resetCredits > 0 && (
           <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={refresh} />
         )}
         {usage && <AccountUsageSection usage={usage} />}
-        {(limits.error || usage?.error) && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+        {(limits?.error || usage?.error) && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
       </RateLimitGauge>
     </RateLimitTipHost>
   )
@@ -509,32 +1237,41 @@ function ClaudeRateLimitIcon({ credentialDir, remoteConnectionId, apiProviderId,
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || (limits.windows.length === 0 && !limits.error)) {
-    return (
-      <RateLimitTipHost tip={tip}>
-        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
-      </RateLimitTipHost>
-    )
-  }
-
-  const badgeWindow = limits.windows.find((w) => w.label === '5h') ?? limits.windows[0]
+  const badgeWindow = limits?.windows.find((w) => w.label === '5h') ?? limits?.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
+  const hasUsage = Boolean(limits && (limits.windows.length > 0 || limits.error))
+  const activeAccountKey = remoteConnectionId ? 'session:current' : claudeHubKey(credentialDir)
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={<ProviderLabel brandKey="claude" size={14} />} label={t('usageGauge.claudeTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
-        {limits.windows.map((w) => (
+      <RateLimitGauge
+        title={<ProviderLabel brandKey="claude" size={14} />}
+        label={t('usageGauge.claudeTitle')}
+        subtitle={accountEmail}
+        planType={limits?.planType ?? null}
+        badgeRemaining={badgeRemaining}
+        hasUsage={hasUsage}
+        activeAccountKey={activeAccountKey}
+        sessionWindows={limits?.windows ?? []}
+        onOpen={refreshIfStale}
+        onRefresh={hasUsage ? refresh : undefined}
+        refreshing={refreshing}
+        fetchedAt={limits?.fetchedAt ?? null}
+        highlight={highlight}
+      >
+        {limits?.windows.map((w) => (
           <WindowRow key={w.id ?? w.label} {...w} />
         ))}
-        {limits.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
-        <ResetGrantsRow grants={limits.resetGrants} />
-        {limits.error && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+        {limits?.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
+        <ResetGrantsRow grants={limits?.resetGrants} />
+        {limits?.error && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
       </RateLimitGauge>
     </RateLimitTipHost>
   )
 }
 
 function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiProviderId: string; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+  const { t } = useTranslation()
   const [limits, setLimits] = useState<ProviderRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -562,21 +1299,29 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
-  if (!limits || limits.windows.length === 0) {
-    return (
-      <RateLimitTipHost tip={tip}>
-        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
-      </RateLimitTipHost>
-    )
-  }
-
-  const badgeWindow = limits.windows[0]
+  const hasUsage = Boolean(limits && limits.windows.length > 0)
+  const badgeWindow = limits?.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
+  const label = limits?.title ?? t('usageGauge.claudeTitle')
+  const titleNode = limits?.title ?? <ProviderLabel brandKey="claude" size={14} />
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={limits.title} label={limits.title} subtitle={limits.email} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
-        {limits.windows.map((w) => (
+      <RateLimitGauge
+        title={titleNode}
+        label={label}
+        subtitle={limits?.email}
+        planType={limits?.planType ?? null}
+        badgeRemaining={badgeRemaining}
+        hasUsage={hasUsage}
+        sessionWindows={limits?.windows ?? []}
+        onOpen={hasUsage ? refreshIfStale : undefined}
+        onRefresh={hasUsage ? refresh : undefined}
+        refreshing={refreshing}
+        fetchedAt={limits?.fetchedAt ?? null}
+        highlight={highlight}
+      >
+        {limits?.windows.map((w) => (
           <WindowRow key={w.id ?? w.label} {...w} />
         ))}
       </RateLimitGauge>
@@ -589,6 +1334,7 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
  * Only Grok exposes a billing surface, so other ACP agents keep the bare tip.
  */
 function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { projectPath: string; agentId: string; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+  const { t } = useTranslation()
   const [limits, setLimits] = useState<ProviderRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -625,48 +1371,73 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
     return () => { for (const id of timers) window.clearTimeout(id) }
   }, [limits, fetchLimits])
 
-  if (!limits || limits.windows.length === 0) {
-    return (
-      <RateLimitTipHost tip={tip}>
-        {highlight ? <FallbackRateLimitGauge highlight={highlight} /> : null}
-      </RateLimitTipHost>
-    )
-  }
-
-  const badgeWindow = limits.windows[0]
+  const hasUsage = Boolean(limits && limits.windows.length > 0)
+  const badgeWindow = limits?.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
+  const label = limits?.title ?? t('usageGauge.windowFallback')
 
   const titleNode = isGrokAcpAgent(agentId)
     ? <ProviderLabel brandKey="grok" size={14} />
     : isAntigravityAcpAgent(agentId)
       ? <ProviderLabel brandKey="antigravity" size={14} />
-      : limits.title
+      : label
+
+  const activeAccountKey = isGrokAcpAgent(agentId)
+    ? 'acp:grok-build'
+    : isAntigravityAcpAgent(agentId)
+      ? 'acp:antigravity'
+      : 'session:current'
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={titleNode} label={limits.title} subtitle={limits.account ?? limits.email} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
-        <GroupedWindowBars windows={limits.windows} />
-        {limits.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
-        {limits.creditBalanceDollars != null && (
-          <CreditBalanceRow dollars={limits.creditBalanceDollars} />
+      <RateLimitGauge
+        title={titleNode}
+        label={label}
+        subtitle={limits ? (limits.account ?? limits.email) : null}
+        planType={limits?.planType ?? null}
+        badgeRemaining={badgeRemaining}
+        hasUsage={hasUsage}
+        activeAccountKey={activeAccountKey}
+        sessionWindows={limits?.windows ?? []}
+        onOpen={hasUsage ? refreshIfStale : undefined}
+        onRefresh={hasUsage ? refresh : undefined}
+        refreshing={refreshing}
+        fetchedAt={limits?.fetchedAt ?? null}
+        highlight={highlight}
+      >
+        {limits && (
+          <>
+            <GroupedWindowBars windows={limits.windows} />
+            {limits.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
+            {limits.creditBalanceDollars != null && (
+              <CreditBalanceRow dollars={limits.creditBalanceDollars} />
+            )}
+          </>
         )}
       </RateLimitGauge>
     </RateLimitTipHost>
   )
 }
 
-function FallbackRateLimitGauge({ highlight }: { highlight: GaugeHighlight }) {
+function UntrackedRateLimitIcon({ providerId, acpAgentId, tip, highlight }: { providerId: string | null; acpAgentId: string | null; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+  const { t } = useTranslation()
+  const brand = (acpAgentId && UNTRACKED_PROVIDER_BRAND[acpAgentId]) || (providerId && UNTRACKED_PROVIDER_BRAND[providerId]) || null
+  const label = brand?.title ?? acpAgentId ?? t('usageGauge.windowFallback')
+  const titleNode = brand?.brandKey
+    ? <ProviderLabel brandKey={brand.brandKey} size={14} />
+    : label
+
   return (
-    <IconButton
-      size="sm"
-      className={cn(
-        'transition-colors',
-        highlight === 'warning' && 'border border-warning/40 bg-warning/10 text-warning hover:bg-warning/15 hover:text-warning',
-        highlight === 'error' && 'border border-error/40 bg-error/10 text-error hover:bg-error/15 hover:text-error',
-      )}
-    >
-      <Gauge />
-    </IconButton>
+    <RateLimitTipHost tip={tip}>
+      <RateLimitGauge
+        title={titleNode}
+        label={label}
+        planType={null}
+        badgeRemaining={null}
+        hasUsage={false}
+        highlight={highlight}
+      />
+    </RateLimitTipHost>
   )
 }
 
@@ -690,7 +1461,9 @@ export function UsageStatusIcon() {
     ? (tip.status === 'rejected' ? 'error' : 'warning')
     : null
 
-  if (!activeProject) return null
+  if (!activeProject) {
+    return <UntrackedRateLimitIcon providerId={activeProvider ?? null} acpAgentId={acpAgentId ?? null} tip={tip} highlight={highlight} />
+  }
   const remoteProject = parseRemoteProjectKey(activeProject)
 
   if (activeProvider === 'codex') {
@@ -726,13 +1499,5 @@ export function UsageStatusIcon() {
     return <AcpRateLimitIcon projectPath={activeProject} agentId={acpAgentId} status={status} tip={tip} highlight={highlight} />
   }
 
-  if (tip) {
-    return (
-      <RateLimitTipHost tip={tip}>
-        <FallbackRateLimitGauge highlight={highlight} />
-      </RateLimitTipHost>
-    )
-  }
-
-  return null
+  return <UntrackedRateLimitIcon providerId={activeProvider ?? null} acpAgentId={acpAgentId ?? null} tip={tip} highlight={highlight} />
 }

@@ -203,7 +203,7 @@ interface AppAPI extends WindowLayoutAPI {
   }) => void): () => void
   codexListModels(projectPath: string, apiProviderId?: string | null, force?: boolean): Promise<ModelOption[]>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
-  codexListAccounts(projectPath: string): Promise<CodexAccount[]>
+  codexListAccounts(projectPath: string, force?: boolean): Promise<CodexAccount[]>
   codexSetDefaultAccount(projectPath: string, accountId: string): Promise<void>
   codexRemoveAccount(projectPath: string, apiProviderId: string): Promise<void>
   codexGetAccountStatus(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountStatus>

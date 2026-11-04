@@ -27,18 +27,135 @@ import {
 } from './antigravity-slash-commands'
 
 describe('antigravity slash commands and skills', () => {
-  it('compiles ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE without Python syntax errors and supports 1.4.5 symbols', () => {
-    expect(() =>
-      execFileSync(
-        'python3',
-        ['-c', 'import sys; compile(sys.stdin.read(), "sitecustomize.py", "exec")'],
-        { input: ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE },
-      ),
-    ).not.toThrow()
+  it('compiles ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE without Python syntax/name errors and executes _patched_send_usage_update', () => {
+    const pyCheck = `
+import asyncio, builtins, json, symtable, sys, types
+
+src = sys.stdin.read()
+compile(src, "sitecustomize.py", "exec")
+
+top = symtable.symtable(src, "sitecustomize.py", "exec")
+top_defs = {s.get_name() for s in top.get_symbols() if s.is_assigned() or s.is_imported()} | set(dir(builtins))
+
+def walk_tables(tbl):
+    for sym in tbl.get_symbols():
+        if sym.is_global() and not sym.is_assigned() and not sym.is_imported():
+            name = sym.get_name()
+            if name not in top_defs:
+                raise NameError(f"Unbound global symbol {name!r} in {tbl.get_name()}")
+    for child in tbl.get_children():
+        walk_tables(child)
+
+walk_tables(top)
+
+ns = {}
+exec(src, ns)
+
+class DummyAdapter:
+    def __init__(self): pass
+    def on_connect(self, conn): pass
+    async def new_session(self, **kw): pass
+    async def _restore_session(self, **kw): pass
+    async def _create_agent_config(self, **kw): pass
+    def _build_literal_model_target(self, m, e): pass
+    async def _maybe_apply_model_switch(self, s): pass
+    async def _permission_handler(self, s, tc): pass
+    async def _stream_live_step(self, s, step, o, h=None): pass
+    async def prompt(self, p, s, message_id=None, **kw): pass
+    async def _maybe_send_usage_update(self, s): pass
+    async def _send_available_commands_update(self, s): pass
+    async def cleanup(self, s=None): pass
+    def _extract_turn_usage(self, s, start):
+        return types.SimpleNamespace(input_tokens=20000, output_tokens=150, thought_tokens=50, cached_read_tokens=18000)
+
+updates = []
+class DummyClient:
+    async def request_permission(self, *a, **kw): pass
+    async def session_update(self, session_id, update):
+        updates.append((session_id, update))
+
+server_mod = types.SimpleNamespace(
+    config_options=types.SimpleNamespace(AVAILABLE_SESSION_MODES=()),
+    schema=types.SimpleNamespace(
+        SessionMode=lambda **kw: types.SimpleNamespace(**kw),
+        UsageUpdate=lambda **kw: kw,
+    ),
+    resolve_skills_paths=lambda cwd=None, additional_directories=None: [],
+    AgyAdapter=DummyAdapter,
+    asyncio=asyncio,
+    model_selection=types.SimpleNamespace(get_context_window_size=lambda m: 1048576),
+    logging=types.SimpleNamespace(exception=lambda *a: (_ for _ in ()).throw(RuntimeError("unexpected logging.exception"))),
+)
+
+ns["_patch_server_module"](server_mod)
+adapter = DummyAdapter()
+adapter._client = DummyClient()
+adapter.on_connect(None)
+sent_events = []
+class DummyConn:
+    is_idle = False
+    async def _send_input_event(self, ev):
+        sent_events.append(ev)
+dummy_conn = DummyConn()
+sys.modules[DummyConn.__module__] = types.SimpleNamespace(
+    localharness_pb2=types.SimpleNamespace(
+        UserInput=lambda parts: {"parts": parts},
+        InputEvent=lambda user_input: {"user_input": user_input},
+    ),
+    to_proto_input_content=lambda x: f"proto:{x}",
+)
+server_mod.sdk_types_module = types.SimpleNamespace(Image=lambda data, mime_type: f"img:{mime_type}:{len(data)}")
+adapter._sessions = {
+    "s1": types.SimpleNamespace(
+        last_reported_used=20200,
+        agent_model_id="gemini-3.1-pro-high",
+        agent=types.SimpleNamespace(
+            is_started=True,
+            conversation=types.SimpleNamespace(_connection=dummy_conn),
+        ),
+    )
+}
+asyncio.run(adapter._send_usage_update("s1"))
+assert len(updates) == 1
+asyncio.run(
+    adapter._client.session_update(
+        session_id="s1",
+        update=types.SimpleNamespace(
+            session_update="agent_message_chunk",
+            content=types.SimpleNamespace(text="Trajectory was cancelled."),
+        ),
+    )
+)
+assert len(updates) == 1
+interject_res = asyncio.run(
+    adapter.ext_method(
+        "_x.ai/interject",
+        {"sessionId": "s1", "content": [{"type": "text", "text": "steer soon msg"}]},
+    )
+)
+assert interject_res == {"accepted": True}
+assert sent_events == [{"user_input": {"parts": ["proto:steer soon msg"]}}]
+print(json.dumps(updates[0][1]))
+`
+    const out = execFileSync('python3', ['-c', pyCheck], {
+      input: ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE,
+      encoding: 'utf8',
+    })
+    const parsed = JSON.parse(out.trim())
+    expect(parsed.field_meta.antigravityTurnUsage).toEqual({
+      contextTokens: 20200,
+      contextWindow: 1048576,
+      model: 'gemini-3.1-pro-high',
+      inputTokens: 2000,
+      outputTokens: 200,
+      cacheReadTokens: 18000,
+      thoughtsTokens: 50,
+    })
     expect(ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE).toContain('getattr(sdk_types, "GeminiModelOptions", None)')
     expect(ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE).toContain('getattr(terminal_sandbox_mod, "os_sandbox_supported", None)')
     expect(ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE).toContain('server_mod.acp_paths.gemini_home()')
     expect(ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE).toContain('_extract_tool_display_title')
+    expect(ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE).toContain('_handle_antigravity_interject')
   })
 
   it('parses single-line and multiline YAML skill frontmatter and respects disable-slash-command', () => {

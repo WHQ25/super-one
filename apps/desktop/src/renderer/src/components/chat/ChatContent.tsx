@@ -50,7 +50,7 @@ import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { dateSeparators } from '@superone/chat-view/presenters/message-time'
 import { MessageDateSeparator } from '@superone/chat-view/presenters/MessageTime'
 import { HARNESS_CAPABILITIES, resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
 import { TurnDetailStateProvider } from './TurnDetailSection'
@@ -176,7 +176,7 @@ function ChatTranscript({
     && sessionStatus === 'streaming'
   const canSteerQueueSoon = canSteerQueue
     && queueCapabilities.supportsQueuedSteerSoon
-    && (queueProvider !== 'acp' || isGrokAcpAgent(acpAgentId))
+    && (queueProvider !== 'acp' || isGrokAcpAgent(acpAgentId) || isAntigravityAcpAgent(acpAgentId))
   const isLocalCodexQueue = canHostStartQueued && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view

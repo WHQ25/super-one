@@ -1466,7 +1466,7 @@ export class AcpBackend implements SessionBackend {
         this.emit({ type: 'status_change', status: 'error' })
       }
     } finally {
-      if (this.sendNowPrompt) {
+      while (this.sendNowPrompt) {
         const next = this.sendNowPrompt
         this.sendNowPrompt = null
         this.activePrompt = next
@@ -1476,10 +1476,7 @@ export class AcpBackend implements SessionBackend {
           await next
         } catch (err) {
           log.warn('[AcpBackend] sendNow prompt failed:', err)
-        } finally {
-          if (this.activePrompt === next) this.finishPrompt()
         }
-        return
       }
       this.finishPrompt()
     }
@@ -1906,12 +1903,15 @@ export class AcpBackend implements SessionBackend {
     const taken = this.pendingQueued.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued ACP message not found: ${cmd.clientMessageId}`)
     try {
-      if (cmd.priority === 'now' && isGrokAcpAgent(this.config.agentId)) {
+      if (
+        cmd.priority === 'now'
+        && (isGrokAcpAgent(this.config.agentId) || this.config.agentId === 'antigravity')
+      ) {
         this.steerNow(taken)
         return
       }
       const ok = await this.interjectRequest(taken.request, taken.delivery)
-      if (!ok) throw new Error('Grok interject is unavailable')
+      if (!ok) throw new Error('ACP interject is unavailable')
     } catch (err) {
       this.pendingQueued.restore(taken)
       throw err

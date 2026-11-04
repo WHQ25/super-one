@@ -68,6 +68,7 @@ def _patch_server_module(server_mod):
     orig_prompt = AgyAdapter.prompt
     orig_maybe_send_usage_update = AgyAdapter._maybe_send_usage_update
     orig_send_available_commands_update = AgyAdapter._send_available_commands_update
+    orig_ext_method = getattr(AgyAdapter, "ext_method", None)
     orig_cleanup = AgyAdapter.cleanup
 
     def _patched_init(self, *args, **kwargs):
@@ -379,17 +380,18 @@ def _patch_server_module(server_mod):
         effective_used = session_info.last_reported_used if used is None else used
         if effective_used is None:
             return
-        effective_model_id = model_id or getattr(session_info, "agent_model_id", None) or getattr(session_info, "current_model_id", None)
-        context_window_size = server_mod.model_selection.get_context_window_size(effective_model_id) or 1048576
-        turn_usage = self._extract_turn_usage(session_id, getattr(self, "_turn_start_usage_by_session", {}).get(session_id))
-        turn_meta = {"contextTokens": int(effective_used), "contextWindow": int(context_window_size), "model": str(effective_model_id or "")}
-        if turn_usage is not None:
-            in_tok = int(getattr(turn_usage, "input_tokens", 0) or 0)
-            out_tok = int(getattr(turn_usage, "output_tokens", 0) or 0)
-            thought_tok = int(getattr(turn_usage, "thought_tokens", 0) or 0)
-            uncached_in = max(0, in_tok - cache_tok) if (cache_tok > 0 and in_tok >= cache_tok) else in_tok
-            turn_meta.update({"inputTokens": uncached_in, "outputTokens": out_tok + thought_tok, "cacheReadTokens": cache_tok, "thoughtsTokens": thought_tok})
         try:
+            effective_model_id = model_id or getattr(session_info, "agent_model_id", None) or getattr(session_info, "current_model_id", None)
+            context_window_size = server_mod.model_selection.get_context_window_size(effective_model_id) or 1048576
+            turn_usage = self._extract_turn_usage(session_id, getattr(self, "_turn_start_usage_by_session", {}).get(session_id))
+            turn_meta = {"contextTokens": int(effective_used), "contextWindow": int(context_window_size), "model": str(effective_model_id or "")}
+            if turn_usage is not None:
+                in_tok = int(getattr(turn_usage, "input_tokens", 0) or 0)
+                out_tok = int(getattr(turn_usage, "output_tokens", 0) or 0)
+                thought_tok = int(getattr(turn_usage, "thought_tokens", 0) or 0)
+                cache_tok = int(getattr(turn_usage, "cached_read_tokens", 0) or 0)
+                uncached_in = max(0, in_tok - cache_tok) if (cache_tok > 0 and in_tok >= cache_tok) else in_tok
+                turn_meta.update({"inputTokens": uncached_in, "outputTokens": out_tok + thought_tok, "cacheReadTokens": cache_tok, "thoughtsTokens": thought_tok})
             await self._client.session_update(
                 session_id=session_id,
                 update=schema.UsageUpdate(session_update="usage_update", used=effective_used, size=context_window_size, field_meta={"antigravityTurnUsage": turn_meta}),
@@ -443,6 +445,13 @@ def _patch_server_module(server_mod):
         except Exception:
             pass
 
+    async def _patched_ext_method(self, method, params):
+        if method in ("x.ai/interject", "_x.ai/interject"):
+            return await _handle_antigravity_interject(self, server_mod, params)
+        if orig_ext_method is not None:
+            return await orig_ext_method(self, method, params)
+        raise RuntimeError(f"Unsupported ext_method: {method}")
+
     async def _patched_cleanup(self, session_id=None):
         await orig_cleanup(self, session_id)
         for attr in ("_agent_mode_by_session_id", "_pending_mode_by_session_id", "_emitted_thinking_by_session", "_turn_start_usage_by_session"):
@@ -465,6 +474,7 @@ def _patch_server_module(server_mod):
     AgyAdapter._maybe_send_usage_update = _patched_maybe_send_usage_update
     AgyAdapter._send_usage_update = _patched_send_usage_update
     AgyAdapter._send_available_commands_update = _patched_send_available_commands_update
+    AgyAdapter.ext_method = _patched_ext_method
     AgyAdapter.cleanup = _patched_cleanup
 `
 

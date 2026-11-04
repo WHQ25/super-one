@@ -1120,6 +1120,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     readonly gen: number
     readonly primaryMessageId: string
     readonly onEvent: (event: AgentEvent) => void
+    readonly stopWaiter: ((stopReason: string) => void) | null
+    readonly settledPromise: Promise<void>
     superseded: boolean
   }
   const newTurnScope = (lastMessageId: string | null = null): AcpTurnScope => ({
@@ -1619,6 +1621,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         stopWaiter = resolve
         promptStopWaiters.push(resolve)
       })
+      let resolveSettled!: () => void
+      const settledPromise = new Promise<void>((resolve) => {
+        resolveSettled = resolve
+      })
       // Own scope per turn: a replacement prompt swaps `currentTurn` without
       // touching this turn's ids, so a late cancel still settles on its own.
       const previousTurn = promptOpts?.sendNow ? currentTurn : null
@@ -1628,11 +1634,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         gen,
         primaryMessageId: messageId,
         onEvent,
+        stopWaiter,
+        settledPromise,
         superseded: false,
       }
-      currentTurn = turn
-      wakeScope = newTurnScope()
-      xaiCorrelation.lastMessageId = messageId
+      const cancelPreviousBeforePrompt = launch.agentId === 'antigravity' && previousTurn !== null
+      if (!cancelPreviousBeforePrompt) {
+        currentTurn = turn
+        wakeScope = newTurnScope()
+        xaiCorrelation.lastMessageId = messageId
+      }
 
       let promptBlocks: Awaited<ReturnType<typeof buildAcpPromptContentAsync>>
       try {
@@ -1648,7 +1659,33 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           const idx = promptStopWaiters.indexOf(stopWaiter)
           if (idx >= 0) promptStopWaiters.splice(idx, 1)
         }
+        resolveSettled()
         throw err
+      }
+      if (cancelPreviousBeforePrompt && previousTurn) {
+        const prevWaiter = previousTurn.stopWaiter
+        try {
+          await activeConnection.agent.notify(methods.agent.session.cancel, {
+            sessionId: activeSession.sessionId,
+          })
+        } catch (err) {
+          log.debug('[acp-runtime] sendNow cancel failed:', err)
+        }
+        if (prevWaiter) {
+          const fallbackMs = opts.cancelStopFallbackMs ?? CANCEL_STOP_FALLBACK_MS
+          setTimeout(() => {
+            const idx = promptStopWaiters.indexOf(prevWaiter)
+            if (idx < 0) return
+            promptStopWaiters.splice(idx, 1)
+            log.warn('[acp-runtime] no agent stop %dms after sendNow cancel — settling turn locally', fallbackMs)
+            prevWaiter('cancelled')
+          }, fallbackMs).unref?.()
+        }
+        await previousTurn.settledPromise
+        currentTurn = turn
+        wakeScope = newTurnScope()
+        xaiCorrelation.lastMessageId = messageId
+        onEvent({ type: 'status_change', status: 'streaming' })
       }
       // Agents without a rules channel, and a resumed Grok session (rules are
       // applied only at creation), get the block on the first non-slash prompt.
@@ -1696,7 +1733,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         },
         (err) => {
           // The replacement never started. Put streaming back on the live turn.
-          if (previousTurn) {
+          if (previousTurn && !cancelPreviousBeforePrompt) {
             previousTurn.superseded = false
             if (currentTurn === turn) currentTurn = previousTurn
           }
@@ -1714,6 +1751,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         settled = true
         const localIds = new Set<string>([turn.primaryMessageId, ...turn.agentMsgToLocal.values()])
         if (turn.superseded) {
+          if (launch.agentId === 'antigravity' && turn.currentStepHasThinking && !turn.currentStepThinkingClosed) {
+            closeAntigravityThinkingStep(turn, turn.lastMessageId ?? messageId, onEvent)
+          }
           for (const ev of cancelOpenToolEvents(turn.lastMessageId ?? messageId, turn.openToolIds)) {
             onEvent(ev)
           }
@@ -1760,6 +1800,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           const idx = promptStopWaiters.indexOf(stopWaiter)
           if (idx >= 0) promptStopWaiters.splice(idx, 1)
         }
+        resolveSettled()
       }
     },
     async cancel() {
@@ -1797,6 +1838,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         images,
       )
       await activeConnection.agent.request(xaiExtWireMethod(XAI_INTERJECT), params)
+      if (launch.agentId === 'antigravity' && currentTurn) {
+        const targetId = currentTurn.lastMessageId ?? currentTurn.primaryMessageId
+        if (currentTurn.currentStepHasThinking && !currentTurn.currentStepThinkingClosed) {
+          closeAntigravityThinkingStep(currentTurn, targetId, currentTurn.onEvent)
+        }
+        currentTurn.stepIndex += 1
+        currentTurn.currentStepHasThinking = false
+        currentTurn.currentStepThinkingClosed = false
+        currentTurn.currentStepHasThoughtText = false
+        currentTurn.stepStartedAt = Date.now()
+      }
     },
     async compactConversation(userContext) {
       await activeConnection.agent.request(xaiExtWireMethod(XAI_COMPACT_CONVERSATION), {

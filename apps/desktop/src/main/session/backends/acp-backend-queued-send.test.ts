@@ -404,4 +404,51 @@ describe('AcpBackend queued send / interject', () => {
     await pause
     await backend.close()
   })
+
+  it('supports both steer-now (sendNow) and steer-soon (interject) for antigravity agent', async () => {
+    const calls: PromptCall[] = []
+    const interjects: string[] = []
+    setAcpRuntimeFactory(async () => manualTurnRuntime(calls, {
+      interject: async (text) => { interjects.push(text) },
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(acpStartOpts({ agentId: 'antigravity' }))
+
+    void backend.send({ content: 'first', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await backend.send({
+      content: 'steer now on antigravity',
+      clientMessageId: 'u-agy-now',
+      assistantMessageId: 'a-agy-now',
+      priority: 'next',
+    })
+    await backend.send({
+      content: 'steer soon on antigravity',
+      clientMessageId: 'u-agy-soon',
+      assistantMessageId: 'a-agy-soon',
+      priority: 'next',
+    })
+
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-agy-now', priority: 'now' })
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-agy-soon', priority: 'next' })
+
+    expect(interjects).toEqual(['steer soon on antigravity'])
+    expect(calls.map((c) => c.sendNow)).toEqual([false, true])
+    expect(calls[1]?.text).toContain('steer now on antigravity')
+
+    calls[1]?.onEvent({
+      type: 'content_delta',
+      messageId: 'a-agy-now',
+      delta: { type: 'text', text: 'replaced' },
+    })
+    expect(events.some((e) => e.type === 'queued_message_consumed' && e.clientMessageId === 'u-agy-now')).toBe(true)
+    expect(events.some((e) => e.type === 'queued_message_consumed' && e.clientMessageId === 'u-agy-soon')).toBe(true)
+
+    calls[0]?.finish()
+    calls[1]?.finish()
+    await backend.close()
+  })
 })
+

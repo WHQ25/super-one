@@ -52,7 +52,13 @@ export const acpStrategy: HarnessStrategy = {
   }),
   createSelections: (session) => (session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),
   /** The agent's catalog loads after the switch. */
-  resetFields: () => ({ selectedModel: '', modelUserChosen: false, acpModelsStatus: 'loading' }),
+  resetFields: () => ({
+    selectedModel: '',
+    modelUserChosen: false,
+    selectedEffort: undefined,
+    effortUserChosen: false,
+    acpModelsStatus: 'loading',
+  }),
   onSelect: ({ get, session, patch, prewarmAfterDispose }) => {
     void get().initializeHarness('acp')
     const applyCachedCatalog = () => {

@@ -772,15 +772,18 @@ export class Session implements SessionContract {
     const nextConfig = this.resolveProviderConfigForApiProvider?.(id)
     this._apiProviderId = id
     if (this.resolveProviderConfigForApiProvider) {
+      const effectiveNextConfig =
+        this.harnessId === 'acp' && this._acpAgentId
+          ? withAgentId(nextConfig, this._acpAgentId)
+          : nextConfig
       let changed = false
       try {
-        changed = JSON.stringify(this.providerConfig) !== JSON.stringify(nextConfig)
+        changed = JSON.stringify(this.providerConfig) !== JSON.stringify(effectiveNextConfig)
       } catch {
         changed = true
       }
       if (changed) {
-        this.providerConfig = nextConfig
-        this.applyAcpAgentToConfig()
+        this.providerConfig = effectiveNextConfig
         this._needsRebuild = true
       }
     }
@@ -886,6 +889,9 @@ export class Session implements SessionContract {
       if (request.claudeFastMode !== undefined) this.setClaudeFastMode(request.claudeFastMode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
+      if (queuedAt !== undefined && request.clientMessageId) {
+        this.forwardEvent({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
+      }
       const delivery = this.createSendDelivery(request, opts?.onInputAccepted)
       // Stable notifications must not attribute a backend continuation's
       // output during preparation to input that has not been submitted yet.

@@ -53,3 +53,12 @@ Non-obvious upstream behaviors that SuperOne depends on.
 - **SuperOne code**: `apps/desktop/src/main/acp/antigravity-protocol.ts` (`sanitizeAntigravityToolInput`, `unwrapAntigravityToolOutputText`, `normalizeAntigravitySessionUpdate`)
 - **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`
 
+## 8. Mid-turn message queueing, SteerNow (`sendNow`), and SteerSoon (`_x.ai/interject`) (observed in 1.4.5)
+
+- **Behavior**:
+  1. `agy_acp_server.par` (`AgyAdapter.prompt`) blocks in `conversation.wait_for_idle()` and raises `Concurrent receive_steps() calls are not supported` if a second `session/prompt` arrives before the active turn finishes, and emits a synthetic `AgentMessageChunk("Trajectory was cancelled.")` on `AntigravityCancelledError`.
+  2. However, the underlying `localharness_external` Go binary (`(*AgentExecutor).scheduleUserCascadeMessageRequest`) natively accepts `localharness_pb2.InputEvent(user_input=...)` over the active WebSocket while the trajectory executor is `RUNNING (2)` and queues the step into `MessageHub` (`MessageContinueCheck`) for injection at the next step boundary without interrupting the running tool/model call.
+  3. Therefore, **SteerSoon (`priority: 'next'`)** uses `AgyAdapter.ext_method("_x.ai/interject")` to call `conn._send_input_event(InputEvent(user_input=...))` without resetting `_processor` and splits the live assistant bubble in SuperOne, while **SteerNow (`priority: 'now'`)** marks the active turn `superseded`, sends `session/cancel`, waits for `previousTurn.settledPromise`, and then dispatches the replacement `session/prompt`.
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `apps/desktop/src/main/acp/antigravity-site-customize-helpers.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/session/backends/acp-backend.ts`, `apps/desktop/src/renderer/src/components/chat/ChatContent.tsx`
+- **Guard**: `apps/desktop/src/main/acp/antigravity-slash-and-usage.test.ts`, `apps/desktop/src/main/session/backends/acp-backend-queued-send.test.ts`
+

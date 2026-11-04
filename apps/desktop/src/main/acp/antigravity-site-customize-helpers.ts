@@ -102,12 +102,62 @@ def _wrap_client_for_auto_reason(client):
                     kwargs["options"] = [first.model_copy(update={"field_meta": meta})] + list(options[1:])
         return await orig_request_permission(*args, **kwargs)
 
+    orig_session_update = getattr(client, "session_update", None)
+    if callable(orig_session_update):
+        async def _patched_session_update(*args, **kwargs):
+            update = kwargs.get("update")
+            if getattr(update, "session_update", None) == "agent_message_chunk":
+                content = getattr(update, "content", None)
+                if getattr(content, "text", None) == "Trajectory was cancelled.":
+                    return None
+            return await orig_session_update(*args, **kwargs)
+    else:
+        _patched_session_update = None
+
     try:
         setattr(client, "request_permission", _patched_request_permission)
+        if _patched_session_update is not None:
+            setattr(client, "session_update", _patched_session_update)
         setattr(client, "_superone_wrapped", True)
     except Exception:
         pass
     return client
+
+
+async def _handle_antigravity_interject(adapter, server_mod, params):
+    params = params if isinstance(params, dict) else {}
+    session_id = params.get("sessionId") or params.get("session_id") or ""
+    session_info = getattr(adapter, "_sessions", {}).get(session_id)
+    if session_info is None or not getattr(session_info.agent, "is_started", False):
+        raise RuntimeError(f"Session not active: {session_id}")
+    conn = getattr(session_info.agent.conversation, "_connection", None)
+    if conn is None or getattr(conn, "is_idle", True):
+        raise RuntimeError(f"Session turn is already idle: {session_id}")
+    local_conn_mod = sys.modules.get(conn.__class__.__module__)
+    pb2 = getattr(local_conn_mod, "localharness_pb2", None)
+    to_proto = getattr(local_conn_mod, "to_proto_input_content", None)
+    if pb2 is None or to_proto is None:
+        raise RuntimeError("localharness_pb2 unavailable for interject")
+    sdk_types = server_mod.sdk_types_module
+    content_blocks = params.get("content")
+    parts = []
+    if isinstance(content_blocks, list) and content_blocks:
+        import base64 as _b64
+        for blk in content_blocks:
+            if not isinstance(blk, dict):
+                continue
+            btype = blk.get("type")
+            if btype == "text":
+                parts.append(to_proto(str(blk.get("text") or "")))
+            elif btype == "image" and blk.get("data"):
+                raw_bytes = _b64.b64decode(blk["data"])
+                mime = str(blk.get("mimeType") or blk.get("mime_type") or "image/png")
+                parts.append(to_proto(sdk_types.Image(data=raw_bytes, mime_type=mime)))
+    if not parts:
+        parts.append(to_proto(str(params.get("text") or "")))
+    event = pb2.InputEvent(user_input=pb2.UserInput(parts=parts))
+    await conn._send_input_event(event)
+    return {"accepted": True}
 `
 
 export const ANTIGRAVITY_SITE_CUSTOMIZE_LOADER = `

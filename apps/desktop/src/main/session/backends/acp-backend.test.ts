@@ -2163,4 +2163,118 @@ describe('AcpBackend', () => {
     expect(events.some((event) => event.type === 'permission_request')).toBe(false)
     await backend.close()
   })
+
+  it('records AskUserQuestion tool_use and tool_result in the assistant message when answered or dismissed', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime({
+        prompt: async (_text, messageId, onEvent) => {
+          const answer = await opts.askUserQuestion!.request({
+            toolCallId: 'interaction_ask_1',
+            questions: [
+              {
+                id: 'interaction_ask_1',
+                header: 'Question',
+                question: 'Which environment should we deploy to?',
+                multiSelect: false,
+                options: [
+                  { label: 'Staging', description: 'Staging' },
+                  { label: 'Production', description: 'Production' },
+                ],
+              },
+            ],
+          })
+          expect(answer).toEqual({
+            outcome: 'accepted',
+            answers: {
+              'Which environment should we deploy to?': ['Production'],
+            },
+            annotations: {
+              'Which environment should we deploy to?': {
+                notes: 'Deploy during maintenance window',
+              },
+            },
+          })
+          const dismissed = await opts.askUserQuestion!.request({
+            toolCallId: 'interaction_ask_2',
+            questions: [
+              {
+                id: 'interaction_ask_2',
+                header: 'Question',
+                question: 'Run smoke tests afterwards?',
+                multiSelect: false,
+                options: [
+                  { label: 'Yes', description: 'Yes' },
+                  { label: 'No', description: 'No' },
+                ],
+              },
+            ],
+          })
+          expect(dismissed).toEqual({ outcome: 'cancelled' })
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => {
+      events.push(event)
+      if (event.type === 'ask_user_question') {
+        if (event.request.requestId === 'interaction_ask_1') {
+          backend.respondToQuestion(
+            'interaction_ask_1',
+            { 'Which environment should we deploy to?': 'Production' },
+            { 'Which environment should we deploy to?': { notes: 'Deploy during maintenance window' } },
+          )
+        } else if (event.request.requestId === 'interaction_ask_2') {
+          backend.dismissQuestion('interaction_ask_2')
+        }
+      }
+    })
+    await backend.start(startOpts({ agentId: 'antigravity' }))
+    await backend.send({ content: 'deploy', assistantMessageId: 'a_ask' })
+
+    const deltas = events.filter(
+      (e): e is Extract<AgentEvent, { type: 'content_delta' }> =>
+        e.type === 'content_delta' && e.messageId === 'a_ask',
+    )
+    const completedUse1 = deltas.find(
+      (e) =>
+        e.delta.type === 'tool_use' &&
+        e.delta.toolUseId === 'interaction_ask_1' &&
+        e.delta.status === 'complete',
+    )
+    expect(completedUse1).toBeDefined()
+    expect(
+      JSON.parse((completedUse1!.delta as Extract<typeof completedUse1.delta, { type: 'tool_use' }>).input),
+    ).toMatchObject({
+      answers: { 'Which environment should we deploy to?': 'Production' },
+      annotations: {
+        'Which environment should we deploy to?': { notes: 'Deploy during maintenance window' },
+      },
+    })
+    const result1 = deltas.find(
+      (e) => e.delta.type === 'tool_result' && e.delta.toolUseId === 'interaction_ask_1',
+    )
+    expect(result1?.delta).toMatchObject({
+      type: 'tool_result',
+      toolUseId: 'interaction_ask_1',
+      summary: '"Which environment should we deploy to?"="Production"',
+      isError: false,
+    })
+
+    const result2 = deltas.find(
+      (e) => e.delta.type === 'tool_result' && e.delta.toolUseId === 'interaction_ask_2',
+    )
+    expect(result2?.delta).toMatchObject({
+      type: 'tool_result',
+      toolUseId: 'interaction_ask_2',
+      summary: 'User dismissed the question without answering.',
+      isError: false,
+    })
+    expect(captured).toBeDefined()
+    await backend.close()
+  })
 })

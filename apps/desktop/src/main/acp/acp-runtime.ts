@@ -148,7 +148,10 @@ import {
   type AntigravityTurnThinkingScope,
   type AntigravityWireTurnUsage,
 } from './antigravity-runtime-bridge'
-import { normalizeAntigravitySessionUpdate } from './antigravity-protocol'
+import {
+  isAntigravityUserInputRequest,
+  normalizeAntigravitySessionUpdate,
+} from './antigravity-protocol'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
   AgentErrorInfo,
@@ -544,6 +547,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     hasOpen: () => false,
     complete: (_reason: 'complete' | 'interrupted' = 'complete') => {},
   }
+  const antigravityInteractionThinkingCtl = {
+    beforeInteraction: () => {},
+    afterInteraction: () => {},
+  }
 
   const handleXaiExtNotification = async (
     method: string,
@@ -677,12 +684,18 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     let clientBuilder = client({ name: 'superone' })
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
         if (launch.agentId === 'antigravity') {
-          return handleAntigravityPermissionRequest(
-            ctx.params,
-            opts.permission,
-            opts.askUserQuestion,
-            currentPermissionMode,
-          )
+          const isUserInput = isAntigravityUserInputRequest(ctx.params)
+          if (isUserInput) antigravityInteractionThinkingCtl.beforeInteraction()
+          try {
+            return await handleAntigravityPermissionRequest(
+              ctx.params,
+              opts.permission,
+              opts.askUserQuestion,
+              currentPermissionMode,
+            )
+          } finally {
+            if (isUserInput) antigravityInteractionThinkingCtl.afterInteraction()
+          }
         }
         return opts.permission.request(ctx.params)
       })
@@ -1247,6 +1260,22 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   agentWakeCtl.isPromptActive = () => !!currentTurn
   agentWakeCtl.hasOpen = () => !!agentInitiatedMessageId
   agentWakeCtl.complete = completeAgentInitiated
+  antigravityInteractionThinkingCtl.beforeInteraction = () => {
+    const msgId = xaiMessageId?.()
+    if (!msgId) return
+    closeAntigravityThinkingStep(scope(), msgId, deliver)
+  }
+  antigravityInteractionThinkingCtl.afterInteraction = () => {
+    const msgId = xaiMessageId?.()
+    if (!msgId) return
+    advanceAntigravityThinkingStepAfterTools(
+      activeSession.sessionId,
+      msgId,
+      scope(),
+      xaiCorrelation,
+      deliver,
+    )
+  }
 
   void (async () => {
     let consecutiveErrors = 0

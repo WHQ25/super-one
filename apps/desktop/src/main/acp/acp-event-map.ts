@@ -25,6 +25,7 @@ import {
 } from '@superone/shared/tool-ui'
 import { extractModelConfig, modesFromConfigOptions } from './acp-config'
 import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
+import { normalizeGrokQuestions } from './acp-xai-extensions'
 
 export interface AcpMapContext {
   messageId: string
@@ -527,7 +528,19 @@ function normalizeInput(
     }
     case 'AskUserQuestion': {
       const out: Record<string, unknown> = {}
-      if (Array.isArray(raw.questions)) out.questions = raw.questions
+      if (Array.isArray(raw.questions)) {
+        const normalized = normalizeGrokQuestions(raw.questions)
+        out.questions = normalized.length > 0 ? normalized : raw.questions
+      }
+      if (raw.answers && typeof raw.answers === 'object' && !Array.isArray(raw.answers)) {
+        out.answers = raw.answers
+      }
+      if (raw.annotations && typeof raw.annotations === 'object' && !Array.isArray(raw.annotations)) {
+        out.annotations = raw.annotations
+      }
+      if (typeof raw.previewFormat === 'string' && raw.previewFormat) {
+        out.previewFormat = raw.previewFormat
+      }
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'TaskOutput': {

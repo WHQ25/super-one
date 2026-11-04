@@ -9,6 +9,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
 import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
@@ -987,10 +988,84 @@ export class AcpBackend implements SessionBackend {
       log.warn('[AcpBackend] ask_user_question with empty questions — cancelling')
       return Promise.resolve(formatGrokAskUserResponse({ kind: 'cancelled' }))
     }
+    const openMessageId = this.liveAssistantId ?? this.currentMessageId
+    if (openMessageId) {
+      this.emit({
+        type: 'content_delta',
+        messageId: openMessageId,
+        delta: {
+          type: 'tool_use',
+          toolName: 'AskUserQuestion',
+          toolUseId: requestId,
+          input: JSON.stringify({ questions: request.questions }),
+          status: 'streaming',
+        },
+      })
+    }
     const event: AgentEvent = { type: 'ask_user_question', request }
     return new Promise((resolve) => {
       this.pendingQuestions.set(requestId, {
-        resolve: (answer) => resolve(formatGrokAskUserResponse(answer)),
+        resolve: (answer) => {
+          const messageId = this.liveAssistantId ?? this.currentMessageId ?? openMessageId
+          if (messageId) {
+            if (answer.kind === 'accepted') {
+              const updatedInput = buildAnsweredQuestionInput({
+                questions: request.questions,
+                answers: answer.answers,
+                annotations: answer.annotations,
+              })
+              const summary =
+                Object.entries(answer.answers)
+                  .filter(([, a]) => Boolean(a))
+                  .map(([q, a]) => `"${q}"="${a}"`)
+                  .join(', ') || 'Answered'
+              this.emit({
+                type: 'content_delta',
+                messageId,
+                delta: {
+                  type: 'tool_use',
+                  toolName: 'AskUserQuestion',
+                  toolUseId: requestId,
+                  input: JSON.stringify(updatedInput),
+                  status: 'complete',
+                },
+              })
+              this.emit({
+                type: 'content_delta',
+                messageId,
+                delta: {
+                  type: 'tool_result',
+                  toolUseId: requestId,
+                  summary,
+                  isError: false,
+                },
+              })
+            } else {
+              this.emit({
+                type: 'content_delta',
+                messageId,
+                delta: {
+                  type: 'tool_use',
+                  toolName: 'AskUserQuestion',
+                  toolUseId: requestId,
+                  input: JSON.stringify({ questions: request.questions }),
+                  status: 'complete',
+                },
+              })
+              this.emit({
+                type: 'content_delta',
+                messageId,
+                delta: {
+                  type: 'tool_result',
+                  toolUseId: requestId,
+                  summary: 'User dismissed the question without answering.',
+                  isError: false,
+                },
+              })
+            }
+          }
+          resolve(formatGrokAskUserResponse(answer))
+        },
         event,
       })
       this.emit(event)

@@ -405,4 +405,51 @@ describe('applyContentDelta: streamed tool output', () => {
     expect(finished[0]).not.toHaveProperty('liveOutput')
     expect(finished[0]).toMatchObject({ status: 'complete' })
   })
+
+  it('preserves AskUserQuestion answers across sparse tool_use updates and deduplicates tool_result by toolUseId', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolName: 'AskUserQuestion',
+      toolUseId: 'interaction_1',
+      input: JSON.stringify({
+        questions: [{ question: 'Target?', header: 'Q', options: [], multiSelect: false }],
+        answers: { 'Target?': 'Production' },
+        annotations: { 'Target?': { notes: 'blue-green' } },
+      }),
+      status: 'complete',
+    })
+    content = applyContentDelta(content, {
+      type: 'tool_result',
+      toolUseId: 'interaction_1',
+      summary: '"Target?"="Production"',
+      isError: false,
+    })
+    // Subsequent sparse ACP tool_call_update without answers and generic 'done' result
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolName: 'AskUserQuestion',
+      toolUseId: 'interaction_1',
+      input: JSON.stringify({
+        questions: [{ question: 'Target?', header: 'Q', options: [], multiSelect: false }],
+      }),
+      status: 'complete',
+    })
+    content = applyContentDelta(content, {
+      type: 'tool_result',
+      toolUseId: 'interaction_1',
+      summary: 'done',
+      isError: false,
+    })
+    expect(content).toHaveLength(2)
+    expect(JSON.parse((content[0] as Extract<ContentBlock, { type: 'tool_use' }>).input)).toMatchObject({
+      answers: { 'Target?': 'Production' },
+      annotations: { 'Target?': { notes: 'blue-green' } },
+    })
+    expect(content[1]).toMatchObject({
+      type: 'tool_result',
+      toolUseId: 'interaction_1',
+      summary: '"Target?"="Production"',
+    })
+  })
 })

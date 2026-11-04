@@ -123,6 +123,7 @@ export function extractAntigravityUserInputQuestion(request: RequestPermissionRe
   const rawTitle = typeof request.toolCall.title === 'string' && request.toolCall.title.trim() ? request.toolCall.title.trim() : 'Choose an option.'
   const questionText = rawTitle.length > TOOL_TEXT_LIMIT ? copyBoundedText(`${rawTitle.slice(0, TOOL_TEXT_LIMIT - 3)}...`) : rawTitle
   return {
+    toolCallId: request.toolCall.toolCallId,
     questions: [{
       id: request.toolCall.toolCallId,
       header: 'Question',

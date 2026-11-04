@@ -85,6 +85,16 @@ export function mergeToolUseInputJson(existing: unknown, incoming: unknown): str
       merged[key] = prev[key]
     }
   }
+  for (const key of ['answers', 'annotations', 'previewFormat'] as const) {
+    const n = merged[key]
+    const empty =
+      n == null ||
+      n === '' ||
+      (typeof n === 'object' && !Array.isArray(n) && Object.keys(n as Record<string, unknown>).length === 0)
+    if (empty && prev[key] != null && prev[key] !== '') {
+      merged[key] = prev[key]
+    }
+  }
   if (!asString) return merged
   try {
     return JSON.stringify(merged)
@@ -264,6 +274,29 @@ export function applyContentDelta(
       const { liveOutput: _final, ...call } = b
       return { ...call, status: 'complete' as const }
     })
+    const existingResultIdx = updated.findIndex(
+      (b) => isToolResultBlock(b) && b.toolUseId === delta.toolUseId,
+    )
+    if (existingResultIdx !== -1) {
+      const existingResult = updated[existingResultIdx]
+      if (existingResult.type === 'tool_result' && result.type === 'tool_result') {
+        const prevSummary = existingResult.summary?.trim() || ''
+        const nextSummary = result.summary?.trim() || ''
+        const keepPrevSummary =
+          Boolean(prevSummary) &&
+          (nextSummary === '' ||
+            nextSummary === 'done' ||
+            (prevSummary.includes('"="') && !nextSummary.includes('"="')) ||
+            prevSummary === 'User dismissed the question without answering.')
+        const mergedResult: ContentBlock = {
+          ...existingResult,
+          ...result,
+          summary: keepPrevSummary ? existingResult.summary : result.summary,
+        }
+        return updated.map((b, i) => (i === existingResultIdx ? mergedResult : b))
+      }
+      return updated.map((b, i) => (i === existingResultIdx ? result : b))
+    }
     return [...updated, result]
   }
   return [...content, delta]

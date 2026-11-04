@@ -22,9 +22,9 @@ Non-obvious upstream behaviors that SuperOne depends on.
 
 ## 4. `interaction_*` and `agent_ask_user` permission request payload (observed in 1.3.0 / 1.4.5)
 
-- **Behavior**: When the agent asks the user clarifying questions, it sends a `session/request_permission` request with `toolCallId` prefixed by `interaction_` (or `toolCall.rawInput.tool_name === 'agent_ask_user'`).
-- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-protocol.ts`, `apps/desktop/src/main/acp/acp-permission-map.ts`, `apps/desktop/src/main/acp/acp-permission-preapprove.ts`
-- **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`
+- **Behavior**: When the agent asks the user clarifying questions, it sends a `session/request_permission` request with `toolCallId` prefixed by `interaction_` (or `toolCall.rawInput.tool_name === 'agent_ask_user'`) without a corresponding `tool_call` / `tool_call_update` session update. `AcpBackend.handleAskUserQuestion` emits streaming and completed `AskUserQuestion` `tool_use` + `tool_result` `content_delta` events so the question and user response render in the chat transcript, while `acp-runtime.ts` closes and advances the Antigravity thinking step around the interaction.
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-protocol.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/session/backends/acp-backend.ts`, `apps/desktop/src/main/acp/acp-permission-map.ts`, `apps/desktop/src/main/acp/acp-permission-preapprove.ts`
+- **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`, `apps/desktop/src/main/session/backends/acp-backend.test.ts`
 
 ## 5. Per-turn real-time token usage and SQLite `steps` schema evolution (observed in 1.4.5)
 

@@ -99,14 +99,23 @@ export function normalizeGrokQuestions(raw: unknown): UserQuestion[] {
     if (!question) continue
     const optionsRaw = Array.isArray(q.options) ? q.options : []
     const options = optionsRaw
-      .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object' && !Array.isArray(o))
-      .map((o) => ({
-        label: typeof o.label === 'string' ? o.label : String(o.label ?? ''),
-        description: typeof o.description === 'string' ? o.description : '',
-        ...(typeof o.preview === 'string' && o.preview ? { preview: o.preview } : {}),
-      }))
+      .map((o) => {
+        if (typeof o === 'string') {
+          return { label: o.trim(), description: '' }
+        }
+        if (o && typeof o === 'object' && !Array.isArray(o)) {
+          const obj = o as Record<string, unknown>
+          return {
+            label: typeof obj.label === 'string' ? obj.label : String(obj.label ?? ''),
+            description: typeof obj.description === 'string' ? obj.description : '',
+            ...(typeof obj.preview === 'string' && obj.preview ? { preview: obj.preview } : {}),
+          }
+        }
+        return { label: '', description: '' }
+      })
       .filter((o) => o.label.length > 0)
-    const multiSelect = q.multiSelect === true || q.multi_select === true
+    const multiSelect =
+      q.multiSelect === true || q.multi_select === true || q.is_multi_select === true
     const header =
       typeof q.header === 'string' && q.header.trim()
         ? q.header.trim()

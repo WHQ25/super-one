@@ -206,6 +206,7 @@ describe('antigravity-protocol', () => {
     expect(decideAcpPermission(request, 'sess-1')).toEqual({ kind: 'prompt' })
 
     const question = extractAntigravityUserInputQuestion(request)
+    expect(question?.toolCallId).toBe('interaction_ask_1')
     expect(question?.questions).toHaveLength(1)
     expect(question?.questions?.[0]?.question).toBe('Which deployment target should we use?')
     expect(question?.questions?.[0]?.options?.map((o) => o.label)).toEqual([

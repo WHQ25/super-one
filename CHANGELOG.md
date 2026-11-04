@@ -15,10 +15,11 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Antigravity is its own ACP harness. Enabling it downloads that runtime, and the account is separate from Grok.
+- Antigravity is its own ACP harness on desktop and on the phone. Enabling it downloads that runtime, and the account is separate from Grok. The phone uses that agent's permission modes, models, and slash commands. Steer Now cancels the live turn and sends the queued message; Steer Soon injects it at the next safe point. A finished tool row shows the MCP result, including output that was spilled to a file, and widget arguments are kept. The usage footer counts newly uploaded input. An empty reasoning block is not shown. A queued message leaves the queue when the turn starts.
 - The Grok usage meter shows the login email.
 - Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
 - One desktop process per userData profile, so a second Windows shortcut does not claim the same remote session. A named instance and a side-by-side alpha still start.
+- A markdown table can be transposed so each record reads down one column. Header marks stay on the cells that had them, and the original first column stays body text. Original Layout restores the table.
 
 ### Fixed
 
@@ -29,6 +30,23 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A phone learns when its session control is revoked, and the next send asks for control again.
 - A collapsed widget stays folded when the transcript unloads it.
 - A remote draft stays hidden once the node assigns the session id.
+- Adding a project grants Grok folder trust without a dialog. Project rules, MCP, hooks, and skills still load.
+- Switching to an ACP harness clears an effort level that harness does not offer.
+
+## [0.77.0-alpha.1] - 2026-11-04
+
+### Added
+
+- A markdown table can be transposed so each record reads down one column. Header marks stay on the cells that had them, and the original first column stays body text. Original Layout restores the table.
+- Antigravity accepts Steer Now and Steer Soon during a turn. Steer Now cancels the live turn and sends the queued message. Steer Soon injects it at the next safe point and leaves the tool that is already running. A cancelled turn does not show "Trajectory was cancelled."
+
+### Fixed
+
+- Adding a project grants Grok folder trust without a dialog. Project rules, MCP, hooks, and skills still load.
+- The phone can select Antigravity. Its permission modes, models, and slash commands stay that agent's. Enabling it in desktop settings reloads the agent list and its models.
+- A finished Antigravity tool call shows the MCP result instead of the preview summary. A standard text envelope unwraps, and output that was spilled to a file is read back. widget_show keeps the arguments it was given.
+- Antigravity usage counts newly uploaded input and leaves cache reads out. An empty reasoning block is removed.
+- Switching to an ACP harness clears an effort level that harness does not offer. A queued message leaves the queue when Antigravity starts it.
 
 ## [0.77.0-alpha] - 2026-11-04
 

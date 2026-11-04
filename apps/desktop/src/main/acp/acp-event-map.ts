@@ -604,21 +604,44 @@ function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): Nor
   const metaTool = typeof mcpMeta.tool === 'string' ? mcpMeta.tool.trim() : ''
   const rawTitle = typeof tool.title === 'string' ? tool.title.trim() : ''
   const parsedFromTitle = rawTitle ? parseMcpToolName(rawTitle) : null
-  const serverName = metaServer || parsedFromTitle?.serverName || ''
-  const mcpToolName = metaTool || parsedFromTitle?.mcpToolName || ''
+  const rawServer =
+    typeof raw.server === 'string'
+      ? raw.server.trim()
+      : typeof raw.ServerName === 'string'
+        ? raw.ServerName.trim()
+        : ''
+  const rawTool =
+    typeof raw.tool === 'string'
+      ? raw.tool.trim()
+      : typeof raw.ToolName === 'string'
+        ? raw.ToolName.trim()
+        : ''
+  const serverName = metaServer || parsedFromTitle?.serverName || rawServer || ''
+  const mcpToolName = metaTool || parsedFromTitle?.mcpToolName || rawTool || ''
   if (!serverName || !mcpToolName) return null
   const toolName = claudeMcpToolRuleName(serverName, mcpToolName)
   const innerArgs =
     raw.arguments && typeof raw.arguments === 'object' && !Array.isArray(raw.arguments)
       ? { ...(raw.arguments as Record<string, unknown>) }
-      : { ...raw }
+      : raw.Arguments && typeof raw.Arguments === 'object' && !Array.isArray(raw.Arguments)
+        ? { ...(raw.Arguments as Record<string, unknown>) }
+        : { ...raw }
   delete innerArgs.arguments
+  delete innerArgs.Arguments
+  const rawSummary =
+    typeof raw.toolSummary === 'string' && raw.toolSummary.trim()
+      ? raw.toolSummary.trim()
+      : typeof raw.toolAction === 'string' && raw.toolAction.trim()
+        ? raw.toolAction.trim()
+        : undefined
   const promptSummary =
     meta && typeof meta === 'object' && typeof meta.prompt === 'string' && meta.prompt.trim()
       ? meta.prompt.trim()
-      : rawTitle && !parseMcpToolName(rawTitle)
-        ? rawTitle
-        : undefined
+      : rawSummary
+        ? rawSummary
+        : rawTitle && !parseMcpToolName(rawTitle)
+          ? rawTitle
+          : undefined
   return {
     toolName,
     input: innerArgs,
@@ -763,12 +786,30 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
     }
   }
   if (terminalOutput && parts.length === 0) parts.push(terminalOutput)
+  const normalized = normalizeAcpTool(update)
+  const toolName = normalized?.toolName
+  const isMcp = Boolean(toolName && parseMcpToolName(toolName))
+  const toolSummary = normalized?.toolSummary?.trim()
+  const rawInput = asRecord(update.rawInput)
+  const inputSummary = pickString(rawInput, ['toolSummary', 'toolAction', 'description'])?.trim()
+  const rawTitle = typeof update.title === 'string' ? update.title.trim() : ''
+  const isPreviewText = parts.length === 1 && (
+    (Boolean(toolSummary) && parts[0].trim() === toolSummary) ||
+    (Boolean(rawTitle) && parts[0].trim() === rawTitle) ||
+    (Boolean(inputSummary) && parts[0].trim() === inputSummary)
+  )
+
   if (update.rawOutput != null) {
     const formatted = formatAcpRawOutput(update.rawOutput)
-    // Prefer unwrapped rawOutput when content parts are empty OR still look like JSON envelopes
-    if (parts.length === 0) {
-      parts.push(formatted)
-    } else if (parts.every((p) => p.trimStart().startsWith('{') || p.trimStart().startsWith('['))) {
+    // Prefer unwrapped rawOutput when content parts are empty, still look like JSON envelopes,
+    // or only contain the initial tool preview summary/title. For MCP tools, rawOutput is always
+    // the canonical execution result.
+    if (
+      parts.length === 0 ||
+      isMcp ||
+      isPreviewText ||
+      parts.every((p) => p.trimStart().startsWith('{') || p.trimStart().startsWith('['))
+    ) {
       parts.length = 0
       parts.push(formatted)
     }
@@ -776,7 +817,6 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
   const summary = parts
     .map((p) => formatAcpRawOutput(p))
     .join('\n')
-  const toolName = normalizeAcpTool(update)?.toolName
   const capped = shouldKeepFullToolResult(summary, toolName) ? summary : summary.slice(0, 4000)
   const failed = update.status === 'failed'
   const text = withGrokAutoDenyPrefix(capped || (failed ? 'failed' : 'done'), failed)

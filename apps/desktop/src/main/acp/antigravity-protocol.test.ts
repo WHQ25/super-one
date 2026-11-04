@@ -487,6 +487,47 @@ describe('antigravity-protocol', () => {
     ])
   })
 
+  it('replaces preview toolSummary with real MCP result in completed session update', () => {
+    const previewSummary = 'Read session metadata'
+    const realResultJson = JSON.stringify({
+      session: { id: 's-123', title: 'Test Session' },
+    })
+    const completedUpdate = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_read_meta',
+      title: 'Session Meta Read',
+      kind: 'other',
+      status: 'completed',
+      rawInput: {
+        ServerName: 'superone',
+        ToolName: 'session_read',
+        Arguments: { sessionId: 's-123', view: 'meta' },
+        toolAction: 'Reading session',
+        toolSummary: previewSummary,
+      },
+      rawOutput: {
+        content: [{ type: 'text', text: realResultJson }],
+      },
+      content: [{ type: 'content', content: { type: 'text', text: previewSummary } }],
+    } as unknown as SessionUpdate)
+
+    expect(completedUpdate.content).toEqual([
+      { type: 'content', content: { type: 'text', text: realResultJson } },
+    ])
+
+    const mapped = mapSessionUpdate(completedUpdate, { messageId: 'msg_m1' })
+    const toolResultDelta = mapped.find(
+      (ev) => ev.type === 'content_delta' && ev.delta.type === 'tool_result',
+    ) as Extract<AgentEvent, { type: 'content_delta' }> | undefined
+
+    expect(toolResultDelta?.delta).toEqual({
+      type: 'tool_result',
+      toolUseId: 'call_read_meta',
+      summary: realResultJson,
+      isError: false,
+    })
+  })
+
   it('decodes Antigravity protobuf step metadata and planner thinking payloads', () => {
     const metadataHex =
       '0a0b088be9d7ce0610c8de9725320b088de9d7ce0610f89eb24b420b088de9d7ce061088ac884d4a2b0a154d4f44454c5f504c414345484f4c4445525f4d333710918401181f22083a060801109184014847501fc2011d084720c0843d2a00421367656d696e692d332e312d70726f2d68696768'

@@ -541,6 +541,20 @@ function formatCursorGlobResult(obj: Record<string, unknown>): string {
   return (obj.files as string[]).join('\n')
 }
 
+function isStandardMcpResult(obj: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(obj.content)
+    && obj.content.length > 0
+    && obj.content.some(
+      (c) =>
+        c
+        && typeof c === 'object'
+        && !Array.isArray(c)
+        && ((c as Record<string, unknown>).type === 'text' || typeof (c as Record<string, unknown>).text === 'string'),
+    )
+  )
+}
+
 function isAgentOutputEnvelope(obj: Record<string, unknown>): boolean {
   const t = obj.type
   return (
@@ -559,6 +573,7 @@ function isAgentOutputEnvelope(obj: Record<string, unknown>): boolean {
     || isShellCommandResult(obj)
     || isCursorGrepResult(obj)
     || isCursorGlobResult(obj)
+    || isStandardMcpResult(obj)
   )
 }
 
@@ -593,6 +608,16 @@ export function formatAgentToolOutput(raw: unknown): string {
     if (typeof obj.output === 'object') {
       const values = Object.values(obj.output as Record<string, unknown>)
       if (values.length === 1 && typeof values[0] === 'string') return values[0]
+    }
+  }
+
+  if (obj.type !== 'ListDir' && obj.type !== 'list_dir' && obj.type !== 'LS' && isStandardMcpResult(obj)) {
+    const textParts = (obj.content as Array<Record<string, unknown>>)
+      .filter((c) => c && typeof c === 'object' && !Array.isArray(c) && (c.type === 'text' || typeof c.text === 'string'))
+      .map((c) => (typeof c.text === 'string' ? c.text : ''))
+      .filter((t) => t.length > 0)
+    if (textParts.length > 0) {
+      return textParts.join('\n')
     }
   }
 

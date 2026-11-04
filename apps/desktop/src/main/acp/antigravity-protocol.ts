@@ -5,7 +5,7 @@ import type { PermissionMode } from '@superone/shared/agent-types'
 import { looksLikeComputerUseOutline } from '@superone/shared/computer-use-result-shape'
 import { looksLikeSessionArchiveToon } from '@superone/shared/session-archive-result-shape'
 import { BUILT_IN_SUPERONE_TOOL_NAMES, COMPUTER_USE_TOOL_NAMES, MINIAPP_CALL_BARE_NAME, MINIAPP_LIST_BARE_NAME } from '@superone/shared/superone-host-owned-tools'
-import { claudeMcpToolRuleName, parseMcpToolName, uiToolNameFromId } from '@superone/shared/tool-ui'
+import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, uiToolNameFromId } from '@superone/shared/tool-ui'
 import type { GrokAskUserQuestionParams } from './acp-xai-extensions'
 
 const TOOL_TEXT_LIMIT = 8_000
@@ -469,9 +469,16 @@ export function normalizeAntigravitySessionUpdate(update: SessionUpdate): Sessio
   }
   const normalizedIn = normalizeAntigravityRawInput(update.rawInput, sanitizedOutput, titleStr, metaVal, update.kind)
   const contentBudget: ToolPayloadBudget = { nodes: 512, text: 512_000, preserveText: isMcp, unwrapOutput: true }
-  const sanitizedContent = Array.isArray(update.content)
+  let sanitizedContent = Array.isArray(update.content)
     ? (sanitizeToolValue(update.content, contentBudget, 0) as typeof update.content)
     : update.content
+
+  if (isMcp && (update.status === 'completed' || update.status === 'failed') && sanitizedOutput !== undefined) {
+    const outText = typeof sanitizedOutput === 'string'
+      ? unwrapAntigravityToolOutputText(sanitizedOutput)
+      : formatAgentToolOutput(sanitizedOutput)
+    sanitizedContent = [{ type: 'content', content: { type: 'text', text: outText } }]
+  }
 
   const nextKind =
     (update.kind === undefined || update.kind === null) && normalizedIn.inferredKind ? normalizedIn.inferredKind : update.kind

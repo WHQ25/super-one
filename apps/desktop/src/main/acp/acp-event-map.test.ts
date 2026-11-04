@@ -854,6 +854,36 @@ describe('formatAcpRawOutput', () => {
     })
   })
 
+  it('unwraps standard MCP tool CallToolResult envelopes into clean payload text', () => {
+    expect(formatAcpRawOutput({
+      content: [{ type: 'text', text: '{"session":{"id":"123"}}' }],
+    })).toBe('{"session":{"id":"123"}}')
+  })
+
+  it('supersedes preview tool summary in update.content when rawOutput is provided', () => {
+    const rawResult = JSON.stringify({ session: { id: 's-123' } })
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_read',
+      title: 'Session Meta Read',
+      status: 'completed',
+      rawInput: {
+        ServerName: 'superone',
+        ToolName: 'session_read',
+        Arguments: { sessionId: 's-123', view: 'meta' },
+        toolSummary: 'Read session metadata',
+      },
+      content: [{ type: 'content', content: { type: 'text', text: 'Read session metadata' } }],
+      rawOutput: {
+        content: [{ type: 'text', text: rawResult }],
+      },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({
+      type: 'content_delta',
+      delta: { type: 'tool_result', toolUseId: 'call_read', summary: rawResult, isError: false },
+    })
+  })
 
   it('unwraps ListDir JSON even when delivered as content text (not only rawOutput)', () => {
     const tree = '- /tmp/a/\n  - b.ts\n'

@@ -221,6 +221,16 @@ describe('formatAgentToolOutput', () => {
     })).toBe(tree)
   })
 
+  it('unwraps standard MCP CallToolResult content envelopes', () => {
+    expect(formatAgentToolOutput({
+      content: [{ type: 'text', text: '{"session":{"id":"s1"}}' }],
+    })).toBe('{"session":{"id":"s1"}}')
+
+    expect(formatAgentToolOutput(JSON.stringify({
+      content: [{ type: 'text', text: '# Session\n\nNotes' }],
+    }))).toBe('# Session\n\nNotes')
+  })
+
   it('decodes GrepSearch byte arrays without Buffer', () => {
     const bytes = Array.from(new TextEncoder().encode('match: line 1\n'))
     expect(formatAgentToolOutput({ type: 'GrepSearch', stdout: bytes })).toBe('match: line 1\n')

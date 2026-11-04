@@ -155,7 +155,7 @@ describe('collaboration grants + mailbox', () => {
 
   it('names the ACP row after the agent behind it, not the protocol', () => {
     const { collab } = bootCollab()
-    const acp = collab.listProfiles().find((p) => p.id === 'acp-base')
+    const acp = collab.listProfiles().find((p) => p.id === 'acp-grok')
     expect(acp).toMatchObject({
       harnessId: 'acp',
       acpAgentId: 'grok-build',

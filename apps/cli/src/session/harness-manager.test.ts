@@ -152,7 +152,7 @@ describe('HarnessManager', () => {
       const manager = new HarnessManager(db)
       manager.enableSimulatedOverlay()
       expect(manager.readySessionHarnessIds()).toEqual(
-        NODE_HARNESS_DEFINITIONS.map(({ sessionHarnessId }) => sessionHarnessId),
+        [...new Set(NODE_HARNESS_DEFINITIONS.map(({ sessionHarnessId }) => sessionHarnessId))],
       )
       db.close()
     }

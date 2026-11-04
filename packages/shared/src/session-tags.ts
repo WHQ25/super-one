@@ -167,12 +167,13 @@ export function planSessionTagUpdate(
 ): { error: string } | { op: SessionTagOp; targets: string[] } {
   const op = parseSessionTagOp(args)
   if ('error' in op) return { error: op.error }
-  const hasIds = Array.isArray(args.sessionIds) && args.sessionIds.length > 0
+  const rawIds = args.sessionIds
+  const hasIds = Array.isArray(rawIds) && rawIds.length > 0
   const single = typeof args.sessionId === 'string' ? args.sessionId.trim() : ''
   if (hasIds && single) return { error: 'Pass sessionId or sessionIds, not both.' }
   if (!hasIds) return { op, targets: [single || fallbackSessionId] }
   if (op.kind !== 'add') return { error: 'sessionIds only works with add (not set or remove).' }
-  const targets = args.sessionIds!
+  const targets = rawIds
     .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
     .map((id) => id.trim())
   if (targets.length === 0) return { error: 'sessionIds is empty.' }

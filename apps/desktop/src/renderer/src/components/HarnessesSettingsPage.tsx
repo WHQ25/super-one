@@ -46,6 +46,7 @@ import {
 } from '@superone/shared/environment/harness-installation'
 import type { HarnessId } from '@superone/shared/session-types'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
+import { refreshAcpResourcesAfterToggle } from '@/harness-ui/acp/refresh-after-toggle'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type HarnessConfigSection } from '@/stores/app'
 import { ClaudeCodeTextInline } from '@/components/harness/ClaudeCodeTextInline'
@@ -485,23 +486,8 @@ export function HarnessesSettingsPage() {
           toast.success(t('settings.harnesses.disabled', { id: item.label }))
         }
         await refreshCatalog()
-        if (item.provider === 'acp') {
-          try {
-            const listed = await window.app.listAcpAgents?.()
-            if (listed) useChatStore.getState().setHarnessResources('acp', listed)
-          } catch {
-            /* best-effort */
-          }
-          if (enabled && item.acpAgentId) {
-            void window.app.refreshAcpModels?.(item.acpAgentId)
-              .then((fresh) => {
-                if (fresh) useChatStore.getState().setHarnessResources('acp', fresh)
-              })
-              .catch(() => {
-                /* best-effort */
-              })
-          }
-        } else if (enabled) {
+        const refreshedAcp = await refreshAcpResourcesAfterToggle(item.provider, item.acpAgentId, enabled)
+        if (!refreshedAcp && enabled) {
           void useChatStore.getState().initializeHarness(item.provider, { force: true })
         }
       } else {

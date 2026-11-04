@@ -365,7 +365,13 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
             {dirtyDot}
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="start">
+        <PopoverContent
+          className="w-80 overflow-y-auto p-0"
+          align="start"
+          side="top"
+          avoidCollisions={false}
+          style={{ maxHeight: 'var(--radix-popper-available-height)' }}
+        >
           <WorktreeStatusHeader
             icon={!isActive ? MainCheckoutIcon : activeIsDetached ? GitCommit : GitBranch}
             label={!isActive
@@ -399,7 +405,7 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
           {!isActive && activeSessionId && currentFolder && (
             <WorktreeForkSection
               sessionId={activeSessionId}
-              cwd={currentFolder}
+              dirty={mainDirty}
               onForked={() => setPopoverOpen(false)}
             />
           )}
@@ -423,7 +429,13 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
+      <PopoverContent
+        className="w-80 overflow-y-auto p-0"
+        align="start"
+        side="top"
+        avoidCollisions={false}
+        style={{ maxHeight: 'var(--radix-popper-available-height)' }}
+      >
         <div className="flex flex-col">
           <div className="border-b px-3 py-2">
             <input

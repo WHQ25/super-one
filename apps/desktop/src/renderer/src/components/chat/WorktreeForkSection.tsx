@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitFork, Loader2 } from 'lucide-react'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
@@ -9,8 +9,12 @@ import { DiffStat } from './DiffStat'
 interface WorktreeForkSectionProps {
   /** SuperOne id of the session to fork. */
   sessionId: string
-  /** Working directory of the source session — used to preview what gets copied. */
-  cwd: string
+  /**
+   * Checkout diff already known to the workdir chip. The carry row has to be
+   * in the first paint of this panel, so the tab-height animation lands on
+   * the final size instead of growing again after a git read.
+   */
+  dirty?: GitDirtyStatus
   onForked: () => void
 }
 
@@ -20,20 +24,11 @@ interface WorktreeForkSectionProps {
  * included or excluded before creating the fork. Only shown for sessions
  * running in the main repo.
  */
-export function WorktreeForkSection({ sessionId, cwd, onForked }: WorktreeForkSectionProps) {
+export function WorktreeForkSection({ sessionId, dirty, onForked }: WorktreeForkSectionProps) {
   const { t } = useTranslation()
-  const [dirty, setDirty] = useState<GitDirtyStatus | undefined>()
   const [carryLocalChanges, setCarryLocalChanges] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    window.app.getGitInfo(cwd).then((info) => {
-      if (!cancelled) setDirty(info?.dirty)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [cwd])
 
   const submit = async () => {
     if (busy) return

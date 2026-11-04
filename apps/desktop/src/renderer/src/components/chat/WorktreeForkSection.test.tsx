@@ -19,9 +19,7 @@ const forkSessionMock = vi.fn(async () => ({ ok: true as const, sessionId: 'fork
 beforeEach(() => {
   realApp = (window as unknown as Record<string, unknown>).app
   realEnvironment = (window as unknown as Record<string, unknown>).environment
-  ;(window as unknown as Record<string, unknown>).app = {
-    getGitInfo: vi.fn(async () => ({ dirty: { files: 2, insertions: 5, deletions: 1 } })),
-  }
+  ;(window as unknown as Record<string, unknown>).app = {}
   ;(window as unknown as Record<string, unknown>).environment = { forkSession: forkSessionMock }
 })
 
@@ -31,11 +29,23 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('WorktreeForkSection local changes', () => {
-  it('lets the user exclude local changes from the new worktree', async () => {
-    render(<WorktreeForkSection sessionId="source-session" cwd="/repo" onForked={() => {}} />)
+const DIRTY = { files: 2, insertions: 5, deletions: 1 }
 
-    const carryChanges = await screen.findByRole('checkbox', { name: /carry local changes/i })
+describe('WorktreeForkSection local changes', () => {
+  it('shows the carry row from the diff it was given, without reading git again', () => {
+    render(<WorktreeForkSection sessionId="source-session" dirty={DIRTY} onForked={() => {}} />)
+    expect(screen.getByRole('checkbox', { name: /carry local changes/i })).toBeChecked()
+  })
+
+  it('omits the carry row when the checkout is clean', () => {
+    render(<WorktreeForkSection sessionId="source-session" dirty={{ files: 0, insertions: 0, deletions: 0 }} onForked={() => {}} />)
+    expect(screen.queryByRole('checkbox', { name: /carry local changes/i })).toBeNull()
+  })
+
+  it('lets the user exclude local changes from the new worktree', async () => {
+    render(<WorktreeForkSection sessionId="source-session" dirty={DIRTY} onForked={() => {}} />)
+
+    const carryChanges = screen.getByRole('checkbox', { name: /carry local changes/i })
     expect(carryChanges).toBeChecked()
 
     fireEvent.click(carryChanges)

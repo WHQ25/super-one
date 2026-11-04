@@ -359,9 +359,25 @@ describe('merged status chip', () => {
     await user.click(screen.getByRole('tab', { name: 'Worktree' }))
     expect(screen.queryByPlaceholderText('Search worktrees…')).toBeNull()
     expect(screen.getByText('Fork to new worktree')).toBeTruthy()
+    // The shorter fork panel must stay above the chip. Bottom placement
+    // covers the terminal once that panel fits in the space under the bar.
+    expect(document.querySelector('[data-slot="popover-content"]')?.getAttribute('data-side')).toBe('top')
 
     await user.click(screen.getByRole('tab', { name: 'Local' }))
     expect(screen.getByPlaceholderText('Search or create branch…')).toBeTruthy()
+  })
+
+  it('includes carry local changes in the worktree panel on the tab switch', async () => {
+    getGitInfo.mockResolvedValue({ branch: 'main', dirty: { files: 5, insertions: 1182, deletions: 3 } })
+    markSessionStarted()
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    expect(await screen.findByText(/uncommitted/i)).toBeTruthy()
+
+    await user.click(screen.getByRole('tab', { name: 'Worktree' }))
+    expect(screen.getByRole('checkbox', { name: /carry local changes/i })).toBeChecked()
+    expect(screen.getByText('Fork to new worktree')).toBeTruthy()
   })
 
   it('still names the machine when a started session is on a remote environment', async () => {

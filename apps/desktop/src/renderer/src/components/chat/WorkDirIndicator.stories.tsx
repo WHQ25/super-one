@@ -228,6 +228,7 @@ export const StartedLocal: Story = {
     await waitFor(() => {
       expect(body.queryByPlaceholderText('Search worktrees…')).toBeNull()
       expect(body.getByText('Fork to new worktree')).toBeTruthy()
+      expect(body.getByRole('checkbox', { name: /carry local changes/i })).toBeChecked()
     })
     await userEvent.click(body.getByRole('tab', { name: 'Local' }))
     await waitFor(() => {

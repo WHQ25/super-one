@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, type ComponentType, type FormEvent, type ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { GitBranch, GitCommit, GitFork, ChevronDown, Check, Circle, Plus } from 'lucide-react'
@@ -186,6 +187,32 @@ function CheckoutPanel({
       onSelect={onSelect}
       onCreate={onCreate}
     />
+  )
+}
+
+/** Same spring as the tab pill, so the panel height moves with the selection. */
+const TAB_PANEL_SPRING = { type: 'spring', bounce: 0.15, duration: 0.3 } as const
+
+/**
+ * One Local / Worktree body. Both panels stay mounted, so the carry row is
+ * already in the worktree layout when the spring starts and the height lands
+ * on the final size. `open` is a prop, not a ref: the React compiler drops
+ * ref reads during render and that left the transition at duration 0.
+ */
+function PanelHeight({ open, children }: { open: boolean; children: ReactNode }) {
+  const reduceMotion = useReducedMotion()
+  return (
+    <motion.div
+      initial={false}
+      animate={{ height: open ? 'auto' : 0 }}
+      transition={reduceMotion ? { duration: 0 } : TAB_PANEL_SPRING}
+      className="overflow-hidden"
+      data-slot="workdir-panel"
+    >
+      <div inert={!open ? true : undefined} aria-hidden={!open}>
+        {children}
+      </div>
+    </motion.div>
   )
 }
 
@@ -862,7 +889,15 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
             {!compact && <ChevronDown className={`size-3 shrink-0 text-muted-foreground transition-transform duration-200 ${popoverOpen ? 'rotate-180' : ''}`} />}
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="start">
+        {/* The terminal panel is below this chip. Bottom placement drops the
+            shorter Worktree panel onto it once that panel fits in the gap. */}
+        <PopoverContent
+          className="w-80 overflow-y-auto p-0"
+          align="start"
+          side="top"
+          avoidCollisions={false}
+          style={{ maxHeight: 'var(--radix-popper-available-height)' }}
+        >
           {startedWorktree ? (
             <>
               {/* Same as the worktree chip before the merge: the checkout and its status only. */}
@@ -903,90 +938,101 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                     <TabsTrigger value="worktree" className="py-1.5" disabled={isGitRepo === false}>{t('sidebar.hover.worktree')}</TabsTrigger>
                   </TabsList>
                 </div>
-                {/* A started session's worktree tab only forks. Searching worktrees does nothing there. */}
-                {!(isOldSession && modeValue === 'worktree') && (
+                <PanelHeight open={modeValue === 'checkout'}>
                   <form className="border-b px-3 py-2" onSubmit={submitSearch}>
                     <input
                       type="text"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder={modeValue === 'worktree' ? t('chat.worktree.searchPlaceholder') : t('chat.git.searchBranches')}
+                      placeholder={t('chat.git.searchBranches')}
                       className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                     />
                   </form>
-                )}
-                {canCreateFromSearch && (
-                  <button
-                    type="button"
-                    onClick={() => { void handleCreateBranch(query) }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent"
-                  >
-                    <Plus className="size-3 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{t('chat.git.createBranch', { name: query })}</span>
-                  </button>
-                )}
-                <TabsContent value="checkout">
-                  <CheckoutPanel
-                    isGitRepo={isGitRepo}
-                    environment={environmentName}
-                    branch={modeValue === 'checkout' && (!lowerQuery || (mainBranch ?? '').toLowerCase().includes(lowerQuery)) ? mainBranch : null}
-                    dirty={mainDirty}
-                    local={filteredLocal}
-                    loading={branchesLoading}
-                    emptyLabel={query && modeValue === 'checkout'
-                      ? t('chat.worktree.noMatches')
-                      : !query && branchLists.error
-                        ? branchLists.error
-                        : undefined}
-                    initing={initing}
-                    onInit={() => { void handleGitInit() }}
-                    onSelect={(branch) => { void handleBranchSelect(branch) }}
-                    onCreate={(name) => { void handleCreateBranch(name) }}
-                  />
-                </TabsContent>
-                <TabsContent value="worktree">
-                  {isOldSession ? (
-                    activeSessionId && currentFolder ? (
-                      <WorktreeForkSection
-                        sessionId={activeSessionId}
-                        cwd={currentFolder}
-                        onForked={() => setPopoverOpen(false)}
-                      />
-                    ) : null
-                  ) : (
-                    <>
-                      <WorktreeDraftPanel
-                        entries={filteredExisting}
-                        metas={wtMetas}
-                        activePath={activePath}
-                        local={modeValue === 'worktree' ? branchLists.local : filteredLocal}
-                        pendingBase={pendingBase}
-                        pending={isPending}
-                        loading={branchesLoading}
-                        emptyEntriesLabel={modeValue === 'worktree' && query && existingEntries.length > 0 ? t('chat.worktree.noMatches') : t('chat.worktree.noneYet')}
-                        emptyBranchesLabel={!query && branchLists.error ? branchLists.error : t('chat.git.noBranches')}
-                        attachReason={(branch) => pendingMode === 'attach' ? checkedOutReason(branch) : null}
-                        onSelectExisting={handleSwitchToExisting}
-                        onSelectBase={handleSelectBase}
-                      />
-                      {pending && (
-                        <WorktreeCreatePanel
-                          base={pendingBase}
-                          mode={pending.mode}
-                          branchName={pendingBranchName}
-                          branchExists={branchNameTaken}
-                          carry={pendingCarry}
-                          dirty={mainDirty}
-                          showAttach={!checkedOutReason(pendingBase)}
-                          attachReason={checkedOutReason(pendingBase)}
-                          onMode={handleSetMode}
-                          onBranchName={handleSetBranchName}
-                          onCarry={handleToggleCarry}
-                        />
-                      )}
-                    </>
+                  {canCreateFromSearch && (
+                    <button
+                      type="button"
+                      onClick={() => { void handleCreateBranch(query) }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent"
+                    >
+                      <Plus className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{t('chat.git.createBranch', { name: query })}</span>
+                    </button>
                   )}
-                </TabsContent>
+                  <TabsContent value="checkout" forceMount>
+                    <CheckoutPanel
+                      isGitRepo={isGitRepo}
+                      environment={environmentName}
+                      branch={!lowerQuery || (mainBranch ?? '').toLowerCase().includes(lowerQuery) ? mainBranch : null}
+                      dirty={mainDirty}
+                      local={filteredLocal}
+                      loading={branchesLoading}
+                      emptyLabel={query
+                        ? t('chat.worktree.noMatches')
+                        : branchLists.error || undefined}
+                      initing={initing}
+                      onInit={() => { void handleGitInit() }}
+                      onSelect={(branch) => { void handleBranchSelect(branch) }}
+                      onCreate={(name) => { void handleCreateBranch(name) }}
+                    />
+                  </TabsContent>
+                </PanelHeight>
+                <PanelHeight open={modeValue === 'worktree'}>
+                  {/* A started session's worktree tab only forks. Searching worktrees does nothing there. */}
+                  {!isOldSession && (
+                    <form className="border-b px-3 py-2" onSubmit={submitSearch}>
+                      <input
+                        type="text"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder={t('chat.worktree.searchPlaceholder')}
+                        className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                      />
+                    </form>
+                  )}
+                  <TabsContent value="worktree" forceMount>
+                    {isOldSession ? (
+                      activeSessionId && currentFolder ? (
+                        <WorktreeForkSection
+                          sessionId={activeSessionId}
+                          dirty={mainDirty}
+                          onForked={() => setPopoverOpen(false)}
+                        />
+                      ) : null
+                    ) : (
+                      <>
+                        <WorktreeDraftPanel
+                          entries={filteredExisting}
+                          metas={wtMetas}
+                          activePath={activePath}
+                          local={branchLists.local}
+                          pendingBase={pendingBase}
+                          pending={isPending}
+                          loading={branchesLoading}
+                          emptyEntriesLabel={query && existingEntries.length > 0 ? t('chat.worktree.noMatches') : t('chat.worktree.noneYet')}
+                          emptyBranchesLabel={!query && branchLists.error ? branchLists.error : t('chat.git.noBranches')}
+                          attachReason={(branch) => pendingMode === 'attach' ? checkedOutReason(branch) : null}
+                          onSelectExisting={handleSwitchToExisting}
+                          onSelectBase={handleSelectBase}
+                        />
+                        {pending && (
+                          <WorktreeCreatePanel
+                            base={pendingBase}
+                            mode={pending.mode}
+                            branchName={pendingBranchName}
+                            branchExists={branchNameTaken}
+                            carry={pendingCarry}
+                            dirty={mainDirty}
+                            showAttach={!checkedOutReason(pendingBase)}
+                            attachReason={checkedOutReason(pendingBase)}
+                            onMode={handleSetMode}
+                            onBranchName={handleSetBranchName}
+                            onCarry={handleToggleCarry}
+                          />
+                        )}
+                      </>
+                    )}
+                  </TabsContent>
+                </PanelHeight>
               </Tabs>
             </>
           )}

@@ -158,6 +158,177 @@ print(json.dumps(updates[0][1]))
     expect(ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE).toContain('_handle_antigravity_interject')
   })
 
+  it('reconciles write_to_file permission frames with code_action (replace_file_content) execution steps without leaving Write stuck or opening a second Edit card', () => {
+    const pyCheck = `
+import asyncio, json, sys, time, types, uuid
+
+src = sys.stdin.read()
+ns = {}
+exec(src, ns)
+
+class FakeModel:
+    def __init__(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
+    def model_copy(self, update=None):
+        d = dict(self.__dict__)
+        if update:
+            d.update(update)
+        return FakeModel(**d)
+
+streamed_steps = []
+
+class DummyAdapter:
+    def __init__(self): pass
+    def on_connect(self, conn): pass
+    async def new_session(self, **kw): pass
+    async def _restore_session(self, **kw): pass
+    async def _create_agent_config(self, **kw): pass
+    def _build_literal_model_target(self, m, e): pass
+    async def _maybe_apply_model_switch(self, s): pass
+    async def _permission_handler(self, s, tc): return True
+    def _resolve_permission_frame(self, session_info, call):
+        if call.id in session_info.reconciled_frame_by_exec:
+            return session_info.reconciled_frame_by_exec[call.id], False
+        q = session_info.pending_permission_frames.get(str(call.name))
+        if q:
+            fid = q.pop(0)
+            session_info.reconciled_frame_by_exec[call.id] = fid
+            return fid, True
+        return call.id, False
+    async def _stream_live_step(self, session_id, step, open_tool_calls, hidden_tool_calls=None):
+        session_info = self._sessions[session_id]
+        for call in step.tool_calls:
+            fid, reconciles = self._resolve_permission_frame(session_info, call)
+            if step.status == "ACTIVE":
+                open_tool_calls[fid] = str(call.name)
+            elif step.status == "DONE":
+                open_tool_calls.pop(fid, None)
+            streamed_steps.append({
+                "status": step.status,
+                "frame_id": fid,
+                "reconciles": reconciles,
+                "call_name": call.name,
+                "call_args": call.args,
+            })
+    async def prompt(self, p, s, message_id=None, **kw): pass
+    async def _maybe_send_usage_update(self, s): pass
+    async def _send_available_commands_update(self, s): pass
+    async def cleanup(self, s=None): pass
+    def _session_workspace_roots(self, s): return ["/workspace"]
+    def _admin_file_access_always_ask(self): return False
+    def _admin_terminal_requires_review(self): return False
+
+updates = []
+class DummyClient:
+    async def request_permission(self, *a, **kw): pass
+    async def session_update(self, session_id, update):
+        updates.append(update)
+
+server_mod = types.SimpleNamespace(
+    config_options=types.SimpleNamespace(AVAILABLE_SESSION_MODES=()),
+    schema=types.SimpleNamespace(
+        SessionMode=lambda **kw: types.SimpleNamespace(**kw),
+        ToolCallStart=lambda **kw: kw,
+        ToolCallProgress=lambda **kw: kw,
+    ),
+    resolve_skills_paths=lambda cwd=None, additional_directories=None: [],
+    AgyAdapter=DummyAdapter,
+    asyncio=asyncio,
+    time=time,
+    uuid=uuid,
+    _EXEC_TOOLS=set(),
+    _AUTO_EDIT_TOOLS={"write_to_file", "replace_file_content", "multi_replace_file_content"},
+    _TERMINAL_STEP_STATUSES={"DONE", "ERROR", "CANCELLED"},
+    _tool_call_name=lambda tc: getattr(tc, "name", ""),
+    _tool_call_target_paths=lambda tc: [tc.args["TargetFile"]] if "TargetFile" in getattr(tc, "args", {}) else ([tc.args["file_path"]] if "file_path" in getattr(tc, "args", {}) else []),
+    _is_internal_mcp_schema_read=lambda *a: False,
+    _call_accesses_outside_workspace=lambda *a: False,
+    _unwrap_mcp_tool_call=lambda name, args, server_name=None: (None, dict(args), None),
+    _extract_tool_display_title=lambda name, args, server_name=None: "Write" if name == "write_to_file" else "Edit",
+    _infer_tool_kind=lambda name, args, server_name=None: "edit",
+    _extract_tool_locations=lambda name, args, server_name=None: [],
+    _extract_tool_content=lambda name, args, server_name=None: [],
+    sdk_types_module=types.SimpleNamespace(
+        StepSource=types.SimpleNamespace(MODEL="MODEL", TOOL="TOOL"),
+        StepStatus=types.SimpleNamespace(ACTIVE="ACTIVE", DONE="DONE", ERROR="ERROR"),
+        StepType=types.SimpleNamespace(TOOL_CALL="TOOL_CALL"),
+    ),
+)
+
+ns["_patch_server_module"](server_mod)
+adapter = DummyAdapter()
+adapter._client = DummyClient()
+adapter.on_connect(None)
+session_info = types.SimpleNamespace(
+    mode_id="auto_edit",
+    pending_permission_frames={},
+    reconciled_frame_by_exec={},
+    mcp_frames={},
+)
+adapter._sessions = {"s1": session_info}
+
+# 1. Permission hook receives write_to_file with full CodeContent and TargetFile
+perm_call = FakeModel(
+    id="",
+    name="write_to_file",
+    args={
+        "TargetFile": "/workspace/scratch/run-ci-checks.sh",
+        "CodeContent": "#!/usr/bin/env bash\\necho ok\\n",
+        "Overwrite": True,
+        "toolSummary": "Write scratch/run-ci-checks.sh",
+    },
+)
+allowed = asyncio.run(adapter._permission_handler("s1", perm_call))
+assert allowed is True
+perm_frame_id = perm_call.id
+assert perm_frame_id
+assert session_info.pending_permission_frames == {"write_to_file": [perm_frame_id]}
+
+# 2. Execution step arrives as code_action -> mapped by SDK to replace_file_content with only file_path
+exec_call = FakeModel(
+    id="40aa7b63-52ec-4d2e-8cb9-14fb0c13716e:33",
+    name="replace_file_content",
+    args={"file_path": "/workspace/scratch/run-ci-checks.sh"},
+    canonical_path="/workspace/scratch/run-ci-checks.sh",
+)
+exec_step = FakeModel(
+    id="40aa7b63-52ec-4d2e-8cb9-14fb0c13716e:33",
+    step_index=33,
+    source="TOOL",
+    type="TOOL_CALL",
+    status="DONE",
+    content="Write scratch/run-ci-checks.sh",
+    tool_calls=[exec_call],
+    parent_trajectory_id=None,
+)
+open_tool_calls = {}
+asyncio.run(adapter._stream_live_step("s1", exec_step, open_tool_calls))
+
+assert session_info.pending_permission_frames == {}
+assert open_tool_calls == {}
+assert len(streamed_steps) == 2
+assert streamed_steps[0]["frame_id"] == perm_frame_id
+assert streamed_steps[0]["reconciles"] is True
+assert streamed_steps[0]["call_name"] == "write_to_file"
+assert streamed_steps[0]["call_args"]["CodeContent"] == "#!/usr/bin/env bash\\necho ok\\n"
+assert streamed_steps[1]["frame_id"] == perm_frame_id
+assert streamed_steps[1]["reconciles"] is False
+assert streamed_steps[1]["call_name"] == "write_to_file"
+print(json.dumps({"perm_frame_id": perm_frame_id, "streamed": streamed_steps}))
+`
+    const out = execFileSync('python3', ['-c', pyCheck], {
+      input: ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE,
+      encoding: 'utf8',
+    })
+    const parsed = JSON.parse(out.trim())
+    expect(parsed.streamed).toHaveLength(2)
+    expect(parsed.streamed[0].frame_id).toBe(parsed.perm_frame_id)
+    expect(parsed.streamed[0].call_name).toBe('write_to_file')
+    expect(parsed.streamed[0].call_args.CodeContent).toBe('#!/usr/bin/env bash\necho ok\n')
+    expect(parsed.streamed[1].frame_id).toBe(parsed.perm_frame_id)
+  })
+
   it('parses single-line and multiline YAML skill frontmatter and respects disable-slash-command', () => {
     const multiline = `---
 name: agy-customizations

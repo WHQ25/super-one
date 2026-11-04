@@ -64,12 +64,25 @@ def _patch_server_module(server_mod):
     orig_build_literal_model_target = AgyAdapter._build_literal_model_target
     orig_maybe_apply_model_switch = AgyAdapter._maybe_apply_model_switch
     orig_permission_handler = AgyAdapter._permission_handler
+    orig_resolve_permission_frame = getattr(AgyAdapter, "_resolve_permission_frame", None)
     orig_stream_live_step = AgyAdapter._stream_live_step
     orig_prompt = AgyAdapter.prompt
     orig_maybe_send_usage_update = AgyAdapter._maybe_send_usage_update
     orig_send_available_commands_update = AgyAdapter._send_available_commands_update
     orig_ext_method = getattr(AgyAdapter, "ext_method", None)
     orig_cleanup = AgyAdapter.cleanup
+
+    _FILE_MUTATION_TOOLS = (
+        "write_to_file",
+        "replace_file_content",
+        "multi_replace_file_content",
+        "create_file",
+        "client_create_file",
+        "write_file",
+        "edit_file",
+        "client_edit_file",
+        "code_action",
+    )
 
     def _patched_init(self, *args, **kwargs):
         orig_init(self, *args, **kwargs)
@@ -78,6 +91,7 @@ def _patch_server_module(server_mod):
         self._emitted_thinking_by_session = {}
         self._turn_start_usage_by_session = {}
         self._tool_opened_at = {}
+        self._permission_call_by_frame_id = {}
 
     def _patched_on_connect(self, conn):
         orig_on_connect(self, conn)
@@ -209,6 +223,109 @@ def _patch_server_module(server_mod):
             if session_info is not None:
                 session_info.admin_controls_snapshot = self._admin_controls_snapshot()
 
+    def _norm_call_paths(call):
+        paths = set()
+        target_paths_fn = getattr(server_mod, "_tool_call_target_paths", None)
+        if callable(target_paths_fn):
+            try:
+                for p in (target_paths_fn(call) or ()):
+                    if isinstance(p, str) and p.strip():
+                        paths.add(os.path.abspath(os.path.expanduser(p.strip())))
+            except Exception:
+                pass
+        canon = getattr(call, "canonical_path", None)
+        if isinstance(canon, str) and canon.strip():
+            paths.add(os.path.abspath(os.path.expanduser(canon.strip())))
+        args = getattr(call, "args", None)
+        if isinstance(args, dict):
+            for k in ("TargetFile", "AbsolutePath", "file_path", "path", "target_file"):
+                v = args.get(k)
+                if isinstance(v, str) and v.strip():
+                    paths.add(os.path.abspath(os.path.expanduser(v.strip())))
+        return paths
+
+    def _record_permission_call(self, tool_call):
+        tc_id = getattr(tool_call, "id", None)
+        if not tc_id:
+            return
+        if not hasattr(self, "_permission_call_by_frame_id"):
+            self._permission_call_by_frame_id = {}
+        tc_name = server_mod._tool_call_name(tool_call)
+        tc_args = getattr(tool_call, "args", None)
+        self._permission_call_by_frame_id[tc_id] = (
+            tc_name,
+            dict(tc_args) if isinstance(tc_args, dict) else {},
+            _norm_call_paths(tool_call),
+        )
+
+    def _match_pending_permission_frame(self, session_info, call, *, pop=False):
+        call_id = getattr(call, "id", None) or ""
+        if session_info is None:
+            return call_id, False
+        reconciled = getattr(session_info, "reconciled_frame_by_exec", None)
+        if isinstance(reconciled, dict) and call_id and call_id in reconciled:
+            return reconciled[call_id], False
+        pending = getattr(session_info, "pending_permission_frames", None)
+        if not isinstance(pending, dict):
+            return call_id, False
+        call_name = server_mod._tool_call_name(call)
+        if call_name in _FILE_MUTATION_TOOLS:
+            call_paths = _norm_call_paths(call)
+            saved_by_fid = getattr(self, "_permission_call_by_frame_id", {})
+            opened_at = getattr(self, "_tool_opened_at", {})
+            best_match = None
+            if call_paths:
+                for q_key in _FILE_MUTATION_TOOLS:
+                    queue = pending.get(q_key)
+                    if not queue:
+                        continue
+                    for idx, fid in enumerate(queue):
+                        saved = saved_by_fid.get(fid)
+                        saved_paths = saved[2] if (isinstance(saved, tuple) and len(saved) >= 3) else set()
+                        if saved_paths and (saved_paths & call_paths):
+                            ts = opened_at.get(fid, float("inf"))
+                            if best_match is None or ts < best_match[0]:
+                                best_match = (ts, q_key, idx, fid)
+                            break
+            if best_match is None:
+                direct_q = pending.get(call_name)
+                if direct_q:
+                    best_match = (opened_at.get(direct_q[0], 0.0), call_name, 0, direct_q[0])
+                else:
+                    for q_key in _FILE_MUTATION_TOOLS:
+                        queue = pending.get(q_key)
+                        if queue:
+                            fid = queue[0]
+                            ts = opened_at.get(fid, float("inf"))
+                            if best_match is None or ts < best_match[0]:
+                                best_match = (ts, q_key, 0, fid)
+            if best_match is not None:
+                _, m_key, m_idx, m_fid = best_match
+                if pop:
+                    q = pending.get(m_key)
+                    if q and 0 <= m_idx < len(q):
+                        q.pop(m_idx)
+                    if not q:
+                        pending.pop(m_key, None)
+                    if isinstance(reconciled, dict) and call_id:
+                        reconciled[call_id] = m_fid
+                return m_fid, True
+        if pop and callable(orig_resolve_permission_frame):
+            return orig_resolve_permission_frame(self, session_info, call)
+        direct_q = pending.get(call_name)
+        if direct_q:
+            fid = direct_q.pop(0) if pop else direct_q[0]
+            if pop:
+                if not direct_q:
+                    pending.pop(call_name, None)
+                if isinstance(reconciled, dict) and call_id:
+                    reconciled[call_id] = fid
+            return fid, True
+        return call_id, False
+
+    def _patched_resolve_permission_frame(self, session_info, call):
+        return _match_pending_permission_frame(self, session_info, call, pop=True)
+
     async def _announce_tool_call_pending_and_in_progress(self, session_id, tool_call):
         if self._client is None:
             return
@@ -220,6 +337,7 @@ def _patch_server_module(server_mod):
             return
         tool_call_id = tool_call.id or server_mod.uuid.uuid4().hex
         tool_call.id = tool_call_id
+        _record_permission_call(self, tool_call)
         server_name = getattr(tool_call, "server_name", None)
         try:
             mcp_display_name, presented_input, mcp_meta = server_mod._unwrap_mcp_tool_call(tool_name, tool_call.args, server_name=server_name)
@@ -287,6 +405,7 @@ def _patch_server_module(server_mod):
             if after_pending_len == prev_pending_len:
                 await _announce_tool_call_pending_and_in_progress(self, session_id, tool_call)
             elif self._client is not None and getattr(tool_call, "id", None):
+                _record_permission_call(self, tool_call)
                 self._tool_opened_at[tool_call.id] = server_mod.time.monotonic()
                 await self._client.session_update(
                     session_id=session_id,
@@ -323,6 +442,24 @@ def _patch_server_module(server_mod):
                 if tc_name in ("view_file", "safe_view_file", "client_view_file", "client_create_file", "client_edit_file"):
                     step = step.model_copy(update={"tool_calls": [sdk_types.ToolCall(id=tc_id, name=tc_name, args={})]})
                     break
+        session_info = self._sessions.get(session_id) if hasattr(self, "_sessions") else None
+        if step.type == sdk_types.StepType.TOOL_CALL and step.tool_calls and session_info is not None:
+            saved_by_fid = getattr(self, "_permission_call_by_frame_id", {})
+            enriched_calls = []
+            changed_calls = False
+            for call in step.tool_calls:
+                fid, _ = _match_pending_permission_frame(self, session_info, call, pop=False)
+                saved = saved_by_fid.get(fid) if fid else None
+                if isinstance(saved, tuple) and len(saved) >= 2:
+                    orig_name, orig_args = saved[0], saved[1]
+                    cur_args = call.args if isinstance(getattr(call, "args", None), dict) else {}
+                    merged_args = {**orig_args, **cur_args} if isinstance(orig_args, dict) else cur_args
+                    if getattr(call, "name", None) != orig_name or cur_args != merged_args:
+                        call = call.model_copy(update={"name": orig_name, "args": merged_args})
+                        changed_calls = True
+                enriched_calls.append(call)
+            if changed_calls:
+                step = step.model_copy(update={"tool_calls": enriched_calls})
         if step.type == sdk_types.StepType.TOOL_CALL and step.status in server_mod._TERMINAL_STEP_STATUSES and step.tool_calls:
             await orig_stream_live_step(self, session_id, step.model_copy(update={"status": sdk_types.StepStatus.ACTIVE}), open_tool_calls, hidden_tool_calls)
             now = server_mod.time.monotonic()
@@ -458,8 +595,11 @@ def _patch_server_module(server_mod):
             m = getattr(self, attr, None)
             if isinstance(m, dict):
                 m.pop(session_id, None) if session_id is not None else m.clear()
-        if session_id is None and isinstance(getattr(self, "_tool_opened_at", None), dict):
-            self._tool_opened_at.clear()
+        if session_id is None:
+            for attr in ("_tool_opened_at", "_permission_call_by_frame_id"):
+                m = getattr(self, attr, None)
+                if isinstance(m, dict):
+                    m.clear()
 
     AgyAdapter.__init__ = _patched_init
     AgyAdapter.on_connect = _patched_on_connect
@@ -469,6 +609,7 @@ def _patch_server_module(server_mod):
     AgyAdapter._build_literal_model_target = _patched_build_literal_model_target
     AgyAdapter._maybe_apply_model_switch = _patched_maybe_apply_model_switch
     AgyAdapter._permission_handler = _patched_permission_handler
+    AgyAdapter._resolve_permission_frame = _patched_resolve_permission_frame
     AgyAdapter._stream_live_step = _patched_stream_live_step
     AgyAdapter.prompt = _patched_prompt
     AgyAdapter._maybe_send_usage_update = _patched_maybe_send_usage_update

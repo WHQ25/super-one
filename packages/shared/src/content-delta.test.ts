@@ -452,4 +452,40 @@ describe('applyContentDelta: streamed tool output', () => {
       summary: '"Target?"="Production"',
     })
   })
+
+  it('preserves Write toolName and file content when a sparse Edit update with only file_path arrives for the same toolUseId', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolName: 'Write',
+      toolUseId: 'write-1',
+      toolFilePath: '/workspace/scratch/run-ci-checks.sh',
+      input: JSON.stringify({
+        file_path: '/workspace/scratch/run-ci-checks.sh',
+        content: '#!/usr/bin/env bash\necho ok\n',
+        TargetFile: '/workspace/scratch/run-ci-checks.sh',
+        CodeContent: '#!/usr/bin/env bash\necho ok\n',
+      }),
+      status: 'streaming',
+    })
+    content = applyContentDelta(content, {
+      type: 'tool_use',
+      toolName: 'Edit',
+      toolUseId: 'write-1',
+      toolFilePath: '/workspace/scratch/run-ci-checks.sh',
+      input: JSON.stringify({
+        file_path: '/workspace/scratch/run-ci-checks.sh',
+      }),
+      status: 'complete',
+    })
+    expect(content).toHaveLength(1)
+    const block = content[0] as Extract<ContentBlock, { type: 'tool_use' }>
+    expect(block.toolName).toBe('Write')
+    expect(block.status).toBe('complete')
+    expect(JSON.parse(block.input)).toMatchObject({
+      file_path: '/workspace/scratch/run-ci-checks.sh',
+      content: '#!/usr/bin/env bash\necho ok\n',
+      CodeContent: '#!/usr/bin/env bash\necho ok\n',
+    })
+  })
 })

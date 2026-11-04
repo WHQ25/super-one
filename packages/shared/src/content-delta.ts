@@ -34,11 +34,24 @@ export function isToolUseBlock(block: ContentBlock): block is ToolUseLikeBlock {
   return 'toolName' in block
 }
 
-/** Fields that carry UI-facing summary text for tool rows. */
+/** Fields that carry UI-facing summary or file-mutation body text for tool rows. */
 const SUMMARY_INPUT_KEYS = [
   'query', 'pattern', 'command', 'description', 'file_path', 'path',
   'url', 'prompt', 'skill', 'tool_name', 'subject', 'task_id',
+  'content', 'CodeContent', 'old_string', 'new_string', 'TargetContent', 'ReplacementContent', 'TargetFile',
 ] as const
+
+function hasEditReplacementFields(input: unknown): boolean {
+  const obj = parseInputObject(input)
+  return (
+    typeof obj.old_string === 'string' ||
+    typeof obj.new_string === 'string' ||
+    typeof obj.TargetContent === 'string' ||
+    typeof obj.ReplacementContent === 'string' ||
+    Array.isArray(obj.ReplacementChunks) ||
+    Array.isArray(obj.edits)
+  )
+}
 
 function parseInputObject(input: unknown): Record<string, unknown> {
   if (input == null || input === '') return {}
@@ -233,14 +246,19 @@ export function applyContentDelta(
       if (!isToolUseBlock(existing)) {
         return content.map((b, i) => (i === idx ? { ...withoutOutputDelta(delta), startedAt: now() } : b))
       }
-      // Sparse ACP updates (status/content only, or backend web_search without query)
-      // must not wipe a richer prior input / toolSummary.
+      // Sparse ACP updates (status/content only, or backend web_search without query,
+      // or Antigravity code_action updates normalized as Edit without replacement fields)
+      // must not wipe a richer prior input / toolSummary or downgrade Write to Edit.
       const mergedInput = mergeToolUseInputJson(existing.input, delta.input)
       const mergedSummary = pickRicherToolSummary(
         existing.toolSummary,
         delta.toolSummary,
         mergedInput,
       )
+      const preservedToolName =
+        existing.toolName === 'Write' && delta.toolName === 'Edit' && !hasEditReplacementFields(delta.input)
+          ? existing.toolName
+          : delta.toolName
       const liveOutput = delta.outputDelta === undefined
         ? existing.liveOutput
         : options.replace ? delta.outputDelta : (existing.liveOutput ?? '') + delta.outputDelta
@@ -250,6 +268,7 @@ export function applyContentDelta(
             ...withoutOutputDelta(delta),
             ...(liveOutput !== undefined ? { liveOutput } : {}),
             ...(existing.app || delta.app ? { app: mergeMcpAppAttachment(existing.app, delta.app) } : {}),
+            toolName: preservedToolName,
             startedAt: existing.startedAt,
             elapsedSeconds: delta.elapsedSeconds ?? existing.elapsedSeconds,
             status: delta.status ?? existing.status,

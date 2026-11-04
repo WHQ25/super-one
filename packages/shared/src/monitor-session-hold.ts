@@ -1,9 +1,10 @@
 import type { AgentEvent } from './agent-types'
 
 /**
- * A Grok monitor keeps running after the turn that started it. That turn's
- * `status_change: idle` would mark the session idle. Hold `background` until
- * the last monitor finishes, and do not cover a turn that is still streaming.
+ * A Grok monitor or background bash keeps running after the turn that started
+ * it. That turn's `status_change: idle` would mark the session idle. Hold
+ * `background` until the last one finishes, and do not cover a turn that is
+ * still streaming. Workflow and goal tasks stay on the idle path.
  */
 export class MonitorSessionHold {
   private readonly ids = new Set<string>()
@@ -14,7 +15,9 @@ export class MonitorSessionHold {
 
   note(event: AgentEvent): void {
     if (event.type === 'task_started') {
-      if (event.taskType === 'monitor' && event.taskId) this.ids.add(event.taskId)
+      if (event.taskId && (event.taskType === 'monitor' || event.taskType === 'bash')) {
+        this.ids.add(event.taskId)
+      }
       return
     }
     if (event.type !== 'task_notification') return
@@ -24,7 +27,7 @@ export class MonitorSessionHold {
     }
   }
 
-  /** Rewrite a terminal idle while a monitor is still running. */
+  /** Rewrite a terminal idle while a monitor or background bash is still running. */
   adjust(event: AgentEvent): AgentEvent {
     this.suppressFollowUp = false
     if (event.type !== 'status_change') return event

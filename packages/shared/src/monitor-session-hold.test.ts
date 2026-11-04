@@ -59,7 +59,21 @@ describe('MonitorSessionHold', () => {
     }).at(-1)).toEqual({ type: 'status_change', status: 'background' })
   })
 
-  it('does not cover a streaming turn or a bash background task', () => {
+  it('rewrites the turn-end idle to background while a bash task is live', () => {
+    const hold = new MonitorSessionHold()
+    play(hold, { type: 'status_change', status: 'streaming' })
+    play(hold, {
+      type: 'task_started',
+      taskId: 'bash-1',
+      description: 'sleep',
+      taskType: 'bash',
+    })
+    expect(play(hold, { type: 'status_change', status: 'idle' })).toEqual([
+      { type: 'status_change', status: 'background' },
+    ])
+  })
+
+  it('does not rewrite a turn that is still streaming', () => {
     const hold = new MonitorSessionHold()
     play(hold, { type: 'status_change', status: 'streaming' })
     expect(play(hold, {
@@ -73,6 +87,19 @@ describe('MonitorSessionHold', () => {
       description: 'sleep',
       taskType: 'bash',
     }])
+    expect(play(hold, { type: 'status_change', status: 'streaming' })).toEqual([
+      { type: 'status_change', status: 'streaming' },
+    ])
+  })
+
+  it('leaves a workflow task on the idle path', () => {
+    const hold = new MonitorSessionHold()
+    play(hold, {
+      type: 'task_started',
+      taskId: 'wf-1',
+      description: 'review',
+      taskType: 'workflow',
+    })
     expect(play(hold, { type: 'status_change', status: 'idle' })).toEqual([
       { type: 'status_change', status: 'idle' },
     ])

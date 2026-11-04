@@ -270,6 +270,34 @@ describe('mapSessionUpdate', () => {
     })
   })
 
+  it('stamps a Grok BackgroundTaskStarted output file onto the bash result', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_bg',
+      status: 'completed',
+      content: [{
+        type: 'content',
+        content: { type: 'text', text: 'Background task bash-1 started' },
+      }],
+      rawOutput: {
+        type: 'BackgroundTaskStarted',
+        task_id: 'bash-1',
+        task_type: 'bash',
+        output_file: '/tmp/sessions/terminal/bash-1.log',
+      },
+    }, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(result).toMatchObject({
+      type: 'content_delta',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'call_bg',
+        summary: 'Background task bash-1 started',
+        outputPath: '/tmp/sessions/terminal/bash-1.log',
+      },
+    })
+  })
+
   it('prefixes only a failed Generic Auto classifier deny', () => {
     const text = 'Tool `Bash` was not executed: Auto mode blocked this action (shell)'
     const completed = mapSessionUpdate({

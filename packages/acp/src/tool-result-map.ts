@@ -26,6 +26,20 @@ export function formatAcpRawOutput(raw: unknown): string {
 }
 
 /**
+ * Grok's background shell returns `{ type: "BackgroundTaskStarted", output_file }`
+ * while the command is still running. Claude puts the same signal in the result
+ * text ("Output is being written to"). The status bar treats that path as the
+ * background receipt.
+ */
+export function backgroundTaskOutputPath(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const record = raw as Record<string, unknown>
+  if (record.type !== 'BackgroundTaskStarted') return undefined
+  const file = record.output_file ?? record.outputFile
+  return typeof file === 'string' && file.length > 0 ? file : undefined
+}
+
+/**
  * Grok Imagine / video tools return a typed MediaGenOutput as raw_output:
  * `{ type: "ImageGen"|"ImageEdit"|…, path, filename, session_folder }`.
  * SuperOne's chat gallery expects the same shape as media_generate_image
@@ -120,10 +134,12 @@ export function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: st
   const capped = shouldKeepFullToolResult(summary, toolName) ? summary : summary.slice(0, 4000)
   const failed = update.status === 'failed'
   const text = withGrokAutoDenyPrefix(capped || (failed ? 'failed' : 'done'), failed)
+  const outputPath = backgroundTaskOutputPath(update.rawOutput)
   return {
     type: 'tool_result',
     toolUseId: update.toolCallId,
     summary: text,
+    ...(outputPath ? { outputPath } : {}),
     isError: failed,
   }
 }

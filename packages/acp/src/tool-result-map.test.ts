@@ -119,4 +119,20 @@ describe('tool result capping', () => {
     const payload = JSON.stringify({ stateId: 'S1', root: { rootId: '@r1' }, blob: 'y'.repeat(20000) })
     expect(summaryOf(completed(payload)).length).toBe(4000)
   })
+
+  it('keeps a BackgroundTaskStarted output file on the result', () => {
+    const result = toolResultFromUpdate(completed('Background task bash-1 started', {
+      rawOutput: {
+        type: 'BackgroundTaskStarted',
+        task_id: 'bash-1',
+        task_type: 'bash',
+        output_file: '/tmp/sessions/terminal/bash-1.log',
+      },
+    }))
+    expect(result).toMatchObject({
+      type: 'tool_result',
+      summary: 'Background task bash-1 started',
+      outputPath: '/tmp/sessions/terminal/bash-1.log',
+    })
+  })
 })

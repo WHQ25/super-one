@@ -80,6 +80,20 @@ describe('collectBackgroundActivities', () => {
       expect(bashActivities).toHaveLength(0)
     })
 
+    it('shows a Grok background bash from its output path while the task is running', () => {
+      const messages = [msg(
+        toolUse('t1', 'Bash', { command: 'sleep 1200 && gh workflow run build-mac.yml' }, 'complete'),
+        toolResult('t1', {
+          summary: 'Background task bash-1 started',
+          outputPath: '/tmp/sessions/terminal/bash-1.log',
+        }),
+      )]
+      const progress = { t1: { description: 'Retry macOS build', taskId: 'bash-1', completed: false } }
+      const { bashActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(bashActivities).toHaveLength(1)
+      expect(bashActivities[0].title).toBe('sleep 1200 && gh workflow run build-mac.yml')
+    })
+
     it('shows bash with outputPath while taskProgress not completed', () => {
       const messages = [msg(
         toolUse('t1', 'Bash', { command: 'sleep 10' }, 'complete'),

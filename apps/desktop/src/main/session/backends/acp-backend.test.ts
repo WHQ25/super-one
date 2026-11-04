@@ -513,20 +513,24 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('still settles idle when only a bash background task is live', async () => {
+  it('keeps the session background while a bash background task is live', async () => {
     const events: AgentEvent[] = []
-    setAcpRuntimeFactory(async () => mockRuntime({
-      prompt: async (_text, messageId, onEvent) => {
-        onEvent({
-          type: 'task_started',
-          taskId: 'bash-1',
-          description: 'sleep',
-          taskType: 'bash',
-        })
-        onEvent({ type: 'message_complete', messageId })
-        onEvent({ type: 'status_change', status: 'idle' })
-      },
-    }))
+    let sessionEvent: AcpRuntimeOptions['onSessionEvent']
+    setAcpRuntimeFactory(async (opts) => {
+      sessionEvent = opts.onSessionEvent
+      return mockRuntime({
+        prompt: async (_text, messageId, onEvent) => {
+          onEvent({
+            type: 'task_started',
+            taskId: 'bash-1',
+            description: 'sleep',
+            taskType: 'bash',
+          })
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
     const backend = new AcpBackend()
     backend.onEvent((event) => events.push(event))
     await backend.start(startOpts({ agentId: 'grok-build' }))
@@ -534,9 +538,22 @@ describe('AcpBackend', () => {
 
     expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
       type: 'status_change',
-      status: 'idle',
+      status: 'background',
     })
     expect(backend.hasActiveBackgroundTasks()).toBe(true)
+
+    sessionEvent?.({
+      type: 'task_notification',
+      taskId: 'bash-1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'exit 0',
+    })
+    expect(events.filter((event) => event.type === 'status_change').at(-1)).toEqual({
+      type: 'status_change',
+      status: 'idle',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(false)
     await backend.close()
   })
 

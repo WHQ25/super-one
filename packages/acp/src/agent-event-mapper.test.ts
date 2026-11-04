@@ -265,4 +265,32 @@ describe('ACP AgentEvent mapper', () => {
     })
     expect(events.at(-1)).toEqual({ type: 'status_change', status: 'idle' })
   })
+
+  it('holds background after the turn while a bash task is live', () => {
+    const events: AgentEvent[] = []
+    const mapper = createAcpAgentEventMapper({
+      messageId: 'message-1',
+      emit: (event) => events.push(event),
+    })
+
+    mapper.start('acp-session-1')
+    mapper.applyXaiNotification(XAI_TASK_BACKGROUNDED, {
+      tool_call_id: 'bash-tool',
+      task_id: 'bash-1',
+      command: 'sleep 1200',
+      description: 'wait',
+      output_file: '/tmp/bash-1.log',
+    })
+    mapper.complete('end_turn')
+    expect(events.at(-1)).toEqual({ type: 'status_change', status: 'background' })
+
+    mapper.applyXaiNotification(XAI_TASK_COMPLETED, {
+      task_snapshot: {
+        task_id: 'bash-1',
+        completed: true,
+        exit_code: 0,
+      },
+    })
+    expect(events.at(-1)).toEqual({ type: 'status_change', status: 'idle' })
+  })
 })

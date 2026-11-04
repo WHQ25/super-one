@@ -104,8 +104,15 @@ export class RpcConnection {
     const msg = message as { type?: string; requestId?: string; result?: unknown; error?: RpcError }
     if (msg.type === 'client') {
       const event = (message as ClientStreamMessage).event
-      if (event?.type === 'control_lost') this.opts.onControlLost?.(event)
-      else if (event) this.opts.onClientEvent?.(event)
+      // PhoneProtocol has no callbacks here. It invalidates the lease and
+      // forwards voice only when receive() leaves the frame unhandled.
+      if (event?.type === 'control_lost') {
+        if (!this.opts.onControlLost) return false
+        this.opts.onControlLost(event)
+        return true
+      }
+      if (!event || !this.opts.onClientEvent) return false
+      this.opts.onClientEvent(event)
       return true
     }
     if (!msg || typeof msg !== 'object') return false

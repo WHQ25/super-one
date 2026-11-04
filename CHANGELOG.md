@@ -15,6 +15,48 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Antigravity is its own ACP harness. Enabling it downloads that runtime, and the account is separate from Grok.
+- The Grok usage meter shows the login email.
+- Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
+- One desktop process per userData profile, so a second Windows shortcut does not claim the same remote session. A named instance and a side-by-side alpha still start.
+
+### Fixed
+
+- The appearance popover aligns to the sidebar's left edge.
+- The worktree popover stays above the chip and springs to the destination height, including the carry-local-changes row.
+- A remote Codex voice call is placed by the node that owns the session.
+- Session rename, tag, and cleanup run on the owning node. A delete still waits on the confirm card, and a reconnect restores that card.
+- A phone learns when its session control is revoked, and the next send asks for control again.
+- A collapsed widget stays folded when the transcript unloads it.
+- A remote draft stays hidden once the node assigns the session id.
+
+## [0.77.0-alpha] - 2026-11-04
+
+### Added
+
+- Antigravity is its own ACP harness. Enabling it downloads that runtime, and the account is separate from Grok.
+- The Grok usage meter shows the login email.
+- Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
+- One desktop process per userData profile, so a second Windows shortcut does not claim the same remote session. A named instance and a side-by-side alpha still start.
+
+### Fixed
+
+- The appearance popover aligns to the sidebar's left edge.
+- The worktree popover stays above the chip and springs to the destination height, including the carry-local-changes row.
+- A remote Codex voice call is placed by the node that owns the session.
+- Session rename, tag, and cleanup run on the owning node. A delete still waits on the confirm card, and a reconnect restores that card.
+- A phone learns when its session control is revoked, and the next send asks for control again.
+- A collapsed widget stays folded when the transcript unloads it.
+- A remote draft stays hidden once the node assigns the session id.
+
+### CI
+
+- The OTA guard reads the published native tag when a runner cannot fetch dl.super-one.dev, and treats an unchanged local APK as a shipped runtime.
+
+## [0.76.0] - 2026-11-03
+
+### Added
+
 - Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. The choice is stored as the session service tier. Ultrafast's trigger is two overlapping bolts; Fast stays one bolt.
 - With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion. The device name floats above the list. An environment card names the machine, its OS, chip, and memory; a connected host adds free memory and one CPU sample. The chip and installed memory stay after disconnect.
 - Finished sessions settle into a project group. The first launch keeps the ten newest non-child sessions in each project and settles the rest. Settling stops that session's harness and, for a parent, its direct children. Collaboration children and scheduled-send shells stay hidden. Opening a settled session leaves it in that group. Pinned and draft sections fold, and the count shows how many rows are hidden. Folded settled rows stay unmounted until the group opens.
@@ -77,130 +119,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A remote Codex turn with no stored preset uses auto-review and keeps it on the node. Full access still never asks. A spawned child is nested under its parent.
 - Enabling or probing a harness on a node reads that machine's own Claude or Codex login.
 - A node shutdown no longer crashes when a harness catalog stamp arrives after its database watch has closed.
-
-### Performance
-
-- Opening a local session no longer rebuilds every sidebar row.
-
-## [0.76.0-alpha.4] - 2026-11-03
-
-### Added
-
-- A node upgrade plays on that environment's icon. Success and failure still toast. A node without SSH still warns with the npm command.
-- A new session follows the sidebar focus. A focused project opens that project and records its environment. An environment alone keeps the current project when it already runs there, and otherwise switches to that host.
-
-### Fixed
-
-- The session hover card stays open while the transcript scrolls.
-- A remote image whose thumbnail does not fit the window keeps its name and the file this desktop already staged.
-- A remote send paints the user bubble before the node session exists. It is marked failed only when create or send is refused.
-- A terminal opened from a new-session page on a remote project opens at that project. The draft id is omitted until the node owns the session.
-- A remote Codex turn with no stored preset uses auto-review and keeps it on the node. Full access still never asks. A spawned child records its parent, and the node publishes session list and activity.
-- Enabling or probing a harness reads that machine's own Claude or Codex login. A present SDK is not treated as a sign-in.
-- Closing the node no longer crashes when a harness catalog stamp arrives after the database watch has closed.
-
-### Tests
-
-- Host-action tests include the collaboration grants table the session store reads. The project-list coalescing check ignores the in-process session-list snapshot.
-
-## [0.76.0-alpha.3] - 2026-11-02
-
-### Added
-
-- On the phone, a draft that wraps while the keyboard is down stacks Send under Stop, so the text keeps the column. One line stays beside Stop. The keyboard-up row is unchanged.
-
-### Fixed
-
-- A streaming compaction marker stays between the closed prefix and the open tail. A later copy of the same result no longer stacks the chips in front of the reply or folds the cut away.
-- A revealed transcript block stays mounted through the scroll correction, so a slow wheel advances instead of shaking.
-- A remote session starts only on a harness the node has enabled and ready. A catalog change on the node updates a desktop that is already connected. Claude usage, models, and effort come from that node. An empty draft keeps the harness already picked. Claude is offered only after that node has been enabled once.
-- A host install of the CLI can decode JPEG screenshots. jpeg-js is bundled instead of required from a package the install does not depend on.
-- When an SSH node does not become healthy, the installer shows the tail of bootstrap.log.
-
-## [0.76.0-alpha.2] - 2026-11-02
-
-### Added
-
-- Double-click an environment, project, or session to give it the sidebar pane. Pinned sessions and drafts for that environment or project stay under the focus bar and start folded.
-- Project session lists page and virtualize. Root sessions stay paged, children load when their parent expands, and a wheel already at the edge continues into the parent scroller. Settled sessions cannot be pinned; the pin slot offers unsettle, and settling does not clear the stored pin. The project hover count includes settled sessions and children.
-- On the phone, finished sessions sit in a folded Settled group. Settling from the row leaves the chat open, and capped lists page as they scroll.
-- A landscape iPhone Duo keeps a sidebar: 280pt when the book is open, one leaf when the hinge is only partly open. Portrait stays a drawer. The portrait lock drops as soon as the hinge leaves closed.
-- Phone pinned sessions and drafts fold from their headings and keep their rows mounted. A draft that arrives on a resident sidebar flies in from the right. Opening one stays out of the list until the composer claims it.
-- Dragging a foldable hinge scrubs the clip and holds the pose until the drag ends. The camera stays put while the view slides to center the phone, and only changes distance if the centered body still does not fit. Letting go turns once, by the smallest angle, to the form that angle belongs to. A fold through 30° stays shut. A tent starts at 31°. 61–80° and 121–180° are the open book, and 81–120° is the laptop. A click travels at 180° per second and finishes in the form it lands in. Letting go off a stop in a tent or a laptop only bends the body.
-
-### Fixed
-
-- Streaming no longer pulls a paused transcript back to the tail. Resume follows a downward gesture or a tick jump. Short lists opt out of scroll anchoring.
-- Opening a parked draft whose id was never saved as a session opens the draft instead of an IPC error.
-- An iOS simulator preview restarts when the helper's video socket, the helper process, or the renderer port dies, and stops after three failures that never paint a frame.
-- Sweeping the hinge again turns a simulator that SpringBoard left facing the wrong way after the previous sweep. Recording the device closed at boot is not that sweep, and a tabletop pose of 0 no longer rewrites an open device back to portrait.
-- Losing the open draft on the phone reuses that draft instead of listing a second pending copy of the same text.
-
-## [0.76.0-alpha.1] - 2026-11-01
-
-### Added
-
-- Finished sessions settle into a project group. The first launch keeps the ten newest non-child sessions in each project and settles the rest. Settling stops that session's harness and, for a parent, its direct children. Collaboration children and scheduled-send shells stay hidden. Pinned and draft sections fold, and the count shows how many rows are hidden. The device name floats above the list. An environment card names the machine, its OS, chip, and memory; a connected host adds free memory and one CPU sample.
-- Scroll areas fade their clipped edges, including settled sessions, history, the file tree, the project menu, tab strips, and markdown tables.
-- A message can name a machine with @env or that machine's name. The agent omits environmentId on this machine and passes it for any other. Paired phones are not targets.
-- Reasoning auto-expands while it streams. Appearance can turn that off. A manual collapse still wins, and the block closes again when it finishes.
-- Codex models that advertise another speed besides Fast offer Speed: Standard plus each catalog tier, including Ultrafast. Ultrafast's trigger is two overlapping bolts; Fast stays one bolt.
-- A remote node serves live Codex and Claude model catalogs, and the same transcript delivery as the desktop: highlight, thumbnails, workflow rows, and child tool transcripts.
-- iPhone Duo stands as a laptop (90–120°, one half flat, hinge across the inner screen) beside closed, tent, and open. A tent stands with the hinge on top. The hinge snaps to one stop per form; only resting on that stop, letting go on it, or pressing its label changes the form. The 3D body turns and settles before the guest picture updates, and its finish can be chosen when the model offers more than one.
-
-### Changed
-
-- Codex runtime 0.165.0.
-- Android phone builds include arm64-v8a and armeabi-v7a only.
-
-### Fixed
-
-- layout_act runs only when the user asks to change the layout or to bring a tab, panel, or session forward. It does not run to take a screenshot, inspect a page, or make a background tab paint.
-- Grok receives the SuperOne host context through session rules. Other agents, and a resumed Grok session, get it on the first prompt.
-- Remote installs require Node 22.13.0 or newer (Fixes #95).
-- A collaboration child keeps the account it was launched with when its session row is still a placeholder (Fixes #94).
-- An angle-bracket absolute file path stays absolute (Fixes #92).
-- The default Claude account stays listed when another login shares its identity (Fixes #89).
-- Desktop usage, probes, and other short external HTTP follow the macOS system proxy. Streaming chat, relay uploads, and loopback calls stay on Node fetch, and the CLI keeps Bun's proxy environment.
-- Draft and pinned sidebar titles use the same size as the other session titles.
-- A detached worktree's hover card shows the short commit, the same label as the workdir chip.
-- The session list no longer flashes when a turn ends.
-- A hover card closes when the list scrolls, and the row keeps its fill until the card closes.
-- Opening a settled session leaves it in the settled group.
-- The branch stays visible when the workdir chip is tight, and a session switch does not paint "Local Checkout" before the git read returns.
-- A list marker's fill stops at leading inline code.
-- Phone inline code sits on the prose line.
-- A removed worktree is named in the banner, not again beside the title.
-- Asked questions on the phone show the question without the harness title beside it.
-
-### Performance
-
-- Folded settled rows stay unmounted until the group opens.
-
-## [0.76.0-alpha] - 2026-10-24
-
-### Added
-
-- With remote nodes on, the sidebar lists projects for each environment. A second machine groups them by repository. A remote shows its link: LAN, relay, SSH, or Tailscale. Offline sections stay collapsed, and row actions appear on hover. The project card shows the primary folder and home-relative paths that open. A session stores a read receipt: empty means unread, and a message id means seen through that completion.
-- Session ages use the interface language, including the age beside a session mention. A session active less than a minute ago has no age.
-- Opening an MCP URL elicitation answers the request, on this machine and on a remote node. Files the server returns as resource links render under the tool row. A withdrawn question leaves.
-- The phone app is built with Expo SDK 58, so it launches on iOS 27.
-
-### Changed
-
-- Claude Agent SDK 0.3.310.
-- Electron 44.9.3. Electron 44.9.1 blocks the compromised eMudhra intermediates (CVE-2026-115570); 44.9.3 adds the later Chromium fixes. The bundled Node is 24.22.0.
-- The phone runtime is React Native 0.88 and React 19.3. New Architecture is required, and the splash screen comes from the expo-splash-screen plugin.
-
-### Fixed
-
-- Computer Use's picture-in-picture paints the JPEG frames.
-- Reasoning stays collapsed while it streams. A manual open stays open until the block finishes.
-- Markdown toolbars sit clear of the scroll rail.
-- A started location popover hides rows that no longer apply, and a refresh keeps the branch list already on screen. A pending worktree chip names only the branch. Worktree and git-status labels are translated.
-- Session hover cards, drafts, and pinned rows keep their place when remote nodes are off.
-- With remote nodes on, a new session keeps its own checkout, and git init runs on the environment that owns the folder.
-- Two screenshots or recordings taken in the same millisecond no longer share a filename.
 
 ### Performance
 

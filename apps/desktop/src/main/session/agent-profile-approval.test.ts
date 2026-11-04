@@ -11,7 +11,13 @@ vi.mock('../database', () => ({ getDb: () => state.db }))
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({ experimentalAgentProfilesEnabled: state.enabled, experimentalClaudeOpenAiChatEnabled: false }) }))
 vi.mock('../providers/credential-store', () => ({ getBinding: () => undefined, getCredentialDecrypted: (id: string) => state.credentials.find((c) => c.id === id) }))
 vi.mock('../providers/registry', () => ({ getPlatforms: () => state.platforms }))
-vi.mock('./session-provider-repo', () => ({ getSessionProvider: (id: string) => createSessionProviderStore(state.db).get(id) }))
+vi.mock('./session-provider-repo', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./session-provider-repo')>()
+  return {
+    ...actual,
+    getSessionProvider: (id: string) => createSessionProviderStore(state.db).get(id),
+  }
+})
 import { approveAgentProfile, configFingerprint, ensureAgentProfileApprovalSchema, isAgentProfileApproved, isPreapprovedProfileLaunch, selectedApprovalProvider } from './agent-profile-approval'
 import { resolveChatService } from '../providers/resolver'
 let directory: string

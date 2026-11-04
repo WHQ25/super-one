@@ -177,7 +177,11 @@ describe('Antigravity zip extraction and managed install', () => {
       },
       downloadToFile: async (_url, destPath) => {
         writeFileSync(destPath, zipBuf)
-        return { byteLength: zipBuf.length, sha256Hex: sha256 }
+        return {
+          byteLength: zipBuf.length,
+          sha256Hex: sha256,
+          sha512Base64: createHash('sha512').update(zipBuf).digest('base64'),
+        }
       },
     })
 
@@ -190,6 +194,7 @@ describe('Antigravity zip extraction and managed install', () => {
         runtimeSource: 'managed',
         enabled: true,
         state: 'ready',
+        requiresAuth: false,
         command: installed.command,
         runtimeVersion: '1.3.0',
       }),

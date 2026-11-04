@@ -28,6 +28,8 @@ vi.mock('./agent-profiles', () => ({
     },
   ],
   sessionAgentLaunchDefaults: (profile: { defaultConfig: object }) => profile.defaultConfig,
+  findSessionAgentProfile: (profiles: Array<{ id: string }>, agentId: string) =>
+    profiles.find((profile) => profile.id === agentId),
 }))
 vi.mock('./collaboration-child-project', () => ({
   resolveCwd: (config: { cwd?: string }, parent: { cwd: string }) => config.cwd ?? parent.cwd,

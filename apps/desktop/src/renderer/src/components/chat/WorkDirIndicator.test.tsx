@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { AgentStatus, WorktreeInfo } from '@superone/shared/agent-types'
+import type { AgentStatus, GitInfo, WorktreeInfo } from '@superone/shared/agent-types'
 
 import { projectRef } from '@superone/shared/environment'
 import { WorkDirIndicator } from './WorkDirIndicator'
@@ -56,7 +56,7 @@ function setSessionStatus(status: AgentStatus): void {
 }
 
 const getWorktreeInfo = vi.fn<(folder: string) => Promise<WorktreeInfo>>()
-const getGitInfo = vi.fn(() => Promise.resolve({ branch: 'HEAD' }))
+const getGitInfo = vi.fn<() => Promise<GitInfo>>(() => Promise.resolve({ branch: 'HEAD' }))
 
 beforeEach(() => {
   getWorktreeInfo.mockReset()

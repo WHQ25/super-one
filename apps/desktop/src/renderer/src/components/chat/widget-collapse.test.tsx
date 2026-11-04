@@ -75,11 +75,11 @@ describe('a widget inside a virtual transcript', () => {
       <ToolBlock toolName={TOOL} toolUseId="w" input={INPUT} status="complete" result={ACK} />,
     )
     fireEvent.click(container.querySelector('[data-embedded-tool-title]')!)
-    expect(container.querySelector('[data-embedded-tool-header]')!.dataset.collapsed).toBe('true')
+    expect(container.querySelector<HTMLElement>('[data-embedded-tool-header]')!.dataset.collapsed).toBe('true')
 
     reload()
 
-    expect(container.querySelector('[data-embedded-tool-header]')!.dataset.collapsed).toBe('true')
+    expect(container.querySelector<HTMLElement>('[data-embedded-tool-header]')!.dataset.collapsed).toBe('true')
   })
 
   it('keeps a sibling with the same title open', () => {

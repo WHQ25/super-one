@@ -23,7 +23,8 @@ function doc(...children: HastNode[]): HastNode {
 
 function run(fade: StreamFadeController, tree: HastNode) {
   fade.bind()
-  const transform = fade.rehype() as unknown as (tree: HastNode) => void
+  // unified calls the plugin with a processor; the attacher ignores `this`.
+  const transform = (fade.rehype as unknown as () => (tree: HastNode) => void)()
   transform(tree)
 }
 

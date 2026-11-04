@@ -85,6 +85,7 @@ vi.mock('../session/agent-profiles', () => ({
   },
   listSessionAgentProfiles: () => [CLAUDE_AGENT],
   resolveAcpAgentId: (row: SessionProvider) => (row.config as { agentId?: string }).agentId ?? state.acpAgentId,
+  resolveProviderRowId: (agentId: string) => agentId,
   profileResources: (row: SessionProvider) => {
     const models = row.harnessId === 'claude' ? CLAUDE_MODELS : row.harnessId === 'codex' ? CODEX_MODELS : row.harnessId === 'acp' ? GROK_MODELS : []
     const host = { lists: { mode: [] } }

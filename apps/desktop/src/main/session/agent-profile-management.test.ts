@@ -80,7 +80,7 @@ describe('Agent Profile settings management', () => {
 
   it('lists one dynamic default per harness, including disabled harnesses', async () => {
     state.available = false
-    expect(listManagedAgentProfiles()).toHaveLength(6)
+    expect(listManagedAgentProfiles()).toHaveLength(7)
     expect(listManagedAgentProfiles().every((profile) => profile.followsDefaults && !profile.available)).toBe(true)
     const first = await getManagedAgentProfile('claude-base')
     state.preferences.claude.defaultEffort = 'low'

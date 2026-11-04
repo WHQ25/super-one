@@ -185,10 +185,10 @@ describe('ensureHostSession', () => {
       harness: null,
       model: null,
       permissionMode: null,
-      settings: null,
+      settings: {},
       originSessionId: 'draft-1',
+      createdAt: '',
       updatedAt: '',
-      pendingSync: false,
       controllerDeviceId: null,
     }
     useDraftsStore.setState({ byConnection: { 'env-1': [row] } })

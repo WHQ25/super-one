@@ -82,8 +82,9 @@ describe('local sessions on the environment route', () => {
     const { host, store } = localRoute()
     const created = await runWindowControl(7, () => host.createSession('local', { projectId: 'p1', harnessId, settings: { permissionMode: 'default' }, selections: { sessionId: 'new' } }))
     expect(created).toMatchObject({ sessionId: 'new' })
-    expect(await host.getSession('local', 'new')).toMatchObject({ harnessId, providerId: `${harnessId}-base` })
-    expect(store.rows.get('new')).toMatchObject({ harnessId, providerId: `${harnessId}-base` })
+    const providerId = harnessId === 'acp' ? 'acp-grok' : `${harnessId}-base`
+    expect(await host.getSession('local', 'new')).toMatchObject({ harnessId, providerId })
+    expect(store.rows.get('new')).toMatchObject({ harnessId, providerId })
   })
 
   it('fences and broadcasts native Codex and OpenCode picker settings', async () => {

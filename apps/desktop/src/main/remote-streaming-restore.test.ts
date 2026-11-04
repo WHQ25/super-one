@@ -86,6 +86,7 @@ it('opens a session on the phone with the Ultracode the desktop session runs wit
     getQueuedMessagesEvent: () => null,
     getCurrentSandboxInfo: () => undefined,
     getCurrentPermissionMode: () => 'default',
+    getApiProviderId: () => null,
     getUiSettings: () => ({ ultracode: true }), getSessionGoal: () => null,
   }
   const client = nativeRestoreClient(() => nativeSessionLoad(host as never, phone()))

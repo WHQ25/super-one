@@ -16,8 +16,8 @@
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "components/HarnessesSettingsPage.tsx": {
-    "count": 13,
-    "reason": "settings/resource IPC per harness (separate track)"
+    "count": 15,
+    "reason": "settings/resource IPC per harness, including the Grok and Antigravity ACP rows"
   },
   "components/HooksPage.tsx": {
     "count": 1,
@@ -192,8 +192,8 @@
     "reason": "experimental-agent rule (non-Grok ACP, OpenCode)"
   },
   "stores/chat-store/helpers/send-message.ts": {
-    "count": 7,
-    "reason": "Codex commands, login and MCP tool sync; capability reminder flavor"
+    "count": 9,
+    "reason": "Codex commands, login and MCP tool sync; Grok and Antigravity ACP provider ids"
   },
   "stores/chat-store/helpers/session-lifecycle.ts": {
     "count": 3,

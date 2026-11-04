@@ -84,6 +84,24 @@ describe('nodePendingToPermissionRequest', () => {
     })
   })
 
+  it('restores a permanent-delete confirm from the node snapshot', () => {
+    const req = nodePendingToPermissionRequest({
+      interactionId: 'cleanup-1',
+      kind: 'session_cleanup_confirm',
+      toolName: 'mcp__superone__session_cleanup',
+      message: 'Delete these sessions permanently?',
+      sessionCleanupConfirm: {
+        sessions: [{ id: 's1', title: 'Draft' }],
+      },
+    })
+    expect(req).toMatchObject({
+      requestId: 'cleanup-1',
+      requestKind: 'session_cleanup_confirm',
+      allowAlwaysAllow: false,
+      sessionCleanupConfirm: { sessions: [{ id: 's1', title: 'Draft' }] },
+    })
+  })
+
   it('ignores non-permission kinds and empty ids', () => {
     expect(
       nodePendingToPermissionRequest({

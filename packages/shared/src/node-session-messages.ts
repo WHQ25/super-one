@@ -9,6 +9,7 @@ import type {
   PermissionRequest,
   PlanApprovalRequest,
   SessionAgentRequestPayload,
+  SessionCleanupConfirmPayload,
   UserQuestion,
 } from './agent-types'
 import { asQuestionPreviewFormat } from './ask-user-question'
@@ -22,7 +23,7 @@ export type NodeTranscriptBlock = {
 
 export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> & {
   interactionId: string
-  kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
+  kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm' | 'session_cleanup_confirm'
   toolName?: string
   toolUseId?: string
   input?: Record<string, unknown>
@@ -35,6 +36,8 @@ export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'eli
     launches?: unknown[]
     profiles?: unknown[]
   }
+  /** Permanent-delete confirm when kind === 'session_cleanup_confirm'. */
+  sessionCleanupConfirm?: SessionCleanupConfirmPayload
 }
 
 export type NodeSessionSnapshot = {
@@ -98,6 +101,22 @@ export function nodePendingToPermissionRequest(
       message:
         pending.message || 'Allow this agent to start the following sessions?',
       sessionAgentsConfirm: payload,
+    }
+  }
+  if (pending.kind === 'session_cleanup_confirm') {
+    const sessions = Array.isArray(pending.sessionCleanupConfirm?.sessions)
+      ? pending.sessionCleanupConfirm.sessions
+      : []
+    return {
+      requestId: pending.interactionId,
+      toolName: pending.toolName || 'mcp__superone__session_cleanup',
+      toolUseId: pending.toolUseId ?? pending.interactionId,
+      input: pending.input && typeof pending.input === 'object' ? pending.input : {},
+      allowAlwaysAllow: false,
+      requestKind: 'session_cleanup_confirm',
+      serverName: pending.serverName || 'superone',
+      message: pending.message || 'Delete these sessions permanently?',
+      sessionCleanupConfirm: { sessions },
     }
   }
   // Permission UI only — question/plan use dedicated mappers below.

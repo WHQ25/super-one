@@ -387,8 +387,8 @@ def _patch_server_module(server_mod):
             in_tok = int(getattr(turn_usage, "input_tokens", 0) or 0)
             out_tok = int(getattr(turn_usage, "output_tokens", 0) or 0)
             thought_tok = int(getattr(turn_usage, "thought_tokens", 0) or 0)
-            cache_tok = int(getattr(turn_usage, "cached_read_tokens", 0) or 0)
-            turn_meta.update({"inputTokens": in_tok, "outputTokens": out_tok + thought_tok, "cacheReadTokens": cache_tok, "thoughtsTokens": thought_tok})
+            uncached_in = max(0, in_tok - cache_tok) if (cache_tok > 0 and in_tok >= cache_tok) else in_tok
+            turn_meta.update({"inputTokens": uncached_in, "outputTokens": out_tok + thought_tok, "cacheReadTokens": cache_tok, "thoughtsTokens": thought_tok})
         try:
             await self._client.session_update(
                 session_id=session_id,

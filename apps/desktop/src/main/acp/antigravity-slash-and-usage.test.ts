@@ -11,6 +11,7 @@ import { createXaiCorrelationState } from './acp-xai-session-notify'
 import { ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE } from './antigravity-auto-bootstrap'
 import { extractAntigravityTurnUsageAndThinking } from './antigravity-db-usage'
 import {
+  advanceAntigravityThinkingStepAfterTools,
   closeAntigravityThinkingStep,
   extractAntigravityPromptResponseUsage,
   extractAntigravityWireTurnUsage,
@@ -281,7 +282,7 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
       },
     })
     expect(promptUsage).toEqual({
-      inputTokens: 31000,
+      inputTokens: 19000,
       outputTokens: 800,
       cacheReadTokens: 12000,
       thoughtsTokens: 300,
@@ -333,7 +334,7 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
     expect(events.at(-1)).toEqual({
       type: 'message_usage',
       messageId: 'msg_live',
-      inputTokens: 31000,
+      inputTokens: 19000,
       outputTokens: 800,
       cacheReadTokens: 12000,
       contextTokens: 22000,
@@ -368,5 +369,140 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
       .map((ev) => (ev.delta.type === 'thinking' ? ev.delta.thinking : ''))
       .join('')
     expect(combinedThinking).toBe('First paragraph.\n\nSecond paragraph.')
+  })
+
+  it('computes uncached input tokens across multi-step turn in SQLite without duplicating cache reads', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agy-multistep-'))
+    try {
+      const sessionId = 'sess_multi'
+      const convDir = join(root, 'antigravity', 'profile', 'antigravity-acp', 'conversations')
+      mkdirSync(convDir, { recursive: true })
+      const dbPath = join(convDir, `${sessionId}.db`)
+      const db = new Database(dbPath)
+      db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_payload BLOB NOT NULL)')
+
+      const encodeLen = (field: number, bytes: Uint8Array): Buffer => {
+        const tag = (field << 3) | 2
+        const lenBytes: number[] = []
+        let v = bytes.length
+        while (v >= 0x80) {
+          lenBytes.push((v & 0x7f) | 0x80)
+          v >>>= 7
+        }
+        lenBytes.push(v)
+        return Buffer.concat([Buffer.from([tag, ...lenBytes]), Buffer.from(bytes)])
+      }
+
+      const encodeVarint = (field: number, val: number): Buffer => {
+        const tag = (field << 3) | 0
+        const bytes = [tag]
+        let v = val
+        while (v >= 0x80) {
+          bytes.push((v & 0x7f) | 0x80)
+          v >>>= 7
+        }
+        bytes.push(v)
+        return Buffer.from(bytes)
+      }
+
+      const userStepPayload = encodeLen(14, Buffer.from([0x0a, 0x05, ...Buffer.from('hello')]))
+
+      const buildMeta = (inputTokens: number, outputTokens: number, cacheReadTokens: number, thoughtsTokens: number): Buffer => {
+        const stats = Buffer.concat([
+          encodeLen(1, Buffer.from('gemini-3.1-pro-high')),
+          encodeVarint(2, inputTokens),
+          encodeVarint(3, outputTokens),
+          encodeVarint(8, cacheReadTokens),
+          encodeVarint(9, thoughtsTokens),
+        ])
+        return encodeLen(9, stats)
+      }
+
+      // Step 1: 20000 total prompt, 19000 cached -> 1000 uncached upload. Output: 50 + 20 thoughts
+      const meta1 = buildMeta(20000, 50, 19000, 20)
+      const planner1 = Buffer.concat([
+        encodeLen(1, Buffer.from('Calling tool')),
+        encodeLen(3, Buffer.from('thinking step 1')),
+      ])
+      const step1Payload = Buffer.concat([
+        encodeLen(1, meta1),
+        Buffer.from([0xa2, 0x01, planner1.length]),
+        planner1,
+      ])
+
+      // Step 2: 20250 total prompt, 20050 cached -> 200 uncached upload. Output: 80 + 0 thoughts
+      const meta2 = buildMeta(20250, 80, 20050, 0)
+      const planner2 = Buffer.concat([
+        encodeLen(1, Buffer.from('Final answer')),
+      ])
+      const step2Payload = Buffer.concat([
+        encodeLen(1, meta2),
+        Buffer.from([0xa2, 0x01, planner2.length]),
+        planner2,
+      ])
+
+      const insert = db.prepare('INSERT INTO steps (idx, step_payload) VALUES (?, ?)')
+      insert.run(0, userStepPayload)
+      insert.run(1, step1Payload)
+      insert.run(2, step2Payload)
+      db.close()
+
+      const summary = extractAntigravityTurnUsageAndThinking(sessionId, root)
+      expect(summary).not.toBeNull()
+      // inputTokens is sum of UNCACHED tokens: (20000 - 19000) + (20250 - 20050) = 1000 + 200 = 1200
+      expect(summary?.inputTokens).toBe(1200)
+      // outputTokens: (50 + 20) + (80 + 0) = 150
+      expect(summary?.outputTokens).toBe(150)
+      // cacheReadTokens: 19000 + 20050 = 39050
+      expect(summary?.cacheReadTokens).toBe(39050)
+      // contextTokens is the occupancy after the final step: 20250 + 80 = 20330
+      expect(summary?.contextTokens).toBe(20330)
+      // thinkingSteps only contains steps with actual text (step 1 has text, step 2 has none)
+      expect(summary?.thinkingSteps).toHaveLength(1)
+      expect(summary?.thinkingSteps[0]?.thinkingText).toBe('thinking step 1')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not eagerly open thinking on advanceAntigravityThinkingStepAfterTools and retracts empty thinking', () => {
+    const scope: AntigravityTurnThinkingScope = {
+      sawAgentThoughtChunk: false,
+      stepIndex: 0,
+      stepStartedAt: 1000,
+      currentStepHasThinking: false,
+      currentStepThinkingClosed: false,
+      currentStepHasThoughtText: false,
+      emittedStepThinkingIds: [],
+    }
+    const events: AgentEvent[] = []
+    const emit = (ev: AgentEvent) => events.push(ev)
+    const corr = createXaiCorrelationState()
+
+    // 1. Advance after tool: does NOT emit thinking content_delta
+    advanceAntigravityThinkingStepAfterTools('nonexistent', 'm1', scope, corr, emit)
+    expect(scope.stepIndex).toBe(1)
+    expect(scope.currentStepHasThinking).toBe(false)
+    expect(events.filter((e) => e.type === 'content_delta')).toHaveLength(0)
+
+    // 2. Open thinking step but no thought chunks arrive
+    openAntigravityThinkingStep(scope, 'm1', emit)
+    expect(scope.currentStepHasThinking).toBe(true)
+    expect(events.some((e) => e.type === 'content_delta' && e.delta.type === 'thinking')).toBe(true)
+
+    // 3. closeAntigravityThinkingStep without thought text retracts the block
+    closeAntigravityThinkingStep(scope, 'm1', emit)
+    expect(events.some((e) => e.type === 'content_retracted')).toBe(true)
+    expect(scope.currentStepHasThinking).toBe(false)
+
+    // 4. finalizeAntigravityTurnThinking on open step without thought text retracts
+    scope.stepIndex = 0
+    scope.currentStepThinkingClosed = false
+    scope.currentStepHasThoughtText = false
+    openAntigravityThinkingStep(scope, 'm1', emit)
+    finalizeAntigravityTurnThinking('nonexistent', 'm1', scope, corr, emit)
+    const retractions = events.filter((e) => e.type === 'content_retracted')
+    expect(retractions.length).toBeGreaterThanOrEqual(2)
+    expect(scope.currentStepHasThinking).toBe(false)
   })
 })

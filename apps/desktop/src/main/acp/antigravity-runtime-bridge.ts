@@ -254,6 +254,16 @@ export function closeAntigravityThinkingStep(
   if (!turnScope.currentStepHasThinking || turnScope.currentStepThinkingClosed) return
   turnScope.currentStepThinkingClosed = true
   turnScope.pendingThoughtNewline = false
+  if (!turnScope.currentStepHasThoughtText) {
+    emitEvent({
+      type: 'content_retracted',
+      messageId: targetMessageId,
+      blocks: [{ type: 'thinking', thinking: '' }],
+    })
+    turnScope.emittedStepThinkingIds.pop()
+    turnScope.currentStepHasThinking = false
+    return
+  }
   const thinkId = `agy_think_step_${turnScope.stepIndex}`
   emitEvent({
     type: 'content_delta',
@@ -323,6 +333,8 @@ export function syncAntigravityTurnFromDb(
   if (summary && !turnScope.sawAgentThoughtChunk) {
     for (let i = 0; i < summary.thinkingSteps.length; i += 1) {
       const step = summary.thinkingSteps[i]
+      const hasDbText = step.thinkingText.trim().length > 0
+      if (!hasDbText) continue
       const thinkId = turnScope.emittedStepThinkingIds[i] ?? `agy_think_step_${i}`
       if (!turnScope.emittedStepThinkingIds.includes(thinkId)) {
         turnScope.emittedStepThinkingIds.push(thinkId)
@@ -332,18 +344,17 @@ export function syncAntigravityTurnFromDb(
         i === turnScope.stepIndex &&
         turnScope.currentStepHasThinking &&
         !turnScope.currentStepThinkingClosed
-      const hasDbText = step.thinkingText.trim().length > 0
-      if (hasDbText && i === turnScope.stepIndex) {
+      if (i === turnScope.stepIndex) {
         turnScope.currentStepHasThoughtText = true
       }
       emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,
-        replace: hasDbText,
+        replace: true,
         delta: {
           type: 'thinking',
           id: thinkId,
-          thinking: hasDbText ? step.thinkingText : '',
+          thinking: step.thinkingText,
           startedAt: step.startedAt,
           ...(isCurrentOpenStep ? {} : { endedAt: step.endedAt }),
         },
@@ -416,7 +427,6 @@ export function advanceAntigravityThinkingStepAfterTools(
   turnScope.currentStepHasThoughtText = false
   turnScope.stepStartedAt = Date.now()
   syncAntigravityTurnFromDb(sessionId, targetMessageId, turnScope, xaiCorrelation, emitEvent)
-  openAntigravityThinkingStep(turnScope, targetMessageId, emitEvent)
 }
 
 export function finalizeAntigravityTurnThinking(
@@ -428,7 +438,7 @@ export function finalizeAntigravityTurnThinking(
   promptResponseUsage?: AntigravityWireTurnUsage | null,
 ): void {
   if (turnScope.currentStepHasThinking && !turnScope.currentStepThinkingClosed) {
-    if (turnScope.stepIndex > 0 && !turnScope.currentStepHasThoughtText) {
+    if (!turnScope.currentStepHasThoughtText) {
       emitEvent({
         type: 'content_retracted',
         messageId: targetMessageId,

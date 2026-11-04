@@ -1665,9 +1665,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // reconcile_plan_mode_with_prompt treats prompt `_meta.mode` as the only
       // prompt-carried mode signal (`agent` | `ask` | `plan`).
       promptOpts?.onInputAccepted?.()
-      if (launch.agentId === 'antigravity') {
-        openAntigravityThinkingStep(turn, messageId, onEvent)
-      }
       const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
         sessionId: activeSession.sessionId,
         prompt: promptBlocks as never,

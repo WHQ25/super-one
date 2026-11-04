@@ -121,12 +121,16 @@ export function extractAntigravityPromptResponseUsage(response: unknown): Antigr
     const val = u[camel] ?? u[snake]
     return typeof val === 'number' && val > 0 ? val : 0
   }
-  const inputTokens = num('inputTokens', 'input_tokens')
+  const rawInputTokens = num('inputTokens', 'input_tokens')
   const rawOutputTokens = num('outputTokens', 'output_tokens')
   const thoughtsTokens = num('thoughtTokens', 'thought_tokens')
   const cacheReadTokens = num('cachedReadTokens', 'cached_read_tokens')
   const outputTokens = rawOutputTokens + thoughtsTokens
-  if (inputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0) {
+  const inputTokens =
+    cacheReadTokens > 0 && rawInputTokens >= cacheReadTokens
+      ? rawInputTokens - cacheReadTokens
+      : rawInputTokens
+  if (inputTokens <= 0 && outputTokens <= 0 && cacheReadTokens <= 0 && rawInputTokens <= 0) {
     return null
   }
   return {
@@ -251,10 +255,18 @@ export function extractAntigravityTurnUsageAndThinking(
     for (const { stepIndex, meta, payload } of rows) {
       if (meta) {
         const stepOut = meta.outputTokens + meta.thoughtsTokens
-        inputTokens += meta.inputTokens
+        const uncachedStepIn =
+          meta.cacheReadTokens > 0 && meta.inputTokens >= meta.cacheReadTokens
+            ? meta.inputTokens - meta.cacheReadTokens
+            : meta.inputTokens
+        inputTokens += uncachedStepIn
         outputTokens += stepOut
         cacheReadTokens += meta.cacheReadTokens
-        const stepContext = meta.inputTokens + meta.cacheReadTokens + stepOut
+        const fullStepPrompt =
+          meta.cacheReadTokens > 0 && meta.inputTokens >= meta.cacheReadTokens
+            ? meta.inputTokens
+            : meta.inputTokens + meta.cacheReadTokens
+        const stepContext = fullStepPrompt + stepOut
         if (stepContext > 0) contextTokens = stepContext
         if (meta.contextWindow > 0) contextWindow = meta.contextWindow
         if (meta.model) model = meta.model
@@ -262,7 +274,7 @@ export function extractAntigravityTurnUsageAndThinking(
 
       const thoughtsTokens = meta?.thoughtsTokens ?? 0
       const thinkingText = payload?.thinkingText ?? ''
-      if (thoughtsTokens > 0 || thinkingText.trim().length > 0) {
+      if (thinkingText.trim().length > 0) {
         const now = Date.now()
         const startedAt = meta && meta.createdAtMs > 0 ? meta.createdAtMs : now - 1000
         let endedAt = startedAt + 1000
@@ -351,13 +363,17 @@ export function extractAllAntigravityUsageRecords(customHome?: string): Antigrav
       for (const metaBuf of metaBuffers) {
         const meta = parseAntigravityStepMetadata(metaBuf)
         const out = meta.outputTokens + meta.thoughtsTokens
-        if (meta.inputTokens <= 0 && out <= 0 && meta.cacheReadTokens <= 0) continue
+        const uncachedIn =
+          meta.cacheReadTokens > 0 && meta.inputTokens >= meta.cacheReadTokens
+            ? meta.inputTokens - meta.cacheReadTokens
+            : meta.inputTokens
+        if (uncachedIn <= 0 && out <= 0 && meta.cacheReadTokens <= 0) continue
         if (meta.createdAtMs <= 0) continue
         records.push({
           providerSessionId,
           createdAt: meta.createdAtMs,
           model: meta.model || 'antigravity',
-          inputTokens: meta.inputTokens,
+          inputTokens: uncachedIn,
           outputTokens: out,
           cacheReadTokens: meta.cacheReadTokens,
         })

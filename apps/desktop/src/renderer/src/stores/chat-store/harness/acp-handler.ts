@@ -220,18 +220,20 @@ function sessionCatalogFromLegacyModels(catalog: AcpAgentModelCatalog): AcpSessi
 }
 
 /** Read-only first paint; config comes from harness_resource_cache (refreshed once per app open). */
-export async function connectAcpResources(): Promise<AcpResources> {
-  try {
-    const startup = await window.app.getStartupData()
-    if (startup.cached.acp?.agents?.length) {
-      return {
-        ...startup.cached.acp,
-        modelsByAgentId: startup.cached.acp.modelsByAgentId ?? {},
-        configByAgentId: startup.cached.acp.configByAgentId ?? {},
+export async function connectAcpResources(opts?: { force?: boolean }): Promise<AcpResources> {
+  if (!opts?.force) {
+    try {
+      const startup = await window.app.getStartupData()
+      if (startup.cached.acp?.agents?.length) {
+        return {
+          ...startup.cached.acp,
+          modelsByAgentId: startup.cached.acp.modelsByAgentId ?? {},
+          configByAgentId: startup.cached.acp.configByAgentId ?? {},
+        }
       }
+    } catch {
+      /* fall through */
     }
-  } catch {
-    /* fall through */
   }
   try {
     if (typeof window.app.listAcpAgents === 'function') {

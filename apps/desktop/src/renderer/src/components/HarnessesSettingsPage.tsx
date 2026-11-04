@@ -485,6 +485,25 @@ export function HarnessesSettingsPage() {
           toast.success(t('settings.harnesses.disabled', { id: item.label }))
         }
         await refreshCatalog()
+        if (item.provider === 'acp') {
+          try {
+            const listed = await window.app.listAcpAgents?.()
+            if (listed) useChatStore.getState().setHarnessResources('acp', listed)
+          } catch {
+            /* best-effort */
+          }
+          if (enabled && item.acpAgentId) {
+            void window.app.refreshAcpModels?.(item.acpAgentId)
+              .then((fresh) => {
+                if (fresh) useChatStore.getState().setHarnessResources('acp', fresh)
+              })
+              .catch(() => {
+                /* best-effort */
+              })
+          }
+        } else if (enabled) {
+          void useChatStore.getState().initializeHarness(item.provider, { force: true })
+        }
       } else {
         await setExperimentalAgentEnabled(item.acpAgentId, enabled)
         toast.success(
@@ -492,6 +511,15 @@ export function HarnessesSettingsPage() {
             id: item.label,
           }),
         )
+        if (enabled && item.acpAgentId) {
+          void window.app.refreshAcpModels?.(item.acpAgentId)
+            .then((fresh) => {
+              if (fresh) useChatStore.getState().setHarnessResources('acp', fresh)
+            })
+            .catch(() => {
+              /* best-effort */
+            })
+        }
       }
       // Keep explicit order: newly enabled keys append; disabled keys stay so
       // re-enable restores rank. Only when the user has set a manual order.

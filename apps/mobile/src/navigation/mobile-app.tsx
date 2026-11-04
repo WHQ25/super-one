@@ -1242,7 +1242,7 @@ export function MobileApp() {
       // merely to list models and is loaded when the user chooses it.
       await openProject(initialProject, false)
       if (clientRef.current !== client || shellDetailsRequestRef.current !== initialShellRequest + 1 || runtimeRef.current || sessionTransitionRef.current.isActive) return true
-      const system = peekHarnessResource(client, 'get_system_info', initialProject.path, selectedProvider)
+      const system = peekHarnessResource(client, 'get_system_info', initialProject.path, selectedProvider, selectedAcpAgentId)
       if (system) applySystemInfo(selectedProvider, system)
       const resources = peekHarnessResource(client, 'get_project_resources', initialProject.path, selectedProvider)
       setWorkspaceDirs(resources?.workspaceDirs ?? [])
@@ -1396,7 +1396,7 @@ export function MobileApp() {
     }
     // Independent reads overlap latency. Only the selected harness is loaded.
     const [, , page] = await Promise.all([
-      preloadHarnessResources(client, p.path, [selectedProvider]),
+      preloadHarnessResources(client, p.path, [suggestionHarnessKey(selectedProvider, selectedAcpAgentId)]),
       loadMcpIcons(client, p.path),
       readProjectSessions(client, p.path),
       refreshGitInfo(p.path),
@@ -1413,7 +1413,7 @@ export function MobileApp() {
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
     const shellRequest = ++shellDetailsRequestRef.current
-    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty)
+    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty, provider === 'acp' ? selectedAcpAgentId : null)
     if (shellRequest !== shellDetailsRequestRef.current || clientRef.current !== client) return
     replaceGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
@@ -1432,7 +1432,7 @@ export function MobileApp() {
     if (!client || !project) throw new Error('Connect to a desktop to refresh models')
     const request = ++systemInfoRequestRef.current
     if (selectedProvider === 'opencode' && runtimeRef.current?.sessionId === sessionId) await runtimeRef.current.refreshResources()
-    const info = await requestHarnessResource(client, 'get_system_info', project.path, selectedProvider, { force: true })
+    const info = await requestHarnessResource(client, 'get_system_info', project.path, selectedProvider, { force: true }, selectedAcpAgentId)
     if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
     if (info.error) throw new Error(info.error)
     applySystemInfo(selectedProvider, info)
@@ -1466,12 +1466,13 @@ export function MobileApp() {
   useEffect(() => {
     const client = clientRef.current
     if (!client || !project) return
-    return subscribeHarnessResources(client, (type, path, provider, value) => {
+    return subscribeHarnessResources(client, (type, path, provider, value, acpAgentId) => {
       if (clientRef.current !== client || path !== project.path || provider !== selectedProvider) return
+      if (provider === 'acp' && acpAgentId && selectedAcpAgentId && acpAgentId !== selectedAcpAgentId) return
       if (type === 'get_system_info') applySystemInfo(selectedProvider, value as RemoteSystemInfo)
       else setWorkspaceDirs((value as { workspaceDirs?: string[] }).workspaceDirs ?? [])
     })
-  }, [connectionState, project?.path, selectedProvider, applySystemInfo])
+  }, [connectionState, project?.path, selectedProvider, selectedAcpAgentId, applySystemInfo])
 
   const openSettings = (origin: SettingsOrigin) => {
     setSettingsOrigin(origin)
@@ -1563,7 +1564,7 @@ export function MobileApp() {
 
   const refreshRuntimeCatalog = (runtime: ChatRuntime, provider: HarnessId, restoreSelection = false) => {
     const request = ++systemInfoRequestRef.current
-    refreshSessionCatalog(() => runtime.loadSystemInfo(provider),
+    refreshSessionCatalog(() => runtime.loadSystemInfo(provider, runtime.session.acpAgentId ?? selectedAcpAgentId),
       () => request === systemInfoRequestRef.current && runtimeRef.current === runtime,
       (info) => applySystemInfo(
         provider,
@@ -1631,7 +1632,7 @@ export function MobileApp() {
     setRoutedEnvironmentId(null)
     // Session settings and credential ids belong to their execution host. They
     // must not override the paired desktop's defaults on its new-session page.
-    harnessSelection.resetForProvider(selectedProvider)
+    harnessSelection.resetForProvider(selectedProvider, selectedAcpAgentId)
     setProject(projects.find(row => row.path === path) ?? projects[0] ?? null)
   }
   const runWorkspaceTransition = (action: (signal: AbortSignal) => Promise<void>) => sessionTransitionRef.current.run(async (signal) => {
@@ -1866,7 +1867,7 @@ export function MobileApp() {
     if (client && targetProject) {
       const request = ++systemInfoRequestRef.current
       const path = targetProject.path
-      const system = peekHarnessResource(client, 'get_system_info', path, selectedProvider)
+      const system = peekHarnessResource(client, 'get_system_info', path, selectedProvider, selectedAcpAgentId)
       const isCurrent = () => clientRef.current === client && request === systemInfoRequestRef.current
       const apply = (info: RemoteSystemInfo) => {
         applySystemInfo(selectedProvider, info)
@@ -1875,7 +1876,7 @@ export function MobileApp() {
       }
       if (system) apply(system)
       else {
-        refreshSessionCatalog(() => requestHarnessResource(client, 'get_system_info', path, selectedProvider),
+        refreshSessionCatalog(() => requestHarnessResource(client, 'get_system_info', path, selectedProvider, false, selectedAcpAgentId),
           isCurrent, apply, () => setStatus(t('Agent settings are unavailable. Refresh the model list and try again.')))
       }
     }
@@ -1966,10 +1967,10 @@ export function MobileApp() {
       applySystemInfo(option.provider, info)
       setHarness(option.provider)
     }
-    const cached = peekHarnessResource(client, 'get_system_info', project.path, option.provider)
+    const cached = peekHarnessResource(client, 'get_system_info', project.path, option.provider, option.acpAgentId)
     if (cached) apply(cached)
     else runUiAction(async () => {
-      apply(await requestHarnessResource(client, 'get_system_info', project.path, option.provider))
+      apply(await requestHarnessResource(client, 'get_system_info', project.path, option.provider, false, option.acpAgentId))
     }, setStatus, 'failed to load agent settings')
   }
   /**

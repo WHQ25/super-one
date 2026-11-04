@@ -20,7 +20,7 @@ const REMOTE_LISTED_HARNESS = {
 } satisfies Record<HarnessId, true>
 
 function listedProvider(rawHarness: string): HarnessId {
-  if (rawHarness === 'acp-grok') return 'acp'
+  if (rawHarness === 'acp-grok' || rawHarness === 'acp-antigravity') return 'acp'
   return Object.hasOwn(REMOTE_LISTED_HARNESS, rawHarness) ? rawHarness as HarnessId : 'claude'
 }
 
@@ -70,7 +70,13 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
   const listedAgentId = typeof s.acpAgentId === 'string' && s.acpAgentId.trim()
     ? s.acpAgentId.trim()
     : null
-  const acpAgentId = listedAgentId ?? (rawHarness === 'acp-grok' ? 'grok-build' : null)
+  const acpAgentId = listedAgentId ?? (
+    rawHarness === 'acp-grok'
+      ? 'grok-build'
+      : rawHarness === 'acp-antigravity'
+        ? 'antigravity'
+        : null
+  )
   const tags = parseTagsJson(s.tags)
   const parentSessionId = typeof s.parentSessionId === 'string' && s.parentSessionId.trim()
     ? s.parentSessionId.trim()

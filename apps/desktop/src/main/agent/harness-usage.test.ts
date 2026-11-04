@@ -108,12 +108,14 @@ describe('readHarnessUsage', () => {
     expect(await readHarnessUsage({ provider: 'codex', projectPath: '/p' }, d)).toBeNull()
   })
 
-  it('reads Grok billing through ACP and skips every other ACP agent', async () => {
+  it('reads Grok and Antigravity billing through ACP and skips every other ACP agent', async () => {
     const d = deps()
     const grok = await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'grok', sessionId: 's1' }, d)
     expect(grok).toMatchObject({ kind: 'acp', title: 'Grok Build', account: 'g@x.ai', creditBalanceDollars: 12 })
+    const antigravity = await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'antigravity', sessionId: 's2' }, d)
+    expect(antigravity).toMatchObject({ kind: 'acp', title: 'Grok Build', account: 'g@x.ai', creditBalanceDollars: 12 })
     expect(await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'gemini' }, d)).toBeNull()
-    expect(d.acpRateLimits).toHaveBeenCalledTimes(1)
+    expect(d.acpRateLimits).toHaveBeenCalledTimes(2)
   })
 
   it('has no meter for harnesses without a subscription surface', async () => {

@@ -46,6 +46,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
 import {
+  catalogIdForSessionProvider,
   isCatalogHarnessEnabled,
   isPickerHarnessEnabled,
   type HarnessCatalogStatus,
@@ -105,8 +106,9 @@ export function ProviderSelector({
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
+  const appHarnessCatalog = useAppStore((s) => s.harnessCatalog)
   const [localHarnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(
-    () => rememberedHarnessCatalog,
+    () => appHarnessCatalog ?? rememberedHarnessCatalog,
   )
   // Pickers offer what the project's machine runs; harness bootstrap below stays on this desktop's.
   const harnessCatalog = useProjectHarnessCatalog(localHarnessCatalog)
@@ -314,6 +316,12 @@ export function ProviderSelector({
     canAutoSelect,
   ])
 
+  useEffect(() => {
+    if (!appHarnessCatalog) return
+    rememberedHarnessCatalog = appHarnessCatalog
+    setHarnessCatalog(appHarnessCatalog)
+  }, [appHarnessCatalog])
+
   const isAgentAllowed = useCallback(
     (provider: ChatProvider, agentId?: string | null) => isPickerHarnessEnabled(harnessCatalog, provider, agentId, {
       enabledExperimentalAgents,
@@ -322,10 +330,24 @@ export function ProviderSelector({
     [enabledExperimentalAgents, experimentalAgentsEnabled, harnessCatalog],
   )
 
+  const normalizedAgents = useMemo(
+    () => agents.map((agent) => {
+      if (agent.installed) return agent
+      const catalogId = catalogIdForSessionProvider('acp', agent.id)
+      if (!catalogId) return agent
+      const row = harnessCatalog?.find((r) => r.id === catalogId)
+      if (row?.enabled && (row.state === 'ready' || row.state === 'needs_auth' || row.state === 'installing')) {
+        return { ...agent, installed: true }
+      }
+      return agent
+    }),
+    [agents, harnessCatalog],
+  )
+
   // OpenCode over ACP is offered as the OpenCode harness, not as an ACP agent.
   const visibleAcpAgents = useMemo(
-    () => agents.filter((agent) => !isOpenCodeAcpAgent(agent.id) && isAgentAllowed('acp', agent.id)),
-    [agents, isAgentAllowed],
+    () => normalizedAgents.filter((agent) => !isOpenCodeAcpAgent(agent.id) && isAgentAllowed('acp', agent.id)),
+    [normalizedAgents, isAgentAllowed],
   )
 
   useEffect(() => {
@@ -360,14 +382,14 @@ export function ProviderSelector({
   ])
 
   const selectedAcpAgent = useMemo(() => {
-    if (agents.length === 0) return null
-    return agents.find((a) => a.id === acpAgentId)
+    if (normalizedAgents.length === 0) return null
+    return normalizedAgents.find((a) => a.id === acpAgentId)
       ?? visibleAcpAgents.find((a) => isGrokAcpAgent(a.id))
       ?? visibleAcpAgents[0]
-      ?? agents.find((a) => isGrokAcpAgent(a.id))
-      ?? agents[0]
+      ?? normalizedAgents.find((a) => isGrokAcpAgent(a.id))
+      ?? normalizedAgents[0]
       ?? null
-  }, [agents, acpAgentId, visibleAcpAgents])
+  }, [normalizedAgents, acpAgentId, visibleAcpAgents])
 
   useEffect(() => {
     if (canAutoSelect && preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {

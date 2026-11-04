@@ -102,7 +102,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   // Read at request time. A catalog write that only moved `lastOpened` must not
   // rebuild `load` and every row callback derived from it.
   const hostProjectsRef = useRef(hostProjects)
-  useEffect(() => { hostProjectsRef.current = hostProjects }, [hostProjects])
+  hostProjectsRef.current = hostProjects
 
   const [folderSessionsHasMore, setFolderSessionsHasMore] = useState<Record<string, boolean>>({})
   const [folderChildSessions, setFolderChildSessions] = useState<Record<string, Record<string, SessionHistoryEntry[]>>>({})

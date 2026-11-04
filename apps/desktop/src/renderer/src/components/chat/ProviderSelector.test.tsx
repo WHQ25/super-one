@@ -70,4 +70,53 @@ describe('ProviderSelector harness catalog', () => {
     expect(switchToSession).not.toHaveBeenCalled()
     expect(useChatStore.getState().projectSessions['/p']._activeSessionId).toBe('artifact')
   })
+
+  it('does not show the install/restart hint when acp-antigravity is enabled and ready in the harness catalog', async () => {
+    window.app.listHarnesses = vi.fn(async () => [
+      { id: 'acp-grok', enabled: true, state: 'ready', runtimeSource: 'external', requiresAuth: true },
+      { id: 'acp-antigravity', enabled: true, state: 'ready', runtimeSource: 'managed', requiresAuth: true },
+    ])
+    window.app.queryHarnessSessionRanks = vi.fn(async () => [])
+    window.app.getAppSettings = vi.fn(async () => ({}) as never)
+
+    const project = createDefaultProjectState()
+    project._activeSessionId = 's1'
+    project._sessions = {
+      s1: {
+        ...createDefaultPerSessionState(),
+        _historyHydrated: true,
+        preferredProvider: 'acp',
+        sessionProvider: 'acp',
+        acpAgentId: 'antigravity',
+        harnessUserChosen: true,
+      },
+    }
+    useChatStore.setState({
+      activeProject: '/p',
+      projectSessions: { '/p': project },
+      harnessResources: {
+        ...useChatStore.getState().harnessResources,
+        acp: {
+          agents: [
+            { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+            // Stale startup cache before ACP agent re-detection completes:
+            { id: 'antigravity', name: 'Antigravity', installed: false, commandPreview: 'agy --acp' },
+          ],
+          selectedAgentId: 'antigravity',
+          modelsByAgentId: {},
+          configByAgentId: {},
+        },
+      },
+      initializeHarness: vi.fn(async () => {}),
+    })
+
+    render(<ProviderSelector />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Antigravity' })).toBeInTheDocument()
+      expect(
+        screen.queryByText('Install this CLI on your machine, then restart SuperOne.'),
+      ).not.toBeInTheDocument()
+    })
+  })
 })

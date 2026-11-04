@@ -9,10 +9,14 @@ describe('mapRemoteSessionRow', () => {
     expect(mapRemoteSessionRow({ sessionId: 'x', harnessId: 'pi' }).provider).toBe('claude')
   })
 
-  it('names grok from the acp-grok catalog id and keeps a session agent ahead of that default', () => {
+  it('names grok and antigravity from their acp catalog ids and keeps a session agent ahead of that default', () => {
     expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp-grok' })).toMatchObject({
       provider: 'acp',
       acpAgentId: 'grok-build',
+    })
+    expect(mapRemoteSessionRow({ sessionId: 'a', harnessId: 'acp-antigravity' })).toMatchObject({
+      provider: 'acp',
+      acpAgentId: 'antigravity',
     })
     expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp-grok', acpAgentId: 'custom' })).toMatchObject({
       provider: 'acp',

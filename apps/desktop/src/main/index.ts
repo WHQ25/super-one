@@ -148,7 +148,7 @@ import { randomBytes } from 'node:crypto'
 import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { detectBuiltinAgents } from './acp/acp-detect'
 import { getBuiltinAgent } from './acp/agent-catalog'
-import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } from './acp/acp-model-cache'
+import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpDetectedAgents, refreshAcpModelsOnce } from './acp/acp-model-cache'
 import {
   AgentIpcChannels,
   type ModelOption,
@@ -5692,26 +5692,8 @@ app.whenReady().then(async () => {
   }
   void (async () => {
     try {
-      const prev = readAcpResourcesCache()
-      const agents = await detectBuiltinAgents()
-      const prevSelected = prev.selectedAgentId
-      const selectedAgentId =
-        prevSelected && (getBuiltinAgent(prevSelected) || prevSelected === 'custom')
-          ? prevSelected
-          : null
-      writeAcpResourcesCache({
-        ...prev,
-        agents: agents.map((a) => ({
-          id: a.id,
-          name: a.name,
-          installed: a.installed,
-          commandPreview: a.commandPreview,
-        })),
-        selectedAgentId,
-        modelsByAgentId: prev.modelsByAgentId ?? {},
-        configByAgentId: prev.configByAgentId ?? {},
-      })
-      log.info('[acp] agent cache refreshed: %d agents', agents.length)
+      const detected = await refreshAcpDetectedAgents()
+      log.info('[acp] agent cache refreshed: %d agents', detected.agents.length)
       const withConfig = await refreshAcpModelsOnce()
       log.info(
         '[acp] config cache refreshed: %d agents with config',

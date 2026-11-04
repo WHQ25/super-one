@@ -121,6 +121,46 @@ describe('remote harness system info', () => {
     expect(info.permissionModes).toEqual(HARNESS_LAUNCH_OPTIONS.acp.permissionModes)
   })
 
+  it('honors an explicit acpAgentId and projects Antigravity permission modes without redundant session modes', async () => {
+    const deps = dependencies({
+      acp: {
+        agents: [
+          { id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' },
+          { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy' },
+        ],
+        selectedAgentId: 'grok-build',
+        configByAgentId: {
+          antigravity: {
+            configOptions: [],
+            extraModels: [model('gemini-3.1-pro-high')],
+            selectedModelId: 'gemini-3.1-pro-high',
+            modelConfigId: null,
+            extraModes: [model('agent'), model('plan')],
+            selectedModeId: 'agent',
+            modeConfigId: null,
+            slashCommands: [{
+              name: 'automation',
+              description: 'Create an automation',
+              argumentHint: '',
+              isSkill: true,
+            }],
+            updatedAt: '2026-09-04T00:00:00.000Z',
+          },
+        },
+      },
+    }, { acp: 'bypassPermissions' })
+    deps.acpAgentId = 'antigravity'
+
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp', deps)
+
+    expect(info.acpAgentId).toBe('antigravity')
+    expect(info.models?.map((entry) => entry.id)).toEqual(['gemini-3.1-pro-high'])
+    expect(info.permissionModes).toEqual(['default', 'plan', 'acceptEdits', 'auto'])
+    expect(info.defaults).toMatchObject({ model: 'gemini-3.1-pro-high', permissionMode: 'default' })
+    expect(info.modes).toBeUndefined()
+    expect(info.slashCommands?.map((entry) => entry.name)).toEqual(['automation'])
+  })
+
   /**
    * The point of the per-harness split: a mode configured on one harness must
    * reach that harness and no other. The previous shared setting could only ever

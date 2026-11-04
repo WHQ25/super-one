@@ -13,6 +13,7 @@ import type {
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
+import { detectBuiltinAgents } from './acp-detect'
 import { createAcpRuntime } from './acp-runtime'
 import { discoverAntigravitySlashCommands } from './antigravity-slash-commands'
 import {
@@ -140,6 +141,30 @@ export function readAcpResourcesCache(): AcpResources {
 
 export function writeAcpResourcesCache(resources: AcpResources): void {
   setCachedHarnessResources('acp', normalizeResources(resources))
+}
+
+export async function refreshAcpDetectedAgents(): Promise<AcpResources> {
+  const prev = readAcpResourcesCache()
+  const agents = await detectBuiltinAgents()
+  const prevSelected = prev.selectedAgentId
+  const selectedAgentId =
+    prevSelected && (getBuiltinAgent(prevSelected) || prevSelected === 'custom')
+      ? prevSelected
+      : null
+  const next = normalizeResources({
+    ...prev,
+    agents: agents.map((a) => ({
+      id: a.id,
+      name: a.name,
+      installed: a.installed,
+      commandPreview: a.commandPreview,
+    })),
+    selectedAgentId,
+    modelsByAgentId: prev.modelsByAgentId ?? {},
+    configByAgentId: prev.configByAgentId ?? {},
+  })
+  writeAcpResourcesCache(next)
+  return next
 }
 
 export function catalogFromModelConfig(cfg: AcpModelConfig): AcpAgentModelCatalog {

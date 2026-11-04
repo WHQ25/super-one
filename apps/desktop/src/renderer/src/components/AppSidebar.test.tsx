@@ -1250,4 +1250,32 @@ describe('AppSidebar interactions', () => {
     expect(c.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   })
+
+  it('loads sessions on startup for non-current folders persisted in expandedProjectKeys', async () => {
+    const { useMultiHostSidebarStore } = await import('@/stores/multi-host-sidebar')
+    useMultiHostSidebarStore.getState().setExpandedProjectKeys(['/super-one'])
+
+    appState.currentFolder = '/project-a'
+    appState.recentFolders = [
+      { name: 'project-a', path: '/project-a', addedAt: '2026-03-01T00:00:00.000Z' },
+      { name: 'super-one', path: '/super-one', addedAt: '2026-03-02T00:00:00.000Z' },
+    ]
+    sessionFixtures.byFolder = {
+      '/project-a': [],
+      '/super-one': [
+        {
+          sessionId: 'sid-super-1',
+          title: 'Persisted Expanded Session',
+          lastActiveAt: '2026-03-02T01:00:00.000Z',
+          messageCount: 3,
+        },
+      ],
+    }
+    chatState.projectSessions = {}
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    expect(await screen.findByText('Persisted Expanded Session')).toBeInTheDocument()
+  })
 })

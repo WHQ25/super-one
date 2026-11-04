@@ -494,14 +494,30 @@ export class AgentService {
   }
 
   /** A harness's catalog and defaults for a phone composer (`get_system_info`, `harness.systemInfo`). */
-  async remoteSystemInfo(projectPath: string, provider: HarnessId, force?: boolean): Promise<import('@superone/shared/agent-types').RemoteSystemInfo> {
+  async remoteSystemInfo(
+    projectPath: string,
+    provider: HarnessId,
+    force?: boolean,
+    acpAgentId?: string | null,
+  ): Promise<import('@superone/shared/agent-types').RemoteSystemInfo> {
     const settings = readAppSettings()
+    if (provider === 'acp' && force) {
+      try {
+        const { refreshAcpDetectedAgents, refreshAcpModelsOnce } = await import('../acp/acp-model-cache')
+        await refreshAcpDetectedAgents()
+        const targetAgentId = acpAgentId?.trim() || settings.agentPreference.acp.selectedAgentId?.trim()
+        await refreshAcpModelsOnce({ ...(targetAgentId ? { agentIds: [targetAgentId] } : {}), force: true })
+      } catch (err) {
+        log.warn('[get_system_info] acp model refresh failed: %s', err instanceof Error ? err.message : String(err))
+      }
+    }
     // Claude account choices retain their credential domain even with one account.
     const claudeAccounts = provider === 'claude'
       ? (await listClaudeAccounts().catch(() => [])).filter((account) => account.loggedIn)
       : []
     const info = await buildRemoteHarnessSystemInfo(projectPath, provider, {
       settings,
+      acpAgentId,
       currentLocale: getCurrentLocale(),
       getCachedResources: getCachedHarnessResources,
       fetchClaudeModels: fetchModels,
@@ -612,7 +628,7 @@ export class AgentService {
 
   /** The harnesses a phone offers for a new chat, in the desktop's suggestion order (`list_harness_options`, `harness.options`). */
   async remoteHarnessOptions(): Promise<{ options: Array<{ key: string; provider: string; acpAgentId: string | null; label: string }> }> {
-    const [{ listHarnessInstallations }, { detectBuiltinAgents }, { orderSuggestionHarnesses }, { isGrokAcpAgent }] =
+    const [{ listHarnessInstallations }, { detectBuiltinAgents }, { orderSuggestionHarnesses }, { isAntigravityAcpAgent, isGrokAcpAgent }] =
       await Promise.all([
         import('../harness/service'),
         import('../acp/acp-detect'),
@@ -624,12 +640,14 @@ export class AgentService {
     const catalog = listHarnessInstallations()
     const catalogOn = (id: string) => catalog.some((row) => row.id === id && row.enabled)
     // Same visibility rules as the desktop `ChatSuggestions`: OpenCode has
-    // its own harness row, and a non-Grok ACP agent needs the experimental
-    // opt-in that names it.
+    // its own harness row, Grok and Antigravity map to their catalog entries,
+    // and any other ACP agent needs the experimental opt-in that names it.
     const acpAgents = (await detectBuiltinAgents())
       .filter((agent) => agent.id !== 'opencode' && (isGrokAcpAgent(agent.id)
         ? catalogOn('acp-grok')
-        : settings.experimentalAgentsEnabled || settings.enabledExperimentalAgents.includes(agent.id)))
+        : isAntigravityAcpAgent(agent.id)
+          ? catalogOn('acp-antigravity')
+          : settings.experimentalAgentsEnabled || settings.enabledExperimentalAgents.includes(agent.id)))
       .map((agent) => ({ id: agent.id, name: agent.name }))
     const options = orderSuggestionHarnesses({
       ranks: queryHarnessSessionRanks(7),
@@ -2094,15 +2112,15 @@ export class AgentService {
       return result
     })
 
-    // Cache-only. Detection / model probes run on app open (see main process startup).
     windowIpc.handle(AgentIpcChannels.ACP_LIST_AGENTS, async () => {
-      const { readAcpResourcesCache } = await import('../acp/acp-model-cache')
-      return readAcpResourcesCache()
+      const { refreshAcpDetectedAgents } = await import('../acp/acp-model-cache')
+      return refreshAcpDetectedAgents()
     })
 
     // Once-per-launch model catalog refresh for installed ACP agents.
     windowIpc.handle(AgentIpcChannels.ACP_REFRESH_MODELS, async (_event, agentId?: string) => {
-      const { refreshAcpModelsOnce } = await import('../acp/acp-model-cache')
+      const { refreshAcpDetectedAgents, refreshAcpModelsOnce } = await import('../acp/acp-model-cache')
+      await refreshAcpDetectedAgents()
       return refreshAcpModelsOnce(agentId ? { agentIds: [agentId] } : undefined)
     })
 

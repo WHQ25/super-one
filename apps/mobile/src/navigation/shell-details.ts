@@ -22,6 +22,7 @@ export async function fetchShellDetails(
   provider: HarnessId,
   refreshCatalog = false,
   includeWorktreeDirty = false,
+  acpAgentId?: string | null,
 ): Promise<ShellDetails> {
   const [git, resources, worktree, system, branchResult, checkedOutResult] = await Promise.all([
     requestGitResource(client, 'git.status', projectPath)
@@ -29,7 +30,7 @@ export async function fetchShellDetails(
     requestHarnessResource(client, 'get_project_resources', projectPath, provider).catch(() => null),
     requestGitResource(client, 'git.worktreeInfo', projectPath)
       .catch(() => null) as Promise<WorktreeInfo | null>,
-    requestHarnessResource(client, 'get_system_info', projectPath, provider, refreshCatalog).catch(() => null),
+    requestHarnessResource(client, 'get_system_info', projectPath, provider, refreshCatalog, acpAgentId).catch(() => null),
     requestGitResource(client, 'git.branches', projectPath)
       .catch(() => null) as Promise<{ branches?: string[] } | null>,
     requestGitResource(client, 'git.worktreeCheckedOutBranches', projectPath)

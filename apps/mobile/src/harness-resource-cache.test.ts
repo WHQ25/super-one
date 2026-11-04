@@ -72,4 +72,33 @@ describe('connection harness resources', () => {
     clearHarnessResources(client)
     expect(peekSlashCatalog(client, '/p', 'claude')).toBeUndefined()
   })
+
+  it('isolates get_system_info catalogs per ACP agent id and forwards acpAgentId to the host', async () => {
+    const client = {
+      resolveProject: async () => ({ environmentId: 'desk', projectId: 'p' }),
+      rpc: vi.fn(async (_method: string, params: { acpAgentId?: string }) => ({
+        models: [{ id: `${params.acpAgentId ?? 'default'}-model` }],
+        slashCommands: [{ name: `${params.acpAgentId ?? 'default'}-cmd`, description: '', argumentHint: '' }],
+      })),
+    }
+
+    await requestHarnessResource(client, 'get_system_info', '/p', 'acp', { acpAgentId: 'grok-build' })
+    await requestSlashCatalog(client, '/p', 'acp', 'antigravity')
+
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      1,
+      'harness.systemInfo',
+      { projectId: 'p', harnessId: 'acp', acpAgentId: 'grok-build' },
+      { environmentId: 'desk' },
+    )
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      2,
+      'harness.systemInfo',
+      { projectId: 'p', harnessId: 'acp', acpAgentId: 'antigravity' },
+      { environmentId: 'desk' },
+    )
+    expect(peekHarnessResource(client, 'get_system_info', '/p', 'acp', 'grok-build')?.models).toEqual([{ id: 'grok-build-model' }])
+    expect(peekHarnessResource(client, 'get_system_info', '/p', 'acp', 'antigravity')?.models).toEqual([{ id: 'antigravity-model' }])
+    expect(peekSlashCatalog(client, '/p', 'acp', 'antigravity')?.map((cmd) => cmd.name)).toContain('antigravity-cmd')
+  })
 })

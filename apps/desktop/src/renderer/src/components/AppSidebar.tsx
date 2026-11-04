@@ -306,6 +306,27 @@ export const AppSidebar = memo(function AppSidebar() {
     useMultiHostSidebarStore.getState().setExpandedProjectKeys([...expandedFolders])
   }, [expandedFolders])
 
+  // Persisted expanded rows survive a restart; load their first page once their host is ready.
+  useEffect(() => {
+    if (multiHostChrome) {
+      for (const bucket of environments) {
+        if (bucket.connection === 'offline') continue
+        for (const checkout of bucket.checkouts) {
+          if (checkout.missing || !expandedFolders.has(checkout.pathKey)) continue
+          if (folderSessionsRef.current[checkout.pathKey]) continue
+          void loadFolderSessions(checkout.pathKey, 'expand')
+        }
+      }
+      return
+    }
+    if (hostTurnedOff) return
+    for (const folder of recentFolders) {
+      if (folder.missing || !expandedFolders.has(folder.path)) continue
+      if (folderSessionsRef.current[folder.path]) continue
+      void loadFolderSessions(folder.path, 'expand')
+    }
+  }, [expandedFolders, multiHostChrome, environments, recentFolders, hostTurnedOff, loadFolderSessions, folderSessionsRef])
+
   const toggleExpand = useCallback((folderPath: string) => {
     // Expanding a folder only reveals its sessions. Selecting one is a row click.
     // The ref updates here, not only in the effect: one click can expand a merged

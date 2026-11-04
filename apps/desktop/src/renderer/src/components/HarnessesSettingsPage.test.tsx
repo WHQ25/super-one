@@ -28,13 +28,24 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
-vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      harnessResources: { acp: { agents: [] } },
-      initializeHarness: vi.fn(),
-    }),
+const chatMock = vi.hoisted(() => ({
+  setHarnessResources: vi.fn(),
+  initializeHarness: vi.fn(),
 }))
+
+vi.mock('@/stores/chat', () => {
+  const state = {
+    harnessResources: { acp: { agents: [] } },
+    initializeHarness: chatMock.initializeHarness,
+    setHarnessResources: chatMock.setHarnessResources,
+  }
+  return {
+    useChatStore: Object.assign(
+      (selector: (value: typeof state) => unknown) => selector(state),
+      { getState: () => state },
+    ),
+  }
+})
 
 vi.mock('@/stores/app', () => {
   const state = {
@@ -210,4 +221,41 @@ describe('first-party harness settings entries', () => {
       ).toBeInTheDocument()
     },
   )
+
+  it('refreshes ACP agent detection and models in chat store right after enabling acp-antigravity', async () => {
+    const listedResources = {
+      agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' }],
+      selectedAgentId: null,
+      modelsByAgentId: {},
+      configByAgentId: {},
+    }
+    const refreshedResources = {
+      ...listedResources,
+      modelsByAgentId: {
+        antigravity: {
+          models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: '' }],
+          selectedModelId: 'gemini-2.5-pro',
+          configId: 'model',
+          updatedAt: '2026-11-04T00:00:00.000Z',
+        },
+      },
+    }
+    const listAcpAgents = vi.fn().mockResolvedValue(listedResources)
+    const refreshAcpModels = vi.fn().mockResolvedValue(refreshedResources)
+    Object.assign(window.app, { listAcpAgents, refreshAcpModels })
+
+    const user = userEvent.setup()
+    render(<HarnessesSettingsPage />)
+
+    await user.click(await screen.findByRole('button', { name: HARNESS_LABELS['acp-antigravity'] }))
+    await user.click(screen.getByRole('switch'))
+
+    await waitFor(() => {
+      expect(hoisted.enableHarness).toHaveBeenCalledWith({ harnessId: 'acp-antigravity' })
+      expect(listAcpAgents).toHaveBeenCalled()
+      expect(refreshAcpModels).toHaveBeenCalledWith('antigravity')
+      expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp', listedResources)
+      expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp', refreshedResources)
+    })
+  })
 })

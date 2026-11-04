@@ -608,9 +608,9 @@ export class ChatRuntime {
   }
   private readonly attachmentBytes = new Map<string, ImageAttachment>()
 
-  async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
+  async loadSystemInfo(provider: string = String(this.provider), acpAgentId: string | null = this.session.acpAgentId ?? null): Promise<SystemInfo> {
     if (!this.projectPath) return {}
-    const info = await requestHarnessResource(this.client, 'get_system_info', this.projectPath, provider) as SystemInfo
+    const info = await requestHarnessResource(this.client, 'get_system_info', this.projectPath, provider, false, acpAgentId) as SystemInfo
 
     this.provider = provider
     this.permissionModes = info.permissionModes ?? info.permissionPresets ?? []

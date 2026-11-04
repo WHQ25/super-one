@@ -362,7 +362,7 @@ const harnessHandlers: HarnessHandlerMap = {
   },
   acp: {
     // Serve disk cache immediately; background refresh runs once per app open in main.
-    connect: () => connectAcpResources(),
+    connect: (opts) => connectAcpResources(opts),
     apply: (s, r) => applyAcpResources(s, r),
   },
   opencode: {

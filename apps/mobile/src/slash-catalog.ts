@@ -85,7 +85,7 @@ export async function requestSlashCatalog(
   acpAgentId?: string | null,
 ): Promise<SlashCommandInfo[]> {
   const [info, resources] = await Promise.all([
-    requestHarnessResource(client, 'get_system_info', projectPath, provider),
+    requestHarnessResource(client, 'get_system_info', projectPath, provider, false, acpAgentId),
     requestHarnessResource(client, 'get_project_resources', projectPath, provider).catch(() => ({})),
   ])
   return buildCatalog(info, resources, provider, acpAgentId)
@@ -97,7 +97,7 @@ export function peekSlashCatalog(
   provider: HarnessId,
   acpAgentId?: string | null,
 ) {
-  const info = peekHarnessResource(client, 'get_system_info', projectPath, provider)
+  const info = peekHarnessResource(client, 'get_system_info', projectPath, provider, acpAgentId)
   const resources = peekHarnessResource(client, 'get_project_resources', projectPath, provider)
   return info && resources ? buildCatalog(info, resources, provider, acpAgentId) : undefined
 }

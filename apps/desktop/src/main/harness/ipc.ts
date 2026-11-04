@@ -68,7 +68,7 @@ export function registerHarnessIpcHandlers(): void {
       }
       log.info('[harness-ipc] enable %s forcePin=%s', input.harnessId, input.forcePin === true)
       await ensureShellPath()
-      return enableDesktopHarness({
+      const result = await enableDesktopHarness({
         harnessId: input.harnessId,
         artifactPath: input.artifactPath,
         command: input.command,
@@ -76,13 +76,39 @@ export function registerHarnessIpcHandlers(): void {
         args: input.args,
         forcePin: input.forcePin === true,
       })
+      if (
+        input.harnessId === 'acp-antigravity'
+        || input.harnessId === 'acp-grok'
+        || input.harnessId === 'opencode'
+      ) {
+        try {
+          const { refreshAcpDetectedAgents } = await import('../acp/acp-model-cache')
+          await refreshAcpDetectedAgents()
+        } catch (err) {
+          log.warn('[harness-ipc] refreshAcpDetectedAgents after enable failed:', err)
+        }
+      }
+      return result
     },
   )
 
   ipcMain.handle(AgentIpcChannels.HARNESS_DISABLE, async (_e, harnessId: string) => {
     if (!isNodeHarnessId(harnessId)) throw new Error(`unknown harnessId: ${harnessId}`)
     log.info('[harness-ipc] disable %s', harnessId)
-    return disableDesktopHarness(harnessId)
+    const result = disableDesktopHarness(harnessId)
+    if (
+      harnessId === 'acp-antigravity'
+      || harnessId === 'acp-grok'
+      || harnessId === 'opencode'
+    ) {
+      try {
+        const { refreshAcpDetectedAgents } = await import('../acp/acp-model-cache')
+        await refreshAcpDetectedAgents()
+      } catch (err) {
+        log.warn('[harness-ipc] refreshAcpDetectedAgents after disable failed:', err)
+      }
+    }
+    return result
   })
 
   ipcMain.handle(AgentIpcChannels.HARNESS_PROBE, async (_e, harnessId: string) => {

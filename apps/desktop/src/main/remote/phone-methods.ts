@@ -151,7 +151,12 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
 
     // Composer catalogs.
     'harness.systemInfo': (p, ctx) =>
-      host.agent.remoteSystemInfo(projectPath(ctx, text(p, 'projectId')), text(p, 'harnessId') as HarnessId, p.force === true),
+      host.agent.remoteSystemInfo(
+        projectPath(ctx, text(p, 'projectId')),
+        text(p, 'harnessId') as HarnessId,
+        p.force === true,
+        optionalText(p, 'acpAgentId') ?? null,
+      ),
     'harness.projectResources': (p, ctx) =>
       host.agent.remoteProjectResources(projectPath(ctx, text(p, 'projectId')), text(p, 'harnessId') as HarnessId),
     'harness.options': () => host.agent.remoteHarnessOptions(),

@@ -726,6 +726,43 @@ describe('AgentService phone projections', () => {
     expect(updateProjectMock).toHaveBeenCalledWith({ path: '/p', extraDirs: ['/shared'] })
     expect(updateProjectMock).toHaveBeenLastCalledWith({ path: '/p', extraDirs: [] })
   })
+
+  it('harness.systemInfo forwards acpAgentId so mobile selects the requested ACP agent catalog', async () => {
+    vi.mocked(database.getCachedHarnessResources).mockReturnValue({
+      agents: [
+        { id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' },
+        { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy' },
+      ],
+      selectedAgentId: 'grok-build',
+      configByAgentId: {
+        antigravity: {
+          configOptions: [],
+          extraModels: [{ id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro (High)', description: '' }],
+          selectedModelId: 'gemini-3.1-pro-high',
+          modelConfigId: null,
+          extraModes: [],
+          selectedModeId: null,
+          modeConfigId: null,
+          slashCommands: [],
+          updatedAt: '2026-09-04T00:00:00.000Z',
+        },
+      },
+    } as never)
+
+    const respond = vi.fn()
+    const service = new AgentService()
+    await captureValue(respond, 'sys-acp', () => nativePhoneProjection(service, 'harness.systemInfo', {
+      projectId: '/p',
+      harnessId: 'acp',
+      acpAgentId: 'antigravity',
+    }))
+
+    expect(respond).toHaveBeenCalledWith('sys-acp', expect.objectContaining({
+      acpAgentId: 'antigravity',
+      models: [expect.objectContaining({ id: 'gemini-3.1-pro-high' })],
+      permissionModes: ['default', 'plan', 'acceptEdits', 'auto'],
+    }))
+  })
 })
 
 /** Observe the projection value and its error independently of transport receipts. */

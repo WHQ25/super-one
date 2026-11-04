@@ -34,15 +34,16 @@ describe('defaultOnboardingSelection', () => {
 })
 
 describe('visibleOnboardingHarnesses', () => {
-  it('always lists Claude and Codex even when no CLI is on PATH', () => {
+  it('always lists Claude, Codex, and Antigravity even when no CLI is on PATH', () => {
     const hits: HarnessCliScanHit[] = [
       { harnessId: 'claude', command: null, detected: false },
       { harnessId: 'codex', command: null, detected: false },
       { harnessId: 'opencode', command: null, detected: false },
       { harnessId: 'cursor', command: null, detected: false },
       { harnessId: 'acp-grok', command: null, detected: false },
+      { harnessId: 'acp-antigravity', command: null, detected: false },
     ]
-    expect(visibleOnboardingHarnesses(hits)).toEqual(['claude', 'codex'])
+    expect(visibleOnboardingHarnesses(hits)).toEqual(['claude', 'codex', 'acp-antigravity'])
   })
 
   it('does not list Cursor just because the SDK is bundled', () => {
@@ -61,12 +62,14 @@ describe('visibleOnboardingHarnesses', () => {
       { harnessId: 'opencode', command: '/bin/opencode', detected: true },
       { harnessId: 'cursor', command: '/bin/cursor', detected: true },
       { harnessId: 'acp-grok', command: null, detected: false },
+      { harnessId: 'acp-antigravity', command: null, detected: false },
     ]
     expect(visibleOnboardingHarnesses(hits)).toEqual([
       'claude',
       'codex',
       'opencode',
       'cursor',
+      'acp-antigravity',
     ])
   })
 })

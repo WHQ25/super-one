@@ -8,6 +8,7 @@ import { registerAttachmentOriginalsIpc } from './attachment-originals'
 import { registerMcpAppsProviderIpc } from './mcp-apps/provider-ipc'
 import { initializeMcpAppExecutor, observeRemoteMcpAppEvent, releaseMcpAppRequester } from './mcp-apps/executor'
 import { codexAccountStore } from './codex/codex-account-store'
+import { registerAntigravityAuthIpc } from './acp/antigravity-auth-ipc'
 import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
 import { registerCodexUsageIpc } from './codex/codex-usage-ipc'
@@ -2728,6 +2729,7 @@ function registerIpcHandlers(): void {
   registerCodexUsageIpc(codexService)
   registerCodexVoiceIpc(codexService)
   registerGrokAuthIpc()
+  registerAntigravityAuthIpc()
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_SERVER_DIAGNOSTICS, async (_event, projectPath: string, apiProviderId?: string | null) => {
     if (parseRemoteProjectKey(projectPath)) {
@@ -4802,7 +4804,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const claude = getCachedHarnessResources('claude')
     const codex = getCachedHarnessResources('codex')
-    const acp = getCachedHarnessResources('acp')
+    const acp = getCachedHarnessResources('acp') ? readAcpResourcesCache() : null
     const opencode = getCachedHarnessResources('opencode')
     const cursor = getCachedHarnessResources('cursor')
     const sandboxCapability = getSandboxCapability()

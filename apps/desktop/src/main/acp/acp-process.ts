@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from 'child_process'
-import { Readable, Writable } from 'stream'
+import { PassThrough, Readable, Writable } from 'stream'
 import type { Stream } from '@agentclientprotocol/sdk'
 import { ndJsonStream } from '@agentclientprotocol/sdk'
 import log from '../logger'
-import { buildSafeEnv } from '../spawn-env'
+import { sanitizeEnv } from '../spawn-env'
 import type { ResolvedAcpLaunch } from './agent-catalog'
 
 let killEscalateMs = 1500
@@ -45,19 +45,58 @@ async function stopProcess(
   await closed.catch(() => undefined)
 }
 
-export function spawnAcpProcess(launch: ResolvedAcpLaunch): AcpProcessHandle {
-  const env = buildSafeEnv(launch.env)
+export interface SpawnAcpProcessOptions {
+  baseEnv?: NodeJS.ProcessEnv
+  onStdoutLine?: (line: string) => boolean
+  onStderrData?: (chunk: string) => void
+  onExit?: () => void
+}
+
+function createFilteredStdout(
+  stdout: NodeJS.ReadableStream,
+  onStdoutLine: (line: string) => boolean,
+): NodeJS.ReadableStream {
+  const pass = new PassThrough()
+  let remainder = ''
+  stdout.on('data', (chunk: Buffer | string) => {
+    remainder += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    let nl = remainder.indexOf('\n')
+    while (nl >= 0) {
+      const line = remainder.slice(0, nl)
+      remainder = remainder.slice(nl + 1)
+      if (!onStdoutLine(line)) {
+        pass.write(`${line}\n`)
+      }
+      nl = remainder.indexOf('\n')
+    }
+  })
+  stdout.once('end', () => {
+    if (remainder.length > 0 && !onStdoutLine(remainder)) {
+      pass.write(remainder)
+    }
+    pass.end()
+  })
+  stdout.once('error', (err) => pass.destroy(err))
+  return pass
+}
+
+export function spawnAcpProcess(
+  launch: ResolvedAcpLaunch,
+  options?: SpawnAcpProcessOptions,
+): AcpProcessHandle {
+  const env = sanitizeEnv(options?.baseEnv ?? process.env, launch.env)
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32' && !/\.(exe|par)$/i.test(launch.command),
     windowsHide: true,
   })
 
   const stdin = child.stdin
   const stdout = child.stdout
   if (!stdin || !stdout) {
+    options?.onExit?.()
     void stopProcess(child, Promise.resolve())
     throw new Error(`Failed to open stdio for ACP agent: ${launch.command}`)
   }
@@ -66,15 +105,21 @@ export function spawnAcpProcess(launch: ResolvedAcpLaunch): AcpProcessHandle {
   child.stderr?.setEncoding('utf8')
   child.stderr?.on('data', (chunk: string) => {
     stderrChunks.push(chunk)
+    options?.onStderrData?.(chunk)
     log.debug('[acp-process] stderr:', chunk.slice(0, 500))
   })
 
+  const effectiveStdout = options?.onStdoutLine
+    ? createFilteredStdout(stdout, options.onStdoutLine)
+    : stdout
+
   const output = Writable.toWeb(stdin) as WritableStream<Uint8Array>
-  const input = Readable.toWeb(stdout) as ReadableStream<Uint8Array>
+  const input = Readable.toWeb(effectiveStdout as Readable) as ReadableStream<Uint8Array>
   const stream = ndJsonStream(output, input)
 
   const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>((resolve) => {
     child.once('exit', (code, signal) => {
+      options?.onExit?.()
       resolve({ code, signal, stderr: stderrChunks.join('') })
     })
   })

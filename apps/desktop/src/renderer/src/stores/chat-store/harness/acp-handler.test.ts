@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { AcpResources } from '@superone/shared/agent-types'
-import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from './acp-handler'
+import type { ChatStore, PerSessionState } from '../types'
+import { applyAcpResources, getCachedAcpCatalog, sessionPatchFromAcpCatalog } from './acp-handler'
 
 const resources: AcpResources = {
   agents: [
@@ -222,5 +223,58 @@ describe('sessionPatchFromAcpCatalog', () => {
     const catalog = getCachedAcpCatalog(resources, 'opencode')!
     const patch = sessionPatchFromAcpCatalog(catalog, { preferSelected: 'missing' })
     expect(patch.selectedModel).toBe('opencode/big-pickle')
+  })
+
+  it('hydrates missing slash commands on open ACP sessions when applyAcpResources runs', () => {
+    const antigravityResources: AcpResources = {
+      agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy acp' }],
+      selectedAgentId: 'antigravity',
+      modelsByAgentId: {},
+      configByAgentId: {
+        antigravity: {
+          configOptions: [
+            {
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              type: 'select',
+              currentValue: 'gemini-3.1-pro-high',
+              options: [{ value: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro (High)', description: null }],
+            },
+          ],
+          slashCommands: [
+            { name: 'plan', description: 'Plan mode', argumentHint: '', isSkill: false },
+            { name: 'superone-harness', description: 'Harness skill', argumentHint: '', isSkill: true },
+          ],
+          updatedAt: '2026-04-01T00:00:00.000Z',
+        },
+      },
+    }
+    const existingSession = {
+      preferredProvider: 'acp',
+      sessionProvider: 'acp',
+      acpAgentId: 'antigravity',
+      acpModels: [{ id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro (High)', description: '' }],
+      acpModelsStatus: 'ready',
+      acpModes: [],
+      acpModesStatus: 'idle',
+      acpSlashCommands: [],
+      acpSlashCommandsStatus: 'idle',
+      selectedModel: 'gemini-3.1-pro-high',
+    } as unknown as PerSessionState
+    const store = {
+      harnessResources: { acp: null },
+      projectSessions: {
+        '/proj': {
+          _activeSessionId: 'sid-1',
+          _sessions: { 'sid-1': existingSession },
+        },
+      },
+    } as unknown as ChatStore
+
+    const result = applyAcpResources(store, antigravityResources)
+    const updated = result.projectSessions?.['/proj']?._sessions['sid-1']
+    expect(updated?.acpSlashCommands.map((c) => c.name)).toEqual(['plan', 'superone-harness'])
+    expect(updated?.acpSlashCommandsStatus).toBe('ready')
   })
 })

@@ -1,7 +1,8 @@
 import type { ComponentType } from 'react'
 import type { HarnessId } from '@superone/shared/agent-types'
-import { isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
 import { AcpSessionIcon } from './AcpSessionIcon'
+import { AntigravitySessionIcon } from './AntigravitySessionIcon'
 import { ClaudeSessionIcon } from './ClaudeSessionIcon'
 import { CodexSessionIcon } from './CodexSessionIcon'
 import type { SessionIconProps } from './ClaudeSessionIcon'
@@ -24,6 +25,7 @@ const OpenCode = withSessionIconGround(OpenCodeSessionIcon)
 const Cursor = withSessionIconGround(CursorSessionIcon)
 const Deepseek = withSessionIconGround(DeepseekSessionIcon)
 const Grok = withSessionIconGround(GrokSessionIcon)
+const Antigravity = withSessionIconGround(AntigravitySessionIcon)
 const Acp = withSessionIconGround(AcpSessionIcon)
 
 /** Pick the sidebar/session brand icon for a harness (+ ACP agent). */
@@ -36,8 +38,11 @@ export function resolveSessionIcon(
   if (harnessId === 'opencode') return OpenCode
   if (harnessId === 'cursor') return Cursor
   if (harnessId === 'dsh') return Deepseek
+  if (harnessId === 'acp-antigravity') return Antigravity
+  if (harnessId === 'acp-grok') return Grok
   if (harnessId === 'acp') {
     if (isGrokAcpAgent(acpAgentId)) return Grok
+    if (isAntigravityAcpAgent(acpAgentId)) return Antigravity
     if (isOpenCodeAcpAgent(acpAgentId)) return OpenCode
     return Acp
   }
@@ -57,6 +62,7 @@ export function resolveSessionIconFromBrandKey(
   // harness id for everything non-ACP); `deepseek` is kept as a display alias.
   if (brandKey === 'dsh' || brandKey === 'deepseek') return Deepseek
   if (brandKey === 'acp-grok' || brandKey.includes('grok')) return Grok
+  if (brandKey === 'acp-antigravity' || brandKey.includes('antigravity')) return Antigravity
   if (brandKey === 'acp' || brandKey.startsWith('acp')) return Acp
   return null
 }

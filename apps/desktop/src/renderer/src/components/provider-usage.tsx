@@ -20,6 +20,18 @@ export function formatWindowLabel(minutes: number | null, t: TFunction): string 
   return `${Math.round(minutes / 1440)}d`
 }
 
+function localizeWindowLabel(label: string, t: TFunction): string {
+  if (label === '5 Hours' || label === '5-hour') {
+    const translated = t('usageGauge.fiveHours')
+    return translated === 'usageGauge.fiveHours' ? '5 Hours' : translated
+  }
+  if (label === 'Weekly') {
+    const translated = t('usageGauge.weekly')
+    return translated === 'usageGauge.weekly' ? 'Weekly' : translated
+  }
+  return label
+}
+
 export function formatResetIn(resetsAtSeconds: number | null, t: TFunction): string | null {
   if (!resetsAtSeconds) return null
   const diffMs = resetsAtSeconds * 1000 - Date.now()
@@ -63,7 +75,7 @@ export function WindowBar(window: UsageWindow) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-        <span className="opacity-70">{label}</span>
+        <span className="opacity-70">{localizeWindowLabel(label, t)}</span>
         <span className="flex items-center gap-1.5">
           {resetIn && <span className="opacity-50">{resetIn} ·</span>}
           <span className="font-medium tabular-nums">{t('usageGauge.percentLeft', { percent: Math.round(remaining) })}</span>
@@ -73,6 +85,50 @@ export function WindowBar(window: UsageWindow) {
         <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${remaining}%` }} />
       </div>
       {copy && <span className="text-[11px] text-muted-foreground">{t(`usageGauge.forecast.${copy.key}`, { time: copy.time })}</span>}
+    </div>
+  )
+}
+
+export function GroupedWindowBars({ windows }: { windows: UsageWindow[] }) {
+  const hasGroups = windows.some((w) => w.label.includes(' · '))
+  if (!hasGroups) {
+    return (
+      <>
+        {windows.map((w) => (
+          <WindowBar key={w.id ?? w.label} {...w} />
+        ))}
+      </>
+    )
+  }
+
+  const groups: Array<{ title: string; items: UsageWindow[] }> = []
+  for (const w of windows) {
+    const sep = w.label.indexOf(' · ')
+    const title = sep >= 0 ? w.label.slice(0, sep).trim() : ''
+    const shortLabel = sep >= 0 ? w.label.slice(sep + 3).trim() : w.label
+    let group = groups.find((g) => g.title === title)
+    if (!group) {
+      group = { title, items: [] }
+      groups.push(group)
+    }
+    group.items.push({ ...w, label: shortLabel })
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {groups.map((group, idx) => (
+        <div
+          key={group.title || idx}
+          className={cn('flex flex-col gap-1.5', idx > 0 && 'border-t border-border/50 pt-2')}
+        >
+          {group.title && (
+            <div className="text-[11px] font-medium text-muted-foreground">{group.title}</div>
+          )}
+          {group.items.map((w) => (
+            <WindowBar key={w.id ?? `${group.title}:${w.label}`} {...w} />
+          ))}
+        </div>
+      ))}
     </div>
   )
 }

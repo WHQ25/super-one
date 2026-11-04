@@ -3,6 +3,7 @@ import { getSessionProvider } from '../session/session-provider-repo'
 import { randomUUID } from 'node:crypto'
 import type { SessionHostPort } from '@superone/runtime/server'
 import type { PermissionMode, SandboxMode, SendMessageRequest } from '@superone/shared/agent-types'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { sanitizeGitRef } from '@superone/runtime/git'
 import { gitRun } from '../git-run'
 import { activateWorktree } from '../git/worktree-ops'
@@ -71,7 +72,7 @@ export async function createDesktopSession(deps: DesktopSessionHostDeps, input: 
       await deps.sessions.disposeSession(sessionId)
     }
     options.assertCreate()
-    const providerId = input.providerId ?? `${input.harnessId ?? 'claude'}-base`
+    const providerId = input.providerId ?? baseSessionProviderId(input.harnessId ?? 'claude', input.acpAgentId)
     if (!continuesFrom) assertAgentProfileLaunchEnabled(getSessionProvider(providerId)?.config)
     deps.edits.create({ sessionId, projectPath, cwd, title: input.title, providerId })
     persisted = true

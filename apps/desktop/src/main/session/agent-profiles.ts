@@ -35,13 +35,10 @@ import {
 import type { AgentProfileListChoice, AgentProfileListOptionKey } from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isDefaultSessionProvider, sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
-import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAntigravityAcpAgent, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
-import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
-import {
-  isHarnessRunnable,
-  sessionHarnessIdToNodeHarnessId,
-} from '@superone/shared/environment'
+import { buildAgentMentionTargets, decodeAgentRef } from '@superone/shared/agent-mention-tags'
+import { isHarnessRunnable, sessionHarnessIdToNodeHarnessId, type NodeHarnessId } from '@superone/shared/environment'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { codexPresetForPermissionMode } from '@superone/shared/harness/harness-sandbox'
@@ -61,16 +58,21 @@ import { defaultChatProviderId } from '../agent/default-chat-provider'
 import { codexAccountStore } from '../codex/codex-account-store'
 
 export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProviders>[number]): string | null {
+  if (provider.id === 'acp-antigravity') return 'antigravity'
   const fromConfig = typeof (provider.config as { agentId?: unknown })?.agentId === 'string'
     ? (provider.config as { agentId: string }).agentId.trim()
     : ''
   const followsDefaults = isDefaultSessionProvider(provider)
   if (fromConfig && !followsDefaults) return fromConfig
   const selected = readAppSettings().agentPreference?.acp?.selectedAgentId
-  if (typeof selected === 'string' && selected.trim()) return selected.trim()
+  if (typeof selected === 'string' && selected.trim()) {
+    const trimmed = selected.trim()
+    if (provider.id !== 'acp-grok' || !isAntigravityAcpAgent(trimmed)) return trimmed
+  }
   const cached = getCachedHarnessResources('acp')
   if (typeof cached?.selectedAgentId === 'string' && cached.selectedAgentId.trim()) {
-    return cached.selectedAgentId.trim()
+    const trimmed = cached.selectedAgentId.trim()
+    if (provider.id !== 'acp-grok' || !isAntigravityAcpAgent(trimmed)) return trimmed
   }
   return fromConfig || null
 }
@@ -222,22 +224,57 @@ export function profileResources(
  * you had already opened a Codex session by hand. The catalog row is the honest
  * signal, and it is the same one Settings shows.
  */
-export function isProviderUsable(provider: ReturnType<typeof listSessionProviders>[number]): boolean {
-  const catalogId = sessionHarnessIdToNodeHarnessId(provider.harnessId)
+function isCatalogHarnessUsable(catalogId: NodeHarnessId | null): boolean {
   if (!catalogId) return false
   const status = getHarnessInstallation(catalogId)
   if (!status.enabled) return false
   if (isHarnessRunnable(status)) return true
-  // `needs_auth` can be stale: credentials added after the last probe leave the
-  // row behind. Re-probe those (cheap: binary + credential lookup) rather than
-  // silently dropping a harness the user just signed into.
   if (status.state !== 'needs_auth') return false
-  try {
-    probeDesktopHarness(catalogId)
-  } catch {
-    return false
-  }
+  try { probeDesktopHarness(catalogId) } catch { return false }
   return isHarnessRunnable(getHarnessInstallation(catalogId))
+}
+
+export function isProviderUsable(provider: ReturnType<typeof listSessionProviders>[number]): boolean {
+  if (provider.harnessId === 'acp') {
+    if (provider.id === 'acp-antigravity') return isCatalogHarnessUsable('acp-antigravity')
+    if (provider.id === 'acp-grok') return isCatalogHarnessUsable('acp-grok')
+    if (isDefaultSessionProvider(provider)) return isCatalogHarnessUsable('acp-grok') || isCatalogHarnessUsable('acp-antigravity')
+    return isCatalogHarnessUsable(isAntigravityAcpAgent(resolveAcpAgentId(provider)) ? 'acp-antigravity' : 'acp-grok')
+  }
+  return isCatalogHarnessUsable(sessionHarnessIdToNodeHarnessId(provider.harnessId))
+}
+
+export function resolveProviderRowId(agentId: string): string {
+  const decoded = decodeAgentRef(agentId)
+  const providerId = decoded?.providerId ?? agentId
+  const providers = listSessionProviders()
+  if (providers.some((row) => row.id === providerId)) return providerId
+  if ((providerId === 'acp-grok' || providerId === 'acp-antigravity') && providers.some((row) => row.id === 'acp-base')) return 'acp-base'
+  if (providerId === 'acp-base') {
+    const target = isAntigravityAcpAgent(decoded?.acpAgentId) ? 'acp-antigravity' : 'acp-grok'
+    if (providers.some((row) => row.id === target)) return target
+  }
+  return providerId
+}
+
+export function findSessionAgentProfile<T extends { id: string; acpAgentId?: string | null }>(
+  profiles: ReadonlyArray<T>,
+  agentId: string,
+): T | undefined {
+  const trimmed = agentId.trim()
+  if (!trimmed) return undefined
+  const direct = profiles.find((profile) => profile.id === trimmed)
+  if (direct) return direct
+  const decoded = decodeAgentRef(trimmed)
+  if (!decoded) return undefined
+  const canonicalId = decoded.providerId === 'acp-base'
+    ? (isAntigravityAcpAgent(decoded.acpAgentId) ? 'acp-antigravity' : 'acp-grok')
+    : decoded.providerId
+  return profiles.find(
+    (profile) => profile.id === canonicalId
+      || (resolveProviderRowId(profile.id) === resolveProviderRowId(canonicalId)
+        && (!decoded.acpAgentId || profile.acpAgentId === decoded.acpAgentId)),
+  )
 }
 
 function profileDisplayName(
@@ -331,27 +368,35 @@ function usableProviders(): Array<{
   acpAgentId: string | null
 }> {
   const enabled = isAgentProfilesEnabled()
-  return listSessionProviders()
+  const allProviders = listSessionProviders()
+  const hasExplicitAcpRows = allProviders.some((row) => row.id === 'acp-grok' || row.id === 'acp-antigravity')
+  return allProviders
     .filter((provider) => enabled || !readAgentProfile(provider.config))
     .filter(isProviderUsable)
-    .map((provider) => ({
-      provider,
-      acpAgentId: provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null,
-    }))
+    .flatMap((provider) => {
+      if (provider.harnessId !== 'acp') return [{ provider, acpAgentId: null }]
+      if (provider.id === 'acp-grok') return [{ provider, acpAgentId: resolveAcpAgentId(provider) }]
+      if (provider.id === 'acp-antigravity') return [{ provider, acpAgentId: 'antigravity' }]
+      if (!isDefaultSessionProvider(provider) || hasExplicitAcpRows) return [{ provider, acpAgentId: resolveAcpAgentId(provider) }]
+      const resolved = resolveAcpAgentId(provider)
+      return [
+        ...(isCatalogHarnessUsable('acp-grok')
+          ? [{ provider: { ...provider, id: 'acp-grok' }, acpAgentId: isAntigravityAcpAgent(resolved) ? 'grok-build' : resolved }]
+          : []),
+        ...(isCatalogHarnessUsable('acp-antigravity')
+          ? [{ provider: { ...provider, id: 'acp-antigravity' }, acpAgentId: 'antigravity' }]
+          : []),
+      ]
+    })
 }
 
-/**
- * The defaults one launch of `profile` starts from. A launch that names its
- * own model, effort or fast mode re-resolves the rest against that model, so
- * an inherited value the model cannot carry is dropped; an explicit one is
- * rejected. Explicit launch fields still go over the result.
- */
 export function sessionAgentLaunchDefaults(
   profile: SessionAgentProfile,
   launch: Pick<SessionAgentLaunchConfig, 'model' | 'effort' | 'fastMode' | 'permissionMode'> | undefined,
 ): SessionAgentLaunchConfig {
   const explicit = launchDefaultsFromConfig(launch)
-  const provider = Object.keys(explicit).length ? listSessionProviders().find((row) => row.id === profile.id) : undefined
+  const providerId = resolveProviderRowId(profile.id)
+  const provider = Object.keys(explicit).length ? listSessionProviders().find((row) => row.id === providerId) : undefined
   let config = profile.defaultConfig
   if (provider) {
     const resources = profileResources(provider, { acpAgentId: profile.acpAgentId ?? null, launch: explicit })
@@ -366,9 +411,13 @@ export function sessionAgentLaunchDefaults(
   return config
 }
 
-/** The settings page also needs Profiles whose harness is currently disabled. */
-export function sessionAgentProfile(provider: ReturnType<typeof listSessionProviders>[number]): SessionAgentProfile {
-  const acpAgentId = provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null
+export function sessionAgentProfile(
+  provider: ReturnType<typeof listSessionProviders>[number],
+  explicitAcpAgentId?: string | null,
+): SessionAgentProfile {
+  const acpAgentId = provider.harnessId === 'acp'
+    ? (explicitAcpAgentId !== undefined ? explicitAcpAgentId : resolveAcpAgentId(provider))
+    : null
   const resources = profileResources(provider, { acpAgentId })
   const models = resources.models.map((model) => ({
     id: model.id,
@@ -388,8 +437,12 @@ export function sessionAgentProfile(provider: ReturnType<typeof listSessionProvi
   }))
   const name = profileDisplayName(provider, acpAgentId)
   const brandKey = resolveHarnessBrandKey(provider.harnessId, acpAgentId)
+  const id =
+    provider.id === 'acp-base'
+      ? (isAntigravityAcpAgent(acpAgentId) ? 'acp-antigravity' : 'acp-grok')
+      : provider.id
   return {
-    id: provider.id,
+    id,
     name,
     harnessId: provider.harnessId,
     ...(isDefaultSessionProvider(provider) && isAgentProfilesEnabled() ? { followsDefaults: true } : {}),
@@ -409,7 +462,7 @@ export function sessionAgentProfile(provider: ReturnType<typeof listSessionProvi
 }
 
 export function listSessionAgentProfiles(): SessionAgentProfile[] {
-  return usableProviders().map(({ provider }) => sessionAgentProfile(provider))
+  return usableProviders().map(({ provider, acpAgentId }) => sessionAgentProfile(provider, acpAgentId))
 }
 
 /**

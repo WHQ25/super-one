@@ -26,7 +26,12 @@ import {
   type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { getDb } from '../database'
-import { listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
+import {
+  findSessionAgentProfile,
+  listSessionAgentProfiles,
+  resolveProviderRowId,
+  sessionAgentLaunchDefaults,
+} from './agent-profiles'
 import { collaborationStore as store } from './collaboration-mailbox'
 import { defaultLaunchCwd } from './collaboration-child-project'
 import {
@@ -83,12 +88,13 @@ export async function listCollaborationAgents(args: ListCollaborationAgentsArgs 
   const id = args.id?.trim()
   const environment = args.environment?.trim()
   if (id && !environment) {
-    const agent = agents.find((profile) => profile.id === id)
+    const agent = findSessionAgentProfile(agents, id)
     return agent ? { ok: true, value: collabAgentDetail(agent) } : { ok: false, error: unknownCollabAgentMessage(id) }
   }
   const environments = await listRemoteAgentEnvironments(agents)
   if (id && environment) {
-    const agent = environments.find((env) => env.environmentId === environment)?.agents.find((profile) => profile.id === id)
+    const envAgents = environments.find((env) => env.environmentId === environment)?.agents ?? []
+    const agent = findSessionAgentProfile(envAgents, id)
     return agent ? { ok: true, value: collabAgentDetail(agent) } : { ok: false, error: unknownCollabAgentMessage(id, environment) }
   }
   return {
@@ -171,7 +177,8 @@ function normalizeLaunches(
 ): SessionAgentLaunchProposal[] {
   if (!Array.isArray(args.launches)) throw new Error('launches must contain at least one proposed session')
   assertLaunchCount(args.launches.length)
-  const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
+  const profileList = listSessionAgentProfiles()
+  const profiles = new Map(profileList.map((profile) => [profile.id, profile]))
   return args.launches.map((launch, index) => {
     if (['profileApproval', 'handoffSessionId', 'codexServiceTier', 'codexPermissionPreset'].some((key) => launch.config && Object.hasOwn(launch.config, key))) {
       throw new Error('Launch bookkeeping is host-owned and cannot be supplied in launch config.')
@@ -183,7 +190,6 @@ function normalizeLaunches(
       const peerSessionId = launch.sessionId?.trim()
       if (!peerSessionId) throw new Error('Link launches require sessionId of an existing SuperOne session')
       if (peerSessionId === parent.id) throw new Error('Cannot link a session to itself')
-      // sessions store project_id; path lives on projects (post project_path migration).
       const peerRow = getDb().prepare(`
         SELECT s.id, s.title, p.path AS project_path, s.provider, s.provider_id, s.acp_agent_id
         FROM sessions s
@@ -201,15 +207,18 @@ function normalizeLaunches(
       assertNotPeeredElsewhere(store(), parent.id, peerSessionId)
       const peerTitle = peerRow.title?.trim() || peerSessionId.slice(0, 8)
       const { summary, name, role } = normalizeLaunchLabels('link', launch, peerTitle)
-      // Confirm tabs show harness (same as spawn) — resolve from peer session identity.
       const peerHarnessId = (peerRow.provider?.trim()
         || peerRow.provider_id?.replace(/-base$/, '')
         || 'claude').toLowerCase()
       const peerAcpAgentId = peerRow.acp_agent_id?.trim() || undefined
       const peerBrandKey = resolveHarnessBrandKey(peerHarnessId, peerAcpAgentId)
       const matchedProfile = peerRow.provider_id
-        ? profiles.get(peerRow.provider_id)
-        : [...profiles.values()].find((p) => p.harnessId === peerHarnessId
+        ? (profileList.find(
+            (p) =>
+              resolveProviderRowId(p.id) === peerRow.provider_id
+              && (!peerAcpAgentId || p.acpAgentId === peerAcpAgentId),
+          ) ?? profiles.get(peerRow.provider_id))
+        : profileList.find((p) => p.harnessId === peerHarnessId
           && (!peerAcpAgentId || p.acpAgentId === peerAcpAgentId))
       const peerHarnessName = matchedProfile?.name
         || (peerHarnessId === 'acp' && peerAcpAgentId
@@ -233,12 +242,11 @@ function normalizeLaunches(
       }
     }
 
-    // spawn + handoff share the whole launch shape; they differ only in whether the
-    // new session is nested under the initiator and gets a mailbox.
-    const agentId = launch.agentId?.trim()
-    if (!agentId) throw new Error(`${mode} launches require agentId from session_collab_list_agents`)
-    const profile = profiles.get(agentId)
-    if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
+    const rawAgentId = launch.agentId?.trim()
+    if (!rawAgentId) throw new Error(`${mode} launches require agentId from session_collab_list_agents`)
+    const profile = findSessionAgentProfile(profileList, rawAgentId)
+    if (!profile) throw new Error(`Unknown agent profile: ${rawAgentId}`)
+    const agentId = profile.id
     const { summary, name, role } = normalizeLaunchLabels(mode, launch)
     const remote = remotes.get(index)
     if (remote) return remoteLaunchProposal(launch, { launchId, profile, summary, name, role, remote })
@@ -387,7 +395,7 @@ export function createGrants(parentSessionId: string, launches: SessionAgentLaun
   assertLaunchCount(launches.length)
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
-  const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
+  const profileList = listSessionAgentProfiles()
   const grants = store()
   return grants.transaction(() => launches.map((original) => {
     let launch = original
@@ -398,14 +406,14 @@ export function createGrants(parentSessionId: string, launches: SessionAgentLaun
       }
       return recordApprovedLaunch(grants, parentSessionId, launch, {}).approved
     }
-    const profile = profiles.get(launch.agentId)
+    const profile = findSessionAgentProfile(profileList, launch.agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
-    // Remote launches were checked against their target's catalog instead.
+    launch = { ...launch, agentId: profile.id }
     if (launch.config.remote) {
       return recordApprovedLaunch(grants, parentSessionId, launch, launch.config).approved
     }
-    // Also covers the confirm UI's provider edit, which reaches here as renderer input.
-    const defaults = isDefaultSessionProvider(getSessionProvider(profile.id)!)
+    const row = getSessionProvider(resolveProviderRowId(profile.id))!
+    const defaults = isDefaultSessionProvider(row)
     if (preapproved.has(launch.launchId) && defaults) launch = { ...launch, config: profileLaunchConfig(launch.config, profile.defaultConfig) }
     assertKnownApiProviderId(launch.config, profile)
     if (preapproved.has(launch.launchId) && !isPreapprovedProfileLaunch(profile, launch, launch.config.cwd ?? '')) {
@@ -415,7 +423,7 @@ export function createGrants(parentSessionId: string, launches: SessionAgentLaun
       ...launch.config,
       ...(preapproved.has(launch.launchId) ? { profileApproval: {
         ...(defaults ? { source: 'defaults' } : {}),
-        fingerprint: currentApprovalFingerprint(getSessionProvider(profile.id)!, profile),
+        fingerprint: currentApprovalFingerprint(row, profile),
         cwd: launch.config.cwd,
       } } : {}),
       ...(codexLaunchPinsSpeed(launch.config)

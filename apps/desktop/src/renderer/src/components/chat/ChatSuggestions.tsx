@@ -362,10 +362,12 @@ export function ProviderSelector({
   const selectedAcpAgent = useMemo(() => {
     if (agents.length === 0) return null
     return agents.find((a) => a.id === acpAgentId)
+      ?? visibleAcpAgents.find((a) => isGrokAcpAgent(a.id))
+      ?? visibleAcpAgents[0]
       ?? agents.find((a) => isGrokAcpAgent(a.id))
       ?? agents[0]
       ?? null
-  }, [agents, acpAgentId])
+  }, [agents, acpAgentId, visibleAcpAgents])
 
   useEffect(() => {
     if (canAutoSelect && preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {

@@ -4,6 +4,10 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from '@agentclientprotocol/sdk'
+import {
+  extractAntigravitySecurityWarning,
+  normalizeAntigravityRawInput,
+} from './antigravity-protocol'
 import { normalizeAcpTool } from './acp-event-map'
 
 export interface PendingPermissionOptions {
@@ -19,12 +23,36 @@ export function mapPermissionRequest(params: RequestPermissionRequest): {
     optionId: o.optionId,
     kind: o.kind,
   }))
-  const normalized = normalizeAcpTool(params.toolCall)
-  const raw = params.toolCall.rawInput
-  const fallbackInput =
-    raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? raw as Record<string, unknown>
-      : {}
+  const normalizedRaw = normalizeAntigravityRawInput(
+    params.toolCall.rawInput,
+    params.toolCall.rawOutput,
+    typeof params.toolCall.title === 'string' ? params.toolCall.title : undefined,
+    (params.toolCall as { _meta?: unknown })._meta,
+    params.toolCall.kind,
+  )
+  const toolCallForNormalize = {
+    ...params.toolCall,
+    ...(normalizedRaw.inferredKind && !params.toolCall.kind
+      ? { kind: normalizedRaw.inferredKind }
+      : {}),
+    ...(normalizedRaw.normalizedTitle !== undefined
+      ? { title: normalizedRaw.normalizedTitle }
+      : {}),
+    ...(normalizedRaw.normalizedMeta !== undefined
+      ? { _meta: normalizedRaw.normalizedMeta }
+      : {}),
+    rawInput: normalizedRaw.rawInput,
+  }
+  const normalized = normalizeAcpTool(toolCallForNormalize)
+  const fallbackInput = normalizedRaw.rawInput
+  const warning = extractAntigravitySecurityWarning(params.options)
+  const baseReason =
+    normalized?.toolSummary ??
+    (typeof params.toolCall.title === 'string' ? params.toolCall.title : undefined)
+  const decisionReason =
+    warning && baseReason
+      ? `${baseReason} — ${warning}`
+      : warning ?? baseReason
 
   return {
     options,
@@ -37,8 +65,7 @@ export function mapPermissionRequest(params: RequestPermissionRequest): {
       toolUseId: params.toolCall.toolCallId,
       input: normalized?.input ?? fallbackInput,
       allowAlwaysAllow: options.some((o) => o.kind === 'allow_always'),
-      decisionReason: normalized?.toolSummary
-        ?? (typeof params.toolCall.title === 'string' ? params.toolCall.title : undefined),
+      decisionReason,
       blockedPath: normalized?.toolFilePath ?? params.toolCall.locations?.[0]?.path,
     },
   }

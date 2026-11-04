@@ -429,6 +429,8 @@ function applyMigrations(db: Database.Database): void {
   }
   db.exec("UPDATE session_providers SET id = 'claude-base' WHERE id = 'claude-official'")
   db.exec("UPDATE session_providers SET id = 'codex-base' WHERE id = 'codex-official'")
+  db.exec("DELETE FROM session_providers WHERE id = 'acp-base' AND EXISTS (SELECT 1 FROM session_providers WHERE id = 'acp-grok')")
+  db.exec("UPDATE session_providers SET id = 'acp-grok', name = 'Grok (Base)' WHERE id = 'acp-base'")
 
   seedBaseSessionProviders(db)
 
@@ -564,6 +566,14 @@ function applyMigrations(db: Database.Database): void {
   if (!sessionColsPostRebuild.some((c) => c.name === 'acp_agent_id')) {
     db.exec('ALTER TABLE sessions ADD COLUMN acp_agent_id TEXT')
   }
+  db.exec(`
+    UPDATE sessions
+    SET provider_id = CASE
+      WHEN LOWER(COALESCE(acp_agent_id, '')) LIKE '%antigravity%' THEN 'acp-antigravity'
+      ELSE 'acp-grok'
+    END
+    WHERE provider_id = 'acp-base'
+  `)
   if (!sessionColsPostRebuild.some((c) => c.name === 'tags_json')) {
     db.exec("ALTER TABLE sessions ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
   }
@@ -700,6 +710,14 @@ function applyMigrations(db: Database.Database): void {
   }
   // Several sessions may link the same peer; only spawn parentage stays unique.
   ensureCollaborationGrantUniqueness(db, { warn: (message) => log.warn(message) })
+  db.exec(`
+    UPDATE session_collaboration_grants
+    SET agent_id = CASE
+      WHEN LOWER(agent_id) LIKE '%antigravity%' THEN 'acp-antigravity'
+      ELSE 'acp-grok'
+    END
+    WHERE agent_id = 'acp-base' OR agent_id LIKE 'acp-base:%'
+  `)
   db.exec(COLLABORATION_WAKE_TABLE_DDL)
   db.exec(SESSION_CONTINUATION_TABLE_DDL)
   ensureAgentProfileApprovalSchema(db)

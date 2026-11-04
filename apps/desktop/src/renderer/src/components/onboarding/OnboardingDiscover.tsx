@@ -16,7 +16,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useAppStore } from '@/stores/app'
 
-type CatalogId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
+type CatalogId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'
 
 type ScanHit = {
   harnessId: CatalogId
@@ -32,22 +32,24 @@ type ProgressState = {
   message?: string
 }
 
-const ORDER: CatalogId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok']
+const ORDER: CatalogId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok', 'acp-antigravity']
 
 function providerOf(id: CatalogId): 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp' {
-  if (id === 'acp-grok') return 'acp'
+  if (id === 'acp-grok' || id === 'acp-antigravity') return 'acp'
   return id
 }
 
 function acpAgentOf(id: CatalogId): string | null {
-  return id === 'acp-grok' ? 'grok-build' : null
+  if (id === 'acp-grok') return 'grok-build'
+  if (id === 'acp-antigravity') return 'antigravity'
+  return null
 }
 
 export function OnboardingDiscover(): React.JSX.Element {
   const { t } = useTranslation()
   const completeOnboarding = useAppStore((s) => s.completeOnboarding)
   const [hits, setHits] = useState<ScanHit[] | null>(null)
-  const [visibleIds, setVisibleIds] = useState<CatalogId[]>(['claude', 'codex'])
+  const [visibleIds, setVisibleIds] = useState<CatalogId[]>(['claude', 'codex', 'acp-antigravity'])
   const [integrationLabels, setIntegrationLabels] = useState<
     Partial<Record<CatalogId, { label: string }>>
   >({})
@@ -64,7 +66,7 @@ export function OnboardingDiscover(): React.JSX.Element {
     try {
       const result = await window.app.scanHarnessClis()
       setHits(result.hits)
-      setVisibleIds(result.visibleIds?.length ? result.visibleIds : ['claude', 'codex'])
+      setVisibleIds(result.visibleIds?.length ? result.visibleIds : ['claude', 'codex', 'acp-antigravity'])
       setIntegrationLabels(result.integrationLabels ?? {})
       setSelected(new Set(result.defaultSelected))
     } catch (err) {
@@ -75,14 +77,16 @@ export function OnboardingDiscover(): React.JSX.Element {
         { harnessId: 'opencode', command: null, detected: false },
         { harnessId: 'cursor', command: null, detected: false },
         { harnessId: 'acp-grok', command: null, detected: false },
+        { harnessId: 'acp-antigravity', command: null, detected: false },
       ])
-      setVisibleIds(['claude', 'codex'])
+      setVisibleIds(['claude', 'codex', 'acp-antigravity'])
       setIntegrationLabels({
         claude: { label: 'Claude Agent SDK' },
         codex: { label: 'Codex App Server' },
         opencode: { label: 'OpenCode SDK' },
         cursor: { label: 'Cursor Agent SDK' },
         'acp-grok': { label: 'Agent Client Protocol' },
+        'acp-antigravity': { label: 'Agent Client Protocol' },
       })
       setSelected(new Set(['claude']))
     } finally {
@@ -135,11 +139,9 @@ export function OnboardingDiscover(): React.JSX.Element {
     try {
       for (const id of ids) {
         setActiveId(id)
-        // Product C: Claude/Codex always SuperOne-managed pin (forcePin skips PATH/bundled).
-        // External harnesses: kernel resolves PATH.
         await window.app.enableHarness({
           harnessId: id,
-          forcePin: id === 'claude' || id === 'codex',
+          forcePin: id === 'claude' || id === 'codex' || id === 'acp-antigravity',
         })
       }
       await completeOnboarding()
@@ -180,7 +182,7 @@ export function OnboardingDiscover(): React.JSX.Element {
             const hit = hitById.get(id)
             const checked = selected.has(id)
             const Icon = resolveSessionIcon(providerOf(id), acpAgentOf(id))
-            const isManaged = id === 'claude' || id === 'codex'
+            const isManaged = id === 'claude' || id === 'codex' || id === 'acp-antigravity'
             const isActive = activeId === id
             const isDownloadFallback = isManaged && !hit?.detected
             const integrationLabel = integrationLabels[id]?.label

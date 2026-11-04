@@ -91,7 +91,7 @@ const PRESETS: { id: RangePreset; days: number | null }[] = [
   { id: 'all', days: null },
 ]
 
-const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex', 'grok', 'cursor', 'opencode']
+const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex', 'grok', 'antigravity', 'cursor', 'opencode']
 
 const TOKEN_TYPE_KEYS = ['input', 'output', 'cacheRead', 'cacheCreation'] as const
 type TokenTypeKey = typeof TOKEN_TYPE_KEYS[number]
@@ -113,6 +113,7 @@ const HARNESS_SERIES: ReadonlyArray<{ key: Harness; label: string; brand: Harnes
   { key: 'claude', label: 'Claude', brand: 'claude' },
   { key: 'codex', label: 'Codex', brand: 'codex' },
   { key: 'grok', label: 'Grok', brand: 'acp' },
+  { key: 'antigravity', label: 'Antigravity', brand: 'acp' },
   { key: 'cursor', label: 'Cursor', brand: 'cursor' },
   { key: 'opencode', label: 'OpenCode', brand: 'opencode' },
 ]
@@ -266,13 +267,13 @@ export function UsagePage() {
 
   const dailyByHarness = useMemo(() => {
     const byDay = new Map<string, {
-      claude: number; codex: number; grok: number; cursor: number; opencode: number
-      claudeCost: number; codexCost: number; grokCost: number; cursorCost: number; opencodeCost: number
+      claude: number; codex: number; grok: number; antigravity: number; cursor: number; opencode: number
+      claudeCost: number; codexCost: number; grokCost: number; antigravityCost: number; cursorCost: number; opencodeCost: number
     }>()
     for (const r of rows) {
       const cur = byDay.get(r.day) ?? {
-        claude: 0, codex: 0, grok: 0, cursor: 0, opencode: 0,
-        claudeCost: 0, codexCost: 0, grokCost: 0, cursorCost: 0, opencodeCost: 0,
+        claude: 0, codex: 0, grok: 0, antigravity: 0, cursor: 0, opencode: 0,
+        claudeCost: 0, codexCost: 0, grokCost: 0, antigravityCost: 0, cursorCost: 0, opencodeCost: 0,
       }
       const tokens = rowTotal(r)
       const cost = rowCostBreakdown(r, catalogModels)?.total ?? 0
@@ -282,6 +283,9 @@ export function UsagePage() {
       } else if (r.harness === 'codex') {
         cur.codex += tokens
         cur.codexCost += cost
+      } else if (r.harness === 'antigravity') {
+        cur.antigravity += tokens
+        cur.antigravityCost += cost
       } else if (r.harness === 'cursor') {
         cur.cursor += tokens
         cur.cursorCost += cost
@@ -700,11 +704,13 @@ interface DailyHarnessRow {
   claude: number
   codex: number
   grok: number
+  antigravity: number
   cursor: number
   opencode: number
   claudeCost: number
   codexCost: number
   grokCost: number
+  antigravityCost: number
   cursorCost: number
   opencodeCost: number
 }

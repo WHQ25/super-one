@@ -15,6 +15,13 @@ export const BUILTIN_ACP_AGENTS: AcpAgentDefinition[] = [
     installHint: 'Install Grok Build CLI, or set command to: npx -y @xai-official/grok agent stdio',
   },
   {
+    id: 'antigravity',
+    name: 'Antigravity',
+    command: process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par',
+    args: process.platform === 'linux' ? ['--uid='] : [],
+    installHint: 'Enable Antigravity in Settings → Harnesses to download the official ACP runtime',
+  },
+  {
     id: 'opencode',
     name: 'OpenCode',
     command: 'opencode',

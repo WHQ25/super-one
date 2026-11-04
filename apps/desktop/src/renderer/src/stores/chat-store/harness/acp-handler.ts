@@ -14,8 +14,50 @@ export function applyAcpResources(
   s: ChatStore,
   r: AcpResources,
 ): Partial<ChatStore> {
+  let projectSessions = s.projectSessions
+  for (const [projectPath, ps] of Object.entries(s.projectSessions ?? {})) {
+    let sessionsChanged = false
+    const nextSessions: Record<string, PerSessionState> = { ...ps._sessions }
+    for (const [sessionId, session] of Object.entries(ps._sessions ?? {})) {
+      const isAcp = (session.sessionProvider || session.preferredProvider) === 'acp'
+      if (!isAcp || !session.acpAgentId) continue
+      const catalog = getCachedAcpCatalog(r, session.acpAgentId)
+      if (!catalog) continue
+      const needsModels = session.acpModels.length === 0 && catalog.models.length > 0
+      const needsModes = session.acpModes.length === 0 && catalog.modes.length > 0
+      const needsSlash = session.acpSlashCommands.length === 0 && catalog.slashCommands.length > 0
+      if (!needsModels && !needsModes && !needsSlash) continue
+      sessionsChanged = true
+      nextSessions[sessionId] = {
+        ...session,
+        ...(needsModels
+          ? sessionPatchFromAcpCatalog(catalog, { preferSelected: session.selectedModel || null })
+          : {
+              ...(needsModes
+                ? {
+                    acpModes: catalog.modes,
+                    acpModeConfigId: catalog.modeConfigId,
+                    selectedAcpModeId: session.selectedAcpModeId ?? catalog.selectedModeId,
+                    acpModesStatus: 'ready' as const,
+                  }
+                : {}),
+              ...(needsSlash
+                ? {
+                    acpSlashCommands: catalog.slashCommands,
+                    acpSlashCommandsStatus: 'ready' as const,
+                  }
+                : {}),
+            }),
+      }
+    }
+    if (sessionsChanged) {
+      if (projectSessions === s.projectSessions) projectSessions = { ...s.projectSessions }
+      projectSessions[projectPath] = { ...ps, _sessions: nextSessions }
+    }
+  }
   return {
     harnessResources: { ...s.harnessResources, acp: r },
+    ...(projectSessions !== s.projectSessions ? { projectSessions } : {}),
   }
 }
 
@@ -73,11 +115,18 @@ function extractSelectCategory(
   const chosen = selects.find((o) => o.category === category)
     ?? selects.find((o) => o.id === idFallback)
   if (!chosen) return null
-  const options = flattenSelectOptions(chosen.options).map((opt) => ({
-    id: opt.value,
-    name: opt.name,
-    description: opt.description,
-  }))
+  const names = new Set<string>()
+  const options = flattenSelectOptions(chosen.options).map((opt) => {
+    const baseName = opt.name.trim() ? opt.name : opt.value
+    const name =
+      category === 'model' && names.has(baseName) ? `${baseName} (${opt.value})` : baseName
+    names.add(baseName)
+    return {
+      id: opt.value,
+      name,
+      description: opt.description,
+    }
+  })
   if (options.length === 0) return null
   const selected =
     typeof chosen.currentValue === 'string' && options.some((m) => m.id === chosen.currentValue)

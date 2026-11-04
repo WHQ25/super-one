@@ -50,6 +50,7 @@ import {
 } from '../mcp/main-thread-session-guard'
 import { buildAcpSessionMcpServers, omitUntrustedProjectMcpServers } from './acp-mcp'
 import { acpHostContextText, isLeadingSlashPrompt } from './acp-host-context'
+import { antigravitySystemPromptAppend } from '../agent/superone-system-prompt'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
 import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
@@ -128,6 +129,26 @@ import {
 } from './acp-session-meta'
 import { GROK_AUTH_REQUIRED } from '@superone/shared/grok-auth'
 import { describeAcpRequestFailure } from './acp-request-error'
+import {
+  ANTIGRAVITY_CLIENT_INFO,
+  advanceAntigravityThinkingStepAfterTools,
+  antigravitySessionMeta,
+  applyAntigravityPermissionMode,
+  authenticateAntigravityRuntime,
+  closeAntigravityThinkingStep,
+  extractAntigravityPromptResponseUsage,
+  extractAntigravityWireTurnUsage,
+  finalizeAntigravityTurnThinking,
+  handleAntigravityPermissionRequest,
+  openAntigravityThinkingStep,
+  prepareAntigravityProcessLaunch,
+  resumeAntigravitySession,
+  stampAntigravityThoughtDeltas,
+  syncAntigravityTurnFromDb,
+  type AntigravityTurnThinkingScope,
+  type AntigravityWireTurnUsage,
+} from './antigravity-runtime-bridge'
+import { normalizeAntigravitySessionUpdate } from './antigravity-protocol'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
   AgentErrorInfo,
@@ -434,7 +455,9 @@ function formatProcessExit(
   if (!info) return 'ACP agent process exited'
   const parts = [`ACP agent process exited (code=${info.code ?? 'null'}, signal=${info.signal ?? 'null'})`]
   const stderr = info.stderr.trim()
-  if (stderr) parts.push(stderr.slice(0, 500))
+  if (stderr) {
+    parts.push(stderr.length > 900 ? `${stderr.slice(0, 250)} ... ${stderr.slice(-650)}` : stderr)
+  }
   return parts.join(': ')
 }
 
@@ -470,15 +493,18 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     stream = custom.stream
     disposeStream = custom.dispose
   } else {
+    let spawnOptions: import('./acp-process').SpawnAcpProcessOptions | undefined
     if (launch.agentId === 'grok-build') {
       const { resolveDesktopGrokLaunch } = await import('../harness/grok-launch')
       const resolved = resolveDesktopGrokLaunch(opts.launch)
       if (!resolved) throw new Error('Grok command not found. Check Settings → Harnesses → Grok.')
       launch.command = resolved.command
       launch.args = resolved.args
+    } else if (launch.agentId === 'antigravity') {
+      spawnOptions = await prepareAntigravityProcessLaunch(launch, opts.launch)
     }
     try {
-      processHandle = spawnAcpProcess(launch)
+      processHandle = spawnAcpProcess(launch, spawnOptions)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       throw new Error(
@@ -611,6 +637,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   }
   opts.signal?.addEventListener('abort', abortInitialization, { once: true })
   if (opts.signal?.aborted) abortInitialization()
+  let currentPermissionMode: PermissionMode = opts.permissionMode ?? 'default'
 
   try {
     // Custom (non-spec) methods require the 3-arg onRequest form with a params
@@ -648,6 +675,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
 
     let clientBuilder = client({ name: 'superone' })
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
+        if (launch.agentId === 'antigravity') {
+          return handleAntigravityPermissionRequest(
+            ctx.params,
+            opts.permission,
+            opts.askUserQuestion,
+            currentPermissionMode,
+          )
+        }
         return opts.permission.request(ctx.params)
       })
       .onRequest(methods.client.fs.readTextFile, async (ctx) => {
@@ -730,13 +765,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     // ACP's text-only filesystem would route every read through UTF-8 and corrupt
     // PNG/JPEG bytes. Let Grok use its local filesystem, as we already do for its
     // terminal; retain the host filesystem bridge for other ACP agents.
-    const useHostDelegation = launch.agentId !== 'grok-build'
+    const isAntigravity = launch.agentId === 'antigravity'
+    const useHostDelegation = launch.agentId !== 'grok-build' && !isAntigravity
+    const useHostTerminal = launch.agentId !== 'grok-build' && !isAntigravity
     const initResult = await connection.agent.request(methods.agent.initialize, {
       protocolVersion: PROTOCOL_VERSION,
-      clientInfo: { name: 'superone', version: clientVersion },
+      clientInfo: isAntigravity
+        ? ANTIGRAVITY_CLIENT_INFO
+        : { name: 'superone', version: clientVersion },
       clientCapabilities: {
         fs: { readTextFile: useHostDelegation, writeTextFile: useHostDelegation },
-        terminal: useHostDelegation,
+        terminal: useHostTerminal,
         ...(advertiseFolderTrust
           ? { _meta: { 'x.ai/folderTrust': { interactive: true } } }
           : {}),
@@ -774,7 +813,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         ? initAny._meta.defaultAuthMethodId
         : null
     const methodId = pickNonInteractiveAcpAuthMethod(authMethods, defaultAuthId)
-    if (methodId) {
+    if (launch.agentId === 'antigravity') {
+      await authenticateAntigravityRuntime(connection)
+      log.info('[acp-runtime] authenticated agent=antigravity')
+    } else if (methodId) {
       try {
         if (launch.agentId === 'grok-build') {
           const authConnection = connection
@@ -823,9 +865,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // there with any session append. Other agents ignore the field.
       rules: launch.agentId === 'grok-build'
         ? acpHostContextText(opts.systemPromptAppend)
-        : opts.systemPromptAppend,
+        : launch.agentId === 'antigravity'
+          ? undefined
+          : opts.systemPromptAppend,
     })
-    const sessionMeta = { ...permissionMeta, ...sessionMetaOverlay }
+    const antigravitySystemPrompt =
+      launch.agentId === 'antigravity'
+        ? antigravitySystemPromptAppend(opts.systemPromptAppend)
+        : undefined
+    const sessionMeta = {
+      ...permissionMeta,
+      ...sessionMetaOverlay,
+      ...(launch.agentId === 'antigravity'
+        ? antigravitySessionMeta(opts.permissionMode, antigravitySystemPrompt)
+        : {}),
+    }
     const sessionRequestBase = {
       cwd: launch.cwd,
       mcpServers,
@@ -840,7 +894,27 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     let sessionVia: 'new' | 'load' = 'new'
     const resumeId = opts.resumeSessionId?.trim() || ''
     const loadSessionCap = agentCapabilities?.loadSession === true
-    if (resumeId && loadSessionCap) {
+    if (resumeId && launch.agentId === 'antigravity') {
+      try {
+        session = await resumeAntigravitySession(
+          connection,
+          resumeId,
+          launch.cwd,
+          mcpServers,
+          opts.permissionMode,
+          antigravitySystemPrompt,
+        )
+        sessionVia = 'load'
+        log.info('[acp-runtime] session/resume ok id=%s agent=antigravity', resumeId)
+      } catch (err) {
+        log.warn(
+          '[acp-runtime] session/resume failed id=%s agent=antigravity — falling back to session/new:',
+          resumeId,
+          err,
+        )
+        session = null
+      }
+    } else if (resumeId && loadSessionCap) {
       let loaded: ActiveSession | null = null
       try {
         // Attach routing *before* load so replayed session/update is not dropped.
@@ -934,8 +1008,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     mcpSessionId = session.sessionId
     attachTrustedProjectMcp()
     // Grok applies rules only at creation. Other ACP agents may ignore this extension.
-    stampedRules = launch.agentId === 'grok-build' && sessionVia === 'new'
-      && typeof sessionMetaOverlay.rules === 'string'
+    stampedRules =
+      (launch.agentId === 'grok-build' &&
+        sessionVia === 'new' &&
+        typeof sessionMetaOverlay.rules === 'string') ||
+      launch.agentId === 'antigravity'
     xaiCorrelation.parentSessionId = session.sessionId
 
     sessionModels = extractModelsFromNewSessionResult(session.newSessionResponse)
@@ -956,7 +1033,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       supportsExtraRoots ? extraRoots.length : 0,
     )
     // Host-selected plan mode before runtime existed — apply after session is live.
-    if (opts.permissionMode === 'plan') {
+    if (launch.agentId === 'antigravity' && opts.permissionMode) {
+      try {
+        await applyAntigravityPermissionMode(connection, session.sessionId, opts.permissionMode)
+      } catch (err) {
+        log.warn('[acp-runtime] antigravity set_mode on create failed:', err)
+      }
+    } else if (opts.permissionMode === 'plan') {
       try {
         await connection.agent.request(methods.agent.session.setMode, {
           sessionId: session.sessionId,
@@ -979,7 +1062,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     await processHandle?.kill().catch(() => undefined)
     disposeStream?.()
     connection?.close(err)
-    const base = err instanceof Error ? err.message : String(err)
+    const base = describeAcpRequestFailure(err)
     if (exitInfo) throw new Error(`${base}. ${formatProcessExit(exitInfo)}`)
     throw err
   }
@@ -1027,24 +1110,28 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
    * shared module state at settle time would stamp `message_interrupted` onto
    * the newer bubble (and leave its own tool blocks spinning).
    */
-  interface AcpTurnScope {
-    /** Agent-side messageId → local assistant message id for multi-message turns. */
+  interface AcpTurnScope extends AntigravityTurnThinkingScope {
     readonly agentMsgToLocal: Map<string, string>
     readonly openToolIds: Set<string>
-    /** Local bubble the turn is currently streaming into. */
     lastMessageId: string | null
   }
   interface AcpPromptTurn extends AcpTurnScope {
     readonly gen: number
     readonly primaryMessageId: string
     readonly onEvent: (event: AgentEvent) => void
-    /** A sendNow replacement owns the session; this turn must not emit idle. */
     superseded: boolean
   }
   const newTurnScope = (lastMessageId: string | null = null): AcpTurnScope => ({
     agentMsgToLocal: new Map<string, string>(),
     openToolIds: new Set<string>(),
     lastMessageId,
+    sawAgentThoughtChunk: false,
+    stepIndex: 0,
+    stepStartedAt: Date.now(),
+    currentStepHasThinking: false,
+    currentStepThinkingClosed: false,
+    currentStepHasThoughtText: false,
+    emittedStepThinkingIds: [],
   })
   let currentTurn: AcpPromptTurn | null = null
   /** Scope for agent-initiated (auto-wake) streaming, which runs only while no prompt is live. */
@@ -1195,7 +1282,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }
           continue
         }
-        const update = message.update
+        const update =
+          launch.agentId === 'antigravity'
+            ? normalizeAntigravitySessionUpdate(message.update)
+            : message.update
         // Grok stamps live context occupancy on every session/update `_meta.totalTokens`.
         const notifMeta = (message as { notification?: { _meta?: Record<string, unknown> | null } }).notification?._meta
         const prevContextTokens = xaiCorrelation.lastUsage?.totalTokens ?? 0
@@ -1241,6 +1331,35 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           const modeId = (update as { currentModeId?: string }).currentModeId
           acpSessionMode = modeId === 'plan' ? 'plan' : 'default'
         }
+        const turnScope = scope()
+        if (update.sessionUpdate === 'agent_thought_chunk') {
+          turnScope.sawAgentThoughtChunk = true
+        }
+        if (launch.agentId === 'antigravity') {
+          if (
+            update.sessionUpdate === 'usage_update' &&
+            syncAntigravityTurnFromDb(
+              activeSession.sessionId,
+              messageId,
+              turnScope,
+              xaiCorrelation,
+              deliver,
+              false,
+              extractAntigravityWireTurnUsage(update),
+            )
+          ) {
+            continue
+          }
+          if (update.sessionUpdate === 'agent_thought_chunk') {
+            openAntigravityThinkingStep(turnScope, messageId, deliver)
+          } else if (
+            update.sessionUpdate === 'agent_message_chunk' ||
+            update.sessionUpdate === 'tool_call'
+          ) {
+            closeAntigravityThinkingStep(turnScope, messageId, deliver)
+          }
+        }
+        const hadOpenTools = turnScope.openToolIds.size > 0
         const mapped = mapSessionUpdate(update, { messageId }, {
           resolveTerminalCommand: (id) => terminalManager.getCommandLine(id),
           resolveTerminalOutput: (id) => terminalManager.getOutput(id),
@@ -1249,8 +1368,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           },
           yoloBaseline,
         })
-        // When occupancy changes, push a context-only usage event so the ring
-        // updates mid-turn without clobbering footer in/out.
+        if (launch.agentId === 'antigravity' && update.sessionUpdate === 'agent_thought_chunk') {
+          stampAntigravityThoughtDeltas(turnScope, mapped)
+        }
         if (contextChanged && xaiCorrelation.lastUsage) {
           const max = xaiCorrelation.lastUsage.maxTokens
           mapped.push({
@@ -1262,7 +1382,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             ...(max > 0 ? { contextWindow: max } : {}),
           })
         }
-        trackOpenTools(scope().openToolIds, mapped)
+        trackOpenTools(turnScope.openToolIds, mapped)
         const migrate = noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
         const superoneSid = opts.superoneSessionId
         if (superoneSid) {
@@ -1279,6 +1399,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         for (const event of migrate) {
           deliver(event)
+        }
+        if (launch.agentId === 'antigravity' && hadOpenTools && turnScope.openToolIds.size === 0) {
+          advanceAntigravityThinkingStepAfterTools(
+            activeSession.sessionId,
+            messageId,
+            turnScope,
+            xaiCorrelation,
+            deliver,
+          )
         }
       } catch (err) {
         if (closed || !pumping) break
@@ -1408,6 +1537,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       return xaiCorrelation.lastUsage
     },
     async setPermissionMode(mode) {
+      currentPermissionMode = mode
+      if (launch.agentId === 'antigravity') {
+        await applyAntigravityPermissionMode(activeConnection, activeSession.sessionId, mode)
+        yoloBaseline = mode === 'plan' ? 'default' : mode
+        acpSessionMode = mode === 'plan' ? 'plan' : 'default'
+        return
+      }
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.
       // Leave the tracked mode alone until set_mode succeeds. A swallowed
       // failure used to stamp prompt _meta.mode=plan while the agent stayed
@@ -1528,6 +1664,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // reconcile_plan_mode_with_prompt treats prompt `_meta.mode` as the only
       // prompt-carried mode signal (`agent` | `ask` | `plan`).
       promptOpts?.onInputAccepted?.()
+      if (launch.agentId === 'antigravity') {
+        openAntigravityThinkingStep(turn, messageId, onEvent)
+      }
       const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
         sessionId: activeSession.sessionId,
         prompt: promptBlocks as never,
@@ -1542,8 +1681,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // (we skipped ActiveSession.prompt, which would have enqueued a stop).
       // Remove by identity so a sendNow successor's waiter is not shifted when
       // this RPC and the stop update both arrive.
+      let promptResponseUsage: AntigravityWireTurnUsage | null = null
       const promptFailure = promptPromise.then<string>(
         (value) => {
+          if (launch.agentId === 'antigravity') {
+            promptResponseUsage = extractAntigravityPromptResponseUsage(value)
+          }
           if (stopWaiter) {
             const idx = promptStopWaiters.indexOf(stopWaiter)
             if (idx >= 0) promptStopWaiters.splice(idx, 1)
@@ -1580,6 +1723,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             onEvent({ type: 'message_interrupted', messageId: id })
           }
           return
+        }
+        if (launch.agentId === 'antigravity') {
+          finalizeAntigravityTurnThinking(
+            activeSession.sessionId,
+            turn.lastMessageId ?? turn.primaryMessageId,
+            turn,
+            xaiCorrelation,
+            onEvent,
+            promptResponseUsage,
+          )
         }
         const { complete, interrupted } = mapStopReason(stopReason)
         if (interrupted) {

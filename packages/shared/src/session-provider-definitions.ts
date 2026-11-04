@@ -15,7 +15,7 @@ export interface BaseSessionProviderSpec {
 export const BASE_SESSION_PROVIDERS = {
   claude: { id: 'claude-base', name: 'Claude (Base)', config: {} },
   codex: { id: 'codex-base', name: 'Codex (Base)', config: {} },
-  acp: { id: 'acp-base', name: 'Others (ACP)', config: { agentId: 'grok-build' } },
+  acp: { id: 'acp-grok', name: 'Grok (Base)', config: { agentId: 'grok-build' } },
   opencode: { id: 'opencode-base', name: 'OpenCode (Base)', config: {} },
   cursor: { id: 'cursor-base', name: 'Cursor (Base)', config: {} },
   dsh: { id: 'dsh-base', name: 'DeepSeek (Base)', config: {} },
@@ -25,17 +25,31 @@ export interface BaseSessionProviderDefinition extends BaseSessionProviderSpec {
   harnessId: HarnessId
 }
 
-export const BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefinition[] = (
-  Object.entries(BASE_SESSION_PROVIDERS) as Array<[HarnessId, BaseSessionProviderSpec]>
-).map(([harnessId, spec]) => ({ harnessId, ...spec }))
+export const EXTRA_BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefinition[] = [
+  { harnessId: 'acp', id: 'acp-antigravity', name: 'Antigravity (Base)', config: { agentId: 'antigravity' } },
+]
 
-export function baseSessionProviderId(harnessId: HarnessId): string {
-  return BASE_SESSION_PROVIDERS[harnessId].id
+export const BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefinition[] = [
+  ...(Object.entries(BASE_SESSION_PROVIDERS) as Array<[HarnessId, BaseSessionProviderSpec]>).map(
+    ([harnessId, spec]) => ({ harnessId, ...spec }),
+  ),
+  ...EXTRA_BASE_SESSION_PROVIDER_DEFINITIONS,
+]
+
+export function baseSessionProviderId(harnessId: HarnessId | string, acpAgentId?: string | null): string {
+  if (harnessId === 'acp' && acpAgentId && acpAgentId.toLowerCase().includes('antigravity')) {
+    return 'acp-antigravity'
+  }
+  const spec = (BASE_SESSION_PROVIDERS as Record<string, BaseSessionProviderSpec | undefined>)[harnessId]
+  return spec ? spec.id : `${harnessId}-base`
 }
 
-/** Only the canonical built-in row follows user defaults. Custom rows keep their own runtime. */
 export function isDefaultSessionProvider(row: { id: string; harnessId: HarnessId; isBase: boolean }): boolean {
-  return row.isBase && row.id === baseSessionProviderId(row.harnessId)
+  if (!row.isBase) return false
+  if (row.harnessId === 'acp') {
+    return row.id === 'acp-grok' || row.id === 'acp-antigravity' || row.id === 'acp-base'
+  }
+  return row.id === baseSessionProviderId(row.harnessId)
 }
 
 /**

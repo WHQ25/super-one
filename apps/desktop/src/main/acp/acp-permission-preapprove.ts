@@ -1,21 +1,28 @@
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { isMainThreadOnlySuperoneTool } from '@superone/shared/superone-host-owned-tools'
+import { claudeMcpToolRuleName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { isBuiltInSuperoneTool, isToolPreapproved } from '../mcp/superone-mcp-server'
 import { isTerminalTabsTool } from '../mcp/terminal-tabs-harness-gate'
+import {
+  extractAntigravityToolNameFromTitle,
+  isAntigravityUserInputRequest,
+  normalizeAntigravityRawInput,
+} from './antigravity-protocol'
 import { normalizeAcpTool } from './acp-event-map'
 
-/**
- * Normalize ACP permission tool identity into Claude-style
- * `mcp__server__tool` names so we can reuse SuperOne host preapproval helpers.
- *
- * Grok MCP wire form is `server__tool` (use_tool envelope). SuperOne UI / Claude
- * form is `mcp__server__tool`.
- */
 export function toClaudeMcpToolName(raw: string): string | null {
   const name = raw.trim()
   if (!name) return null
   if (name.startsWith('mcp__')) return name
-  // Grok / ACP: server__tool (exactly one server segment before first __)
+  const parsed = parseMcpToolName(name)
+  if (parsed) return claudeMcpToolRuleName(parsed.serverName, parsed.mcpToolName)
+  const stripped = extractAntigravityToolNameFromTitle(name)
+  if (stripped) {
+    const parsedStripped = parseMcpToolName(stripped)
+    if (parsedStripped) {
+      return claudeMcpToolRuleName(parsedStripped.serverName, parsedStripped.mcpToolName)
+    }
+  }
   if (name.includes('__')) return `mcp__${name}`
   return null
 }
@@ -30,7 +37,23 @@ function collectCandidateClaudeNames(toolCall: AcpToolCall): string[] {
     if (claude && !out.includes(claude)) out.push(claude)
   }
 
-  const normalized = normalizeAcpTool(toolCall)
+  const normalizedAntigravity = normalizeAntigravityRawInput(
+    toolCall.rawInput,
+    toolCall.rawOutput,
+    typeof toolCall.title === 'string' ? toolCall.title : undefined,
+    (toolCall as { _meta?: unknown })._meta,
+    toolCall.kind,
+  )
+  const normalized = normalizeAcpTool({
+    ...toolCall,
+    rawInput: normalizedAntigravity.rawInput,
+    ...(normalizedAntigravity.normalizedTitle !== undefined
+      ? { title: normalizedAntigravity.normalizedTitle }
+      : {}),
+    ...(normalizedAntigravity.normalizedMeta !== undefined
+      ? { _meta: normalizedAntigravity.normalizedMeta }
+      : {}),
+  })
   if (normalized?.toolName) push(normalized.toolName)
 
   const rawInput = toolCall.rawInput
@@ -42,11 +65,23 @@ function collectCandidateClaudeNames(toolCall: AcpToolCall): string[] {
   }
 
   if (typeof toolCall.title === 'string') push(toolCall.title)
+  if (normalizedAntigravity.normalizedTitle) push(normalizedAntigravity.normalizedTitle)
 
-  const meta = (toolCall as { _meta?: Record<string, unknown> | null })._meta
-  const xai = meta && typeof meta === 'object' ? meta['x.ai/tool'] : null
-  if (xai && typeof xai === 'object' && !Array.isArray(xai)) {
-    push((xai as { name?: unknown }).name)
+  const meta =
+    normalizedAntigravity.normalizedMeta ??
+    (toolCall as { _meta?: Record<string, unknown> | null })._meta
+  if (meta && typeof meta === 'object') {
+    const mcp = meta.mcp
+    if (mcp && typeof mcp === 'object' && !Array.isArray(mcp)) {
+      const m = mcp as { server?: unknown; tool?: unknown }
+      if (typeof m.server === 'string' && typeof m.tool === 'string' && m.server.trim() && m.tool.trim()) {
+        push(claudeMcpToolRuleName(m.server.trim(), m.tool.trim()))
+      }
+    }
+    const xai = meta['x.ai/tool']
+    if (xai && typeof xai !== 'string' && typeof xai === 'object' && !Array.isArray(xai)) {
+      push((xai as { name?: unknown }).name)
+    }
   }
 
   return out
@@ -58,8 +93,7 @@ function collectToolInput(params: RequestPermissionRequest): Record<string, unkn
   const rawInput = params.toolCall.rawInput
   if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return {}
   const r = rawInput as Record<string, unknown>
-  // Grok use_tool envelope nests args under tool_input
-  const nested = r.tool_input
+  const nested = r.tool_input ?? r.arguments
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     return nested as Record<string, unknown>
   }
@@ -111,6 +145,9 @@ export function decideAcpPermission(
   params: RequestPermissionRequest,
   mainSessionId?: string | null,
 ): AcpPermissionDecision {
+  if (isAntigravityUserInputRequest(params)) {
+    return { kind: 'prompt' }
+  }
   const names = collectCandidateClaudeNames(params.toolCall)
   const mainThreadTool = names.find((name) => isMainThreadOnlySuperoneTool(name))
   if (mainThreadTool && looksLikeAcpSubagentCall(params, mainSessionId)) {
@@ -142,6 +179,9 @@ export function parentMainThreadToolName(toolCall: AcpToolCall): string | null {
 export function shouldAutoAllowAcpPermission(
   params: RequestPermissionRequest,
 ): { allow: true; reason: AcpPreapproveReason; toolName: string } | { allow: false } {
+  if (isAntigravityUserInputRequest(params)) {
+    return { allow: false }
+  }
   const input = collectToolInput(params)
   for (const name of collectCandidateClaudeNames(params.toolCall)) {
     if (isBuiltInSuperoneTool(name)) {

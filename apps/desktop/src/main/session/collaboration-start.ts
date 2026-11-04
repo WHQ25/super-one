@@ -32,7 +32,7 @@ import { getDb } from '../database'
 import { createSession as createSessionRecord, hideSession } from '../db-sessions'
 import log from '../logger'
 import { applyDesktopSessionSettings } from '../node-host/desktop-session-mutations'
-import { listSessionAgentProfiles } from './agent-profiles'
+import { findSessionAgentProfile, listSessionAgentProfiles, resolveProviderRowId } from './agent-profiles'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import { ensureChildProject, isManagedWorktreePath, resolveCwd } from './collaboration-child-project'
 import { sendToRemoteChild, startRemoteChild, type StartedRemoteChild } from './collaboration-remote'
@@ -208,15 +208,16 @@ async function startSessionAgentImpl(
   const originalAssertControl = assertControl
   assertControl = () => {
     originalAssertControl()
-    if (grant.task_sent !== 1) assertAgentProfileLaunchEnabled(getSessionProvider(grant.agent_id)?.config)
+    const rowId = resolveProviderRowId(grant.agent_id)
+    if (grant.task_sent !== 1) assertAgentProfileLaunchEnabled(getSessionProvider(rowId)?.config)
     if (approvedConfig.profileApproval && grant.task_sent !== 1) {
       const { profileApproval, launchId: _id, summary: _summary, codexServiceTier: _tier, handoffSessionId: _handoff, ...config } = approvedConfig
-      const profile = listSessionAgentProfiles().find((item) => item.id === grant.agent_id)
-      const row = getSessionProvider(grant.agent_id)
+      const profile = findSessionAgentProfile(listSessionAgentProfiles(), grant.agent_id)
+      const row = getSessionProvider(rowId)
       if (isAgentProfilesEnabled() && profileApproval.source === 'defaults' && profile && row && isDefaultSessionProvider(row)
         && (profile.harnessId !== 'acp' || profile.acpAgentId)) return
       if (!profile || !row || currentApprovalFingerprint(row, profile) !== profileApproval.fingerprint
-        || !isPreapprovedProfileLaunch(profile, { launchId: '', mode: grant.kind, agentId: grant.agent_id, name: '', role: '', summary: '', config }, profileApproval.cwd)) {
+        || !isPreapprovedProfileLaunch(profile, { launchId: '', mode: grant.kind, agentId: profile.id, name: '', role: '', summary: '', config }, profileApproval.cwd)) {
         throw new Error('Profile approval or configuration changed. Request this launch again for user review.')
       }
     }
@@ -365,10 +366,8 @@ async function startSessionAgentImpl(
   }
   try { assertControl() } catch (error) { await rollbackWorktree(); throw error }
 
-  // Default Profile grants follow the settings in effect when the runtime is created.
-  // Existing children keep their initial settings and idempotent retries above.
   if (approvedConfig.profileApproval?.source === 'defaults') {
-    const profile = listSessionAgentProfiles().find((item) => item.id === grant.agent_id)!
+    const profile = findSessionAgentProfile(listSessionAgentProfiles(), grant.agent_id)!
     config = {
       ...profileLaunchConfig(config, profile.defaultConfig),
       profileApproval: approvedConfig.profileApproval,
@@ -382,7 +381,8 @@ async function startSessionAgentImpl(
 
   const childSessionId = randomUUID()
   const agentId = grant.agent_id
-  const profile = listSessionAgentProfiles().find((item) => item.id === agentId)
+  const providerRowId = resolveProviderRowId(agentId)
+  const profile = findSessionAgentProfile(listSessionAgentProfiles(), agentId)
   const codexServiceTier = resolveCodexServiceTier(agentId, config)
   const displayName = deriveCollaborationName({ name: config.name })
   const role = deriveCollaborationRole({
@@ -390,15 +390,10 @@ async function startSessionAgentImpl(
     task: grant.task,
   })
   const title = collaborationSessionTitle(displayName, role)
-  // is_worktree / worktree_path: host-cut worktree OR agent attached cwd to an
-  // existing worktree of the project (Reviewer reading implementer's tree).
   const isWorktreeSession = worktreeEnabled || resolve(cwd) !== resolve(projectPath)
   const worktreePath = isWorktreeSession ? cwd : undefined
-  createSessionRecord(projectPath, childSessionId, title, isWorktreeSession, gitBranch ?? undefined, worktreePath, agentId)
+  createSessionRecord(projectPath, childSessionId, title, isWorktreeSession, gitBranch ?? undefined, worktreePath, providerRowId)
   let child: Session
-  // createSession always promotes the new session to project-active. Collaboration
-  // children must not steal routing from the parent for unscoped main-process ops.
-  // Scoped to the joined project, which is not always the parent's.
   const previousActiveId = host.getActiveSession(projectPath)?.id ?? null
   try {
     child = host.createSession({
@@ -406,7 +401,7 @@ async function startSessionAgentImpl(
       projectPath,
       cwd,
       gitBranch,
-      providerId: grant.agent_id,
+      providerId: providerRowId,
       model: config.model,
       effort: config.effort as EffortLevel | undefined,
       codexServiceTier,
@@ -415,7 +410,6 @@ async function startSessionAgentImpl(
       permissionMode: config.permissionMode as PermissionMode | undefined,
       sandboxMode: config.sandboxMode as SandboxMode | undefined,
       acpAgentId: profile?.acpAgentId ?? null,
-      // Handoff is one-way by construction: the receiver gets no collaboration prompt.
       ...(isHandoff
         ? {}
         : { systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id) }),
@@ -429,34 +423,22 @@ async function startSessionAgentImpl(
           previousActiveId,
           err instanceof Error ? err.message : String(err),
         )
-        // The previous target disappeared while the child was being created. Do
-        // not leave the collaboration child as an accidental routing fallback.
         host.clearActiveSession(projectPath)
       }
     } else if (!previousActiveId) {
       host.clearActiveSession(projectPath)
     }
     child.setTitle(title, 'agent')
-    // The profile's harness options, through the path a composer pick takes; before the first turn starts the runtime.
     const optionSettings = { ...launchOptionSettings(config.options), ...(config.claudeFastMode !== undefined ? { claudeFastMode: config.claudeFastMode } : {}) }
     if (Object.keys(optionSettings).length) await applyDesktopSessionSettings(child, optionSettings)
     assertControl()
-    // Persist provider + ACP agent immediately so sidebar brand icons work before first save.
-    //
-    // api_provider_id / selected_model / selected_effort belong here for the same
-    // reason: Session.notifyStateChange refuses to persist an empty transcript, so
-    // until the first message lands this row is the renderer's ONLY source for them
-    // (chat-store restores both from the persisted row, never from the live Session).
-    // Leaving them null made the child's model selector resolve against the global
-    // provider binding and show the default harness model name instead of the
-    // launched third-party one.
     getDb().prepare(`
       UPDATE sessions
       SET provider_id = ?, provider = ?, acp_agent_id = COALESCE(?, acp_agent_id), title = ?,
           api_provider_id = ?, selected_model = ?, selected_effort = ?
       WHERE id = ?
     `).run(
-      grant.agent_id,
+      providerRowId,
       profile?.harnessId ?? null,
       profile?.acpAgentId ?? null,
       title,

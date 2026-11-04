@@ -17,8 +17,10 @@ import { isJevRunToolName, looksLikeJevRunResult } from '@superone/shared/jev-ru
 import { withGrokAutoDenyPrefix } from '@superone/shared/grok-auto-deny'
 import {
   applyDescriptionPersonaLabel,
+  claudeMcpToolRuleName,
   formatAgentToolOutput,
   normalizeToolIdKey,
+  parseMcpToolName,
   uiToolNameFromId,
 } from '@superone/shared/tool-ui'
 import { extractModelConfig, modesFromConfigOptions } from './acp-config'
@@ -317,7 +319,6 @@ function enrichSearchInput(
   return input
 }
 
-/** Prefer query/pattern for UI chip over human titles like "Web search:". */
 function displayToolSummary(
   toolName: string,
   input: Record<string, unknown>,
@@ -326,7 +327,7 @@ function displayToolSummary(
   if (toolName === 'WebSearch') {
     const q = typeof input.query === 'string' ? input.query.trim() : ''
     if (q) return q
-    return queryFromWebSearchTitle(title) ?? (title && title !== 'Web search:' ? title : undefined)
+    return queryFromWebSearchTitle(title) ?? (title && title !== 'Web search:' && !nameFromToolId(title) ? title : undefined)
   }
   if (toolName === 'Grep') {
     const p = typeof input.pattern === 'string' ? input.pattern.trim() : ''
@@ -340,7 +341,18 @@ function displayToolSummary(
     }
     return patternFromGrepTitle(title)
   }
-  if (title?.trim()) return title.trim()
+  if (toolName === 'Bash') {
+    const desc = typeof input.description === 'string' ? input.description.trim() : ''
+    const cmd = typeof input.command === 'string' ? input.command.trim() : ''
+    if (desc && (!title || title.trim() === cmd || nameFromToolId(title.trim()))) {
+      return desc
+    }
+  }
+  if (title?.trim()) {
+    const trimmed = title.trim()
+    if ((!/\s/.test(trimmed) && nameFromToolId(trimmed)) || parseMcpToolName(trimmed)) return undefined
+    return trimmed
+  }
   return undefined
 }
 
@@ -579,10 +591,39 @@ function isUseToolEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): boo
 }
 
 function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): NormalizedAcpTool | null {
-  if (!isUseToolEnvelope(tool, raw)) return null
-  const id = raw.tool_name
-  if (typeof id !== 'string' || !id.includes('__')) return null
-  return { toolName: `mcp__${id}`, input: asRecord(raw.tool_input) }
+  if (isUseToolEnvelope(tool, raw)) {
+    const id = raw.tool_name
+    if (typeof id !== 'string' || !id.includes('__')) return null
+    return { toolName: `mcp__${id}`, input: asRecord(raw.tool_input) }
+  }
+  const meta = (tool as { _meta?: Record<string, unknown> | null })._meta
+  const mcpMeta = meta && typeof meta === 'object' && !Array.isArray(meta)
+    ? asRecord(meta.mcp)
+    : {}
+  const metaServer = typeof mcpMeta.server === 'string' ? mcpMeta.server.trim() : ''
+  const metaTool = typeof mcpMeta.tool === 'string' ? mcpMeta.tool.trim() : ''
+  const rawTitle = typeof tool.title === 'string' ? tool.title.trim() : ''
+  const parsedFromTitle = rawTitle ? parseMcpToolName(rawTitle) : null
+  const serverName = metaServer || parsedFromTitle?.serverName || ''
+  const mcpToolName = metaTool || parsedFromTitle?.mcpToolName || ''
+  if (!serverName || !mcpToolName) return null
+  const toolName = claudeMcpToolRuleName(serverName, mcpToolName)
+  const innerArgs =
+    raw.arguments && typeof raw.arguments === 'object' && !Array.isArray(raw.arguments)
+      ? { ...(raw.arguments as Record<string, unknown>) }
+      : { ...raw }
+  delete innerArgs.arguments
+  const promptSummary =
+    meta && typeof meta === 'object' && typeof meta.prompt === 'string' && meta.prompt.trim()
+      ? meta.prompt.trim()
+      : rawTitle && !parseMcpToolName(rawTitle)
+        ? rawTitle
+        : undefined
+  return {
+    toolName,
+    input: innerArgs,
+    ...(promptSummary ? { toolSummary: promptSummary } : {}),
+  }
 }
 
 export function normalizeAcpTool(
@@ -875,12 +916,14 @@ export function grokPromptMetaMode(acpSessionMode: string): 'plan' | 'agent' {
   return acpSessionMode === 'plan' ? 'plan' : 'agent'
 }
 
-/** Map ACP `current_mode_update` onto SuperOne permission chrome. */
 export function permissionModeFromAcpCurrentMode(
   currentModeId: string | undefined,
   yoloBaseline: PermissionMode = 'default',
 ): PermissionMode {
-  return currentModeId === 'plan' ? 'plan' : yoloBaseline
+  if (currentModeId === 'plan') return 'plan'
+  if (currentModeId === 'auto_edit') return 'acceptEdits'
+  if (currentModeId === 'yolo') return 'bypassPermissions'
+  return yoloBaseline
 }
 
 /** Map one ACP session update into zero or more SuperOne AgentEvents. */
@@ -915,10 +958,11 @@ export function mapSessionUpdate(
     case 'agent_thought_chunk': {
       const text = textFromContent(update.content)
       if (!text) return []
+      const now = Date.now()
       return [{
         type: 'content_delta',
         messageId: ctx.messageId,
-        delta: { type: 'thinking', thinking: text },
+        delta: { type: 'thinking', thinking: text, startedAt: now, endedAt: now },
       }]
     }
     case 'tool_call':
@@ -987,7 +1031,6 @@ export function mapSessionUpdate(
       return mapPlanToTodoEvents(ctx.messageId, update.entries ?? [])
     }
     case 'usage_update': {
-      // ACP usage_update is context occupancy (used/size), not turn billing in/out.
       const used = typeof (update as { used?: number }).used === 'number' ? (update as { used: number }).used : null
       const size = typeof (update as { size?: number }).size === 'number' ? (update as { size: number }).size : null
       if (used == null) return []
@@ -996,14 +1039,37 @@ export function mapSessionUpdate(
         cost && typeof cost.amount === 'number' && (cost.currency === 'USD' || !cost.currency)
           ? cost.amount
           : undefined
+      const meta = (update as { _meta?: Record<string, unknown> | null })._meta
+      const agyTurn =
+        meta && typeof meta.antigravityTurnUsage === 'object' && meta.antigravityTurnUsage !== null
+          ? (meta.antigravityTurnUsage as Record<string, unknown>)
+          : null
+      const inputTokens =
+        agyTurn && typeof agyTurn.inputTokens === 'number' && agyTurn.inputTokens > 0
+          ? agyTurn.inputTokens
+          : 0
+      const outputTokens =
+        agyTurn && typeof agyTurn.outputTokens === 'number' && agyTurn.outputTokens > 0
+          ? agyTurn.outputTokens
+          : 0
+      const cacheReadTokens =
+        agyTurn && typeof agyTurn.cacheReadTokens === 'number' && agyTurn.cacheReadTokens > 0
+          ? agyTurn.cacheReadTokens
+          : undefined
+      const model =
+        agyTurn && typeof agyTurn.model === 'string' && agyTurn.model.trim()
+          ? agyTurn.model.trim()
+          : undefined
       return [{
         type: 'message_usage',
         messageId: ctx.messageId,
-        inputTokens: 0,
-        outputTokens: 0,
+        inputTokens,
+        outputTokens,
+        ...(cacheReadTokens != null ? { cacheReadTokens } : {}),
         contextTokens: used,
         ...(size != null ? { contextWindow: size } : {}),
         ...(costUsd != null ? { costUsd } : {}),
+        ...(model ? { model } : {}),
       }]
     }
     case 'config_option_update': {
@@ -1061,8 +1127,10 @@ export function mapSessionUpdate(
           hint = readArgumentHintFromMarkdownFile(c._meta.path)
         }
         const isSkill = Boolean(
-          c._meta && typeof c._meta === 'object' && typeof c._meta.path === 'string' &&
-          /SKILL\.md$/i.test(c._meta.path),
+          c._meta &&
+            typeof c._meta === 'object' &&
+            ((c._meta as { isSkill?: unknown }).isSkill === true ||
+              (typeof c._meta.path === 'string' && /SKILL\.md$/i.test(c._meta.path))),
         )
         const workflowSource =
           c._meta && typeof c._meta === 'object' && typeof c._meta.workflowSource === 'string'

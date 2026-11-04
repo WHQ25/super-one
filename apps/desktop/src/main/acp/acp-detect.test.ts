@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../harness/grok-launch', () => ({
   resolveDesktopGrokLaunch: vi.fn(() => null),
 }))
+vi.mock('../harness/antigravity-launch', () => ({
+  resolveDesktopAntigravityLaunch: vi.fn(() => null),
+}))
 import { accessSync, constants, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'fs'
 import { delimiter, join } from 'path'
 import { homedir, tmpdir } from 'os'
@@ -36,7 +39,7 @@ describe('acp-detect', () => {
 
   it('marks agents installed when which finds them on PATH', async () => {
     const agents = await detectBuiltinAgents()
-    expect(agents.map((a) => a.id).sort()).toEqual(['grok-build', 'opencode'])
+    expect(agents.map((a) => a.id).sort()).toEqual(['antigravity', 'grok-build', 'opencode'])
     // In this developer environment these CLIs exist; tolerate CI without them.
     for (const a of agents) {
       if (a.resolvedPath) {

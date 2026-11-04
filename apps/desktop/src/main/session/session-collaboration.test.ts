@@ -486,13 +486,13 @@ describe('@agent mention targets', () => {
 
   it('resolves the ACP base provider to the agent behind it', () => {
     state.providers = [{
-      id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', isBase: true,
+      id: 'acp-grok', harnessId: 'acp', name: 'Grok (Base)', isBase: true,
       config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0,
     }]
     expect(listAgentMentionTargets()).toEqual([
       expect.objectContaining({
-        ref: 'acp-base:grok-build',
-        providerId: 'acp-base',
+        ref: 'acp-grok:grok-build',
+        providerId: 'acp-grok',
         acpAgentId: 'grok-build',
         slug: 'grok',
         displayName: 'Grok',
@@ -653,7 +653,7 @@ describe('@agent mention targets', () => {
 
     expect(listSessionAgentProfiles()).toEqual([
       expect.objectContaining({
-        id: 'acp-base',
+        id: 'acp-grok',
         acpAgentId: 'grok-build',
         defaultConfig: { model: 'grok-4.5', effort: 'high', permissionMode: 'default' },
       }),
@@ -2491,6 +2491,10 @@ registerDefaultProfileScenarios({
     if (apiProviderId !== undefined) state.defaultChatProviderId = apiProviderId
   },
   setAcpAgent: (id) => { state.agentPreference.acp.selectedAgentId = id },
+  enableAntigravity: (enabled) => {
+    if (enabled) state.harnessStatuses['acp-antigravity'] = { enabled: true, state: 'ready' }
+    else delete state.harnessStatuses['acp-antigravity']
+  },
   useReadOnlyCodex: () => {
     state.providers = [{ id: 'codex-base', harnessId: 'codex', name: 'Codex', isBase: true, config: {}, createdAt: 0, updatedAt: 0 }]
     state.resourceCache.codex = { models: [{ id: 'gpt', name: 'GPT', supportedReasoningEfforts: [{ value: 'high' }] }] }

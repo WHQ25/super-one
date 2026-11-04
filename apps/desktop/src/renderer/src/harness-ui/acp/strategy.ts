@@ -1,6 +1,6 @@
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { callSession } from '@/lib/session-client'
-import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
+import { ACP_PERMISSION_MODES, acpPermissionModesForAgent } from '@/components/chat/acpPermissionModes'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { neutralSelection } from '../neutral-selection'
 import type { HarnessStrategy } from '../strategy'
@@ -9,7 +9,7 @@ export const acpStrategy: HarnessStrategy = {
   selection: neutralSelection,
   queuePolicy: 'always',
   slash: {
-    hostCommands: ['workflows', 'mcp'],
+    hostCommands: ['clear', 'workflows', 'mcp'],
     /** Grok `/recap` is `x.ai/recap` (auto=false), not a prompt turn. */
     run: async (name, { session, projectPath, sessionId, patch }) => {
       if (name !== 'recap' || !isGrokAcpAgent(session.acpAgentId)) return false
@@ -74,9 +74,13 @@ export const acpStrategy: HarnessStrategy = {
       await prewarmAfterDispose()
     })()
   },
-  /** Only modes SuperOne can drive over the wire (see acpPermissionModes). */
   permissionCycle: ACP_PERMISSION_MODES,
-  /** Plan is `session/set_mode`: toggle plan vs default rather than cycling. */
+  cyclePermission: ({ store, session, target }) => {
+    const modes = acpPermissionModesForAgent(session.acpAgentId)
+    const idx = modes.indexOf(session.permissionMode)
+    const next = modes[((idx === -1 ? 0 : idx) + 1) % modes.length]!
+    store.setPermissionMode(next, target)
+  },
   togglePlan: ({ store, session, target }) => {
     store.setPermissionMode(session.permissionMode === 'plan' ? 'default' : 'plan', target)
   },

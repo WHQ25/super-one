@@ -65,7 +65,8 @@ describe('sessionProviders RPC', () => {
     expect(res?.error).toBeUndefined()
     const providers = (res?.result as { providers: Array<{ id: string }> }).providers
     expect(providers.map((p) => p.id).sort()).toEqual([
-      'acp-base',
+      'acp-antigravity',
+      'acp-grok',
       'claude-base',
       'codex-base',
       'cursor-base',

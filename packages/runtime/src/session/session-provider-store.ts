@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { HarnessId } from '@superone/shared/session-types'
-import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
+import { BASE_SESSION_PROVIDER_DEFINITIONS, baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseAgentProfileSpec, providerLaunchRuntime } from '@superone/shared/agent-profile'
 import type { SqliteDatabase } from '../sqlite'
 
@@ -114,6 +114,12 @@ CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(ha
 
 function seedBaseSessionProviders(db: SqliteDatabase): void {
   const now = new Date().toISOString()
+  db.prepare(
+    "DELETE FROM session_providers WHERE id = 'acp-base' AND EXISTS (SELECT 1 FROM session_providers WHERE id = 'acp-grok')",
+  ).run()
+  db.prepare(
+    "UPDATE session_providers SET id = 'acp-grok', name = 'Grok (Base)' WHERE id = 'acp-base'",
+  ).run()
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO session_providers
       (id, harness_id, name, is_base, config_json, created_at, updated_at)
@@ -230,17 +236,21 @@ export function createSessionProviderStore(
   }
 
   const get = (id: string): SessionProviderRecord | null => {
-    const row = db
-      .prepare('SELECT * FROM session_providers WHERE id = ?')
-      .get(id) as SessionProviderRow | undefined
+    const row = (
+      db.prepare('SELECT * FROM session_providers WHERE id = ?').get(id)
+      ?? (id === 'acp-base'
+        ? db.prepare("SELECT * FROM session_providers WHERE id = 'acp-grok'").get()
+        : undefined)
+    ) as SessionProviderRow | undefined
     return row ? rowToProvider(row) : null
   }
 
   const getBase = (harnessId: string): SessionProviderRecord => {
     const id = assertHarnessId(harnessId)
-    const p = get(`${id}-base`)
+    const baseId = baseSessionProviderId(id)
+    const p = get(baseId)
     if (!p) {
-      throw Object.assign(new Error(`Base provider missing: ${id}-base`), { code: 'not_found' })
+      throw Object.assign(new Error(`Base provider missing: ${baseId}`), { code: 'not_found' })
     }
     return p
   }

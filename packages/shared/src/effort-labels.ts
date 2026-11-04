@@ -61,14 +61,18 @@ export function isKnownEffortLevel(value: string): boolean {
 export function isAcpEffortConfigId(configId: string | null | undefined): boolean {
   if (configId == null || configId.trim() === '') return true
   const key = configId.trim().toLowerCase()
-  return key === 'reasoning_effort' || key === 'thought_level'
+  return key === 'reasoning_effort' || key === 'thought_level' || key === 'thinking_level'
 }
 
-/** ACP select whose id or category is Grok reasoning effort (`reasoning_effort` / `thought_level`). */
 export function isAcpEffortConfigOption(option: { id?: string | null; category?: string | null }): boolean {
   const id = option.id?.trim().toLowerCase()
   const category = option.category?.trim().toLowerCase()
-  return id === 'reasoning_effort' || category === 'thought_level' || category === 'reasoning_effort'
+  return (
+    id === 'reasoning_effort' ||
+    id === 'thinking_level' ||
+    category === 'thought_level' ||
+    category === 'reasoning_effort'
+  )
 }
 
 function rankKey(id: string, name: string): string {

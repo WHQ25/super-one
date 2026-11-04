@@ -7,6 +7,7 @@
  */
 
 import type { AgentRunConfig } from '@superone/shared/agent-types'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import type { SessionRuntime } from '../session/session-runtime'
 import { computeNextRunAt } from './schedule'
 import type { AutomationRecord, AutomationStore } from './store'
@@ -186,7 +187,7 @@ export class AutomationService {
       const session = this.deps.sessions.create({
         projectId: automation.projectId,
         harnessId,
-        providerId: `${harnessId}-base`,
+        providerId: baseSessionProviderId(harnessId),
         title,
         cwd: projectPath,
         model: turnOpts.model,

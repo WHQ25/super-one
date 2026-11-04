@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
-import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type {
   AcpAgentDescriptor,
   HarnessId,
@@ -253,6 +253,9 @@ export function HarnessPreferencePicker({
       if (agent.id === 'opencode') return false
       if (isGrokAcpAgent(agent.id)) {
         return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
+      }
+      if (isAntigravityAcpAgent(agent.id)) {
+        return isCatalogHarnessEnabled(harnessCatalog, 'acp-antigravity')
       }
       return isExperimentalAcpAgentEnabled(agent.id, {
         enabledExperimentalAgents,

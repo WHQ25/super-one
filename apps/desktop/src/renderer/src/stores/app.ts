@@ -1224,8 +1224,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       harnessConfigSection: null,
       view: 'settings',
     }
-    // Nested config panes key off settingsProvider — keep them aligned.
-    if (listKey === 'acp-grok') {
+    if (listKey === 'acp-grok' || listKey === 'acp-antigravity') {
       patch.settingsProvider = 'acp'
     } else if (
       listKey === 'claude'

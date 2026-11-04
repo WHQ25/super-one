@@ -4,6 +4,7 @@ import {
   type EnvironmentEventEnvelope,
 } from '@superone/shared/environment'
 import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import type { ChatMessage, ModelOption, SandboxInfo } from '@superone/shared/agent-types'
 import type { SessionRestoreFacts } from '@superone/shared/environment'
 import type { SessionHostPort, TranscriptWindowView } from '@superone/runtime/server'
@@ -223,7 +224,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
       sessionId: row.sessionId,
       projectId: row.projectId,
       harnessId: row.harnessId,
-      providerId: row.providerId ?? `${row.harnessId}-base`,
+      providerId: row.providerId ?? baseSessionProviderId(row.harnessId, row.acpAgentId),
       title: row.title,
       status: activity === 'streaming' || activity === 'background' ? 'streaming' : activity === 'error' ? 'error' : 'idle',
       // Messages are served by session.messages.list from the desktop transcript.

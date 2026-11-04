@@ -897,8 +897,8 @@ export class AgentService {
     return this.sessionManager
   }
 
-  private baseProviderIdForHarness(harnessId: HarnessId | undefined): string {
-    return baseSessionProviderId(harnessId ?? 'claude')
+  private baseProviderIdForHarness(harnessId: HarnessId | undefined, acpAgentId?: string | null): string {
+    return baseSessionProviderId(harnessId ?? 'claude', acpAgentId)
   }
 
   private async getOrCreateActiveSession(
@@ -917,7 +917,7 @@ export class AgentService {
     const gitBranch = hint?.gitBranch ?? null
     const apiProviderHint = hint?.apiProviderId ?? null
     const acpAgentHint = hint?.acpAgentId ?? null
-    const providerId = this.baseProviderIdForHarness(hint?.provider)
+    const providerId = this.baseProviderIdForHarness(hint?.provider, acpAgentHint)
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
     const expectedHarness = hint?.provider

@@ -41,6 +41,48 @@ export type Messages = {
     browserError: string
     unknownError: string
   }
+  antigravityAuth: {
+    title: string
+    methodLabel: string
+    methods: {
+      oauthPersonal: string
+      oauthBusiness: string
+      geminiApiKey: string
+      agentPlatform: string
+    }
+    signedOut: string
+    signedIn: string
+    signedOutHint: string
+    signIn: string
+    signOut: string
+    refresh: string
+    checking: string
+    starting: string
+    waiting: string
+    openBrowser: string
+    cancel: string
+    haveCallback: string
+    callbackLabel: string
+    callbackPlaceholder: string
+    submitCallback: string
+    verifying: string
+    failed: string
+    retry: string
+    unavailable: string
+    installHint: string
+    apiKeyLabel: string
+    apiKeyPlaceholder: string
+    apiKeySaved: string
+    clearApiKey: string
+    gcpProjectLabel: string
+    gcpProjectPlaceholder: string
+    gcpLocationLabel: string
+    gcpLocationPlaceholder: string
+    saveConfig: string
+    configSaved: string
+    browserError: string
+    unknownError: string
+  }
   activity: {
     launcher: {
       browser: string
@@ -666,6 +708,7 @@ export type Messages = {
           opencode: string
           cursor: string
           'acp-grok': string
+          'acp-antigravity': string
         }
       }
     }
@@ -873,6 +916,7 @@ export type Messages = {
         opencode: string
         cursor: string
         acpGrok: string
+        acpAntigravity: string
         experimentalAcp: string
       }
       ids: {
@@ -882,6 +926,7 @@ export type Messages = {
         opencode: string
         cursor: string
         'acp-grok': string
+        'acp-antigravity': string
       }
       codexAccount: {
         usageUnavailable: string
@@ -1658,6 +1703,7 @@ export type Messages = {
         claude: string
         codex: string
         grok: string
+        antigravity: string
         cursor: string
         opencode: string
       }
@@ -1917,7 +1963,9 @@ export type Messages = {
       subtitle: string
       ask: { label: string; description: string }
       plan: { label: string; description: string }
+      acceptEdits: { label: string; description: string }
       auto: { label: string; description: string }
+      antigravityAuto: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
       autoFailClosedToast: string
       folderTrustTitle: string
@@ -4606,6 +4654,8 @@ export type Messages = {
     refreshUsage: string
     codexTitle: string
     windowFallback: string
+    fiveHours: string
+    weekly: string
     percentLeft: string
     resetsSoon: string
     resetsIn: string
@@ -4668,6 +4718,48 @@ export const en: Messages = {
     apiKey: "API Key Configured",
     browserError: "Could not open the browser. Please try again.",
     unknownError: "Unable to reach Grok Build. Please try again.",
+  },
+  antigravityAuth: {
+    title: "Antigravity Account",
+    methodLabel: "Authentication Method",
+    methods: {
+      oauthPersonal: "Google Account (OAuth)",
+      oauthBusiness: "Gemini Enterprise (OAuth + GCP)",
+      geminiApiKey: "Gemini API Key",
+      agentPlatform: "Vertex AI / Agent Platform",
+    },
+    signedOut: "Not Signed In",
+    signedIn: "Signed In",
+    signedOutHint: "Sign in with Google or configure an API key / GCP project.",
+    signIn: "Sign In with Google",
+    signOut: "Sign Out",
+    refresh: "Refresh",
+    checking: "Checking…",
+    starting: "Preparing Sign-in…",
+    waiting: "Waiting for Google Sign-in…",
+    openBrowser: "Open Browser",
+    cancel: "Cancel",
+    haveCallback: "Remote session? Paste callback URL",
+    callbackLabel: "Redirect Callback URL",
+    callbackPlaceholder: "http://127.0.0.1:.../oauth-callback?code=...&state=...",
+    submitCallback: "Complete Sign-in",
+    verifying: "Verifying Your Account…",
+    failed: "Could Not Sign In",
+    retry: "Try Again",
+    unavailable: "Antigravity Runtime Is Not Installed",
+    installHint: "Enable Antigravity to download the runtime, then refresh.",
+    apiKeyLabel: "API Key",
+    apiKeyPlaceholder: "Enter Gemini or Vertex AI API key…",
+    apiKeySaved: "API key saved",
+    clearApiKey: "Clear Key",
+    gcpProjectLabel: "GCP Project ID",
+    gcpProjectPlaceholder: "my-gcp-project",
+    gcpLocationLabel: "GCP Location",
+    gcpLocationPlaceholder: "us-central1",
+    saveConfig: "Save Configuration",
+    configSaved: "Antigravity configuration saved",
+    browserError: "Could not open the browser. Please try again.",
+    unknownError: "Unable to reach Antigravity runtime. Please try again.",
   },
   activity: {
     launcher: {
@@ -5330,6 +5422,7 @@ export const en: Messages = {
           opencode: 'OpenCode',
           cursor: 'Cursor',
           'acp-grok': 'Grok',
+          'acp-antigravity': 'Antigravity',
         },
       },
     },
@@ -5557,6 +5650,7 @@ export const en: Messages = {
         opencode: 'OpenCode CLI / server. External runtime resolved from PATH or config.',
         cursor: 'Experimental Cursor Agent SDK harness. Managed in-process runtime; requires a Cursor User API Key.',
         acpGrok: 'Grok via the Agent Client Protocol.',
+        acpAntigravity: 'Google Antigravity ACP server. Downloads on enable when not bundled.',
         experimentalAcp: 'Optional ACP agent detected on this machine.',
       },
       ids: {
@@ -5566,6 +5660,7 @@ export const en: Messages = {
         opencode: 'OpenCode',
         cursor: 'Cursor',
         'acp-grok': 'Grok (ACP)',
+        'acp-antigravity': 'Antigravity',
       },
       codexAccount: {
         usageUnavailable: 'Usage is unavailable. Refresh to try again.',
@@ -6401,6 +6496,7 @@ export const en: Messages = {
         claude: 'Claude',
         codex: 'Codex',
         grok: 'Grok',
+        antigravity: 'Antigravity',
         cursor: 'Cursor',
         opencode: 'OpenCode',
       },
@@ -6665,9 +6761,17 @@ export const en: Messages = {
         label: 'Plan',
         description: 'Research and draft a plan; edits limited until you approve',
       },
+      acceptEdits: {
+        label: 'Accept Edits',
+        description: 'Auto-accept file edit operations',
+      },
       auto: {
         label: 'Auto',
         description: 'Classifier allows routine work; blocks fail closed without a prompt',
+      },
+      antigravityAuto: {
+        label: 'Auto',
+        description: 'Auto-approve edits and safe commands; prompt on irreversible actions',
       },
       alwaysApprove: {
         label: 'Always Approve',
@@ -9337,6 +9441,8 @@ export const en: Messages = {
     refreshUsage: 'Refresh Usage',
     codexTitle: 'Codex Usage',
     windowFallback: 'Usage',
+    fiveHours: '5 Hours',
+    weekly: 'Weekly',
     percentLeft: '{{percent}}% left',
     resetsSoon: 'resets soon',
     resetsIn: 'resets in {{time}}',

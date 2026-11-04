@@ -2,16 +2,12 @@ import { AcpModeSelector } from '@/components/chat/AcpModeSelector'
 import { AcpPermissionModeList, acpPermissionModeOption } from '@/components/chat/AcpPermissionModeList'
 import { AcpPermissionSelector } from '@/components/chat/AcpPermissionSelector'
 import { AcpModelSelector } from '@/components/chat/model-selector/AcpModelSelector'
-import { Grok } from '@lobehub/icons'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { Antigravity, Grok } from '@lobehub/icons'
+import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
 import type { HarnessControls } from '../controls'
 import { AcpLaunchModel } from './launch-model'
 
-/**
- * Permission baseline (ask / plan / auto / always) plus the agent's own session
- * modes when it has them; Grok's effort-shaped modes live on the model control.
- */
 function AcpPermissionControl({ compact }: { compact: boolean }) {
   return (
     <>
@@ -25,10 +21,15 @@ export const acpControls: HarnessControls = {
   launchAgentField: 'acpAgentId',
   ModelControl: AcpModelSelector,
   LaunchModelControl: AcpLaunchModel,
-  // Default / Grok Build → official Grok mark; other ACP agents keep the generic ACP glyph.
-  PickerIcon: ({ size, acpAgentId }) => (!acpAgentId || isGrokAcpAgent(acpAgentId)
-    ? <Grok size={size} className="text-foreground" />
-    : <AcpSessionIcon status="default" size={size} />),
+  PickerIcon: ({ size, acpAgentId }) => {
+    if (!acpAgentId || isGrokAcpAgent(acpAgentId)) {
+      return <Grok size={size} className="text-foreground" />
+    }
+    if (isAntigravityAcpAgent(acpAgentId)) {
+      return <Antigravity.Color size={size} />
+    }
+    return <AcpSessionIcon status="default" size={size} />
+  },
   PermissionControl: AcpPermissionControl,
   launchPermission: (value, select) => {
     const option = acpPermissionModeOption(value)

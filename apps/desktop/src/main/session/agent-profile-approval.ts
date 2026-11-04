@@ -10,7 +10,7 @@ import { getDb } from '../database'
 import { readAppSettings } from '../app-settings-service'
 import { resolveChatService } from '../providers/resolver'
 import { getSessionProvider } from './session-provider-repo'
-import { resolveAcpAgentId } from './agent-profiles'
+import { resolveAcpAgentId, resolveProviderRowId } from './agent-profiles'
 import type { SessionProvider } from './types'
 
 export { ensureAgentProfileApprovalSchema } from './agent-profile-approval-schema'
@@ -53,7 +53,7 @@ export function approveAgentProfile(row: SessionProvider, config: SessionAgentLa
 export function isAgentProfileApproved(profile: SessionAgentProfile): boolean {
   if (!isAgentProfilesEnabled()) return false
   if (profile.harnessId === 'acp' && !profile.acpAgentId?.trim()) return false
-  const row = getSessionProvider(profile.id)
+  const row = getSessionProvider(resolveProviderRowId(profile.id))
   if (!row) return false
   if (isDefaultSessionProvider(row)) return true
   if (!profile.defaultConfig.model || row.isBase || !readAgentProfile(row.config)) return false

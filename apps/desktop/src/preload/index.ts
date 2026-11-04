@@ -1078,15 +1078,15 @@ const appAPI = {
   scanHarnessClis: () =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_SCAN_CLI) as Promise<{
       hits: Array<{
-        harnessId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
+        harnessId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'
         command: string | null
         detected: boolean
         version?: string
       }>
-      defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
-      visibleIds: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
+      defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'>
+      visibleIds: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'>
       integrationLabels: Record<
-        'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
+        'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity',
         { label: string }
       >
     }>,
@@ -1572,6 +1572,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, data) as Promise<DiscoverModelsResult>,
   grokAuth: (request: import('@superone/shared/grok-auth').GrokAuthRequest) =>
     ipcRenderer.invoke('acp:grok-auth', request) as Promise<import('@superone/shared/grok-auth').GrokAuthState>,
+  antigravityAuth: (request: import('@superone/shared/antigravity-auth').AntigravityAuthRequest) =>
+    ipcRenderer.invoke('acp:antigravity-auth', request) as Promise<import('@superone/shared/antigravity-auth').AntigravityAuthState>,
   listAcpAgents: () =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,
   refreshAcpModels: (agentId?: string) =>

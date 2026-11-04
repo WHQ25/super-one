@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PermissionRequest, SessionAgentLaunchConfig } from '@superone/shared/agent-types'
+import { listAgentMentionTargets } from './agent-profiles'
 import { fakeHost, fakeSession } from './collaboration-test-fixtures'
 import { getSessionCollaborationRunConfig, listSessionAgentProfiles, requestSessionAgents, startSessionAgent } from './session-collaboration'
 import { resolveSessionAgentsConfirm } from './session-collaboration-confirm'
@@ -12,6 +13,7 @@ export function registerDefaultProfileScenarios(fixture: {
   providers(): SessionProvider[]
   setDefaults(config: Partial<SessionAgentLaunchConfig>): void
   setAcpAgent(id: string): void
+  enableAntigravity?(enabled: boolean): void
   useReadOnlyCodex(): void
   duringProjectResolution(effect: () => void): void
   grantCount(): number
@@ -120,6 +122,46 @@ export function registerDefaultProfileScenarios(fixture: {
       fixture.providers().splice(0, 1, { id: 'acp-base', harnessId: 'acp', name: 'ACP', isBase: true, config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0 })
       fixture.setAcpAgent('agent-selected')
       expect(listSessionAgentProfiles()[0].acpAgentId).toBe('agent-selected')
+    })
+
+    it('offers and launches both Grok and Antigravity when both ACP harnesses are ready', async () => {
+      fixture.providers().splice(
+        0,
+        fixture.providers().length,
+        { id: 'acp-grok', harnessId: 'acp', name: 'Grok (Base)', isBase: true, config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0 },
+        { id: 'acp-antigravity', harnessId: 'acp', name: 'Antigravity (Base)', isBase: true, config: { agentId: 'antigravity' }, createdAt: 0, updatedAt: 0 },
+      )
+      fixture.setAcpAgent('grok-build')
+      fixture.enableAntigravity?.(true)
+      try {
+        const profiles = listSessionAgentProfiles()
+        expect(profiles.map((p) => ({ id: p.id, acpAgentId: p.acpAgentId, name: p.name }))).toEqual([
+          { id: 'acp-grok', acpAgentId: 'grok-build', name: 'Grok' },
+          { id: 'acp-antigravity', acpAgentId: 'antigravity', name: 'Antigravity' },
+        ])
+        const mentions = listAgentMentionTargets()
+        expect(mentions.map((m) => ({ slug: m.slug, providerId: m.providerId, acpAgentId: m.acpAgentId }))).toEqual([
+          { slug: 'grok', providerId: 'acp-grok', acpAgentId: 'grok-build' },
+          { slug: 'antigravity', providerId: 'acp-antigravity', acpAgentId: 'antigravity' },
+        ])
+        const parent = fakeSession('parent')
+        const { host, createSession } = fakeHost(parent)
+        const requested = parsed(await requestSessionAgents(parent.id, {
+          launches: [{ agentId: 'acp-antigravity', name: 'Agy', role: 'Reviewer', summary: 'Review code' }],
+        }, host))
+        expect(requested.status).toBe('approved')
+        const started = parsed(await startSessionAgent(parent.id, {
+          launchId: requested.launches[0].launchId,
+          task: 'Review this PR',
+        }, host))
+        expect(started.status).toBe('started')
+        expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+          providerId: 'acp-antigravity',
+          acpAgentId: 'antigravity',
+        }))
+      } finally {
+        fixture.enableAntigravity?.(false)
+      }
     })
 
     it('preserves the native read-only Codex default through launch and restore settings', async () => {

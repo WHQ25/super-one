@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PerSessionState } from '@/stores/chat-store/types'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { shouldReuseDraftOriginSessionId } from './draft-session-origin'
+import { resetHostSession } from './session-client'
 
 const armed = {
   sessionId: 'original',
@@ -64,5 +65,6 @@ describe('draft session origin', () => {
       },
     })
     expect(await shouldReuseDraftOriginSessionId('original', undefined, '/repo')).toBe(false)
+    expect(await resetHostSession('/repo', 'original', 'next-sid')).toBeNull()
   })
 })

@@ -82,7 +82,10 @@ function profilesToTargets(raw: unknown): AgentMentionTarget[] {
       providerId: profile.id,
       harnessId: profile.harnessId as HarnessId,
       name: typeof profile.name === 'string' ? profile.name : profile.id,
-      isBase: profile.id === `${profile.harnessId}-base`,
+      isBase:
+        profile.id === `${profile.harnessId}-base`
+        || profile.id === 'acp-grok'
+        || profile.id === 'acp-antigravity',
       acpAgentId: typeof profile.acpAgentId === 'string' ? profile.acpAgentId : null,
     }]
   })

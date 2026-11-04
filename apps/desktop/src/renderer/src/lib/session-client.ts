@@ -4,6 +4,7 @@
  * for a paired node — and every operation goes through `window.environment`,
  * so callers never branch on where a session runs.
  */
+import { unwrapIpcInvokeError } from '@superone/shared/ipc-error'
 import type {
   SessionCallMethod,
   SessionCallMethods,
@@ -16,6 +17,17 @@ import type {
 import type { PerSessionState, PersistedSessionState } from '@/stores/chat-store/types'
 import { parseRemoteProjectKey } from './remote-project-key'
 import { connectionIdForProjectKey } from './session-list-ops'
+
+export function isAbsentHostSessionError(error: unknown): boolean {
+  const code = (error as { code?: string }).code
+  if (code === 'not_found' || code === 'unsupported') return true
+  const message = unwrapIpcInvokeError(error instanceof Error ? error.message : String(error))
+  return (
+    message === 'session not found' ||
+    message.startsWith('Unsupported session operation') ||
+    message.startsWith('Unsupported method:')
+  )
+}
 
 /** A project key's folder as its host names it. */
 export function hostPathForProjectKey(projectKey: string): string {
@@ -125,8 +137,7 @@ export async function resetHostSession(projectKey: string, sessionId: string, ne
   try {
     return await callSession(projectKey, sessionId, 'session.reset', newSessionId ? { newSessionId } : {})
   } catch (error) {
-    const code = (error as { code?: string }).code
-    if (code === 'not_found' || code === 'unsupported') return null
+    if (isAbsentHostSessionError(error)) return null
     throw error
   }
 }

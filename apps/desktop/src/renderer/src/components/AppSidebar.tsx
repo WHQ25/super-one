@@ -384,9 +384,12 @@ export const AppSidebar = memo(function AppSidebar() {
   const handleDeleteSession = useCallback(async () => {
     if (!deleteTarget) return
     if (skipConfirm) setSkipDeleteConfirm()
-    await executeDeleteSession(deleteTarget)
-    setDeleteTarget(null)
-    setSkipConfirm(false)
+    try {
+      await executeDeleteSession(deleteTarget)
+    } finally {
+      setDeleteTarget(null)
+      setSkipConfirm(false)
+    }
   }, [deleteTarget, skipConfirm, executeDeleteSession])
 
   const deleteTargetCli = getDeleteSessionRecovery(deleteTarget?.provider ?? 'claude', deleteTarget?.sessionId ?? '')

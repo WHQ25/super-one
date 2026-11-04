@@ -7,7 +7,7 @@
  * - If `listHarnesses` has not returned yet (catalog null), nothing is visible
  */
 
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
 import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -26,24 +26,14 @@ export function catalogEntryOn(
   return Boolean(row?.enabled && row.state !== 'disabled')
 }
 
-/**
- * Whether a first-party catalog harness may appear in pickers / chat bar.
- * `catalog === null` means unknown (IPC not ready) — treat as not enabled so
- * we never flash a disabled harness (e.g. Claude Code) as a fake default.
- */
 export function isCatalogHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
-  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'dsh',
+  id: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity' | 'dsh',
 ): boolean {
   if (catalog == null) return false
   return catalogEntryOn(catalog, id)
 }
 
-/**
- * True only when the catalog is known *and* the row is explicitly disabled.
- * Unknown catalog (`null`) is not disabled — treating it as disabled would
- * flash a read-only session banner on every launch before listHarnesses returns.
- */
 export function isCatalogHarnessDisabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
   id: string,
@@ -53,10 +43,6 @@ export function isCatalogHarnessDisabled(
   return Boolean(row && !row.enabled)
 }
 
-/**
- * A node's catalog as its descriptor states it: `capabilities.harnessIds`
- * lists the session harnesses that are enabled and ready there.
- */
 export function catalogFromHarnessIds(harnessIds: readonly string[]): HarnessCatalogStatus[] {
   return NODE_HARNESS_DEFINITIONS.map((def) => {
     const runnable = harnessIds.includes(def.sessionHarnessId)
@@ -64,10 +50,6 @@ export function catalogFromHarnessIds(harnessIds: readonly string[]): HarnessCat
   })
 }
 
-/**
- * Map a session's active provider to the Settings → Harnesses catalog id.
- * Returns null for providers that are not gated by the catalog (e.g. experimental ACP).
- */
 export function catalogIdForSessionProvider(
   provider: string,
   acpAgentId?: string | null,
@@ -77,23 +59,20 @@ export function catalogIdForSessionProvider(
   }
   if (provider === 'acp') {
     if (!acpAgentId || isGrokAcpAgent(acpAgentId)) return 'acp-grok'
+    if (isAntigravityAcpAgent(acpAgentId)) return 'acp-antigravity'
     return null
   }
   return null
 }
 
-/** Whether a non-Grok ACP agent id may appear in pickers / suggestions. */
 export function isExperimentalAcpAgentEnabled(
   agentId: string,
   opts: {
     enabledExperimentalAgents: string[]
-    /** Legacy master switch — still honored until cleared. */
     legacyExperimentalAgentsEnabled?: boolean
   },
 ): boolean {
-  if (isGrokAcpAgent(agentId)) {
-    // Grok product harness uses catalog id acp-grok — callers should use
-    // isCatalogHarnessEnabled('acp-grok') instead of this helper alone.
+  if (isGrokAcpAgent(agentId) || isAntigravityAcpAgent(agentId)) {
     return true
   }
   if (opts.legacyExperimentalAgentsEnabled) return true
@@ -114,6 +93,12 @@ export function isGrokHarnessEnabled(
   return isCatalogHarnessEnabled(catalog, 'acp-grok')
 }
 
+export function isAntigravityHarnessEnabled(
+  catalog: HarnessCatalogStatus[] | null | undefined,
+): boolean {
+  return isCatalogHarnessEnabled(catalog, 'acp-antigravity')
+}
+
 export function isClaudeHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
@@ -126,25 +111,18 @@ export function isCodexHarnessEnabled(
   return isCatalogHarnessEnabled(catalog, 'codex')
 }
 
-/** Whether the Cursor catalog harness may appear in pickers / chat bar. */
 export function isCursorHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
   return isCatalogHarnessEnabled(catalog, 'cursor')
 }
 
-/** Whether the DeepSeek catalog harness may appear in pickers / chat bar. */
 export function isDeepseekHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
   return isCatalogHarnessEnabled(catalog, 'dsh')
 }
 
-/**
- * Whether a harness (and, for ACP, an agent) may be picked: its catalog row,
- * else the experimental-agent switches. One rule for every harness picker.
- * ACP without an agent yet stays pickable while its agent resolves.
- */
 export function isPickerHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
   provider: HarnessId,
@@ -152,15 +130,11 @@ export function isPickerHarnessEnabled(
   opts: { enabledExperimentalAgents: string[]; legacyExperimentalAgentsEnabled?: boolean },
 ): boolean {
   const catalogId = catalogIdForSessionProvider(provider, agentId)
-  // A non-Grok ACP agent is opted into one by one.
   if (!catalogId) return !!agentId && isExperimentalAcpAgentEnabled(agentId, opts)
-  // Grok's agent id arrives after the harness. An unknown catalog may still
-  // resolve it; a catalog that has the row off must not keep the chip.
   if (!agentId && catalogId === 'acp-grok') {
     if (catalog == null) return true
     return catalogEntryOn(catalog, catalogId)
   }
   if (catalog != null && catalogEntryOn(catalog, catalogId)) return true
-  // The legacy experimental switch still enables OpenCode.
   return !!opts.legacyExperimentalAgentsEnabled && isExperimentalAgentProvider(provider, agentId)
 }

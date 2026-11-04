@@ -75,7 +75,7 @@ describe('session-provider-repo', () => {
     it('listByHarness filters by harness', () => {
       expect(listByHarness('claude').map((p) => p.id)).toEqual(['claude-base'])
       expect(listByHarness('codex').map((p) => p.id)).toEqual(['codex-base'])
-      expect(listByHarness('acp').map((p) => p.id)).toEqual(['acp-base'])
+      expect(listByHarness('acp').map((p) => p.id)).toEqual(['acp-grok', 'acp-antigravity'])
     })
 
     it('get returns null for unknown id', () => {

@@ -174,7 +174,10 @@ export async function listRemoteAgentEnvironments(localProfiles: SessionAgentPro
 }
 
 /** A remote child runs on the target's base provider for its harness; local provider ids mean nothing there. */
-export function remoteProviderId(harnessId: string): string {
+export function remoteProviderId(harnessId: string, acpAgentId?: string | null): string {
+  if (harnessId === 'acp') {
+    return acpAgentId && acpAgentId.toLowerCase().includes('antigravity') ? 'acp-antigravity' : 'acp-grok'
+  }
   return `${harnessId}-base`
 }
 

@@ -33,6 +33,7 @@ import {
 import { desktopNetFetch } from '../desktop-net-fetch'
 import log from '../logger'
 import { scriptedHarnessEnabled } from '../session/scripted-harness-gate'
+import { refreshAntigravityInstallation } from './antigravity-installation'
 import { refreshGrokInstallation } from './grok-installation'
 
 let manager: HarnessManager | null = null
@@ -87,7 +88,12 @@ export function resetHarnessManagerForTests(): void {
 export function listHarnessInstallations(): HarnessInstallationStatus[] {
   const manager = getHarnessManager()
   const grok = refreshGrokInstallation(manager)
-  return manager.list().map((row) => row.id === 'acp-grok' ? grok : row)
+  const antigravity = refreshAntigravityInstallation(manager)
+  return manager.list().map((row) => {
+    if (row.id === 'acp-grok') return grok
+    if (row.id === 'acp-antigravity') return antigravity
+    return row
+  })
 }
 
 export function getHarnessInstallation(id: NodeHarnessId): HarnessInstallationStatus {
@@ -97,25 +103,32 @@ export function getHarnessInstallation(id: NodeHarnessId): HarnessInstallationSt
 function depsWithProgress(harnessId: NodeHarnessId): HarnessKernelDeps {
   const base = desktopHarnessDeps()
   let lastEmitAt = 0
+  const emitProgress = (id: NodeHarnessId, received: number, total: number) => {
+    const now = Date.now()
+    const done = total > 0 && received >= total
+    if (done || lastEmitAt === 0 || now - lastEmitAt >= PROGRESS_THROTTLE_MS) {
+      lastEmitAt = now
+      progressListener?.({
+        harnessId: id,
+        received,
+        total,
+        phase: 'download',
+      })
+    }
+  }
   const wrapped: ManagedRuntimeInstaller = {
     install(id, home, onProgress) {
       return base.installer.install(id, home, (received, total) => {
-        const now = Date.now()
-        const done = total > 0 && received >= total
-        if (done || lastEmitAt === 0 || now - lastEmitAt >= PROGRESS_THROTTLE_MS) {
-          lastEmitAt = now
-          progressListener?.({
-            harnessId: id,
-            received,
-            total,
-            phase: 'download',
-          })
-        }
+        emitProgress(id, received, total)
         onProgress?.(received, total)
       })
     },
   }
-  return { ...base, installer: wrapped }
+  return {
+    ...base,
+    installer: wrapped,
+    onProgress: (received, total) => emitProgress(harnessId, received, total),
+  }
 }
 
 export async function enableDesktopHarness(
@@ -146,7 +159,7 @@ async function enableDesktopHarnessOnce(
   log.info(`[harness] enable ${id}`)
   try {
     // Mark installing for managed downloads so the UI can show progress immediately.
-    if (id === 'claude' || id === 'codex') {
+    if (id === 'claude' || id === 'codex' || id === 'acp-antigravity') {
       const cur = m.get(id)
       if (!cur.command || cur.state === 'disabled' || cur.state === 'missing' || cur.state === 'error') {
         m.update(id, { enabled: true, state: 'installing', diagnosticCode: null })

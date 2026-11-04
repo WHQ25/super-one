@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, Layers } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 
@@ -14,13 +15,14 @@ import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const acpModes = useActiveSession((s) => s.acpModes)
   const acpModeConfigId = useActiveSession((s) => s.acpModeConfigId)
   const selectedAcpModeId = useActiveSession((s) => s.selectedAcpModeId)
   const acpModesStatus = useActiveSession((s) => s.acpModesStatus)
   const { setSelectedAcpMode } = useScopedSessionActions()
 
-  // Grok effort stays on the model selector, including configId `reasoning_effort`.
+  if (isAntigravityAcpAgent(acpAgentId)) return null
   if (isAcpEffortConfigId(acpModeConfigId)) return null
   if (acpModesStatus === 'loading' && acpModes.length === 0) return null
   if (acpModes.length === 0) return null

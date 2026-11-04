@@ -36,7 +36,7 @@ describe('phone endpoint: native creation', () => {
     const input = { projectId: 'p1', harnessId: 'acp', sessionId: 'chosen', acpAgentId: 'grok', worktreeBranch: 'HEAD', worktreeMode: 'detach', worktreeCarryLocalChanges: false, options: { model: 'm', effort: 'high', mode: 'build', agentPreset: 'preset', additionalDirectories: ['/extra'] } }
     const result = await phone.rpc('session.create', input, 'native-create')
     expect(result).toMatchObject({ sessionId: 'chosen', cwd: worktree, model: 'm', effort: 'high', mode: 'build', agentPreset: 'preset' })
-    expect(created).toHaveBeenCalledWith(expect.objectContaining({ id: 'chosen', providerId: 'acp-base', acpAgentId: 'grok', cwd: worktree, gitBranch: null, model: 'm', additionalDirectories: ['/extra'] }))
+    expect(created).toHaveBeenCalledWith(expect.objectContaining({ id: 'chosen', providerId: 'acp-grok', acpAgentId: 'grok', cwd: worktree, gitBranch: null, model: 'm', additionalDirectories: ['/extra'] }))
     expect(activateWorktree).toHaveBeenCalledWith(projectDir, { baseBranch: 'HEAD', mode: 'detach', branchName: undefined, carryLocalChanges: false })
     expect(await phone.rpc('session.create', input, 'native-create')).toEqual(result)
     expect(created).toHaveBeenCalledOnce()

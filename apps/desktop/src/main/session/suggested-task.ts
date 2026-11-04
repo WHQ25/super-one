@@ -17,7 +17,7 @@ import {
   type SuggestedTaskLaunchOptions,
 } from '@superone/shared/suggested-task'
 import { resolveMainWorktreeDir } from '../git/worktree-ops'
-import { listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
+import { findSessionAgentProfile, listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
 import { resolveCwd } from './collaboration-child-project'
 import { resolveLiveSession } from './collaboration-host'
 import { collaborationStore as store } from './collaboration-mailbox'
@@ -63,7 +63,8 @@ async function defaultWorktree(cwd: string, title: string, taskId: string): Prom
 /** The suggesting session's agent, running as that session does; the first launchable agent otherwise. */
 function initialChoice(parent: Pick<Session, 'snapshot' | 'getUiSettings'>, profiles: SessionAgentProfile[]): SuggestedTaskLaunchChoice | null {
   const ui = parent.getUiSettings()
-  return suggestedTaskInitialChoice(profiles, parent.snapshot.providerId, {
+  const parentAgentId = findSessionAgentProfile(profiles, parent.snapshot.providerId)?.id ?? parent.snapshot.providerId
+  return suggestedTaskInitialChoice(profiles, parentAgentId, {
     ...(ui.permissionMode ? { permissionMode: ui.permissionMode } : {}),
     ...(ui.selectedModel ? { model: ui.selectedModel } : {}),
     ...(ui.selectedEffort ? { effort: ui.selectedEffort } : {}),
@@ -121,7 +122,7 @@ async function launch(
   if (!store().grantForLaunch(parentSessionId, launchId)?.started_at) {
     const profiles = listSessionAgentProfiles()
     const choice = requested ?? initialChoice(parent, profiles)
-    const profile = profiles.find((item) => item.id === choice?.agentId)
+    const profile = choice?.agentId ? findSessionAgentProfile(profiles, choice.agentId) : undefined
     if (!choice || !profile) {
       throw new SuggestedTaskError(`This agent (${choice?.agentId ?? parent.snapshot.providerId}) cannot launch new sessions.`)
     }

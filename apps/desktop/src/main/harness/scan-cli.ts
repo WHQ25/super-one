@@ -26,6 +26,7 @@ const SEARCH_NAMES: Record<NodeHarnessId, string[]> = {
   opencode: ['opencode'],
   cursor: ['cursor'],
   'acp-grok': ['grok'],
+  'acp-antigravity': ['agy_acp_server.par', 'agy_acp_server'],
   // In-process npm packages; no CLI binary to detect on PATH.
   dsh: [],
 }
@@ -36,9 +37,14 @@ const ONBOARDING_ORDER: readonly NodeHarnessId[] = [
   'opencode',
   'cursor',
   'acp-grok',
+  'acp-antigravity',
 ]
 
-const ALWAYS_VISIBLE_ONBOARDING: ReadonlySet<NodeHarnessId> = new Set(['claude', 'codex'])
+const ALWAYS_VISIBLE_ONBOARDING: ReadonlySet<NodeHarnessId> = new Set([
+  'claude',
+  'codex',
+  'acp-antigravity',
+])
 
 function withWinSuffixes(names: string[]): string[] {
   if (process.platform !== 'win32') return names
@@ -109,6 +115,7 @@ export function integrationLabels(): Record<NodeHarnessId, IntegrationLabel> {
     opencode: { label: 'OpenCode SDK' },
     cursor: { label: 'Cursor Agent SDK' },
     'acp-grok': { label: 'Agent Client Protocol' },
+    'acp-antigravity': { label: 'Agent Client Protocol' },
     dsh: { label: 'DeepSeek Harness (in-process)' },
   }
 }

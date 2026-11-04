@@ -22,6 +22,7 @@ import type {
   SideChatStartResult,
 } from '@superone/shared/agent-types'
 import type { ControlLeasePort, DraftsPort, McpAppsPort, SessionHostPort } from '@superone/runtime/server'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import type { ControlLeaseService } from '@superone/runtime/lease'
 import type { DesktopContinuations } from '../session/session-continuation'
 import type { NodeSessionRecord } from '@superone/runtime/session'
@@ -441,7 +442,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     const cwd = input.cwd ?? projectPath
     this.deps.edits.create({ sessionId, projectPath, cwd, title: input.title })
     const session = this.deps.sessions.createSession({ id: sessionId, projectPath, cwd,
-      providerId: input.providerId ?? `${input.harnessId ?? 'claude'}-base`,
+      providerId: input.providerId ?? baseSessionProviderId(input.harnessId ?? 'claude'),
       apiProviderId: input.apiProviderId, title: input.title, systemPromptAppend: input.systemPromptAppend ?? undefined })
     session.lease.grantCreatedSession()
     return this.record(this.requireRow(sessionId))

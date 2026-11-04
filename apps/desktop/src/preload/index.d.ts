@@ -175,15 +175,15 @@ interface AppAPI extends WindowLayoutAPI {
   /** Onboarding: scan PATH for first-party harness CLIs. */
   scanHarnessClis(): Promise<{
     hits: Array<{
-      harnessId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'
+      harnessId: 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'
       command: string | null
       detected: boolean
       version?: string
     }>
-    defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
-    visibleIds: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok'>
+    defaultSelected: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'>
+    visibleIds: Array<'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity'>
     integrationLabels: Record<
-      'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok',
+      'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity',
       { label: string }
     >
   }>
@@ -433,6 +433,7 @@ interface AppAPI extends WindowLayoutAPI {
   discoverProviderModels(data: { apiKey: string; credentialId?: string; baseUrl: string }): Promise<DiscoverModelsResult>
   listAcpAgents(): Promise<import('@superone/shared/agent-types').AcpResources>
   grokAuth(request: import('@superone/shared/grok-auth').GrokAuthRequest): Promise<import('@superone/shared/grok-auth').GrokAuthState>
+  antigravityAuth(request: import('@superone/shared/antigravity-auth').AntigravityAuthRequest): Promise<import('@superone/shared/antigravity-auth').AntigravityAuthState>
   refreshAcpModels(agentId?: string): Promise<import('@superone/shared/agent-types').AcpResources>
 
   // File operations
@@ -648,7 +649,7 @@ interface AppAPI extends WindowLayoutAPI {
   queryUsage(range?: { from?: string; to?: string }): Promise<{
     rows: Array<{
       day: string
-      harness: 'claude' | 'codex' | 'grok'
+      harness: 'claude' | 'codex' | 'grok' | 'antigravity' | 'cursor' | 'opencode'
       model: string
       input_tokens: number
       output_tokens: number
@@ -656,7 +657,7 @@ interface AppAPI extends WindowLayoutAPI {
       cache_creation_tokens: number
     }>
   }>
-  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' | 'cursor' | 'opencode' }): Promise<{
+  queryUsageCounts(range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' | 'antigravity' | 'cursor' | 'opencode' }): Promise<{
     sessions: number
     messages: number
   }>

@@ -16,7 +16,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GripVertical, Loader2, RefreshCw } from 'lucide-react'
-import { Codex, Cursor, DeepSeek, Grok, OpenCode } from '@lobehub/icons'
+import { Antigravity, Codex, Cursor, DeepSeek, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import {
   DndContext,
@@ -38,7 +38,7 @@ import { Badge } from '@superone/ui/components/ui/badge'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
-import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
 import {
   NODE_HARNESS_IDS,
@@ -57,6 +57,7 @@ import { HooksPage } from './HooksPage'
 import { PluginsPage } from './PluginsPage'
 import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
+import { AntigravityAuthSettings } from './AntigravityAuthSettings'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 import { GrokAuthSettings } from './GrokAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
@@ -155,6 +156,13 @@ const CATALOG_HARNESS_META = {
     experimental: false,
     configProvider: 'acp',
   },
+  'acp-antigravity': {
+    provider: 'acp',
+    labelKey: 'settings.harnesses.ids.acp-antigravity',
+    descriptionKey: 'settings.harnesses.desc.acpAntigravity',
+    experimental: true,
+    configProvider: 'acp',
+  },
   dsh: {
     provider: 'dsh',
     labelKey: 'settings.harnesses.ids.deepseek',
@@ -250,6 +258,9 @@ function HarnessBrandTitle({
   }
   if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) {
     return wrap(<Grok.Text size={size} />)
+  }
+  if (provider === 'acp' && isAntigravityAcpAgent(acpAgentId)) {
+    return wrap(<Antigravity.Text size={size} />)
   }
   return (
     <span
@@ -360,7 +371,12 @@ export function HarnessesSettingsPage() {
   // back to the Claude Code page on every click.
   useEffect(() => {
     if (!harnessConfigSection) return
-    setSelectedKey(listKeyForSettingsProvider(settingsProvider))
+    setSelectedKey((prev) => {
+      if (settingsProvider === 'acp' && (prev === 'acp-grok' || prev === 'acp-antigravity')) {
+        return prev
+      }
+      return listKeyForSettingsProvider(settingsProvider)
+    })
   }, [harnessConfigSection, settingsProvider])
 
   // Chat "Re-enable" (and similar) open this page with a specific row focused.
@@ -379,7 +395,8 @@ export function HarnessesSettingsPage() {
   const items = useMemo((): ListItem[] => {
     const agents = acpAgents.filter((a) => a.id !== 'opencode')
     const grok = agents.find((a) => isGrokAcpAgent(a.id))
-    const rest = agents.filter((a) => !isGrokAcpAgent(a.id))
+    const antigravity = agents.find((a) => isAntigravityAcpAgent(a.id))
+    const rest = agents.filter((a) => !isGrokAcpAgent(a.id) && !isAntigravityAcpAgent(a.id))
     const list: ListItem[] = NODE_HARNESS_IDS.map((catalogId) => {
       const meta: CatalogHarnessMeta = CATALOG_HARNESS_META[catalogId]
       return {
@@ -389,9 +406,16 @@ export function HarnessesSettingsPage() {
         label:
           catalogId === 'acp-grok'
             ? (grok?.name || t(meta.labelKey))
-            : t(meta.labelKey),
+            : catalogId === 'acp-antigravity'
+              ? (antigravity?.name || t(meta.labelKey))
+              : t(meta.labelKey),
         provider: meta.provider,
-        acpAgentId: catalogId === 'acp-grok' ? (grok?.id ?? 'grok-build') : null,
+        acpAgentId:
+          catalogId === 'acp-grok'
+            ? (grok?.id ?? 'grok-build')
+            : catalogId === 'acp-antigravity'
+              ? (antigravity?.id ?? 'antigravity')
+              : null,
         experimental: meta.experimental,
         description: t(meta.descriptionKey),
         configProvider: meta.configProvider,
@@ -924,7 +948,11 @@ function HarnessDetail({
                 {section === 'preferences' && (
                   <PreferencesPage provider={item.configProvider} />
                 )}
-                {section === 'account' && item.configProvider === 'acp' && <GrokAuthSettings onAuthChanged={onRefresh} />}
+                {section === 'account' && item.configProvider === 'acp' && (
+                  isAntigravityAcpAgent(acpAgentId)
+                    ? <AntigravityAuthSettings onAuthChanged={onRefresh} />
+                    : <GrokAuthSettings onAuthChanged={onRefresh} />
+                )}
                 {section === 'agents' && <AgentsPage />}
                 {section === 'skills' && <SkillsPage />}
                 {section === 'mcp' && <McpPage />}

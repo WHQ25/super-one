@@ -153,11 +153,17 @@ export function extractModelConfig(
   const chosen = byCategory ?? byId ?? fallback
   if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
 
-  const models: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
-    id: opt.value,
-    name: opt.name,
-    description: opt.description,
-  }))
+  const names = new Set<string>()
+  const models: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => {
+    const baseName = opt.name.trim() ? opt.name : opt.value
+    const name = names.has(baseName) ? `${baseName} (${opt.value})` : baseName
+    names.add(baseName)
+    return {
+      id: opt.value,
+      name,
+      description: opt.description,
+    }
+  })
   if (models.length === 0) return null
 
   const selected =

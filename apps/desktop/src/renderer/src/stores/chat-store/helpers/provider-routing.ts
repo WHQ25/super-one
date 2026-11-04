@@ -1,5 +1,5 @@
 import type { HarnessId } from '@superone/shared/agent-types'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
 export type ProviderResolvableSession = {
@@ -12,7 +12,7 @@ export function resolveProvider(session: ProviderResolvableSession): HarnessId {
 }
 
 export function isExperimentalAgentProvider(provider: HarnessId, acpAgentId?: string | null): boolean {
-  if (provider === 'acp') return acpAgentId ? !isGrokAcpAgent(acpAgentId) : false
+  if (provider === 'acp') return acpAgentId ? !isGrokAcpAgent(acpAgentId) && !isAntigravityAcpAgent(acpAgentId) : false
   return provider === 'opencode'
 }
 

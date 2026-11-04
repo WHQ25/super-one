@@ -6,6 +6,7 @@ import {
   type SessionProviderStore,
   type UpdateSessionProviderInput,
 } from '@superone/runtime/session'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { getDb } from '../database'
 import { harnessRegistry } from './harness-registry'
 import type { HarnessId, SessionProvider } from './types'
@@ -87,7 +88,13 @@ export function deleteProviderRow(existing: SessionProvider, remove: () => boole
   return getDb().transaction(() => {
     const deleted = remove()
     if (deleted) {
-      getDb().prepare('UPDATE sessions SET provider_id = ? WHERE provider_id = ?').run(`${existing.harnessId}-base`, existing.id)
+      const fallbackId = baseSessionProviderId(
+        existing.harnessId,
+        typeof (existing.config as { agentId?: unknown })?.agentId === 'string'
+          ? (existing.config as { agentId: string }).agentId
+          : null,
+      )
+      getDb().prepare('UPDATE sessions SET provider_id = ? WHERE provider_id = ?').run(fallbackId, existing.id)
     }
     return deleted
   })()

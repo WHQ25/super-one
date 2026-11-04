@@ -1255,16 +1255,16 @@ describe('sendMessageImpl: @agent reminder', () => {
 
   it('passes the providerId, not the ACP-qualified ref, as agentId', async () => {
     seedProject('/proj', 'sid-1', {
-      mentions: [{ kind: 'agent-profile', value: 'acp-base:grok-build', displayName: 'Grok' }],
+      mentions: [{ kind: 'agent-profile', value: 'acp-grok:grok-build', displayName: 'Grok' }],
     })
 
     await useChatStore.getState().sendMessage(
-      '<superone-agent><name>Grok</name><ref>acp-base:grok-build</ref></superone-agent> help',
+      '<superone-agent><name>Grok</name><ref>acp-grok:grok-build</ref></superone-agent> help',
     )
 
     const content = sentText()
-    expect(content).toContain('- "Grok" → agentId "acp-base"')
-    expect(content).not.toContain('agentId "acp-base:grok-build"')
+    expect(content).toContain('- "Grok" → agentId "acp-grok"')
+    expect(content).not.toContain('agentId "acp-grok:grok-build"')
   })
 
   it('adds no reminder when no agent was mentioned', async () => {
@@ -1404,5 +1404,20 @@ describe('sendMessageImpl: miniapp authorize', () => {
     expect(sid).toBe('sid-1')
     expect(useChatStore.getState().projectSessions['/proj']._activeSessionId).toBe('sid-1')
     expect(useChatStore.getState().projectSessions['/proj']._sessions['sid-1'].sessionProvider).toBe('codex')
+  })
+
+  it('passes acp-antigravity agentId when @Antigravity is mentioned inside Grok', async () => {
+    seedProject('/proj', 'sid-1', {
+      preferredProvider: 'acp',
+      sessionProvider: 'acp',
+      acpAgentId: 'grok-build',
+      mentions: [
+        { kind: 'agent-profile', value: 'acp-antigravity:antigravity', displayName: 'Antigravity' },
+      ],
+    })
+
+    await useChatStore.getState().sendMessage('ask @antigravity to review')
+
+    expect(sentText()).toContain('- "Antigravity" → agentId "acp-antigravity"')
   })
 })

@@ -16,12 +16,13 @@ import {
 } from './harness-installation'
 
 describe('NodeHarnessId', () => {
-  it('accepts first-party catalog ids including cursor and acp-grok', () => {
+  it('accepts first-party catalog ids including cursor, acp-grok, and acp-antigravity', () => {
     expect(isNodeHarnessId('claude')).toBe(true)
     expect(isNodeHarnessId('codex')).toBe(true)
     expect(isNodeHarnessId('opencode')).toBe(true)
     expect(isNodeHarnessId('cursor')).toBe(true)
     expect(isNodeHarnessId('acp-grok')).toBe(true)
+    expect(isNodeHarnessId('acp-antigravity')).toBe(true)
     expect(isNodeHarnessId('dsh')).toBe(true)
     expect(isNodeHarnessId('deepseek')).toBe(false)
     expect(isNodeHarnessId('acp')).toBe(false)
@@ -31,16 +32,19 @@ describe('NodeHarnessId', () => {
   it('maps legacy session acp to acp-grok and back to wire acp', () => {
     expect(sessionHarnessIdToNodeHarnessId('acp')).toBe('acp-grok')
     expect(sessionHarnessIdToNodeHarnessId('acp-grok')).toBe('acp-grok')
+    expect(sessionHarnessIdToNodeHarnessId('acp-antigravity')).toBe('acp-antigravity')
     expect(sessionHarnessIdToNodeHarnessId('cursor')).toBe('cursor')
     expect(sessionHarnessIdToNodeHarnessId('dsh')).toBe('dsh')
     expect(nodeHarnessIdToSessionHarnessId('acp-grok')).toBe('acp')
+    expect(nodeHarnessIdToSessionHarnessId('acp-antigravity')).toBe('acp')
     expect(nodeHarnessIdToSessionHarnessId('codex')).toBe('codex')
     expect(nodeHarnessIdToSessionHarnessId('cursor')).toBe('cursor')
     expect(nodeHarnessIdToSessionHarnessId('dsh')).toBe('dsh')
   })
 
-  it('normalizes session wire ids so Grok always persists as acp in Stage 1', () => {
+  it('normalizes session wire ids so Grok and Antigravity always persist as acp in Stage 1', () => {
     expect(normalizeSessionHarnessId('acp-grok')).toBe('acp')
+    expect(normalizeSessionHarnessId('acp-antigravity')).toBe('acp')
     expect(normalizeSessionHarnessId('acp')).toBe('acp')
     expect(normalizeSessionHarnessId('codex')).toBe('codex')
     expect(normalizeSessionHarnessId('cursor')).toBe('cursor')
@@ -101,6 +105,12 @@ describe('readySessionHarnessIds', () => {
         enabled: true,
         state: 'ready',
         command: '/usr/local/bin/grok',
+      },
+      {
+        ...defaultHarnessInstallationStatus('acp-antigravity'),
+        enabled: true,
+        state: 'ready',
+        command: '/usr/local/bin/agy_acp_server.par',
       },
     ]
     expect(readySessionHarnessIds(statuses)).toEqual(['claude', 'acp'])

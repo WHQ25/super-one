@@ -29,8 +29,11 @@ import {
   type ManagedHarnessId,
 } from './managed-release'
 import { isCursorSdkAvailable, resolveCursorApiKeyPlain } from './cursor-availability'
+import { enableAcpAntigravity } from './antigravity-runtime'
 import { probeHarnessReadiness } from './runtime-ready'
 import type { HarnessKernelDeps } from './types'
+
+export { enableAcpAntigravity } from './antigravity-runtime'
 
 export interface EnableHarnessInput {
   harnessId: NodeHarnessId
@@ -71,6 +74,12 @@ export async function enableHarness(
     status = enableCursor(manager)
   } else if (id === 'dsh') {
     status = enableDeepseek(manager)
+  } else if (id === 'acp-antigravity') {
+    status = await enableAcpAntigravity(manager, {
+      command: input.command,
+      args: input.args ?? [],
+      forcePin: input.forcePin === true,
+    }, deps)
   } else {
     status = enableAcpGrok(manager, {
       command: input.command,
@@ -398,7 +407,7 @@ function validateServerUrl(raw: string): string {
   return `${url.origin}${url.pathname === '/' ? '' : url.pathname}`
 }
 
-function sanitizeHarnessArgs(args: string[]): string[] {
+export function sanitizeHarnessArgs(args: string[]): string[] {
   for (const a of args) {
     if (looksLikeSecretArg(a)) {
       throw new Error('refusing to store credential-like --arg values')

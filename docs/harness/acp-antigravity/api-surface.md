@@ -1,0 +1,26 @@
+# Antigravity (ACP) API surface
+
+Version: `1.4.5` (`@agentclientprotocol/sdk` `^1.4.0`)
+
+## Connection & Lifecycle
+
+| Name | Status | Usage | Code |
+|---|---|---|---|
+| `initialize` | `used` | Handshake with `protocolVersion: 1`; reads `authMethods` | `apps/desktop/src/main/acp/acp-runtime.ts` |
+| `authenticate` | `used` | Authenticates using configured `methodId` (`oauth-personal`, `oauth-business`, `gemini-api-key`, `agent-platform`) | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts#authenticateAntigravityRuntime` |
+| `session/new` | `used` | Starts an Antigravity session with workspace `cwd`, `additionalDirectories`, MCP servers, and `_meta.antigravity.systemPrompt.append`; extracts `models`, `modes`, and `configOptions` | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts` |
+| `session/resume` / `session/load` | `used` | Resumes an existing session by `sessionId` when supported, preserving `_meta.antigravity.systemPrompt.append` | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts#resumeAntigravitySession` |
+| `session/prompt` | `used` | Sends text, slash commands (`/plan`, `/usage`, `/logout`, skills), and image content blocks for a turn; extracts turn-end `PromptResponse.usage` (`inputTokens`, `outputTokens`, `thoughtTokens`, `cachedReadTokens`) | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/antigravity-db-usage.ts` |
+| `session/cancel` | `used` | Interrupts an active turn | `apps/desktop/src/main/acp/acp-runtime.ts` |
+| `session/set_model` | `used` | Selects the active model on the session | `apps/desktop/src/main/acp/acp-runtime.ts` |
+| `session/set_mode` | `used` | Selects the active session mode (`default`, `auto_edit`, `auto`, `plan`, `yolo`) | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts#applyAntigravityPermissionMode` |
+| `session/set_config_option` | `used` | Applies reasoning effort / thinking level (`category === 'thought_level'`) | `apps/desktop/src/main/acp/acp-runtime.ts` |
+
+## Session Updates & Permissions
+
+| Name | Status | Usage | Code |
+|---|---|---|---|
+| `session/update` (`agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`, `available_commands_update`, `current_mode_update`) | `used` | Mapped to `AgentEvent` stream (`acp_commands` preserves `_meta.isSkill` and merges workspace/user/plugin/builtin `SKILL.md` skills) | `apps/desktop/src/main/acp/acp-event-map.ts`, `apps/desktop/src/main/acp/antigravity-slash-commands.ts` |
+| `session/update` (`usage_update`) | `used` | Real-time per-step context window (`used`, `size`) and cumulative per-turn token breakdown (`_meta.antigravityTurnUsage`) merged with conversation SQLite `.db` step metadata | `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/antigravity-db-usage.ts` |
+| `session/update` (`config_option_update`) | `used` | Updates cached models, modes, and reasoning effort options on the session | `apps/desktop/src/main/acp/acp-event-map.ts` |
+| `session/request_permission` | `used` | Maps tool approval requests, `agy.security.warning` PolicyGuardian advisories, and `interaction_*` structured questions to SuperOne permission prompts | `apps/desktop/src/main/acp/acp-permission-map.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts` |

@@ -5,6 +5,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { ensureShellPath } from '../shell-path'
 import { buildSafeEnv } from '../spawn-env'
+import { resolveDesktopAntigravityLaunch } from '../harness/antigravity-launch'
 import { resolveDesktopGrokLaunch } from '../harness/grok-launch'
 import { BUILTIN_ACP_AGENTS, type AcpAgentDefinition } from './agent-catalog'
 
@@ -117,6 +118,19 @@ export async function detectAgent(def: AcpAgentDefinition): Promise<DetectedAcpA
         commandPreview: [resolved.command, ...resolved.args].join(' '),
         installHint: def.installHint,
         resolvedPath: resolved.command,
+      }
+    }
+  }
+  if (def.id === 'antigravity') {
+    const resolved = resolveDesktopAntigravityLaunch()
+    if (resolved?.executablePath) {
+      return {
+        id: def.id,
+        name: def.name,
+        installed: true,
+        commandPreview: [resolved.executablePath, ...resolved.args].join(' '),
+        installHint: def.installHint,
+        resolvedPath: resolved.executablePath,
       }
     }
   }

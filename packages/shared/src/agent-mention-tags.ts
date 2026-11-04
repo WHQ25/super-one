@@ -79,6 +79,7 @@ export const AGENT_MENTION_SLUGS: Readonly<Record<string, AgentMentionSlugSpec>>
   claude: { slug: 'claude', aliases: ['cc', 'claude-code'], displayName: 'Claude' },
   codex: { slug: 'codex', aliases: ['gpt', 'openai'], displayName: 'Codex' },
   'acp-grok': { slug: 'grok', aliases: ['xai', 'acp'], displayName: 'Grok' },
+  'acp-antigravity': { slug: 'antigravity', aliases: ['agy', 'google'], displayName: 'Antigravity' },
   opencode: { slug: 'opencode', aliases: ['oc'], displayName: 'OpenCode' },
   'acp-opencode': { slug: 'opencode', aliases: ['oc', 'acp'], displayName: 'OpenCode' },
   cursor: { slug: 'cursor', aliases: [], displayName: 'Cursor' },

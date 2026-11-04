@@ -11,8 +11,10 @@ import { existsSync } from 'node:fs'
 import {
   managedHarnessPrefix,
   readCurrentPointer,
+  resolveAntigravityRuntime,
   resolveExternalCommand,
   resolveGrokRuntime,
+  resolveManagedAntigravityFromHome,
   isCursorSdkAvailable,
   resolveCursorApiKeyPlain,
   setHarnessReleaseVersionProvider,
@@ -28,6 +30,7 @@ import { resolveSdkClaudeBinary } from '../agent/claude-binary'
 import { resolveCursorApiKey } from '../cursor/cursor-auth'
 import { getBaseProvider } from '../session/session-provider-repo'
 import { resolveDeepseekApiKey } from '../deepseek/deepseek-credentials'
+import { isAntigravityAuthSatisfied } from '../acp/antigravity-profile'
 import { allowBundledHarnessPlatformPackages } from './bundled-fallback'
 import { resolveHarnessHomeRoot } from './home'
 import {
@@ -116,6 +119,12 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     if (id === 'acp-grok') {
       return resolveGrokRuntime(harnesses)?.command ?? null
     }
+    if (id === 'acp-antigravity') {
+      return (
+        resolveAntigravityRuntime(harnesses, { homeRoot: resolveHarnessHomeRoot() })
+          ?.executablePath ?? null
+      )
+    }
     if (id === 'opencode') {
       if (!harnesses.get(id).enabled) return null
       return envBinary('SUPERONE_OPENCODE_BINARY') ?? harnesses.get(id).command ?? null
@@ -144,6 +153,12 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
       )
     }
     if (id === 'acp-grok') return Boolean(envBinary('SUPERONE_ACP_BINARY'))
+    if (id === 'acp-antigravity') {
+      return Boolean(
+        envBinary('SUPERONE_ANTIGRAVITY_BINARY') ||
+          resolveManagedAntigravityFromHome(resolveHarnessHomeRoot()),
+      )
+    }
     if (id === 'opencode') return Boolean(envBinary('SUPERONE_OPENCODE_BINARY'))
     if (id === 'cursor') return isCursorSdkAvailable()
     if (id === 'dsh') return true
@@ -210,6 +225,11 @@ export function desktopHarnessAuthProbe(): HarnessAuthProbe {
           ? { ok: true, reason: 'DeepSeek provider credential' }
           : null
       }
+      if (id === 'acp-antigravity') {
+        return isAntigravityAuthSatisfied()
+          ? { ok: true, reason: 'Antigravity auth configured' }
+          : null
+      }
       if (id !== 'claude' && id !== 'codex') return null
       const consumer: ConsumerId = id === 'codex' ? 'chat:codex' : 'chat:claude'
       const binding = getBinding(consumer)
@@ -253,5 +273,6 @@ export function desktopHarnessDeps(): HarnessKernelDeps {
       httpFetch: chromiumHttpFetch(),
     }),
     auth: desktopHarnessAuthProbe(),
+    httpFetch: chromiumHttpFetch(),
   }
 }

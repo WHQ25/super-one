@@ -189,11 +189,16 @@ export async function sendMessageImpl(
     const { decodeAgentRef, formatAgentMentionReminder } = await import(
       '@superone/shared/agent-mention-tags'
     )
+    const { isAntigravityAcpAgent } = await import('@superone/shared/acp-brand')
     agentReminderSuffix = formatAgentMentionReminder(
       agentMentions.flatMap((m) => {
         const decoded = decodeAgentRef(m.value)
         if (!decoded) return []
-        return [{ displayName: m.displayName || decoded.providerId, providerId: decoded.providerId }]
+        const providerId =
+          decoded.providerId === 'acp-base'
+            ? (isAntigravityAcpAgent(decoded.acpAgentId) ? 'acp-antigravity' : 'acp-grok')
+            : decoded.providerId
+        return [{ displayName: m.displayName || providerId, providerId }]
       }),
     )
   }
@@ -238,11 +243,11 @@ export async function sendMessageImpl(
   )
   let capabilityReminderSuffix = ''
   let desktopAppReminderSuffix = ''
-  // Expand popup-selected path/agent tags to bare @value for the model; keep
-  // the stored user bubble as structured tags so only those render as chips.
   let agentContent = expandPathRefTagsForAgent(rawContent)
-  // CLI-style `/workflow name key=value` → JSON object for the agent (Grok expects JSON or free text).
-  if (/^\/workflow\s+\S+/i.test(agentContent)) {
+  if (
+    /^\/workflow\s+\S+/i.test(agentContent) &&
+    !(effectiveProvider === 'acp' && session.acpAgentId === 'antigravity')
+  ) {
     const { rewriteWorkflowCommandForAgent } = await import(
       '../../../components/chat/workflow-cli-args'
     )
@@ -463,11 +468,15 @@ export async function sendMessageImpl(
   //   }
   // }
 
-  // A bare `/name` the harness's slash policy keeps off the wire.
   const slashName = rawContent.match(/^\/(\S+)$/)?.[1]
   if (slashName) {
     const slash = HARNESS_STRATEGIES[effectiveProvider].slash
-    const hostCommand = slash.hostCommands.includes(slashName) ? CLAUDE_INTERCEPTED_COMMANDS[slashName] : undefined
+    const isBlockedWorkflow =
+      slashName === 'workflows' && effectiveProvider === 'acp' && session.acpAgentId === 'antigravity'
+    const hostCommand =
+      !isBlockedWorkflow && slash.hostCommands.includes(slashName)
+        ? CLAUDE_INTERCEPTED_COMMANDS[slashName]
+        : undefined
     if (hostCommand) {
       patchSession(() => ({ _pendingSlashCommand: '' }))
       await hostCommand()

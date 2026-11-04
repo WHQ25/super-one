@@ -1,15 +1,6 @@
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type { PermissionMode } from '@superone/shared/agent-types'
 
-/**
- * Grok ACP modes SuperOne can drive over the wire:
- * - default → ask permission baseline + session mode default
- * - plan → session/set_mode plan (not yolo)
- * - auto → autoMode
- * - bypassPermissions → yolo / always-approve
- *
- * Labels/icons live in AcpPermissionSelector so this module stays free of JSX
- * (shared with cyclePermissionMode in the chat store).
- */
 export const ACP_PERMISSION_MODES: PermissionMode[] = [
   'default',
   'plan',
@@ -17,9 +8,26 @@ export const ACP_PERMISSION_MODES: PermissionMode[] = [
   'bypassPermissions',
 ]
 
-export type AcpPermissionModeId = (typeof ACP_PERMISSION_MODES)[number]
+export const ANTIGRAVITY_PERMISSION_MODES: PermissionMode[] = [
+  'default',
+  'plan',
+  'acceptEdits',
+  'auto',
+]
 
-export type AcpPermissionLabelKey = 'ask' | 'plan' | 'auto' | 'alwaysApprove'
+export function acpPermissionModesForAgent(agentId?: string | null): PermissionMode[] {
+  return isAntigravityAcpAgent(agentId) ? ANTIGRAVITY_PERMISSION_MODES : ACP_PERMISSION_MODES
+}
+
+export type AcpPermissionModeId = PermissionMode
+
+export type AcpPermissionLabelKey =
+  | 'ask'
+  | 'plan'
+  | 'acceptEdits'
+  | 'auto'
+  | 'antigravityAuto'
+  | 'alwaysApprove'
 
 export interface AcpPermissionModeMeta {
   id: AcpPermissionModeId
@@ -29,7 +37,6 @@ export interface AcpPermissionModeMeta {
   activeBg: string
 }
 
-/** Style tokens only — same vocabulary as Claude/Codex status-bar selectors. */
 export const ACP_PERMISSION_MODE_META: AcpPermissionModeMeta[] = [
   {
     id: 'default',
@@ -58,5 +65,36 @@ export const ACP_PERMISSION_MODE_META: AcpPermissionModeMeta[] = [
     color: 'text-destructive',
     hoverBg: 'hover:bg-destructive/10',
     activeBg: 'bg-destructive/15',
+  },
+]
+
+export const ANTIGRAVITY_PERMISSION_MODE_META: AcpPermissionModeMeta[] = [
+  {
+    id: 'default',
+    labelKey: 'ask',
+    color: 'text-muted-foreground',
+    hoverBg: 'hover:bg-accent',
+    activeBg: 'bg-accent',
+  },
+  {
+    id: 'plan',
+    labelKey: 'plan',
+    color: 'text-purple-500 dark:text-purple-400',
+    hoverBg: 'hover:bg-purple-500/10',
+    activeBg: 'bg-purple-500/15',
+  },
+  {
+    id: 'acceptEdits',
+    labelKey: 'acceptEdits',
+    color: 'text-lime-600 dark:text-lime-400',
+    hoverBg: 'hover:bg-lime-500/10',
+    activeBg: 'bg-lime-500/15',
+  },
+  {
+    id: 'auto',
+    labelKey: 'antigravityAuto',
+    color: 'text-orange-500 dark:text-orange-400',
+    hoverBg: 'hover:bg-orange-500/10',
+    activeBg: 'bg-orange-500/15',
   },
 ]

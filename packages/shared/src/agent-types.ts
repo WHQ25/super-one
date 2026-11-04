@@ -3761,7 +3761,7 @@ export interface ClaudeRateLimits {
 
 export interface ProviderRateLimits extends ClaudeRateLimits {
   title: string
-  /** Remaining prepaid ("bought") credit balance in USD, when the provider reports one. */
+  email?: string | null
   creditBalanceDollars?: number
   /**
    * Signed-in email when this reading already identified a first-party login.

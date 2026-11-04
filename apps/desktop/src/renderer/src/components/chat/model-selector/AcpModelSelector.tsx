@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
-import { acpAgentDisplayName } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
-import { acpSelectorModels } from '@/harness-ui/acp/model-options'
+import { acpSelectorModels, projectAntigravityModels } from '@/harness-ui/acp/model-options'
 import { GroupedModelEffortSelector, type SelectorEffortOption } from './GroupedModelEffortSelector'
 import { acpContextWindowParam } from './AcpContextWindowSelect'
 
@@ -48,22 +48,32 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const modelLabel = currentModel ? view.label(currentModel) : (selectedModel || null)
   const currentLabel = modelLabel ?? agentLabel ?? t('chat.suggestions.acpLabel')
 
-  // Grok effort lives next to the model (GroupedModelEffortSelector), same as Claude/Codex.
-  const effortOptions = useMemo<SelectorEffortOption[]>(
+  const isAntigravity = isAntigravityAcpAgent(acpAgentId)
+  const antigravityView = useMemo(
+    () => (isAntigravity ? projectAntigravityModels(acpModels, selectedModel) : null),
+    [isAntigravity, acpModels, selectedModel],
+  )
+  const modeEffortOptions = useMemo<SelectorEffortOption[]>(
     () => acpModeCatalog({ modes: acpModes, modeConfigId: acpModeConfigId, selectedModeId: selectedAcpModeId }).efforts,
     [acpModes, acpModeConfigId, selectedAcpModeId],
   )
-  const effortIsAcpModeCatalog = effortOptions.length > 0
-  const selectedEffort = effortIsAcpModeCatalog
-    ? (selectedAcpModeId ?? acpModes[0]?.id ?? null)
-    : null
-  const selectedEffortLabel = effortIsAcpModeCatalog
-    ? formatEffortOptionLabel(
-      acpModes.find((m) => m.id === selectedEffort)?.name
-        ?? selectedEffort
-        ?? '',
-    ) || null
-    : null
+  const useModelIdEfforts = Boolean(antigravityView && antigravityView.effortOptions.length > 0)
+  const effortOptions = useModelIdEfforts ? antigravityView!.effortOptions : modeEffortOptions
+  const effortIsAcpModeCatalog = !useModelIdEfforts && modeEffortOptions.length > 0
+  const selectedEffort = useModelIdEfforts
+    ? antigravityView!.selectedEffort
+    : effortIsAcpModeCatalog
+      ? (selectedAcpModeId ?? acpModes[0]?.id ?? null)
+      : null
+  const selectedEffortLabel = useModelIdEfforts
+    ? antigravityView!.selectedEffortLabel
+    : effortIsAcpModeCatalog
+      ? formatEffortOptionLabel(
+        acpModes.find((m) => m.id === selectedEffort)?.name
+          ?? selectedEffort
+          ?? '',
+      ) || null
+      : null
 
   if (acpModelsStatus === 'loading' || (acpModelsStatus === 'idle' && agent?.installed && !selectedModel)) {
     return (
@@ -77,7 +87,6 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   }
 
   if (acpModels.length === 0) {
-    // Show known model id even when catalog hasn't arrived (mini-window cold paint).
     if (selectedModel) {
       return (
         <div className="flex items-center gap-1">
@@ -106,15 +115,22 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
 
   return (
     <GroupedModelEffortSelector
-      models={view.models}
+      models={antigravityView ? antigravityView.models : view.models}
       modelGroups={view.modelGroups}
-      selectedModelId={selectedModel}
-      selectedModelLabel={currentLabel}
-      onSelectModel={setSelectedModel}
+      selectedModelId={antigravityView ? antigravityView.selectedBaseModelId : selectedModel}
+      selectedModelLabel={antigravityView ? (antigravityView.selectedModelLabel ?? currentLabel) : currentLabel}
+      onSelectModel={(id) => setSelectedModel(antigravityView ? antigravityView.resolveModelId(id) : id)}
       effortOptions={effortOptions}
       selectedEffort={selectedEffort}
       selectedEffortLabel={selectedEffortLabel}
-      onSelectEffort={setSelectedAcpMode}
+      onSelectEffort={(nextEffort) => {
+        if (useModelIdEfforts && antigravityView) {
+          const nextModelId = antigravityView.resolveEffortModelId(nextEffort)
+          if (nextModelId) setSelectedModel(nextModelId)
+          return
+        }
+        setSelectedAcpMode(nextEffort)
+      }}
       optionParams={contextParam ? [contextParam] : undefined}
       onOptionParamChange={contextParam ? (id, value) => {
         if (id !== 'context' || value === contextParam.selected) return

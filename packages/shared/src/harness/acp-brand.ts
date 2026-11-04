@@ -9,6 +9,11 @@ export function isGrokAcpAgent(agentId: string | null | undefined): boolean {
   return id.includes('grok')
 }
 
+export function isAntigravityAcpAgent(agentId: string | null | undefined): boolean {
+  if (!agentId) return false
+  return agentId.toLowerCase().includes('antigravity')
+}
+
 export function isOpenCodeAcpAgent(agentId: string | null | undefined): boolean {
   if (!agentId) return false
   return agentId.toLowerCase().includes('opencode')
@@ -22,6 +27,7 @@ export function resolveHarnessBrandKey(
   if (!harnessId) return 'claude'
   if (harnessId !== 'acp') return harnessId
   if (isGrokAcpAgent(acpAgentId)) return 'acp-grok'
+  if (isAntigravityAcpAgent(acpAgentId)) return 'acp-antigravity'
   if (isOpenCodeAcpAgent(acpAgentId)) return 'acp-opencode'
   if (acpAgentId?.trim()) {
     const short = acpAgentId.trim().toLowerCase().replace(/-build$/, '').replace(/[^a-z0-9]+/g, '-')
@@ -40,6 +46,7 @@ export function acpAgentDisplayName(
     return catalogName.trim().replace(/\s+Build$/i, '')
   }
   if (isGrokAcpAgent(agentId)) return 'Grok'
+  if (isAntigravityAcpAgent(agentId)) return 'Antigravity'
   if (isOpenCodeAcpAgent(agentId)) return 'OpenCode'
   if (agentId?.trim()) {
     return agentId

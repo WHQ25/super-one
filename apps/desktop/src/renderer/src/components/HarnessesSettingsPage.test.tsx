@@ -10,6 +10,7 @@ import {
 import { HarnessesSettingsPage, listKeyForSettingsProvider } from './HarnessesSettingsPage'
 
 vi.mock('./GrokAuthSettings', () => ({ GrokAuthSettings: () => <div>grok-account</div> }))
+vi.mock('./AntigravityAuthSettings', () => ({ AntigravityAuthSettings: () => <div>antigravity-account</div> }))
 
 const hoisted = vi.hoisted(() => ({
   enableHarness: vi.fn(),
@@ -99,6 +100,7 @@ const HARNESS_LABELS = {
   opencode: /OpenCode/i,
   cursor: /^Cursor/i,
   'acp-grok': /Grok \(ACP\)/i,
+  'acp-antigravity': /Antigravity/i,
   dsh: /DeepSeek/i,
 } satisfies Record<NodeHarnessId, RegExp>
 
@@ -181,7 +183,7 @@ describe('first-party harness settings entries', () => {
     expect(screen.getByRole('tab', { name: /Preferences/i })).toHaveAttribute('data-state', 'active')
   })
 
-  it.each(['opencode', 'acp-grok'] as const)(
+  it.each(['opencode', 'acp-grok', 'acp-antigravity'] as const)(
     'keeps %s selected instead of snapping back to Claude Code',
     async (harnessId) => {
       const user = userEvent.setup()
@@ -193,15 +195,17 @@ describe('first-party harness settings entries', () => {
         expect(screen.queryByRole('tab', { name: /Subagents/i })).not.toBeInTheDocument()
       })
       expect(screen.getByRole('tab', { name: /Preferences/i })).toBeInTheDocument()
-      expect(screen.getAllByRole('tab')).toHaveLength(harnessId === 'acp-grok' ? 2 : 1)
-      if (harnessId === 'acp-grok') {
-        expect(screen.getByText('grok-account')).toBeInTheDocument()
+      expect(screen.getAllByRole('tab')).toHaveLength(harnessId === 'opencode' ? 1 : 2)
+      if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') {
+        expect(
+          screen.getByText(harnessId === 'acp-antigravity' ? 'antigravity-account' : 'grok-account'),
+        ).toBeInTheDocument()
         await user.click(screen.getByRole('tab', { name: /Preferences/i }))
         view.rerender(<HarnessesSettingsPage />)
       }
       expect(
         screen.getByText(
-          harnessId === 'acp-grok' ? 'preferences-for-acp' : 'preferences-for-opencode',
+          harnessId === 'opencode' ? 'preferences-for-opencode' : 'preferences-for-acp',
         ),
       ).toBeInTheDocument()
     },

@@ -13,6 +13,7 @@
 
 import type { HarnessInstallationStatus, NodeHarnessId } from '@superone/shared/environment'
 import type { ManagedHarnessId } from './managed-release'
+import type { HttpFetch } from './tarball-fetch'
 
 /**
  * Filesystem root for harness runtimes — **one path for CLI + desktop**:
@@ -108,4 +109,6 @@ export interface HarnessKernelDeps {
   resolver: HarnessRuntimeResolver
   installer: ManagedRuntimeInstaller
   auth?: HarnessAuthProbe | null
+  httpFetch?: HttpFetch
+  onProgress?: (received: number, total: number) => void
 }

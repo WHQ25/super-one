@@ -12,7 +12,14 @@
 import type { HarnessId } from '../session-types'
 
 /** First-party node Harness catalog IDs (target identities). */
-export type NodeHarnessId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'dsh'
+export type NodeHarnessId =
+  | 'claude'
+  | 'codex'
+  | 'opencode'
+  | 'cursor'
+  | 'acp-grok'
+  | 'acp-antigravity'
+  | 'dsh'
 
 export type HarnessRuntimeSource = 'managed' | 'external'
 
@@ -55,6 +62,7 @@ export const NODE_HARNESS_DEFINITIONS: readonly NodeHarnessDefinition[] = [
   // Managed runtimeSource (SDK) but not on ManagedHarnessId CDN pin chain yet.
   { id: 'cursor', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'cursor' },
   { id: 'acp-grok', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
+  { id: 'acp-antigravity', runtimeSource: 'managed', requiresAuth: false, sessionHarnessId: 'acp' },
   // In-process dsh Cordis tree (npm @deepseek-ai/dsh-*); no external binary to install.
   { id: 'dsh', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'dsh' },
 ] as const
@@ -70,6 +78,7 @@ export function isNodeHarnessId(value: unknown): value is NodeHarnessId {
     value === 'opencode' ||
     value === 'cursor' ||
     value === 'acp-grok' ||
+    value === 'acp-antigravity' ||
     value === 'dsh'
   )
 }
@@ -86,6 +95,7 @@ export function getNodeHarnessDefinition(id: NodeHarnessId): NodeHarnessDefiniti
  */
 export function sessionHarnessIdToNodeHarnessId(sessionId: string): NodeHarnessId | null {
   if (sessionId === 'acp' || sessionId === 'acp-grok') return 'acp-grok'
+  if (sessionId === 'acp-antigravity') return 'acp-antigravity'
   if (
     sessionId === 'claude' ||
     sessionId === 'codex' ||
@@ -264,7 +274,7 @@ export function readySessionHarnessIds(
   const out: HarnessId[] = []
   for (const def of NODE_HARNESS_DEFINITIONS) {
     const status = byId.get(def.id)
-    if (status && isHarnessRunnable(status)) {
+    if (status && isHarnessRunnable(status) && !out.includes(def.sessionHarnessId)) {
       out.push(def.sessionHarnessId)
     }
   }

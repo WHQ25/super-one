@@ -3,6 +3,7 @@ import {
   catalogEntryOn,
   catalogFromHarnessIds,
   catalogIdForSessionProvider,
+  isAntigravityHarnessEnabled,
   isCatalogHarnessDisabled,
   isCatalogHarnessEnabled,
   isClaudeHarnessEnabled,
@@ -73,7 +74,9 @@ describe('harness-visibility', () => {
     expect(catalogIdForSessionProvider('claude')).toBe('claude')
     expect(catalogIdForSessionProvider('codex')).toBe('codex')
     expect(catalogIdForSessionProvider('acp', null)).toBe('acp-grok')
+    expect(catalogIdForSessionProvider('acp', 'antigravity')).toBe('acp-antigravity')
     expect(catalogIdForSessionProvider('acp', 'some-custom-agent')).toBe(null)
+    expect(isAntigravityHarnessEnabled(null)).toBe(false)
   })
 })
 
@@ -98,6 +101,8 @@ describe('isPickerHarnessEnabled', () => {
 
   it('gates ACP agents by the Grok row or experimental opt-in, and keeps an unresolved agent pickable only while the catalog is unknown or the row is on', () => {
     expect(isPickerHarnessEnabled(catalog, 'acp', 'grok-build', off)).toBe(true)
+    expect(isPickerHarnessEnabled(catalog, 'acp', 'antigravity', off)).toBe(false)
+    expect(isPickerHarnessEnabled([...catalog, { id: 'acp-antigravity', enabled: true, state: 'ready' }], 'acp', 'antigravity', off)).toBe(true)
     expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', off)).toBe(false)
     expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', { enabledExperimentalAgents: ['gemini'] })).toBe(true)
     expect(isPickerHarnessEnabled(catalog, 'acp', null, off)).toBe(true)

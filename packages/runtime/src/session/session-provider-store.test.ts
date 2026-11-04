@@ -27,10 +27,33 @@ describe('session-provider-store', () => {
   it('seeds base providers on ensure', () => {
     const store = openStore()
     const ids = store.list().map((p) => p.id).sort()
-    expect(ids).toEqual(['acp-base', 'claude-base', 'codex-base', 'cursor-base', 'dsh-base', 'opencode-base'])
+    expect(ids).toEqual(['acp-antigravity', 'acp-grok', 'claude-base', 'codex-base', 'cursor-base', 'dsh-base', 'opencode-base'])
     expect(store.getBase('claude').isBase).toBe(true)
     expect(store.getBase('dsh').isBase).toBe(true)
     expect(store.get('claude-base')?.name).toContain('Claude')
+  })
+
+  it('migrates legacy acp-base row to acp-grok on ensure', () => {
+    const db = new Database(':memory:')
+    dbs.push(db)
+    db.exec(`
+      CREATE TABLE session_providers (
+        id TEXT PRIMARY KEY,
+        harness_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        is_base INTEGER NOT NULL DEFAULT 0,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `)
+    db.prepare(
+      `INSERT INTO session_providers (id, harness_id, name, is_base, config_json, created_at, updated_at) VALUES (?, ?, ?, 1, ?, '1', '1')`,
+    ).run('acp-base', 'acp', 'Others (ACP)', JSON.stringify({ agentId: 'grok-build', model: 'grok-4' }))
+    const store = createSessionProviderStore(db)
+    expect(store.list().map((p) => p.id)).not.toContain('acp-base')
+    expect(store.get('acp-grok')?.config).toEqual({ agentId: 'grok-build', model: 'grok-4' })
+    expect(store.get('acp-antigravity')?.config).toEqual({ agentId: 'antigravity' })
   })
 
   it('creates, updates, and deletes custom profiles', () => {

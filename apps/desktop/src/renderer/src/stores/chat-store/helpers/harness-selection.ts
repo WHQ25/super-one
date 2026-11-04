@@ -111,8 +111,13 @@ export function hydrateAcpCatalogForSession(
   const session = get().projectSessions[projectPath]?._sessions[sessionId]
   if (!session) return
   if (resolveProvider(session) !== 'acp' || !session.acpAgentId) return
-  // Live replay already populated a ready catalog — don't clobber.
-  if (session.acpModels.length > 0 && session.acpModelsStatus === 'ready') return
+  if (
+    session.acpModels.length > 0
+    && session.acpModelsStatus === 'ready'
+    && session.acpSlashCommands.length > 0
+  ) {
+    return
+  }
 
   const agentId = session.acpAgentId
   const preferSelected = session.selectedModel || null
@@ -121,9 +126,30 @@ export function hydrateAcpCatalogForSession(
     const current = get().projectSessions[projectPath]?._sessions[sessionId]
     if (!current || resolveProvider(current) !== 'acp') return
     if (current.acpAgentId !== agentId) return
-    if (current.acpModels.length > 0 && current.acpModelsStatus === 'ready') return
     const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
     if (!catalog) return
+    if (current.acpModels.length > 0 && current.acpModelsStatus === 'ready') {
+      const needsModes = current.acpModes.length === 0 && catalog.modes.length > 0
+      const needsSlash = current.acpSlashCommands.length === 0 && catalog.slashCommands.length > 0
+      if (!needsModes && !needsSlash) return
+      set((s) => updatePerSession(s, projectPath, sessionId, () => ({
+        ...(needsModes
+          ? {
+              acpModes: catalog.modes,
+              acpModeConfigId: catalog.modeConfigId,
+              selectedAcpModeId: current.selectedAcpModeId ?? catalog.selectedModeId,
+              acpModesStatus: 'ready' as const,
+            }
+          : {}),
+        ...(needsSlash
+          ? {
+              acpSlashCommands: catalog.slashCommands,
+              acpSlashCommandsStatus: 'ready' as const,
+            }
+          : {}),
+      })))
+      return
+    }
     set((s) => updatePerSession(s, projectPath, sessionId, () =>
       sessionPatchFromAcpCatalog(catalog, {
         preferSelected: current.selectedModel || preferSelected,
@@ -238,10 +264,13 @@ export function ensureAcpSlashCommandsImpl(
 
   const key = `${activeProject}:${session.acpAgentId}`
 
-  // Always show loading while ensuring runtime so popup can display a spinner
-  // (cached commands still render underneath). Live available_commands_update
-  // writes ready + refreshed list into the cache.
+  const cachedCommands =
+    session.acpSlashCommands.length === 0
+      ? getCachedAcpCatalog(get().harnessResources.acp, session.acpAgentId)?.slashCommands
+      : undefined
+
   set((s) => updateActivePerSession(s, () => ({
+    ...(cachedCommands?.length ? { acpSlashCommands: cachedCommands } : {}),
     acpSlashCommandsStatus: 'loading',
   })))
 

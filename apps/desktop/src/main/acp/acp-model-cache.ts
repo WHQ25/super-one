@@ -14,6 +14,7 @@ import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/e
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
 import { createAcpRuntime } from './acp-runtime'
+import { discoverAntigravitySlashCommands } from './antigravity-slash-commands'
 import {
   deriveSessionCatalog,
   modelCatalogFromSession,
@@ -82,11 +83,37 @@ function migrateModelsIntoConfig(
   return next
 }
 
+function mergeSlashCommands(
+  primary: ReadonlyArray<SlashCommandInfo> | undefined,
+  secondary: ReadonlyArray<SlashCommandInfo> | undefined,
+): SlashCommandInfo[] | undefined {
+  const list = [...(primary ?? []), ...(secondary ?? [])]
+  if (list.length === 0) return undefined
+  const seen = new Set<string>()
+  const out: SlashCommandInfo[] = []
+  for (const cmd of list) {
+    const name = cmd.name.replace(/^\//, '').trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    out.push({ ...cmd, name })
+  }
+  return out
+}
+
 function normalizeResources(raw: AcpResources): AcpResources {
   const configByAgentId = migrateModelsIntoConfig(
     { ...(raw.configByAgentId ?? {}) },
     raw.modelsByAgentId,
   )
+  if (configByAgentId.antigravity) {
+    configByAgentId.antigravity = {
+      ...configByAgentId.antigravity,
+      slashCommands: mergeSlashCommands(
+        discoverAntigravitySlashCommands(),
+        configByAgentId.antigravity.slashCommands,
+      ),
+    }
+  }
   return {
     ...raw,
     configByAgentId,
@@ -306,7 +333,9 @@ function mergeAgentCatalog(
 ): AcpAgentConfigCatalog {
   if (!prev) return next
   const nextHasModes = Boolean(next.extraModes?.length)
-    || next.configOptions.some((o) => o.category === 'mode' || o.id === 'mode')
+    || next.configOptions.some(
+      (o) => o.category === 'mode' || o.id === 'mode' || isAcpEffortConfigOption(o),
+    )
   return {
     configOptions: next.configOptions.length ? next.configOptions : prev.configOptions,
     extraModels: next.extraModels?.length ? next.extraModels : prev.extraModels,
@@ -321,9 +350,7 @@ function mergeAgentCatalog(
     modeConfigId: nextHasModes
       ? (next.modeConfigId ?? null)
       : (prev.modeConfigId ?? null),
-    // Slash commands are loaded lazily when the user opens the / popup — never
-    // collected during startup model/config probe. Always preserve cached ones.
-    slashCommands: prev.slashCommands,
+    slashCommands: mergeSlashCommands(next.slashCommands, prev.slashCommands),
     updatedAt: next.updatedAt,
   }
 }
@@ -340,16 +367,17 @@ function catalogHasContent(cat: AcpAgentConfigCatalog | undefined): boolean {
   )
 }
 
-function isCatalogFresh(cat: AcpAgentConfigCatalog | undefined): boolean {
+function isCatalogFresh(agentId: string, cat: AcpAgentConfigCatalog | undefined): boolean {
   if (!catalogHasContent(cat) || !cat?.updatedAt) return false
+  if (agentId === 'antigravity') {
+    const session = deriveSessionCatalog(cat)
+    const hasNonGemini = session.models.some((m) => !m.id.toLowerCase().startsWith('gemini-'))
+    if (!hasNonGemini) return false
+  }
   const age = Date.now() - Date.parse(cat.updatedAt)
   return Number.isFinite(age) && age >= 0 && age < ACP_CATALOG_FRESH_MS
 }
 
-/**
- * Startup probe for models/modes only. Slash commands are intentionally not
- * waited on here — they load when the user first opens the ACP / popup.
- */
 async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog | null> {
   const def = getBuiltinAgent(agentId)
   if (!def) return null
@@ -382,6 +410,9 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
     }
 
     const catalog = mergeAgentCatalog(catalogFromConfigOptions(options, modelCfg, modeCfg), prev)
+    if (agentId === 'antigravity' && (!catalog.slashCommands || catalog.slashCommands.length === 0)) {
+      catalog.slashCommands = discoverAntigravitySlashCommands()
+    }
     const session = deriveSessionCatalog(catalog)
     log.info(
       '[acp-model-cache] probe ok agent=%s configOptions=%d models=%d modes=%d modeConfigId=%s',
@@ -397,13 +428,6 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
   }
 }
 
-/**
- * Resolve which installed agents should be spawned for a catalog refresh.
- *
- * Default (startup): only the selected ACP agent — never spawn every installed
- * agent (e.g. OpenCode) just because it happens to be on PATH.
- * Explicit `agentIds` still probes those agents (used when the user switches).
- */
 export function resolveAcpProbeTargets(
   resources: AcpResources,
   opts?: { agentIds?: string[] },
@@ -418,14 +442,6 @@ export function resolveAcpProbeTargets(
   return installed.filter((a) => a.id === selected)
 }
 
-/**
- * Refresh model/mode catalogs once per app open (or on demand).
- * Does not probe slash commands (lazy, on first / popup open).
- *
- * By default only probes the selected ACP agent, and skips agents whose cache
- * is still fresh — so installing OpenCode must not cost a ~1GB background
- * process on every SuperOne launch.
- */
 export async function refreshAcpModelsOnce(opts?: {
   agentIds?: string[]
   force?: boolean
@@ -436,7 +452,7 @@ export async function refreshAcpModelsOnce(opts?: {
 
   await Promise.all(targets.map(async (agent) => {
     if (!opts?.force && probedThisLaunch.has(agent.id)) return
-    if (!opts?.force && isCatalogFresh(configByAgentId[agent.id])) {
+    if (!opts?.force && isCatalogFresh(agent.id, configByAgentId[agent.id])) {
       probedThisLaunch.add(agent.id)
       log.info('[acp-model-cache] skip fresh cache agent=%s', agent.id)
       return

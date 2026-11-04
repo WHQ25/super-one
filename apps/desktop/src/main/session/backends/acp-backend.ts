@@ -14,6 +14,7 @@ import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
 import {
+  recordAntigravityFromUsage,
   recordGrokFromUsage,
   subtractDelta,
   type UsageStepDelta,
@@ -35,6 +36,7 @@ import {
   upsertAcpAgentModes,
   upsertAcpAgentSlashCommands,
 } from '../../acp/acp-model-cache'
+import { discoverAntigravitySlashCommands } from '../../acp/antigravity-slash-commands'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { folderTrustDecision, type FolderTrustRequest } from '../../acp/folder-trust'
 import { describeAcpRequestFailure } from '../../acp/acp-request-error'
@@ -327,6 +329,20 @@ export class AcpBackend implements SessionBackend {
     return false
   }
 
+  private emitAntigravitySlashCommands(): void {
+    if (this.config.agentId !== 'antigravity' || !this.startOpts) return
+    try {
+      const commands = discoverAntigravitySlashCommands({
+        cwd: this.effectiveCwd(this.startOpts),
+        additionalDirectories: this.startOpts.additionalDirectories,
+      })
+      upsertAcpAgentSlashCommands('antigravity', commands)
+      this.emit({ type: 'acp_commands', commands, agentId: 'antigravity' })
+    } catch {
+      void 0
+    }
+  }
+
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('AcpBackend already disposed')
     const next = readConfig(opts.config)
@@ -343,7 +359,7 @@ export class AcpBackend implements SessionBackend {
       this.config.agentId ?? '(none)',
       this.effectiveCwd(opts),
     )
-    // Spawn early so available_commands_update can fill the / popup before the first send.
+    this.emitAntigravitySlashCommands()
     void this.ensureRuntime().catch((err) => {
       log.warn('[AcpBackend] start ensureRuntime failed:', err instanceof Error ? err.message : String(err))
     })
@@ -361,9 +377,7 @@ export class AcpBackend implements SessionBackend {
       this.config.agentId ?? '(none)',
       this.effectiveCwd(opts),
     )
-    // Re-spawn so worktree/cwd switches take effect before the next prompt
-    // (Grok binds cwd at session/new; a cold start on send is too late if UI
-    // already showed tools from the previous project root).
+    this.emitAntigravitySlashCommands()
     void this.ensureRuntime().catch((err) => {
       log.warn('[AcpBackend] rebuild ensureRuntime failed:', err instanceof Error ? err.message : String(err))
     })
@@ -377,6 +391,7 @@ export class AcpBackend implements SessionBackend {
       void this.teardownRuntime().then(() => {
         this.startOpts = opts
         this.config = next
+        this.emitAntigravitySlashCommands()
         return this.ensureRuntime()
       }).catch((err) => {
         log.warn('[AcpBackend] prewarm rebuild failed:', err instanceof Error ? err.message : String(err))
@@ -385,6 +400,7 @@ export class AcpBackend implements SessionBackend {
     }
     this.startOpts = opts
     this.config = next
+    this.emitAntigravitySlashCommands()
     void this.ensureRuntime().catch((err) => {
       log.warn('[AcpBackend] prewarm failed:', err instanceof Error ? err.message : String(err))
     })
@@ -816,12 +832,23 @@ export class AcpBackend implements SessionBackend {
       this.modeConfigId = event.configId ?? null
     }
     if (event.type === 'acp_commands') {
+      let commands = event.commands
+      if (agentId === 'antigravity') {
+        try {
+          const discovered = discoverAntigravitySlashCommands({
+            cwd: this.startOpts ? this.effectiveCwd(this.startOpts) : undefined,
+            additionalDirectories: this.startOpts?.additionalDirectories,
+          })
+          const seen = new Set(commands.map((c) => c.name))
+          commands = [...commands, ...discovered.filter((c) => !seen.has(c.name))]
+          event = { ...event, commands }
+        } catch {
+          void 0
+        }
+      }
       if (agentId) {
         try {
-          // Persist agent-global commands (including empty). Project-scoped
-          // workflows are stripped inside the cache writer — they belong to
-          // this session's cwd, not every grok-build session.
-          upsertAcpAgentSlashCommands(agentId, event.commands)
+          upsertAcpAgentSlashCommands(agentId, commands)
         } catch (err) {
           log.debug('[AcpBackend] upsert slash commands cache failed:', err)
         }
@@ -829,16 +856,17 @@ export class AcpBackend implements SessionBackend {
       log.info(
         '[AcpBackend] acp_commands agent=%s count=%d names=%s',
         agentId ?? '(none)',
-        event.commands.length,
-        event.commands.slice(0, 12).map((c) => c.name).join(','),
+        commands.length,
+        commands.slice(0, 12).map((c) => c.name).join(','),
       )
     }
     if (
-      agentId === 'grok-build'
+      (agentId === 'grok-build' || agentId === 'antigravity')
       && event.type === 'message_usage'
       && (event.inputTokens > 0 || event.outputTokens > 0 || (event.cacheReadTokens ?? 0) > 0)
     ) {
-      const model = this.selectedModelId ?? this.startOpts?.model ?? 'grok'
+      const fallbackModel = agentId === 'antigravity' ? 'antigravity' : 'grok'
+      const model = event.model ?? this.selectedModelId ?? this.startOpts?.model ?? fallbackModel
       const usageEvent = { ...event, model }
       const curr: UsageStepDelta = {
         inputTokens: event.inputTokens,
@@ -852,7 +880,8 @@ export class AcpBackend implements SessionBackend {
       const delta = subtractDelta(curr, prev)
       this.lastGrokUsageRecorded = { messageId: event.messageId, usage: curr }
       try {
-        recordGrokFromUsage(
+        const recordFn = agentId === 'antigravity' ? recordAntigravityFromUsage : recordGrokFromUsage
+        recordFn(
           {
             inputTokens: delta.inputTokens,
             outputTokens: delta.outputTokens,
@@ -862,7 +891,7 @@ export class AcpBackend implements SessionBackend {
           new Date(),
         )
       } catch (err) {
-        log.warn('[AcpBackend] Grok usage stats write failed:', err)
+        log.warn('[AcpBackend] ACP usage stats write failed:', err)
       }
       this.emit(usageEvent)
       return
@@ -893,20 +922,18 @@ export class AcpBackend implements SessionBackend {
       return Promise.resolve(mapPermissionDecision(options, false))
     }
     if (decision.kind === 'auto-allow') {
-      // Built-ins (except main-thread-only): prefer allow_always / allow-always-mcp
-      // so Grok stops re-prompting. Main-thread-only tools stay allow-once
-      // so a parent grant is not inherited by Grok child sessions.
       if (!decision.alwaysAllow && this.startOpts?.sessionId) {
         noteParentMainThreadCall(this.startOpts.sessionId, params.toolCall.toolCallId, decision.toolName)
       }
+      const alwaysAllow = decision.alwaysAllow && this.config.agentId !== 'antigravity'
       log.info(
         '[AcpBackend] auto-allow permission tool=%s reason=%s always=%s requestId=%s',
         decision.toolName,
         decision.reason,
-        decision.alwaysAllow,
+        alwaysAllow,
         request.requestId,
       )
-      return Promise.resolve(mapPermissionDecision(options, true, decision.alwaysAllow))
+      return Promise.resolve(mapPermissionDecision(options, true, alwaysAllow))
     }
     if (decision.kind === 'terminal-gate' && this.startOpts?.sessionId) {
       // Allow-once only: the remembered grant is the host's command rule, never the
@@ -1607,8 +1634,13 @@ export class AcpBackend implements SessionBackend {
         : null
       if (effortId && preservedEffort) {
         try {
-          if (extractReasoningEffortConfig(next)?.selectedModeId !== preservedEffort) {
-            next = await runtime.setConfigOption(effortId, preservedEffort)
+          const nextEffort = extractReasoningEffortConfig(next)
+          if (
+            nextEffort &&
+            nextEffort.modes.some((m) => m.id === preservedEffort) &&
+            nextEffort.selectedModeId !== preservedEffort
+          ) {
+            next = await runtime.setConfigOption(nextEffort.configId ?? effortId, preservedEffort)
           }
         } catch (err) {
           log.warn('[AcpBackend] preserve reasoning_effort after model change failed:', err)
@@ -1684,8 +1716,7 @@ export class AcpBackend implements SessionBackend {
     const effort = asGrokReasoningEffort(modeId)
     if (effort) this.grokReasoningEffort = effort
     if (!this.runtime) {
-      // An effort reaches the spawn itself; any other mode is applied once the agent is up.
-      if (!effort) this.pendingModeId = modeId
+      if (!effort || this.config.agentId === 'antigravity') this.pendingModeId = modeId
       return
     }
     const epoch = this.runtimeEpoch

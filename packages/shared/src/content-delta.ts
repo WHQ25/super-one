@@ -202,9 +202,14 @@ export function applyContentDelta(
     const idx = lastMergeTargetIndex(content, delta)
     const target = idx === -1 ? undefined : content[idx]
     if (target?.type === 'thinking' && target.id === undefined) {
-      // startedAt/endedAt are stamped upstream in the main process (claude-query);
-      // carry them through — keep the run's original start, advance to the latest end.
-      return content.map((b, i) => (i === idx ? { ...target, thinking: target.thinking + delta.thinking, endedAt: delta.endedAt ?? target.endedAt } : b))
+      return content.map((b, i) => (i === idx
+        ? {
+            ...target,
+            thinking: target.thinking + delta.thinking,
+            startedAt: target.startedAt ?? delta.startedAt,
+            endedAt: delta.endedAt ?? target.endedAt,
+          }
+        : b))
     }
   }
   // `isToolUseBlock`, not `type === 'tool_use'`: the remote projection types the
@@ -295,7 +300,6 @@ export function retractContentBlocks(content: ContentBlock[], blocks: RetractedB
   for (const ref of blocks) {
     if (ref.type !== 'text' && ref.type !== 'thinking') continue
     const payload = ref.type === 'text' ? ref.text : ref.thinking
-    if (!payload) continue
     const own = (b: ContentBlock): string | undefined =>
       b.type === ref.type && !b.parentToolUseId ? (b.type === 'text' ? b.text : b.thinking) : undefined
     const lastIndexWhere = (test: (value: string) => boolean): number => {
@@ -304,6 +308,13 @@ export function retractContentBlocks(content: ContentBlock[], blocks: RetractedB
         if (value !== undefined && test(value)) return i
       }
       return -1
+    }
+    if (!payload) {
+      if (ref.type === 'thinking') {
+        const idx = lastIndexWhere((value) => value === '')
+        if (idx !== -1) next = next.filter((_, i) => i !== idx)
+      }
+      continue
     }
     // A dead stream is withdrawn before its replacement starts. Its deltas
     // may have merged onto confirmed content, so remove only the newest suffix.

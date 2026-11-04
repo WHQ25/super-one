@@ -481,6 +481,23 @@ CREATE TABLE IF NOT EXISTS session_providers (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_session_providers_harness ON session_providers(harness_id);
+DELETE FROM session_providers WHERE id = 'acp-base' AND EXISTS (SELECT 1 FROM session_providers WHERE id = 'acp-grok');
+UPDATE session_providers SET id = 'acp-grok', name = 'Grok (Base)' WHERE id = 'acp-base';
+UPDATE sessions
+SET provider_id = CASE
+  WHEN EXISTS (
+    SELECT 1 FROM acp_session_agents a
+    WHERE a.session_id = sessions.session_id AND LOWER(a.agent_id) LIKE '%antigravity%'
+  ) THEN 'acp-antigravity'
+  ELSE 'acp-grok'
+END
+WHERE provider_id = 'acp-base';
+UPDATE session_collaboration_grants
+SET agent_id = CASE
+  WHEN LOWER(agent_id) LIKE '%antigravity%' THEN 'acp-antigravity'
+  ELSE 'acp-grok'
+END
+WHERE agent_id = 'acp-base' OR agent_id LIKE 'acp-base:%';
 `)
   const now = new Date().toISOString()
   const stmt = db.prepare(`

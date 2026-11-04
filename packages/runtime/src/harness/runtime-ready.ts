@@ -38,6 +38,12 @@ const RUNTIME_SPECS: Record<
     okReason: 'acp binary available',
     failReason: 'acp-grok runtime unavailable: enable with --command or set SUPERONE_ACP_BINARY',
   },
+  'acp-antigravity': {
+    catalogId: 'acp-antigravity',
+    okReason: 'antigravity acp binary available',
+    failReason:
+      'acp-antigravity runtime unavailable: enable harness acp-antigravity or set SUPERONE_ANTIGRAVITY_BINARY',
+  },
   opencode: {
     catalogId: 'opencode',
     okReason: 'opencode binary available',
@@ -73,6 +79,18 @@ export function assertSessionHarnessRuntimeReady(
   if (sessionHarnessId === 'opencode' && harnesses.get('opencode').enabled &&
     harnesses.getExternalLaunchConfig('opencode').serverUrl?.trim()) {
     return { ok: true, reason: 'configured opencode server endpoint available' }
+  }
+
+  if (sessionHarnessId === 'acp') {
+    if (
+      resolver.resolveBinary('acp-grok', harnesses) ||
+      resolver.isRunnableWithoutCatalog('acp-grok') ||
+      resolver.resolveBinary('acp-antigravity', harnesses) ||
+      resolver.isRunnableWithoutCatalog('acp-antigravity')
+    ) {
+      return { ok: true, reason: spec.okReason }
+    }
+    return { ok: false, reason: spec.failReason }
   }
 
   if (
@@ -217,7 +235,7 @@ function isAuthSatisfied(
     return { ok: true, reason: 'SUPERONE_HARNESS_MARK_READY' }
   }
   const defRequiresAuth =
-    id === 'claude' || id === 'codex' || id === 'cursor' || id === 'dsh'
+    id === 'claude' || id === 'codex' || id === 'cursor' || id === 'dsh' || id === 'acp-antigravity'
   if (!defRequiresAuth) {
     return { ok: true, reason: 'external harness does not require SuperOne provider auth' }
   }

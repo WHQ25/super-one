@@ -15,9 +15,9 @@ import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { claudeLimitsFromSubscription, claudeSubscriptionFromReport, unavailableNodeLimits } from '@/harness-ui/claude/remote-subscription-usage'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
 import type { ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
-import { ExtraUsageBar, formatCreditExpiry, formatTokens, formatWindowLabel, ResetGrantsRow, WindowBar as WindowRow } from './provider-usage'
+import { ExtraUsageBar, formatCreditExpiry, formatTokens, formatWindowLabel, GroupedWindowBars, ResetGrantsRow, WindowBar as WindowRow } from './provider-usage'
 import { USAGE_POLL_MS, type UsageWindow } from '@superone/shared/subscription-usage'
 import { formatUsageDuration } from '@superone/shared/subscription-usage-presentation'
 import { useSubscriptionAlert } from './use-subscription-alert'
@@ -575,7 +575,7 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+      <RateLimitGauge title={limits.title} label={limits.title} subtitle={limits.email} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.id ?? w.label} {...w} />
         ))}
@@ -636,12 +636,16 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
   const badgeWindow = limits.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
 
+  const titleNode = isGrokAcpAgent(agentId)
+    ? <ProviderLabel brandKey="grok" size={14} />
+    : isAntigravityAcpAgent(agentId)
+      ? <ProviderLabel brandKey="antigravity" size={14} />
+      : limits.title
+
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={isGrokAcpAgent(agentId) ? <ProviderLabel brandKey="grok" size={14} /> : limits.title} label={limits.title} subtitle={limits.account} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
-        {limits.windows.map((w) => (
-          <WindowRow key={w.id ?? w.label} {...w} />
-        ))}
+      <RateLimitGauge title={titleNode} label={limits.title} subtitle={limits.account ?? limits.email} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+        <GroupedWindowBars windows={limits.windows} />
         {limits.extraUsage && <ExtraUsageBar extra={limits.extraUsage} />}
         {limits.creditBalanceDollars != null && (
           <CreditBalanceRow dollars={limits.creditBalanceDollars} />
@@ -718,9 +722,7 @@ export function UsageStatusIcon() {
     return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} tip={tip} highlight={highlight} />
   }
 
-  // Grok is the only ACP agent with a billing surface; asking the others would
-  // just be a round-trip to `method not found` on every turn end.
-  if (activeProvider === 'acp' && acpAgentId && isGrokAcpAgent(acpAgentId)) {
+  if (activeProvider === 'acp' && acpAgentId && (isGrokAcpAgent(acpAgentId) || isAntigravityAcpAgent(acpAgentId))) {
     return <AcpRateLimitIcon projectPath={activeProject} agentId={acpAgentId} status={status} tip={tip} highlight={highlight} />
   }
 

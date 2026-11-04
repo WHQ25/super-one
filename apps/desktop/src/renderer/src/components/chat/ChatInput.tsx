@@ -463,14 +463,15 @@ export function ChatInput({
           argumentHint: '',
           isSkill: false,
         },
-        {
+      ]
+      if (acpAgentId !== 'antigravity') {
+        local.push({
           name: 'workflows',
           description: t('chat.acpCommands.workflowsDesc'),
           argumentHint: '',
           isSkill: false,
-        },
-      ]
-      // Host-only Grok `/recap` (x.ai/recap) — not an agent available_command.
+        })
+      }
       if (isGrokAcpAgent(acpAgentId)) {
         local.push({
           name: 'recap',
@@ -480,8 +481,79 @@ export function ChatInput({
         })
       }
       const seen = new Set(local.map((c) => c.name))
-      const agentCmds = Array.isArray(acpSlashCommandsFromAgent) ? acpSlashCommandsFromAgent : []
-      // Prefer host local entries (e.g. /workflows UI) over same-named agent commands.
+      const rawAgentCmds = Array.isArray(acpSlashCommandsFromAgent) ? acpSlashCommandsFromAgent : []
+      const agentCmds: SlashCommandInfo[] =
+        rawAgentCmds.length > 0 || acpAgentId !== 'antigravity'
+          ? rawAgentCmds
+          : [
+              {
+                name: 'plan',
+                description:
+                  'Plan carefully before executing a task (generates an implementation plan artifact and awaits user approval).',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'compact',
+                description: 'Compact or summarize conversation context to free up the context window.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'goal',
+                description: 'Run a thorough long-running task until the goal is fully achieved.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'schedule',
+                description: 'Run an instruction on a recurring schedule or set a one-time timer.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'browser',
+                description: 'Browse the web or interact with web applications.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'grill-me',
+                description: 'Align on a plan through an interactive interview to resolve design decisions.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'teamwork',
+                description: 'Coordinate a team of autonomous agents working together.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'learn',
+                description: 'Persist a learned correction or setup for future tasks.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'boost',
+                description: 'Deep thinking, strategic planning, and rigorous verification for complex tasks.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'usage',
+                description: 'Display model quota usage and reset times.',
+                argumentHint: '',
+                isSkill: false,
+              },
+              {
+                name: 'logout',
+                description: 'Sign out of Antigravity and clear stored credentials.',
+                argumentHint: '',
+                isSkill: false,
+              },
+            ]
       const fromAgent = agentCmds.filter((c) => {
         const name = c.name.replace(/^\//, '').trim()
         if (!name || seen.has(name)) return false
@@ -490,8 +562,7 @@ export function ChatInput({
       }).map((c) => ({
         ...c,
         name: c.name.replace(/^\//, '').trim(),
-        // ACP available_commands are agent commands, never Claude project skills.
-        isSkill: false,
+        isSkill: Boolean(c.isSkill),
       }))
       return [...fromAgent, ...local]
     }, [t, acpSlashCommandsFromAgent, acpAgentId])
@@ -756,7 +827,7 @@ export function ChatInput({
           void requestSideChat()
           return
         }
-        if (slashPolicy.hostCommands.includes(name)) {
+        if (slashPolicy.hostCommands.includes(name) && !(name === 'workflows' && acpAgentId === 'antigravity')) {
           clearFirstLine()
           setSlashIndex(-1)
           void runClaudeInterceptedCommand(name)
@@ -805,7 +876,7 @@ export function ChatInput({
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [slashPolicy, activeSlashCommands, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, sessionScope, goalCapability, enterGoalCompose]
+      [slashPolicy, acpAgentId, activeSlashCommands, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, sessionScope, goalCapability, enterGoalCompose]
     )
 
     const addDirParse = useMemo(() => {
@@ -818,14 +889,12 @@ export function ChatInput({
     const addDirActive = addDirParse.active
     const addDirArgsText = addDirParse.argsText
 
-    // Grok/ACP (and Claude if typed): dedicated `/workflow` picker after commit
-    // (`/workflow ` via space or Tab/Enter selection) — not bare `/workflow`.
     const workflowSlashParse = useMemo(() => {
-      if (!slashPolicy.hostCommands.includes('workflows')) {
+      if (!slashPolicy.hostCommands.includes('workflows') || acpAgentId === 'antigravity') {
         return { active: false, argsText: '' }
       }
       return parseWorkflowSlashLine(text)
-    }, [text, slashPolicy])
+    }, [text, slashPolicy, acpAgentId])
     const workflowSlashActive = workflowSlashParse.active
     const workflowSlashArgsText = workflowSlashParse.argsText
 

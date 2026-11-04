@@ -1394,7 +1394,6 @@ export interface PermissionRequest {
     | 'webmcp_trust_confirm'
     | 'device_control_confirm'
     | 'terminal_command_confirm'
-    | 'folder_trust'
     | 'input_request'
   serverName?: string
   message?: string

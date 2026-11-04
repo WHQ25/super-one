@@ -28,11 +28,6 @@ export function parseFolderTrustRequest(raw: unknown): FolderTrustRequest {
   }
 }
 
-/** Trust only on an explicit allow. Cancel, deny, and any other decision reject. */
-export function folderTrustDecision(allow: boolean, decision?: 'cancel'): 'trust' | 'reject' {
-  return allow && decision !== 'cancel' ? 'trust' : 'reject'
-}
-
 /**
  * Answer `x.ai/folder_trust/request`. Anything other than the exact string
  * `trust`, including a throw or a timeout, is `reject`.

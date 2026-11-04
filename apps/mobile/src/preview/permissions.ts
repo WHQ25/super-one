@@ -122,10 +122,6 @@ export const permissionExamples = {
     inputRequest: { title: 'Review notes', description: 'Add context before the next change.', origin: { kind: 'agent' }, output: 'caller' },
     schemaForm: parseSchemaForm({ type: 'object', required: ['notes'], properties: { notes: { type: 'string', title: 'Notes' } } }),
   },
-  folder_trust: {
-    toolName: 'FolderTrust',
-    input: { cwd: '/Users/me/app/packages/web', workspace: '/Users/me/app', configKinds: ['rules', 'mcp', 'hooks', 'skills'] },
-  },
 } satisfies Record<PermissionKind, PermissionExample>
 
 export function permissionRequest(kind: PermissionKind): PermissionRequest {

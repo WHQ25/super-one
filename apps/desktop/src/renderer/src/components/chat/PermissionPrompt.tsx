@@ -35,7 +35,6 @@ import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
 import { AgentProfileConfirmPromptContainer } from './AgentProfileConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
-import { FolderTrustPrompt } from './FolderTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import { leaveDecisionField, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
@@ -489,16 +488,6 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   if (!pendingPermission) return null
 
   if (isInputRequest) return <InputRequestPrompt request={pendingPermission} />
-
-  if (pendingPermission.requestKind === 'folder_trust') {
-    return (
-      <FolderTrustPrompt
-        request={pendingPermission}
-        onTrust={() => { void respondToPermission(pendingPermission.requestId, true) }}
-        onReject={() => { void respondToPermission(pendingPermission.requestId, false) }}
-      />
-    )
-  }
 
   if (isVideoGenConfirm) {
     const videoGenConfirm = pendingPermission.videoGenConfirm

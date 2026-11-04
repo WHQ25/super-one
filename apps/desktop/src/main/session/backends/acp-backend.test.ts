@@ -2144,7 +2144,7 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('resolves folder trust from the permission dialog', async () => {
+  it('trusts a new grok folder without a permission dialog', async () => {
     let captured: AcpRuntimeOptions | undefined
     setAcpRuntimeFactory(async (opts) => {
       captured = opts
@@ -2154,65 +2154,13 @@ describe('AcpBackend', () => {
     const events: AgentEvent[] = []
     backend.onEvent((event) => events.push(event))
     await backend.start(startOpts({ agentId: 'grok-build' }))
-    const request = {
+    await expect(captured!.onFolderTrust!({
       sessionId: 's1',
       cwd: '/tmp/proj',
       workspace: '/tmp/ws',
       configKinds: ['project'],
-    }
-    const trusted = captured!.onFolderTrust!(request)
-    const allowEvent = events.find((event): event is Extract<AgentEvent, { type: 'permission_request' }> =>
-      event.type === 'permission_request' && event.request.requestKind === 'folder_trust')
-    expect(allowEvent?.request).toMatchObject({
-      toolName: 'FolderTrust',
-      allowAlwaysAllow: false,
-      requestKind: 'folder_trust',
-      input: {
-        cwd: request.cwd,
-        workspace: request.workspace,
-        configKinds: request.configKinds,
-      },
-    })
-    expect(backend.respondToPermission(allowEvent!.request.requestId, true)).toBe(true)
-    await expect(trusted).resolves.toBe('trust')
-
-    const denied = captured!.onFolderTrust!(request)
-    const denyEvent = events.filter((event): event is Extract<AgentEvent, { type: 'permission_request' }> =>
-      event.type === 'permission_request' && event.request.requestKind === 'folder_trust').at(-1)
-    expect(backend.respondToPermission(denyEvent!.request.requestId, false)).toBe(true)
-    await expect(denied).resolves.toBe('reject')
-
-    const cancelled = captured!.onFolderTrust!(request)
-    const cancelEvent = events.filter((event): event is Extract<AgentEvent, { type: 'permission_request' }> =>
-      event.type === 'permission_request' && event.request.requestKind === 'folder_trust').at(-1)
-    expect(backend.respondToPermission(
-      cancelEvent!.request.requestId,
-      true,
-      undefined,
-      undefined,
-      undefined,
-      'cancel',
-    )).toBe(true)
-    await expect(cancelled).resolves.toBe('reject')
-    await backend.close()
-  })
-
-  it.each(['interrupt', 'close'] as const)('rejects a pending folder trust on %s', async (action) => {
-    let captured: AcpRuntimeOptions | undefined
-    setAcpRuntimeFactory(async (opts) => {
-      captured = opts
-      return mockRuntime()
-    })
-    const backend = new AcpBackend()
-    await backend.start(startOpts({ agentId: 'grok-build' }))
-    const pending = captured!.onFolderTrust!({
-      sessionId: 's1',
-      cwd: '/tmp/proj',
-      workspace: '/tmp/ws',
-      configKinds: [],
-    })
-    await backend[action]()
-    await expect(pending).resolves.toBe('reject')
+    })).resolves.toBe('trust')
+    expect(events.some((event) => event.type === 'permission_request')).toBe(false)
     await backend.close()
   })
 })

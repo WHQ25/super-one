@@ -69,7 +69,7 @@ launch initializes with host filesystem and terminal off, a production client
 version from `resolveCliReleaseVersion()` (the in-repo package walk remains only
 when the caller omits `clientVersion`), and explicit yolo/auto booleans. Other ACP
 launches still send empty `clientCapabilities`. The node does not inherit the
-desktop backend's live session controls, folder-trust dialog, or self-echo
+desktop backend's live session controls, folder-trust auto-grant, or self-echo
 filter merely by importing the mapper. Headless plan approval is cancelled when
 no approving host path exists. Production turns use the harness-stored `grok`
 binary with args `agent stdio`, resolved again on each ACP turn.

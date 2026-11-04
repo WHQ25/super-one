@@ -38,7 +38,7 @@ import {
 } from '../../acp/acp-model-cache'
 import { discoverAntigravitySlashCommands } from '../../acp/antigravity-slash-commands'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
-import { folderTrustDecision, type FolderTrustRequest } from '../../acp/folder-trust'
+import type { FolderTrustRequest } from '../../acp/folder-trust'
 import { describeAcpRequestFailure } from '../../acp/acp-request-error'
 import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
@@ -220,10 +220,6 @@ export class AcpBackend implements SessionBackend {
     resolve: (response: RequestPermissionResponse) => void
     options: PendingPermissionOptions[]
     event: AgentEvent
-  }>()
-
-  private pendingFolderTrust = new Map<string, {
-    resolve: (outcome: 'trust' | 'reject') => void
   }>()
 
   private pendingQuestions = new Map<string, {
@@ -950,26 +946,18 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
+  /**
+   * Adding the SuperOne project is the trust decision. Grok still requires
+   * `{ outcome: "trust" }` before it loads project rules, MCP, hooks, and skills.
+   */
   private handleFolderTrust(request: FolderTrustRequest): Promise<'trust' | 'reject'> {
-    const requestId = `folder-trust-${request.sessionId || 'session'}-${Date.now()}`
-    const event: AgentEvent = {
-      type: 'permission_request',
-      request: {
-        requestId,
-        toolName: 'FolderTrust',
-        input: {
-          cwd: request.cwd,
-          workspace: request.workspace,
-          configKinds: request.configKinds,
-        },
-        allowAlwaysAllow: false,
-        requestKind: 'folder_trust',
-      },
-    }
-    return new Promise((resolve) => {
-      this.pendingFolderTrust.set(requestId, { resolve })
-      this.emit(event)
-    })
+    log.info(
+      '[AcpBackend] auto-trust folder workspace=%s cwd=%s kinds=%s',
+      request.workspace,
+      request.cwd,
+      request.configKinds.join(','),
+    )
+    return Promise.resolve('trust')
   }
 
   private handleConsentNotice(gate: GrokConsentGate): Promise<boolean> {
@@ -1114,11 +1102,6 @@ export class AcpBackend implements SessionBackend {
     } finally {
       this.cronTaskIds.delete(taskId)
     }
-  }
-
-  private rejectPendingFolderTrust(): void {
-    for (const [, pending] of this.pendingFolderTrust) pending.resolve('reject')
-    this.pendingFolderTrust.clear()
   }
 
   private rejectPendingElicitations(): void {
@@ -1527,7 +1510,6 @@ export class AcpBackend implements SessionBackend {
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
     this.rejectPendingElicitations()
-    this.rejectPendingFolderTrust()
     this.cronTaskIds.clear()
     if (!this.runtime && this.ensureRuntimePromise) {
       // send() is parked on ensureRuntime(); a stalled spawn (Grok retrying its
@@ -1553,7 +1535,6 @@ export class AcpBackend implements SessionBackend {
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
     this.rejectPendingElicitations()
-    this.rejectPendingFolderTrust()
     this.cronTaskIds.clear()
     this.liveBackgroundTaskIds.clear()
     this.monitorHold.reset()
@@ -1825,12 +1806,6 @@ export class AcpBackend implements SessionBackend {
     decision?: 'cancel',
     formAnswers?: Record<string, unknown>,
   ): boolean {
-    const trust = this.pendingFolderTrust.get(requestId)
-    if (trust) {
-      this.pendingFolderTrust.delete(requestId)
-      trust.resolve(folderTrustDecision(allow, decision))
-      return true
-    }
     if (decision === 'cancel') {
       if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
     }

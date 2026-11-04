@@ -326,8 +326,9 @@ export interface AcpRuntimeOptions {
    */
   onPermissionModeResolved?: (mode: PermissionMode) => void
   /**
-   * Folder trust dialog. Advertised only when this is set on a grok-build launch.
-   * Trust is the only outcome that loads project rules, MCP, hooks, and skills.
+   * Answers Grok's folder-trust request. Desktop grants trust because the user
+   * already added the project. Advertised only when this is set on a grok-build
+   * launch. Trust is the only outcome that loads project rules, MCP, hooks, and skills.
    */
   onFolderTrust?: (request: import('./folder-trust').FolderTrustRequest) => Promise<'trust' | 'reject'>
   /** Override the 30-minute folder-trust wait. Tests use a few milliseconds. */

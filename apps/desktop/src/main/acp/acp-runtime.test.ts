@@ -752,7 +752,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
   })
 
-  it('rejects folder trust when the dialog exceeds folderTrustTimeoutMs', async () => {
+  it('rejects folder trust when the handler exceeds folderTrustTimeoutMs', async () => {
     let result: unknown
     const agentApp = agent({ name: 'trust-timeout-agent' })
       .onRequest(methods.agent.initialize, async () => ({

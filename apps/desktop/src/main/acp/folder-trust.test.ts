@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  folderTrustDecision,
   parseFolderTrustRequest,
   settleFolderTrust,
 } from './folder-trust'
@@ -18,12 +17,6 @@ describe('folder trust', () => {
       workspace: '/proj',
       configKinds: ['rules', 'mcp'],
     })
-  })
-
-  it('trusts only an explicit allow', () => {
-    expect(folderTrustDecision(true)).toBe('trust')
-    expect(folderTrustDecision(true, 'cancel')).toBe('reject')
-    expect(folderTrustDecision(false)).toBe('reject')
   })
 
   it('rejects a timeout, a throw, and any outcome other than trust', async () => {

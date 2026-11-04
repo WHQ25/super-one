@@ -62,6 +62,20 @@ export const Default: Story = {
       expect(within(dialog).getByRole('table')).toHaveTextContent('Alice')
       await userEvent.keyboard('{Escape}')
       await waitFor(() => expect(body.queryByRole('dialog')).toBeNull())
+      const transpose = canvas.getByRole('button', { name: /Transpose Table|行列互换/ })
+      await userEvent.click(transpose)
+      await waitFor(() => {
+        expect(within(table).queryAllByRole('columnheader')).toEqual([])
+        expect(within(table).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual([
+          'Name / 名称', 'Role / 职责', 'Status / 状态',
+        ])
+      })
+      await userEvent.click(canvas.getByRole('button', { name: /Original Layout|恢复原表/ }))
+      await waitFor(() => {
+        expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+          'Name / 名称', 'Role / 职责', 'Status / 状态',
+        ])
+      })
     } finally {
       if (descriptor) Object.defineProperty(navigator.clipboard, 'writeText', descriptor)
       else Reflect.deleteProperty(navigator.clipboard, 'writeText')
@@ -74,6 +88,34 @@ export const DarkChinese: Story = { ...Default, globals: { theme: 'dark', locale
 export const Narrow: Story = {
   ...Default,
   decorators: [(Story) => <div style={{ width: 320 }}><Story /></div>],
+}
+
+const WIDE = [
+  '| Field | Alpha | Beta | Gamma | Delta | Epsilon | Zeta |',
+  '| --- | --- | --- | --- | --- | --- | --- |',
+  '| Owner | Ada | Grace | Linus | Margaret | Edsger | Barbara |',
+  '| State | Ready | Review | Blocked | Ready | Draft | Shipped |',
+].join('\n')
+
+export const Wide: Story = {
+  args: { text: `A wide row becomes one column.\n\n${WIDE}`, isStreaming: false },
+  decorators: [(Story) => <div style={{ width: 360 }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const table = canvas.getByRole('table')
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(7)
+    await userEvent.click(canvas.getByRole('button', { name: /Transpose Table|行列互换/ }))
+    await waitFor(() => {
+      expect(within(table).queryAllByRole('columnheader')).toEqual([])
+      expect(within(table).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual([
+        'Field', 'Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta',
+      ])
+    })
+    const owner = within(table).getByRole('cell', { name: 'Owner' })
+    expect(owner).not.toHaveAttribute('data-table-mark')
+    const column = [...table.querySelectorAll('tr')].map((row) => row.children[1]?.textContent)
+    expect(column).toEqual(['Owner', 'Ada', 'Grace', 'Linus', 'Margaret', 'Edsger', 'Barbara'])
+  },
 }
 
 export const Streaming: Story = {

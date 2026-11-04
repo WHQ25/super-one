@@ -194,6 +194,34 @@
 .chat-md [data-streamdown="table-row"]:nth-child(2n) {
   background-color: color-mix(in oklch, var(--muted), transparent 60%);
 }
+/* A transposed table pins the original column names in the first column, so
+   one record reads top to bottom. The scroll-edge fade would wash that column
+   out, and the mask lives on the scroll box rather than the cells. */
+.chat-md [data-streamdown="table-wrapper"][data-table-transposed] > div:has(> [data-streamdown="table"]) {
+  mask-image: none;
+  animation-name: none;
+}
+/* A cell that was a column header keeps the header mark after it moves into the body. */
+[data-table-mark] {
+  font-weight: 600;
+  background-color: var(--muted);
+  white-space: nowrap;
+  max-width: none;
+}
+[data-table-transposed] [data-streamdown="table-header"] > [data-streamdown="table-row"] > [data-streamdown="table-header-cell"]:first-child,
+[data-table-transposed] [data-streamdown="table-body"] > [data-streamdown="table-row"] > [data-streamdown="table-cell"]:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  font-weight: 600;
+  background-color: var(--muted);
+  white-space: nowrap;
+  max-width: none;
+  box-shadow: 1px 0 0 var(--border);
+}
+[data-table-transposed] [data-streamdown="table-header"] > [data-streamdown="table-row"] > [data-streamdown="table-header-cell"]:first-child {
+  z-index: 2;
+}
 
 /* --- Display math ---
    KaTeX lays a display formula out on one unbreakable line. Without its own

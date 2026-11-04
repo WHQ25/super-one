@@ -4621,6 +4621,8 @@ export type Messages = {
     copyCode: string
     copyImage: string
     copyTable: string
+    transposeTable: string
+    restoreTable: string
     expand: string
     fastMode: string
     ultracode: string
@@ -9400,6 +9402,8 @@ export const en: Messages = {
     copyCode: 'Copy Code',
     copyImage: 'Copy Image',
     copyTable: 'Copy Table',
+    transposeTable: 'Transpose Table',
+    restoreTable: 'Original Layout',
     expand: 'Expand',
     fastMode: 'Fast mode: {{state}}',
     ultracode: 'Ultracode: dynamic workflows on every task',

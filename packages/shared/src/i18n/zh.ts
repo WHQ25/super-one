@@ -4693,6 +4693,8 @@ export const zh: Messages = {
     copyCode: '复制代码',
     copyImage: '复制图片',
     copyTable: '复制表格',
+    transposeTable: '行列互换',
+    restoreTable: '恢复原表',
     expand: '展开',
     fastMode: '快速模式：{{state}}',
     ultracode: 'Ultracode：每个任务都使用动态 workflow',

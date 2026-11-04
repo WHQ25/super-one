@@ -43,3 +43,13 @@ Non-obvious upstream behaviors that SuperOne depends on.
   2. Antigravity disables `run_workflow` in `antigravitySessionMeta` and does not support Grok `/workflows`.
 - **SuperOne code**: `apps/desktop/src/main/acp/antigravity-slash-commands.ts`, `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `apps/desktop/src/main/acp/antigravity-profile.ts`, `apps/desktop/src/main/session/backends/acp-backend.ts`, `apps/desktop/src/renderer/src/components/chat/ChatInput.tsx`, `apps/desktop/src/renderer/src/stores/chat-store/helpers/send-message.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-slash-and-usage.test.ts`
+
+## 7. MCP tool `step.content` timestamp header, `.system_generated/steps/<N>/output.txt` spill files, and `rawInput` preservation (observed in 1.4.5 / 1.23.2)
+
+- **Behavior**:
+  1. `localharness_external` prepends `Created At: <ISO>\nCompleted At: <ISO>\n` to `step.content` (which `AgyAdapter._stream_live_step` emits as `rawOutput` and `content[0].content.text` on `tool_call_update(status="completed")`).
+  2. When an MCP or built-in tool output exceeds `mcp_max_output_bytes` (~10 KB for MCP tools), `localharness_external` writes the body to `file:///.../.system_generated/steps/<N>/output.txt` and replaces `step.content` with `The output was large and was saved to: file:///.../.system_generated/steps/<N>/output.txt`.
+  3. Applying `[Earlier output truncated]` tail-slicing (`boundText`) to `rawInput` or to timestamp-wrapped `widget_show` outputs corrupts inline `widget_code` HTML/CSS/JS and prevents `resolveWidgetCall` from parsing structured JSON results.
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-protocol.ts` (`sanitizeAntigravityToolInput`, `unwrapAntigravityToolOutputText`, `normalizeAntigravitySessionUpdate`)
+- **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`
+

@@ -1,6 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { RequestPermissionRequest, SessionUpdate } from '@agentclientprotocol/sdk'
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
@@ -320,6 +321,65 @@ describe('antigravity-protocol', () => {
     const sanitized = sanitizeAntigravityToolPayload({ output: huge }) as { output: string }
     expect(sanitized.output.length).toBeLessThan(9_000)
     expect(sanitized.output).toContain('[Earlier output truncated]')
+  })
+
+  it('preserves large widget_show inputs and unwraps Antigravity timestamp headers and spilled step output files', () => {
+    const largeWidgetCode = `<style>.dot { height: 7px; }</style><div>${'<span>quota</span>'.repeat(700)}</div><script>window.ok = 1;</script>`
+    expect(largeWidgetCode.length).toBeGreaterThan(10_000)
+    const tempRoot = mkdtempSync(join(tmpdir(), 'agy-widget-spill-'))
+    try {
+      const stepDir = join(tempRoot, '.system_generated', 'steps', '14')
+      mkdirSync(stepDir, { recursive: true })
+      const spilledFile = join(stepDir, 'output.txt')
+      const widgetResultJson = JSON.stringify({
+        title: 'account_quota_popover_final_v3',
+        widget_code: largeWidgetCode,
+      })
+      writeFileSync(spilledFile, widgetResultJson, 'utf8')
+      const spilledNotice = [
+        'Created At: 2026-11-04T20:44:00+08:00',
+        'Completed At: 2026-11-04T20:44:00+08:00',
+        `The output was large and was saved to: ${pathToFileURL(spilledFile).href}`,
+      ].join('\n')
+
+      const completedUpdate = normalizeAntigravitySessionUpdate({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'widget_1',
+        title: 'Running superone_widget_show',
+        kind: 'other',
+        status: 'completed',
+        rawInput: {
+          ServerName: 'superone',
+          ToolName: 'widget_show',
+          Arguments: { title: 'account_quota_popover_final_v3', widget_code: largeWidgetCode },
+        },
+        rawOutput: spilledNotice,
+        content: [{ type: 'content', content: { type: 'text', text: spilledNotice } }],
+      } as unknown as SessionUpdate)
+
+      const mapped = mapSessionUpdate(completedUpdate, { messageId: 'msg_w1' })
+      const toolUseDelta = mapped.find(
+        (ev) => ev.type === 'content_delta' && ev.delta.type === 'tool_use',
+      ) as Extract<AgentEvent, { type: 'content_delta' }> | undefined
+      const toolResultDelta = mapped.find(
+        (ev) => ev.type === 'content_delta' && ev.delta.type === 'tool_result',
+      ) as Extract<AgentEvent, { type: 'content_delta' }> | undefined
+
+      expect(toolUseDelta?.delta).toMatchObject({
+        type: 'tool_use',
+        toolName: 'mcp__superone__widget_show',
+        input: JSON.stringify({ title: 'account_quota_popover_final_v3', widget_code: largeWidgetCode }),
+      })
+      expect(toolResultDelta?.delta).toEqual({
+        type: 'tool_result',
+        toolUseId: 'widget_1',
+        summary: widgetResultJson,
+        isError: false,
+      })
+      expect(JSON.stringify(mapped)).not.toContain('[Earlier output truncated]')
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true })
+    }
   })
 
   it('unwraps and auto-approves built-in SuperOne MCP tools from Antigravity permission and session updates', () => {

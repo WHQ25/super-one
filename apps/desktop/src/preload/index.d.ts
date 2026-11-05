@@ -835,7 +835,7 @@ interface MiniAppAPI {
 }
 
 interface TerminalAPI {
-  create(opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }): Promise<TerminalListItem>
+  create(opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean; bashScript?: string }): Promise<TerminalListItem>
   list(cwd?: string): Promise<TerminalListItem[]>
   snapshot(terminalId: string): Promise<TerminalSnapshot | null>
   /** `input`: typed, pasted or composed by the user, not a reply xterm sent on its own. */

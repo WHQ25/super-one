@@ -7,7 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Loader2, Play } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { useIsCodeFenceIncomplete } from 'streamdown'
 import { fenceHighlightLanguage } from './fence-language'
@@ -56,6 +57,8 @@ export interface HighlightedCodeBlockPresenterProps {
   language: string
   codePlugin: CodeHighlighterPlugin
   isComplete?: boolean
+  /** Omit outside a host that can execute scripts. null keeps Bash visibly disabled. */
+  runBash?: ((code: string) => Promise<void>) | null
   ports: HighlightedCodeBlockPresenterPorts
 }
 
@@ -77,7 +80,12 @@ interface TokenLine {
   }>
 }
 
-export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isComplete = true, ports }: HighlightedCodeBlockPresenterProps) {
+export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isComplete = true, runBash, ports }: HighlightedCodeBlockPresenterProps) {
+  const { t } = useTranslation()
+  const [starting, setStarting] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const startingRef = useRef(false)
+  const isBash = language.trim().toLowerCase() === 'bash'
   const activePlugin = ports.isDark ? codePlugin : ports.lightCodePlugin
   const fallbackFg = ports.isDark ? DARK_FG : LIGHT_FG
   const [copied, setCopied] = useState(false)
@@ -147,17 +155,49 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
     setTimeout(() => setCopied(false), 2000)
   }, [code, ports])
 
+  const handleRun = async () => {
+    if (!runBash || !isComplete || !code.trim() || startingRef.current) return
+    startingRef.current = true
+    setStarting(true)
+    setRunError(null)
+    try {
+      await runBash(code)
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error))
+    } finally {
+      startingRef.current = false
+      setStarting(false)
+    }
+  }
+
   return (
     <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md bg-muted/20">
       <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
         <span className="opacity-50">{language}</span>
-        <button
-          onClick={handleCopy}
-          className="rounded p-0.5 opacity-50 transition-opacity hover:opacity-100"
-        >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          {isBash && runBash !== undefined && (
+            <button
+              type="button"
+              onClick={() => void handleRun()}
+              disabled={!runBash || !isComplete || !code.trim() || starting}
+              aria-label={t('tooltips.runBash')}
+              title={t(!runBash ? 'tooltips.runBashNeedsProject' : !isComplete ? 'tooltips.runBashIncomplete' : 'tooltips.runBash')}
+              className="rounded p-0.5 opacity-50 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-25"
+            >
+              {starting ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleCopy}
+            aria-label={t('tooltips.copyCode')}
+            className="rounded p-0.5 opacity-50 transition-opacity hover:opacity-100"
+          >
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          </button>
+        </div>
       </div>
+      {runError && <div role="alert" className="px-3 pb-2 text-xs text-destructive">{runError}</div>}
       <pre
         ref={preRef}
         className="overflow-x-auto px-3 pb-3 text-xs leading-relaxed"

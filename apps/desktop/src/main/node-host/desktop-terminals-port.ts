@@ -34,7 +34,7 @@ export function createDesktopTerminalsPort(
     list: () => manager.list(),
     create: (opts) => {
       void ensureShellPath()
-      const term = manager.create({ cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? (basename(opts.cwd) || 'Terminal'), cols: opts.cols, rows: opts.rows })
+      const term = manager.create({ cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? (basename(opts.cwd) || 'Terminal'), cols: opts.cols, rows: opts.rows, bashScript: opts.bashScript })
       return { terminalId: term.terminalId, cwd: term.cwd, title: term.title, cols: term.cols, rows: term.rows }
     },
     attach: async (terminalId, clientSessionId) => {

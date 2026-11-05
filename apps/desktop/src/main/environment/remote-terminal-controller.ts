@@ -92,14 +92,19 @@ export class RemoteTerminalController {
     return parseRemoteTerminalKey(terminalId) !== null
   }
 
-  async create(input: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }): Promise<TerminalListItem> {
+  async create(input: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; bashScript?: string }): Promise<TerminalListItem> {
     const remote = parseRemoteProjectKey(input.projectPath)
     if (!remote) throw new Error('remote project path required')
     const [watch, projectId] = await Promise.all([this.watch(remote.connectionId), this.options.projectId(input.projectPath)])
     // The node resolves where the project or the session runs, as it does for its phones.
-    const { terminalId, cwd, title } = await watch.node.rpc<{ terminalId: string; cwd: string; title: string }>('terminal.create', {
+    const { terminalId, cwd, title, scriptStarted } = await watch.node.rpc<{ terminalId: string; cwd: string; title: string; scriptStarted?: boolean }>('terminal.create', {
       projectId, ...(input.sessionId ? { sessionId: input.sessionId } : {}), title: input.title, cols: input.cols, rows: input.rows,
+      ...(input.bashScript !== undefined ? { bashScript: input.bashScript } : {}),
     })
+    if (input.bashScript !== undefined && !scriptStarted) {
+      await this.kill(remoteTerminalKey(remote.connectionId, terminalId))
+      throw new Error('This node does not support Bash scripts. Update SuperOne on the node and try again.')
+    }
     const item = watch.items.get(terminalId)
       ?? { terminalId, cwd, projectPath: remote.path, title, status: 'running', ownerDeviceId: null }
     watch.items.set(terminalId, item)

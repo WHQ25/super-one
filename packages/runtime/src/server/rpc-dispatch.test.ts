@@ -181,6 +181,17 @@ describe('node rpc dispatch on a partial host', () => {
 })
 
 describe('terminal control delegates', () => {
+  it('runs a Bash block at the project root without substituting the session worktree', async () => {
+    const create = vi.fn(input => ({ terminalId: 'new', ...input }))
+    const ctx = projectsOnlyHost({
+      terminals: { create } as unknown as RpcContext['terminals'],
+      sessions: { get: () => ({ projectId: 'p1', cwd: '/tmp/worktree' }) } as unknown as SessionHostPort,
+    })
+    const bashScript = "pwd\nprintf '%s\\n' '$HOME'\nexit 7"
+    expect(await dispatchRpc('terminal.create', { projectId: 'p1', bashScript }, ctx)).toMatchObject({ result: { cwd: '/tmp/p1', scriptStarted: true } })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/tmp/p1', projectPath: '/tmp/p1', bashScript }))
+  })
+
   it('resolves a session worktree and filters its project terminals on the host', async () => {
     const create = vi.fn(input => ({ terminalId: 'new', ...input }))
     const ctx = projectsOnlyHost({

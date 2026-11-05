@@ -4619,6 +4619,9 @@ export type Messages = {
     mermaidPreview: string
     mermaidSource: string
     copyCode: string
+    runBash: string
+    runBashNeedsProject: string
+    runBashIncomplete: string
     copyImage: string
     copyTable: string
     transposeTable: string
@@ -9406,6 +9409,9 @@ export const en: Messages = {
     mermaidPreview: 'Preview',
     mermaidSource: 'Source',
     copyCode: 'Copy Code',
+    runBash: 'Run Bash',
+    runBashNeedsProject: 'Open a project to run Bash',
+    runBashIncomplete: 'Wait for the code block to finish',
     copyImage: 'Copy Image',
     copyTable: 'Copy Table',
     transposeTable: 'Transpose Table',

@@ -27,6 +27,8 @@ export interface CreateTerminalOptions {
   rows?: number
   env?: Record<string, string>
   shell?: string
+  /** Run the complete script as a Bash process instead of an interactive shell. */
+  bashScript?: string
   /** Session whose agent tool opened the tab — docked in that session's activity panel. */
   agentSessionId?: string
   /** Opened from the activity panel's launcher — kept out of the bottom terminal panel. */
@@ -63,6 +65,7 @@ export class TerminalManager {
       onEvent: this.opts.onEvent,
       env: opts.env,
       shell: opts.shell,
+      bashScript: opts.bashScript,
       agentSessionId: opts.agentSessionId,
       openedInActivity: opts.openedInActivity,
       coalesceMs: this.opts.coalesceMs,

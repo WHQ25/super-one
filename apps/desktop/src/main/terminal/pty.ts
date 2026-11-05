@@ -23,6 +23,7 @@ export interface PtySpawnOptions {
   rows: number
   env?: Record<string, string>
   shell?: string
+  bashScript?: string
 }
 
 export interface PtySpawner {
@@ -71,7 +72,11 @@ export const nodePtySpawner: PtySpawner = {
       if (!env.LANG && !env.LC_ALL) env.LANG = getSystemUtf8Locale()
       if (!env.LC_CTYPE) env.LC_CTYPE = 'UTF-8'
     }
-    const proc = spawn(opts.shell || defaultShell(), [], {
+    // Use argv rather than terminal input: tabs, newlines and shell quoting stay literal.
+    const scripted = opts.bashScript !== undefined
+    // A separate Bash runs the script so `exit` cannot close the result tab.
+    const args = scripted ? ['-c', 'bash -c "$1"; result=$?; printf "\\n[exit %s]\\n" "$result"; exec bash -i', 'bash', opts.bashScript!] : []
+    const proc = spawn(scripted ? 'bash' : opts.shell || defaultShell(), args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,

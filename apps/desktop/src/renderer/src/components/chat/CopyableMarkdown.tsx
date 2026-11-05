@@ -6,6 +6,7 @@ import { defaultRemarkPlugins, type Components } from 'streamdown'
 import { VirtualMarkdownBlock } from './VirtualMarkdownBlock'
 import { remarkMediaPaths } from './remark-media-paths'
 import { tryCopy } from '@/lib/clipboard'
+import { CodeBlockProjectScope } from './code-block-project-scope'
 import {
   getMathPluginSync,
   loadMathPlugin,
@@ -86,11 +87,15 @@ export const CopyableMarkdown = memo(function CopyableMarkdown({
     remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkMediaPaths(projectPath)],
   } : desktopMarkdownRuntime, [projectPath])
   return (
-    <DesktopSessionLinkScope projectPath={projectPath}><CopyableMarkdownPresenter
-      text={text}
-      isStreaming={isStreaming}
-      components={components as Components | undefined}
-      runtime={runtime}
-    /></DesktopSessionLinkScope>
+    <CodeBlockProjectScope value={projectPath ?? null}>
+      <DesktopSessionLinkScope projectPath={projectPath}>
+        <CopyableMarkdownPresenter
+          text={text}
+          isStreaming={isStreaming}
+          components={components as Components | undefined}
+          runtime={runtime}
+        />
+      </DesktopSessionLinkScope>
+    </CodeBlockProjectScope>
   )
 })

@@ -38,6 +38,26 @@ async function settlePtyExit(): Promise<void> {
 }
 
 describe('NodeTerminalManager exit bookkeeping', () => {
+  it('keeps Bash script output and its exit code visible in a new interactive tab', async () => {
+    const { db } = freshDb()
+    const terminals = new NodeTerminalManager(db)
+    const dir = mkdtempSync(join(tmpdir(), 'bash project '))
+    dirs.push(dir)
+    let terminalId: string | undefined
+    try {
+      const info = terminals.create({ cwd: dir, bashScript: "pwd\nvalue='你好'\nprintf '%s\\n' \"$value\"\nexit 7" })
+      terminalId = info.terminalId
+      await vi.waitFor(() => expect(terminals.get(info.terminalId)?.snapshot).toContain('[exit 7]'))
+      expect(terminals.get(info.terminalId)?.snapshot).toContain(dir)
+      expect(terminals.get(info.terminalId)?.snapshot).toContain('你好')
+      expect(terminals.get(info.terminalId)?.exitedAt).toBeNull()
+    } finally {
+      if (terminalId) terminals.kill(terminalId)
+      db.close()
+      await settlePtyExit()
+    }
+  })
+
   it('publishes native output and control hints with an attach sequence and releases control on kill', async () => {
     const { db } = freshDb()
     const terminals = new NodeTerminalManager(db)

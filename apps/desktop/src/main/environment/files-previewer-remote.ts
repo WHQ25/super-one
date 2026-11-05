@@ -2,7 +2,7 @@
  * The `@native/files-previewer` resolver for a remote-node session
  * (`docs/features/inline-files-previewer.md` §2.2, §6.1).
  *
- * The agent on the node only ever names node paths. Each is one of three
+ * The agent on the node only ever names node paths. Each is one of four
  * things, and each is stat'd where it actually lives — the desktop never
  * guesses a file into the project (`session-sync-zone.md` §4.2):
  *
@@ -11,21 +11,22 @@
  *    `missing`);
  *  - inside the node project → `workspace.listDir` of the parent for size
  *    (`artifact.stat` is zone-scoped and cannot see project files);
- *  - an absolute node path outside both → `unpreviewable`, never spliced into
- *    the project.
+ *  - temporary files outside both → node-authorized, chunked local copies;
+ *  - other absolute node paths → `unpreviewable`, never spliced into the project.
  *
  * `absolutePath` stays the node path; the renderer resolves it through
  * `resolveSessionFile` when it reads or builds a URL.
  */
-import { basename } from 'node:path'
+import { basename, dirname } from 'node:path'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import type { WorkspaceEntry } from '@superone/shared/environment'
-import { classifyPreviewerFile } from '../generative-ui/files-previewer-payload'
+import { classifyPreviewerFile, resolvePreviewerFile } from '../generative-ui/files-previewer-payload'
 import { mirrorNodeArtifact } from './session-file-mirror'
 import { nodeTwinOf, parseNodeZonePath, type NodeSyncZone } from './sync-zone-paths'
 import { normalizeHostPath } from './remote-file-tree'
 
 export interface RemotePreviewerContext {
+  resolveTempFile?: (path: string) => Promise<import('./remote-temp-files').RemoteTempFileResolution>
   connectionId: string
   /** Host path of the session's project, for the project-file check. */
   hostPath: string
@@ -97,8 +98,14 @@ export async function resolveRemotePreviewerFile(
 
   const rel = projectRelative(ctx.hostPath, abs)
   if (rel === null) {
-    // Neither in the zone nor under the project root: the desktop has no way to
-    // serve it (a media 403 or a project-splice would be a lie), so say so now.
+    const temp = await ctx.resolveTempFile?.(abs)
+    if (temp?.kind === 'missing') return { ...base, kind: 'missing' }
+    if (temp?.kind === 'local') {
+      // Reuse local sniffing and size limits, preserving the node identity for
+      // every subsequent read, Retry, media URL and phone handoff.
+      const file = resolvePreviewerFile({ path: temp.path }, { root: dirname(temp.path), isReadable: () => true })
+      return { ...file, ...base }
+    }
     return { ...base, kind: 'unpreviewable', reason: 'outside_readable_roots' }
   }
   const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '.'

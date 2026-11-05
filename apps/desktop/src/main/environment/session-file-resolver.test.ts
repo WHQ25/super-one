@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({ userData: '' }))
 // The zone's delivery record: a table that cannot be read protects every zone file (R5).
 vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
+vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { materializeRemoteProjectFile, resolveSessionFile, type SessionFileResolverDeps } from './session-file-resolver'
 import { nodeZonePath } from './sync-zone-paths'

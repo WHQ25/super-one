@@ -46,6 +46,8 @@ import type {
 } from '@superone/shared/environment'
 import {
   SESSION_DURABLE_EVENT,
+  TEMP_FILE_RPC_METHODS,
+  servesMethod,
   DEFAULT_REMOTE_INSTALL_SOURCE,
   DESKTOP_UPGRADE_REQUIRED,
   PROTOCOL_GENERATION,
@@ -1035,6 +1037,19 @@ export class EnvironmentHost {
     } catch {
       return null
     }
+  }
+
+  /** Read-only node temp files, materialized for the existing desktop/phone viewers. */
+  async resolveRemoteTempFile(connectionId: string, path: string): Promise<import('./remote-temp-files').RemoteTempFileResolution> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const descriptor = await gateway.getDescriptor()
+    if (!servesMethod(descriptor.capabilities, TEMP_FILE_RPC_METHODS.stat) ||
+        !servesMethod(descriptor.capabilities, TEMP_FILE_RPC_METHODS.read)) return { kind: 'outside' }
+    const { materializeRemoteTempFile } = await import('./remote-temp-files')
+    return materializeRemoteTempFile(connectionId, path, {
+      stat: path => gateway.statTempFile(path),
+      read: input => gateway.readTempFile(input),
+    })
   }
 
   /** `artifact.stat` / `artifact.get` — controller binding only, no lease. */

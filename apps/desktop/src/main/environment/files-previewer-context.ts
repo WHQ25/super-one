@@ -28,6 +28,7 @@ interface NodeSessionView {
 
 /** The slice of `EnvironmentHost` the previewer needs; tests hand in a fake. */
 export interface PreviewerHost {
+  resolveRemoteTempFile?: (connectionId: string, path: string) => Promise<import('./remote-temp-files').RemoteTempFileResolution>
   getSession(connectionId: string, sessionId: string): Promise<unknown>
   getRemoteProjectPath(connectionId: string, projectId: string): Promise<string | null>
   listProjects(connectionId: string): Promise<{ projectId: string; path: string }[]>
@@ -47,6 +48,9 @@ function remoteContext(
     hostPath: input.hostPath,
     cwd: input.cwd,
     zone: host.getSyncZone(connectionId),
+    resolveTempFile: host.resolveRemoteTempFile
+      ? path => host.resolveRemoteTempFile!(connectionId, path)
+      : undefined,
     artifactStat: (sid, rel) => host.artifactStat(connectionId, sid, rel),
     artifactGet: (input) => host.artifactGet(connectionId, input),
     listDir: (relativeDir) => (projectId ? host.remoteWorkspaceListDir(connectionId, projectId, relativeDir) : Promise.resolve([])),

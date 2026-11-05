@@ -2,6 +2,7 @@ import type { HarnessId } from '@superone/shared/agent-types'
 import { ARTIFACT_RPC_METHODS, harnessAdvertisementKey, servesMethod, TRANSCRIPT_FOLD_METHOD } from '@superone/shared/environment'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { randomUUID } from 'node:crypto'
+import { TEMP_FILE_RPC_METHODS, type TempFileStatResult, type TempFileReadRequest, type TempFileReadResult } from '@superone/shared/environment'
 import type {
   ArtifactDeleteResult,
   SessionStreamFrame,
@@ -510,6 +511,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     absolutePath: string,
   ): Promise<{ path: string; entries: Array<{ name: string; path: string; type: 'directory' }> }> {
     return this.client.rpc('fs.listDir', { path: absolutePath })
+  }
+
+  statTempFile(path: string): Promise<TempFileStatResult> {
+    return this.client.rpc(TEMP_FILE_RPC_METHODS.stat, { path })
+  }
+
+  readTempFile(input: TempFileReadRequest): Promise<TempFileReadResult> {
+    return this.client.rpc(TEMP_FILE_RPC_METHODS.read, input)
   }
 
   /** Clone a repository on the remote host and register it as a project there. */

@@ -68,10 +68,15 @@ does not rewrite the result; its card supplies the remote key at load time
   stat and mirror through the artifact RPCs, then classify and sniff locally.
 - Project files: list the parent through `workspace.listDir` and classify by
   extension and size, without a second RPC to sniff the head bytes.
-- Paths outside both roots: return `outside_readable_roots`.
+- Temporary files outside the project/zone: the node authorizes its own OS
+  temporary roots through read-only `fs.statTempFile` / `fs.readTempFile` RPCs.
+  Chunked, size/mtime-validated copies feed the existing desktop and phone
+  viewers. The payload keeps the node path and remote root as its identity.
+  Unsupported nodes and paths outside the node's temporary roots remain
+  `outside_readable_roots`; missing temporary files retain their row and Retry.
 - A session `cwd` outside its project: use an existing node project rooted at or
   above that directory if one exists. Never register a ghost project as a preview
-  side effect. Without such a project, outside paths remain unpreviewable.
+  side effect. Without such a project, non-temporary outside paths remain unpreviewable.
 
 `statPreviewerFileForRoot` reuses this resolution for Retry. Root plus absolute
 path is the resource identity: a bare `/srv/app/report.png` cannot identify a

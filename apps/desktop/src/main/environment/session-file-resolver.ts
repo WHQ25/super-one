@@ -4,6 +4,7 @@
  *
  *   remote root + path under the node zone   → desktop mirror (fetched / refreshed via artifact.*)
  *   remote root + path under the desktop zone → that path (a desktop-produced file)
+ *   remote root + an out-of-project temp file → a node-authorized local cache copy
  *   remote root + anything else               → a node project file (workspace.readFile)
  *   local root                                → the path itself
  *
@@ -22,6 +23,7 @@ import type { EnvironmentHost } from './environment-host'
 import { isUnderSyncZone } from '../media-output-paths'
 import { mirrorNodeArtifact } from './session-file-mirror'
 import { parseNodeZonePath, type NodeSyncZone } from './sync-zone-paths'
+import type { RemoteTempFileResolution } from './remote-temp-files'
 
 export type SessionFileResolution =
   | { kind: 'local'; path: string }
@@ -29,16 +31,18 @@ export type SessionFileResolution =
   | { kind: 'missing' }
 
 export interface SessionFileResolverDeps {
+  resolveRemoteTempFile?: (connectionId: string, path: string) => Promise<RemoteTempFileResolution>
   getSyncZone: (connectionId: string) => NodeSyncZone | null
   artifactStat: (connectionId: string, sessionId: string, relativePath: string) => Promise<ArtifactStatResult>
   artifactGet: (connectionId: string, input: ArtifactGetRequest) => Promise<ArtifactGetResult>
 }
 
 /** The resolver's view of an EnvironmentHost (structural, so test fakes need only what they use). */
-export type SessionFileHost = Pick<EnvironmentHost, 'getSyncZone' | 'artifactStat' | 'artifactGet'>
+export type SessionFileHost = Pick<EnvironmentHost, 'getSyncZone' | 'artifactStat' | 'artifactGet' | 'resolveRemoteTempFile'>
 
 export function resolverDepsFor(host: Partial<SessionFileHost>): SessionFileResolverDeps {
   return {
+    resolveRemoteTempFile: host.resolveRemoteTempFile?.bind(host),
     getSyncZone: (connectionId) => host.getSyncZone?.(connectionId) ?? null,
     artifactStat: (connectionId, sessionId, relativePath) => {
       if (!host.artifactStat) throw new Error('artifact.stat unavailable')
@@ -94,7 +98,10 @@ export async function resolveSessionFile(
   // out before the zone existed) and read here.
   if ((isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) && isUnderSyncZone(path)) return { kind: 'local', path }
   const relativePath = remoteRelative(remote.path, path)
-  if (relativePath === null) return { kind: 'missing' }
+  if (relativePath === null) {
+    const temp = await resolved.resolveRemoteTempFile?.(remote.connectionId, path)
+    return temp?.kind === 'local' ? { kind: 'local', path: temp.path } : { kind: 'missing' }
+  }
   return { kind: 'remote-project', connectionId: remote.connectionId, folderPath: root!, relativePath }
 }
 

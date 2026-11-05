@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom'
 import { chromium } from '@playwright/test'
 import postcss from 'postcss'
+import { assertSameRaster } from './raster-drift'
 import { rasterizeSvg, sizedSvg } from './rasterize-svg'
 import { ClaudeSessionIcon, type SessionIconProps } from '../../../packages/ui/src/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '../../../packages/ui/src/components/harness/CodexSessionIcon'
@@ -168,9 +169,8 @@ if (filterMarks.size) {
       if (!rasterMap.includes(`${brand}:`)) throw new Error(`Add ${brand} to harness-rasters.ts before generating its raster`)
       const png = await rasterizeSvg(page, sizedSvg(svg, 24, 24))
       const file = resolve(directory, `${brand}.png`)
-      if (check) {
-        if (!readFileSync(file).equals(png)) throw new Error(`Harness raster ${brand} is stale. Run generate-harness-icons.ts`)
-      } else writeFileSync(file, png)
+      if (check) assertSameRaster(readFileSync(file), png, `Harness raster ${brand}`, 'Run generate-harness-icons.ts')
+      else writeFileSync(file, png)
     }
   } finally {
     await browser.close()

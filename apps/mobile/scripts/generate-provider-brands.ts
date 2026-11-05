@@ -8,6 +8,7 @@ import {
   TIGHT_COMBINE_SPACE_MULTIPLE,
   TIGHT_COMBINE_TEXT_MULTIPLE,
 } from '../../desktop/src/renderer/src/components/TightCombine'
+import { assertSameRaster } from './raster-drift'
 import { rasterizeSvg, sizedSvg } from './rasterize-svg'
 
 /**
@@ -94,9 +95,8 @@ const rasterMap = readFileSync(resolve(rasterDirectory, '../provider-rasters.ts'
 for (const raster of rasters) {
   if (!rasterMap.includes(`${raster.key}:`)) throw new Error(`Add ${raster.key} to provider-rasters.ts before generating its raster`)
   const file = resolve(rasterDirectory, `${raster.key}.png`)
-  if (check) {
-    if (!readFileSync(file).equals(raster.png)) throw new Error(`Provider raster ${raster.key} is stale. Run generate:icons`)
-  } else writeFileSync(file, raster.png)
+  if (check) assertSameRaster(readFileSync(file), raster.png, `Provider raster ${raster.key}`, 'Run generate:icons')
+  else writeFileSync(file, raster.png)
 }
 
 const target = resolve(import.meta.dirname, '../src/ui/provider-brands.generated.json')

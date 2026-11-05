@@ -72,6 +72,7 @@ export interface RemoteCollaborationPort {
     sessionId: string
     text: string
     clientMessageId?: string
+    source?: 'task-notification'
     projectPath: string
     providerId?: string
     permissionMode?: string
@@ -356,7 +357,7 @@ export function remoteChildLabel(childSessionId: string): string | null {
 export async function sendToRemoteChild(
   childSessionId: string,
   text: string,
-  options: { clientMessageId?: string; collaboration?: MessageDisplayFields['collaboration'] } = {},
+  options: { clientMessageId?: string; source?: 'task-notification'; collaboration?: MessageDisplayFields['collaboration'] } = {},
 ): Promise<void> {
   const grant = collaborationStore().spawnGrantForChild(childSessionId)
   const config = grant ? parseGrantConfig(grant.config_json) : null
@@ -367,6 +368,7 @@ export async function sendToRemoteChild(
     sessionId: childSessionId,
     text,
     ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+    ...(options.source ? { source: options.source } : {}),
     ...(options.collaboration ? { collaboration: options.collaboration } : {}),
     projectPath: remoteProjectKey(env.connectionId, config.remote.projectPath ?? ''),
     providerId: grant.agent_id,

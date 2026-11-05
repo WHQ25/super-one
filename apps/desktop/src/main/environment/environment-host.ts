@@ -2131,6 +2131,7 @@ export class EnvironmentHost {
     if (images.length > 0) options.images = images
     Object.assign(options, parseMessageDisplay(input))
     if (input.echoUserMessage) options.echoUserMessage = true
+    if (input.source === 'task-notification') options.source = input.source
     if (input.turnKind === 'run' || input.turnKind === 'steer' || input.turnKind === 'review' || input.turnKind === 'compact') {
       options.turnKind = input.turnKind
     }

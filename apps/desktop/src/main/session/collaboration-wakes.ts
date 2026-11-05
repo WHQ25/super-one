@@ -21,7 +21,7 @@ export function collaborationWakeQueue(host: SessionManager): CollaborationWakeQ
     },
     admit: (sessionId, content, notificationId, onInputAccepted, beforeInput) => runHostReaction(async () => {
       if (remoteChildTarget(sessionId)) {
-        await sendToRemoteChild(sessionId, content, { clientMessageId: notificationId })
+        await sendToRemoteChild(sessionId, content, { clientMessageId: notificationId, source: 'task-notification' })
         return
       }
       const session = resolveLiveSession(host, sessionId)

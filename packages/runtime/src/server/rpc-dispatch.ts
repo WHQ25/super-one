@@ -2352,6 +2352,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       ...parseMessageDisplay(options),
       ...selections,
       echoUserMessage: options.echoUserMessage === true,
+      ...(options.source === 'task-notification' ? { source: 'task-notification' as const } : {}),
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),

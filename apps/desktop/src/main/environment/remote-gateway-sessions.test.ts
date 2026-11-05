@@ -180,14 +180,19 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     expect(header).toMatchObject({ sessionId, status: 'idle' })
     expect(header).not.toHaveProperty('transcript')
 
-    // Start the watch and stop it. FS delivery is best-effort, so this does not
-    // wait out the poll loop; a failed watchStart still rejects.
+    // Start the watch. A quiet filesystem never yields, and `return()` stays
+    // queued until the current `next()` yields, so awaiting it hangs until the
+    // 5s test timeout (CI #41987236381). A watchStart rejection still fails
+    // this test; the file itself is checked with listDir below.
     const iter = gw.workspace.watch({ project: projectRef, relativePath: '.' })[Symbol.asyncIterator]()
     writeFileSync(join(projectDir, 'watched.txt'), 'new')
     const pending = iter.next()
-    await new Promise((r) => setTimeout(r, 150))
-    await iter.return?.()
-    await pending
+    const winner = await Promise.race([
+      pending.then(() => 'event' as const),
+      new Promise<'quiet'>((resolve) => setTimeout(() => resolve('quiet'), 150)),
+    ])
+    if (winner === 'event') await iter.return?.()
+    else pending.then(() => { void iter.return?.() }, () => { void iter.return?.() })
 
     // Explicit watchStart/poll path verification via listDir still works
     const entries = await gw.workspace.listDir({ project: projectRef, relativePath: '.' })

@@ -12,7 +12,7 @@ import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import type { GitDirtyStatus, GitInfoResult, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { parseRemoteProjectKey, remoteActiveFileRoot } from '@/lib/remote-project-key'
 import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './work-dir-label'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
@@ -79,6 +79,7 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
   const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
 
   const activePath = wtState?.activePath ?? null
+  const activeGitPath = currentFolder && activePath ? remoteActiveFileRoot(currentFolder, activePath) : null
   /** Remote node project: same “Local” label, Server icon (vs Monitor on this machine). */
   const isRemoteProject = Boolean(currentFolder && parseRemoteProjectKey(currentFolder))
   const mainCheckoutState: WorkDirState = {
@@ -105,12 +106,12 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
   }, [currentFolder, isGitRepo, activePath])
 
   const refreshActiveDirty = useCallback(() => {
-    if (!activePath) return
-    window.app.getGitInfo(activePath).then((info) => {
+    if (!activeGitPath) return
+    window.app.getGitInfo(activeGitPath).then((info) => {
       const next = knownDirty(info)
       setActiveDirty((prev) => (sameDirty(prev, next) ? prev : next))
     }).catch(() => {})
-  }, [activePath])
+  }, [activeGitPath])
 
   // The agent can also move the worktree's HEAD or attach a branch to a
   // detached checkout during a turn (`git switch -c` / `git checkout -b`), and
@@ -125,18 +126,18 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
   // Event-driven, like the branch chip: read once for the worktree, then only
   // when a turn ends or the repo's HEAD moves.
   useEffect(() => {
-    if (!activePath) { setActiveDirty(undefined); return }
+    if (!activeGitPath) { setActiveDirty(undefined); return }
     let cancelled = false
-    window.app.getGitInfo(activePath).then((info) => {
+    window.app.getGitInfo(activeGitPath).then((info) => {
       if (cancelled) return
       const next = knownDirty(info)
       setActiveDirty((prev) => (sameDirty(prev, next) ? prev : next))
     }).catch(() => {})
     const unsub = window.app.onGitHeadChange((evt) => {
-      if (evt.folderPath === activePath) refreshActiveWorktree()
+      if (evt.folderPath === activePath || evt.folderPath === activeGitPath) refreshActiveWorktree()
     })
     return () => { cancelled = true; unsub() }
-  }, [activePath, refreshActiveWorktree])
+  }, [activePath, activeGitPath, refreshActiveWorktree])
 
   useOnTurnCompleted(refreshActiveWorktree)
 

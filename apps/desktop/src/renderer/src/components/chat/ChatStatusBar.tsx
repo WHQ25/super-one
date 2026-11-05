@@ -9,6 +9,7 @@ import { Activity, ChevronDown, Square, SquareTerminal, Bot, Workflow, TriangleA
 import { AnimatePresence, motion } from 'motion/react'
 import { useActiveSession, useChatStore, useSessionScope, getActiveSessionView } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { remoteActiveFileRoot } from '@/lib/remote-project-key'
 import { StatusBarPermission } from './chat-status-bar/StatusBarPermission'
 import { StatusBarSandbox } from './chat-status-bar/StatusBarSandbox'
 import { StatusBarPip, useHiddenPipTarget } from './chat-status-bar/StatusBarPip'
@@ -248,7 +249,10 @@ export function ChatStatusBar() {
   const location = useComposerLocation()
   // The experiment follows the session checkout. Otherwise git status stays on
   // the open project folder, which is what the separate branch chip reads.
-  const gitFolder = experimentalRemoteNodesEnabled ? (location.cwd || currentFolder) : currentFolder
+  // Restored node sessions carry a host cwd, not a renderer remote key.
+  const gitFolder = experimentalRemoteNodesEnabled && currentFolder
+    ? remoteActiveFileRoot(currentFolder, location.cwd)
+    : currentFolder
   const sessionGitBranch = useActiveSession((s) => s._gitBranch)
   const isInWorktree = computeIsInWorktree(currentFolder ? worktrees[currentFolder] : undefined)
   const scope = useSessionScope()

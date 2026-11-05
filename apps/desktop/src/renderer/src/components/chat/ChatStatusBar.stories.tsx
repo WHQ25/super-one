@@ -3,16 +3,20 @@ import { useEffect, useState } from 'react'
 import type { ChatMessage, GitInfoResult } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { ChatStatusBar } from './ChatStatusBar'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 
 const PROJECT = '/storybook/status-bar'
+const REMOTE_PROJECT = 'remote:office:/srv/app'
+const REMOTE_WORKTREE = '/home/node/.worktrees/app/task-7af08a26'
 
 const XCODE_LICENSE_ERROR =
   "You have not agreed to the Xcode license agreements. Please run 'sudo xcodebuild -license' from within a Terminal window to review and agree to the Xcode and Apple SDKs license."
 
 /** Per-story git answer; the component reads it once on mount and again when the chip is clicked. */
 let gitResult: GitInfoResult = null
+let remoteWorktreePreview = false
 
 interface MonitorSeed {
   description: string
@@ -83,23 +87,53 @@ function seedMonitor(seed: MonitorSeed | undefined): void {
 }
 
 mockIpc('app', 'getMediaServerPort', async () => 6006)
-mockIpc('app', 'getGitInfo', async () => gitResult)
+mockIpc('app', 'getGitInfo', async (path: unknown) => {
+  if (remoteWorktreePreview && path === REMOTE_WORKTREE) {
+    return { branch: null, error: 'Remote worktree was read on this machine' }
+  }
+  return gitResult
+})
 mockIpc('app', 'getGitBranches', async () => ['main', 'develop'])
 mockIpc('app', 'getCheckedOutBranches', async () => ['main'])
 mockIpc('app', 'getWorktreeInfo', async () => ({ isWorktree: false, currentBranch: 'main', entries: [] }))
 mockIpc('app', 'collaborationMailbox', Object.assign(() => {}, { list: async () => [], onChanged: () => () => {} }))
 for (const method of ['listPlatforms', 'listCredentials', 'listBindings', 'claudeListAccounts']) mockIpc('app', method, async () => [])
 
-function Preview({ git, narrow = false, monitor }: { git: GitInfoResult; narrow?: boolean; monitor?: MonitorSeed }) {
+function Preview({ git, narrow = false, monitor, remoteWorktree = false }: { git: GitInfoResult; narrow?: boolean; monitor?: MonitorSeed; remoteWorktree?: boolean }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     gitResult = git
+    remoteWorktreePreview = remoteWorktree
     const prevApp = useAppStore.getState()
     const prevChat = useChatStore.getState()
-    useChatStore.getState().ensureSession(PROJECT)
-    useChatStore.setState({ activeProject: PROJECT })
+    const prevHosts = useMultiHostSidebarStore.getState().environments
+    const projectPath = remoteWorktree ? REMOTE_PROJECT : PROJECT
+    useChatStore.getState().ensureSession(projectPath)
+    useChatStore.setState({ activeProject: projectPath })
+    if (remoteWorktree) {
+      useChatStore.setState((state) => {
+        const project = state.projectSessions[projectPath]
+        const sid = project._activeSessionId!
+        return {
+          projectSessions: {
+            ...state.projectSessions,
+            [projectPath]: {
+              ...project,
+              _sessions: {
+                ...project._sessions,
+                [sid]: { ...project._sessions[sid], environmentSelection: null, _worktreePath: REMOTE_WORKTREE, _gitBranch: 'task/7af08a26' },
+              },
+            },
+          },
+        }
+      })
+      useMultiHostSidebarStore.setState({ environments: [{
+        environmentId: 'office', connectionId: 'office', label: 'VensenA', kind: 'cli-node',
+        connection: 'connected', projectsStatus: 'ready', projectsError: null, checkouts: [],
+      }] })
+    }
     seedMonitor(monitor)
-    useAppStore.setState({ experimentalRemoteNodesEnabled: true, currentFolder: PROJECT, _worktrees: {} })
+    useAppStore.setState({ experimentalRemoteNodesEnabled: true, currentFolder: projectPath, _worktrees: {} })
     setReady(true)
     return () => {
       useAppStore.setState({
@@ -108,8 +142,10 @@ function Preview({ git, narrow = false, monitor }: { git: GitInfoResult; narrow?
         _worktrees: prevApp._worktrees,
       })
       useChatStore.setState(prevChat)
+      useMultiHostSidebarStore.setState({ environments: prevHosts })
+      remoteWorktreePreview = false
     }
-  }, [git, monitor])
+  }, [git, monitor, remoteWorktree])
   if (!ready) return null
   return (
     <div className="@container rounded-lg border border-border bg-background py-2" style={{ width: narrow ? 300 : 640, maxWidth: '100%' }}>
@@ -129,6 +165,20 @@ type Story = StoryObj<typeof meta>
 
 /** Folder is a repo: the one chip shows the branch and the dirty dot. */
 export const Repo: Story = { args: { git: { branch: 'main', dirty: { files: 3, insertions: 41, deletions: 7 } } } }
+
+/** Restored node sessions store a bare host cwd; Git reads must retain the node. */
+export const RemoteWorktree: Story = {
+  args: { remoteWorktree: true, git: { branch: 'task/7af08a26', dirty: { files: 2, insertions: 12, deletions: 3 } } },
+}
+
+export const RemoteWorktreeNarrow: Story = {
+  args: { ...RemoteWorktree.args, narrow: true },
+}
+
+export const RemoteWorktreeDark: Story = {
+  args: RemoteWorktree.args,
+  globals: { theme: 'dark' },
+}
 
 /** Folder is not a repo (`null`): the one chip says Git is not initialized. */
 export const NotARepo: Story = { args: { git: null } }

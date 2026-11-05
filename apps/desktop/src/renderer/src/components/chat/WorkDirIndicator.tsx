@@ -433,6 +433,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
 
   const activePath = location.selection.kind === 'existing' ? location.selection.path : null
+  const activeGitPath = currentFolder && activePath ? remoteActiveFileRoot(currentFolder, activePath) : null
   const isRemoteProject = Boolean(currentFolder && parseRemoteProjectKey(currentFolder))
   const fallbackEnvironment = typeof window !== 'undefined' && window.app.platform === 'darwin'
     ? t('sidebar.thisMac')
@@ -481,12 +482,12 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   }, [currentFolder, isGitRepo])
 
   const refreshActiveDirty = useCallback(() => {
-    if (!activePath) return
-    window.app.getGitInfo(activePath).then((info) => {
+    if (!activeGitPath) return
+    window.app.getGitInfo(activeGitPath).then((info) => {
       const next = knownDirty(info)
       setActiveDirty((prev) => (sameDirty(prev, next) ? prev : next))
     }).catch(() => {})
-  }, [activePath])
+  }, [activeGitPath])
 
   // The agent can also move the worktree's HEAD or attach a branch to a
   // detached checkout during a turn (`git switch -c` / `git checkout -b`), and
@@ -499,18 +500,18 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   }, [activePath, refreshActiveDirty, refreshWorktreeInfo])
 
   useEffect(() => {
-    if (!activePath) { setActiveDirty(undefined); return }
+    if (!activeGitPath) { setActiveDirty(undefined); return }
     let cancelled = false
-    window.app.getGitInfo(activePath).then((info) => {
+    window.app.getGitInfo(activeGitPath).then((info) => {
       if (cancelled) return
       const next = knownDirty(info)
       setActiveDirty((prev) => (sameDirty(prev, next) ? prev : next))
     }).catch(() => {})
     const unsub = window.app.onGitHeadChange((evt) => {
-      if (evt.folderPath === activePath) refreshActiveWorktree()
+      if (evt.folderPath === activePath || evt.folderPath === activeGitPath) refreshActiveWorktree()
     })
     return () => { cancelled = true; unsub() }
-  }, [activePath, refreshActiveWorktree])
+  }, [activePath, activeGitPath, refreshActiveWorktree])
 
   useOnTurnCompleted(refreshActiveWorktree)
 

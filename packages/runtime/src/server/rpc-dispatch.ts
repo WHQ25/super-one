@@ -46,6 +46,7 @@ import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { DRAFT_HANDLERS, isDraftOpenReceiptLive } from './rpc-drafts'
 import { TERMINAL_HANDLERS } from './rpc-terminals'
 import { ARTIFACT_HANDLERS } from './rpc-artifacts'
+import { TEMP_FILE_HANDLERS } from './rpc-temp-files'
 import { MCP_APPS_HANDLERS } from './rpc-mcp-apps'
 import { parseSessionSettings } from './session-settings'
 import { parseSessionSendSelections } from './session-send-selections'
@@ -249,6 +250,7 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: HostRpc
 
 const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, method: string) => RpcResult | Promise<RpcResult>>> = {
   ...SESSION_OPERATION_HANDLERS,
+  ...TEMP_FILE_HANDLERS,
   'environment.descriptor': (_payload, ctx) => handleDescriptor(ctx),
   'environment.health': (_payload, ctx) => handleHealth(ctx),
   'environment.systemInfo': (_payload, ctx) => handleSystemInfo(ctx),

@@ -1,5 +1,5 @@
 import { realpathSync, existsSync, lstatSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { isAgentTranscriptAbsolutePath as isAgentTranscriptPathShape } from '@superone/shared/agent-transcript-path'
 
@@ -248,7 +248,7 @@ export function getReadableAssetRoots(
   opts?: { homeDir?: string; tmpDir?: string },
 ): string[] {
   const homeDir = opts?.homeDir ?? homedir()
-  const tmpDirs = [opts?.tmpDir ?? process.env.TMPDIR, '/tmp', '/private/tmp'].filter(Boolean) as string[]
+  const tmpDirs = [opts?.tmpDir ?? tmpdir(), '/tmp', '/private/tmp'].filter(Boolean) as string[]
   const extraRoots = [
     join(homeDir, '.codex', '.tmp', 'plugins'),
     join(homeDir, '.codex', '.tmp', 'bundled-marketplaces'),

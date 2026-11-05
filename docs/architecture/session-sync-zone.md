@@ -246,12 +246,15 @@ process (`environment/session-file-resolver.ts#resolveSessionFile`):
 ```
 remote root + path under the node zone    → desktop mirror (fetched / refreshed via artifact.*)
 remote root + path under the desktop zone → that path (a desktop-produced file)
+remote root + an out-of-project temp file → node-authorized local cache copy
 remote root + anything else               → node project file (workspace.readFile)
 local root                                → the path itself
 ```
 
-An out-of-project absolute node path resolves to `missing`, never spliced into
-the project. A phone that needs real bytes of a node *project* file gets a
+An out-of-project absolute node path is checked through the node's read-only
+temporary-file RPCs. An authorized temporary file gets a private local cache
+copy; other paths resolve to `missing`, never spliced into the project. A phone
+that needs real bytes of a node *project* file gets a
 transient copy under the OS temp directory (`materializeRemoteProjectFile`),
 not a zone file.
 
@@ -318,6 +321,17 @@ desktop then does no rewrite and no mirror, and consumers report desktop
 artifacts as `missing` in that session. No shim.
 
 ### 5.2 Artifact RPCs
+
+Temporary files use a separate read-only contract, `fs.statTempFile` and
+`fs.readTempFile` (`packages/shared/src/environment/temp-file-rpc.ts`), gated
+by `workspace:read`. The node allows only its OS temp directory, `/tmp` and
+`/private/tmp`, with realpath checks against symlink escapes. Reads are bounded
+to 4 MiB per RPC. Desktop `environment/remote-temp-files.ts` validates size and
+mtime across chunks and on completion, then atomically caches the file under
+a private OS-temp directory, keyed by connection and node path. All file readers
+and the native previewer reuse that copy, while retaining the remote identity.
+Node refusal, deletion and disconnect never serve stale cache bytes. This
+does not add write access, a project registration or a sync-zone artifact.
 
 `workspace.*` is project-scoped by construction and stays that way; the zone
 is outside every project. Five RPCs under `artifact.*`

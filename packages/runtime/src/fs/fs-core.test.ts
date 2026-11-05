@@ -10,8 +10,14 @@ import {
   isAgentTranscriptAbsolutePath,
   assertAgentTranscriptAbsolutePath,
   getAgentTranscriptRoots,
+  getReadableAssetRoots,
   toProjectRelativePath,
 } from './index'
+
+it('includes the OS temporary directory in desktop asset roots, including hosts without TMPDIR', () => {
+  expect(getReadableAssetRoots([])).toContain(tmpdir())
+  expect(getReadableAssetRoots([], { tmpDir: '/custom/temp' })).toContain('/custom/temp')
+})
 
 describe('resolveProjectPath', () => {
   it('rejects absolute and escaping paths', () => {

@@ -9,7 +9,10 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { mapSessionUpdate } from './acp-event-map'
 import { createXaiCorrelationState } from './acp-xai-session-notify'
 import { ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE } from './antigravity-auto-bootstrap'
-import { extractAntigravityTurnUsageAndThinking } from './antigravity-db-usage'
+import {
+  extractAllAntigravityUsageRecords,
+  extractAntigravityTurnUsageAndThinking,
+} from './antigravity-db-usage'
 import {
   advanceAntigravityThinkingStepAfterTools,
   closeAntigravityThinkingStep,
@@ -667,7 +670,7 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
       mkdirSync(convDir, { recursive: true })
       const dbPath = join(convDir, `${sessionId}.db`)
       const db = new Database(dbPath)
-      db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_payload BLOB NOT NULL)')
+      db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, metadata BLOB, step_payload BLOB)')
 
       const encodeLen = (field: number, bytes: Uint8Array): Buffer => {
         const tag = (field << 3) | 2
@@ -695,59 +698,78 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
 
       const userStepPayload = encodeLen(14, Buffer.from([0x0a, 0x05, ...Buffer.from('hello')]))
 
-      const buildMeta = (inputTokens: number, outputTokens: number, cacheReadTokens: number, thoughtsTokens: number): Buffer => {
+      const buildMeta = (
+        inputTokens: number,
+        outputTokens: number,
+        cacheReadTokens: number,
+        thoughtsTokens: number,
+        candidatesTokens: number,
+      ): Buffer => {
+        const ts = encodeVarint(1, 1730764800)
         const stats = Buffer.concat([
           encodeLen(1, Buffer.from('gemini-3.1-pro-high')),
           encodeVarint(2, inputTokens),
           encodeVarint(3, outputTokens),
-          encodeVarint(8, cacheReadTokens),
+          encodeVarint(5, cacheReadTokens),
           encodeVarint(9, thoughtsTokens),
+          encodeVarint(10, candidatesTokens),
         ])
-        return encodeLen(9, stats)
+        return Buffer.concat([encodeLen(1, ts), encodeLen(9, stats)])
       }
 
-      // Step 1: 20000 total prompt, 19000 cached -> 1000 uncached upload. Output: 50 + 20 thoughts
-      const meta1 = buildMeta(20000, 50, 19000, 20)
+      const meta1 = buildMeta(1000, 70, 19000, 20, 50)
       const planner1 = Buffer.concat([
         encodeLen(1, Buffer.from('Calling tool')),
         encodeLen(3, Buffer.from('thinking step 1')),
       ])
       const step1Payload = Buffer.concat([
-        encodeLen(1, meta1),
         Buffer.from([0xa2, 0x01, planner1.length]),
         planner1,
       ])
 
-      // Step 2: 20250 total prompt, 20050 cached -> 200 uncached upload. Output: 80 + 0 thoughts
-      const meta2 = buildMeta(20250, 80, 20050, 0)
+      const meta2 = buildMeta(200, 80, 20050, 0, 80)
       const planner2 = Buffer.concat([
         encodeLen(1, Buffer.from('Final answer')),
       ])
       const step2Payload = Buffer.concat([
-        encodeLen(1, meta2),
         Buffer.from([0xa2, 0x01, planner2.length]),
         planner2,
       ])
 
-      const insert = db.prepare('INSERT INTO steps (idx, step_payload) VALUES (?, ?)')
-      insert.run(0, userStepPayload)
-      insert.run(1, step1Payload)
-      insert.run(2, step2Payload)
+      const insert = db.prepare('INSERT INTO steps (idx, step_type, metadata, step_payload) VALUES (?, ?, ?, ?)')
+      insert.run(0, 14, null, userStepPayload)
+      insert.run(1, 15, meta1, step1Payload)
+      insert.run(2, 15, meta2, step2Payload)
       db.close()
 
       const summary = extractAntigravityTurnUsageAndThinking(sessionId, root)
       expect(summary).not.toBeNull()
-      // inputTokens is sum of UNCACHED tokens: (20000 - 19000) + (20250 - 20050) = 1000 + 200 = 1200
       expect(summary?.inputTokens).toBe(1200)
-      // outputTokens: (50 + 20) + (80 + 0) = 150
       expect(summary?.outputTokens).toBe(150)
-      // cacheReadTokens: 19000 + 20050 = 39050
       expect(summary?.cacheReadTokens).toBe(39050)
-      // contextTokens is the occupancy after the final step: 20250 + 80 = 20330
       expect(summary?.contextTokens).toBe(20330)
-      // thinkingSteps only contains steps with actual text (step 1 has text, step 2 has none)
       expect(summary?.thinkingSteps).toHaveLength(1)
       expect(summary?.thinkingSteps[0]?.thinkingText).toBe('thinking step 1')
+
+      const records = extractAllAntigravityUsageRecords(root)
+      expect(records).toEqual([
+        {
+          providerSessionId: sessionId,
+          createdAt: 1730764800000,
+          model: 'gemini-3.1-pro-high',
+          inputTokens: 1000,
+          outputTokens: 70,
+          cacheReadTokens: 19000,
+        },
+        {
+          providerSessionId: sessionId,
+          createdAt: 1730764800000,
+          model: 'gemini-3.1-pro-high',
+          inputTokens: 200,
+          outputTokens: 80,
+          cacheReadTokens: 20050,
+        },
+      ])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

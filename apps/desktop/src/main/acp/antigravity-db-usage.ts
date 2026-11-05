@@ -147,6 +147,13 @@ export function extractAntigravityPromptResponseUsage(response: unknown): Antigr
 const STEP_TYPE_USER_INPUT = 14
 const STEP_TYPE_PLANNER_RESPONSE = 15
 
+function stepTotalOutputTokens(meta: AntigravityStepMetadata): number {
+  if (meta.candidatesTokens > 0 && meta.outputTokens >= meta.candidatesTokens + meta.thoughtsTokens) {
+    return meta.outputTokens
+  }
+  return meta.outputTokens + meta.thoughtsTokens
+}
+
 function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Array<{
   stepIndex: number
   meta: AntigravityStepMetadata | null
@@ -156,43 +163,46 @@ function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Array<
     (db.prepare('PRAGMA table_info(steps)').all() as Array<{ name: string }>).map((col) => col.name),
   )
 
-  if (columns.has('step_index') && columns.has('step_type')) {
+  const idxCol = columns.has('idx') ? 'idx' : columns.has('step_index') ? 'step_index' : null
+  if (!idxCol) return []
+
+  if (columns.has('step_type')) {
     const lastUserRow = db
-      .prepare('SELECT MAX(step_index) AS maxIndex FROM steps WHERE step_type = ?')
+      .prepare(`SELECT MAX(${idxCol}) AS maxIndex FROM steps WHERE step_type = ?`)
       .get(STEP_TYPE_USER_INPUT) as { maxIndex: number | null } | undefined
     const minStepIndex = typeof lastUserRow?.maxIndex === 'number' ? lastUserRow.maxIndex : -1
     const hasMetadataCol = columns.has('metadata')
-    const rows = (
-      hasMetadataCol
-        ? db
-            .prepare(
-              'SELECT step_index, step_payload, metadata FROM steps WHERE step_index > ? AND step_type = ? ORDER BY step_index ASC',
-            )
-            .all(minStepIndex, STEP_TYPE_PLANNER_RESPONSE)
-        : db
-            .prepare(
-              'SELECT step_index, step_payload FROM steps WHERE step_index > ? AND step_type = ? ORDER BY step_index ASC',
-            )
-            .all(minStepIndex, STEP_TYPE_PLANNER_RESPONSE)
-    ) as Array<{
+    const hasPayloadCol = columns.has('step_payload')
+    const selectCols = [
+      `${idxCol} AS step_index`,
+      'step_type',
+      ...(hasPayloadCol ? ['step_payload'] : []),
+      ...(hasMetadataCol ? ['metadata'] : []),
+    ].join(', ')
+    const rows = db
+      .prepare(`SELECT ${selectCols} FROM steps WHERE ${idxCol} > ? AND step_type != ? ORDER BY ${idxCol} ASC`)
+      .all(minStepIndex, STEP_TYPE_USER_INPUT) as Array<{
       step_index: number
-      step_payload: Buffer | null
+      step_type: number
+      step_payload?: Buffer | null
       metadata?: Buffer | null
     }>
 
     return rows.map((row) => {
-      const env = row.step_payload ? extractStepEnvelope(row.step_payload) : null
+      const isPlanner = row.step_type === STEP_TYPE_PLANNER_RESPONSE
+      const env = isPlanner && row.step_payload ? extractStepEnvelope(row.step_payload) : null
       const metaBuf = row.metadata ?? env?.metadataBuf ?? null
       return {
         stepIndex: row.step_index,
         meta: metaBuf ? parseAntigravityStepMetadata(metaBuf) : null,
-        payload: env?.plannerResponse ?? (row.step_payload ? parseAntigravityPlannerResponse(row.step_payload) : null),
+        payload: isPlanner
+          ? (env?.plannerResponse ?? (row.step_payload ? parseAntigravityPlannerResponse(row.step_payload) : null))
+          : null,
       }
     })
   }
 
-  const idxCol = columns.has('idx') ? 'idx' : columns.has('step_index') ? 'step_index' : null
-  if (!idxCol || !columns.has('step_payload')) return []
+  if (!columns.has('step_payload')) return []
 
   const allRows = db
     .prepare(`SELECT ${idxCol} AS idx, step_payload FROM steps ORDER BY ${idxCol} ASC`)
@@ -254,19 +264,11 @@ export function extractAntigravityTurnUsageAndThinking(
 
     for (const { stepIndex, meta, payload } of rows) {
       if (meta) {
-        const stepOut = meta.outputTokens + meta.thoughtsTokens
-        const uncachedStepIn =
-          meta.cacheReadTokens > 0 && meta.inputTokens >= meta.cacheReadTokens
-            ? meta.inputTokens - meta.cacheReadTokens
-            : meta.inputTokens
-        inputTokens += uncachedStepIn
+        const stepOut = stepTotalOutputTokens(meta)
+        inputTokens += meta.inputTokens
         outputTokens += stepOut
         cacheReadTokens += meta.cacheReadTokens
-        const fullStepPrompt =
-          meta.cacheReadTokens > 0 && meta.inputTokens >= meta.cacheReadTokens
-            ? meta.inputTokens
-            : meta.inputTokens + meta.cacheReadTokens
-        const stepContext = fullStepPrompt + stepOut
+        const stepContext = meta.inputTokens + meta.cacheReadTokens + stepOut
         if (stepContext > 0) contextTokens = stepContext
         if (meta.contextWindow > 0) contextWindow = meta.contextWindow
         if (meta.model) model = meta.model
@@ -337,11 +339,12 @@ export function extractAllAntigravityUsageRecords(customHome?: string): Antigrav
       const columns = new Set(
         (db.prepare('PRAGMA table_info(steps)').all() as Array<{ name: string }>).map((col) => col.name),
       )
+      const orderCol = columns.has('idx') ? 'idx' : columns.has('step_index') ? 'step_index' : 'rowid'
       const metaBuffers: Uint8Array[] = []
       if (columns.has('metadata') && columns.has('step_type')) {
         const rows = db
-          .prepare('SELECT metadata, step_payload FROM steps WHERE step_type = ? ORDER BY step_index ASC')
-          .all(STEP_TYPE_PLANNER_RESPONSE) as Array<{ metadata: Buffer | null; step_payload: Buffer | null }>
+          .prepare(`SELECT metadata, step_payload FROM steps WHERE step_type != ? ORDER BY ${orderCol} ASC`)
+          .all(STEP_TYPE_USER_INPUT) as Array<{ metadata: Buffer | null; step_payload: Buffer | null }>
         for (const row of rows) {
           if (row.metadata) metaBuffers.push(row.metadata)
           else if (row.step_payload) {
@@ -350,7 +353,6 @@ export function extractAllAntigravityUsageRecords(customHome?: string): Antigrav
           }
         }
       } else if (columns.has('step_payload')) {
-        const orderCol = columns.has('idx') ? 'idx' : columns.has('step_index') ? 'step_index' : 'rowid'
         const rows = db
           .prepare(`SELECT step_payload FROM steps ORDER BY ${orderCol} ASC`)
           .all() as Array<{ step_payload: Buffer | null }>
@@ -360,20 +362,18 @@ export function extractAllAntigravityUsageRecords(customHome?: string): Antigrav
           if (env.plannerResponse && env.metadataBuf) metaBuffers.push(env.metadataBuf)
         }
       }
+      let lastModel = ''
       for (const metaBuf of metaBuffers) {
         const meta = parseAntigravityStepMetadata(metaBuf)
-        const out = meta.outputTokens + meta.thoughtsTokens
-        const uncachedIn =
-          meta.cacheReadTokens > 0 && meta.inputTokens >= meta.cacheReadTokens
-            ? meta.inputTokens - meta.cacheReadTokens
-            : meta.inputTokens
-        if (uncachedIn <= 0 && out <= 0 && meta.cacheReadTokens <= 0) continue
+        if (meta.model) lastModel = meta.model
+        const out = stepTotalOutputTokens(meta)
+        if (meta.inputTokens <= 0 && out <= 0 && meta.cacheReadTokens <= 0) continue
         if (meta.createdAtMs <= 0) continue
         records.push({
           providerSessionId,
           createdAt: meta.createdAtMs,
-          model: meta.model || 'antigravity',
-          inputTokens: uncachedIn,
+          model: meta.model || lastModel || 'antigravity',
+          inputTokens: meta.inputTokens,
           outputTokens: out,
           cacheReadTokens: meta.cacheReadTokens,
         })

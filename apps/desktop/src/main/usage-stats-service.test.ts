@@ -239,6 +239,18 @@ function fakeDb(): {
           iterate: () => [],
         }
       }
+      if (trimmed.startsWith('UPDATE chat_messages SET metadata_json')) {
+        return {
+          run: (metadataJson: string, id: string) => {
+            const m = state.messages.find((x) => x.id === id)
+            if (m) m.metadata_json = metadataJson
+            return { changes: m ? 1 : 0 }
+          },
+          all: () => [],
+          get: () => undefined,
+          iterate: () => [],
+        }
+      }
       return {
         run: () => ({ changes: 0 }),
         all: () => [],
@@ -670,6 +682,68 @@ describe('usage-stats-service: backfill', () => {
     backfillFromHistory()
     expect(state.sessions[0].usage_counted_at).not.toBeNull()
     expect(state.messages[0].usage_counted_at).not.toBeNull()
+  })
+
+  it('repairs legacy Antigravity messages that stored total prompt tokens in inputTokens', async () => {
+    state.meta.set('usage_backfill_done', 'v7')
+    const { getBackfillStatus, backfillFromHistory, queryUsage } = await import('./usage-stats-service')
+    expect(getBackfillStatus()).toBe('pending')
+
+    state.sessions.push({
+      id: 'agy1',
+      created_at: '2026-11-04T17:09:00.000Z',
+      provider: 'acp',
+      acp_agent_id: 'antigravity',
+      usage_counted_at: null,
+    })
+    state.messages.push(
+      {
+        id: 'agy1-a1',
+        session_id: 'agy1',
+        metadata_json: JSON.stringify({
+          model: 'gemini-4-argon-high',
+          usage: {
+            inputTokens: 17930752,
+            outputTokens: 57489,
+            cacheReadInputTokens: 16778070,
+          },
+        }),
+        created_at: '2026-11-04T17:09:33.808Z',
+        provider_id: 'acp',
+        role: 'assistant',
+        status: 'complete',
+        usage_counted_at: null,
+      },
+      {
+        id: 'agy1-a2',
+        session_id: 'agy1',
+        metadata_json: JSON.stringify({
+          model: 'gemini-4-argon-high',
+          usage: {
+            inputTokens: 1204647,
+            outputTokens: 98430,
+            cacheReadInputTokens: 18998154,
+          },
+        }),
+        created_at: '2026-11-05T08:21:15.125Z',
+        provider_id: 'acp',
+        role: 'assistant',
+        status: 'complete',
+        usage_counted_at: null,
+      },
+    )
+
+    backfillFromHistory()
+    expect(getBackfillStatus()).toBe('done')
+
+    const rows = queryUsage().rows.filter((r) => r.harness === 'antigravity')
+    const totalInput = rows.reduce((acc, r) => acc + r.input_tokens, 0)
+    const totalCacheRead = rows.reduce((acc, r) => acc + r.cache_read_tokens, 0)
+    expect(totalInput).toBe((17930752 - 16778070) + 1204647)
+    expect(totalCacheRead).toBe(16778070 + 18998154)
+
+    const repairedFirst = JSON.parse(state.messages[0].metadata_json!)
+    expect(repairedFirst.usage.inputTokens).toBe(17930752 - 16778070)
   })
 })
 

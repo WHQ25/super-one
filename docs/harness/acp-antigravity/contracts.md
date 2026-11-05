@@ -26,15 +26,15 @@ Non-obvious upstream behaviors that SuperOne depends on.
 - **SuperOne code**: `apps/desktop/src/main/acp/antigravity-protocol.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/session/backends/acp-backend.ts`, `apps/desktop/src/main/acp/acp-permission-map.ts`, `apps/desktop/src/main/acp/acp-permission-preapprove.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`, `apps/desktop/src/main/session/backends/acp-backend.test.ts`
 
-## 5. Per-turn real-time token usage and SQLite `steps` schema evolution (observed in 1.4.5)
+## 5. Per-turn real-time token usage and SQLite `steps` schema evolution (observed in 1.4.5 / 1.4.8)
 
 - **Behavior**:
-  1. In `1.4.5`, conversation `.db` files use `steps(idx INTEGER PRIMARY KEY, step_payload BLOB)` where `step_payload` is a serialized `trajectory_pb2.Step` (field 1 `metadata`, field 14 `user_input`, field 20 `planner_response`), whereas `1.3.0` used `steps(step_index, step_type, step_payload, metadata)`.
+  1. Conversation `.db` files use either `steps(idx INTEGER PRIMARY KEY, step_type, metadata, step_payload, ...)` (`1.4.8`), `steps(idx INTEGER PRIMARY KEY, step_payload BLOB)` (`1.4.5`), or `steps(step_index, step_type, step_payload, metadata)` (`1.3.0`).
   2. During a turn, `localharness_external` emits `StepUpdate` (WebSocket frame 1) followed by `UsageUpdate` (WebSocket frame 2). Unpatched `AgyAdapter._maybe_send_usage_update` only yields `asyncio.sleep(0)` and `_send_usage_update` sends only `used`/`size` (and drops the update when `model_selection.get_context_window_size` returns `None`). At turn end, `AgyAdapter.prompt` returns `PromptResponse(stop_reason, usage=turn_usage)`.
-  3. Upstream `PromptUsage.input_tokens` and `Step.metadata.inputTokens` reflect total prompt tokens (inclusive of cached tokens). SuperOne turn footer tokens (`streamingTokens.input`) track incremental upload tokens that actually grow the context (`max(0, input_tokens - cached_read_tokens)`), while `contextTokens` reflects total context window occupancy.
+  3. On the ACP wire, `PromptUsage.input_tokens` reflects total prompt tokens (inclusive of `cached_read_tokens`), so `_patched_send_usage_update` and `extractAntigravityPromptResponseUsage` subtract `cached_read_tokens` (`max(0, input_tokens - cached_read_tokens)`). By contrast, in SQLite `StepMetadata.ModelUsageStats` (protobuf field 9), field 2 (`input_tokens`) is already the uncached incremental input, field 5 (`cache_read_tokens`) is the cached read count, and field 3 (`output_tokens`) in `1.4.8+` already includes `thoughts_tokens` (field 9) + `candidates_tokens` (field 10).
   4. Thinking steps are opened lazily upon receipt of actual non-empty `agent_thought_chunk` updates (never eagerly on prompt dispatch or tool-advance), and empty thinking frames are retracted so the UI never displays phantom "reasoning..." states.
-- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-db-usage.ts`, `apps/desktop/src/main/acp/antigravity-db-proto.ts`, `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`
-- **Guard**: `apps/desktop/src/main/acp/antigravity-slash-and-usage.test.ts`
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-db-usage.ts`, `apps/desktop/src/main/acp/antigravity-db-proto.ts`, `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/usage-stats-backfill.ts`
+- **Guard**: `apps/desktop/src/main/acp/antigravity-slash-and-usage.test.ts`, `apps/desktop/src/main/usage-stats-service.test.ts`
 
 ## 6. Slash command advertisement timing, skills discovery, and `/workflows` exclusion (observed in 1.4.5)
 

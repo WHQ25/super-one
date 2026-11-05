@@ -108,14 +108,19 @@ function parseModelUsageStats(buf: Uint8Array): {
       pos = len.nextOffset + len.value
     } else if (
       wireType === 0 &&
-      (fieldNumber === 2 || fieldNumber === 3 || fieldNumber === 8 || fieldNumber === 9 || fieldNumber === 10)
+      (fieldNumber === 2 ||
+        fieldNumber === 3 ||
+        fieldNumber === 5 ||
+        fieldNumber === 8 ||
+        fieldNumber === 9 ||
+        fieldNumber === 10)
     ) {
       const val = readVarint(buf, pos)
       if (!val) break
       pos = val.nextOffset
       if (fieldNumber === 2) inputTokens = val.value
       else if (fieldNumber === 3) outputTokens = val.value
-      else if (fieldNumber === 8) cacheReadTokens = val.value
+      else if (fieldNumber === 5 || (fieldNumber === 8 && cacheReadTokens === 0)) cacheReadTokens = val.value
       else if (fieldNumber === 9) thoughtsTokens = val.value
       else if (fieldNumber === 10) candidatesTokens = val.value
     } else {

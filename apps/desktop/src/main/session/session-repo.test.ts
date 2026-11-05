@@ -24,6 +24,7 @@ import {
   loadSessionStateBySid,
   forkSessionRecord,
   resolveProviderSessionIdForResume,
+  deriveAcpAgentId,
   rowToChatMessage,
 } from './session-repo'
 
@@ -1103,3 +1104,16 @@ describe('rowToChatMessage: healing a transcript on load', () => {
     expect(rowToChatMessage(row({ status: 'streaming' })).status).toBe('interrupted')
   })
 })
+
+describe('deriveAcpAgentId', () => {
+  it('prefers an explicit acp_agent_id column value when present', () => {
+    expect(deriveAcpAgentId({ acp_agent_id: 'custom-agent', provider_id: 'acp-grok' })).toBe('custom-agent')
+  })
+
+  it('infers grok-build and antigravity from built-in ACP provider_id rows when acp_agent_id is null', () => {
+    expect(deriveAcpAgentId({ acp_agent_id: null, provider_id: 'acp-grok' })).toBe('grok-build')
+    expect(deriveAcpAgentId({ acp_agent_id: null, provider_id: 'acp-antigravity' })).toBe('antigravity')
+    expect(deriveAcpAgentId({ acp_agent_id: null, provider_id: 'claude-base' })).toBeNull()
+  })
+})
+

@@ -43,7 +43,7 @@ export const acpStrategy: HarnessStrategy = {
   missingDefaults: () => ({}),
   restore: (session, { state }) => {
     const catalog = session.acpAgentId ? getCachedAcpCatalog(state.harnessResources.acp, session.acpAgentId) : null
-    return catalog ? sessionPatchFromAcpCatalog(catalog) : {}
+    return catalog ? sessionPatchFromAcpCatalog(catalog, { preferSelected: session.selectedModel || null }) : {}
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined, acpAgentId: session.acpAgentId ?? undefined }),
   draftSettings: (session) => ({

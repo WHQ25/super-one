@@ -27,7 +27,7 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
   setHarness(harness: HarnessId): void
   applyText(text: string): void
   openProject(project: Project): Promise<void>
-  loadSettings(provider: HarnessId, project: Project): Promise<void>
+  loadSettings(provider: HarnessId, project: Project, acpAgentId?: string | null): Promise<void>
   leaveSession(): void
   showDraft(title: string): void
   showWorkspace(): void
@@ -57,7 +57,7 @@ export function useMobileDraftSession(opts: Omit<Parameters<typeof useRemoteDraf
       await opts.openProject(target)
       const provider = row.settings.harness ?? row.harness ?? 'claude'
       s.resetForProvider(provider, row.settings.acpAgentId)
-      await opts.loadSettings(provider, target)
+      await opts.loadSettings(provider, target, row.settings.acpAgentId)
       s.restoreDraft({ harness: row.harness, model: row.model, permissionMode: row.permissionMode, ...row.settings })
       opts.setHarness(provider)
       opts.setWorktree(worktreeFromDraft(row.settings))

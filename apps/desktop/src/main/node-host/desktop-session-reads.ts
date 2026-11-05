@@ -364,8 +364,11 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     if (!includeState) return { live, state: {} as Record<string, unknown>, restore: undefined as SessionRestoreFacts | undefined, cursor }
     state = withTranscriptTodos(state, sources.todos, replay.some((event) => event.type === 'todos_updated'))
     state.pendingAsyncQuestions = pendingCodexAsyncQuestions(sources.questions)
+    const acpAgentId = row.harnessId === 'acp'
+      ? (live?.snapshot?.acpAgentId ?? row.acpAgentId ?? null)
+      : null
     if (row.harnessId === 'acp') {
-      state = attachAcpModelCatalog(state, live?.snapshot?.acpAgentId ?? row.acpAgentId, this.reads.acpModelCatalog)
+      state = attachAcpModelCatalog(state, acpAgentId, this.reads.acpModelCatalog)
     }
     const facts = sessionRestoreFacts({ session: live, row, history: sources.history, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
     const { restore, ...current } = facts
@@ -373,6 +376,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     const { messages: _messages, ...rest } = {
       ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath,
       _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId,
+      ...(acpAgentId ? { acpAgentId } : {}),
       _worktreeRemoved: restore.worktreeMissing, ...(stored ? { stored } : {}),
     }
     return { live, state: rest as unknown as Record<string, unknown>, restore, cursor }

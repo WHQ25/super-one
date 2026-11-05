@@ -8,6 +8,7 @@ import { ClaudeSessionIcon, type SessionIconProps } from '../../../packages/ui/s
 import { CodexSessionIcon } from '../../../packages/ui/src/components/harness/CodexSessionIcon'
 import { AcpSessionIcon } from '../../../packages/ui/src/components/harness/AcpSessionIcon'
 import { GrokSessionIcon } from '../../../packages/ui/src/components/harness/GrokSessionIcon'
+import { AntigravitySessionIcon } from '../../../packages/ui/src/components/harness/AntigravitySessionIcon'
 import { CursorSessionIcon } from '../../../packages/ui/src/components/harness/CursorSessionIcon'
 import { OpenCodeSessionIcon } from '../../../packages/ui/src/components/harness/OpenCodeSessionIcon'
 import { DeepseekSessionIcon } from '../../../packages/ui/src/components/harness/DeepseekSessionIcon'
@@ -80,8 +81,9 @@ function scene(node: Element, corner = false): IconScene {
   const result: IconScene = { style: nativeStyle(node), animations: animations(node) }
   if (node.tagName === 'svg') {
     if (corner) Object.assign(result.style, { width: 9, height: 9 })
-    const defs = elements(node).filter((child) => child.tagName === 'defs')
-    const parts = elements(node).filter((child) => child.tagName !== 'defs' && child.tagName !== 'title')
+    const isDef = (child: Element) => child.tagName === 'defs' || child.tagName === 'mask' || child.tagName === 'clipPath'
+    const defs = elements(node).filter(isDef)
+    const parts = elements(node).filter((child) => !isDef(child) && child.tagName !== 'title')
     result.children = parts.map((part) => {
       const shell = node.cloneNode(false) as Element
       for (const attr of ['class', 'style', 'width', 'height', 'aria-hidden']) shell.removeAttribute(attr)
@@ -114,7 +116,7 @@ function scaleLayout(a: IconScene, b: IconScene) {
 }
 const components: Record<IconBrand, ComponentType<SessionIconProps>> = {
   claude: ClaudeSessionIcon, codex: CodexSessionIcon, acp: AcpSessionIcon,
-  grok: GrokSessionIcon, cursor: CursorSessionIcon, opencode: OpenCodeSessionIcon, dsh: DeepseekSessionIcon,
+  grok: GrokSessionIcon, antigravity: AntigravitySessionIcon, cursor: CursorSessionIcon, opencode: OpenCodeSessionIcon, dsh: DeepseekSessionIcon,
 }
 const scenes = {} as HarnessSceneData['scenes']
 for (const [brand, Component] of Object.entries(components)) {

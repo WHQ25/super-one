@@ -192,7 +192,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     createdAt: row.created_at,
     lastUserMessageAt: row.last_user_message_at,
     apiProviderId: row.api_provider_id ?? null,
-    acpAgentId: row.acp_agent_id ?? null,
+    acpAgentId: deriveAcpAgentId(row),
     selectedModel: storedSelectedModel(harnessId, row.selected_model),
     selectedEffort: (row.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: row.codex_service_tier ?? null,
@@ -221,6 +221,20 @@ export function harnessIdFromProviderId(providerId: string): HarnessId {
 export function deriveHarnessId(row: { provider_id?: string | null; provider?: string | null }): HarnessId {
   const providerId = row.provider_id ?? inferLegacyProviderId(row)
   return harnessIdFromProviderId(providerId)
+}
+
+/**
+ * Derive the ACP agent id for a persisted row. Explicit `acp_agent_id` wins;
+ * legacy or provider-migrated rows (`acp-grok` / `acp-antigravity`) fall back
+ * to their built-in agent id so switching sessions never falls back to the
+ * previously active ACP agent.
+ */
+export function deriveAcpAgentId(row: { acp_agent_id?: string | null; provider_id?: string | null; provider?: string | null }): string | null {
+  if (typeof row.acp_agent_id === 'string' && row.acp_agent_id.trim()) return row.acp_agent_id.trim()
+  const providerId = row.provider_id ?? inferLegacyProviderId(row)
+  if (providerId === 'acp-grok') return 'grok-build'
+  if (providerId === 'acp-antigravity') return 'antigravity'
+  return null
 }
 
 /** A Claude row that stored the CLI-settings `default` model reads as unselected. */

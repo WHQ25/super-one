@@ -70,12 +70,14 @@ function foldContentDelta(prev: ContentDeltaEvent, next: ContentDeltaEvent): Con
     return { ...next, ...replace, delta: merged }
   }
   if (a.type === 'thinking' && b.type === 'thinking') {
+    const remoteDetail = b.remoteDetail ?? a.remoteDetail
     const merged: ContentBlock = {
       ...b,
       type: 'thinking',
       thinking: (a.thinking ?? '') + (b.thinking ?? ''),
       startedAt: a.startedAt ?? b.startedAt,
       endedAt: b.endedAt ?? a.endedAt,
+      ...(remoteDetail !== undefined ? { remoteDetail } : {}),
     }
     return { ...next, ...replace, delta: merged }
   }

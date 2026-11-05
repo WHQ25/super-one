@@ -1,5 +1,5 @@
 export type IconState = 'default' | 'running' | 'background' | 'unseen' | 'automation'
-export type IconBrand = 'claude' | 'codex' | 'acp' | 'grok' | 'cursor' | 'opencode' | 'dsh'
+export type IconBrand = 'claude' | 'codex' | 'acp' | 'grok' | 'antigravity' | 'cursor' | 'opencode' | 'dsh'
 export type ScaledLength = { multiplier: number; offset: number }
 export type SceneStyle = Record<string, number | string | ScaledLength>
 export type IconScene = { style: SceneStyle; animations: string[]; xml?: string; children?: IconScene[] }

@@ -15,6 +15,7 @@ const css = [...document.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map((ma
 if (!css.includes('mention-chip__icon')) throw new Error('Build chat-view before generating brand artwork')
 const refs = {
   claude: 'claude-base', codex: 'codex-base', 'acp-grok': 'acp-base:grok-build',
+  'acp-antigravity': 'acp-base:antigravity',
   'acp-opencode': 'acp-base:opencode', opencode: 'opencode-base', cursor: 'cursor-base',
   dsh: 'dsh-base', acp: 'acp-base:custom', '$unknown': 'unknown-base',
 }

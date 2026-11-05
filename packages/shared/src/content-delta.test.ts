@@ -488,4 +488,30 @@ describe('applyContentDelta: streamed tool output', () => {
       CodeContent: '#!/usr/bin/env bash\necho ok\n',
     })
   })
+
+  it('preserves remoteDetail when merging consecutive thinking deltas', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, {
+      type: 'thinking',
+      thinking: '',
+      startedAt: 1000,
+    })
+    content = applyContentDelta(content, {
+      type: 'thinking',
+      thinking: '',
+      startedAt: 1000,
+      endedAt: 2000,
+      remoteDetail: '["msg_1","thinking",0]',
+    })
+    expect(content).toEqual([
+      {
+        type: 'thinking',
+        thinking: '',
+        startedAt: 1000,
+        endedAt: 2000,
+        remoteDetail: '["msg_1","thinking",0]',
+      },
+    ])
+  })
 })
+

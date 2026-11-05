@@ -11,6 +11,7 @@ export function mentionBrandArtwork(ref: string, scheme: MobileColorScheme, fore
   const brand = brandKeyForAgentRef(ref)
   // Match the shared desktop resolver's custom ACP and display aliases.
   const key = Object.hasOwn(artwork, brand) ? brand : brand.includes('grok') ? 'acp-grok'
+    : brand.includes('antigravity') ? 'acp-antigravity'
     : brand.startsWith('acp') ? 'acp' : brand === 'deepseek' ? 'dsh' : '$unknown'
   const id = artwork[key]
   return id ? images[id] : undefined

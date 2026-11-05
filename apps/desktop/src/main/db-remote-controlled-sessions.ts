@@ -1,5 +1,5 @@
 import { getDb } from './database'
-import { deriveHarnessId } from './session/session-repo'
+import { deriveHarnessId, deriveAcpAgentId } from './session/session-repo'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import type { HarnessId, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 
@@ -121,7 +121,7 @@ interface Row {
   provider_session_id: string | null
   worktree_path: string | null
   is_worktree: number | null
-  git_branch: string | null
+  git_branch: number | string | null
   context_tokens: number | null
   total_cost_usd: number | null
   is_pinned: number | null
@@ -138,6 +138,7 @@ interface Row {
 }
 
 function toRow(r: Row): DesktopSessionRow {
+  const acpAgentId = deriveAcpAgentId(r)
   return {
     sessionId: r.id,
     projectId: r.project_id,
@@ -149,7 +150,7 @@ function toRow(r: Row): DesktopSessionRow {
     providerSessionId: r.provider_session_id,
     worktreePath: r.worktree_path,
     isWorktree: !!r.is_worktree,
-    gitBranch: r.git_branch,
+    gitBranch: typeof r.git_branch === 'string' ? r.git_branch : null,
     contextTokens: r.context_tokens ?? 0,
     totalCostUsd: r.total_cost_usd ?? 0,
     isPinned: !!r.is_pinned,
@@ -162,7 +163,7 @@ function toRow(r: Row): DesktopSessionRow {
     updatedAt: Date.parse(r.updated_at) || 0,
     controller: parseRemoteController(r.remote_controller_json),
     ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
-    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+    ...(acpAgentId ? { acpAgentId } : {}),
   }
 }
 

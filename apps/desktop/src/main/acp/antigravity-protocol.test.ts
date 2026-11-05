@@ -594,4 +594,51 @@ describe('antigravity-protocol', () => {
     finalizeAntigravityTurnThinking('nonexistent-session', 'm1', scope, createXaiCorrelationState(), apply)
     expect(content).toHaveLength(1)
   })
+
+  it('normalizes sparse tool_call_update for an open MCP tool without dropping rawOutput', () => {
+    const startUpdate = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'mcp_call_read_1',
+      title: 'Running superone_session_read',
+      kind: 'other',
+      status: 'pending',
+      rawInput: {
+        ServerName: 'superone',
+        ToolName: 'session_read',
+        Arguments: { sessionId: 'session-xyz-123' },
+      },
+    } as unknown as SessionUpdate)
+
+    const mappedStart = mapSessionUpdate(startUpdate, { messageId: 'msg_1' })
+    const toolUse = mappedStart.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_use')
+    expect(toolUse).toBeDefined()
+    if (toolUse?.type === 'content_delta' && toolUse.delta.type === 'tool_use') {
+      expect(toolUse.delta.toolName).toBe('mcp__superone__session_read')
+    }
+
+    const realMarkdownSession = [
+      'environmentId: localhost',
+      '# Session session-xyz-123 — text',
+      'title: My Test Session · harness: acp · messages: 10',
+      'A'.repeat(5000),
+    ].join('\n')
+
+    const completedUpdate = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'mcp_call_read_1',
+      status: 'completed',
+      rawOutput: realMarkdownSession,
+      content: [{ type: 'content', content: { type: 'text', text: 'Read session session-xyz-123' } }],
+    } as unknown as SessionUpdate)
+
+    const mappedDone = mapSessionUpdate(completedUpdate, { messageId: 'msg_1' })
+    const toolResult = mappedDone.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(toolResult).toBeDefined()
+    if (toolResult?.type === 'content_delta' && toolResult.delta.type === 'tool_result') {
+      expect(toolResult.delta.summary).not.toBe('Read session session-xyz-123')
+      expect(toolResult.delta.summary).toBe(realMarkdownSession)
+      expect(toolResult.delta.summary.length).toBeGreaterThan(4500)
+    }
+  })
 })
+

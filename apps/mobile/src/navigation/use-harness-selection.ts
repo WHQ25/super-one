@@ -51,10 +51,16 @@ function resolveClaimedServiceTier(
 
 export function useHarnessSelection() {
   const { setBrandHue } = useMobileTheme()
-  const [selectedProvider, setSelectedProvider] = useState<HarnessId>('claude')
+  const [selectedProvider, setSelectedProviderState] = useState<HarnessId>('claude')
+  const selectedProviderRef = useRef<HarnessId>('claude')
+  const setSelectedProvider = (provider: HarnessId) => {
+    selectedProviderRef.current = provider
+    setSelectedProviderState(provider)
+  }
   const [selectedModel, setSelectedModel] = useState('')
   const [selectedEffort, setSelectedEffortState] = useState('')
   const [selectedAcpAgentId, setSelectedAcpAgentId] = useState<string | null>(null)
+  const selectedAcpAgentIdRef = useRef<string | null>(null)
   const [models, setModels] = useState<NonNullable<RemoteSystemInfo['models']>>([])
   const [efforts, setEfforts] = useState<RemoteEffortOption[]>([])
   const [systemInfo, setSystemInfo] = useState<RemoteSystemInfo>({})
@@ -184,7 +190,9 @@ export function useHarnessSelection() {
     setSandboxSupport(info.sandboxSupport ?? 'always')
     // A user-picked ACP agent outranks whatever the host happens to report:
     // the switcher chose `Grok Build`, not "whichever agent is loaded".
-    setSelectedAcpAgentId((current) => provider === 'acp' ? current ?? info.acpAgentId ?? null : null)
+    const nextAcpAgentId = provider === 'acp' ? selectedAcpAgentIdRef.current ?? info.acpAgentId ?? null : null
+    selectedAcpAgentIdRef.current = nextAcpAgentId
+    setSelectedAcpAgentId(nextAcpAgentId)
     setPermissionModes(modes)
     setPermissionModeState(nextPermissionMode)
   }
@@ -214,7 +222,9 @@ export function useHarnessSelection() {
     setClaudeFastModePick(null)
     setHostUltracode(false)
     setUltracodePick(null)
-    setSelectedAcpAgentId(provider === 'acp' ? acpAgentId : null)
+    const nextAcpAgentId = provider === 'acp' ? acpAgentId : null
+    selectedAcpAgentIdRef.current = nextAcpAgentId
+    setSelectedAcpAgentId(nextAcpAgentId)
   }
 
   /** A saved draft is authoritative even when model discovery has changed. */
@@ -237,7 +247,9 @@ export function useHarnessSelection() {
     setSelectedModel(model)
     setSelectedEffortState(effort)
     setPermissionModeState(permission)
-    setSelectedAcpAgentId(settings.acpAgentId ?? null)
+    const nextAcpAgentId = settings.acpAgentId ?? null
+    selectedAcpAgentIdRef.current = nextAcpAgentId
+    setSelectedAcpAgentId(nextAcpAgentId)
     setSelectedAgentId(settings.openCodeAgentId ?? null)
     setSelectedModeId(settings.selectedAcpModeId ?? null)
     setSelectedProviderId(settings.apiProviderId ?? null)
@@ -334,11 +346,13 @@ export function useHarnessSelection() {
 
   return {
     selectedProvider,
+    selectedProviderRef,
     setSelectedProvider,
     selectedModel,
     selectedEffort,
     setSelectedEffort,
     selectedAcpAgentId,
+    selectedAcpAgentIdRef,
     activeProvider: systemInfo.activeProvider ?? null,
     activeProviderName: systemInfo.activeProvider?.name,
     models,

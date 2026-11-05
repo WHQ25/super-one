@@ -1586,5 +1586,34 @@ describe('Grok Grep / WebSearch summary wiring', () => {
     expect(JSON.parse(delta.input as string)).toMatchObject({ pattern: 'from-meta', path: '/proj' })
     expect(delta.toolSummary).toMatch(/from-meta/)
   })
+
+  it('replaces preview summary in sparse tool_call_update with rawOutput when tool was previously opened', () => {
+    const ctx = { messageId: 'm1' }
+    mapSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call_sparse_1',
+      title: 'mcp__superone__session_list',
+      status: 'in_progress',
+      rawInput: { limit: 10 },
+      _meta: { prompt: 'List recent sessions' },
+    } as never, ctx)
+
+    const realToon = 'sessions[1]:\n  - id: s1\n    title: Test\n'
+    const doneEvents = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_sparse_1',
+      status: 'completed',
+      rawOutput: realToon,
+      content: [{ type: 'content', content: { type: 'text', text: 'List recent sessions' } }],
+    } as never, ctx)
+
+    const res = doneEvents.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect(res).toBeDefined()
+    if (res?.type === 'content_delta' && res.delta.type === 'tool_result') {
+      expect(res.delta.summary).toBe(realToon)
+      expect(res.delta.summary).not.toContain('List recent sessions')
+    }
+  })
 })
+
 

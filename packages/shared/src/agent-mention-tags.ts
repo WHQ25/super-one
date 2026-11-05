@@ -57,7 +57,9 @@ export function brandKeyForAgentRef(ref: string): string {
   const decoded = decodeAgentRef(ref)
   if (!decoded) return 'claude'
   const harnessId = decoded.providerId.split('-')[0] ?? ''
-  return resolveHarnessBrandKey(harnessId, decoded.acpAgentId)
+  const acpAgentId = decoded.acpAgentId
+    ?? (decoded.providerId === 'acp-grok' ? 'grok-build' : decoded.providerId === 'acp-antigravity' ? 'antigravity' : undefined)
+  return resolveHarnessBrandKey(harnessId, acpAgentId)
 }
 
 // --- Slugs: what the user actually types after `@` ---------------------------

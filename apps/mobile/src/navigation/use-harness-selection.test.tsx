@@ -491,3 +491,31 @@ test('catalogReady is false from a harness reset until its catalog lands', async
   await act(async () => { result.current.applySystemInfo('claude', claudeInfo) })
   expect(result.current.catalogReady).toBe(true)
 })
+
+test('switching between ACP agents updates selectedAcpAgentIdRef synchronously and replaces the model catalog', async () => {
+  const { result } = await mount()
+  await act(async () => {
+    result.current.resetForProvider('acp', 'antigravity')
+    expect(result.current.selectedAcpAgentIdRef.current).toBe('antigravity')
+    result.current.applySystemInfo('acp', {
+      models: [{ id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: '' }],
+      defaults: { model: 'gemini-3-pro' },
+    })
+  })
+  expect(result.current.selectedAcpAgentId).toBe('antigravity')
+  expect(result.current.models.map((m) => m.id)).toEqual(['gemini-3-pro'])
+
+  await act(async () => {
+    result.current.resetForProvider('acp', 'grok-build')
+    // Must be updated synchronously before React commits so async openSession callers read the new ACP agent ID.
+    expect(result.current.selectedAcpAgentIdRef.current).toBe('grok-build')
+    result.current.applySystemInfo('acp', {
+      models: [{ id: 'grok-4.20', name: 'Grok 4.20', description: '' }],
+      defaults: { model: 'grok-4.20' },
+    })
+  })
+  expect(result.current.selectedAcpAgentId).toBe('grok-build')
+  expect(result.current.models.map((m) => m.id)).toEqual(['grok-4.20'])
+  expect(result.current.selectedModel).toBe('grok-4.20')
+})
+

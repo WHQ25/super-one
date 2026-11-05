@@ -38,12 +38,32 @@ const RESET_OUTCOME_COPY: Record<CodexRateLimitResetOutcome, string> = {
 export function usageBrandKey(usage: RemoteUsage): string | null {
   if (usage.kind === 'claude') return 'claude'
   if (usage.kind === 'codex') return 'openai'
-  // The host only shapes an ACP meter for Grok (the one ACP agent with billing).
-  if (usage.kind === 'acp') return 'grok'
   const title = usage.title.toLowerCase()
+  if (usage.kind === 'acp') {
+    if (title.includes('antigravity')) return 'antigravity'
+    return 'grok'
+  }
   if (title.includes('glm') || title.includes('zhipu')) return 'zhipu'
   if (title.includes('minimax')) return 'minimax'
   return null
+}
+
+/** Group windows that carry a `' · '` prefix (e.g. `Gemini · 5 Hours`) so row labels stay compact. */
+export function groupUsageWindows(windows: UsageWindow[]): Array<{ title: string; items: UsageWindow[] }> | null {
+  if (!windows.some((w) => w.label.includes(' · '))) return null
+  const groups: Array<{ title: string; items: UsageWindow[] }> = []
+  for (const w of windows) {
+    const sep = w.label.indexOf(' · ')
+    const title = sep >= 0 ? w.label.slice(0, sep).trim() : ''
+    const shortLabel = sep >= 0 ? w.label.slice(sep + 3).trim() : w.label
+    let group = groups.find((g) => g.title === title)
+    if (!group) {
+      group = { title, items: [] }
+      groups.push(group)
+    }
+    group.items.push({ ...w, label: shortLabel })
+  }
+  return groups
 }
 
 export function useToneColor() {
@@ -233,6 +253,7 @@ export function UsagePanel({ usage, rateLimit, onConsumeResetCredit }: Pick<Usag
   </Text> : null
   if (!usage) return liveNote
   const agoMinutes = updatedAgoMinutes(usage.fetchedAt)
+  const windowGroups = groupUsageWindows(usage.windows)
 
   return <View style={{ gap: 8 }}>
     <View style={{ gap: 2 }}>
@@ -243,7 +264,22 @@ export function UsagePanel({ usage, rateLimit, onConsumeResetCredit }: Pick<Usag
       {usage.account ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 11 }}>{usage.account}</Text> : null}
     </View>
     {liveNote}
-    {usage.windows.map((window) => <WindowRow key={window.id ?? window.label} window={window} now={now} />)}
+    {windowGroups
+      ? <View style={{ gap: 10 }}>
+        {windowGroups.map((group, idx) => (
+          <View
+            key={group.title || idx}
+            style={{
+              gap: 6,
+              ...(idx > 0 ? { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 } : {}),
+            }}
+          >
+            {group.title ? <Text style={{ color: colors.mutedForeground, fontSize: 11, fontWeight: '500' }}>{t(group.title)}</Text> : null}
+            {group.items.map((window) => <WindowRow key={window.id ?? `${group.title}:${window.label}`} window={window} now={now} />)}
+          </View>
+        ))}
+      </View>
+      : usage.windows.map((window) => <WindowRow key={window.id ?? window.label} window={window} now={now} />)}
     {usage.extraUsage ? <ExtraUsage extra={usage.extraUsage} /> : null}
     {usage.creditBalanceDollars != null ? <Row label={t('Credit balance')} value={`$${usage.creditBalanceDollars.toFixed(2)}`} /> : null}
     <ResetCredits usage={usage} onConsume={onConsumeResetCredit} />

@@ -662,6 +662,27 @@ function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): Nor
   }
 }
 
+interface KnownToolCall {
+  toolName: string
+  input: Record<string, unknown>
+  toolFilePath?: string
+  toolSummary?: string
+  rawTitle?: string
+  inputSummary?: string
+  isMcp: boolean
+}
+
+const knownToolCallsById = new Map<string, KnownToolCall>()
+const MAX_KNOWN_TOOL_CALLS = 2000
+
+function recordKnownToolCall(toolCallId: string, info: KnownToolCall): void {
+  if (knownToolCallsById.size >= MAX_KNOWN_TOOL_CALLS) {
+    const oldest = knownToolCallsById.keys().next().value
+    if (oldest) knownToolCallsById.delete(oldest)
+  }
+  knownToolCallsById.set(toolCallId, info)
+}
+
 export function normalizeAcpTool(
   tool: AcpToolLike,
   opts?: { terminalCommand?: string },
@@ -670,14 +691,39 @@ export function normalizeAcpTool(
   const raw = { ...grokMetaInput(tool), ...asRecord(tool.rawInput) }
   const rawInput = asRecord(tool.rawInput)
   const mcp = unwrapMcpEnvelope(tool, rawInput)
-  if (mcp) return mcp
+  if (mcp) {
+    if (tool.toolCallId) {
+      recordKnownToolCall(tool.toolCallId, {
+        toolName: mcp.toolName,
+        input: mcp.input,
+        toolSummary: mcp.toolSummary,
+        rawTitle: typeof tool.title === 'string' && tool.title.trim() ? tool.title.trim() : undefined,
+        inputSummary: pickString(rawInput, ['toolSummary', 'toolAction', 'description'])?.trim(),
+        isMcp: true,
+      })
+    }
+    return mcp
+  }
   // Sparse use_tool (no tool_name yet) must not paint a fallback chip or
   // overwrite a delta-chunk that already unwrapped the inner MCP name.
   if (isUseToolEnvelope(tool, rawInput) && typeof rawInput.tool_name !== 'string') return null
   const diffs = extractDiffs(tool.content)
   const terminalId = extractEmbeddedTerminalId(tool.content)
   const toolName = resolveToolName(tool, raw, diffs, !!terminalId)
-  if (!toolName) return null
+  if (!toolName) {
+    if (tool.toolCallId) {
+      const known = knownToolCallsById.get(tool.toolCallId)
+      if (known) {
+        return {
+          toolName: known.toolName,
+          input: known.input,
+          toolFilePath: known.toolFilePath,
+          toolSummary: known.toolSummary,
+        }
+      }
+    }
+    return null
+  }
   const filePath = extractFilePath(tool, raw, diffs)
   const title = typeof tool.title === 'string' && tool.title.trim() ? tool.title.trim() : undefined
   const input = enrichSearchInput(
@@ -685,13 +731,25 @@ export function normalizeAcpTool(
     normalizeInput(toolName, tool.kind, raw, filePath, diffs, opts?.terminalCommand),
     title,
   )
-  return {
+  const normalized: NormalizedAcpTool = {
     toolName,
     input,
     toolFilePath: filePath,
     toolSummary: displayToolSummary(toolName, input, title),
     terminalId,
   }
+  if (tool.toolCallId) {
+    recordKnownToolCall(tool.toolCallId, {
+      toolName,
+      input,
+      toolFilePath: filePath,
+      toolSummary: normalized.toolSummary,
+      rawTitle: title,
+      inputSummary: pickString(rawInput, ['toolSummary', 'toolAction', 'description'])?.trim(),
+      isMcp: Boolean(parseMcpToolName(toolName)),
+    })
+  }
+  return normalized
 }
 
 function toolUseBlock(tool: AcpToolLike, opts?: { terminalCommand?: string }): ContentBlock | null {
@@ -711,6 +769,7 @@ function toolUseBlock(tool: AcpToolLike, opts?: { terminalCommand?: string }): C
     toolFilePath: normalized.toolFilePath,
   }
 }
+
 
 
 /**

@@ -476,7 +476,7 @@ export function MobileApp() {
     setWorktree: setWorktreeSelection, setSandbox: setPendingSandboxMode, setAttachments, setHarness,
     applyText: suggestions.applyProgrammatic,
     openProject: (target) => openProject(target, true, true),
-    loadSettings: (provider, target) => loadShellDetails(provider, target),
+    loadSettings: (provider, target, acpAgentId) => loadShellDetails(provider, target, false, false, acpAgentId),
     leaveSession: () => leaveActiveSession(),
     showDraft: (title) => { setActiveSessionTitle(title); setScreen('chat') },
     showWorkspace: returnToWorkspace, onError: setStatus,
@@ -1408,12 +1408,18 @@ export function MobileApp() {
     cache.store(p.path, { rows: page.sessions, total: page.totalCount, revision: listRevision })
   }
 
-  const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false, includeWorktreeDirty = false) => {
+  const loadShellDetails = async (
+    provider: HarnessId = harnessSelection.selectedProviderRef.current,
+    p = project,
+    refreshCatalog = false,
+    includeWorktreeDirty = false,
+    acpAgentId: string | null | undefined = harnessSelection.selectedAcpAgentIdRef.current,
+  ) => {
     const client = clientRef.current
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
     const shellRequest = ++shellDetailsRequestRef.current
-    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty, provider === 'acp' ? selectedAcpAgentId : null)
+    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty, provider === 'acp' ? (acpAgentId ?? null) : null)
     if (shellRequest !== shellDetailsRequestRef.current || clientRef.current !== client) return
     replaceGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
@@ -1467,9 +1473,11 @@ export function MobileApp() {
     const client = clientRef.current
     if (!client || !project) return
     return subscribeHarnessResources(client, (type, path, provider, value, acpAgentId) => {
-      if (clientRef.current !== client || path !== project.path || provider !== selectedProvider) return
-      if (provider === 'acp' && acpAgentId && selectedAcpAgentId && acpAgentId !== selectedAcpAgentId) return
-      if (type === 'get_system_info') applySystemInfo(selectedProvider, value as RemoteSystemInfo)
+      const activeProvider = harnessSelection.selectedProviderRef.current
+      const activeAcpAgentId = harnessSelection.selectedAcpAgentIdRef.current
+      if (clientRef.current !== client || path !== project.path || provider !== activeProvider) return
+      if (provider === 'acp' && activeAcpAgentId && acpAgentId !== activeAcpAgentId) return
+      if (type === 'get_system_info') applySystemInfo(activeProvider, value as RemoteSystemInfo)
       else setWorkspaceDirs((value as { workspaceDirs?: string[] }).workspaceDirs ?? [])
     })
   }, [connectionState, project?.path, selectedProvider, selectedAcpAgentId, applySystemInfo])
@@ -1562,9 +1570,15 @@ export function MobileApp() {
     return runtime
   }
 
-  const refreshRuntimeCatalog = (runtime: ChatRuntime, provider: HarnessId, restoreSelection = false) => {
+  const refreshRuntimeCatalog = (
+    runtime: ChatRuntime,
+    provider: HarnessId,
+    restoreSelection = false,
+    acpAgentId: string | null | undefined = harnessSelection.selectedAcpAgentIdRef.current,
+  ) => {
+    const targetAcpAgentId = provider === 'acp' ? (runtime.session.acpAgentId ?? acpAgentId ?? null) : null
     const request = ++systemInfoRequestRef.current
-    refreshSessionCatalog(() => runtime.loadSystemInfo(provider, runtime.session.acpAgentId ?? selectedAcpAgentId),
+    refreshSessionCatalog(() => runtime.loadSystemInfo(provider, targetAcpAgentId),
       () => request === systemInfoRequestRef.current && runtimeRef.current === runtime,
       (info) => applySystemInfo(
         provider,
@@ -1632,7 +1646,7 @@ export function MobileApp() {
     setRoutedEnvironmentId(null)
     // Session settings and credential ids belong to their execution host. They
     // must not override the paired desktop's defaults on its new-session page.
-    harnessSelection.resetForProvider(selectedProvider, selectedAcpAgentId)
+    harnessSelection.resetForProvider(harnessSelection.selectedProviderRef.current, harnessSelection.selectedAcpAgentIdRef.current)
     setProject(projects.find(row => row.path === path) ?? projects[0] ?? null)
   }
   const runWorkspaceTransition = (action: (signal: AbortSignal) => Promise<void>) => sessionTransitionRef.current.run(async (signal) => {
@@ -1663,10 +1677,11 @@ export function MobileApp() {
       setSessionId(row.sessionId)
       setActiveSessionTitle(row.title || 'Untitled')
       const provider = (row.provider ?? 'claude') as HarnessId
+      const targetAcpAgentId = row.acpAgentId ?? null
       // Until the new catalog arrives, omit model overrides and let this
       // session retain its host-owned settings instead of sending the last
       // session's model/effort with a quick first message.
-      harnessSelection.resetForProvider(provider, row.acpAgentId ?? null)
+      harnessSelection.resetForProvider(provider, targetAcpAgentId)
       setHarness(provider)
       const runtime = bindRuntime(client)
       setScreen('chat')
@@ -1674,7 +1689,7 @@ export function MobileApp() {
       if (signal.aborted || runtimeRef.current !== runtime) return
       setSessionLoading(false)
       console.info('[SessionRestore]', runtime.restoreMetrics)
-      refreshRuntimeCatalog(runtime, provider, true)
+      refreshRuntimeCatalog(runtime, provider, true, targetAcpAgentId)
       // A turn may have ended while this session was not on screen — the chip
       // only watches the open session, so coming back has to re-read the tree.
       void refreshGitInfo(p.path).catch(() => {})
@@ -1751,7 +1766,7 @@ export function MobileApp() {
               setScreen('chat')
               syncSheets(runtime, true)
               setSessionLoading(false)
-              refreshRuntimeCatalog(runtime, provider, true)
+              refreshRuntimeCatalog(runtime, provider, true, candidate.target.acpAgentId)
             },
           })
         })

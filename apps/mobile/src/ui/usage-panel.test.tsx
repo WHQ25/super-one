@@ -57,6 +57,27 @@ test('the Grok meter wears the Grok brand lockup instead of the globe fallback',
   expect(screen.getByText('dev@x.ai')).toBeTruthy()
 })
 
+test('the Antigravity meter wears the Antigravity brand lockup and groups model-family windows', async () => {
+  const antigravity: RemoteUsage = {
+    kind: 'acp', title: 'Antigravity', account: 'dev@google.com', planType: 'AI Ultra', extraUsage: null, fetchedAt: now,
+    windows: [
+      { label: 'Gemini · 5 Hours', usedPercent: 0, resetsAt: Math.round(now / 1000) + 5 * 3600 },
+      { label: 'Gemini · Weekly', usedPercent: 72, resetsAt: Math.round(now / 1000) + 5 * 86_400 + 2 * 3600 },
+      { label: 'Claude & GPT · 5 Hours', usedPercent: 0, resetsAt: Math.round(now / 1000) + 5 * 3600 },
+      { label: 'Claude & GPT · Weekly', usedPercent: 0, resetsAt: Math.round(now / 1000) + 7 * 86_400 },
+    ],
+  }
+  await renderWithTheme(<UsagePanel usage={antigravity} />)
+  expect(screen.getByLabelText('Antigravity')).toBeTruthy()
+  expect(screen.getByText('AI Ultra')).toBeTruthy()
+  expect(screen.getByText('Gemini')).toBeTruthy()
+  expect(screen.getByText('Claude & GPT')).toBeTruthy()
+  expect(screen.getAllByText('5 Hours')).toHaveLength(2)
+  expect(screen.getAllByText('Weekly')).toHaveLength(2)
+  expect(screen.queryByText('Gemini · 5 Hours')).toBeNull()
+  expect(screen.queryByText('Claude & GPT · Weekly')).toBeNull()
+})
+
 test('a live rejection is spelled out above the windows, and stands alone without a reading', async () => {
   await renderWithTheme(<UsagePanel usage={null} rateLimit={{ status: 'rejected', resetsAt: Math.round(now / 1000) + 600 }} />)
   expect(screen.getByText('Rate limited · Resets in 10m')).toBeTruthy()

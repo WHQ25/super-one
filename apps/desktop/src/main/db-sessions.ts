@@ -1,6 +1,6 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
-import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelectedModel, harnessIdFromProviderId } from './session/session-repo'
+import { serializeMessageContent, rowToChatMessage, deriveHarnessId, deriveAcpAgentId, storedSelectedModel, harnessIdFromProviderId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SettledSessionPage, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -70,6 +70,7 @@ type ListedSessionRow = {
 function mapListedSession(r: ListedSessionRow): SessionHistoryEntry {
   const tags = parseTagsJson(r.tags_json)
   const harnessId = deriveHarnessId(r)
+  const acpAgentId = deriveAcpAgentId(r)
   const selectedModel = storedSelectedModel(harnessId, r.selected_model)
   const remoteController = remoteControllerInfo(r.remote_controller_json)
   const childCount = typeof r.child_count === 'number' ? r.child_count : 0
@@ -88,7 +89,7 @@ function mapListedSession(r: ListedSessionRow): SessionHistoryEntry {
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
-    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+    ...(acpAgentId ? { acpAgentId } : {}),
     ...(selectedModel ? { selectedModel } : {}),
     ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
     ...(childCount > 0 ? { childCount } : {}),
@@ -473,7 +474,7 @@ export function loadStoredSessionState(sessionId: string): StoredSessionState | 
     parentSessionId: session.parent_session_id ?? null,
     continuedIn: session.continued_in ?? null,
     apiProviderId: session.api_provider_id ?? null,
-    acpAgentId: session.acp_agent_id ?? null,
+    acpAgentId: deriveAcpAgentId(session),
     selectedModel: storedSelectedModel(provider, session.selected_model),
     selectedEffort: (session.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: session.codex_service_tier ?? null,
@@ -669,6 +670,7 @@ const CROSS_PROJECT_SESSION_SELECT = `
 type CrossProjectSessionRow = { id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_settled: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; seen_completed_message_id: string | null; folder_path: string; folder_name: string }
 
 function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
+  const acpAgentId = deriveAcpAgentId(r)
   return {
     sessionId: r.id,
     title: r.title ?? 'Untitled',
@@ -681,7 +683,7 @@ function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
-    ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+    ...(acpAgentId ? { acpAgentId } : {}),
     ...listedUnread(r.seen_completed_message_id),
     folderPath: r.folder_path,
     folderName: r.folder_name,

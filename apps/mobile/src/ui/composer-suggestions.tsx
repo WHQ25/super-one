@@ -146,6 +146,7 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
   if (item.kind === 'agent-profile') {
     const brand = brandKeyForAgentRef(item.path)
     if (brand === 'acp-grok') return <HarnessIcon provider="acp" acpAgentId="grok" size={size} />
+    if (brand === 'acp-antigravity') return <HarnessIcon provider="acp" acpAgentId="antigravity" size={size} />
     if (brand === 'acp-opencode') return <HarnessIcon provider="acp" acpAgentId="opencode" size={size} />
     if (brand === 'claude' || brand === 'codex' || brand === 'cursor' || brand === 'opencode' || brand === 'dsh' || brand === 'acp') return <HarnessIcon provider={brand} size={size} />
     return <Bot size={size} color={colors.foreground} />

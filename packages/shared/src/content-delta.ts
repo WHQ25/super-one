@@ -180,7 +180,15 @@ function applyIdentifiedDelta(content: ContentBlock[], delta: IdentifiedBlock, r
   if (target.type === 'text' && delta.type === 'text') {
     next = { ...target, ...delta, text: replace ? delta.text : target.text + delta.text }
   } else if (target.type === 'thinking' && delta.type === 'thinking') {
-    next = { ...target, ...delta, thinking: replace ? delta.thinking : target.thinking + delta.thinking, startedAt: target.startedAt ?? delta.startedAt, endedAt: delta.endedAt ?? target.endedAt }
+    const remoteDetail = delta.remoteDetail ?? target.remoteDetail
+    next = {
+      ...target,
+      ...delta,
+      thinking: replace ? delta.thinking : target.thinking + delta.thinking,
+      startedAt: target.startedAt ?? delta.startedAt,
+      endedAt: delta.endedAt ?? target.endedAt,
+      ...(remoteDetail !== undefined ? { remoteDetail } : {}),
+    }
   } else if (target.type === 'plan' && delta.type === 'plan') {
     next = { ...target, text: replace ? delta.text : target.text + delta.text }
   } else {
@@ -225,12 +233,14 @@ export function applyContentDelta(
     const idx = lastMergeTargetIndex(content, delta)
     const target = idx === -1 ? undefined : content[idx]
     if (target?.type === 'thinking' && target.id === undefined) {
+      const remoteDetail = delta.remoteDetail ?? target.remoteDetail
       return content.map((b, i) => (i === idx
         ? {
             ...target,
             thinking: target.thinking + delta.thinking,
             startedAt: target.startedAt ?? delta.startedAt,
             endedAt: delta.endedAt ?? target.endedAt,
+            ...(remoteDetail !== undefined ? { remoteDetail } : {}),
           }
         : b))
     }

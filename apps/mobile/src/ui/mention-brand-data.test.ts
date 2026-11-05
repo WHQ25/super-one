@@ -8,7 +8,7 @@ describe('native provider mention artwork', () => {
     const themes = { light: [GENERATED_LIGHT_COLORS.foreground], dark: [GENERATED_DARK_COLORS.foreground] }
     for (const [scheme, colors] of Object.entries(themes)) {
       for (const color of colors) {
-        for (const ref of ['claude-base', 'codex-review', 'acp-base:grok-build', 'opencode-base', 'cursor-base', 'dsh-base', 'acp-base:custom', 'future-base']) {
+        for (const ref of ['claude-base', 'codex-review', 'acp-base:grok-build', 'acp-base:antigravity', 'opencode-base', 'cursor-base', 'dsh-base', 'acp-base:custom', 'future-base']) {
           const png = mentionBrandArtwork(ref, scheme as 'light' | 'dark', color)
           expect(png, `${scheme}/${ref}`).toBeTruthy()
           const bytes = Buffer.from(png!, 'base64')
@@ -27,6 +27,9 @@ describe('native provider mention artwork', () => {
     expect(image('codex-work-review')).toBe(image('codex-base'))
     expect(image('acp-base:opencode')).toBe(image('opencode-base'))
     expect(image('acp-base:grok-build')).not.toBe(image('acp-base:custom'))
+    expect(image('acp-base:antigravity')).not.toBe(image('acp-base:custom'))
+    expect(image('acp-base:antigravity')).not.toBe(image('acp-base:grok-build'))
+    expect(image('acp-antigravity')).toBe(image('acp-base:antigravity'))
     expect(image('future-base')).not.toBe(image('claude-base'))
     expect(image('future-base')).toBe(image('unknown-base'))
   })

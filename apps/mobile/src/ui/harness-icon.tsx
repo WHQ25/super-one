@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { View } from 'react-native'
 import type { HarnessId } from '@superone/shared/agent-types'
-import { isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
 import { useMobileTheme } from '../theme/context'
 import { HarnessScene, harnessScenes } from './harness-scene'
 import type { IconBrand, IconState } from './harness-scene-types'
@@ -16,6 +16,7 @@ export function sessionIconState(status?: string): IconState {
 export function sessionIconBrand(provider: HarnessId, acpAgentId?: string | null): IconBrand {
   if (provider !== 'acp') return provider
   if (isGrokAcpAgent(acpAgentId)) return 'grok'
+  if (isAntigravityAcpAgent(acpAgentId)) return 'antigravity'
   if (isOpenCodeAcpAgent(acpAgentId)) return 'opencode'
   return 'acp'
 }

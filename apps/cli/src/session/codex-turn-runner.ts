@@ -341,8 +341,19 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       )
     }
 
-    const { cwd, authEnv, threadConfig, mcpServers } = await prepare(input)
     const sessionId = input.session.sessionId
+    const priorThread = input.session.providerResume?.startsWith('thread:')
+      ? input.session.providerResume.slice('thread:'.length).trim() || null
+      : null
+    // The UI archive is not Codex's conversation. Never silently start blank
+    // when an older node lost the identity of an interrupted first turn.
+    const hasPriorHistory = input.session.transcript.some(block =>
+      block.id !== input.clientMessageId && !block.queued && !block.queuedInComposer && !block.metadata?.sendFailure,
+    )
+    if (!priorThread && !liveBySession.get(sessionId)?.threadId && hasPriorHistory) {
+      throw new Error('Cannot resume Codex: the provider resume ID is missing. Saved chat history is unchanged; recover the original thread or start a new session explicitly.')
+    }
+    const { cwd, authEnv, threadConfig, mcpServers } = await prepare(input)
     let turnKind = parseTurnKind(input.turnKind)
 
     if (input.images?.length && turnKind !== 'run' && turnKind !== 'steer') {
@@ -351,11 +362,6 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     const attachmentInput = input.images?.length ? buildCodexAttachmentInput(input.text, input.images) : undefined
     const prompt = input.text
     const reasoningEffort = mapCodexReasoningEffort(input.effort)
-
-    const priorThread =
-      input.session.providerResume && input.session.providerResume.startsWith('thread:')
-        ? input.session.providerResume.slice('thread:'.length)
-        : null
 
     // Steer must hit the in-flight connection immediately (not serialized on chain).
     if (turnKind === 'steer' || (turnKind === 'run' && liveBySession.get(sessionId)?.activeTurnId)) {
@@ -423,6 +429,9 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             signal: input.signal,
           })
         }
+        // Persist as soon as start/resume succeeds, before a turn can act.
+        // Waiting for its result loses the identity on update, abort or error.
+        input.onProviderResume?.(`thread:${conn.threadId}`)
 
         if (turnKind === 'run') {
           const result = await openTurnAndStream({

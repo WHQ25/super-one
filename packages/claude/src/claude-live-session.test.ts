@@ -52,6 +52,23 @@ function successTurn(sessionId: string, text: string): Array<Record<string, unkn
 }
 
 describe('ClaudeLiveSession', () => {
+  it('reports the session identity from idle init before mapping output and deduplicates it across turns', async () => {
+    const onSessionId = vi.fn()
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'native-session', tools: [], mcp_servers: [] } as unknown as SDKMessage
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) yield* successTurn('native-session', 'done') as SDKMessage[]
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn, onSessionId })
+    try {
+      await vi.waitFor(() => expect(onSessionId).toHaveBeenCalledWith('native-session'))
+      const onAgentEvent = () => expect(onSessionId).toHaveBeenCalledWith('native-session')
+      const first = live.sendTurn({ content: 'first', onAgentEvent })
+      const injected = live.sendTurn({ content: 'next', onAgentEvent })
+      await Promise.all([first, injected])
+      expect(onSessionId).toHaveBeenCalledOnce()
+    } finally { await live.dispose() }
+  })
+
   it('reports scheduled wakeups from the Stop hook and emits each change into the turn', async () => {
     const cron = { id: 'c1', schedule: '*/30 * * * *', recurring: true, prompt: 'ping' }
     const cronsPerTurn = [[cron], []]

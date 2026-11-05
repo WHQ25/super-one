@@ -5,6 +5,25 @@ Upstream behavior SuperOne depends on that the app-server schema does not state.
 its area. Realtime is experimental upstream (`features.realtime_conversation`,
 enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 
+## Resume identity is independent of the chat archive
+
+- **Behavior:** `thread/start` returns a resumable thread identity before a turn
+  completes. SuperOne's durable chat events do not restore Codex's model context:
+  continuing a conversation requires `thread/resume` with the original identity.
+  Starting another thread with only the next user input creates a blank context,
+  even when the UI still displays the previous conversation.
+- **Observed:** Codex 0.166.0 node rollouts across an interrupted first turn and
+  host update. Both the original and replacement rollout remained on disk.
+- **Depends on it:** The node `codex-turn-runner.ts` invokes `onProviderResume`
+  immediately after thread setup, before input delivery. A cold session with
+  previous delivered history but no identity fails rather than starting blank.
+  Desktop `codex-turn.ts` preserves a stored identity when resume fails; its
+  empty-rollout retry may create a thread only for a new conversation.
+- **Guard:** Node `codex-turn-runner.test.ts` checkpoints SQLite during the first
+  streaming turn, reloads after interruption or restart, and verifies the next
+  send uses `thread/resume`. Desktop `codex-turn.test.ts` covers missing/empty
+  rollouts, retained identity, and retries on fresh conversations.
+
 ## Remote plugin catalog identity
 
 - **Behavior:** A remote-only marketplace has `path: null`; its plugin source is

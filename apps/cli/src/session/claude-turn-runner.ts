@@ -214,6 +214,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     refreshMcpAppsCatalog: (force?: boolean) => Promise<void>
     /** Latest turn's sink; a process opened for an MCP App action has none yet. */
     onAmbientEvent?: (event: AgentEvent) => void
+    onProviderResume?: (resume: string) => void
     /** The process's mod surface (Claude Code mods drawn by remote views). */
     modSurface: ModSurface | null
     /** Mod events raised before the first turn gave the entry a sink. */
@@ -375,6 +376,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     })
     const live = ClaudeLiveSession.open({
       cwd: p.cwd,
+      onSessionId: (id) => lives.get(sessionKey)?.onProviderResume?.(formatClaudeSessionResume(id)!),
       onAmbientEvent: (event) => {
         const current = lives.get(sessionKey)
         if (!current) return
@@ -451,6 +453,16 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       )
     }
 
+    const sessionKey = input.session.sessionId
+    // Chat events alone cannot restore the SDK's conversation.
+    const priorSessionId = parseClaudeSessionResume(input.session.providerResume) ?? lives.get(sessionKey)?.live.sessionId
+    const hasPriorHistory = input.session.transcript.some(block =>
+      block.id !== input.clientMessageId && !block.queued && !block.queuedInComposer && !block.metadata?.sendFailure,
+    )
+    if (!priorSessionId && !lives.has(sessionKey) && hasPriorHistory) {
+      throw new Error('Cannot resume Claude: the provider resume ID is missing. Saved chat history is unchanged; recover the original session or start a new session explicitly.')
+    }
+
     const { cwd, authEnv, uid, permissions } = await prepare({
       session: input.session,
       apiProviderId: input.apiProviderId,
@@ -464,7 +476,6 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       })
     }
 
-    const sessionKey = input.session.sessionId
     // Probe disk MCP before (re)opening so mcp.save after a live session starts
     // is picked up on the next turn (strict allowlist is fixed at open).
     // diskNames does not depend on host-action servers — skip creating them here.
@@ -500,7 +511,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     }
 
     entry ??= openEntry({
-      session: input.session,
+      session: { ...input.session, providerResume: formatClaudeSessionResume(priorSessionId) },
       binary,
       cwd,
       authEnv,
@@ -516,6 +527,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       ultracode,
       claudeFastMode,
     })
+    entry.onProviderResume = input.onProviderResume
+    // Init may have arrived before this turn installed its persistence sink.
+    if (entry.live.sessionId) input.onProviderResume?.(formatClaudeSessionResume(entry.live.sessionId)!)
     if (claudeFastMode !== undefined && claudeFastMode !== entry.claudeFastMode) {
       await entry.live.setClaudeFastMode(claudeFastMode)
       entry.claudeFastMode = claudeFastMode

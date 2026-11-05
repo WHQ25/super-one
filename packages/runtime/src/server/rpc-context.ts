@@ -322,6 +322,8 @@ export interface SessionHostPort {
   setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }): NodeSessionRecord
   /** Live rows including hidden and settled sessions. Omitted by hosts that page through list(). */
   archiveEntries?(): Iterable<Readonly<NodeSessionRecord>>
+  /** Projected transcript count; avoids materializing cold messages for metadata. */
+  messageCount?(sessionId: string): number
   /** Opens the session_cleanup delete card. Omitted by the desktop session host. */
   requestCleanupConfirm?(input: SessionCleanupConfirmInput): Promise<CleanupConfirmOutcome>
   close(sessionId: string): void | Promise<void>

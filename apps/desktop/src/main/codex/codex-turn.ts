@@ -1162,13 +1162,14 @@ export async function withThreadConnection<T>(
         && Boolean(resumableThreadId)
         && !signal?.aborted
         && isCodexAppServerConnectionError(error)
-      // Empty rollout is a Codex writer race on thread/start or the first
-      // turn/start (0-byte jsonl, metadata tens of ms later). thread/start
+      // On a new conversation, empty rollout can be a Codex writer race on
+      // thread/start or the first turn/start (0-byte jsonl, metadata tens of ms later). thread/start
       // failed before any thread was resolved — safe for every caller.
       // turn/start on a live thread is opt-in (`retryEmptyRollout`) and
       // closes once markTurnAccepted runs. Goal / timeline / mid-turn
-      // stream errors must not discard a live thread.
+      // stream errors and restored conversations must not discard their thread.
       const canRetryEmptyRollout = attempt === 0
+        && !resumableThreadId
         && !signal?.aborted
         && isCodexEmptyRolloutError(error)
         && (!threadResolved || (Boolean(options?.retryEmptyRollout) && !turnAccepted))
@@ -1369,9 +1370,7 @@ export async function resolveThread(
           permissionPreset: permissionProfile.permissionPreset,
           error: message,
         }, failedThreadId ?? undefined)
-        session.threadId = null
-        session.threadReady = false
-        return startNewThread()
+        throw new Error(`Cannot resume Codex thread ${failedThreadId}: ${message}. Saved chat history is unchanged; retry restoration or start a new session explicitly.`, { cause: err })
       })
     : await startNewThread()
 
@@ -1532,12 +1531,13 @@ export async function prewarmCodexSession(
   cwd: string,
 ): Promise<string> {
   const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+  const resumableThreadId = session.threadId
   try {
     const threadId = await resolveThread(handle.connection, session, session.projectPath, cwd, permissionProfile)
     await drainPrewarmNotifications(handle.connection, session)
     return threadId
   } catch (error) {
-    if (!isCodexEmptyRolloutError(error)) throw error
+    if (resumableThreadId || !isCodexEmptyRolloutError(error)) throw error
     log.warn(
       '[codex] prewarm empty rollout; retrying sid=%s: %s',
       session.superoneSessionId,

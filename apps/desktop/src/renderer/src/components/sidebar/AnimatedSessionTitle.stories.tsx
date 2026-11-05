@@ -50,7 +50,8 @@ export const MessageFallback: Story = { render: () => <Preview /> }
 export const NarrowLongTitle: Story = { render: () => <Preview width={200}
   title="Investigate voice session recovery and keep titles consistent across all windows" restored /> }
 
-function InitialMessagePreview({ provider = 'codex', width = 280 }: { provider?: 'claude' | 'codex'; width?: number }) {
+function InitialMessagePreview({ provider = 'codex', width = 280, remote = false }: { provider?: 'claude' | 'codex'; width?: number; remote?: boolean }) {
+  const projectPath = remote ? 'remote:storybook-node:/work/app' : PROJECT
   const [sentTitle, setSentTitle] = useState<string | null>(null)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
   useLayoutEffect(() => {
@@ -59,19 +60,19 @@ function InitialMessagePreview({ provider = 'codex', width = 280 }: { provider?:
     const project = createDefaultProjectState()
     project._activeSessionId = SID
     project._sessions[SID] = { ...createDefaultPerSessionState(), sessionProvider: provider, _historyHydrated: true }
-    useChatStore.setState({ activeProject: PROJECT, projectSessions: { [PROJECT]: project }, agentTitles: {} })
-    useAppStore.setState({ currentFolder: PROJECT, tmpFolder: null })
+    useChatStore.setState({ activeProject: projectPath, projectSessions: { [projectPath]: project }, agentTitles: {} })
+    useAppStore.setState({ currentFolder: projectPath, tmpFolder: null })
     return () => {
       timers.current.forEach(clearTimeout)
       useChatStore.setState(prevChat)
       useAppStore.setState(prevApp)
     }
-  }, [provider])
+  }, [provider, projectPath])
 
   const send = (text: string) => {
     useChatStore.setState((state) => {
-      const project = state.projectSessions[PROJECT]
-      return { projectSessions: { ...state.projectSessions, [PROJECT]: { ...project,
+      const project = state.projectSessions[projectPath]
+      return { projectSessions: { ...state.projectSessions, [projectPath]: { ...project,
         _sessions: { ...project._sessions, [SID]: { ...project._sessions[SID],
           _animateInitialTitle: true,
           messages: [{ id: 'first-message', role: 'user', status: 'complete', providerId: provider, createdAt: '',
@@ -81,14 +82,15 @@ function InitialMessagePreview({ provider = 'codex', width = 280 }: { provider?:
     setSentTitle(text)
     if (!text.startsWith('/')) return
     const syncTitle = (title: string) => useChatStore.setState((state) => {
-      const project = state.projectSessions[PROJECT]
-      return { projectSessions: { ...state.projectSessions, [PROJECT]: { ...project,
+      const project = state.projectSessions[projectPath]
+      return { projectSessions: { ...state.projectSessions, [projectPath]: { ...project,
         sessions: [{ sessionId: SID, title, provider, lastActiveAt: '', messageCount: 1 }],
         _sessions: { ...project._sessions, [SID]: { ...project._sessions[SID], _title: title === text ? text : null } },
       } } }
     })
-    // Exercise the title returning before the 220 ms fade-out completes.
-    timers.current = [setTimeout(() => syncTitle('Untitled'), 50), setTimeout(() => syncTitle(text), 100)]
+    // Remote list metadata can stay unnamed well beyond the 220 ms fade-out.
+    timers.current = [setTimeout(() => syncTitle(remote ? 'New session' : 'Untitled'), 50),
+      setTimeout(() => syncTitle(text), remote ? 2500 : 100)]
   }
 
   return <div className="space-y-3" style={{ width }}>
@@ -97,10 +99,10 @@ function InitialMessagePreview({ provider = 'codex', width = 280 }: { provider?:
       <button disabled={sentTitle !== null} onClick={() => send('First plain text message')}>Send plain text</button>
     </div>
     <div data-testid="initial-header" className="flex min-w-0 rounded-md bg-card px-3 py-2">
-      <SessionTitleAnimated projectPath={PROJECT} sessionId={SID} className="min-w-0 text-xs text-muted-foreground" />
+      <SessionTitleAnimated projectPath={projectPath} sessionId={SID} className="min-w-0 text-xs text-muted-foreground" />
     </div>
     <div data-testid="initial-sidebar" className="bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
-      {sentTitle && <SessionRow folderPath={PROJECT}
+      {sentTitle && <SessionRow folderPath={projectPath}
         session={{ sessionId: SID, title: sentTitle, provider, lastActiveAt: '', messageCount: 1 }} {...noop} />}
     </div>
   </div>
@@ -122,6 +124,29 @@ export const InitialSlashTitle: Story = {
 }
 export const InitialSlashTitleClaude: Story = { ...InitialSlashTitle, render: () => <InitialMessagePreview provider="claude" /> }
 export const InitialTitleInteractive: Story = { render: () => <InitialMessagePreview /> }
+export const RemoteInitialTitle: Story = {
+  render: () => <InitialMessagePreview remote />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Send /release alpha' }))
+    await waitFor(() => expect(useChatStore.getState().projectSessions['remote:storybook-node:/work/app']
+      .sessions[0]?.title).toBe('New session'))
+    // Check while the host is still unnamed, after the first entrance finishes.
+    await waitFor(() => {
+      const row = canvas.getByTestId('initial-sidebar')
+      expect(row.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+      expect(row.querySelector('.animated-title-inner')).toHaveTextContent('/release alpha')
+    }, { timeout: 2000 })
+    await waitFor(() => expect(useChatStore.getState().projectSessions['remote:storybook-node:/work/app']
+      .sessions[0]?.title).toBe('/release alpha'), { timeout: 3000 })
+    for (const surface of ['initial-header', 'initial-sidebar']) {
+      expect(canvas.getByTestId(surface).querySelector('.animated-title-inner')).toHaveTextContent('/release alpha')
+      expect(canvas.getByTestId(surface).querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+    }
+  },
+}
+export const RemoteInitialTitleNarrowDark: Story = { ...RemoteInitialTitle,
+  render: () => <InitialMessagePreview remote width={200} />, globals: { theme: 'dark' } }
 export const InitialSlashTitleNarrowDark: Story = { ...InitialSlashTitle,
   render: () => <InitialMessagePreview width={200} />, globals: { theme: 'dark' } }
 export const InitialPlainTextTitle: Story = {

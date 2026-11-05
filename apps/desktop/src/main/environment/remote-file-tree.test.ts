@@ -39,6 +39,9 @@ describe('normalizeHostPath / hostPathsEqual', () => {
     expect(normalizeHostPath('/work/app/')).toBe('/work/app')
     expect(hostPathsEqual('/work/app', '/work/app/')).toBe(true)
     expect(hostPathsEqual('/work/app', '/work/other')).toBe(false)
+    expect(hostPathsEqual('/var/folders/x/T/task', '/private/var/folders/x/T/task')).toBe(true)
+    expect(hostPathsEqual('/tmp/task', '/private/tmp/task')).toBe(true)
+    expect(hostPathsEqual('/private/home/a', '/home/a')).toBe(false)
   })
 })
 

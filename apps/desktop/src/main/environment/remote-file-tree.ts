@@ -175,8 +175,20 @@ export function normalizeHostPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '') || '/'
 }
 
+/** macOS binds these directories through /private. Git reports that form. */
+function macosSystemPath(path: string): string {
+  const normalized = normalizeHostPath(path)
+  const short = normalized.startsWith('/private/') ? normalized.slice('/private'.length) : normalized
+  if (
+    short === '/tmp' || short.startsWith('/tmp/')
+    || short === '/var' || short.startsWith('/var/')
+    || short === '/etc' || short.startsWith('/etc/')
+  ) return short
+  return normalized
+}
+
 export function hostPathsEqual(a: string, b: string): boolean {
-  return normalizeHostPath(a) === normalizeHostPath(b)
+  return macosSystemPath(a) === macosSystemPath(b)
 }
 
 /**

@@ -1,22 +1,49 @@
-import { closeSync, constants, fstatSync, openSync, readSync, statSync, type Stats } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync, statSync, type Stats } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { isAbsolute } from 'node:path'
+import { dirname, isAbsolute, resolve, sep } from 'node:path'
 import { TEMP_FILE_CHUNK_BYTES, TEMP_FILE_RPC_METHODS, OPERATION_SCOPES, type TempFileStatResult, type TempFileReadResult } from '@superone/shared/environment'
-import { isPathWithinAllowed, resolveRealPath } from '../fs/path-security'
+import { resolveRealPath } from '../fs/path-security'
 import { asRecord, mapThrown, requireScopes, type RpcHandlerTable } from './rpc-helpers'
 import type { RpcContext } from './rpc-context'
+
+function tempRootForms(): Array<{ resolved: string; real: string }> {
+  return [tmpdir(), '/tmp', '/private/tmp'].map((root) => {
+    const resolved = resolve(root)
+    return { resolved, real: existsSync(resolved) ? resolveRealPath(resolved) : resolved }
+  })
+}
+
+function underTempRoot(abs: string, roots: Array<{ resolved: string; real: string }>): boolean {
+  return roots.some((root) =>
+    abs === root.resolved || abs.startsWith(root.resolved + sep)
+    || abs === root.real || abs.startsWith(root.real + sep))
+}
 
 function tempPath(value: unknown): string {
   if (typeof value !== 'string' || !isAbsolute(value) || value.includes('\0')) {
     throw Object.assign(new Error('absolute path required'), { code: 'invalid_argument' })
   }
-  // Match desktop temporary asset roots, including macOS /var -> /private/var.
-  // Check realpaths so a link under /tmp cannot expose a file outside it.
-  const roots = [tmpdir(), '/tmp', '/private/tmp']
-  if (!isPathWithinAllowed(value, roots)) {
-    throw Object.assign(new Error('path is outside temporary directories'), { code: 'forbidden' })
+  // Match desktop temporary asset roots on both macOS path forms. A missing
+  // file has no realpath, so /var/folders/... would otherwise fail the
+  // comparison against tmpdir()'s /private/var realpath and look unauthorized.
+  // An existing symlink is still followed and rejected when its target leaves.
+  const candidate = resolve(value)
+  const roots = tempRootForms()
+  const forbid = () => Object.assign(new Error('path is outside temporary directories'), { code: 'forbidden' })
+  if (!underTempRoot(candidate, roots)) throw forbid()
+  if (existsSync(candidate)) {
+    const real = resolveRealPath(candidate)
+    if (!underTempRoot(real, roots)) throw forbid()
+    return real
   }
-  return resolveRealPath(value)
+  let existing = candidate
+  while (!existsSync(existing)) {
+    const parent = dirname(existing)
+    if (parent === existing || !underTempRoot(parent, roots)) throw forbid()
+    existing = parent
+  }
+  if (!underTempRoot(resolveRealPath(existing), roots)) throw forbid()
+  return candidate
 }
 
 function fileStat(st: Stats): TempFileStatResult {

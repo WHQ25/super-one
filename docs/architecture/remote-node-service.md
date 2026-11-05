@@ -1416,6 +1416,13 @@ a repeated save never reapplies stale text. Disconnect releases only that
 phone's draft grants and composer views; a controller desktop's draft grants
 end when its last connection closes.
 
+A controller carries the draft association when a node assigns a new session
+ID. Preparing an unsent session for voice or media retains its draft marker;
+a typed send that already staged its user message must not restore that marker.
+Consuming an opened draft sends its `leaseId` through the desktop environment
+API to `draft.delete`, then forgets the lease after deletion succeeds. Hiding a
+row in the renderer alone does not consume the node's durable draft.
+
 ## 15. Installation, Service Lifecycle, and Upgrade
 
 The Linux installation provides:

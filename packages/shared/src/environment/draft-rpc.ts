@@ -149,6 +149,7 @@ export interface DraftListResult {
 
 export interface DraftDeleteRequest {
   draftId: string
+  leaseId?: string
 }
 
 export interface DraftDeleteResult {

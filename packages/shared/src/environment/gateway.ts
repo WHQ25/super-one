@@ -369,7 +369,7 @@ export interface DraftGateway {
   list(input?: DraftListRequest): Promise<DraftRecord[]>
   /** `leaseId` writes under the composer's `draft.open` grant. A plain upsert stays the controller outbox. */
   upsert(input: DraftUpsertRequest & { leaseId?: string }): Promise<DraftRecord>
-  delete(draftId: string): Promise<void>
+  delete(draftId: string, leaseId?: string): Promise<void>
   /** Take the draft's lease and return the host's flushed copy. */
   open?(draftId: string): Promise<DraftOpenResult>
   /** Release a lease this client holds. */

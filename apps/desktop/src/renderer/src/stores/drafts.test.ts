@@ -61,6 +61,22 @@ beforeEach(() => {
 })
 
 describe('opening a remote draft', () => {
+  it('consumes an opened remote draft under its lease so it stays gone after a list refresh', async () => {
+    const draft = entry({ id: 'd1', text: 'sent message' })
+    let exists = true
+    openDraft.mockResolvedValue({ leaseId: 'lease-1', draft })
+    deleteDraft.mockImplementation(async (_connectionId: string, _draftId: string, leaseId?: string) => {
+      if (leaseId !== 'lease-1') throw new Error('This draft is Read Only while another device is editing it.')
+      exists = false
+    })
+    listDrafts.mockImplementation(async () => exists ? [draft] : [])
+    await useDraftsStore.getState().openDraft('remote', 'd1')
+    await useDraftsStore.getState().removeDraft('remote', 'd1')
+    await useDraftsStore.getState().loadDrafts('remote')
+    expect(useDraftsStore.getState().byConnection.remote).toEqual([])
+    expect(useDraftsStore.getState().leases.d1).toBeUndefined()
+  })
+
   it('keeps the lease and sends it with the next save, without locking the composer', async () => {
     useDraftsStore.setState({
       byConnection: { remote: [entry({ id: 'd1', text: 'stale', controllerDeviceId: 'host-window' })] },

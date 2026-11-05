@@ -782,7 +782,7 @@ export class EnvironmentHost {
    * node needs the node, so an offline delete reports failure instead of
    * pretending to succeed and resurrecting on the next list.
    */
-  async deleteDraft(connectionId: string, draftId: string): Promise<void> {
+  async deleteDraft(connectionId: string, draftId: string, leaseId?: string): Promise<void> {
     if (connectionId === 'local') {
       const local = this.registry.getLocal()
       await local.drafts!.delete(draftId)
@@ -791,7 +791,7 @@ export class EnvironmentHost {
     const wasQueued = listPendingDrafts(connectionId).some((p) => p.draft.id === draftId)
     deletePendingDraft(draftId)
     try {
-      await this.remoteDrafts(connectionId).delete(draftId)
+      await this.remoteDrafts(connectionId).delete(draftId, leaseId)
     } catch (err) {
       if (!wasQueued) throw err
     }

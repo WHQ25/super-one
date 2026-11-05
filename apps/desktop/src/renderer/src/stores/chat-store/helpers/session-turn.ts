@@ -194,7 +194,9 @@ function adoptSessionId(set: ChatStoreSet, projectPath: string, from: string | n
     const sessions = { ...project._sessions }
     const base = (from ? sessions[from] : undefined) ?? sessions[to]
     if (from && from !== to) delete sessions[from]
-    if (base) sessions[to] = carriedDraftId && !base.draftId ? { ...base, draftId: carriedDraftId } : base
+    // Preparing voice/media still owns an unsent draft. A typed send already
+    // staged its bubble and cleared draftId; do not restore that marker.
+    if (base) sessions[to] = carriedDraftId && !base.draftId && isUnsentSession(base) ? { ...base, draftId: carriedDraftId } : base
     return {
       projectSessions: {
         ...s.projectSessions,

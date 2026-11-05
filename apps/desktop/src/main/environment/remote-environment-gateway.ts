@@ -236,8 +236,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         const res = await client.rpc<DraftUpsertResult>('draft.upsert', leaseId ? { ...draft, leaseId } : draft)
         return res.draft
       },
-      async delete(draftId) {
-        await client.rpc('draft.delete', { draftId })
+      async delete(draftId, leaseId) {
+        await client.rpc('draft.delete', { draftId, ...(leaseId ? { leaseId } : {}) })
       },
       async open(draftId) {
         return client.rpc<DraftOpenResult>('draft.open', { draftId })

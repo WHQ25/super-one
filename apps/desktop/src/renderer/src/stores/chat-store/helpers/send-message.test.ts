@@ -100,6 +100,8 @@ vi.stubGlobal('window', {
 await import('../index')
 const { useChatStore } = await import('../index')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
+const { useDraftsStore } = await import('../../drafts')
+const { _resetDraftSessionMap, claimDraftForSession, getDraftIdForSession } = await import('./draft-promote')
 
 function seedProject(path: string, sessionId: string, sessionPatch: Partial<ReturnType<typeof createDefaultPerSessionState>> = {}) {
   const proj = createDefaultProjectState()
@@ -165,6 +167,29 @@ beforeEach(() => {
 
 describe('sendMessageImpl: remote node', () => {
   const remotePath = 'remote:env-1:/work/app'
+
+  it('consumes the saved draft when the node replaces the composer session id', async () => {
+    _resetDraftSessionMap()
+    const deleteDraft = vi.fn().mockResolvedValue(undefined)
+    window.environment.deleteDraft = deleteDraft
+    useDraftsStore.setState({ byConnection: {}, discardedIds: {}, leases: {} })
+    seedProject(remotePath, 'local-draft-sid', {
+      preferredProvider: 'claude', draftId: 'saved-draft', draftText: '',
+    })
+    claimDraftForSession('local-draft-sid', 'saved-draft')
+    try {
+      await useChatStore.getState().sendMessage('hello')
+      await vi.waitFor(() => expect(deleteDraft).toHaveBeenCalledWith('env-1', 'saved-draft'))
+      expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
+      expect(getActiveSession(remotePath).messages).toHaveLength(1)
+      expect(getActiveSession(remotePath).draftId).toBeNull()
+      expect(getDraftIdForSession('local-draft-sid')).toBeUndefined()
+      expect(getDraftIdForSession('node-sid-1')).toBeUndefined()
+    } finally {
+      _resetDraftSessionMap()
+      useDraftsStore.setState({ byConnection: {}, discardedIds: {}, leases: {} })
+    }
+  })
 
   it('paints the user bubble before the node creates the session', async () => {
     seedProject(remotePath, 'local-draft-sid', {

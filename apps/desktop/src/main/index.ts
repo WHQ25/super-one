@@ -2161,9 +2161,9 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_DELETE_DRAFT,
-    async (_e, connectionId: string, draftId: string) => {
+    async (_e, connectionId: string, draftId: string, leaseId?: string) => {
       const { getEnvironmentHost } = await import('./environment')
-      await getEnvironmentHost().deleteDraft(connectionId, draftId)
+      await getEnvironmentHost().deleteDraft(connectionId, draftId, leaseId)
     },
   )
   ipcMain.handle(

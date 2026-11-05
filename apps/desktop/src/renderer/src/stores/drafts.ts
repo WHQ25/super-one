@@ -126,7 +126,7 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
     if (get().discardedIds[draft.id] || get().discardedIds[saved.id]) {
       // User deleted this row while the upsert was in flight — undo the write
       // so the next list/flush cannot resurrect it.
-      void window.environment.deleteDraft(connectionId, saved.id).catch(() => {})
+      void get().removeDraft(connectionId, saved.id).catch(() => {})
       return
     }
     window.app?.trace?.('drafts', 'save_ipc', {
@@ -164,13 +164,20 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
   },
 
   removeDraft: async (connectionId, draftId) => {
-    await window.environment.deleteDraft(connectionId, draftId)
-    set((s) => ({
-      byConnection: {
-        ...s.byConnection,
-        [connectionId]: (s.byConnection[connectionId] ?? []).filter((d) => d.id !== draftId),
-      },
-    }))
+    const leaseId = get().leases[draftId]
+    if (leaseId) await window.environment.deleteDraft(connectionId, draftId, leaseId)
+    else await window.environment.deleteDraft(connectionId, draftId)
+    set((s) => {
+      const leases = { ...s.leases }
+      if (leases[draftId] === leaseId) delete leases[draftId]
+      return {
+        leases,
+        byConnection: {
+          ...s.byConnection,
+          [connectionId]: (s.byConnection[connectionId] ?? []).filter((d) => d.id !== draftId),
+        },
+      }
+    })
   },
 
   discardDraft: async (connectionId, draftId) => {

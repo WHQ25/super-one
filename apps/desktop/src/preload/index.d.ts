@@ -1069,7 +1069,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /** Release a lease from `openDraft`. */
   closeDraft(connectionId: string, draftId: string, leaseId: string): Promise<void>
   upsertDraft(connectionId: string, draft: DraftUpsertRequest & { leaseId?: string }): Promise<DraftListEntry>
-  deleteDraft(connectionId: string, draftId: string): Promise<void>
+  deleteDraft(connectionId: string, draftId: string, leaseId?: string): Promise<void>
   disconnectDraft(connectionId: string, draftId: string): Promise<void>
   onDraftOpenRequested(callback: (draftId: string) => Promise<void>): () => void
   /**

@@ -478,11 +478,12 @@ const environmentAPI = {
       connectionId,
       draft,
     ) as Promise<DraftListEntry>,
-  deleteDraft: (connectionId: string, draftId: string) =>
+  deleteDraft: (connectionId: string, draftId: string, leaseId?: string) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_DELETE_DRAFT,
       connectionId,
       draftId,
+      leaseId,
     ) as Promise<void>,
   listSessions: (
     connectionId: string,

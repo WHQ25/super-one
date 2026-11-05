@@ -41,5 +41,6 @@ export function withSessionZone(runner: TurnRunner, syncRoot: string): TurnRunne
   wrapped.disposeSession = runner.disposeSession
   wrapped.disposeAll = runner.disposeAll
   wrapped.listActiveRuntimes = runner.listActiveRuntimes
+  wrapped.codexVoice = runner.codexVoice
   return wrapped
 }

@@ -58,11 +58,10 @@ function temp(prefix: string): string {
 
 async function bootNode(label = 'p1'): Promise<NodeRuntime> {
   const nodeHome = temp('superone-p1-node-')
-  const port = 22000 + Math.floor(Math.random() * 10000)
   const rt = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    bindPort: 0,
     label, simulatedHarness: true })
   runtimes.push(rt)
   return rt
@@ -253,11 +252,10 @@ describe('Phase 1 acceptance', () => {
     expect(newIdentity.publicKeyFingerprint).not.toBe(oldFp)
     expect(newIdentity.environmentId).not.toBe(oldEnv)
 
-    const port = 24000 + Math.floor(Math.random() * 10000)
     const rt2 = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      bindPort: 0,
       label: 'clone-test', simulatedHarness: true })
     runtimes.push(rt2)
 

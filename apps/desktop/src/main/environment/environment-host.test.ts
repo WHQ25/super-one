@@ -69,7 +69,7 @@ async function bootNode(): Promise<NodeRuntime> {
   sharedRuntime = await startNodeRuntime({
     nodeHome: sharedNodeHome,
     bindHost: '127.0.0.1',
-    bindPort: 35000 + Math.floor(Math.random() * 1000),
+    bindPort: 0,
     simulatedHarness: true,
   })
   return sharedRuntime

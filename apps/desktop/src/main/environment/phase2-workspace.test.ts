@@ -55,8 +55,7 @@ describe('Phase 2 remote workspace routing', () => {
     writeFileSync(join(projectDir, 'a.txt'), 'alpha')
     execFileSync('git', ['init'], { cwd: projectDir, stdio: 'ignore' })
 
-    const port = 26000 + Math.floor(Math.random() * 10000)
-    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: port, simulatedHarness: true })
+    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
     runtimes.push(rt)
 
     const store = new NodeCredentialStore(desk)

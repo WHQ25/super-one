@@ -131,8 +131,7 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     dirs.push(nodeHome, desk, projectDir)
     writeFileSync(join(projectDir, 'seed.txt'), 'seed')
 
-    const port = 33000 + Math.floor(Math.random() * 1000)
-    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: port, simulatedHarness: true })
+    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
     runtimes.push(rt)
 
     const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(desk) })
@@ -216,11 +215,10 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     dirs.push(nodeHome, desk, projectDir)
     writeFileSync(join(projectDir, 'seed.txt'), 'seed')
 
-    const port = 34000 + Math.floor(Math.random() * 1000)
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      bindPort: 0,
       simulatedHarness: true,
     })
     runtimes.push(rt)

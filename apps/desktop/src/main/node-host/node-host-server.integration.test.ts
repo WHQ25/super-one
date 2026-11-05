@@ -157,7 +157,7 @@ async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDom
       hooks: testHarnessHooks(),
       ...extra,
     },
-    { bindPort: 23000 + Math.floor(Math.random() * 10000) },
+    { bindPort: 0 },
   )
   hosts.push(host)
   const pairing = host.mintPairingToken()
@@ -180,8 +180,7 @@ describe('DesktopNodeHost', () => {
     const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
     harnesses.enableSimulatedOverlay()
     const terminals = scriptedTerminals()
-    const port = 23000 + Math.floor(Math.random() * 10000)
-    const start = (bindPort: number) => startDesktopNode(
+    const start = () => startDesktopNode(
       {
         ...terminals.deps,
         userDataDir: userData,
@@ -203,10 +202,10 @@ describe('DesktopNodeHost', () => {
         listAgentProfiles: () => AGENT_PROFILES,
         hooks: testHarnessHooks(),
       },
-      { bindPort },
+      { bindPort: 0 },
     )
 
-    let host = await start(port)
+    let host = await start()
     hosts.push(host)
     expect(host.url).toContain('127.0.0.1')
 
@@ -260,11 +259,17 @@ describe('DesktopNodeHost', () => {
     expect(await client.rpc('terminal.create', { cwd: projectDir })).toMatchObject({ terminalId: expect.any(String), cwd: projectDir })
     expect(await client.rpc('harness.enable', { harnessId: 'codex' })).toMatchObject({ id: 'codex' })
 
-    // Restart B (on a fresh port: fetch would reuse the closed keep-alive socket): the cursor continues from the durable log.
+    // Restart B on a new port. fetch would reuse a keep-alive socket to the
+    // port we just closed, so redraw if the OS gives that port back.
+    const previousPort = host.port
     manager.disconnectAll()
     await stopDesktopNode(host)
     hosts.splice(0)
-    host = await start(port + 1)
+    host = await start()
+    if (host.port === previousPort) {
+      await stopDesktopNode(host)
+      host = await start()
+    }
     hosts.push(host)
     const reconnected = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a2-')) })
     managers.push(reconnected)

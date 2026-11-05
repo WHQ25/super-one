@@ -53,11 +53,10 @@ describe('RemoteEnvironmentGateway workspace.tailWatch', () => {
     mkdirSync(join(projectDir, 'temp'), { recursive: true })
     writeFileSync(join(projectDir, 'temp', 'bash.output'), 'seed')
 
-    const port = 38000 + Math.floor(Math.random() * 1000)
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      bindPort: 0,
       simulatedHarness: true,
     })
     runtimes.push(rt)
@@ -117,11 +116,10 @@ describe('RemoteEnvironmentGateway workspace.tailWatch', () => {
     const prevHome = process.env.HOME
     process.env.HOME = home
     try {
-      const port = 38100 + Math.floor(Math.random() * 1000)
       const rt = await startNodeRuntime({
         nodeHome,
         bindHost: '127.0.0.1',
-        bindPort: port,
+        bindPort: 0,
         simulatedHarness: true,
       })
       runtimes.push(rt)

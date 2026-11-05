@@ -78,7 +78,7 @@ describe('EnvironmentHost remote drain across interactions', () => {
     runtime = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: 36000 + Math.floor(Math.random() * 1000),
+      bindPort: 0,
       simulatedHarness: true,
       turnRunner: questionTurnRunner,
     })

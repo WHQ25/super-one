@@ -48,11 +48,10 @@ describe('NodeConnectionManager integration', () => {
     const desktopData = mkdtempSync(join(tmpdir(), 'superone-desktop-cm-'))
     dirs.push(nodeHome, desktopData)
 
-    const port = 21000 + Math.floor(Math.random() * 10000)
     const runtime = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      bindPort: 0,
       label: 'integration-node', simulatedHarness: true })
     runtimes.push(runtime)
 
@@ -108,12 +107,10 @@ describe('NodeConnectionManager integration', () => {
     const desktopData = mkdtempSync(join(tmpdir(), 'superone-desktop-cm-restart-'))
     dirs.push(nodeHome, desktopData)
 
-    const port1 = 22000 + Math.floor(Math.random() * 10000)
-    const port2 = port1 + 1
     const runtime = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port1,
+      bindPort: 0,
       label: 'restart-node',
       simulatedHarness: true,
     })
@@ -153,14 +150,26 @@ describe('NodeConnectionManager integration', () => {
     )
     expect(leftConnected).toBe(true)
 
-    // Restart same node home on a *different* port — proves client baseUrl is refreshed.
-    const runtime2 = await startNodeRuntime({
+    // Restart the same node home on a new listen so the client base URL has to
+    // change. Port 0 is free; redraw once if the OS hands back the port we closed.
+    const previousUrl = currentBaseUrl
+    let runtime2 = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port2,
+      bindPort: 0,
       label: 'restart-node',
       simulatedHarness: true,
     })
+    if (runtime2.server.url.replace(/\/$/, '') === previousUrl) {
+      await runtime2.stop()
+      runtime2 = await startNodeRuntime({
+        nodeHome,
+        bindHost: '127.0.0.1',
+        bindPort: 0,
+        label: 'restart-node',
+        simulatedHarness: true,
+      })
+    }
     runtimes.push(runtime2)
     currentBaseUrl = runtime2.server.url.replace(/\/$/, '')
 

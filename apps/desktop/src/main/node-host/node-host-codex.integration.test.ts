@@ -69,7 +69,7 @@ async function pairedWithCodex() {
       listAgentProfiles: () => AGENT_PROFILES,
       hooks: testHarnessHooks(),
     },
-    { bindPort: 23000 + Math.floor(Math.random() * 10000) },
+    { bindPort: 0 },
   )
   hosts.push(host)
   const pairing = host.mintPairingToken()

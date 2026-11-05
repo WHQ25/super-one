@@ -78,11 +78,10 @@ describe('RemoteHostActionConsumer via EnvironmentHost', () => {
     dirs.push(nodeHome, projectDir)
     writeFileSync(join(projectDir, 'a.txt'), 'x')
 
-    const port = 36000 + Math.floor(Math.random() * 2000)
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      bindPort: 0,
       turnRunner: runner,
       simulatedHarness: true,
     })
@@ -187,11 +186,10 @@ describe('RemoteHostActionConsumer via EnvironmentHost', () => {
     dirs.push(nodeHome, projectDir)
     writeFileSync(join(projectDir, 'a.txt'), 'x')
 
-    const port = 38000 + Math.floor(Math.random() * 2000)
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      bindPort: 0,
       turnRunner: runner,
       simulatedHarness: true,
     })

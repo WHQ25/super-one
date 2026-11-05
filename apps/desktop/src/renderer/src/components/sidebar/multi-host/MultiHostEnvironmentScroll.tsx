@@ -100,12 +100,13 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
   const pinned = props.environments.find((bucket) => bucket.environmentId === pinnedId) ?? null
 
   return (
-    <div ref={frameRef} className="device-name-clip relative h-full">
+    // pt-1 and top-1 stay equal. With AppDrawer's mb-1 the gap is 8px.
+    <div ref={frameRef} className="device-name-clip relative h-full pt-1">
       <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll h-full">
         <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} />
       </ScrollArea>
       {pinned && (
-        <div ref={pinRef} data-slot="pinned-device-name" className="pointer-events-none absolute inset-x-0 top-0 z-10 px-2">
+        <div ref={pinRef} data-slot="pinned-device-name" className="pointer-events-none absolute inset-x-0 top-1 z-10 px-2">
           <div className="pointer-events-auto">
             <PinnedHeader {...props} bucket={pinned} />
           </div>

@@ -195,6 +195,13 @@ export const LongList: Story = {
     const fill = getComputedStyle(pinnedHeader!).backgroundColor
     await expect(fill === 'rgba(0, 0, 0, 0)' || fill === 'transparent').toBe(true)
     await expect(pinnedHeader!.className).not.toContain('bg-')
+    const frame = pin!.parentElement
+    await expect(frame).toHaveClass('pt-1')
+    await expect(pin).toHaveClass('top-1')
+    const listGap = pin!.getBoundingClientRect().top - frame!.getBoundingClientRect().top
+    await expect(listGap).toBeGreaterThan(3)
+    await expect(listGap).toBeLessThan(6)
+
     const pinTop = pin!.getBoundingClientRect().top
     viewport!.scrollTop = 160
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))

@@ -2,6 +2,8 @@ import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, 
 
 /** Optional session families: a host advertises only the operations it implements. */
 export interface SessionOperationMethods {
+  /** One answer per question of a Codex agent message's async question item. */
+  'session.answerAsyncQuestion': { input: { messageId: string; itemId: string; answers: string[] }; result: { reply: string } }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }
   'session.steer': { input: { clientMessageId: string; priority?: 'now' | 'next' }; result: { ok: boolean } }
   'session.forceRecover': { input: { message?: string }; result: { ok: true } }
@@ -28,6 +30,7 @@ export interface SessionOperationMethods {
 }
 export type SessionOperationMethod = keyof SessionOperationMethods
 export const SESSION_OPERATION_METHODS: ReadonlySet<string> = new Set([
+  'session.answerAsyncQuestion',
   'session.dequeue', 'session.steer',
   'session.reportWorktreeRemoved',
   'session.forceRecover',

@@ -8,6 +8,7 @@ import { McpAppAttachmentIndex } from './mcp-apps-index'
 import { hydrateMcpAppResource, mcpAppStatePatch } from '../mcp-apps/attachment-state'
 import { ArtifactWakes } from './artifact-wakes'
 import { InputAdmission } from './input-admission'
+import { answerNodeAsyncQuestion } from './codex-async-question'
 import type { TranscriptAccess } from '../stream/delivery/transcript-access'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -1453,6 +1454,28 @@ export class SessionRuntime {
   async callOperation(sessionId: string, method: string, input: Record<string, unknown>, assertControl: () => void = () => {}) {
     const session = this.live.get(sessionId)
     if (!session || session.closed) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (method === 'session.answerAsyncQuestion') {
+      assertControl()
+      if (this.disposing || session.status === 'ended') throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+      return answerNodeAsyncQuestion(session, this.messages(sessionId), input, async (message, text) => {
+        const admission = new InputAdmission({
+          beforeInput: assertControl,
+          onInputAccepted: () => {
+            session.transcript.push({ id: message.id, role: 'user', text, createdAt: Date.parse(message.createdAt),
+              userMessageContent: message.content, ...(message.metadata ? { metadata: message.metadata } : {}) })
+            session.updatedAt = Date.now()
+            this.persist(session)
+            this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.userMessage,
+              payload: { blockId: message.id, text, message, echoUserMessage: true } })
+          },
+        })
+        this.beginTurn(session, { text, userBlockId: message.id, inputAdmission: admission,
+          // The Codex runner steers a live turn and starts normally when it has ended.
+          turnKind: 'run', model: session.model, effort: session.effort, apiProviderId: session.apiProviderId,
+          permissionMode: session.permissionMode, sandboxMode: session.sandboxMode })
+        await admission.promise
+      })
+    }
     if (method === 'session.steer' || method === 'session.dequeue') return operateNodeQueue(method, input, {
       session, queue: this.turnQueues.get(sessionId) ?? [], admitting: this.queueAdmissions,
       runner: this.turnRunner, assertControl,
@@ -1475,7 +1498,7 @@ export class SessionRuntime {
       onPermission: (interaction, signal) => this.waitForPermissionDecision(session, interaction, signal),
     })
   }
-  get servedOperations(): ReadonlySet<string> { return this.turnRunner.servedOperations ?? new Set() }
+  get servedOperations(): ReadonlySet<string> { return new Set(['session.answerAsyncQuestion', ...(this.turnRunner.servedOperations ?? [])]) }
 
   /** Live Codex app-server for a voice call on this node. */
   codexVoice(): TurnRunner['codexVoice'] {

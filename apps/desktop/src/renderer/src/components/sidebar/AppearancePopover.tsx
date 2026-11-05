@@ -112,7 +112,7 @@ export function AppearancePopover(): React.JSX.Element {
         sideOffset={8}
         alignOffset={-32}
         collisionPadding={8}
-        className="w-80 p-3"
+        className="w-76 p-3"
       >
         {mode === 'basic' ? (
           <>

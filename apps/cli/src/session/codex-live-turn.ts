@@ -16,8 +16,6 @@ import {
 } from '@superone/codex'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
-const TURN_WAIT_TIMEOUT_MS = 300_000
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -130,9 +128,6 @@ export async function openTurnAndStream(opts: {
   opts.onTurnStarted?.(turnId)
 
   let finalText = ''
-  const deadline = Date.now() + TURN_WAIT_TIMEOUT_MS
-  const inputWaitAtStart = opts.client.getUserInputWaitMs?.() ?? 0
-  const remaining = () => deadline - Date.now() + (opts.client.getUserInputWaitMs?.() ?? 0) - inputWaitAtStart
   const agentEventMapper = opts.onAgentEvent
     ? createCodexAgentEventMapper({
         messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
@@ -146,12 +141,12 @@ export async function openTurnAndStream(opts: {
     : null
   agentEventMapper?.start(opts.threadId)
 
-  while (!opts.signal.aborted && remaining() > 0) {
+  // Long tool work and compaction have no overall deadline. Poll only to
+  // observe cancellation; connection failures still reject immediately.
+  while (!opts.signal.aborted) {
     let note: { method: string; params: Record<string, unknown> } | null
     try {
-      note = await opts.client.nextNotification(
-        Math.min(5_000, Math.max(0, remaining())),
-      )
+      note = await opts.client.nextNotification(5_000)
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       agentEventMapper?.fail(error.message, /interrupt|abort/i.test(error.message))
@@ -204,10 +199,6 @@ export async function openTurnAndStream(opts: {
     }
   }
 
-  if (opts.signal.aborted) {
-    agentEventMapper?.fail('Codex turn interrupted', true)
-    throw new Error('Codex turn interrupted')
-  }
-  agentEventMapper?.fail('Codex turn timed out waiting for turn/completed')
-  throw new Error('Codex turn timed out waiting for turn/completed')
+  agentEventMapper?.fail('Codex turn interrupted', true)
+  throw new Error('Codex turn interrupted')
 }

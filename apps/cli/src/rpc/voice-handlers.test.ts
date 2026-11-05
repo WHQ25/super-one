@@ -1,11 +1,20 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import type { NodeSessionRecord } from '@superone/runtime/session'
+import type { NodeSessionRecord, TurnRunner } from '@superone/runtime/session'
 import { codexVoiceConsumesNotification } from '../session/codex-turn-runner'
+import { withSessionZone } from '../session/session-zone-runner'
 import { dispatchVoiceRpc, resetCliVoiceHostForTests } from './voice-handlers'
 import type { RpcContext } from './handlers'
 
-afterEach(() => { resetCliVoiceHostForTests() })
+let syncRoot: string | undefined
+afterEach(() => {
+  resetCliVoiceHostForTests()
+  if (syncRoot) rmSync(syncRoot, { recursive: true, force: true })
+  syncRoot = undefined
+})
 
 function session(patch: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
   return {
@@ -45,7 +54,7 @@ describe('codex voice notification drain', () => {
 })
 
 describe('dispatchVoiceRpc', () => {
-  it('starts the node Codex thread and pushes the SDP answer instead of storing it', async () => {
+  it('starts voice through the session-zone runner and pushes the SDP answer instead of storing it', async () => {
     const published: AgentEvent[] = []
     const pushed: unknown[] = []
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
@@ -72,6 +81,10 @@ describe('dispatchVoiceRpc', () => {
       },
       setVoiceActive,
     }))
+    syncRoot = mkdtempSync(join(tmpdir(), 'voice-rpc-'))
+    const inner: TurnRunner = vi.fn(async () => ({ finalText: '' }))
+    inner.codexVoice = { open }
+    const runner = withSessionZone(inner, syncRoot)
     const assertValid = vi.fn()
     const ctx = {
       client: { clientSessionId: 'desktop-1', scopes: ['session:operate', 'session:read'] },
@@ -81,7 +94,7 @@ describe('dispatchVoiceRpc', () => {
       streams: { push: (message: unknown) => { pushed.push(message) } },
       sessions: {
         get: () => session(),
-        codexVoice: () => ({ open }),
+        codexVoice: () => runner.codexVoice,
         publishHarnessEvent: (_sessionId: string, event: AgentEvent) => { published.push(event) },
         noteProviderResume,
       },
@@ -103,6 +116,7 @@ describe('dispatchVoiceRpc', () => {
       holderClientId: 'desktop-1',
     }))
     expect(open).toHaveBeenCalledOnce()
+    expect(inner).not.toHaveBeenCalled()
     expect(calls.map((call) => call.method)).toEqual(['thread/settings/update', 'thread/realtime/start'])
     expect(calls[1]?.params).toMatchObject({
       threadId: 'thread-1',

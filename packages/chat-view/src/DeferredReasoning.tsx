@@ -8,7 +8,7 @@ export function DeferredReasoning({ remoteDetails, ...props }: Props) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const { text, error, loading, retry } = useDeferredText(remoteDetails, expanded, props.blockDone)
-  return <ReasoningBlock {...props} collapseOnDone={false}
+  return <ReasoningBlock {...props}
     showContent={Boolean(remoteDetails?.length) || props.showContent}
     onExpandedChange={setExpanded} onRetry={error ? retry : undefined}
     text={remoteDetails?.length ? (error || (loading && !text ? t('common.loading') : text)) : props.text} />

@@ -1,8 +1,8 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import type { NodeSessionRecord, TurnRunner } from '@superone/runtime/session'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { CodexVoiceConnection, NodeSessionRecord, TurnRunner } from '@superone/runtime/session'
 import { withSessionZone } from './session-zone-runner'
 
 let root: string
@@ -36,5 +36,25 @@ describe('session zone turn wrapper', () => {
     inner.disposeSession = async () => {}
     const runner = withSessionZone(inner, root)
     expect(runner.disposeSession).toBe(inner.disposeSession)
+  })
+
+  it('opens the Codex voice connection without starting a text turn', async () => {
+    root = mkdtempSync(join(tmpdir(), 'zone-runner-'))
+    const connection: CodexVoiceConnection = {
+      threadId: 'thread-1',
+      request: vi.fn(async () => ({})),
+      subscribe: vi.fn(() => () => {}),
+      setVoiceActive: vi.fn(),
+    }
+    const inner: TurnRunner = vi.fn(async () => ({ finalText: '' }))
+    const open = vi.fn(async () => connection)
+    inner.codexVoice = { open }
+    const runner = withSessionZone(inner, root)
+    const voiceSession = { ...session(), harnessId: 'codex' }
+
+    expect(runner.codexVoice).toBeDefined()
+    expect(await runner.codexVoice!.open(voiceSession)).toBe(connection)
+    expect(open).toHaveBeenCalledExactlyOnceWith(voiceSession)
+    expect(inner).not.toHaveBeenCalled()
   })
 })

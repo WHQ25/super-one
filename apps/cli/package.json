@@ -40,6 +40,7 @@
     "@superone/opencode": "workspace:*",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*",
+    "@toon-format/toon": "^4.1.1",
     "better-sqlite3": "^13.0.1",
     "jpeg-js": "^0.4.4",
     "node-pty": "^1.0.0",

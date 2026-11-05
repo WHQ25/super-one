@@ -24,6 +24,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Codex tasks on remote nodes keep running past five minutes, including long tool calls and automatic context compaction, without false timeout or compression failures.
 - Antigravity and ACP AskUserQuestion interactions render as interactive question cards in the chat transcript.
 - A running Grok background bash task remains visible in the status bar and holds the session active until finished.
 - The appearance popover aligns to the sidebar's left edge.

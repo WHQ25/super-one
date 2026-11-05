@@ -749,7 +749,7 @@ url = "https://mcp.linear.app/mcp"
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('turnKind=steer reuses long-lived connection and issues turn/steer', async () => {
+  it.each(['steer', 'run'] as const)('turnKind=%s reuses an active connection and issues turn/steer', async turnKind => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-steer-'))
     const bin = join(dir, 'codex')
     writeFileSync(bin, '#!/bin/sh\n')
@@ -797,12 +797,14 @@ url = "https://mcp.linear.app/mcp"
       expect.objectContaining({ sessionId: 'steer-s', busy: true }),
     ])
 
-    // Concurrent steer on same session while turn is open.
+    // Async answers use run: the runner selects steer while the turn is live.
+    const onInputAccepted = vi.fn()
     const steerP = runner({
       session: session({ sessionId: 'steer-s', providerResume: 'thread:t-s' }),
       text: 'nudge',
       images: [PNG_ATTACHMENT],
-      turnKind: 'steer',
+      turnKind,
+      onInputAccepted,
       onDelta: () => {},
       signal: new AbortController().signal,
     })
@@ -814,6 +816,7 @@ url = "https://mcp.linear.app/mcp"
     child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: steerReq.id, result: {} })}\n`)
     const steerResult = await steerP
     expect(steerResult.skipAssistantTranscript).toBe(true)
+    expect(onInputAccepted).toHaveBeenCalledOnce()
 
     // Complete original turn
     child.stdout.write(

@@ -74,6 +74,18 @@ mobile split its display at that cursor while later output keeps the original
 message ID. Accepted async answers capture the same cursor before
 steering, so subsequent output appears below the answer bubble immediately.
 
+## Remote async question replies
+
+The CLI serves `session.answerAsyncQuestion` through the shared session operation
+dispatcher. It validates the stored question item and the caller's control lease,
+then runs the reply through the Codex runner: a live turn is steered, while an
+ended turn starts normally on the resumed thread. Acceptance, not turn completion,
+acknowledges the RPC and persists the `codex_async_answer:<itemId>` user row with
+its questions and pre-delivery transcript cursor. Failed handoff leaves the
+question pending. Dismiss uses the same path with the shared cancellation text.
+Concurrent calls share a handoff; retries replay the accepted reply, including
+after restart when the original question's streaming delta is no longer present.
+Covered by runtime `rpc-async-question.test.ts` and CLI `codex-turn-runner.test.ts`.
 ## Node turn lifetime
 
 - **Behavior:** A turn can run for more than five minutes, including silent tool

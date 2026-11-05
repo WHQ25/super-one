@@ -15,6 +15,13 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
   const p = asRecord(payload)
   try {
     const sessionId = requiredText(p, 'sessionId')
+    if (method === 'session.answerAsyncQuestion') {
+      requiredText(p, 'messageId')
+      requiredText(p, 'itemId')
+      if (!Array.isArray(p.answers) || p.answers.some(answer => typeof answer !== 'string')) {
+        throw Object.assign(new Error('answers must be a string array'), { code: 'invalid_argument' })
+      }
+    }
     if (method === 'session.dequeue' || method === 'session.steer') requiredText(p, 'clientMessageId')
     if (method === 'session.rewind' || method === 'session.previewRewind' || method === 'session.truncateAtCheckpoint') requiredText(p, 'checkpointId')
     if (method === 'session.mcpAuthenticate') requiredText(p, 'serverName')

@@ -4,6 +4,21 @@ import type { NodeRpcClient } from './node-rpc-client'
 import type { ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
 
 const descriptor = { environmentId: 'env-1', label: 'b' } as ExecutionEnvironmentDescriptor
+const syncDescriptor: ExecutionEnvironmentDescriptor = {
+  environmentId: 'env-1',
+  label: 'node',
+  platform: { os: 'linux', arch: 'x64' },
+  nodeVersion: 'v22.0.0',
+  protocolVersion: 1,
+  syncRoot: '/home/node/.superone/node/sync',
+  capabilities: {
+    methods: ['artifact.put'],
+    harnessIds: ['claude'],
+    coldSessionResume: true,
+    turnReattach: false,
+    hostActionV1: true,
+  },
+}
 
 function gateway() {
   const getDescriptor = vi.fn(async () => descriptor)
@@ -13,6 +28,90 @@ function gateway() {
 }
 
 describe('RemoteEnvironmentGateway descriptor cache', () => {
+  it('keeps sync identity and capability gates across the 60-second refresh boundary', async () => {
+    vi.useFakeTimers()
+    try {
+      const { gw, getDescriptor, rpc } = gateway()
+      gw.rememberDescriptor(syncDescriptor)
+      const zone = { syncRoot: syncDescriptor.syncRoot, os: 'linux' }
+      vi.advanceTimersByTime(59_999)
+      expect(gw.syncZone()).toEqual(zone)
+      expect(gw.drafts).toBeUndefined()
+      vi.advanceTimersByTime(1)
+      expect(gw.syncZone()).toEqual(zone)
+      expect(gw.cachedDescriptor).toBe(syncDescriptor)
+      expect(gw.drafts).toBeUndefined()
+      await expect(gw.providerExportBundle()).rejects.toMatchObject({ code: 'failed_precondition' })
+      vi.advanceTimersByTime(60_000)
+      expect(gw.syncZone()).toEqual(zone)
+      expect(getDescriptor).not.toHaveBeenCalled()
+      expect(rpc).not.toHaveBeenCalled()
+      gw.clearDescriptor()
+      expect(gw.cachedDescriptor).toBeNull()
+      expect(gw.syncZone()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('accepts harness catalog events after the descriptor refresh deadline', () => {
+    vi.useFakeTimers()
+    try {
+      const { gw, getDescriptor } = gateway()
+      gw.rememberDescriptor(syncDescriptor)
+      vi.advanceTimersByTime(60_001)
+      gw.replaceAdvertisedHarnesses(['codex'])
+      expect(gw.cachedDescriptor?.capabilities.harnessIds).toEqual(['codex'])
+      expect(gw.syncZone()?.syncRoot).toBe(syncDescriptor.syncRoot)
+      expect(getDescriptor).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the connection snapshot during refresh failures and replaces it on success', async () => {
+    const { gw, getDescriptor } = gateway()
+    gw.rememberDescriptor(syncDescriptor)
+    let reject: (reason: Error) => void = () => {}
+    getDescriptor.mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail }))
+    const refresh = gw.refreshDescriptor()
+    expect(gw.cachedDescriptor).toBe(syncDescriptor)
+    reject(new Error('temporarily unavailable'))
+    await expect(refresh).rejects.toThrow('temporarily unavailable')
+    expect(gw.cachedDescriptor).toBe(syncDescriptor)
+    const next = { ...syncDescriptor, syncRoot: '/new/sync' }
+    getDescriptor.mockResolvedValueOnce(next)
+    await expect(gw.getDescriptor()).resolves.toBe(next)
+    expect(gw.syncZone()).toEqual({ syncRoot: '/new/sync', os: 'linux' })
+  })
+
+  it('does not let an older fetch overwrite a remembered connection snapshot', async () => {
+    const { gw, getDescriptor } = gateway()
+    let resolve: (value: ExecutionEnvironmentDescriptor) => void = () => {}
+    getDescriptor.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    const old = gw.getDescriptor()
+    const next = { ...syncDescriptor, syncRoot: '/new/sync' }
+    gw.rememberDescriptor(next)
+    resolve(syncDescriptor)
+    await old
+    expect(gw.cachedDescriptor).toBe(next)
+    expect(gw.syncZone()?.syncRoot).toBe('/new/sync')
+  })
+
+  it('revokes a previously supported sync zone when a new descriptor removes it', async () => {
+    const { gw, getDescriptor } = gateway()
+    gw.rememberDescriptor(syncDescriptor)
+    getDescriptor.mockResolvedValueOnce({
+      ...syncDescriptor,
+      capabilities: { ...syncDescriptor.capabilities, methods: [] },
+    })
+    await gw.refreshDescriptor()
+    expect(gw.syncZone()).toBeNull()
+    getDescriptor.mockResolvedValueOnce({ ...syncDescriptor, syncRoot: undefined })
+    await gw.refreshDescriptor()
+    expect(gw.syncZone()).toBeNull()
+  })
+
   it('returns a remembered descriptor without dialing again', async () => {
     const { gw, getDescriptor } = gateway()
     gw.rememberDescriptor(descriptor)
@@ -29,11 +128,12 @@ describe('RemoteEnvironmentGateway descriptor cache', () => {
     const first = gw.refreshDescriptor()
     const second = gw.getDescriptor()
     gw.clearDescriptor()
-    resolve(descriptor)
-    await expect(first).resolves.toBe(descriptor)
-    await expect(second).resolves.toBe(descriptor)
+    resolve(syncDescriptor)
+    await expect(first).resolves.toBe(syncDescriptor)
+    await expect(second).resolves.toBe(syncDescriptor)
     expect(getDescriptor).toHaveBeenCalledTimes(1)
     expect(gw.cachedDescriptor).toBeNull()
+    expect(gw.syncZone()).toBeNull()
     await gw.getDescriptor()
     expect(getDescriptor).toHaveBeenCalledTimes(2)
   })
@@ -98,11 +198,16 @@ describe('RemoteEnvironmentGateway host catalog', () => {
     vi.useFakeTimers()
     try {
       const { gw, getDescriptor } = gateway()
-      gw.rememberDescriptor(descriptor)
+      gw.rememberDescriptor(syncDescriptor)
       await gw.getDescriptor()
+      expect(getDescriptor).not.toHaveBeenCalled()
+      const next = { ...syncDescriptor, syncRoot: '/refreshed/sync' }
+      getDescriptor.mockResolvedValueOnce(next)
       vi.advanceTimersByTime(60_000)
-      await gw.getDescriptor()
+      expect(gw.syncZone()?.syncRoot).toBe(syncDescriptor.syncRoot)
+      await expect(gw.getDescriptor()).resolves.toBe(next)
       expect(getDescriptor).toHaveBeenCalledTimes(1)
+      expect(gw.syncZone()?.syncRoot).toBe(next.syncRoot)
     } finally {
       vi.useRealTimers()
     }

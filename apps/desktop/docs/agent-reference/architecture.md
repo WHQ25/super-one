@@ -110,12 +110,17 @@ scheduled-send reads. Opening a remote session starts the window read beside
 
 | Read | Cached in | Kept | Dropped by |
 |---|---|---|---|
-| `environment.descriptor` | `RemoteEnvironmentGateway`, fetched at connect | 60 s | disconnect, forget |
+| `environment.descriptor` | `RemoteEnvironmentGateway`, fetched at connect | 60 s freshness; last validated connection snapshot until dropped | disconnect, forget |
 | Provider bindings, credentials, platforms | gateway host catalog | until dropped | `catalogChanged`, A's own provider writes, disconnect, forget |
 | `claude.listAccounts` | gateway host catalog | 60 s | the same, plus `notifyClaudeAccountsChanged`; `force` bypasses it |
 | Remote `git.worktrees`, `git.mentionCapabilities` | `remote-file-tree.ts` | 30 s | A's git writes, disconnect, reconnect, forget (by connection id) |
 | Local worktree list, `@git` capabilities | `git/git-read-cache.ts` | 30 s / until dropped | git writes, the file watcher (`.git/HEAD`, `.git/index`, `.git/worktrees/`) |
 | `window.environment.listItems()` | renderer `lib/environment-list.ts` | while someone subscribes | any environment status push, `invalidateEnvironmentList()` before the settings page refreshes after a change |
+
+Synchronous capability and sync-zone reads use the last validated connection
+descriptor even after its freshness TTL. The next asynchronous descriptor read
+refreshes it; a refresh failure retains that snapshot, while disconnect/forget
+clears it and fences any late response from the old fetch.
 
 The TTLs exist because the host does not push every change: B computes
 `harnessIds` when the descriptor is read and announces neither capability

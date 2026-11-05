@@ -815,4 +815,291 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
     expect(retractions.length).toBeGreaterThanOrEqual(2)
     expect(scope.currentStepHasThinking).toBe(false)
   })
+
+  it('does not prematurely close open MCP tool calls on call_mcp_tool dispatch and forwards MCP metadata on completion', () => {
+    const pyCheck = `
+import asyncio, json, sys, time, types, uuid
+
+src = sys.stdin.read()
+ns = {}
+exec(src, ns)
+
+class FakeModel:
+    def __init__(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
+    def model_copy(self, update=None):
+        d = dict(self.__dict__)
+        if update:
+            d.update(update)
+        return FakeModel(**d)
+
+emitted_updates = []
+class DummyClient:
+    async def request_permission(self, *a, **kw): pass
+    async def session_update(self, session_id, update):
+        emitted_updates.append((session_id, update))
+
+class DummyAdapter:
+    def __init__(self): pass
+    def on_connect(self, conn): pass
+    async def new_session(self, **kw): pass
+    async def _restore_session(self, **kw): pass
+    async def _create_agent_config(self, **kw): pass
+    def _build_literal_model_target(self, m, e): pass
+    async def _permission_handler(self, s, tc): return True
+    def _resolve_permission_frame(self, session_info, call):
+        if call.id in session_info.reconciled_frame_by_exec:
+            return session_info.reconciled_frame_by_exec[call.id], False
+        queue = session_info.pending_permission_frames.get(str(call.name))
+        if not queue:
+            queue = session_info.pending_permission_frames.get("session_read")
+        if queue:
+            fid = queue.pop(0)
+            session_info.reconciled_frame_by_exec[call.id] = fid
+            return fid, True
+        return call.id, False
+    async def _stream_live_step(self, session_id, step, open_tool_calls, hidden_tool_calls=None):
+        session_info = self._sessions[session_id]
+        if step.status != "ERROR":
+            for call in step.tool_calls:
+                fid, reconciles = self._resolve_permission_frame(session_info, call)
+                open_tool_calls[fid] = str(call.name)
+        if step.type == "TOOL_CALL" and step.status == "DONE":
+            for call in step.tool_calls:
+                fid = session_info.reconciled_frame_by_exec.get(call.id, call.id)
+                if fid in open_tool_calls:
+                    open_tool_calls.pop(fid, None)
+                    session_info.mcp_frames.pop(fid, None)
+                    await self._client.session_update(
+                        session_id=session_id,
+                        update=FakeModel(
+                            session_update="tool_call_update",
+                            tool_call_id=fid,
+                            raw_output=step.content,
+                            status="completed",
+                        ),
+                    )
+    async def prompt(self, p, s, message_id=None, **kw): pass
+    async def _maybe_send_usage_update(self, s): pass
+    async def _send_available_commands_update(self, s): pass
+    async def cleanup(self, s=None): pass
+
+server_mod = types.SimpleNamespace(
+    config_options=types.SimpleNamespace(AVAILABLE_SESSION_MODES=()),
+    schema=types.SimpleNamespace(
+        SessionMode=lambda **kw: types.SimpleNamespace(**kw),
+        ToolCallProgress=lambda **kw: FakeModel(**kw),
+    ),
+    resolve_skills_paths=lambda cwd=None, additional_directories=None: [],
+    AgyAdapter=DummyAdapter,
+    asyncio=asyncio,
+    time=time,
+    uuid=uuid,
+    _TERMINAL_STEP_STATUSES={"DONE", "ERROR", "CANCELLED"},
+    _tool_call_name=lambda tc: getattr(tc, "name", ""),
+    _tool_call_target_paths=lambda tc: [],
+    _is_internal_mcp_schema_read=lambda *a: False,
+    _call_accesses_outside_workspace=lambda *a: False,
+    _unwrap_mcp_tool_call=lambda name, args, server_name=None: (None, dict(args), None),
+    sdk_types_module=types.SimpleNamespace(
+        StepSource=types.SimpleNamespace(MODEL="MODEL", TOOL="TOOL"),
+        StepStatus=types.SimpleNamespace(ACTIVE="ACTIVE", DONE="DONE", ERROR="ERROR"),
+        StepType=types.SimpleNamespace(TOOL_CALL="TOOL_CALL"),
+    ),
+    acp_paths=types.SimpleNamespace(gemini_home=lambda: tmp_home),
+    json=json,
+)
+
+import os, tempfile
+tmp_home = tempfile.mkdtemp()
+logs_dir = os.path.join(tmp_home, "antigravity-acp", "brain", "s1", ".system_generated", "logs")
+os.makedirs(logs_dir, exist_ok=True)
+with open(os.path.join(logs_dir, "transcript.jsonl"), "w", encoding="utf-8") as fh:
+    fh.write(json.dumps({
+        "step_index": 13,
+        "type": "MCP_TOOL",
+        "status": "DONE",
+        "content": "Created At: 2026-11-05T18:52:56+08:00\\nCompleted At: 2026-11-05T18:52:56+08:00\\n# Session s-1\\nFull markdown session body",
+    }) + "\\n")
+
+ns["_patch_server_module"](server_mod)
+adapter = DummyAdapter()
+adapter._client = DummyClient()
+adapter.on_connect(None)
+
+session_info = types.SimpleNamespace(
+    pending_permission_frames={"session_read": ["frame_123"]},
+    mcp_frames={"frame_123": ("superone_session_read", {"sessionId": "s-1"}, {"mcp": {"server": "superone", "tool": "session_read"}})},
+    reconciled_frame_by_exec={},
+)
+adapter._sessions = {"s1": session_info}
+adapter._permission_call_by_frame_id["frame_123"] = (
+    "call_mcp_tool",
+    {"ServerName": "superone", "ToolName": "session_read", "Arguments": {"sessionId": "s-1"}, "toolSummary": "Read user queries from session"},
+    set(),
+)
+open_tool_calls = {"frame_123": "session_read"}
+
+# 1. Step A: model emits call_mcp_tool with preview summary as step.content
+step_a = FakeModel(
+    id="s1_12",
+    step_index=12,
+    type="TOOL_CALL",
+    status="DONE",
+    source="MODEL",
+    parent_trajectory_id=None,
+    tool_calls=[FakeModel(id="call_dispatch_1", name="call_mcp_tool", args={"ServerName": "superone", "ToolName": "session_read", "Arguments": {"sessionId": "s-1"}})],
+    content="Read session s-1",
+)
+asyncio.run(adapter._stream_live_step("s1", step_a, open_tool_calls))
+
+# Assert: Step A did NOT close frame_123
+assert "frame_123" in open_tool_calls, "frame_123 should still be open after dispatch"
+assert "frame_123" in session_info.pending_permission_frames["session_read"], "pending frame should not be consumed by dispatch"
+assert len(emitted_updates) == 0, "no completion update should be emitted on dispatch step"
+
+# 2. Step B: live LocalConnectionStep has step.content = tool_summary ("Read user queries from session"), while real output is in transcript.jsonl/SQLite
+step_b = FakeModel(
+    id="s1_13",
+    step_index=13,
+    type="TOOL_CALL",
+    status="DONE",
+    source="MODEL",
+    parent_trajectory_id=None,
+    tool_calls=[FakeModel(id="s1_13", name="session_read", args={"sessionId": "s-1"}, server_name="superone")],
+    content="Read user queries from session",
+)
+asyncio.run(adapter._stream_live_step("s1", step_b, open_tool_calls))
+
+# Assert: Step B closed frame_123 with enriched MCP metadata and real output resolved from persisted step
+assert "frame_123" not in open_tool_calls, "frame_123 should be closed after execution"
+assert len(emitted_updates) == 1, "exactly one completion update expected"
+sess_id, done_up = emitted_updates[0]
+assert done_up.tool_call_id == "frame_123"
+assert done_up.raw_output == "# Session s-1\\nFull markdown session body"
+assert done_up.title == "superone_session_read"
+assert done_up.kind == "execute"
+assert done_up.field_meta == {"mcp": {"server": "superone", "tool": "session_read"}}
+assert done_up.raw_input == {"sessionId": "s-1"}
+print(json.dumps({"ok": True, "raw_output": done_up.raw_output, "title": done_up.title}))
+`
+    const out = execFileSync('python3', ['-c', pyCheck], {
+      input: ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE,
+      encoding: 'utf8',
+    })
+    const parsed = JSON.parse(out.trim())
+    expect(parsed.ok).toBe(true)
+    expect(parsed.raw_output).toContain('# Session s-1')
+    expect(parsed.title).toBe('superone_session_read')
+  })
+
+  it('resolves SQLite mcp_tool output accurately when omitted planner_response steps shift StepUpdate.step_index behind steps.idx', () => {
+    const pyCheck = `
+import asyncio, json, os, sqlite3, sys, tempfile, time, types, uuid
+
+src = sys.stdin.read()
+ns = {}
+exec(src, ns)
+
+class FakeModel:
+    def __init__(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
+    def model_copy(self, update=None):
+        d = dict(self.__dict__)
+        if update:
+            d.update(update)
+        return FakeModel(**d)
+
+class FakeToolCallProto:
+    def __init__(self, name="", arguments_json=""):
+        self.name = name
+        self.arguments_json = arguments_json
+
+class FakeMcpToolProto:
+    def __init__(self, name="", arguments_json="", result_string=""):
+        self.tool_call = FakeToolCallProto(name, arguments_json)
+        self.result_string = result_string
+        self.result_uri = ""
+    def WhichOneof(self, oneof_name):
+        return "result_string" if self.result_string else None
+
+class FakeStepProto:
+    def __init__(self):
+        self._kind = None
+        self.mcp_tool = FakeMcpToolProto()
+    def ParseFromString(self, payload):
+        obj = json.loads(payload.decode("utf-8"))
+        self._kind = obj.get("kind")
+        if self._kind == "mcp_tool":
+            self.mcp_tool = FakeMcpToolProto(
+                obj.get("name", ""),
+                json.dumps(obj.get("args", {})),
+                obj.get("result_string", ""),
+            )
+    def WhichOneof(self, oneof_name):
+        return self._kind
+
+tmp_dir = tempfile.mkdtemp()
+db_path = os.path.join(tmp_dir, "s_offset.db")
+conn = sqlite3.connect(db_path)
+conn.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, metadata BLOB, step_payload BLOB)")
+rows = [
+    (8, {"kind": "mcp_tool", "name": "session_rename", "args": {"title": "Test"}, "result_string": '{"ok":true}'}),
+    (9, {"kind": "planner_response"}),
+    (10, {"kind": "mcp_tool", "name": "session_list", "args": {"limit": 3}, "result_string": '[{"sessionId":"s-1","title":"One"}]'}),
+    (11, {"kind": "mcp_tool", "name": "session_read", "args": {"sessionId": "s-1", "view": "meta"}, "result_string": '{"sessionId":"s-1","messageCount":10}'}),
+    (12, {"kind": "planner_response"}),
+    (13, {"kind": "mcp_tool", "name": "session_read", "args": {"sessionId": "s-1", "view": "user"}, "result_string": "# User View\\n### [u0] (10:00)\\nHello"}),
+    (14, {"kind": "planner_response"}),
+    (15, {"kind": "mcp_tool", "name": "session_read", "args": {"sessionId": "s-1", "view": "assistant"}, "result_string": "# Assistant View\\n### [a1] (10:01)\\nWorld"}),
+]
+for r_idx, r_obj in rows:
+    conn.execute("INSERT INTO steps (idx, step_type, metadata, step_payload) VALUES (?, 30, NULL, ?)", (r_idx, json.dumps(r_obj).encode("utf-8")))
+conn.commit()
+conn.close()
+
+server_mod = types.SimpleNamespace(
+    asyncio=asyncio,
+    json=json,
+    session_store=types.SimpleNamespace(trajectory_path=lambda sid: db_path),
+    trajectory_pb2=types.SimpleNamespace(Step=FakeStepProto),
+    _tool_call_name=lambda tc: getattr(tc, "name", ""),
+)
+
+adapter = types.SimpleNamespace(
+    _used_mcp_db_idxs_by_session={},
+    _matched_mcp_db_idx_by_step={},
+    _turn_min_mcp_db_idx_by_session={"s_offset": 0},
+)
+
+live_steps = [
+    FakeModel(id="s_offset:8", step_index=8, tool_calls=[FakeModel(name="session_rename", args={"title": "Test"}, server_name="superone")]),
+    FakeModel(id="s_offset:9", step_index=9, tool_calls=[FakeModel(name="session_list", args={"limit": 3}, server_name="superone")]),
+    FakeModel(id="s_offset:10", step_index=10, tool_calls=[FakeModel(name="session_read", args={"sessionId": "s-1", "view": "meta"}, server_name="superone")]),
+    FakeModel(id="s_offset:11", step_index=11, tool_calls=[FakeModel(name="session_read", args={"sessionId": "s-1", "view": "user"}, server_name="superone")]),
+    FakeModel(id="s_offset:13", step_index=13, tool_calls=[FakeModel(name="session_read", args={"sessionId": "s-1", "view": "assistant"}, server_name="superone")]),
+]
+
+outputs = [
+    asyncio.run(ns["_resolve_live_mcp_step_output"](adapter, server_mod, "s_offset", st))
+    for st in live_steps
+]
+print(json.dumps(outputs))
+`
+    const out = execFileSync('python3', ['-c', pyCheck], {
+      input: ANTIGRAVITY_SITE_CUSTOMIZE_SOURCE,
+      encoding: 'utf8',
+    })
+    const outputs = JSON.parse(out.trim())
+    expect(outputs).toEqual([
+      '{"ok":true}',
+      '[{"sessionId":"s-1","title":"One"}]',
+      '{"sessionId":"s-1","messageCount":10}',
+      '# User View\n### [u0] (10:00)\nHello',
+      '# Assistant View\n### [a1] (10:01)\nWorld',
+    ])
+  })
 })
+

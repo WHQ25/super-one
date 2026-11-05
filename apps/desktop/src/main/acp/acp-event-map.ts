@@ -691,8 +691,9 @@ export function normalizeAcpTool(
   const raw = { ...grokMetaInput(tool), ...asRecord(tool.rawInput) }
   const rawInput = asRecord(tool.rawInput)
   const mcp = unwrapMcpEnvelope(tool, rawInput)
+  const isSessionUpdate = typeof (tool as { sessionUpdate?: unknown }).sessionUpdate === 'string'
   if (mcp) {
-    if (tool.toolCallId) {
+    if (isSessionUpdate && tool.toolCallId) {
       recordKnownToolCall(tool.toolCallId, {
         toolName: mcp.toolName,
         input: mcp.input,
@@ -710,20 +711,7 @@ export function normalizeAcpTool(
   const diffs = extractDiffs(tool.content)
   const terminalId = extractEmbeddedTerminalId(tool.content)
   const toolName = resolveToolName(tool, raw, diffs, !!terminalId)
-  if (!toolName) {
-    if (tool.toolCallId) {
-      const known = knownToolCallsById.get(tool.toolCallId)
-      if (known) {
-        return {
-          toolName: known.toolName,
-          input: known.input,
-          toolFilePath: known.toolFilePath,
-          toolSummary: known.toolSummary,
-        }
-      }
-    }
-    return null
-  }
+  if (!toolName) return null
   const filePath = extractFilePath(tool, raw, diffs)
   const title = typeof tool.title === 'string' && tool.title.trim() ? tool.title.trim() : undefined
   const input = enrichSearchInput(
@@ -738,7 +726,7 @@ export function normalizeAcpTool(
     toolSummary: displayToolSummary(toolName, input, title),
     terminalId,
   }
-  if (tool.toolCallId) {
+  if (isSessionUpdate && tool.toolCallId) {
     recordKnownToolCall(tool.toolCallId, {
       toolName,
       input,
@@ -873,12 +861,15 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
   }
   if (terminalOutput && parts.length === 0) parts.push(terminalOutput)
   const normalized = normalizeAcpTool(update)
-  const toolName = normalized?.toolName
-  const isMcp = Boolean(toolName && parseMcpToolName(toolName))
-  const toolSummary = normalized?.toolSummary?.trim()
+  const known = update.toolCallId ? knownToolCallsById.get(update.toolCallId) : undefined
+  const toolName = normalized?.toolName ?? known?.toolName
+  const isMcp = Boolean(toolName && parseMcpToolName(toolName)) || known?.isMcp === true
+  const toolSummary = normalized?.toolSummary?.trim() ?? known?.toolSummary?.trim()
   const rawInput = asRecord(update.rawInput)
-  const inputSummary = pickString(rawInput, ['toolSummary', 'toolAction', 'description'])?.trim()
-  const rawTitle = typeof update.title === 'string' ? update.title.trim() : ''
+  const inputSummary =
+    pickString(rawInput, ['toolSummary', 'toolAction', 'description'])?.trim()
+    ?? known?.inputSummary
+  const rawTitle = (typeof update.title === 'string' ? update.title.trim() : '') || known?.rawTitle || ''
   const isPreviewText = parts.length === 1 && (
     (Boolean(toolSummary) && parts[0].trim() === toolSummary) ||
     (Boolean(rawTitle) && parts[0].trim() === rawTitle) ||
@@ -907,6 +898,9 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
   const failed = update.status === 'failed'
   const text = withGrokAutoDenyPrefix(capped || (failed ? 'failed' : 'done'), failed)
   const outputPath = backgroundTaskOutputPath(update.rawOutput)
+  if (update.toolCallId && (update.status === 'completed' || update.status === 'failed')) {
+    knownToolCallsById.delete(update.toolCallId)
+  }
   return {
     type: 'tool_result',
     toolUseId: update.toolCallId,
@@ -942,6 +936,7 @@ function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (isCollabToolName(toolName)) return true
   if (isSessionArchiveToolName(toolName)) return true
   if (looksLikeSessionArchiveToon(summary)) return true
+  if (/^# Session\s+\S+/m.test(summary)) return true
   if (isComputerUseToolName(toolName)) return true
   if (looksLikeComputerUseOutline(summary)) return true
   if (isJevRunToolName(toolName)) return true

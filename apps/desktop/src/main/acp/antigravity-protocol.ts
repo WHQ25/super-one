@@ -15,7 +15,7 @@ const WARNING_TEXT_LIMIT = 512
 const MAX_SPILLED_OUTPUT_BYTES = 2 * 1024 * 1024
 const SECURITY_WARNING_META_KEY = 'agy.security.warning'
 const STEP_TIMESTAMP_HEADER_RE = /^(?:Created At:\s*[^\r\n]+\r?\n(?:Completed At:\s*[^\r\n]+\r?\n)?|Completed At:\s*[^\r\n]+\r?\n)/
-const SPILLED_STEP_OUTPUT_RE = /^The output was large and was saved to:\s*(file:\/\/[^\r\n]+|\/[^\r\n]+)\s*$/
+const SPILLED_STEP_OUTPUT_RE = /^(?:The output was large and was saved to|Result saved to URI):\s*(file:\/\/[^\r\n]+|\/[^\r\n]+)\s*$/
 const READ_ONLY_TOOL_KINDS = new Set(['read', 'search', 'think'])
 const MUTATION_TOOL_KINDS = new Set(['edit', 'delete', 'move'])
 const SUBAGENT_TITLES = new Set([
@@ -442,13 +442,34 @@ export function normalizeAntigravityRawInput(
   }
 }
 
+const knownAntigravityMcpCalls = new Set<string>()
+const MAX_KNOWN_ANTIGRAVITY_MCP_CALLS = 1000
+
+function recordAntigravityMcpCall(id: string): void {
+  if (knownAntigravityMcpCalls.size >= MAX_KNOWN_ANTIGRAVITY_MCP_CALLS) {
+    const oldest = knownAntigravityMcpCalls.values().next().value
+    if (oldest) knownAntigravityMcpCalls.delete(oldest)
+  }
+  knownAntigravityMcpCalls.add(id)
+}
+
 export function normalizeAntigravitySessionUpdate(update: SessionUpdate): SessionUpdate {
   if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return update
   const titleStr = typeof update.title === 'string' ? update.title : undefined
   const metaVal = (update as { _meta?: unknown })._meta
-  const isMcp = Boolean(
+  let isMcp = Boolean(
     resolveAntigravityMcpMeta(titleStr, extractAntigravityToolNameFromTitle(titleStr), metaVal, update.kind, update.rawInput),
   )
+  if (update.toolCallId) {
+    if (isMcp) {
+      recordAntigravityMcpCall(update.toolCallId)
+    } else if (knownAntigravityMcpCalls.has(update.toolCallId)) {
+      isMcp = true
+    }
+    if (update.status === 'completed' || update.status === 'failed') {
+      knownAntigravityMcpCalls.delete(update.toolCallId)
+    }
+  }
   let sanitizedOutput =
     update.rawOutput !== undefined ? sanitizeAntigravityToolPayload(update.rawOutput, isMcp) : undefined
   if (isRecord(sanitizedOutput)) {

@@ -62,7 +62,7 @@ def _patch_server_module(server_mod):
     orig_restore_session = AgyAdapter._restore_session
     orig_create_agent_config = AgyAdapter._create_agent_config
     orig_build_literal_model_target = AgyAdapter._build_literal_model_target
-    orig_maybe_apply_model_switch = AgyAdapter._maybe_apply_model_switch
+    orig_maybe_apply_model_switch = getattr(AgyAdapter, "_maybe_apply_model_switch", None)
     orig_permission_handler = AgyAdapter._permission_handler
     orig_resolve_permission_frame = getattr(AgyAdapter, "_resolve_permission_frame", None)
     orig_stream_live_step = AgyAdapter._stream_live_step
@@ -92,6 +92,9 @@ def _patch_server_module(server_mod):
         self._turn_start_usage_by_session = {}
         self._tool_opened_at = {}
         self._permission_call_by_frame_id = {}
+        self._used_mcp_db_idxs_by_session = {}
+        self._matched_mcp_db_idx_by_step = {}
+        self._turn_min_mcp_db_idx_by_session = {}
 
     def _patched_on_connect(self, conn):
         orig_on_connect(self, conn)
@@ -212,7 +215,8 @@ def _patch_server_module(server_mod):
         return config, teardown_callback
 
     async def _patched_maybe_apply_model_switch(self, session_id):
-        await orig_maybe_apply_model_switch(self, session_id)
+        if callable(orig_maybe_apply_model_switch):
+            await orig_maybe_apply_model_switch(self, session_id)
         session_info = self._sessions.get(session_id)
         if session_info is None:
             return
@@ -312,12 +316,19 @@ def _patch_server_module(server_mod):
                 return m_fid, True
         if pop and callable(orig_resolve_permission_frame):
             return orig_resolve_permission_frame(self, session_info, call)
-        direct_q = pending.get(call_name)
+        mcp_key = None
+        if call_name == "call_mcp_tool" and isinstance(getattr(call, "args", None), dict):
+            mcp_key = call.args.get("ToolName") or call.args.get("tool") or call.args.get("tool_name")
+        elif getattr(call, "server_name", None):
+            mcp_key = call_name
+
+        queue_key = mcp_key if (mcp_key and mcp_key in pending) else call_name
+        direct_q = pending.get(queue_key)
         if direct_q:
             fid = direct_q.pop(0) if pop else direct_q[0]
             if pop:
                 if not direct_q:
-                    pending.pop(call_name, None)
+                    pending.pop(queue_key, None)
                 if isinstance(reconciled, dict) and call_id:
                     reconciled[call_id] = fid
             return fid, True
@@ -443,41 +454,116 @@ def _patch_server_module(server_mod):
                     step = step.model_copy(update={"tool_calls": [sdk_types.ToolCall(id=tc_id, name=tc_name, args={})]})
                     break
         session_info = self._sessions.get(session_id) if hasattr(self, "_sessions") else None
+        if step.type == sdk_types.StepType.TOOL_CALL and step.tool_calls and step.status != sdk_types.StepStatus.ERROR:
+            dispatch_free = [c for c in step.tool_calls if server_mod._tool_call_name(c) != "call_mcp_tool"]
+            if len(dispatch_free) != len(step.tool_calls):
+                step = step.model_copy(update={"tool_calls": dispatch_free})
         if step.type == sdk_types.StepType.TOOL_CALL and step.tool_calls and session_info is not None:
             saved_by_fid = getattr(self, "_permission_call_by_frame_id", {})
             enriched_calls = []
             changed_calls = False
             for call in step.tool_calls:
-                fid, _ = _match_pending_permission_frame(self, session_info, call, pop=False)
-                saved = saved_by_fid.get(fid) if fid else None
-                if isinstance(saved, tuple) and len(saved) >= 2:
-                    orig_name, orig_args = saved[0], saved[1]
-                    cur_args = call.args if isinstance(getattr(call, "args", None), dict) else {}
-                    merged_args = {**orig_args, **cur_args} if isinstance(orig_args, dict) else cur_args
-                    if getattr(call, "name", None) != orig_name or cur_args != merged_args:
-                        call = call.model_copy(update={"name": orig_name, "args": merged_args})
-                        changed_calls = True
+                call_name = server_mod._tool_call_name(call)
+                if call_name in _FILE_MUTATION_TOOLS and not getattr(call, "server_name", None):
+                    fid, _ = _match_pending_permission_frame(self, session_info, call, pop=False)
+                    saved = saved_by_fid.get(fid) if fid else None
+                    if isinstance(saved, tuple) and len(saved) >= 2 and saved[0] in _FILE_MUTATION_TOOLS:
+                        orig_name, orig_args = saved[0], saved[1]
+                        cur_args = call.args if isinstance(getattr(call, "args", None), dict) else {}
+                        merged_args = {**orig_args, **cur_args} if isinstance(orig_args, dict) else cur_args
+                        if getattr(call, "name", None) != orig_name or cur_args != merged_args:
+                            call = call.model_copy(update={"name": orig_name, "args": merged_args})
+                            changed_calls = True
                 enriched_calls.append(call)
             if changed_calls:
                 step = step.model_copy(update={"tool_calls": enriched_calls})
-        if step.type == sdk_types.StepType.TOOL_CALL and step.status in server_mod._TERMINAL_STEP_STATUSES and step.tool_calls:
-            await orig_stream_live_step(self, session_id, step.model_copy(update={"status": sdk_types.StepStatus.ACTIVE}), open_tool_calls, hidden_tool_calls)
-            now = server_mod.time.monotonic()
-            min_wait = 0.0
-            for call in step.tool_calls:
-                call_name = server_mod._tool_call_name(call)
-                for fid, fname in open_tool_calls.items():
-                    if fname == call_name:
-                        elapsed = now - self._tool_opened_at.setdefault(fid, now)
-                        if elapsed < 0.045 and (0.045 - elapsed) > min_wait:
-                            min_wait = 0.045 - elapsed
-            if min_wait > 0:
-                await server_mod.asyncio.sleep(min_wait)
-        return await orig_stream_live_step(self, session_id, step, open_tool_calls, hidden_tool_calls)
+        orig_client_update = self._client.session_update if self._client else None
+        saved_mcp_frames = dict(session_info.mcp_frames) if (session_info and hasattr(session_info, "mcp_frames")) else {}
+
+        async def _enriching_session_update(*u_args, **u_kwargs):
+            update = u_kwargs.get("update") or (u_args[1] if len(u_args) > 1 else None)
+            if update and getattr(update, "session_update", None) == "tool_call_update":
+                tc_id = getattr(update, "tool_call_id", None)
+                if tc_id and tc_id in saved_mcp_frames:
+                    mcp_title, mcp_input, mcp_meta = saved_mcp_frames[tc_id]
+                    up = {}
+                    if not getattr(update, "title", None) and mcp_title:
+                        up["title"] = mcp_title
+                    if getattr(update, "kind", None) in (None, "other"):
+                        up["kind"] = "execute"
+                    if getattr(update, "raw_input", None) is None and mcp_input:
+                        up["raw_input"] = mcp_input
+                    if getattr(update, "field_meta", None) is None and mcp_meta:
+                        up["field_meta"] = mcp_meta
+                    if up:
+                        try:
+                            update = update.model_copy(update=up)
+                        except Exception:
+                            for k, v in up.items():
+                                try:
+                                    setattr(update, k, v)
+                                except Exception:
+                                    pass
+                        if "update" in u_kwargs:
+                            u_kwargs["update"] = update
+                        elif len(u_args) > 1:
+                            u_args = (u_args[0], update, *u_args[2:])
+            return await orig_client_update(*u_args, **u_kwargs)
+
+        if orig_client_update:
+            self._client.session_update = _enriching_session_update
+        try:
+            if step.type == sdk_types.StepType.TOOL_CALL and step.status in server_mod._TERMINAL_STEP_STATUSES and step.tool_calls:
+                await orig_stream_live_step(self, session_id, step.model_copy(update={"status": sdk_types.StepStatus.ACTIVE}), open_tool_calls, hidden_tool_calls)
+                if session_info and hasattr(session_info, "mcp_frames"):
+                    saved_mcp_frames.update(session_info.mcp_frames)
+                now = server_mod.time.monotonic()
+                min_wait = 0.0
+                for call in step.tool_calls:
+                    call_name = server_mod._tool_call_name(call)
+                    for fid, fname in open_tool_calls.items():
+                        if fname == call_name:
+                            elapsed = now - self._tool_opened_at.setdefault(fid, now)
+                            if elapsed < 0.045 and (0.045 - elapsed) > min_wait:
+                                min_wait = 0.045 - elapsed
+                if min_wait > 0:
+                    await server_mod.asyncio.sleep(min_wait)
+                is_mcp_step = bool(saved_mcp_frames) or any(
+                    bool(getattr(c, "server_name", None)) or server_mod._unwrap_mcp_tool_call(server_mod._tool_call_name(c), getattr(c, "args", None))[2] is not None
+                    for c in step.tool_calls
+                )
+                if is_mcp_step and step.status != sdk_types.StepStatus.ERROR and not getattr(step, "error", None):
+                    real_mcp_out = await _resolve_live_mcp_step_output(self, server_mod, session_id, step)
+                    if isinstance(real_mcp_out, str) and real_mcp_out:
+                        step = step.model_copy(update={"content": real_mcp_out})
+            return await orig_stream_live_step(self, session_id, step, open_tool_calls, hidden_tool_calls)
+        finally:
+            if orig_client_update:
+                self._client.session_update = orig_client_update
 
     async def _patched_prompt(self, prompt, session_id, message_id=None, **kwargs):
         if not hasattr(self, "_turn_start_usage_by_session"):
             self._turn_start_usage_by_session = {}
+        if not hasattr(self, "_turn_min_mcp_db_idx_by_session"):
+            self._turn_min_mcp_db_idx_by_session = {}
+        if not hasattr(self, "_matched_mcp_db_idx_by_step"):
+            self._matched_mcp_db_idx_by_step = {}
+        self._matched_mcp_db_idx_by_step.pop(session_id, None)
+        session_store = getattr(server_mod, "session_store", None)
+        if session_store is not None and hasattr(session_store, "trajectory_path"):
+            try:
+                db_path = session_store.trajectory_path(session_id)
+                if isinstance(db_path, str) and os.path.isfile(db_path):
+                    import sqlite3 as _sqlite3
+                    conn = _sqlite3.connect(db_path, timeout=1.0)
+                    try:
+                        row = conn.execute("SELECT MAX(idx) FROM steps").fetchone()
+                        max_idx = row[0] if row else None
+                        self._turn_min_mcp_db_idx_by_session[session_id] = (int(max_idx) + 1) if isinstance(max_idx, int) else 0
+                    finally:
+                        conn.close()
+            except Exception:
+                pass
         session_info = self._sessions.get(session_id)
         if session_info is not None:
             current_before = self._read_current_usage(session_id, session_info) or session_info.last_observed_usage
@@ -591,7 +677,15 @@ def _patch_server_module(server_mod):
 
     async def _patched_cleanup(self, session_id=None):
         await orig_cleanup(self, session_id)
-        for attr in ("_agent_mode_by_session_id", "_pending_mode_by_session_id", "_emitted_thinking_by_session", "_turn_start_usage_by_session"):
+        for attr in (
+            "_agent_mode_by_session_id",
+            "_pending_mode_by_session_id",
+            "_emitted_thinking_by_session",
+            "_turn_start_usage_by_session",
+            "_used_mcp_db_idxs_by_session",
+            "_matched_mcp_db_idx_by_step",
+            "_turn_min_mcp_db_idx_by_session",
+        ):
             m = getattr(self, attr, None)
             if isinstance(m, dict):
                 m.pop(session_id, None) if session_id is not None else m.clear()
@@ -607,7 +701,8 @@ def _patch_server_module(server_mod):
     AgyAdapter._restore_session = _patched_restore_session
     AgyAdapter._create_agent_config = _patched_create_agent_config
     AgyAdapter._build_literal_model_target = _patched_build_literal_model_target
-    AgyAdapter._maybe_apply_model_switch = _patched_maybe_apply_model_switch
+    if orig_maybe_apply_model_switch is not None:
+        AgyAdapter._maybe_apply_model_switch = _patched_maybe_apply_model_switch
     AgyAdapter._permission_handler = _patched_permission_handler
     AgyAdapter._resolve_permission_frame = _patched_resolve_permission_frame
     AgyAdapter._stream_live_step = _patched_stream_live_step

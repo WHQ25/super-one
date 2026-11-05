@@ -9,6 +9,219 @@ _AUTO_MODE_ID = "auto"
 _AUTO_REASON_VAR = contextvars.ContextVar("_superone_auto_reason", default="")
 _PENDING_NEW_MODE_VAR = contextvars.ContextVar("_superone_pending_new_mode", default="")
 _FRONTMATTER_RE = re.compile(r"^---\\r?\\n([\\s\\S]*?)\\r?\\n---(?:\\r?\\n|$)")
+_STEP_TS_HEADER_RE = re.compile(r"^(?:Created At:\\s*[^\\r\\n]+\\r?\\n(?:Completed At:\\s*[^\\r\\n]+\\r?\\n)?|Completed At:\\s*[^\\r\\n]+\\r?\\n)")
+_SPILLED_URI_RE = re.compile(r"^(?:The output was large and was saved to|Result saved to URI):\\s*(file://[^\\r\\n]+|/[^\\r\\n]+)\\s*$")
+
+
+def _clean_mcp_output_py(text):
+    if not isinstance(text, str) or not text:
+        return None
+    stripped = _STEP_TS_HEADER_RE.sub("", text)
+    m = _SPILLED_URI_RE.match(stripped.strip())
+    if m:
+        target = m.group(1).strip()
+        try:
+            import urllib.parse as _urlparse
+            fpath = _urlparse.unquote(_urlparse.urlparse(target).path) if target.startswith("file://") else target
+            if os.path.isfile(fpath) and os.path.getsize(fpath) <= 2 * 1024 * 1024:
+                with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
+                    return _STEP_TS_HEADER_RE.sub("", fh.read())
+        except Exception:
+            pass
+    return stripped
+
+
+def _extract_mcp_call_target(server_mod, step):
+    tool_name = ""
+    call_args = None
+    calls = getattr(step, "tool_calls", None)
+    if calls:
+        call = calls[0]
+        raw_name = server_mod._tool_call_name(call) or ""
+        raw_args = getattr(call, "args", None)
+        if raw_name == "call_mcp_tool" and isinstance(raw_args, dict):
+            tool_name = str(raw_args.get("ToolName") or raw_args.get("tool") or raw_args.get("tool_name") or "")
+            inner = raw_args.get("Arguments")
+            if isinstance(inner, dict):
+                call_args = inner
+            elif isinstance(inner, str) and inner.strip():
+                try:
+                    json_mod = getattr(server_mod, "json", None) or __import__("json")
+                    parsed = json_mod.loads(inner)
+                    if isinstance(parsed, dict):
+                        call_args = parsed
+                except Exception:
+                    pass
+        else:
+            tool_name = raw_name
+            if isinstance(raw_args, dict):
+                call_args = raw_args
+    return tool_name, call_args
+
+
+def _read_mcp_step_output_once(adapter, server_mod, session_id, step_key, step_idx, tool_name, call_args=None, *, strict_args=True):
+    used_by_session = getattr(adapter, "_used_mcp_db_idxs_by_session", None)
+    if not isinstance(used_by_session, dict):
+        used_by_session = {}
+        try:
+            setattr(adapter, "_used_mcp_db_idxs_by_session", used_by_session)
+        except Exception:
+            pass
+    used_idxs = used_by_session.setdefault(session_id, set())
+    matched_by_session = getattr(adapter, "_matched_mcp_db_idx_by_step", None)
+    if not isinstance(matched_by_session, dict):
+        matched_by_session = {}
+        try:
+            setattr(adapter, "_matched_mcp_db_idx_by_step", matched_by_session)
+        except Exception:
+            pass
+    step_map = matched_by_session.setdefault(session_id, {})
+    turn_min_map = getattr(adapter, "_turn_min_mcp_db_idx_by_session", None)
+    turn_min_idx = turn_min_map.get(session_id, 0) if isinstance(turn_min_map, dict) else 0
+    min_idx = max(int(step_idx) if (isinstance(step_idx, int) and step_idx >= 0) else 0, int(turn_min_idx))
+    pinned_idx = step_map.get(step_key) if step_key else None
+
+    session_store = getattr(server_mod, "session_store", None)
+    trajectory_pb2 = getattr(server_mod, "trajectory_pb2", None)
+    json_mod = getattr(server_mod, "json", None) or __import__("json")
+    db_path = None
+    if session_store is not None and hasattr(session_store, "trajectory_path"):
+        try:
+            db_path = session_store.trajectory_path(session_id)
+        except Exception:
+            db_path = None
+    has_db = bool(isinstance(db_path, str) and os.path.isfile(db_path) and trajectory_pb2 is not None)
+    if has_db:
+        try:
+            import sqlite3 as _sqlite3
+            conn = _sqlite3.connect(db_path, timeout=1.0)
+            try:
+                if isinstance(pinned_idx, int):
+                    rows = conn.execute("SELECT idx, step_payload FROM steps WHERE idx = ?", (pinned_idx,)).fetchall()
+                else:
+                    rows = conn.execute("SELECT idx, step_payload FROM steps WHERE idx >= ? ORDER BY idx ASC", (min_idx,)).fetchall()
+                for r_idx, payload in rows:
+                    if not payload:
+                        continue
+                    if pinned_idx is None and r_idx in used_idxs:
+                        continue
+                    p_step = trajectory_pb2.Step()
+                    p_step.ParseFromString(payload)
+                    if p_step.WhichOneof("step") != "mcp_tool":
+                        continue
+                    db_tool_name = p_step.mcp_tool.tool_call.name or ""
+                    if tool_name and db_tool_name and db_tool_name != tool_name:
+                        continue
+                    if strict_args and isinstance(call_args, dict) and call_args and p_step.mcp_tool.tool_call.arguments_json:
+                        try:
+                            db_args = json_mod.loads(p_step.mcp_tool.tool_call.arguments_json)
+                        except Exception:
+                            db_args = None
+                        if isinstance(db_args, dict) and db_args != call_args:
+                            continue
+                    out_str = None
+                    res_kind = p_step.mcp_tool.WhichOneof("result")
+                    if res_kind == "result_string" and p_step.mcp_tool.result_string:
+                        out_str = _clean_mcp_output_py(p_step.mcp_tool.result_string)
+                    elif res_kind == "result_uri" and p_step.mcp_tool.result_uri:
+                        out_str = _clean_mcp_output_py(f"Result saved to URI: {p_step.mcp_tool.result_uri}")
+                    elif hasattr(adapter, "_extract_tool_output"):
+                        raw_out = adapter._extract_tool_output(p_step)
+                        if isinstance(raw_out, str) and raw_out.strip():
+                            out_str = _clean_mcp_output_py(raw_out)
+                    if isinstance(out_str, str) and out_str:
+                        used_idxs.add(r_idx)
+                        if step_key:
+                            step_map[step_key] = r_idx
+                        return out_str, True
+            finally:
+                conn.close()
+        except Exception:
+            pass
+        return None, True
+
+    has_storage = False
+    try:
+        acp_paths = getattr(server_mod, "acp_paths", None)
+        gemini_home = acp_paths.gemini_home() if (acp_paths and hasattr(acp_paths, "gemini_home")) else os.path.expanduser("~/.gemini")
+        for sub in ("antigravity-acp", ""):
+            logs_dir = (
+                os.path.join(gemini_home, sub, "brain", session_id, ".system_generated", "logs")
+                if sub
+                else os.path.join(gemini_home, "brain", session_id, ".system_generated", "logs")
+            )
+            for fname in ("transcript_full.jsonl", "transcript.jsonl"):
+                fpath = os.path.join(logs_dir, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                has_storage = True
+                with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
+                    lines = fh.readlines()
+                candidates = []
+                for line in lines:
+                    line = line.strip()
+                    if not line or '"MCP_TOOL"' not in line:
+                        continue
+                    obj = json_mod.loads(line)
+                    if obj.get("type") != "MCP_TOOL":
+                        continue
+                    if obj.get("status") not in ("DONE", "ERROR", "CORTEX_STEP_STATUS_DONE", "CORTEX_STEP_STATUS_ERROR"):
+                        continue
+                    t_idx = obj.get("step_index")
+                    if isinstance(pinned_idx, int):
+                        if t_idx != pinned_idx:
+                            continue
+                    else:
+                        if isinstance(t_idx, int) and t_idx < min_idx:
+                            continue
+                        if isinstance(t_idx, int) and t_idx in used_idxs:
+                            continue
+                    candidates.append((t_idx if isinstance(t_idx, int) else 10**9, t_idx, obj.get("content")))
+                candidates.sort(key=lambda item: item[0])
+                for _, t_idx, content in candidates:
+                    if isinstance(content, str) and content.strip():
+                        cleaned = _clean_mcp_output_py(content)
+                        if isinstance(cleaned, str) and cleaned:
+                            if isinstance(t_idx, int):
+                                used_idxs.add(t_idx)
+                                if step_key:
+                                    step_map[step_key] = t_idx
+                            return cleaned, True
+    except Exception:
+        pass
+    return None, has_storage
+
+
+async def _resolve_live_mcp_step_output(adapter, server_mod, session_id, step):
+    step_idx = getattr(step, "step_index", None)
+    step_id = getattr(step, "id", None)
+    if not isinstance(step_idx, int) and isinstance(step_id, str):
+        for sep in (":", "_"):
+            if sep in step_id:
+                try:
+                    step_idx = int(step_id.rsplit(sep, 1)[1])
+                    break
+                except Exception:
+                    step_idx = None
+    step_key = str(step_id) if (isinstance(step_id, str) and step_id) else (f"{session_id}:{step_idx}" if isinstance(step_idx, int) else "")
+    tool_name, call_args = _extract_mcp_call_target(server_mod, step)
+    for delay in (0.0, 0.02, 0.04, 0.08, 0.12):
+        if delay > 0:
+            await server_mod.asyncio.sleep(delay)
+        out, has_storage = _read_mcp_step_output_once(
+            adapter, server_mod, session_id, step_key, step_idx, tool_name, call_args, strict_args=True
+        )
+        if isinstance(out, str) and out:
+            return out
+        if not has_storage:
+            break
+    if isinstance(call_args, dict) and call_args:
+        out, _ = _read_mcp_step_output_once(
+            adapter, server_mod, session_id, step_key, step_idx, tool_name, call_args, strict_args=False
+        )
+        if isinstance(out, str) and out:
+            return out
+    return None
 
 
 def _extract_requested_mode_id(kwargs):

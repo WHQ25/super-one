@@ -628,3 +628,24 @@ module that runs inside the CLI process. Upstream docs:
 - Desktop and node send the session choice as `settings.fastMode` at query creation and `Query.applyFlagSettings({fastMode})` for a live switch. The warmup key includes the flag. A host wake that omits the field preserves the existing choice.
 - Account availability, organization policy and rate limits remain SDK-owned. Disabled reasons such as `extra_usage_disabled`, `not_first_party` or `model_not_allowed` describe current availability, not model capability. `preference`, `pending` and `sdk_opt_in_required` must not prevent a user from opting in. `fast_mode_state` and `fast_mode_disabled_reason` are retained in init/result metadata, so requesting Fast never fabricates an applied `on` state.
 - Verification: selector, launch settings and node runner tests use recorded catalog shapes and a fake SDK. No billed live inference is required by these checks.
+
+### Node host queue and explicit steering
+
+- **Behavior:** Ordinary composer sends during a running Claude turn stay in the
+  node's FIFO as editable/removable queue cards. `session.steer` promotes one
+  card and hands it to the existing SDK input stream with priority `now` or
+  `next`, preserving the running process and its settings. The node rechecks
+  the control lease immediately before handoff. A pre-handoff refusal restores
+  the queue card. Host notifications retain their separate admission path.
+- **Observed:** SDK 0.3.310 declares that `user_message_uuids` includes sends folded
+  into a prompt between tool rounds. An explicit `next` send may therefore
+  share the active turn's result rather than receive a separate result. Resolve
+  all acknowledged sends while storing the answer once. For explicit `now`,
+  suppress the displaced turn's `aborted_tools` / `aborted_streaming` completion
+  warning; user Stop errors remain unchanged.
+- **Depends on it:** `packages/runtime/src/session/queued-controls.ts`,
+  `packages/runtime/src/session/session-runtime.ts`,
+  `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-turn-runner.ts`.
+- **Guard:** `packages/runtime/src/session/session-runtime.queue.test.ts`,
+  `packages/claude/src/claude-live-session.test.ts`,
+  `apps/cli/src/session/claude-turn-runner.test.ts`.

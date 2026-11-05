@@ -226,9 +226,12 @@ jobs:
               VERSION="${TAG#mobile/${PREFIX}/v}"
               CODE="${VERSION##*-build}"
               VERSION="${VERSION%-build*}"
+              # `**/*.md` does not match markdown that sits directly in
+              # apps/mobile. Those notes are not fingerprint inputs.
               if git -C "${ROOT}" diff --quiet FETCH_HEAD HEAD -- apps/mobile \
                 ':!apps/mobile/src' ':!apps/mobile/scripts' ':!apps/mobile/build-code.js' \
-                ':!apps/mobile/**/*.md' ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'
+                ':!apps/mobile/*.md' ':!apps/mobile/**/*.md' \
+                ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'
               then
                 BUILD="${VERSION} (${CODE}), local tag ${TAG}"
               else

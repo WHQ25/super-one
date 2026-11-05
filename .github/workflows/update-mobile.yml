@@ -17,6 +17,9 @@ name: Update Mobile (OTA)
 # EAS build: if the lookup misses, the published native tag is fetched and the
 # fingerprint inputs are compared with this checkout. An empty diff means that
 # binary already runs this runtime. Any other miss fails the run.
+# `@expo/fingerprint` does not hash `scripts/`. Those generators write the JS
+# bundle under `src`, or an asset that stays in the diff, so the scripts
+# themselves are not a runtime change.
 #
 # Channels are per platform: each platform has an `alpha` app on channel
 # `alpha` and a stable app on `internal` (Android APK) or `production` (iOS
@@ -224,7 +227,7 @@ jobs:
               CODE="${VERSION##*-build}"
               VERSION="${VERSION%-build*}"
               if git -C "${ROOT}" diff --quiet FETCH_HEAD HEAD -- apps/mobile \
-                ':!apps/mobile/src' ':!apps/mobile/build-code.js' \
+                ':!apps/mobile/src' ':!apps/mobile/scripts' ':!apps/mobile/build-code.js' \
                 ':!apps/mobile/**/*.md' ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'
               then
                 BUILD="${VERSION} (${CODE}), local tag ${TAG}"

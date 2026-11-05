@@ -100,12 +100,14 @@ Run for `android` and `ios`, each on channel `alpha` with tag prefix
    fingerprint inputs with the checkout:
    ```bash
    git diff --quiet <tag>..HEAD -- apps/mobile \
-     ':!apps/mobile/src' ':!apps/mobile/build-code.js' \
+     ':!apps/mobile/src' ':!apps/mobile/scripts' ':!apps/mobile/build-code.js' \
      ':!apps/mobile/**/*.md' ':!apps/mobile/**/*.test.ts' ':!apps/mobile/**/*.test.tsx'
    ```
    An empty diff means the published binary already runs this fingerprint
    (`build-code.js` is ignored by `fingerprint.config.js`; JS under `src` is
-   what an OTA ships). That platform is **OTA** onto the published build code.
+   what an OTA ships). `scripts/` is not a fingerprint source either:
+   generators write that JS, or an asset that remains in the diff. That
+   platform is **OTA** onto the published build code.
    Do not bump `build-code.js`. A non-empty diff is **native**: an OTA would
    publish to a runtime nobody runs.
 

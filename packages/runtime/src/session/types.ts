@@ -323,6 +323,10 @@ export type TurnRunner = ((input: {
    * emits on its own (`message_start`, status, provider ids) are not delivery.
    */
   onInputAccepted?: () => void
+  /** Recheck admission immediately before handing input to the SDK. */
+  beforeInput?: () => void
+  /** Explicit Claude steering from the host-owned composer queue. */
+  steerPriority?: 'now' | 'next'
   onDelta: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void
   /** Lossless harness-native AgentEvent stream. */

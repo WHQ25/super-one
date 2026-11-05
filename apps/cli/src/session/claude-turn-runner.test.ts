@@ -94,6 +94,63 @@ describe('claude resume helpers', () => {
 })
 
 describe('createNodeClaudeTurnRunner', () => {
+  it.each(['now', 'next'] as const)('routes %s steering into the existing Claude process and fences stale control', async priority => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-node-steer-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const seen: SDKUserMessage[] = []
+    let finish!: () => void
+    const gate = new Promise<void>(resolve => { finish = resolve })
+    const queryFn = vi.fn<ClaudeQueryFn>(({ prompt }) => (async function* () {
+      const iterator = (prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+      seen.push((await iterator.next()).value!)
+      const next = iterator.next().then(item => { seen.push(item.value!); return item.value! })
+      await gate
+      yield* success('s', 'first') as SDKMessage[]
+      await next
+      yield* success('s', 'second') as SDKMessage[]
+      for await (const _user of { [Symbol.asyncIterator]: () => iterator }) { /* drain on close */ }
+    })() as ReturnType<ClaudeQueryFn>)
+    const runner = createProductionTurnRunner({ resolveProjectPath: () => dir, claudeBinaryPath: bin,
+      claudeQueryFn: queryFn, allowSimulatedFallback: false, mcpMergeMode: 'host-action-only' })
+    const base = { session: session(), onDelta: () => {}, signal: new AbortController().signal }
+    const first = runner({ ...base, text: 'first', effort: 'high' })
+    await vi.waitFor(() => expect(seen).toHaveLength(1))
+    // A revoked lease must neither submit the message nor dispose the current turn.
+    await expect(runner({ ...base, text: 'stale', steerPriority: priority,
+      beforeInput: () => { throw new Error('stale lease') } })).rejects.toThrow('stale lease')
+    const accepted = vi.fn()
+    const second = runner({ ...base, text: 'second', effort: 'low', model: 'other-model',
+      steerPriority: priority, beforeInput: () => {}, onInputAccepted: accepted })
+    try {
+      await vi.waitFor(() => expect(seen).toHaveLength(2))
+      expect(seen[1]).toMatchObject({ priority, message: { content: 'second' } })
+      expect(queryFn).toHaveBeenCalledOnce()
+      expect(accepted).toHaveBeenCalledOnce()
+    } finally {
+      finish()
+      await Promise.allSettled([first, second])
+      await runner.disposeAll?.()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reuses the process when concurrent host sends finish asynchronous preparation together', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-concurrent-prepare-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const queryFn = vi.fn(bridgeQuery(() => success('s', 'ok')))
+    const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir,
+      queryFn, allowSimulatedFallback: false, mcpMergeMode: 'host-action-only' })
+    const base = { session: session(), onDelta: () => {}, signal: new AbortController().signal }
+    try {
+      await Promise.all([runner({ ...base, text: 'first' }), runner({ ...base, text: 'host wake', source: 'task-notification' })])
+      expect(queryFn).toHaveBeenCalledOnce()
+    } finally { await runner.disposeAll?.(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('resolves binary from explicit path', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-'))
     const bin = join(dir, 'claude')

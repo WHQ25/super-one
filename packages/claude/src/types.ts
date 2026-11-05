@@ -149,6 +149,8 @@ export interface RunClaudeSdkTurnOptions {
 }
 
 export interface ClaudeSdkTurnResult {
+  /** A steered send consumed by the same native result as an earlier send. */
+  skipAssistantTranscript?: boolean
   finalText: string
   sessionId: string | null
 }

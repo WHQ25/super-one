@@ -43,6 +43,9 @@ export interface ClaudeLiveTurnInput {
   clientMessageId?: string
   /** When true (default if a turn is active), use SDK priority next. */
   priorityNext?: boolean
+  /** Explicit mid-turn handoff; ordinary sends remain serialized. */
+  priority?: 'now' | 'next'
+  beforeInput?: () => void
   /** Transcript provenance; decides the SDK `origin` (see claudeMessageOrigin). */
   source?: ChatMessageSource
   onDelta?: (text: string) => void
@@ -113,6 +116,7 @@ export interface ClaudeLiveSessionOptions {
 }
 
 interface PendingTurn {
+  submitted?: boolean
   tag: string
   msg: SDKUserMessage
   input: ClaudeLiveTurnInput
@@ -121,6 +125,7 @@ interface PendingTurn {
 }
 
 interface ActiveTurn {
+  steeredNow?: boolean
   tag: string
   userUuid: string
   messageId: string
@@ -471,8 +476,8 @@ export class ClaudeLiveSession {
 
   /**
    * Send one user turn on the long-lived query.
-   * If a turn is already running, the message is queued with priority next and
-   * starts after the current result (desktop ClaudeBackend parity).
+   * Ordinary sends wait for the active result. Explicit steering is pushed
+   * immediately with its native priority and tracked until its result arrives.
    */
   sendTurn(input: ClaudeLiveTurnInput): Promise<ClaudeSdkTurnResult> {
     if (this.closed) {
@@ -482,6 +487,7 @@ export class ClaudeLiveSession {
     const sessionId = this.sdkSessionId || ''
     const priorityNext = input.priorityNext !== false && this.isBusy
     const msg = toUserMessage(input.content, sessionId, priorityNext, input.source)
+    if (input.priority) Object.assign(msg, { priority: input.priority })
 
     return new Promise<ClaudeSdkTurnResult>((resolve, reject) => {
       if (input.signal?.aborted) {
@@ -509,7 +515,17 @@ export class ClaudeLiveSession {
       input.signal?.addEventListener('abort', onAbort, { once: true })
 
       if (this.isBusy) {
-        this.pending.push({ tag, msg, input, resolve, reject })
+        const item: PendingTurn = { tag, msg, input, resolve, reject }
+        if (input.priority) {
+          try {
+            input.beforeInput?.()
+            input.onInputAccepted?.()
+            this.bridge.push(msg, tag)
+            if (input.priority === 'now' && this.active) this.active.steeredNow = true
+            item.submitted = true
+          } catch (error) { reject(error); return }
+        }
+        this.pending.push(item)
         return
       }
       this.startTurn({ tag, msg, input, resolve, reject })
@@ -558,6 +574,7 @@ export class ClaudeLiveSession {
   }
 
   private startTurn(item: PendingTurn): void {
+    if (!item.submitted) item.input.beforeInput?.()
     const messageId = item.input.messageId || `assistant-${item.tag}`
     this.permissionHandler = item.input.onPermission
     this.questionHandler = item.input.onQuestion
@@ -580,8 +597,10 @@ export class ClaudeLiveSession {
       item.msg = { ...item.msg, session_id: this.sdkSessionId }
     }
     // Handed to the SDK: from here the CLI may act on the prompt.
-    item.input.onInputAccepted?.()
-    this.bridge.push(item.msg, item.tag)
+    if (!item.submitted) {
+      item.input.onInputAccepted?.()
+      this.bridge.push(item.msg, item.tag)
+    }
   }
 
   private flushPending(): void {
@@ -717,7 +736,13 @@ export class ClaudeLiveSession {
           if (useAgentEvents) {
             holder._mapper = createClaudeAgentEventMapper({
               messageId: cur.messageId,
-              emit: cur.input.onAgentEvent!,
+              emit: event => {
+                if (cur.steeredNow && event.type === 'message_complete' &&
+                    (event.metadata?.terminalReason === 'aborted_tools' || event.metadata?.terminalReason === 'aborted_streaming')) {
+                  const { terminalReason: _steered, ...metadata } = event.metadata
+                  cur.input.onAgentEvent!({ ...event, metadata })
+                } else cur.input.onAgentEvent!(event)
+              },
               startedAt: Date.now(),
               pausedMs: () => this.timing.pausedMs,
               isInterrupted: () => cur.input.signal?.aborted === true,
@@ -757,6 +782,17 @@ export class ClaudeLiveSession {
         }
 
         if (applied.isResult) {
+          // Steer Soon can fold into the active prompt. One native result may
+          // acknowledge several sends; none may wait forever for another result.
+          if (uuids) {
+            for (let index = this.pending.length - 1; index >= 0; index--) {
+              const pending = this.pending[index]!
+              if (!pending.submitted || !pending.msg.uuid || !uuids.includes(pending.msg.uuid)) continue
+              this.pending.splice(index, 1)
+              if (applied.resultIsError) pending.reject(new Error(applied.resultError || 'Claude turn failed'))
+              else pending.resolve({ finalText: '', sessionId: this.sdkSessionId, skipAssistantTranscript: true })
+            }
+          }
           cur.sawResult = true
           if (applied.resultIsError) {
             cur.resultError = applied.resultError || 'Claude turn failed'

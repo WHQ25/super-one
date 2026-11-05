@@ -6,6 +6,7 @@ import type { InputAdmission } from './input-admission'
 export interface TurnOpts extends MessageDisplayFields {
   inputAdmission?: InputAdmission
   parkInComposer?: boolean
+  steerPriority?: 'now' | 'next'
   clientMessageId?: string
   echoUserMessage?: boolean
   text: string

@@ -1178,7 +1178,7 @@ export class SessionRuntime {
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
-    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer')) && !(session.harnessId === 'codex' && key === 'permissionPreset'))) {
+    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer')) && !(session.harnessId === 'claude' && (key === 'priority' || key === 'steer')) && !(session.harnessId === 'codex' && key === 'permissionPreset'))) {
       throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
     }
     if (session.harnessId === 'codex' && input.permissionPreset !== undefined) {
@@ -1212,7 +1212,7 @@ export class SessionRuntime {
 
     const controller = input.collaboration ? this.controllerLabel?.(input.client.clientSessionId) : null
     const turnOpts: TurnOpts = {
-      parkInComposer: session.harnessId === 'opencode' && session.status === 'streaming' && input.priority !== undefined,
+      parkInComposer: input.source !== 'task-notification' && session.status === 'streaming' && (session.harnessId === 'claude' || (session.harnessId === 'opencode' && input.priority !== undefined)),
       text: input.text,
       clientMessageId: input.clientMessageId,
       ...parseMessageDisplay(input),
@@ -1250,23 +1250,22 @@ export class SessionRuntime {
       this.appendUserMessage(session, turnOpts)
 
       if (session.status === 'streaming') {
-        // Claude accepts concurrent priority=next sends. Codex only live-injects
-        // an explicit steer; ordinary composer sends serialize through the FIFO.
+        // Composer messages stay host-queued; only an explicit steer joins a live turn.
         const harnessId = session.harnessId || 'claude'
-        const liveInject =
-          harnessId === 'claude' ||
+        const liveInject = (harnessId === 'claude' && input.source === 'task-notification') ||
           (harnessId === 'codex' && turnOpts.turnKind === 'steer')
         if (liveInject) {
           this.beginTurn(session, turnOpts)
           return this.clone(session)
         }
         this.enqueueTurn(session, turnOpts)
-        if (harnessId === 'opencode' && input.steer === 'now' && turnOpts.parkInComposer) {
+        const steer = input.steer ?? (harnessId === 'claude' && input.priority === 'now' ? 'now' : undefined)
+        if ((harnessId === 'opencode' || harnessId === 'claude') && steer && turnOpts.parkInComposer) {
           const assertControl = () => this.leases.assertValid({ resource: ref, leaseId: input.leaseId,
             generation: input.generation, holderClientId: input.client.clientSessionId })
           // The send is already durable. A refused steer keeps that accepted input
           // in the queue; do not turn it into a failed send or submit it twice.
-          await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId }, assertControl).catch(() => {})
+          await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId, priority: steer }, assertControl).catch(() => {})
         }
         return this.clone(session)
       }
@@ -1496,6 +1495,23 @@ export class SessionRuntime {
     if (method === 'session.steer' || method === 'session.dequeue') return operateNodeQueue(method, input, {
       session, queue: this.turnQueues.get(sessionId) ?? [], admitting: this.queueAdmissions,
       runner: this.turnRunner, assertControl,
+      promoteClaude: async (turn, priority) => {
+        const admission = new InputAdmission({ beforeInput: assertControl,
+          onInputAccepted: () => this.consumeComposerQueued(session, turn) })
+        this.beginTurn(session, { ...turn, steerPriority: priority, inputAdmission: admission })
+        await admission.promise
+      },
+      restored: queue => {
+        this.turnQueues.set(sessionId, queue)
+        this.publishComposerQueue(session)
+      },
+      settled: () => {
+        if (!session.closed && (session.status === 'idle' || session.status === 'streaming') &&
+            (this.activeTurnCounts.get(sessionId) ?? 0) === 0 && !this.ambientTurns.has(sessionId)) {
+          const next = this.turnQueues.get(sessionId)?.shift()
+          if (next) this.beginTurn(session, next)
+        }
+      },
       consumed: turn => this.consumeComposerQueued(session, turn),
       dequeued: turn => {
         session.transcript = session.transcript.filter(row => row.id !== turn.userBlockId)
@@ -1599,8 +1615,8 @@ export class SessionRuntime {
     this.activeTurnCounts.set(sid, prev + 1)
 
     const row = this.userRow(session, opts.userBlockId)
-    this.consumeComposerQueued(session, opts)
-    if (row?.queued) delete row.queued
+    if (!opts.steerPriority) this.consumeComposerQueued(session, opts)
+    if (row?.queued && !opts.steerPriority) delete row.queued
     session.status = 'streaming'
     session.updatedAt = Date.now()
     this.persist(session)
@@ -1747,6 +1763,8 @@ export class SessionRuntime {
         ultracode: opts.ultracode,
         claudeFastMode: opts.claudeFastMode ?? session.claudeFastMode ?? undefined,
         signal: abort.signal,
+        beforeInput: () => opts.inputAdmission?.beforeInput(),
+        steerPriority: opts.steerPriority,
         onInputAccepted: markStarted,
         onProviderResume: (resume) => { session.providerResume = resume; this.persist(session) },
         onDelta: (delta) => {
@@ -1856,7 +1874,7 @@ export class SessionRuntime {
       } else {
         // Only mark error if this is the last active turn.
         const remainingPeers = Math.max(0, (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1)
-        if (!started && this.markSendFailed(session, opts.userBlockId, (err as Error).message)) {
+        if (!started && (opts.steerPriority || this.markSendFailed(session, opts.userBlockId, (err as Error).message))) {
           // Nothing ran: the failure sits on the row, and work queued behind it may still run.
           const fifo = this.turnQueues.get(session.sessionId)?.length ?? 0
           if (remainingPeers <= 0 && fifo === 0) {
@@ -1904,10 +1922,12 @@ export class SessionRuntime {
         this.persist(session)
       }
 
-      // Drain FIFO queue (non-live-inject harnesses). Claude/Codex live inject uses concurrent beginTurn.
+      // Drain ordinary sends after all active turns settle. A Claude promotion
+      // owns FIFO draining until it accepts the input or restores the card.
       if (
         !session.closed &&
         remainingAfter <= 0 &&
+        !(session.harnessId === 'claude' && this.queueAdmissions.has(sid)) &&
         (session.status === 'idle' || session.status === 'streaming')
       ) {
         const q = this.turnQueues.get(sid)

@@ -69,6 +69,76 @@ describe('ClaudeLiveSession', () => {
     } finally { await live.dispose() }
   })
 
+  it.each(['now', 'next'] as const)('hands explicit %s steering to the SDK before the active result', async priority => {
+    const seen: SDKUserMessage[] = []
+    let finish!: () => void
+    const gate = new Promise<void>(resolve => { finish = resolve })
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      const input = (prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+      const first = (await input.next()).value!
+      seen.push(first)
+      const second = input.next().then(item => { seen.push(item.value!); return item.value! })
+      await gate
+      yield { ...successTurn('s', 'first').at(-1), terminal_reason: priority === 'now' ? 'aborted_tools' : 'completed' } as SDKMessage
+      await second
+      yield* successTurn('s', 'second') as SDKMessage[]
+      for await (const _user of { [Symbol.asyncIterator]: () => input }) { /* drain on close */ }
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
+    const events: AgentEvent[] = []
+    const first = live.sendTurn({ content: 'first', onAgentEvent: event => events.push(event) })
+    await vi.waitFor(() => expect(seen).toHaveLength(1))
+    const accepted = vi.fn()
+    const second = live.sendTurn({ content: 'second', priority, onInputAccepted: accepted } as Parameters<typeof live.sendTurn>[0])
+    try {
+      await vi.waitFor(() => expect(seen).toHaveLength(2), { timeout: 200 })
+      expect(seen[1]).toMatchObject({ priority, message: { content: 'second' } })
+      expect(accepted).toHaveBeenCalledOnce()
+    } finally {
+      finish()
+      await Promise.all([first, second])
+      await live.dispose()
+      if (priority === 'now') expect(events.find(event => event.type === 'message_complete')).not.toMatchObject({ metadata: { terminalReason: 'aborted_tools' } })
+    }
+  })
+
+  it('settles a Steer Soon message folded into the current result without duplicating the answer', async () => {
+    const seen: SDKUserMessage[] = []
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      const iterator = (prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+      seen.push((await iterator.next()).value!)
+      seen.push((await iterator.next()).value!)
+      yield { ...successTurn('s', 'combined').at(-1),
+        user_message_uuid: seen[1]!.uuid,
+        user_message_uuids: seen.map(item => item.uuid),
+      } as SDKMessage
+      for await (const _user of { [Symbol.asyncIterator]: () => iterator }) { /* drain on close */ }
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
+    const first = live.sendTurn({ content: 'first' })
+    await vi.waitFor(() => expect(seen).toHaveLength(1))
+    const second = live.sendTurn({ content: 'second', priority: 'next' })
+    const completed: unknown[] = []
+    const results = Promise.all([first, second]).then(values => { completed.push(...values); return values })
+    void results.catch(() => {})
+    try {
+      await vi.waitFor(() => expect(completed).toHaveLength(2), { timeout: 200 })
+      expect(completed[0]).toMatchObject({ finalText: 'combined' })
+      expect(completed[1]).toMatchObject({ finalText: '', skipAssistantTranscript: true })
+    } finally { await live.dispose(); await results.catch(() => {}) }
+  })
+
+  it('keeps an idle SDK session usable when a handoff lease check rejects', async () => {
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn: bridgeAwareQuery(() => successTurn('s', 'ok')) })
+    await expect(live.sendTurn({ content: 'stale', priority: 'now',
+      beforeInput: () => { throw new Error('stale lease') } })).rejects.toThrow('stale lease')
+    const completed: string[] = []
+    const valid = live.sendTurn({ content: 'valid' }).then(result => { completed.push(result.finalText) })
+    void valid.catch(() => {})
+    try { await vi.waitFor(() => expect(completed).toEqual(['ok']), { timeout: 200 }) }
+    finally { await live.dispose(); await valid.catch(() => {}) }
+  })
+
   it('reports scheduled wakeups from the Stop hook and emits each change into the turn', async () => {
     const cron = { id: 'c1', schedule: '*/30 * * * *', recurring: true, prompt: 'ping' }
     const cronsPerTurn = [[cron], []]

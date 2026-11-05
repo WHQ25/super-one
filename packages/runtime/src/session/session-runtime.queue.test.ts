@@ -59,7 +59,7 @@ const client = { clientSessionId: 'c1' }
 const lease = { leaseId: 'l1', generation: 'g1' }
 
 describe('SessionRuntime send queue', () => {
-  it('claude mid-stream send starts concurrent turnRunner (live inject path)', async () => {
+  it('claude mid-stream composer sends stay in the host FIFO until the active turn ends', async () => {
     let active = 0
     let maxActive = 0
     const order: string[] = []
@@ -84,8 +84,7 @@ describe('SessionRuntime send queue', () => {
       leaseId: lease.leaseId,
       generation: lease.generation,
     })
-    // Second send while first is still running — concurrent beginTurn (SDK
-    // live session serializes with priority=next inside the harness).
+    // The host keeps the second send editable until it runs or is steered.
     await runtime.send({
       sessionId: session.sessionId,
       text: 'second',
@@ -96,15 +95,118 @@ describe('SessionRuntime send queue', () => {
 
     const done = await waitIdle(runtime, session.sessionId)
     expect(done.status).toBe('idle')
-    expect(maxActive).toBe(2)
-    expect(order).toEqual(['start:first', 'start:second', 'end:first', 'end:second'])
+    expect(maxActive).toBe(1)
+    expect(order).toEqual(['start:first', 'end:first', 'start:second', 'end:second'])
     const users = done.transcript.filter((t) => t.role === 'user').map((t) => t.text)
     expect(users).toEqual(['first', 'second'])
   })
 
+  it.each(['now', 'next'] as const)('Claude queue cards support %s steering and withdrawal', async priority => {
+    const gates: Array<() => void> = []
+    const inputs: Array<{ text: string; steerPriority?: string }> = []
+    const runner: TurnRunner = async input => {
+      inputs.push(input as typeof inputs[number])
+      input.onInputAccepted?.()
+      await new Promise<void>(resolve => gates.push(resolve))
+      return { finalText: input.text }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-claude-steer', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const send = (text: string) => runtime.send({ sessionId: session.sessionId, text, clientMessageId: text,
+      client, ...lease, priority: 'later' })
+    try {
+      await send('first')
+      await send('second')
+      expect(inputs.map(input => input.text)).toEqual(['first'])
+      expect(runtime.get(session.sessionId)?.transcript.find(row => row.id === 'second')).toMatchObject({ queuedInComposer: true })
+      await runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second', priority }, () => {})
+      expect(inputs.map(input => [input.text, input.steerPriority])).toEqual([['first', undefined], ['second', priority]])
+      await send('withdraw')
+      expect(await runtime.callOperation(session.sessionId, 'session.dequeue', { clientMessageId: 'withdraw' }, () => {})).toEqual({ removed: true })
+      expect(runtime.get(session.sessionId)?.transcript.some(row => row.id === 'withdraw')).toBe(false)
+      gates.splice(0).forEach(resolve => resolve())
+      await waitIdle(runtime, session.sessionId)
+      expect(inputs).toHaveLength(2)
+    } finally { gates.splice(0).forEach(resolve => resolve()) }
+  })
+
+  it('restores a refused Claude promotion without losing or failing the editable card', async () => {
+    let finish!: () => void
+    const runner: TurnRunner = async input => {
+      if (input.steerPriority) throw new Error('handoff refused')
+      input.onInputAccepted?.()
+      await new Promise<void>(resolve => { finish = resolve })
+      return { finalText: 'done' }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-refusal', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const send = (text: string) => runtime.send({ sessionId: session.sessionId, text, clientMessageId: text, client, ...lease })
+    await send('first')
+    await send('second')
+    await expect(runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second' }, () => {})).rejects.toThrow('handoff refused')
+    const queued = runtime.get(session.sessionId)?.transcript.find(row => row.id === 'second')
+    expect(queued).toMatchObject({ queuedInComposer: true, queued: true })
+    expect(queued?.metadata?.sendFailure).toBeUndefined()
+    expect(await runtime.callOperation(session.sessionId, 'session.dequeue', { clientMessageId: 'second' }, () => {})).toEqual({ removed: true })
+    finish()
+    await waitIdle(runtime, session.sessionId)
+  })
+
+  it('drains a restored Claude card if the active turn ended while steering was refused', async () => {
+    let finish!: () => void
+    let refuse!: (error: Error) => void
+    const seen: string[] = []
+    const runner: TurnRunner = async input => {
+      if (input.steerPriority) return new Promise((_, reject) => { refuse = reject })
+      seen.push(input.text)
+      input.onInputAccepted?.()
+      if (input.text === 'first') await new Promise<void>(resolve => { finish = resolve })
+      return { finalText: input.text }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-refusal-race', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const send = (text: string) => runtime.send({ sessionId: session.sessionId, text, clientMessageId: text, client, ...lease })
+    await send('first'); await send('second')
+    const operation = runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second' }, () => {})
+    finish()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    refuse(new Error('turn ended before handoff'))
+    await expect(operation).rejects.toThrow('turn ended before handoff')
+    await waitIdle(runtime, session.sessionId)
+    expect(seen).toEqual(['first', 'second'])
+  })
+
+  it('keeps controller notification wakes hidden and separate from queued composer messages', async () => {
+    const gates: Array<() => void> = []
+    const inputs: Parameters<TurnRunner>[0][] = []
+    const runner: TurnRunner = async input => {
+      inputs.push(input)
+      input.onInputAccepted?.()
+      await new Promise<void>(resolve => gates.push(resolve))
+      return { finalText: 'done' }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-hidden-wake', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    await runtime.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'first', client, ...lease })
+    await runtime.send({ sessionId: session.sessionId, text: 'queued', clientMessageId: 'queued', client, ...lease })
+    try {
+      const wake = { sessionId: session.sessionId, text: 'notification', clientMessageId: 'wake', source: 'task-notification' as const, client, ...lease }
+      await runtime.send(wake)
+      await runtime.send(wake)
+      expect(inputs.map(input => [input.text, input.source])).toEqual([['first', undefined], ['notification', 'task-notification']])
+      expect(runtime.get(session.sessionId)?.transcript.filter(row => row.role === 'user').map(row => row.id)).toEqual(['first', 'queued'])
+      expect(runtime.get(session.sessionId)?.transcript.find(row => row.id === 'queued')).toMatchObject({ queuedInComposer: true })
+      await runtime.callOperation(session.sessionId, 'session.dequeue', { clientMessageId: 'queued' }, () => {})
+    } finally { gates.splice(0).forEach(resolve => resolve()) }
+    await waitIdle(runtime, session.sessionId)
+  })
+
   it('non-live-inject mid-stream send serializes via FIFO queue', async () => {
-    // Codex mid-stream auto-steers (concurrent beginTurn), same family as Claude
-    // live inject. FIFO applies to harnesses without live inject (e.g. opencode).
+    // Ordinary sends serialize for every harness; explicit steer is separate.
     let active = 0
     let maxActive = 0
     const order: string[] = []

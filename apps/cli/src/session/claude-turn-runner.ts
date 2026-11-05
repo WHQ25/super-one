@@ -445,115 +445,123 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       )
     }
 
-    const binary = binaryOrNull()
-    if (!binary) {
-      if (opts.allowSimulatedFallback) return simulatedClaude(input)
-      throw new Error(
-        'Claude Agent SDK binary not available: reinstall optional platform package or set SUPERONE_CLAUDE_BINARY',
-      )
-    }
-
     const sessionKey = input.session.sessionId
-    // Chat events alone cannot restore the SDK's conversation.
-    const priorSessionId = parseClaudeSessionResume(input.session.providerResume) ?? lives.get(sessionKey)?.live.sessionId
-    const hasPriorHistory = input.session.transcript.some(block =>
-      block.id !== input.clientMessageId && !block.queued && !block.queuedInComposer && !block.metadata?.sendFailure,
-    )
-    if (!priorSessionId && !lives.has(sessionKey) && hasPriorHistory) {
-      throw new Error('Cannot resume Claude: the provider resume ID is missing. Saved chat history is unchanged; recover the original session or start a new session explicitly.')
-    }
-
-    const { cwd, authEnv, uid, permissions } = await prepare({
-      session: input.session,
-      apiProviderId: input.apiProviderId,
-      permissionMode: input.permissionMode,
-      sessionDir: input.sessionDir,
-    })
-    if (permissions.downgradedFrom) {
-      input.onAgentEvent?.({
-        type: 'agent_setting_change',
-        patch: { permissionMode: permissions.permissionMode as PermissionMode },
-      })
-    }
-
-    // Probe disk MCP before (re)opening so mcp.save after a live session starts
-    // is picked up on the next turn (strict allowlist is fixed at open).
-    // diskNames does not depend on host-action servers — skip creating them here.
-    const mergedProbe = ensureMcpMerge({
-      provider: 'claude',
-      cwd,
-      mode: opts.mcpMergeMode,
-      env: authEnv,
-      homeDir: opts.homeDir,
-    })
-    const nextMcpDiskKey = mcpDiskKeyOf(mergedProbe.diskNames)
-    const nextAdditionalDirsKey = additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean))
-
     let entry = lives.get(sessionKey)
-    // A turn without a say (a host wake) keeps the Ultracode the process had,
-    // across a restart too.
-    const ultracode = input.ultracode ?? entry?.ultracode
-    const claudeFastMode = input.claudeFastMode ?? input.session.claudeFastMode ?? entry?.claudeFastMode
-    const model = trimmedOrUndefined(input.model)
-    const effort = trimmedOrUndefined(input.effort)
-    // Restart live session if cwd changed (worktree switch), the MCP allowlist
-    // changed, the directory set changed, or the effort changed — an in-place
-    // effort change would turn Ultracode off.
-    if (
-      entry
-      && (entry.cwd !== cwd
-        || entry.mcpDiskKey !== nextMcpDiskKey
-        || entry.additionalDirsKey !== nextAdditionalDirsKey
-        || (effort !== undefined && effort !== entry.effort))
-    ) {
-      await disposeEntry(sessionKey)
-      entry = undefined
-    }
+    // Steering uses the running process and its settings. A queued message's
+    // model/effort snapshot must never rebuild the process it is steering.
+    if (!input.steerPriority) {
+      const binary = binaryOrNull()
+      if (!binary) {
+        if (opts.allowSimulatedFallback) return simulatedClaude(input)
+        throw new Error(
+          'Claude Agent SDK binary not available: reinstall optional platform package or set SUPERONE_CLAUDE_BINARY',
+        )
+      }
 
-    entry ??= openEntry({
-      session: { ...input.session, providerResume: formatClaudeSessionResume(priorSessionId) },
-      binary,
-      cwd,
-      authEnv,
-      uid,
-      permissionMode: permissions.permissionMode,
-      model,
-      effort,
-      sandboxMode: input.sandboxMode,
-      additionalDirectories: input.additionalDirectories,
-      enabledSkills: input.enabledSkills,
-      disabledSkills: input.disabledSkills,
-      apiProviderId: input.apiProviderId,
-      ultracode,
-      claudeFastMode,
-    })
+      // Chat events alone cannot restore the SDK's conversation.
+      const priorSessionId = parseClaudeSessionResume(input.session.providerResume) ?? entry?.live.sessionId
+      const hasPriorHistory = input.session.transcript.some(block =>
+        block.id !== input.clientMessageId && !block.queued && !block.queuedInComposer && !block.metadata?.sendFailure,
+      )
+      if (!priorSessionId && !entry && hasPriorHistory) {
+        throw new Error('Cannot resume Claude: the provider resume ID is missing. Saved chat history is unchanged; recover the original session or start a new session explicitly.')
+      }
+
+      const { cwd, authEnv, uid, permissions } = await prepare({
+        session: input.session,
+        apiProviderId: input.apiProviderId,
+        permissionMode: input.permissionMode,
+        sessionDir: input.sessionDir,
+      })
+      if (permissions.downgradedFrom) {
+        input.onAgentEvent?.({
+          type: 'agent_setting_change',
+          patch: { permissionMode: permissions.permissionMode as PermissionMode },
+        })
+      }
+
+      // Probe disk MCP before (re)opening so mcp.save after a live session starts
+      // is picked up on the next turn (strict allowlist is fixed at open).
+      // diskNames does not depend on host-action servers — skip creating them here.
+      const mergedProbe = ensureMcpMerge({
+        provider: 'claude',
+        cwd,
+        mode: opts.mcpMergeMode,
+        env: authEnv,
+        homeDir: opts.homeDir,
+      })
+      const nextMcpDiskKey = mcpDiskKeyOf(mergedProbe.diskNames)
+      const nextAdditionalDirsKey = additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean))
+
+      // Another host send may have opened the process while prepare awaited.
+      entry = lives.get(sessionKey)
+      // A turn without a say (a host wake) keeps the Ultracode the process had,
+      // across a restart too.
+      const ultracode = input.ultracode ?? entry?.ultracode
+      const claudeFastMode = input.claudeFastMode ?? input.session.claudeFastMode ?? entry?.claudeFastMode
+      const model = trimmedOrUndefined(input.model)
+      const effort = trimmedOrUndefined(input.effort)
+      // Restart live session if cwd changed (worktree switch), the MCP allowlist
+      // changed, the directory set changed, or the effort changed — an in-place
+      // effort change would turn Ultracode off.
+      if (
+        entry
+        && (entry.cwd !== cwd
+          || entry.mcpDiskKey !== nextMcpDiskKey
+          || entry.additionalDirsKey !== nextAdditionalDirsKey
+          || (effort !== undefined && effort !== entry.effort))
+      ) {
+        await disposeEntry(sessionKey)
+        entry = undefined
+      }
+
+      entry ??= openEntry({
+        session: { ...input.session, providerResume: formatClaudeSessionResume(priorSessionId) },
+        binary,
+        cwd,
+        authEnv,
+        uid,
+        permissionMode: permissions.permissionMode,
+        model,
+        effort,
+        sandboxMode: input.sandboxMode,
+        additionalDirectories: input.additionalDirectories,
+        enabledSkills: input.enabledSkills,
+        disabledSkills: input.disabledSkills,
+        apiProviderId: input.apiProviderId,
+        ultracode,
+        claudeFastMode,
+      })
+      if (claudeFastMode !== undefined && claudeFastMode !== entry.claudeFastMode) {
+        await entry.live.setClaudeFastMode(claudeFastMode)
+        entry.claudeFastMode = claudeFastMode
+        input.onAgentEvent?.({ type: 'agent_setting_change', patch: { claudeFastMode } })
+      }
+      if (ultracode !== undefined && ultracode !== entry.ultracode) {
+        await entry.live.setUltracode(ultracode)
+        entry.ultracode = ultracode
+        input.onAgentEvent?.({ type: 'agent_setting_change', patch: { ultracode } })
+      }
+      if (model !== undefined && model !== entry.model) {
+        await entry.live.setModel(model)
+        entry.model = model
+      }
+      const requestedMode = permissions.permissionMode
+      if (requestedMode !== undefined && requestedMode !== entry.permissionMode) {
+        // A mode the model cannot take is refused; the turn runs in the mode the
+        // process is in, and the client is told which one that is.
+        const switched = await entry.live.setPermissionMode(requestedMode).then(() => true, () => false)
+        if (switched) entry.permissionMode = requestedMode
+        else if (entry.permissionMode) {
+          input.onAgentEvent?.({ type: 'agent_setting_change', patch: { permissionMode: entry.permissionMode as PermissionMode } })
+        }
+      }
+    }
+    if (!entry) throw new Error('No live Claude session to steer')
     entry.onProviderResume = input.onProviderResume
     // Init may have arrived before this turn installed its persistence sink.
     if (entry.live.sessionId) input.onProviderResume?.(formatClaudeSessionResume(entry.live.sessionId)!)
-    if (claudeFastMode !== undefined && claudeFastMode !== entry.claudeFastMode) {
-      await entry.live.setClaudeFastMode(claudeFastMode)
-      entry.claudeFastMode = claudeFastMode
-      input.onAgentEvent?.({ type: 'agent_setting_change', patch: { claudeFastMode } })
-    }
-    if (ultracode !== undefined && ultracode !== entry.ultracode) {
-      await entry.live.setUltracode(ultracode)
-      entry.ultracode = ultracode
-      input.onAgentEvent?.({ type: 'agent_setting_change', patch: { ultracode } })
-    }
-    if (model !== undefined && model !== entry.model) {
-      await entry.live.setModel(model)
-      entry.model = model
-    }
-    const requestedMode = permissions.permissionMode
-    if (requestedMode !== undefined && requestedMode !== entry.permissionMode) {
-      // A mode the model cannot take is refused; the turn runs in the mode the
-      // process is in, and the client is told which one that is.
-      const switched = await entry.live.setPermissionMode(requestedMode).then(() => true, () => false)
-      if (switched) entry.permissionMode = requestedMode
-      else if (entry.permissionMode) {
-        input.onAgentEvent?.({ type: 'agent_setting_change', patch: { permissionMode: entry.permissionMode as PermissionMode } })
-      }
-    }
+    const cwd = entry.cwd
     entry.onAmbientEvent = input.onAmbientEvent
     if (input.onAmbientEvent) for (const event of entry.modBacklog.splice(0)) input.onAmbientEvent(event)
 
@@ -564,6 +572,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     const activeEntry = entry
     activeEntry.busyCount += 1
     activeEntry.lastActivityAt = Date.now()
+    let accepted = false
     try {
       const result = await activeEntry.live.sendTurn({
         content,
@@ -571,8 +580,10 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         clientMessageId: input.messageId,
         // If live is already busy, ClaudeLiveSession queues with priority next.
         priorityNext: true,
+        priority: input.steerPriority,
+        beforeInput: input.beforeInput,
         source: input.source,
-        onInputAccepted: input.onInputAccepted,
+        onInputAccepted: () => { accepted = true; input.onInputAccepted?.() },
         onDelta: input.onDelta,
         onEvent: input.onEvent,
         // Only when the caller listens: its presence selects the structured event path.
@@ -637,11 +648,12 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
       return {
         finalText: result.finalText,
+        ...(result.skipAssistantTranscript ? { skipAssistantTranscript: true } : {}),
         providerResume: formatClaudeSessionResume(result.sessionId),
       }
     } catch (err) {
       // Drop broken live session so the next turn reopens cleanly.
-      await disposeEntry(sessionKey)
+      if (!input.steerPriority || accepted) await disposeEntry(sessionKey)
       throw err
     } finally {
       activeEntry.busyCount = Math.max(0, activeEntry.busyCount - 1)

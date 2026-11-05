@@ -7,6 +7,9 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
   admitting: Set<string>
   runner: TurnRunner
   assertControl(): void
+  promoteClaude?(turn: TurnOpts, priority: 'now' | 'next'): Promise<void>
+  restored?(queue: TurnOpts[]): void
+  settled?(): void
   consumed(turn: TurnOpts): void
   dequeued(turn: TurnOpts): void
   abandoned(turn: TurnOpts): void
@@ -24,6 +27,28 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
   if (method === 'session.dequeue') {
     deps.queue.splice(index, 1); deps.dequeued(turn)
     return { removed: true }
+  }
+  if (deps.session.harnessId === 'claude' && deps.promoteClaude) {
+    const priority = input.priority ?? 'now'
+    if (priority !== 'now' && priority !== 'next')
+      throw Object.assign(new Error('Invalid Claude steer priority'), { code: 'invalid_argument' })
+    if (deps.session.status !== 'streaming') throw new Error('Queued message can only steer an active Claude turn')
+    if (deps.admitting.has(deps.session.sessionId)) throw new Error('Another queued input is being submitted')
+    deps.admitting.add(deps.session.sessionId)
+    deps.queue.splice(index, 1)
+    try {
+      await deps.promoteClaude(turn, priority)
+      return { ok: true }
+    } catch (error) {
+      if (!deps.session.closed && !['interrupted', 'error', 'ended'].includes(deps.session.status)) {
+        deps.queue.splice(Math.min(index, deps.queue.length), 0, turn)
+        deps.restored?.(deps.queue)
+      } else deps.abandoned(turn)
+      throw error
+    } finally {
+      deps.admitting.delete(deps.session.sessionId)
+      deps.settled?.()
+    }
   }
   if (deps.session.harnessId !== 'opencode' || !deps.runner.steer)
     throw Object.assign(new Error('This session does not support queued steering'), { code: 'unsupported' })

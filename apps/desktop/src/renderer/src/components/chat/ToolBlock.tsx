@@ -329,7 +329,10 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
     widgetComposerPorts,
     renderBash: (bashProps) => <BashTerminalView {...bashProps} />,
     renderFileChip: (fileProps) => <FileChip {...fileProps} />,
-    renderFileDiff: ({ toolName, params, isStreaming: diffStreaming, useCanvasEdit }) => {
+    renderFileDiff: ({ toolName, params, toolDiff, isStreaming: diffStreaming, useCanvasEdit }) => {
+      // Remote detail carries a prefixed diff, including Write and add/delete.
+      // Treat it as a patch rather than raw file contents (which would double the prefixes).
+      if (toolDiff) return <FileChangeDiff params={{ ...params, kind: 'update', diff: toolDiff }} isStreaming={diffStreaming} />
       if (toolName === 'Edit') {
         if (useCanvasEdit) return <CanvasEditDiff params={params} />
         return String(params.old_string ?? '') || String(params.new_string ?? '')
@@ -386,20 +389,6 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
 })
 
 /**
- * A summarized file-change row's input keeps only its path; the detail sends
- * the body as `toolDiff`, which the desktop diff reads as `diff`.
- */
-function withDetailDiff(input: string | undefined, toolDiff: string | undefined): string | undefined {
-  if (!input || !toolDiff) return input
-  try {
-    const params = JSON.parse(input) as Record<string, unknown>
-    return params.diff ? input : JSON.stringify({ ...params, diff: toolDiff })
-  } catch {
-    return input
-  }
-}
-
-/**
  * A summarized row (`remoteDetail`) in a desktop chat: the same desktop block,
  * hydrated from the session's detail. Generic and Bash rows load their body
  * when opened; a block with its own chrome loads when shown, because its
@@ -409,9 +398,14 @@ function DeferredToolBlock({ remoteDetail, ...props }: ToolBlockProps & { remote
   const onOpen = !hasDedicatedToolRow(props.toolName)
   const [expanded, setExpanded] = useState(false)
   const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, onOpen ? expanded : true, props.status !== 'streaming', props.toolUseId)
-  const input = withDetailDiff(detail.input, detail.toolDiff)
   const loaded = {
-    ...(input ? { input } : {}),
+    ...(detail.input ? { input: detail.input } : {}),
+    // Codex item details already selected this file's raw diff in `input`.
+    // Their top-level diff/counts aggregate the entire patch, unlike generic tool detail.
+    ...(!detail.item && detail.toolLineDelta ? { toolLineDelta: detail.toolLineDelta } : {}),
+    ...(!detail.item && detail.toolDiff ? { toolDiff: detail.toolDiff } : {}),
+    ...(detail.toolDiffTokens ? { toolDiffTokens: detail.toolDiffTokens } : {}),
+    ...(detail.filePath ? { filePath: detail.filePath } : {}),
     ...(detail.result !== undefined ? { result: detail.result } : {}),
     ...(detail.isError ? { isError: true } : {}),
     ...(detail.bashEditDiff ? { bashEditDiff: detail.bashEditDiff } : {}),

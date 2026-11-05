@@ -160,8 +160,8 @@ describe('countLines', () => {
     expect(countLines('a\nb\nc')).toBe(3)
   })
 
-  it('should count trailing newline as extra line', () => {
-    expect(countLines('a\nb\n')).toBe(3)
+  it('does not count the final line terminator as an extra source line', () => {
+    expect(countLines('a\nb\n')).toBe(2)
   })
 })
 
@@ -289,7 +289,7 @@ describe('computeToolMeta', () => {
       })
       const result = computeToolMeta(block, '/proj')
       expect(result.toolFilePath).toBe('file.ts')
-      expect(result.toolLineDelta).toEqual({ added: 2, removed: 1 })
+      expect(result.toolLineDelta).toEqual({ added: 1, removed: 0 })
       expect(result.toolDiff).toBeDefined()
     })
 

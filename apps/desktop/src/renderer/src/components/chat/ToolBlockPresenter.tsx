@@ -54,6 +54,7 @@ import {
   type FileChipPortProps,
   type FileDiffPresenterProps,
   type GenericToolRowPorts,
+  type GenericToolRowProps,
 } from '@superone/chat-view/presenters/GenericToolRow'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { SuggestedTaskToolBlock } from './SuggestedTaskToolBlock'
@@ -99,7 +100,7 @@ const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   : []
 
 
-export interface ToolBlockProps {
+export interface ToolBlockProps extends Pick<GenericToolRowProps, 'filePath' | 'toolLineDelta' | 'toolDiff' | 'toolDiffTokens'> {
   trailing?: ReactNode
   app?: ToolAppAttachment
   toolName: string
@@ -224,6 +225,10 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   toolUseId,
   input,
   toolSummary,
+  filePath,
+  toolLineDelta,
+  toolDiff,
+  toolDiffTokens,
   status,
   elapsedSeconds,
   result,
@@ -639,6 +644,10 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       toolUseId={toolUseId}
       input={input}
       toolSummary={toolSummary}
+      filePath={filePath}
+      toolLineDelta={toolLineDelta}
+      toolDiff={toolDiff}
+      toolDiffTokens={toolDiffTokens}
       status={status}
       elapsedSeconds={elapsedSeconds}
       result={result}

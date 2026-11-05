@@ -31,6 +31,8 @@ const legacyTurn: ChatMessageType = { id: 'turn', role: 'assistant', status: 'co
 const DETAILS: Record<string, string> = {
   bash: JSON.stringify({ input: JSON.stringify({ command: 'bun run test', description: 'Run the tests' }), result: LONG_OUTPUT }),
   grep: JSON.stringify({ input: JSON.stringify({ pattern: 'greet', path: '/repo/src' }), result: '/repo/src/greet.ts\n/repo/src/index.ts' }),
+  edit: JSON.stringify({ input: JSON.stringify({ file_path: '/repo/src/greet.ts' }), toolDiff: DIFF, toolLineDelta: { added: 1, removed: 1 } }),
+  write: JSON.stringify({ input: JSON.stringify({ file_path: '/repo/src/note.ts' }), toolDiff: '+export const note = "Hello"', toolLineDelta: { added: 1, removed: 0 } }),
   cmd: JSON.stringify({ item: { ...command, aggregatedOutput: LONG_OUTPUT }, input: JSON.stringify({ command: 'bun run test' }), result: LONG_OUTPUT }),
   patch: JSON.stringify({ item: { ...fileChange, changes: [{ ...fileChange.changes[0], diff: DIFF }] } }),
   spawn: JSON.stringify({ item: { ...collab, prompt: 'Run the test suite and report failures.', childItems: { child: [
@@ -65,6 +67,8 @@ function Scenario({ state = 'loaded', narrow = false }: { state?: LoadState; nar
         <DesktopReasoning text="" blockDone showContent remoteDetails={['think']} />
         <ToolBlock toolName="Bash" toolUseId="bash" input={JSON.stringify({ command: 'bun run test' })} status="complete" remoteDetail="bash" />
         <ToolBlock toolName="Grep" toolUseId="grep" input={JSON.stringify({ pattern: 'greet' })} status="complete" remoteDetail="grep" />
+        <ToolBlock toolName="Edit" toolUseId="edit" input={JSON.stringify({ file_path: '/repo/src/greet.ts' })} toolLineDelta={{ added: 1, removed: 1 }} status="complete" remoteDetail="edit" />
+        <ToolBlock toolName="Write" toolUseId="write" input={JSON.stringify({ file_path: '/repo/src/note.ts' })} toolLineDelta={{ added: 1, removed: 0 }} status="complete" remoteDetail="write" />
         <CodexCommandBlock item={command} isStreaming={false} />
         <ChatMessage message={withCodexContent(legacyTurn)} sessionStatus="idle" isLastAssistant />
       </div>

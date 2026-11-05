@@ -352,6 +352,10 @@ function renderFullViewBlock(
           toolName={block.toolName}
           toolUseId={block.toolUseId}
           input={block.input}
+          filePath={block.toolFilePath}
+          toolLineDelta={block.toolLineDelta}
+          toolDiff={block.toolDiff}
+          toolDiffTokens={block.toolDiffTokens}
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           result={toolResultMap.get(block.toolUseId)}

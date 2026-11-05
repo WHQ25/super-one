@@ -64,7 +64,7 @@ import { ChipSelection } from './chip-selection'
 import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
 import { ReplyCommentChips } from './ReplyCommentChips'
 import { requestReplyCommentEdit } from './reply-comment-target'
-import { buildChatImage, originalPending, useOriginalUploads, watchOriginals } from './attachment-originals'
+import { buildChatImage, buildChatImageFromBase64, originalPending, useOriginalUploads, watchOriginals } from './attachment-originals'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { McpAppContextAttachments } from './McpAppContextAttachments'
@@ -1570,6 +1570,16 @@ export function ChatInput({
       [attachImage],
     )
     chatInputAPI.addImageFromPath = addImageFromPath
+
+    const addImageFromBase64 = useCallback(
+      async (base64: string, mimeType: string, name: string) => {
+        const raw = base64.includes(',') ? base64.split(',').pop()! : base64
+        const image = await buildChatImageFromBase64(raw, mimeType, name, sessionScope ?? undefined)
+        if (image) attachFile(image.attachment, image.target)
+      },
+      [attachFile, sessionScope],
+    )
+    chatInputAPI.addImageFromBase64 = addImageFromBase64
 
     const handleFileSelect = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {

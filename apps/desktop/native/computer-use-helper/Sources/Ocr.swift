@@ -42,6 +42,13 @@ func recognizeText(pngData: Data, minConfidence: Double) throws -> [[String: Any
     // Left on: a phone screen is mostly ordinary prose, and the model's language
     // correction is what turns near-misses into the exact label the agent then taps.
     request.usesLanguageCorrection = true
+    request.automaticallyDetectsLanguage = true
+    if let supported = try? request.supportedRecognitionLanguages() {
+        let preferred = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"].filter { supported.contains($0) }
+        if !preferred.isEmpty {
+            request.recognitionLanguages = preferred
+        }
+    }
 
     let handler = VNImageRequestHandler(cgImage: image, options: [:])
     try handler.perform([request])

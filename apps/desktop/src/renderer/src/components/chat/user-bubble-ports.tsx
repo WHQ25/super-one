@@ -100,7 +100,14 @@ function localZoneImageSrc(attachment: ImageAttachment): string | null {
 }
 
 /** The image viewer, or a PDF's preview. A remote original opens from the local zone file. */
-function DesktopAttachmentViewer({ attachment, isDocument, open, onOpenChange }: AttachmentViewerProps) {
+function DesktopAttachmentViewer({
+  attachment,
+  isDocument,
+  open,
+  onOpenChange,
+  initialEditing,
+  onReplaceAttachment,
+}: AttachmentViewerProps) {
   if (isDocument) {
     if (!attachment.base64) return null
     return open ? <PdfAttachmentDialog attachment={attachment} onClose={() => onOpenChange(false)} /> : null
@@ -109,7 +116,17 @@ function DesktopAttachmentViewer({ attachment, isDocument, open, onOpenChange }:
   // A window thumbnail is the small copy. Open the zone file when this machine has it.
   const src = (!inline || attachment.preview) ? localZoneImageSrc(attachment) ?? inline : inline
   if (!src) return null
-  return <ImageLightbox src={src} alt={attachment.name} open={open} onOpenChange={onOpenChange} />
+  return (
+    <ImageLightbox
+      src={src}
+      alt={attachment.name}
+      fileName={attachment.name}
+      open={open}
+      onOpenChange={onOpenChange}
+      initialEditing={initialEditing}
+      onReplaceAttachment={onReplaceAttachment}
+    />
+  )
 }
 
 const DESKTOP_USER_BUBBLE_PORTS: UserBubblePorts = {

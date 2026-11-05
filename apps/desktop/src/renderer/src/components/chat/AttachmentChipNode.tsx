@@ -1,8 +1,8 @@
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 import { AttachmentChipPresenter } from '@superone/chat-view/presenters/AttachmentChip'
-import { retryOriginal, useOriginalUploads } from './attachment-originals'
+import { buildChatImageFromBase64, retryOriginal, useOriginalUploads } from './attachment-originals'
 import type { AttachmentNodeAttrs } from './attachment-node'
 
 export function AttachmentChipNode({ node }: NodeViewProps) {
@@ -15,6 +15,19 @@ export function AttachmentChipNode({ node }: NodeViewProps) {
   // lingers for a frame — render nothing rather than a broken chip.
   if (!att) return <NodeViewWrapper as="span" contentEditable={false} />
 
+  const handleReplaceAttachment = async (base64: string, mimeType: string) => {
+    const image = await buildChatImageFromBase64(base64, mimeType, att.name)
+    if (!image) return
+    useChatStore.getState().updateAttachmentById(
+      id,
+      {
+        ...image.attachment,
+        id,
+      },
+      image.target,
+    )
+  }
+
   return (
     <NodeViewWrapper as="span" contentEditable={false} data-attachment="" className="select-none">
       <AttachmentChipPresenter
@@ -23,7 +36,9 @@ export function AttachmentChipNode({ node }: NodeViewProps) {
           status,
           onRetry: () => void retryOriginal(originalPath),
         } : undefined}
+        onReplaceAttachment={handleReplaceAttachment}
       />
     </NodeViewWrapper>
   )
 }
+

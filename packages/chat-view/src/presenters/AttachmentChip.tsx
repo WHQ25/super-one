@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Check, Copy, ImageIcon, Maximize2, RotateCw } from 'lucide-react'
+import { AlertCircle, Check, Copy, ImageIcon, Maximize2, Pencil, RotateCw } from 'lucide-react'
 import type { AttachmentOriginalStatus, ImageAttachment } from '@superone/shared/agent-types'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -22,21 +22,24 @@ export interface AttachmentOriginalUpload {
  * Inline attachment chip: an image thumbnail or a file-type icon, then the file
  * name, in the composer and in a sent bubble on both hosts. Click or tap opens
  * the host's viewer; where the host has hover, a card shows the image larger
- * with copy / open. `selectable` lets a sent bubble's selection take the chip.
+ * with copy / edit / open. `selectable` lets a sent bubble's selection take the chip.
  * `messageId` lets a host fetch an original the transcript only holds a
  * thumbnail of.
  */
-export function AttachmentChipPresenter({ att, document, messageId, selectable, original }: {
+export function AttachmentChipPresenter({ att, document, messageId, selectable, original, onReplaceAttachment }: {
   att: ImageAttachment
   /** A document block: its bytes may be gone (a phone transcript), so its mime type cannot say. */
   document?: boolean
   messageId?: string
   selectable?: boolean
   original?: AttachmentOriginalUpload
+  /** Provided when rendered inside the composer so Save replaces the attachment in place. */
+  onReplaceAttachment?: (base64: string, mimeType: string) => Promise<void> | void
 }) {
   const { t } = useTranslation()
   const { ChipCard, AttachmentViewer, copyImage, localAttachmentSrc } = useUserBubblePorts()
   const [open, setOpen] = useState(false)
+  const [initialEditing, setInitialEditing] = useState(false)
   const { copied, run } = useCopiedFlag()
   const isPdf = document || att.mimeType === 'application/pdf'
   // Bytes when the window carried a thumbnail. Otherwise the host may still
@@ -47,6 +50,10 @@ export function AttachmentChipPresenter({ att, document, messageId, selectable, 
   const failed = upload?.state === 'failed'
   const uploadNote = uploading ? t('chat.attachmentOriginal.uploading', { percent: Math.round(upload.progress * 100) })
     : failed ? t(upload.retryable ? 'chat.attachmentOriginal.failed' : 'chat.attachmentOriginal.failedReattach') : null
+  const openViewer = (edit: boolean) => {
+    setInitialEditing(edit)
+    setOpen(true)
+  }
   return (
     <>
       <ChipCard
@@ -63,7 +70,17 @@ export function AttachmentChipPresenter({ att, document, messageId, selectable, 
                 {copied ? <Check className="text-success" /> : <Copy />}
               </IconButton>
             )}
-            <IconButton tooltip={t('chat.attachmentChip.open')} onClick={() => setOpen(true)}>
+            {!isPdf && src && (onReplaceAttachment || copyImage) && (
+              <IconButton
+                tooltip={t('chat.attachmentChip.edit')}
+                aria-label={t('chat.attachmentChip.edit')}
+                data-testid="attachment-chip-edit-button"
+                onClick={() => openViewer(true)}
+              >
+                <Pencil />
+              </IconButton>
+            )}
+            <IconButton tooltip={t('chat.attachmentChip.open')} onClick={() => openViewer(false)}>
               <Maximize2 />
             </IconButton>
           </>
@@ -84,7 +101,7 @@ export function AttachmentChipPresenter({ att, document, messageId, selectable, 
           // its name as text would duplicate it on paste.
           data-copy-text=" "
           data-copy-image={isPdf ? undefined : ''}
-          onClick={() => setOpen(true)}
+          onClick={() => openViewer(false)}
           icon={isPdf
             ? <FileIcon name={att.name} size={16} />
             : !src ? <ImageIcon />
@@ -95,7 +112,18 @@ export function AttachmentChipPresenter({ att, document, messageId, selectable, 
           label={att.name}
         />
       </ChipCard>
-      <AttachmentViewer attachment={att} isDocument={isPdf} messageId={messageId} open={open} onOpenChange={setOpen} />
+      <AttachmentViewer
+        attachment={att}
+        isDocument={isPdf}
+        messageId={messageId}
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          if (!next) setInitialEditing(false)
+        }}
+        initialEditing={initialEditing}
+        onReplaceAttachment={onReplaceAttachment}
+      />
     </>
   )
 }

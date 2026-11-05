@@ -2109,6 +2109,7 @@ export type Messages = {
     }
     attachmentChip: {
       open: string
+      edit: string
     }
     attachmentOriginal: {
       stageFailed: string
@@ -2271,6 +2272,41 @@ export type Messages = {
       paramSize: string
       paramAspectRatio: string
       paramReferenceImages: string
+      edit: string
+    }
+    imageEditor: {
+      edit: string
+      exitEdit: string
+      select: string
+      pen: string
+      rect: string
+      ellipse: string
+      line: string
+      arrow: string
+      text: string
+      textPlaceholder: string
+      marker: string
+      mosaic: string
+      strokeWidth: string
+      color: string
+      customColor: string
+      undo: string
+      redo: string
+      clearAll: string
+      save: string
+      saveAs: string
+      addToChat: string
+      recognizingText: string
+      recognizeText: string
+      recognizedCount: string
+      noTextRecognized: string
+      redactAllText: string
+      toggleOcrBoxes: string
+      savedAttachment: string
+      savedFile: string
+      savedAs: string
+      saveFailed: string
+      addedToChat: string
     }
     worktree: {
       searchPlaceholder: string
@@ -6929,6 +6965,7 @@ export const en: Messages = {
     },
     attachmentChip: {
       open: 'Open Preview',
+      edit: 'Edit Image',
     },
     attachmentOriginal: {
       stageFailed: 'Could not attach {{name}}: its full-size original could not be kept.',
@@ -7091,6 +7128,41 @@ export const en: Messages = {
       paramSize: 'Size',
       paramAspectRatio: 'Aspect ratio',
       paramReferenceImages: 'Reference images',
+      edit: 'Edit Image',
+    },
+    imageEditor: {
+      edit: 'Edit Image',
+      exitEdit: 'Exit',
+      select: 'Select & Move',
+      pen: 'Pen',
+      rect: 'Rectangle',
+      ellipse: 'Circle',
+      line: 'Line',
+      arrow: 'Arrow',
+      text: 'Add Text',
+      textPlaceholder: 'Type text…',
+      marker: 'Step Marker',
+      mosaic: 'Redact / Mosaic',
+      strokeWidth: 'Thickness',
+      color: 'Color',
+      customColor: 'Custom Color',
+      undo: 'Undo',
+      redo: 'Redo',
+      clearAll: 'Clear All Annotations',
+      save: 'Save',
+      saveAs: 'Save As',
+      addToChat: 'Add to Chat',
+      recognizingText: 'Recognizing text…',
+      recognizeText: 'Recognize Text',
+      recognizedCount: 'Recognized {{count}} text regions (click dashed boxes to redact)',
+      noTextRecognized: 'No text detected — drag to redact manually',
+      redactAllText: 'Redact All Text',
+      toggleOcrBoxes: 'Show/Hide Detected Text',
+      savedAttachment: 'Replaced attachment with annotated image',
+      savedFile: 'Saved annotated image',
+      savedAs: 'Saved to {{path}}',
+      saveFailed: 'Save failed: {{error}}',
+      addedToChat: 'Added to chat',
     },
     worktree: {
       searchPlaceholder: 'Search worktrees…',

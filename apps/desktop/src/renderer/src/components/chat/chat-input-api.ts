@@ -7,5 +7,6 @@ import type { MentionKind } from '@/stores/chat'
  */
 export const chatInputAPI: {
   insertMention: ((kind: MentionKind, value: string, displayName: string) => void) | null
-  addImageFromPath: ((absPath: string) => void) | null
-} = { insertMention: null, addImageFromPath: null }
+  addImageFromPath: ((absPath: string) => Promise<void> | void) | null
+  addImageFromBase64: ((base64: string, mimeType: string, name: string) => Promise<void> | void) | null
+} = { insertMention: null, addImageFromPath: null, addImageFromBase64: null }

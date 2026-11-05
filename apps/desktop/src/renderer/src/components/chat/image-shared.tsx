@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon, Pencil } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
@@ -14,6 +14,7 @@ import { mediaUrlFor } from '@/lib/path-utils'
 import { useMediaServerPort, useMediaUrl } from '@/hooks/use-media-server-port'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './chat-input-api'
+import { ImageAnnotationEditor } from './image-editor/ImageAnnotationEditor'
 import { useAppStore } from '@/stores/app'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
 import { resolveMediaModelLabel, resolveMediaProviderLabel } from '@superone/shared/media-provider-labels'
@@ -325,6 +326,8 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   // Fullscreen always prefers the original; stream via media server so 4K files load.
   const fullPath = item ? imageFullPath(item) : undefined
   const fullSrc = useMediaUrl(fullPath && item?.status !== 'failed' ? fullPath : undefined) ?? null
+  const [editing, setEditing] = useState(false)
+  const [overrideSrc, setOverrideSrc] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null)
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null)
@@ -336,24 +339,56 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   const multi = items.length > 1
   const hasPrev = index > 0
   const hasNext = index < items.length - 1
+  const activeSrc = overrideSrc ?? fullSrc
+
+  useEffect(() => {
+    setEditing(false)
+    setOverrideSrc(null)
+  }, [open, index])
 
   useEffect(() => {
     setDims(null)
-    if (!fullSrc) return
+    if (!activeSrc) return
     const img = new Image()
     img.onload = () => setDims({ width: img.naturalWidth, height: img.naturalHeight })
-    img.src = fullSrc
-  }, [fullSrc])
+    img.src = activeSrc
+  }, [activeSrc])
+
+  const handleQuickAddToChat = useCallback(async () => {
+    if (!fullPath && !overrideSrc) return
+    if (overrideSrc && overrideSrc.startsWith('data:') && chatInputAPI.addImageFromBase64) {
+      const commaIdx = overrideSrc.indexOf(',')
+      const base64 = commaIdx >= 0 ? overrideSrc.slice(commaIdx + 1) : ''
+      if (base64) {
+        await chatInputAPI.addImageFromBase64(base64, 'image/png', item ? buildImageFileName(item) : 'image.png')
+        toast.success(t('chat.imageEditor.addedToChat'))
+        onOpenChange(false)
+        return
+      }
+    }
+    if (fullPath && chatInputAPI.addImageFromPath) {
+      await chatInputAPI.addImageFromPath(fullPath)
+      toast.success(t('chat.imageEditor.addedToChat'))
+      onOpenChange(false)
+    }
+  }, [fullPath, overrideSrc, item, t, onOpenChange])
 
   useEffect(() => {
-    if (!open || !multi) return
+    if (!open || editing) return
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && (fullPath || overrideSrc)) {
+        e.preventDefault()
+        e.stopPropagation()
+        void handleQuickAddToChat()
+        return
+      }
+      if (!multi) return
       if (e.key === 'ArrowLeft' && hasPrev) { e.preventDefault(); onIndexChange(index - 1) }
       else if (e.key === 'ArrowRight' && hasNext) { e.preventDefault(); onIndexChange(index + 1) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, multi, index, hasPrev, hasNext, onIndexChange])
+  }, [open, editing, multi, index, hasPrev, hasNext, onIndexChange, fullPath, overrideSrc, handleQuickAddToChat])
 
   const handleDownload = async () => {
     if (!fullPath || downloading) return
@@ -381,184 +416,234 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
         className="left-0 top-0 h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background/95 p-0 shadow-none sm:max-w-none"
       >
         <DialogTitle className="sr-only">{item.revisedPrompt ?? 'Generated image'}</DialogTitle>
-        {(() => {
-          const imageArea = (
-            <div className="absolute inset-0 px-[5vw] py-[5vh]">
-              {fullSrc && <ImagePreview src={fullSrc} alt={item.revisedPrompt ?? 'Generated image'} />}
-            </div>
-          )
-          if (!fullPath) return imageArea
-          return (
-            <AdaptiveContextMenu items={menuItems}>{imageArea}</AdaptiveContextMenu>
-          )
-        })()}
-
-        {multi && (
+        {editing && activeSrc ? (
+          <ImageAnnotationEditor
+            src={activeSrc}
+            alt={item.revisedPrompt ?? 'Generated image'}
+            filePath={fullPath}
+            fileName={buildImageFileName(item)}
+            onSavedImage={(dataUrl) => setOverrideSrc(dataUrl)}
+            onExitEdit={() => setEditing(false)}
+            onCloseViewer={() => onOpenChange(false)}
+          />
+        ) : (
           <>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              disabled={!hasPrev}
-              onClick={() => onIndexChange(index - 1)}
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="absolute left-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
-              aria-label="Previous image"
-            >
-              <ChevronLeft className="size-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              disabled={!hasNext}
-              onClick={() => onIndexChange(index + 1)}
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className="absolute right-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
-              aria-label="Next image"
-            >
-              <ChevronRight className="size-5" />
-            </Button>
-            <div className={cn(
-              "absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-border/50 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
-              isWindows ? "top-12" : "top-3"
-            )}>
-              {index + 1} / {items.length}
-            </div>
-          </>
-        )}
+            {(() => {
+              const imageArea = (
+                <div className="absolute inset-0 px-[5vw] py-[5vh]">
+                  {activeSrc && <ImagePreview src={activeSrc} alt={item.revisedPrompt ?? 'Generated image'} />}
+                </div>
+              )
+              if (!fullPath) return imageArea
+              return (
+                <AdaptiveContextMenu items={menuItems}>{imageArea}</AdaptiveContextMenu>
+              )
+            })()}
 
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className={cn(
-            "absolute right-[108px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-            isWindows ? "top-12" : "top-3"
-          )}
-           onClick={() => setInfoOpen((v) => !v)}
-          aria-label="Image info"
-          aria-expanded={infoOpen}
-        >
-          <Info className="size-4" />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className={cn(
-            "absolute right-[60px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-            isWindows ? "top-12" : "top-3"
-          )}
-           onClick={handleDownload}
-          disabled={downloading}
-          aria-label="Download image"
-        >
-          {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-        </Button>
-
-        <DialogClose asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            className={cn(
-              "absolute right-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-              isWindows ? "top-12" : "top-3"
+            {multi && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={!hasPrev}
+                  onClick={() => onIndexChange(index - 1)}
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                  className="absolute left-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
+                  aria-label="Previous image"
+                >
+                  <ChevronLeft className="size-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={!hasNext}
+                  onClick={() => onIndexChange(index + 1)}
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                  className="absolute right-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
+                  aria-label="Next image"
+                >
+                  <ChevronRight className="size-5" />
+                </Button>
+                <div className={cn(
+                  "absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-border/50 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
+                  isWindows ? "top-12" : "top-3"
+                )}>
+                  {index + 1} / {items.length}
+                </div>
+              </>
             )}
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </Button>
-        </DialogClose>
 
-        {infoOpen && (
-          <div className={cn(
-            "absolute right-3 z-20 max-h-[80vh] w-80 overflow-y-auto rounded-md border border-border/50 bg-popover p-4 text-xs text-popover-foreground shadow-md",
-            isWindows ? "top-[84px]" : "top-14"
-          )}>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                {dims && <span>{dims.width} × {dims.height}</span>}
-                {dims && generationMs !== null && <span className="text-border">·</span>}
-                {generationMs !== null && <span>{t('chat.image.generatedIn', { duration: formatDuration(generationMs) })}</span>}
-                {!dims && generationMs === null && !item.params?.length && !item.referenceImagePaths?.length && <span>{t('chat.image.noMetadata')}</span>}
-              </div>
-              {item.params && item.params.length > 0 && (
-                <dl className="flex flex-col gap-1 border-t pt-2">
-                  {item.params.map((p) => (
-                    <div key={p.key} className="flex items-baseline justify-between gap-3">
-                      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        {PARAM_LABEL_KEYS[p.key] ? t(PARAM_LABEL_KEYS[p.key]) : p.key}
-                      </dt>
-                      {p.key === 'provider' ? (
-                        <ProviderParamValue id={p.value} providers={providers} />
-                      ) : p.key === 'model' ? (
-                        <ModelParamValue id={p.value} providerId={providerParamId} providers={providers} />
-                      ) : (
-                        <dd className="break-all text-right text-foreground">{p.value}</dd>
-                      )}
+            {fullPath && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                className={cn(
+                  "absolute right-[204px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+                  isWindows ? "top-12" : "top-3"
+                )}
+                onClick={() => void handleQuickAddToChat()}
+                title={`${t('chat.image.addToChat')} (⌘↵)`}
+                aria-label={t('chat.image.addToChat')}
+              >
+                <MessageSquarePlus className="size-4" />
+              </Button>
+            )}
+
+            {activeSrc && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                className={cn(
+                  "absolute right-[156px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+                  isWindows ? "top-12" : "top-3"
+                )}
+                onClick={() => setEditing(true)}
+                title={t('chat.image.edit')}
+                aria-label={t('chat.image.edit')}
+                data-testid="image-viewer-edit-button"
+              >
+                <Pencil className="size-4" />
+              </Button>
+            )}
+
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              className={cn(
+                "absolute right-[108px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+                isWindows ? "top-12" : "top-3"
+              )}
+              onClick={() => setInfoOpen((v) => !v)}
+              aria-label="Image info"
+              aria-expanded={infoOpen}
+            >
+              <Info className="size-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              className={cn(
+                "absolute right-[60px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+                isWindows ? "top-12" : "top-3"
+              )}
+              onClick={handleDownload}
+              disabled={downloading}
+              aria-label="Download image"
+            >
+              {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            </Button>
+
+            <DialogClose asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                className={cn(
+                  "absolute right-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
+                  isWindows ? "top-12" : "top-3"
+                )}
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </Button>
+            </DialogClose>
+
+            {infoOpen && (
+              <div className={cn(
+                "absolute right-3 z-20 max-h-[80vh] w-80 overflow-y-auto rounded-md border border-border/50 bg-popover p-4 text-xs text-popover-foreground shadow-md",
+                isWindows ? "top-[84px]" : "top-14"
+              )}>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    {dims && <span>{dims.width} × {dims.height}</span>}
+                    {dims && generationMs !== null && <span className="text-border">·</span>}
+                    {generationMs !== null && <span>{t('chat.image.generatedIn', { duration: formatDuration(generationMs) })}</span>}
+                    {!dims && generationMs === null && !item.params?.length && !item.referenceImagePaths?.length && <span>{t('chat.image.noMetadata')}</span>}
+                  </div>
+                  {item.params && item.params.length > 0 && (
+                    <dl className="flex flex-col gap-1 border-t pt-2">
+                      {item.params.map((p) => (
+                        <div key={p.key} className="flex items-baseline justify-between gap-3">
+                          <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {PARAM_LABEL_KEYS[p.key] ? t(PARAM_LABEL_KEYS[p.key]) : p.key}
+                          </dt>
+                          {p.key === 'provider' ? (
+                            <ProviderParamValue id={p.value} providers={providers} />
+                          ) : p.key === 'model' ? (
+                            <ModelParamValue id={p.value} providerId={providerParamId} providers={providers} />
+                          ) : (
+                            <dd className="break-all text-right text-foreground">{p.value}</dd>
+                          )}
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {item.referenceImagePaths && item.referenceImagePaths.length > 0 && (
+                    <div className="border-t pt-2">
+                      <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {t('chat.image.paramReferenceImages')}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {item.referenceImagePaths.map((p) => (
+                          <ReferenceImageThumb key={p} path={p} />
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </dl>
-              )}
-              {item.referenceImagePaths && item.referenceImagePaths.length > 0 && (
-                <div className="border-t pt-2">
-                  <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {t('chat.image.paramReferenceImages')}
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {item.referenceImagePaths.map((p) => (
-                      <ReferenceImageThumb key={p} path={p} />
-                    ))}
-                  </div>
+                  )}
+                  {item.warnings && item.warnings.length > 0 && (
+                    <div className="border-t pt-2">
+                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                        {t('chat.image.warnings')}
+                      </div>
+                      <ul className="flex list-disc flex-col gap-1 pl-4 leading-relaxed text-muted-foreground">
+                        {item.warnings.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {item.revisedPrompt && (
+                    <SelectionContextMenuZone className="border-t pt-2">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {t('chat.image.prompt')}
+                        </span>
+                        <IconButton
+                          size="xs"
+                          variant="ghost"
+                          tooltip={t('chat.image.copyPrompt')}
+                          aria-label={t('chat.image.copyPrompt')}
+                          onClick={() => { void copyImagePrompt(item.revisedPrompt!, t) }}
+                        >
+                          <ClipboardCopy />
+                        </IconButton>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto leading-relaxed">
+                        {item.revisedPrompt}
+                      </div>
+                    </SelectionContextMenuZone>
+                  )}
                 </div>
-              )}
-              {item.warnings && item.warnings.length > 0 && (
-                <div className="border-t pt-2">
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
-                    {t('chat.image.warnings')}
-                  </div>
-                  <ul className="flex list-disc flex-col gap-1 pl-4 leading-relaxed text-muted-foreground">
-                    {item.warnings.map((w, i) => (
-                      <li key={i}>{w}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {item.revisedPrompt && (
-                <SelectionContextMenuZone className="border-t pt-2">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {t('chat.image.prompt')}
-                    </span>
-                    <IconButton
-                      size="xs"
-                      variant="ghost"
-                      tooltip={t('chat.image.copyPrompt')}
-                      aria-label={t('chat.image.copyPrompt')}
-                      onClick={() => { void copyImagePrompt(item.revisedPrompt!, t) }}
-                    >
-                      <ClipboardCopy />
-                    </IconButton>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto leading-relaxed">
-                    {item.revisedPrompt}
-                  </div>
-                </SelectionContextMenuZone>
-              )}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {downloadStatus && (
-          <div className={cn(
-            "absolute right-3 z-20 max-w-70 truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
-            isWindows ? "top-[84px]" : "top-14"
-          )}>
-            {downloadStatus}
-          </div>
+            {downloadStatus && (
+              <div className={cn(
+                "absolute right-3 z-20 max-w-70 truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
+                isWindows ? "top-[84px]" : "top-14"
+              )}>
+                {downloadStatus}
+              </div>
+            )}
+          </>
         )}
       </DialogContent>
     </Dialog>
   )
 }
+

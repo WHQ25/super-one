@@ -4230,6 +4230,51 @@ function registerIpcHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.handle(
+    AgentIpcChannels.WRITE_IMAGE_FILE,
+    async (_event, absPath: string, base64: string) => {
+      try {
+        if (typeof absPath !== 'string' || !isAbsolute(absPath)) {
+          return { ok: false, error: 'Target path must be absolute' }
+        }
+        const raw = typeof base64 === 'string' ? (base64.includes(',') ? base64.split(',').pop()! : base64) : ''
+        if (!raw) return { ok: false, error: 'Empty image data' }
+        await writeFile(absPath, Buffer.from(raw, 'base64'))
+        return { ok: true, savedPath: absPath }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.RECOGNIZE_IMAGE_TEXT,
+    async (_event, base64: string, minConfidence = 0.2) => {
+      try {
+        if (process.platform !== 'darwin') {
+          return { ok: false, error: 'OCR is only supported on macOS' }
+        }
+        const raw = typeof base64 === 'string' ? (base64.includes(',') ? base64.split(',').pop()! : base64) : ''
+        if (!raw) return { ok: false, error: 'Empty image data' }
+        const { getSharedHelperClient } = await import('./computer-use/platform/macos-helper-client')
+        const response = await getSharedHelperClient().request(
+          'ocr',
+          { data: raw, minConfidence: typeof minConfidence === 'number' ? minConfidence : 0.2 },
+          30_000,
+        )
+        if (!response.ok) {
+          return { ok: false, error: response.error?.message || 'OCR failed' }
+        }
+        const result = response.result as {
+          texts?: Array<{ text: string; confidence: number; x: number; y: number; width: number; height: number }>
+        }
+        return { ok: true, texts: result.texts ?? [] }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
   ipcMain.handle(AgentIpcChannels.REVEAL_FILE, (_event, absPath: string) => {
     shell.showItemInFolder(absPath)
   })

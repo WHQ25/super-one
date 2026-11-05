@@ -492,6 +492,17 @@ interface AppAPI extends WindowLayoutAPI {
     x: number,
     y: number,
   ): Promise<{ ok: true } | { ok: false; error: string }>
+  writeImageFile(
+    absPath: string,
+    base64: string,
+  ): Promise<{ ok: true; savedPath: string } | { ok: false; error: string }>
+  recognizeImageText(
+    base64: string,
+    minConfidence?: number,
+  ): Promise<
+    | { ok: true; texts: Array<{ text: string; confidence: number; x: number; y: number; width: number; height: number }> }
+    | { ok: false; error: string }
+  >
   revealFile(absPath: string): Promise<void>
   getPathForFile(file: File): string
   startDrag(paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void

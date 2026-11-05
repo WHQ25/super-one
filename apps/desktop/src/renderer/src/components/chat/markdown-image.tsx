@@ -64,7 +64,15 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
   }
 
   return (
-    <ImageLightbox src={src} alt={alt} open={open} onOpenChange={onOpenChange} menuItems={menuItems}>
+    <ImageLightbox
+      src={src}
+      alt={alt}
+      filePath={savedPath}
+      fileName={basename(savedPath)}
+      open={open}
+      onOpenChange={onOpenChange}
+      menuItems={menuItems}
+    >
       <Button
         variant="ghost"
         size="icon-xs"

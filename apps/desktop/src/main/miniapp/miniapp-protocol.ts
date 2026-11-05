@@ -90,6 +90,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
               'Content-Range': `bytes ${start}-${end}/${fileSize}`,
               'Content-Length': String(end - start + 1),
               'Accept-Ranges': 'bytes',
+              'Access-Control-Allow-Origin': '*',
             },
           })
         }
@@ -98,6 +99,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
             'Content-Type': contentType,
             'Content-Length': String(fileSize),
             'Accept-Ranges': 'bytes',
+            'Access-Control-Allow-Origin': '*',
           },
         })
       }
@@ -117,6 +119,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
             'Content-Range': `bytes ${start}-${end}/${total}`,
             'Content-Length': String(end - start + 1),
             'Accept-Ranges': 'bytes',
+            'Access-Control-Allow-Origin': '*',
           },
         })
       }
@@ -126,6 +129,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
           'Content-Type': contentType,
           'Content-Length': String(total),
           'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*',
         },
       })
     } catch (err) {

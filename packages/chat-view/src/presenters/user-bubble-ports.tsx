@@ -35,6 +35,10 @@ export interface AttachmentViewerProps {
   messageId?: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** When true, opens the viewer directly in annotation edit mode. */
+  initialEditing?: boolean
+  /** Provided when viewing a composer attachment; Save replaces the attachment in place. */
+  onReplaceAttachment?: (base64: string, mimeType: string) => Promise<void> | void
 }
 
 /**

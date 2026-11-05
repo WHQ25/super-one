@@ -50,4 +50,23 @@ describe('AttachmentChipPresenter', () => {
     expect(html).not.toContain('<img')
     expect(html).toContain('lucide-image')
   })
+
+  it('renders an edit icon button in the hover preview actions for composer image attachments', () => {
+    const html = renderToStaticMarkup(createElement(
+      UserBubblePortsProvider,
+      {
+        value: {
+          ...DEFAULT_USER_BUBBLE_PORTS,
+          ChipCard: ({ actions, children }) => createElement('div', null, actions, children),
+        },
+      },
+      createElement(AttachmentChipPresenter, {
+        att: { name: 'draft.png', mimeType: 'image/png', base64: 'AAA' },
+        onReplaceAttachment: () => {},
+      }),
+    ))
+
+    expect(html).toContain('data-testid="attachment-chip-edit-button"')
+  })
 })
+

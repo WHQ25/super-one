@@ -1678,6 +1678,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_SAVE_IMAGE, base64, mimeType, suggestedName, defaultDir),
   copyBrowserImageAt: (webContentsId: number, x: number, y: number) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_COPY_IMAGE_AT, webContentsId, x, y),
+  writeImageFile: (absPath: string, base64: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.WRITE_IMAGE_FILE, absPath, base64),
+  recognizeImageText: (base64: string, minConfidence?: number) =>
+    ipcRenderer.invoke(AgentIpcChannels.RECOGNIZE_IMAGE_TEXT, base64, minConfidence),
   revealFile: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REVEAL_FILE, absPath),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),

@@ -23,6 +23,7 @@ export interface CoreSlice {
   closeCursorApiKeyPrompt: () => void
   toggleTodos: () => void
   addAttachment: (attachment: ImageAttachment, target?: SessionWriteTarget) => void
+  updateAttachmentById: (id: string, attachment: ImageAttachment, target?: SessionWriteTarget) => void
   removeAttachment: (index: number, target?: SessionWriteTarget) => void
   removeAttachmentById: (id: string, target?: SessionWriteTarget) => void
   clearAttachments: (target?: SessionWriteTarget) => void
@@ -105,6 +106,12 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
   addAttachment: (attachment, target) => {
     set((s) => commitPerSession(s, target, (sess) => ({
       attachments: [...sess.attachments, attachment],
+    })))
+  },
+
+  updateAttachmentById: (id, attachment, target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
+      attachments: sess.attachments.map((a) => (a.id === id ? { ...attachment, id } : a)),
     })))
   },
 

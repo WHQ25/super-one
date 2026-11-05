@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Maximize2 } from 'lucide-react'
+import { Maximize2, Pencil } from 'lucide-react'
 import { IMAGE_EXTENSIONS } from '@superone/shared/file-preview'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
-import { toLocalFileUrl } from '@/lib/path-utils'
+import { localFileUrlToPath, toLocalFileUrl } from '@/lib/path-utils'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { ChipHoverCard } from '@superone/ui/components/ui/ChipHoverCard'
 import { ImageLightbox } from './image-lightbox'
@@ -28,8 +28,14 @@ function FileImageIcon({ name, filePath, size }: { name: string; filePath: strin
   const [hover, setHover] = useState(false)
   const [pressed, setPressed] = useState(false)
   const [open, setOpen] = useState(false)
+  const [initialEditing, setInitialEditing] = useState(false)
   if (!displaySrc || failed || brokenSrc === displaySrc) return <FileIcon name={filePath.split(/[/\\]/).pop() || name} size={size} />
-  const enlarge = () => { setHover(false); setOpen(true) }
+  const resolvedLocalPath = localFileUrlToPath(displaySrc) ?? (filePath.startsWith('/') ? filePath : undefined)
+  const enlarge = (edit = false) => {
+    setHover(false)
+    setInitialEditing(edit)
+    setOpen(true)
+  }
   return (
     <span
       className="inline-flex size-full items-center justify-center"
@@ -48,10 +54,27 @@ function FileImageIcon({ name, filePath, size }: { name: string; filePath: strin
         open={hover && !pressed && !open}
         onOpenChange={(next) => setHover(next && !pressed && !open)}
         title={name}
-        actions={<IconButton tooltip={t('chat.attachmentChip.open')} onClick={(e) => { e.stopPropagation(); enlarge() }}><Maximize2 /></IconButton>}
+        actions={(
+          <>
+            <IconButton
+              tooltip={t('chat.attachmentChip.edit')}
+              aria-label={t('chat.attachmentChip.edit')}
+              data-testid="file-chip-edit-button"
+              onClick={(e) => { e.stopPropagation(); enlarge(true) }}
+            >
+              <Pencil />
+            </IconButton>
+            <IconButton
+              tooltip={t('chat.attachmentChip.open')}
+              onClick={(e) => { e.stopPropagation(); enlarge(false) }}
+            >
+              <Maximize2 />
+            </IconButton>
+          </>
+        )}
         card={(
           <button type="button" className="block w-full cursor-zoom-in" aria-label={t('chat.attachmentChip.open')}
-            onClick={(e) => { e.stopPropagation(); enlarge() }}>
+            onClick={(e) => { e.stopPropagation(); enlarge(false) }}>
             <img src={displaySrc} alt={name} draggable={false} className="max-h-64 w-full rounded-md object-contain" />
           </button>
         )}
@@ -61,8 +84,20 @@ function FileImageIcon({ name, filePath, size }: { name: string; filePath: strin
       </ChipHoverCard>
       {/* Portal events still bubble through the chip: viewer clicks must not open FileTab. */}
       {open && <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-        <ImageLightbox src={displaySrc} alt={name} open={open} onOpenChange={setOpen} />
+        <ImageLightbox
+          src={displaySrc}
+          alt={name}
+          filePath={resolvedLocalPath}
+          fileName={name}
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next)
+            if (!next) setInitialEditing(false)
+          }}
+          initialEditing={initialEditing}
+        />
       </span>}
     </span>
   )
 }
+

@@ -4636,6 +4636,8 @@ export const AgentIpcChannels = {
   BROWSER_FETCH_IMAGE: 'app:browser-fetch-image',
   BROWSER_SAVE_IMAGE: 'app:browser-save-image',
   BROWSER_COPY_IMAGE_AT: 'app:browser-copy-image-at',
+  WRITE_IMAGE_FILE: 'app:write-image-file',
+  RECOGNIZE_IMAGE_TEXT: 'app:recognize-image-text',
   REVEAL_FILE: 'app:reveal-file',
 
   // Concurrent session management

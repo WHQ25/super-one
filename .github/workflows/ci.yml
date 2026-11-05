@@ -73,9 +73,9 @@ jobs:
       - run: bun install --frozen-lockfile --concurrent-scripts=1
       # Desktop suite also covers packages/shared, packages/ui and scripts/
       # (release tooling) through vitest.config.ts `include`.
-      # `test` uses every core. `test:quiet` (--maxWorkers=50%) is the local
-      # script, so a laptop does not saturate; this runner is dedicated.
-      - run: bun run test
+      # ubuntu-latest has 4 vCPUs. Pin 3 forks and leave one for the Vitest
+      # parent. `test:quiet` (--maxWorkers=50%) stays the laptop cap.
+      - run: bun run test -- --maxWorkers=3
 
   test-node:
     runs-on: ubuntu-latest

@@ -1,3 +1,5 @@
+import { WindowViews } from '@superone/runtime/stream/delivery/window-views'
+import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import { describe, expect, it } from 'vitest'
 import type { SessionLoadResult } from '@superone/shared/environment'
 import type { ContentBlock } from '@superone/shared/agent-types'
@@ -264,5 +266,30 @@ describe('DESKTOP_FOLD_BUDGET', () => {
     expect(calls).toBeGreaterThanOrEqual(20)
     expect(calls).toBeLessThanOrEqual(30)
     expect(page.end).toBeLessThan(inner.entries.length)
+  })
+})
+
+
+describe('remote suggested-task state', () => {
+  it('keeps a launched card settled across a live patch and session reopen', async () => {
+    const taskId = '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b'
+    let messages = [textMessage('suggestion', 'assistant', '')]
+    messages[0].content = [
+      { type: 'tool_use', toolName: 'mcp__superone__session_suggest_task', toolUseId: 'suggest', input: JSON.stringify({ title: 'Fix issue', tldr: 'Follow up', prompt: 'Fix it' }), status: 'complete' },
+      { type: 'tool_result', toolUseId: 'suggest', summary: JSON.stringify({ taskId, status: 'pending' }) },
+    ]
+    const views = new WindowViews()
+    const call = async (request: TranscriptWindowRequest & { holder: string }): Promise<TranscriptWindowResult> => ({
+      ...views.serve({ sessionId: 's', holder: request.holder, messages, request, budget: DESKTOP_WINDOW_BUDGET }),
+      sessionId: 's', schema: 1, state: {}, cursor,
+    })
+    const first = await loadRemoteTranscriptWindow(call, null, { sessionId: 's' })
+    messages = applySuggestedTaskUpdate(messages, taskId, { status: 'launched', sessionId: 'child' })
+    const patch = views.patches('s', messages)
+    expect(patch).toHaveLength(1)
+    const event = presentDesktopWindowPatch(first.held, { type: 'transcript_window', patch: patch[0].patch })
+    expect(event?.rows?.[0].content[0]).toMatchObject({ suggestedTask: { status: 'launched', sessionId: 'child' } })
+    const reopened = await loadRemoteTranscriptWindow(call, first.held, { sessionId: 's' })
+    expect(reopened.snapshot.messages[0].content[0]).toMatchObject({ suggestedTask: { status: 'launched', sessionId: 'child' } })
   })
 })

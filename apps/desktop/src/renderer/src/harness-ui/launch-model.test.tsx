@@ -115,6 +115,23 @@ describe('launch model controls', () => {
   })
 })
 
+describe('remote launch model metadata', () => {
+  it('uses the Codex profile name and per-model effort without a local catalog', () => {
+    render(<Row harnessId="codex" catalog="profile" profile={profile('codex', {
+      models: [{ id: 'custom-remote', name: 'Remote Model', supportedReasoningEfforts: [{ value: 'high', description: 'Thorough' }] }],
+    })} model="custom-remote" />)
+    expect(picker.selectedModelLabel).toBe('Remote Model')
+    expect(values('effortOptions')).toEqual(['high'])
+  })
+
+  it('labels a Claude concrete model selection using its catalog alias', () => {
+    render(<Row harnessId="claude" catalog="profile" profile={profile('claude', {
+      models: [{ id: 'opus', name: 'Opus' }],
+    })} model="claude-opus-5-5" />)
+    expect(picker.selectedModelLabel).toBe('Opus')
+  })
+})
+
 describe('ACP launch model', () => {
   it('shows Grok legacy modes (no config id) as effort, ascending', () => {
     setAcp('grok', { models: [model('grok-4')], extraModes: [model('high', { name: 'High Effort' }), model('low', { name: 'Low Effort' })] })

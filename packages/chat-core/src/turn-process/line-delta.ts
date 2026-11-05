@@ -1,11 +1,11 @@
 import { diffLines } from 'diff'
 
-function splitContentLines(text: string): string[] {
+export function splitContentLines(text: string): string[] {
   if (!text) return []
   return text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
 }
 
-function countContentLines(text: string): number {
+export function countContentLines(text: string): number {
   return splitContentLines(text).length
 }
 
@@ -14,7 +14,7 @@ export function ensureTrailingNewline(s: string): string {
   return s.endsWith('\n') ? s : s + '\n'
 }
 
-function countEditDelta(oldStr: string, newStr: string): { added: number; removed: number } {
+export function countEditDelta(oldStr: string, newStr: string): { added: number; removed: number } {
   let added = 0
   let removed = 0
   for (const change of diffLines(ensureTrailingNewline(oldStr), ensureTrailingNewline(newStr))) {

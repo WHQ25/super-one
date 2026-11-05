@@ -1,4 +1,5 @@
 import { diffLines } from 'diff'
+import { computeLineDelta, countContentLines as countLines, countEditDelta, ensureTrailingNewline, splitContentLines } from '@superone/chat-core/turn-process/line-delta'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, ContentBlock, ChatMessage, TodoToolItem } from '@superone/shared/agent-types'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
@@ -304,72 +305,15 @@ export function revealTodoResults(message: ChatMessage): ChatMessage {
   return changed ? { ...message, content } : message
 }
 
-export function countLines(s: string): number {
-  if (!s) return 0
-  return s.split('\n').length
-}
-
-export function countEditDelta(oldStr: string, newStr: string): { added: number; removed: number } {
-  let added = 0
-  let removed = 0
-  for (const change of diffLines(oldStr, newStr)) {
-    if (change.added) added += change.count ?? 0
-    else if (change.removed) removed += change.count ?? 0
-  }
-  return { added, removed }
-}
-
-/**
- * Count `+` / `-` lines of a unified or prefixed diff, ignoring the `+++` / `---`
- * file headers. Returns undefined when the diff carries no changed line.
- */
-function countDiffTextDelta(diff: string): { added: number; removed: number } | undefined {
-  let added = 0, removed = 0
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) added++
-    else if (line.startsWith('-') && !line.startsWith('---')) removed++
-  }
-  return added > 0 || removed > 0 ? { added, removed } : undefined
-}
-
-/** Cursor reports edit totals on the result; use them when the diff text itself has no hunk lines. */
-function reportedLineDelta(p: Record<string, unknown>): { added: number; removed: number } | undefined {
-  const added = Number(p.linesAdded)
-  const removed = Number(p.linesRemoved)
-  const hasAdded = Number.isFinite(added) && added > 0
-  const hasRemoved = Number.isFinite(removed) && removed > 0
-  if (!hasAdded && !hasRemoved) return undefined
-  return { added: hasAdded ? added : 0, removed: hasRemoved ? removed : 0 }
-}
+// Keep the host exports compatible while sharing the renderer's source-line rules.
+export { countLines, countEditDelta }
 
 /**
  * Header `+N -M` only — no unified diff, no highlighter. Progressive summary rows
  * need this without paying for the bodies `computeToolMeta` builds on expansion.
  */
 function lineDeltaFromParams(toolName: string, p: Record<string, unknown>): { added: number; removed: number } | undefined {
-  if (toolName === 'Write') {
-    const content = String(p.content ?? '')
-    return content ? { added: countLines(content), removed: 0 } : undefined
-  }
-  if (toolName === 'Edit') {
-    const oldStr = String(p.old_string ?? '')
-    const newStr = String(p.new_string ?? '')
-    if (oldStr || newStr) {
-      const delta = countEditDelta(oldStr, newStr)
-      return delta.added > 0 || delta.removed > 0 ? delta : undefined
-    }
-    const diff = String(p.diff ?? p.diffString ?? '')
-    return (diff ? countDiffTextDelta(diff) : undefined) ?? reportedLineDelta(p)
-  }
-  if (toolName === 'FileChange') {
-    const diff = String(p.diff ?? '')
-    const kind = String(p.kind ?? '')
-    if (!diff) return undefined
-    if (kind === 'add') return { added: countLines(diff), removed: 0 }
-    if (kind === 'delete') return { added: 0, removed: countLines(diff) }
-    return countDiffTextDelta(diff)
-  }
-  return undefined
+  return computeLineDelta(toolName, p) ?? undefined
 }
 
 export function computeToolLineDelta(toolName: string, input: string): { added: number; removed: number } | undefined {
@@ -421,10 +365,10 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         const newStr = String(p.new_string ?? '')
         toolLineDelta = lineDeltaFromParams('Edit', p)
         if (oldStr || newStr) {
-          const changes = diffLines(oldStr, newStr)
+          const changes = diffLines(ensureTrailingNewline(oldStr), ensureTrailingNewline(newStr))
           const parts: string[] = []
           for (const change of changes) {
-            const lines = change.value.replace(/\n$/, '').split('\n')
+            const lines = splitContentLines(change.value)
             const prefix = change.added ? '+' : change.removed ? '-' : ' '
             for (const l of lines) parts.push(`${prefix}${l}`)
           }
@@ -448,7 +392,7 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         const content = String(p.content ?? '')
         if (content) {
           toolLineDelta = lineDeltaFromParams('Write', p)
-          toolDiff = content.split('\n').map((l: string) => `+${l}`).join('\n')
+          toolDiff = splitContentLines(content).map((l) => `+${l}`).join('\n')
           if (filePath) {
             const addedTokens = highlightCodeSync(content, filePath)
             if (addedTokens) toolDiffTokens = { added: addedTokens }
@@ -462,9 +406,9 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         if (diff) {
           toolLineDelta = lineDeltaFromParams('FileChange', p)
           if (kind === 'add') {
-            toolDiff = diff.split('\n').map((l: string) => `+${l}`).join('\n')
+            toolDiff = splitContentLines(diff).map((l) => `+${l}`).join('\n')
           } else if (kind === 'delete') {
-            toolDiff = diff.split('\n').map((l: string) => `-${l}`).join('\n')
+            toolDiff = splitContentLines(diff).map((l) => `-${l}`).join('\n')
           } else {
             toolDiff = diff
           }
@@ -720,10 +664,10 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
       const oldStr = String(input.old_string ?? '')
       const newStr = String(input.new_string ?? '')
       if (!oldStr && !newStr) return event
-      const changes = diffLines(oldStr, newStr)
+      const changes = diffLines(ensureTrailingNewline(oldStr), ensureTrailingNewline(newStr))
       const parts: string[] = []
       for (const change of changes) {
-        const lines = change.value.replace(/\n$/, '').split('\n')
+        const lines = splitContentLines(change.value)
         const prefix = change.added ? '+' : change.removed ? '-' : ' '
         for (const l of lines) parts.push(`${prefix}${l}`)
       }
@@ -738,7 +682,7 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
     if (toolName === 'Write') {
       const content = String(input.content ?? '')
       if (!content) return event
-      const toolDiff = content.split('\n').map((l: string) => `+${l}`).join('\n')
+      const toolDiff = splitContentLines(content).map((l) => `+${l}`).join('\n')
       const toolLineDelta = { added: countLines(content), removed: 0 }
       const addedTokens = filePath ? highlightCodeSync(content, filePath) : undefined
       const toolDiffTokens = addedTokens ? { added: addedTokens } : undefined

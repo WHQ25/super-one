@@ -53,8 +53,8 @@ export interface FileDiffPresenterProps {
   isStreaming: boolean
   useCanvasEdit: boolean
   /**
-   * Diff precomputed by the desktop for surfaces that never receive the edited bodies.
-   * The desktop itself leaves this undefined and renders from `params`.
+   * Prefixed diff precomputed by the host for surfaces that never receive the edited bodies,
+   * including a desktop viewing a remote session.
    */
   toolDiff?: string
   toolDiffTokens?: RemoteDiffTokens

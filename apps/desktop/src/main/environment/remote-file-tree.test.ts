@@ -8,6 +8,7 @@ const zoneState = vi.hoisted(() => ({ userData: '' }))
 vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => zoneState.userData } }))
 import {
+  resolveRemoteProjectContext,
   hostPathsEqual,
   listRemoteFileTreeDir,
   mapWorkspaceEntriesToFileTree,
@@ -124,6 +125,18 @@ function mockHost(overrides: Record<string, unknown> = {}): EnvironmentHost {
     ...overrides,
   } as unknown as EnvironmentHost
 }
+
+describe('remote worktree compatibility', () => {
+  it('asks for a node upgrade instead of registering a checkout or reading the main project on an older node', async () => {
+    const host = mockHost({ getGateway: () => ({
+      gitStatus: vi.fn(),
+      gitWorktrees: vi.fn().mockResolvedValue([{ path: '/work/task' }]),
+      resolveWorkspaceCwd: vi.fn().mockRejectedValue(new Error('unknown method workspace.resolveCwd')),
+    }) })
+    await expect(resolveRemoteProjectContext(host, 'remote:conn-1:/work/task')).rejects.toThrow('Update the node')
+    expect(host.openProject).not.toHaveBeenCalled()
+  })
+})
 
 describe('listRemoteFileTreeDir', () => {
   it('returns null for local paths', async () => {

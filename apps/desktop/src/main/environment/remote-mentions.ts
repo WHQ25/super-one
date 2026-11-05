@@ -35,7 +35,7 @@ export async function listRemoteDirectoryForMentions(
   const rel = relativePath.trim() === '' ? '.' : relativePath.replace(/\\/g, '/')
   try {
     const entries = await host.workspace().listDir({
-      project: { environmentId: ctx.environmentId, projectId: ctx.projectId },
+      project: { environmentId: ctx.environmentId, projectId: ctx.projectId, ...(ctx.cwd ? { cwd: ctx.cwd } : {}) },
       relativePath: rel,
     })
     const result: ListDirEntry[] = []
@@ -74,6 +74,7 @@ async function fetchRemoteFileInventory(
         ? scopeDir.replace(/\\/g, '/').replace(/\/$/, '')
         : undefined
     const result = await gw.workspaceListFiles(ctx.projectId, {
+      ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
       relativePath,
       maxDepth: 10,
       maxFiles: 20_000,
@@ -123,7 +124,7 @@ export async function listRemoteSkillsAndCommands(
   const gw = asRemoteGw(host, ctx.environmentId)
   if (!gw) return { skills: [], commands: [] }
   try {
-    const result = await gw.workspaceListSkills(ctx.projectId)
+    const result = await gw.workspaceListSkills(ctx.projectId, ctx.cwd)
     const mapOne = (row: {
       name?: string
       description?: string

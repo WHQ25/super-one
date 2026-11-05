@@ -200,6 +200,8 @@ export interface RemoteProjectContext {
   environmentId: string
   projectId: string
   hostPath: string
+  /** Linked checkout under the owning project, never a separately registered project. */
+  cwd?: string
 }
 
 /** Map node workspace.listDir entries into the renderer FileTreeEntry shape. */
@@ -235,9 +237,9 @@ export async function resolveRemoteProjectContext(
   folderPath: string,
   opts?: {
     /**
-     * When true (default for file-tree open), register the path on the node if
-     * missing. Git status / worktree probes must pass false so worktree host
-     * paths are not permanently added to project.list as ghost projects.
+     * When true (default for file-tree open), resolve linked checkouts under
+     * their owning project before registering an ordinary missing folder.
+     * False only looks up registered project roots (used by git probes).
      */
     registerIfMissing?: boolean
   },
@@ -254,6 +256,31 @@ export async function resolveRemoteProjectContext(
   let project = projects.find((p) => hostPathsEqual(p.path, remote.path))
   if (!project) {
     if (opts?.registerIfMissing === false) return null
+    const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
+    if (gw?.gitWorktrees) {
+      for (const candidate of projects) {
+        const worktrees = await gw.gitWorktrees(candidate.projectId)
+        if (Array.isArray(worktrees) && worktrees.some(wt => typeof wt.path === 'string' && hostPathsEqual(wt.path, remote.path))) {
+          if (!gw.resolveWorkspaceCwd) throw new Error('Update the node to browse worktree files without registering another project.')
+          let cwd: string
+          try {
+            cwd = (await gw.resolveWorkspaceCwd(candidate.projectId, remote.path)).cwd
+          } catch (error) {
+            if (/unknown method|not found|unsupported/i.test((error as Error).message)) {
+              throw new Error('Update the node to browse worktree files without registering another project.')
+            }
+            throw error
+          }
+          return {
+            connectionId: remote.connectionId,
+            environmentId: known.environmentId,
+            projectId: candidate.projectId,
+            hostPath: remote.path,
+            cwd,
+          }
+        }
+      }
+    }
     project = await host.openProject(remote.connectionId, remote.path)
   }
 
@@ -277,6 +304,7 @@ async function fetchRemoteGitStatusRaw(
   insertions?: number
   deletions?: number
 } | null> {
+  statusCwd ??= ctx.cwd
   const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
   if (!gw) return null
   const cacheKey = `${ctx.connectionId}:${ctx.projectId}:${statusCwd ?? ''}`
@@ -323,10 +351,7 @@ export async function listRemoteFileTreeDir(
   const relativePath = dirRelPath.trim() === '' ? '.' : dirRelPath.replace(/\\/g, '/')
   const [entries, parsed] = await Promise.all([
     host.workspace().listDir({
-      project: {
-        environmentId: ctx.environmentId,
-        projectId: ctx.projectId,
-      },
+      project: projectRef(ctx),
       relativePath,
     }),
     fetchRemoteGitParsed(host, ctx),
@@ -335,7 +360,7 @@ export async function listRemoteFileTreeDir(
 }
 
 function projectRef(ctx: RemoteProjectContext) {
-  return { environmentId: ctx.environmentId, projectId: ctx.projectId }
+  return { environmentId: ctx.environmentId, projectId: ctx.projectId, ...(ctx.cwd ? { cwd: ctx.cwd } : {}) }
 }
 
 export async function renameRemoteFile(
@@ -806,6 +831,7 @@ export async function saveRemoteProjectFile(
  * Insertions/deletions are not computed remotely (no shortstat RPC yet) — 0 when dirty.
  */
 type RemoteGitGateway = {
+  resolveWorkspaceCwd?: (projectId: string, cwd: string) => Promise<{ cwd: string }>
   gitStatus: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
   gitBranches?: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
   gitInit?: (projectId: string) => Promise<unknown>
@@ -1148,6 +1174,7 @@ export async function getRemoteGitDiffFile(
       return { path: filePath, diff: '' }
     }
     const result = (await gw.gitDiff(ctx.projectId, {
+      ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
       staged,
       path: toRemoteRelativePath(ctx.hostPath, filePath),
     })) as { diff?: string }

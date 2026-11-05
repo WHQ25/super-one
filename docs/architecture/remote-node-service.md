@@ -1362,6 +1362,15 @@ atomic write, search and watch, with a 10 MiB per-file cap on read/write.
 The node enforces allowed project roots, normalizes real paths, rejects
 traversal and symlink escapes, and applies payload and transfer limits.
 
+A linked worktree retains its owning project's ID. Desktop resolves checkout
+paths against `git.worktrees` before considering project registration. File
+operations carry an optional `WorkspaceProjectRef.cwd`; the node validates it
+as that project's checkout and scopes the filesystem for the request, without
+adding a project row. `workspace.resolveCwd` validates and returns the checkout
+root before use, so an older node cannot silently ignore `cwd` and edit the
+main checkout. File inventories, skills, and git diffs use the same
+checkout, so opening a suggested task does not add its worktree to the sidebar.
+
 ### 14.3 Git and worktrees
 
 Git commands and worktree creation execute on the node. A local and a remote

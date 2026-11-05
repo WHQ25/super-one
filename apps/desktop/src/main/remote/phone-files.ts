@@ -39,7 +39,7 @@ async function resolvePhoneFile(root: string, path: string): Promise<string | nu
   const { resolveRemoteProjectContext } = await import('../environment/remote-file-tree')
   const ctx = await resolveRemoteProjectContext(host, resolution.folderPath)
   if (!ctx) return null
-  const ref = { environmentId: ctx.environmentId, projectId: ctx.projectId }
+  const ref = { environmentId: ctx.environmentId, projectId: ctx.projectId, ...(ctx.cwd ? { cwd: ctx.cwd } : {}) }
   return materializeRemoteProjectFile(resolution.connectionId, resolution.folderPath, resolution.relativePath, {
     stat: async rel => {
       const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '.'

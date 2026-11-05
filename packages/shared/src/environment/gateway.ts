@@ -271,13 +271,19 @@ export interface TerminalGateway {
   releaseControl(input: LeaseReleaseInput): Promise<void>
 }
 
+/** A project workspace may read a linked checkout without registering another project. */
+export interface WorkspaceProjectRef extends ProjectRef {
+  /** Host-absolute checkout root; the host validates ownership before file operations. */
+  cwd?: string
+}
+
 export interface WorkspaceListInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   relativePath: string
 }
 
 export interface WorkspaceReadInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   relativePath: string
   /** Optional byte range for large files. */
   offset?: number
@@ -285,7 +291,7 @@ export interface WorkspaceReadInput {
 }
 
 export interface WorkspaceWriteInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   relativePath: string
   content: string | Uint8Array
   /** Expected content hash for optimistic concurrency; optional. */
@@ -293,7 +299,7 @@ export interface WorkspaceWriteInput {
 }
 
 export interface WorkspaceSearchInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   query: string
   relativePath?: string
 }
@@ -336,14 +342,14 @@ export interface WorkspaceEntry {
 }
 
 export interface WorkspaceRenameInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   relativePath: string
   /** Single path segment (no separators). */
   newName: string
 }
 
 export interface WorkspaceMoveInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   /** Source path relative to project root. */
   fromPath: string
   /** Destination directory relative to project root (`.` = root). */
@@ -351,12 +357,12 @@ export interface WorkspaceMoveInput {
 }
 
 export interface WorkspaceDeleteInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   relativePath: string
 }
 
 export interface WorkspaceMkdirInput {
-  project: ProjectRef
+  project: WorkspaceProjectRef
   relativePath: string
 }
 

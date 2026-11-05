@@ -74,6 +74,17 @@ export interface WorkspaceSkillInfo {
 export class WorkspaceFsService {
   constructor(private readonly projects: WorkspaceProjects) {}
 
+  /** Request-scoped filesystem after the RPC boundary validates the checkout. */
+  atRoot(projectId: string, root: string): WorkspaceFsService {
+    return new WorkspaceFsService({
+      get: (id) => {
+        const project = this.projects.get(id)
+        return project && id === projectId ? { ...project, path: root } : null
+      },
+      touch: (id) => this.projects.touch(id),
+    })
+  }
+
   private projectRoot(projectId: string): string {
     const p = this.projects.get(projectId)
     if (!p) throw Object.assign(new Error('project not found'), { code: 'not_found' })

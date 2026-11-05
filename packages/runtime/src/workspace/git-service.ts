@@ -171,8 +171,8 @@ export class WorkspaceGitService {
     }
   }
 
-  async diff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<GitDiffResult> {
-    const cwd = this.root(projectId)
+  async diff(projectId: string, opts?: { staged?: boolean; path?: string; cwd?: string }): Promise<GitDiffResult> {
+    const cwd = opts?.cwd ? await this.assertRepoWorktreePath(projectId, opts.cwd) : this.root(projectId)
     const args = ['diff']
     if (opts?.staged) args.push('--cached')
     if (opts?.path) {

@@ -557,13 +557,19 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     })
   }
 
+  /** Validate a linked checkout and negotiate checkout-aware file operations. */
+  async resolveWorkspaceCwd(projectId: string, cwd: string): Promise<{ cwd: string }> {
+    return this.client.rpc('workspace.resolveCwd', { projectId, cwd })
+  }
+
   /** Path inventory for @-mention / file search (not content grep). */
   async workspaceListFiles(
     projectId: string,
-    opts?: { relativePath?: string; maxDepth?: number; maxFiles?: number },
+    opts?: { relativePath?: string; maxDepth?: number; maxFiles?: number; cwd?: string },
   ): Promise<{ files?: Array<{ path: string; isDirectory: boolean }> }> {
     return this.client.rpc('workspace.listFiles', {
       projectId,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
       ...(opts?.relativePath ? { relativePath: opts.relativePath } : {}),
       ...(opts?.maxDepth != null ? { maxDepth: opts.maxDepth } : {}),
       ...(opts?.maxFiles != null ? { maxFiles: opts.maxFiles } : {}),
@@ -571,7 +577,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   }
 
   /** Node-local Claude skills + slash commands (user + project). */
-  async workspaceListSkills(projectId: string): Promise<{
+  async workspaceListSkills(projectId: string, cwd?: string): Promise<{
     skills?: Array<{
       name: string
       description: string
@@ -587,7 +593,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       scope?: string
     }>
   }> {
-    return this.client.rpc('workspace.listSkills', { projectId })
+    return this.client.rpc('workspace.listSkills', { projectId, ...(cwd ? { cwd } : {}) })
   }
 
   /** Node-local installed Claude plugins for a project. */
@@ -737,7 +743,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('hooks.delete', { projectId, id })
   }
 
-  async gitDiff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<unknown> {
+  async gitDiff(projectId: string, opts?: { staged?: boolean; path?: string; cwd?: string }): Promise<unknown> {
     return this.client.rpc('git.diff', { projectId, ...opts })
   }
 
@@ -1822,6 +1828,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.project.environmentId)
         return this.client.rpc('workspace.listDir', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           relativePath: input.relativePath,
         })
       },
@@ -1833,6 +1840,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           encoding?: string
         }>('workspace.readFile', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           relativePath: input.relativePath,
           offset: input.offset,
           limit: input.limit,
@@ -1853,6 +1861,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
             : Buffer.from(input.content).toString('base64')
         return this.client.rpc('workspace.writeFile', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           relativePath: input.relativePath,
           content,
           encoding: typeof input.content === 'string' ? 'utf8' : 'base64',
@@ -1863,6 +1872,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.project.environmentId)
         return this.client.rpc('workspace.rename', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           relativePath: input.relativePath,
           newName: input.newName,
         })
@@ -1871,6 +1881,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.project.environmentId)
         return this.client.rpc('workspace.move', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           fromPath: input.fromPath,
           destDirPath: input.destDirPath,
         })
@@ -1879,6 +1890,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.project.environmentId)
         return this.client.rpc('workspace.delete', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           relativePath: input.relativePath,
         })
       },
@@ -1886,6 +1898,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.project.environmentId)
         return this.client.rpc('workspace.mkdir', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           relativePath: input.relativePath,
         })
       },
@@ -1893,6 +1906,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.project.environmentId)
         return this.client.rpc('workspace.search', {
           projectId: input.project.projectId,
+          ...(input.project.cwd ? { cwd: input.project.cwd } : {}),
           query: input.query,
           relativePath: input.relativePath,
         })

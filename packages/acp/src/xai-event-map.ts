@@ -1,3 +1,4 @@
+import { extractModelsFromAgentModelsField } from './config-map'
 import type { AgentEvent, EffortLevel } from '@superone/shared/agent-types'
 import { normalizeAcpGoalStatus, sessionGoalFromAcp, type AcpGoal } from '@superone/shared/acp-goal'
 import { mapGrokToolCallDeltaChunk } from '@superone/shared/grok-tool-delta'
@@ -157,6 +158,13 @@ export function mapXaiStandaloneNotification(
         state.lastEventSeq = env.eventSeq
       }
       return events
+    }
+    case 'x.ai/models/update': {
+      const catalog = extractModelsFromAgentModelsField(params)
+      if (!catalog) return []
+      const selected = catalog.models.find(model => model.id === catalog.selectedModelId)
+      if (selected?.contextWindow) noteContextWindow(state, selected.contextWindow)
+      return [{ type: 'acp_models', ...catalog, status: 'ready' }]
     }
     case XAI_TASK_BACKGROUNDED:
       return mapTaskBackgrounded(params, state)

@@ -228,3 +228,94 @@ export function modesFromConfigOptions(
 ): AcpModeConfig | null {
   return extractReasoningEffortConfig(configOptions) ?? extractModeConfig(configOptions)
 }
+
+/** Grok / some agents: initialize or session/new `_meta.modelState` / top-level `models`. */
+export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  const available = obj.availableModels
+  if (!Array.isArray(available) || available.length === 0) return null
+
+  const models: ModelOption[] = []
+  for (const item of available) {
+    if (!item || typeof item !== 'object') continue
+    const m = item as Record<string, unknown>
+    const id = typeof m.modelId === 'string' ? m.modelId : typeof m.id === 'string' ? m.id : null
+    const name = typeof m.name === 'string' ? m.name : id
+    if (!id || !name) continue
+    // Grok stamps window on model meta as totalContextTokens; also accept common aliases.
+    const meta = (m._meta && typeof m._meta === 'object' && !Array.isArray(m._meta)
+      ? m._meta
+      : m.meta && typeof m.meta === 'object' && !Array.isArray(m.meta)
+        ? m.meta
+        : null) as Record<string, unknown> | null
+    const rawCw =
+      (typeof m.contextWindow === 'number' ? m.contextWindow : undefined)
+      ?? (meta && typeof meta.totalContextTokens === 'number' ? meta.totalContextTokens : undefined)
+      ?? (meta && typeof meta.context_window === 'number' ? meta.context_window : undefined)
+      ?? (meta && typeof meta.contextWindow === 'number' ? meta.contextWindow : undefined)
+    const contextWindow = typeof rawCw === 'number' && Number.isFinite(rawCw) && rawCw > 0 ? rawCw : undefined
+    const listedWindows = parseContextWindows(meta?.contextWindows ?? m.contextWindows)
+    const effortLevels = parseModelEffortLevels(m, meta)
+    models.push({
+      id,
+      name,
+      description: typeof m.description === 'string' ? m.description : '',
+      ...(contextWindow != null ? { contextWindow } : {}),
+      ...(listedWindows ? { contextWindows: listedWindows } : {}),
+      ...(effortLevels ? { supportsEffort: true, supportedEffortLevels: effortLevels } : {}),
+    })
+  }
+  if (models.length === 0) return null
+
+  const current =
+    typeof obj.currentModelId === 'string' && models.some((m) => m.id === obj.currentModelId)
+      ? obj.currentModelId
+      : (models[0]?.id ?? null)
+
+  return { configId: null, models, selectedModelId: current }
+}
+
+function parseContextWindows(raw: unknown): number[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const windows = raw.filter((item): item is number => typeof item === 'number' && Number.isFinite(item) && item > 0)
+  return windows.length > 0 ? windows : undefined
+}
+
+const ACP_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
+
+function parseModelEffortLevels(
+  model: Record<string, unknown>,
+  meta: Record<string, unknown> | null,
+): ModelOption['supportedEffortLevels'] {
+  const raw = model.reasoningEfforts
+    ?? model.reasoning_efforts
+    ?? meta?.reasoningEfforts
+    ?? meta?.reasoning_efforts
+  if (!Array.isArray(raw)) return undefined
+  const out: NonNullable<ModelOption['supportedEffortLevels']> = []
+  for (const item of raw) {
+    const value = typeof item === 'string'
+      ? item
+      : (item && typeof item === 'object' && !Array.isArray(item)
+        ? (item as { value?: unknown }).value
+        : null)
+    if (typeof value !== 'string') continue
+    const key = value.trim().toLowerCase()
+    if (ACP_EFFORT_LEVELS.has(key)) out.push(key as NonNullable<ModelOption['supportedEffortLevels']>[number])
+  }
+  return out.length > 0 ? out : undefined
+}
+
+
+/** Prefer standard config options; retain model metadata from the legacy catalog. */
+export function modelsFromSessionResult(result: unknown): AcpModelConfig | null {
+  if (!result || typeof result !== 'object') return null
+  const raw = result as Record<string, unknown>
+  const options = extractModelConfig(raw.configOptions as ConfigOptionLike[] | undefined)
+  const legacy = extractModelsFromAgentModelsField(raw.models ?? raw.modelState)
+  if (!options) return legacy
+  return { ...options, models: options.models.map(model => ({
+    ...legacy?.models.find(extra => extra.id === model.id), ...model,
+  })) }
+}

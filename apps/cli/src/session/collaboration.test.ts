@@ -1,3 +1,4 @@
+import * as modelCatalog from './harness-model-catalog'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -70,6 +71,22 @@ function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner; a
 }
 
 describe('collaboration grants + mailbox', () => {
+  it('discovers ACP models for cold list-agents calls and reuses them for launch defaults', async () => {
+    const { collab } = bootCollab()
+    const probe = vi.spyOn(modelCatalog, 'listNodeLiveHarnessModels').mockResolvedValue([
+      { id: 'grok-full', name: 'Full', description: '', isDefault: true },
+    ])
+    try {
+      const profiles = await collab.discoverProfiles()
+      const grok = profiles.find(profile => profile.harnessId === 'acp')
+      expect(grok?.models).toEqual([expect.objectContaining({ id: 'grok-full', name: 'Full' })])
+      expect(grok?.defaultConfig.model).toBe('grok-full')
+      expect(collab.listProfiles().find(profile => profile.id === grok?.id)?.models).toEqual(grok?.models)
+      await collab.discoverProfiles()
+      expect(probe).toHaveBeenCalledOnce()
+    } finally { probe.mockRestore() }
+  })
+
   it('requires user confirmation for defaults while Agent Profiles is disabled', async () => {
     const { collab, sessions, projects, nodeHome } = bootCollab({ agentProfilesEnabled: () => false })
     const parent = sessions.create({ projectId: projects.open(nodeHome).projectId, harnessId: 'claude', title: 'Parent' })

@@ -16,6 +16,18 @@ import {
 } from './xai-state'
 
 describe('ACP xAI AgentEvent mapping', () => {
+  it.each(['x.ai/models/update', '_x.ai/models/update'])('maps %s into a model catalog', method => {
+    const events = mapXaiStandaloneNotification(method, {
+      sessionId: 's1', currentModelId: 'full', availableModels: [
+        { modelId: 'fast', name: 'Fast' }, { modelId: 'full', name: 'Full' },
+      ],
+    }, createXaiCorrelationState())
+    expect(events).toEqual([{ type: 'acp_models', status: 'ready', configId: null,
+      selectedModelId: 'full', models: [
+        { id: 'fast', name: 'Fast', description: '' }, { id: 'full', name: 'Full', description: '' },
+      ] }])
+  })
+
   it('parses session notification envelopes and rejects malformed payloads', () => {
     expect(parseXaiSessionNotificationEnvelope({
       session_id: 'session-1',

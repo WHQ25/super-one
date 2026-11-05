@@ -1707,7 +1707,15 @@ export class Session implements SessionContract {
       this.applyAcpAgentToConfig()
       return
     }
+    const leavingEmptyDraft = this._messages.length === 0
     this._acpAgentId = agentId
+    if (leavingEmptyDraft) {
+      // Same sid, next agent. Drop Grok's initialization occupancy and its
+      // provider thread so prewarm does not session/load that thread here.
+      this._contextTokens = 0
+      this._totalCostUsd = 0
+      this._providerSessionId = null
+    }
     this.applyAcpAgentToConfig()
     try {
       dbUpdateAcpAgentId(this.id, agentId)

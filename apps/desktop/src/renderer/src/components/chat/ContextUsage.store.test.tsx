@@ -144,4 +144,50 @@ describe('ContextUsage when switching an empty session to another harness', () =
       })
     },
   )
+
+  it('hides Grok initialization usage after switching the empty draft to Antigravity', async () => {
+    useChatStore.setState({ projectSessions: {}, activeProject: null })
+    seedSession()
+    const sid = useChatStore.getState().projectSessions[WIN_PATH]._activeSessionId!
+    useChatStore.setState((state) => {
+      const project = state.projectSessions[WIN_PATH]
+      return {
+        projectSessions: {
+          ...state.projectSessions,
+          [WIN_PATH]: {
+            ...project,
+            _sessions: {
+              ...project._sessions,
+              [sid]: {
+                ...project._sessions[sid],
+                sessionProvider: 'acp',
+                preferredProvider: 'acp',
+                acpAgentId: 'grok-build',
+              },
+            },
+          },
+        },
+      }
+    })
+    useChatStore.getState().handleAgentEvent({
+      type: 'message_usage',
+      projectPath: WIN_PATH,
+      sessionId: sid,
+      messageId: 'acp_session_grok',
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 1359,
+      contextWindow: 500_000,
+    })
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('1.4k / 500.0k')).toBeTruthy()
+
+    await act(async () => {
+      useChatStore.getState().setAcpAgentId('antigravity')
+    })
+
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByText(/1\.4k/)).toBeNull()
+  })
 })

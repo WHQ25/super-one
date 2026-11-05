@@ -736,6 +736,48 @@ describe('Session state machine', () => {
     })
   })
 
+  it('prewarm to another ACP agent drops empty-draft Grok context and resume id', () => {
+    ;({ session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base', acpAgentId: 'grok-build' }))
+    backend.emit({
+      type: 'message_usage',
+      messageId: 'acp_session_grok',
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 1359,
+      contextWindow: 500_000,
+    })
+    backend.fireProviderSessionId('grok-thread')
+    expect(session.snapshot.contextTokens).toBe(1359)
+    expect(session.snapshot.providerSessionId).toBe('grok-thread')
+
+    session.prewarm({ acpAgentId: 'antigravity' })
+
+    expect(session.snapshot.acpAgentId).toBe('antigravity')
+    expect(session.snapshot.contextTokens).toBe(0)
+    expect(session.snapshot.totalCostUsd).toBe(0)
+    expect(session.snapshot.providerSessionId).toBeNull()
+    expect(backend.prewarmCalls.at(-1)?.providerSessionId).toBeUndefined()
+  })
+
+  it('prewarm of the same ACP agent keeps the empty draft resume id', () => {
+    ;({ session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base', acpAgentId: 'grok-build' }))
+    backend.emit({
+      type: 'message_usage',
+      messageId: 'acp_session_grok',
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 1359,
+      contextWindow: 500_000,
+    })
+    backend.fireProviderSessionId('grok-thread')
+
+    session.prewarm({ acpAgentId: 'grok-build' })
+
+    expect(session.snapshot.contextTokens).toBe(1359)
+    expect(session.snapshot.providerSessionId).toBe('grok-thread')
+    expect(backend.prewarmCalls.at(-1)?.providerSessionId).toBe('grok-thread')
+  })
+
   it('prewarm unions the project workspace folders onto the hint, like send does', () => {
     // A hint carries the caller half only. Warming without the project's
     // folders would produce a key the real turn can never match, so a renderer

@@ -34,6 +34,7 @@ import { claudeAccountRefreshHost } from '../harness/claude-handler'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
+import { isContextUsageHeld, releaseContextUsageHold } from '../helpers/context-usage-hold'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import { startBashOutputLive } from '../helpers/bash-output-live'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
@@ -420,6 +421,17 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
       const updatedSession = { ...targetSession, ...delta }
+      if (event.type === 'acp_models') releaseContextUsageHold(targetSid, event.agentId)
+      // Initialization usage from the agent we just left can still be queued.
+      // Keep the cleared ring until this agent's own catalog is announced.
+      if (event.type === 'message_usage' && isContextUsageHeld(targetSid)) {
+        updatedSession.contextTokens = targetSession.contextTokens
+        updatedSession.contextWindow = targetSession.contextWindow
+        updatedSession.totalCostUsd = targetSession.totalCostUsd
+        updatedSession.streamingTokens = targetSession.streamingTokens
+        updatedSession.codexUsageSnapshot = targetSession.codexUsageSnapshot
+        updatedSession.codexTurnLastUsage = targetSession.codexTurnLastUsage
+      }
       if (event.type === 'user_message_appended' && event.message.role === 'user'
         && goalComposerAction(event.message.content.filter((block) => block.type === 'text').map((block) => block.text).join(''), [])?.type === 'set') {
         updatedSession.draftId = null

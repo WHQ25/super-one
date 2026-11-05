@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AppSettings, ChatMessage, ClaudeResources, CodexResources, HarnessId, ModelOption } from '@superone/shared/agent-types'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { clearAllContextUsageHolds } from './context-usage-hold'
 
 /**
  * Per-harness preference block carrying only what session defaults read.
@@ -227,6 +228,7 @@ function userMsg(id: string, providerId: 'claude' | 'codex' = 'claude'): ChatMes
 
 beforeEach(() => {
   resetStore()
+  clearAllContextUsageHolds()
   useCodexRealtimeViewStore.setState({ sessions: {} })
   vi.clearAllMocks()
   mockLocalStorage.clear()
@@ -848,9 +850,102 @@ describe('setPreferredProviderImpl', () => {
 
     const sess = activeSession()
     expect(sess.acpAgentId).toBe('opencode')
+    expect(sess.contextTokens).toBe(0)
+    expect(sess.contextWindow).toBeNull()
     expect(sess.acpModels.map((m) => m.id)).toEqual(['openai/gpt-5.4', 'opencode/big-pickle'])
     expect(sess.selectedModel).toBe('opencode/big-pickle')
     expect(sess.acpModelsStatus).toBe('ready')
+  })
+
+  it('drops Grok initialization usage when an empty draft switches to Antigravity', () => {
+    setupProject()
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      contextTokens: 1359,
+      contextWindow: 500_000,
+      detailedUsage: { totalTokens: 1359, maxTokens: 500_000, percentage: 0, model: 'grok', categories: [] },
+      totalCostUsd: 0.01,
+      _providerSessionId: 'grok-thread',
+      selectedAcpContextWindow: 500_000,
+    })
+    const sid = activeProjectState()._activeSessionId!
+    mockWindowEnvironment.callSession.mockClear()
+
+    useChatStore.getState().setAcpAgentId('antigravity')
+
+    expect(activeProjectState()._activeSessionId).toBe(sid)
+    expect(activeSession()).toMatchObject({
+      acpAgentId: 'antigravity',
+      contextTokens: 0,
+      contextWindow: null,
+      detailedUsage: null,
+      totalCostUsd: 0,
+      _providerSessionId: null,
+      selectedAcpContextWindow: null,
+    })
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sid, 'session.reset', {})
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'message_usage',
+      projectPath: PATH,
+      sessionId: sid,
+      messageId: 'acp_session_grok',
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 1359,
+      contextWindow: 500_000,
+    })
+    expect(activeSession().contextTokens).toBe(0)
+    expect(activeSession().contextWindow).toBeNull()
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'acp_models',
+      projectPath: PATH,
+      sessionId: sid,
+      models: [{ id: 'agy-1', name: 'Antigravity', description: '' }],
+      selectedModelId: 'agy-1',
+      configId: null,
+      status: 'ready',
+      agentId: 'antigravity',
+    })
+    useChatStore.getState().handleAgentEvent({
+      type: 'message_usage',
+      projectPath: PATH,
+      sessionId: sid,
+      messageId: 'acp_session_agy',
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 800,
+      contextWindow: 200_000,
+    })
+    expect(activeSession().contextTokens).toBe(800)
+    expect(activeSession().contextWindow).toBe(200_000)
+  })
+
+  it('keeps context usage when the ACP agent changes after the first message', () => {
+    setupProject()
+    patchSession({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      messages: [userMsg('u1')],
+      contextTokens: 1359,
+      contextWindow: 500_000,
+      _providerSessionId: 'grok-thread',
+    })
+    mockWindowEnvironment.callSession.mockClear()
+
+    useChatStore.getState().setAcpAgentId('antigravity')
+
+    expect(activeSession()).toMatchObject({
+      acpAgentId: 'antigravity',
+      contextTokens: 1359,
+      contextWindow: 500_000,
+      _providerSessionId: 'grok-thread',
+    })
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
   it('initializes DeepSeek and falls back to deepseek-v4-pro', async () => {

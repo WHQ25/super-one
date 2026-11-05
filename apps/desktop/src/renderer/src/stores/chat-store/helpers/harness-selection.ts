@@ -3,10 +3,29 @@ import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { resetHostSession } from '@/lib/session-client'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
 import type { ChatProvider, ChatStore } from '../types'
+import { clearContextUsageHold, holdContextUsageUntilAgent } from './context-usage-hold'
 import type { ChatStoreSet } from './lifecycle'
 import { sessionDefaultsFor } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
 import { getActivePerSession, getProject, triggerPrewarm, updateActivePerSession, updatePerSession } from './store-helpers'
+
+/** Usage and resume identity belong to the runtime being left, even before the first send. */
+function emptyDraftRuntimeReset() {
+  return {
+    apiProviderId: null,
+    contextTokens: 0,
+    contextWindow: null as number | null,
+    detailedUsage: null,
+    streamingTokens: { input: 0, output: 0 },
+    totalCostUsd: 0,
+    codexUsageSnapshot: null,
+    codexTurnLastUsage: null,
+    _providerSessionId: null as string | null,
+    status: 'idle' as const,
+    awaitingAssistantReply: false,
+    slashCommandOutput: null,
+  }
+}
 
 export function setPreferredProviderImpl(
   set: ChatStoreSet,
@@ -35,23 +54,7 @@ export function setPreferredProviderImpl(
     // would leave the indicator pointing at a thread the new harness never saw.
     sessionGoal: null,
   }
-  /** Shared resets when leaving any harness on an empty draft. */
-  const emptyDraftHarnessReset = {
-    // Provider/account bindings belong to the old harness; the new one uses its defaults.
-    apiProviderId: null,
-    // Usage belongs to the disposed harness runtime, even before the first send.
-    contextTokens: 0,
-    contextWindow: null,
-    detailedUsage: null,
-    streamingTokens: { input: 0, output: 0 },
-    totalCostUsd: 0,
-    codexUsageSnapshot: null,
-    codexTurnLastUsage: null,
-    _providerSessionId: null as string | null,
-    status: 'idle' as const,
-    awaitingAssistantReply: false,
-    slashCommandOutput: null,
-  }
+  const emptyDraftHarnessReset = emptyDraftRuntimeReset()
   const strategy = HARNESS_STRATEGIES[provider]
   // ACP model ids (e.g. grok-4.6 / opencode/…) must not stick on another harness's selectors.
   const modelReset = {
@@ -64,6 +67,7 @@ export function setPreferredProviderImpl(
   }
 
   const draftSid = getProject(get(), activeProject)._activeSessionId
+  clearContextUsageHold(draftSid)
 
   const switchedPermissionMode = sessionDefaultsFor(provider).permissionMode
   set((s) => updateActivePerSession(s, () => ({
@@ -181,13 +185,23 @@ export function setAcpAgentIdImpl(
   get: () => ChatStore,
   agentId: string | null,
 ): void {
+  const { activeProject } = get()
   const session = getActivePerSession(get())
   if (session.sessionProvider && session.messages.length > 0 && session.sessionProvider !== 'acp') return
   if (session.acpAgentId === agentId) {
     const acp = get().harnessResources.acp
     if (acp?.selectedAgentId === agentId) return
   }
+  // Grok and Antigravity share harness `acp`, so the picker never goes through
+  // setPreferredProvider. An empty draft must still drop the previous agent's
+  // initialization usage, or that ring stays on the next agent.
+  const switchingEmptyAcpAgent = resolveProvider(session) === 'acp'
+    && session.acpAgentId != null
+    && session.acpAgentId !== agentId
+    && session.messages.length === 0
   const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+  const draftSid = activeProject ? getProject(get(), activeProject)._activeSessionId : null
+  if (switchingEmptyAcpAgent && draftSid && agentId) holdContextUsageUntilAgent(draftSid, agentId)
   set((s) => updateActivePerSession(s, () => ({
     acpAgentId: agentId,
     acpModes: [],
@@ -207,12 +221,20 @@ export function setAcpAgentIdImpl(
           selectedModel: '',
           modelUserChosen: false,
         }),
+    ...(session.acpAgentId !== agentId ? { selectedAcpContextWindow: null } : {}),
+    ...(switchingEmptyAcpAgent ? emptyDraftRuntimeReset() : {}),
   })))
+  const disposePriorMain: Promise<unknown> = switchingEmptyAcpAgent && activeProject && draftSid
+    ? resetHostSession(activeProject, draftSid).catch(() => null)
+    : Promise.resolve(null)
   const acp = get().harnessResources.acp
   if (acp && acp.selectedAgentId !== agentId) {
     get().setHarnessResources('acp', { ...acp, selectedAgentId: agentId })
   }
   void (async () => {
+    // Dispose the previous agent's process before prewarm recreates this sid,
+    // so Grok's session/load id and initialization usage cannot attach to Antigravity.
+    await disposePriorMain
     try {
       await window.app.saveAppSettings({
         agentPreference: {

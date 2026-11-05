@@ -180,26 +180,14 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     expect(header).toMatchObject({ sessionId, status: 'idle' })
     expect(header).not.toHaveProperty('transcript')
 
-    // watch via gateway
-    const watchIter = gw.workspace.watch({ project: projectRef, relativePath: '.' })
-    const iter = watchIter[Symbol.asyncIterator]()
+    // Start the watch and stop it. FS delivery is best-effort, so this does not
+    // wait out the poll loop; a failed watchStart still rejects.
+    const iter = gw.workspace.watch({ project: projectRef, relativePath: '.' })[Symbol.asyncIterator]()
     writeFileSync(join(projectDir, 'watched.txt'), 'new')
-    let saw = false
-    for (let i = 0; i < 30; i++) {
-      const result = await Promise.race([
-        iter.next().then((v) => v),
-        new Promise<{ done: true; value: undefined }>((r) =>
-          setTimeout(() => r({ done: true, value: undefined }), 150),
-        ),
-      ])
-      if (!result.done && result.value?.path?.includes('watched')) {
-        saw = true
-        break
-      }
-    }
-    // Watch is best-effort on CI FS; at least start/poll RPC path must not throw.
-    // If FS events fire, we saw them; either way gateway.watch is wired.
-    expect(typeof saw).toBe('boolean')
+    const pending = iter.next()
+    await new Promise((r) => setTimeout(r, 150))
+    await iter.return?.()
+    await pending
 
     // Explicit watchStart/poll path verification via listDir still works
     const entries = await gw.workspace.listDir({ project: projectRef, relativePath: '.' })

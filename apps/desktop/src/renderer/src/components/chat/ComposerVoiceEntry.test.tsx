@@ -156,9 +156,17 @@ describe('realtime voice surfaces', () => {
 
   async function reachConnectedCall(): Promise<void> {
     await reachAnsweredCall()
-    await act(async () => driveConnectionState('connected'))
+    // The ready cue holds the microphone for ~940ms. Advance that guard instead
+    // of sleeping it: every caller below only needs the call already connected.
+    vi.useFakeTimers()
+    try {
+      await act(async () => driveConnectionState('connected'))
+      await vi.advanceTimersByTimeAsync(VOICE_READY_CUE_MIC_GUARD_MS)
+    } finally {
+      vi.useRealTimers()
+    }
     await waitFor(() => expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeEnabled())
-    await waitFor(() => expect(microphoneTrack.enabled).toBe(true))
+    expect(microphoneTrack.enabled).toBe(true)
   }
 
   it('keeps a return entry reachable from other sessions while a call runs', () => {

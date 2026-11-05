@@ -73,7 +73,9 @@ jobs:
       - run: bun install --frozen-lockfile --concurrent-scripts=1
       # Desktop suite also covers packages/shared, packages/ui and scripts/
       # (release tooling) through vitest.config.ts `include`.
-      - run: bun run test:quiet
+      # `test` uses every core. `test:quiet` (--maxWorkers=50%) is the local
+      # script, so a laptop does not saturate; this runner is dedicated.
+      - run: bun run test
 
   test-node:
     runs-on: ubuntu-latest

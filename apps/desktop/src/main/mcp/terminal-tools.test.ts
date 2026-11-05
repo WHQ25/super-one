@@ -74,8 +74,11 @@ class StubManager implements TerminalToolHost {
     })
     this.sessions.set(terminalId, session)
     this.ptys.set(terminalId, pty)
-    // A login shell draws its prompt right after spawn; run waits for it.
+    // A login shell draws its prompt right after spawn. `run` then waits until
+    // that prompt has been quiet for 700ms. Date it already past that window:
+    // the prompt is on screen, and the test would otherwise sleep the wait.
     pty.emitData('$ ')
+    session.lastOutputAt = Date.now() - 1_000
     return session
   }
 

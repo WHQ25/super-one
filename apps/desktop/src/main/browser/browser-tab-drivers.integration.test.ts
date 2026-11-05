@@ -88,7 +88,14 @@ describe('tab driver recorded before every action', () => {
   })
 
   it('reports failure rather than swallowing it when a tab never becomes attributable', async () => {
-    fakeWindow(() => ({ ok: false, error: 'Browser view is not attached yet' }))
-    await expect(requireTabDriver('sess-D', 'browser-never')).resolves.toBe(false)
+    vi.useFakeTimers()
+    try {
+      fakeWindow(() => ({ ok: false, error: 'Browser view is not attached yet' }))
+      const pending = requireTabDriver('sess-D', 'browser-never')
+      await vi.advanceTimersByTimeAsync(3_000)
+      await expect(pending).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

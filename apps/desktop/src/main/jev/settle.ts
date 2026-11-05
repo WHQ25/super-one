@@ -48,6 +48,17 @@ const realClock: SettleClock = {
   }),
 }
 
+/** A test file points polling here so it does not sleep. An explicit `clock` argument still wins. */
+let testClock: SettleClock | undefined
+
+export function setSettleClockForTests(clock: SettleClock | undefined): void {
+  testClock = clock
+}
+
+function resolveClock(clock?: SettleClock): SettleClock {
+  return clock ?? testClock ?? realClock
+}
+
 /**
  * The facts a decision is made from: the text Jev is shown, which elements are
  * there, what they say, and what state they are in. Deliberately not the
@@ -81,7 +92,7 @@ export async function settleByPolling<Page extends RunObservation>(
   page: Page,
   observe: (signal?: AbortSignal) => Promise<Page>,
   signal?: AbortSignal,
-  { clock = realClock }: { clock?: SettleClock } = {},
+  { clock = resolveClock() }: { clock?: SettleClock } = {},
 ): Promise<{ report: SettleReport; page: Page | null }> {
   const before = observationSignature(page)
   const start = clock.now()
@@ -130,7 +141,7 @@ export async function waitForChangeByPolling<Page extends RunObservation>(
   // An adapter whose own observe already settles (a device samples the screen
   // until the pixels hold still) passes SETTLED_ADAPTER_POLL_MS: waiting the
   // full interval on top of that read would spend the cap waiting twice.
-  { clock = realClock, pollMs = POLL_MS }: { clock?: SettleClock; pollMs?: number } = {},
+  { clock = resolveClock(), pollMs = POLL_MS }: { clock?: SettleClock; pollMs?: number } = {},
 ): Promise<boolean> {
   const before = observationSignature(page)
   const deadline = clock.now() + timeoutMs
@@ -148,7 +159,7 @@ export async function waitReadyByPolling<Page extends RunObservation>(
   timeoutMs: number,
   observe: (signal?: AbortSignal) => Promise<Page>,
   signal?: AbortSignal,
-  { clock = realClock, pollMs = POLL_MS }: { clock?: SettleClock; pollMs?: number } = {},
+  { clock = resolveClock(), pollMs = POLL_MS }: { clock?: SettleClock; pollMs?: number } = {},
 ): Promise<boolean> {
   const deadline = clock.now() + timeoutMs
   for (;;) {

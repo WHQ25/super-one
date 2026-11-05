@@ -117,7 +117,10 @@ export class ComputerUseService {
     this.fake = this.adapter instanceof FakePlatformBackend ? this.adapter : null
     this.states = new StateStore(options.stateLimit)
     this.bypassPolicy = options.bypassPolicy ?? false
-    this.clock = options.clock ?? (() => Date.now())
+    // advanceTime moves the fake's own clock. The settle loops below read
+    // `this.clock`, so a wall clock never sees those jumps and an unchanged
+    // outline busy-waits out ACT_SETTLE_MS on every action.
+    this.clock = options.clock ?? (this.fake ? () => this.fake!.nowMs : () => Date.now())
     this.menus = new ContextMenuLedger({
       adapter: this.adapter,
       roots: this.roots,
@@ -881,7 +884,7 @@ export class ComputerUseService {
   ): Promise<UiRootIdentity | undefined> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       throwIfAborted(signal)
-      if (attempt > 0) await sleep(40, signal)
+      if (attempt > 0) await this.delay(40, signal)
       await this.refreshRoots()
       throwIfAborted(signal)
       const refreshedTarget = this.roots.get(transient.rootId)

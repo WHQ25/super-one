@@ -60,22 +60,24 @@ function tempDir(prefix: string): string {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** B on the relay, and A paired with it from B's code: relay alone, or with a LAN path to B that starts down. */
-async function pairedOverRelay(opts: { lan?: boolean } = {}) {
+async function pairedOverRelay(opts: { lan?: boolean; sink?: Array<() => unknown> } = {}) {
+  const sink = opts.sink ?? cleanup
   const relay = await startTestRelay()
-  cleanup.push(() => relay.close())
+  sink.push(() => relay.close())
   const { host: b, sessions, close: closeB } = await startTestDesktopNode({
     userDataDir: tempDir('superone-proto-b-'),
     projectDir: tempDir('superone-proto-project-'),
     listen: { bindPort: 0, relayUrl: relay.url },
   })
-  cleanup.push(closeB)
+  sink.push(closeB)
   await vi.waitFor(() => expect(b.relayConnected).toBe(true))
 
-  electron.userData = tempDir('superone-proto-a-')
-  const a = new EnvironmentHost(electron.userData, { discoverLan: async () => [] })
-  cleanup.push(() => a.dispose())
+  const userData = tempDir('superone-proto-a-')
+  electron.userData = userData
+  const a = new EnvironmentHost(userData, { discoverLan: async () => [] })
+  sink.push(() => a.dispose())
   const lan = opts.lan ? await lanPath(b.port) : null
-  if (lan) cleanup.push(lan.cut)
+  if (lan) sink.push(lan.cut)
   const { lan: _lan, tailscaleHost: _ts, ...relayOnly } = decodeNodePairingCode(encodeNodePairingCode(b.mintPairingToken()), Date.now())
   const code: NodePairingCode = lan ? { ...relayOnly, lan: { host: '127.0.0.1', port: Number(new URL(lan.url).port) } } : relayOnly
   const { connectionId } = await a.pairRemote({
@@ -93,7 +95,7 @@ async function pairedOverRelay(opts: { lan?: boolean } = {}) {
 }
 
 /** Follow the session from its current version, collecting what arrives. */
-async function follow(a: EnvironmentHost, connectionId: string, sessionId: string) {
+async function follow(a: EnvironmentHost, connectionId: string, sessionId: string, sink: Array<() => unknown> = cleanup) {
   const received: EnvironmentEventEnvelope[] = []
   const resyncs: number[] = []
   const unfollow = await a.followSessionEvents(connectionId, sessionId, {
@@ -104,7 +106,7 @@ async function follow(a: EnvironmentHost, connectionId: string, sessionId: strin
     const { events } = await a.connections.getClient(connectionId)!.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: '0' })
     return events.filter((e) => e.aggregateId === sessionId).at(-1)?.sessionVersion ?? 0
   })
-  cleanup.push(unfollow)
+  sink.push(unfollow)
   return { received, resyncs }
 }
 
@@ -119,27 +121,31 @@ async function quiet(frames: string[], ms = 400): Promise<void> {
 
 describe('unified protocol between desktops', () => {
   it('follows a recorded turn over the relay at no more frames or bytes than the phone link did', async () => {
-    const measured: Record<string, Wire> = {}
-    for (const { recording, events } of scenarios as Recording[]) {
-      const { relay, a, connectionId, sessionId, emit } = await pairedOverRelay()
-      const { received } = await follow(a, connectionId, sessionId)
-      // The chat opens the session as it follows it; over the relay that summarizes it.
-      await expect(a.connections.getClient(connectionId)!.rpc('session.load', { sessionId })).resolves.toMatchObject({ summarized: true })
-      await quiet(relay.fromDesktop)
-      const mark = relay.fromDesktop.length
-      // The baseline's pace: one event every 10 ms, on schedule however long each takes.
-      const started = Date.now()
-      for (const [index, event] of events.filter((e) => typeof e.type === 'string').entries()) {
-        await sleep(Math.max(0, started + index * EVENT_SPACING_MS - Date.now()))
-        emit(event)
+    // Each recording keeps the baseline's 10 ms pace. They share no host, so
+    // they run together: the wall clock is the longest recording, not the sum.
+    const measured = Object.fromEntries(await Promise.all((scenarios as Recording[]).map(async ({ recording, events }) => {
+      const sink: Array<() => unknown> = []
+      try {
+        const { relay, a, connectionId, sessionId, emit } = await pairedOverRelay({ sink })
+        const { received } = await follow(a, connectionId, sessionId, sink)
+        // The chat opens the session as it follows it; over the relay that summarizes it.
+        await expect(a.connections.getClient(connectionId)!.rpc('session.load', { sessionId })).resolves.toMatchObject({ summarized: true })
+        await quiet(relay.fromDesktop)
+        const mark = relay.fromDesktop.length
+        // The baseline's pace: one event every 10 ms, on schedule however long each takes.
+        const started = Date.now()
+        for (const [index, event] of events.filter((e) => typeof e.type === 'string').entries()) {
+          await sleep(Math.max(0, started + index * EVENT_SPACING_MS - Date.now()))
+          emit(event)
+        }
+        await quiet(relay.fromDesktop)
+        const frames = relay.fromDesktop.slice(mark)
+        expect(received.length).toBeGreaterThan(0)
+        return [recording, { frames: frames.length, bytes: frames.reduce((sum, text) => sum + Buffer.byteLength(text), 0) }] as const
+      } finally {
+        while (sink.length) await sink.pop()!()
       }
-      await quiet(relay.fromDesktop)
-      const frames = relay.fromDesktop.slice(mark)
-      measured[recording] = { frames: frames.length, bytes: frames.reduce((sum, text) => sum + Buffer.byteLength(text), 0) }
-      expect(received.length).toBeGreaterThan(0)
-      while (cleanup.length) await cleanup.pop()!()
-      resetEnvironmentHostForTests()
-    }
+    }))) as Record<string, Wire>
     for (const [recording, wire] of Object.entries(measured)) {
       const phone = (baseline as Record<string, { live?: Wire }>)[recording].live!
       expect({ recording, frames: wire.frames <= phone.frames, bytes: wire.bytes <= phone.bytes, wire, phone })

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ComputerUseService } from '../computer-use/computer-use-service'
 import { FakePlatformBackend } from '../computer-use/platform/fake-backend'
 import { axTreeToOutline } from '../computer-use/platform/ax-outline'
@@ -8,8 +8,25 @@ import * as screenshotStore from '../computer-use/screenshot-store'
 import { buildActionSpace, clickVerb } from './action-space'
 import { FastRun, StaleObservation } from './loop'
 import { buildRequest } from './questions'
+import { setSettleClockForTests, type SettleClock } from './settle'
 import { noul, pick } from './test-fixtures'
 import type { JevRequest } from './typesafe-client'
+
+// Polling sleeps 150ms and holds an unchanged page for 600ms. This file only
+// checks the verdict, so the clock moves without waiting.
+const settleClock: SettleClock = (() => {
+  let at = 0
+  return {
+    now: () => at,
+    sleep(ms, signal) {
+      if (signal?.aborted) return Promise.reject(signal.reason)
+      at += ms
+      return Promise.resolve()
+    },
+  }
+})()
+beforeAll(() => setSettleClockForTests(settleClock))
+afterAll(() => setSettleClockForTests(undefined))
 
 function fixture(tier: CapabilityTier = 'full') {
   const backend = new FakePlatformBackend([{ app: 'Notes', bundleId: 'com.test.notes', pid: 7, windows: [{ title: 'Scratch', focused: true,

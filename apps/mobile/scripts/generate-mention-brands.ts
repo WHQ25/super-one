@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium } from '@playwright/test'
 import { AgentProfileIcon } from '../../../packages/ui/src/components/harness/AgentProfileIcon'
 import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../src/theme/tokens.generated'
+import { assertMentionBrandsCurrent } from './mention-brand-check'
 
 // Use the complete desktop DOM + compiled CSS: some marks have non-SVG layers.
 // The caller builds chat-view first so its stylesheet reflects current sources.
@@ -55,7 +56,6 @@ try {
 }
 const target = resolve(root, 'apps/mobile/src/ui/mention-brands.generated.json')
 const output = JSON.stringify({ pixels: 128, variants, images }) + '\n'
-if (process.argv.includes('--check')) {
-  if (readFileSync(target, 'utf8') !== output) throw new Error('Native mention brands are stale; run generate:icons')
-} else writeFileSync(target, output)
+if (process.argv.includes('--check')) assertMentionBrandsCurrent(readFileSync(target, 'utf8'), output)
+else writeFileSync(target, output)
 console.log(`Native mention brands: ${Object.keys(images).length} images, ${Object.keys(refs).length} identities`)

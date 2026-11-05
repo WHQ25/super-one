@@ -2,6 +2,7 @@ import { deflateSync } from 'node:zlib'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { assertMentionBrandsCurrent } from './mention-brand-check'
 import { RASTER_MEAN_LIMIT, assertSameRaster, rasterMeanDelta } from './raster-drift'
 
 function crc32(data: Buffer): number {
@@ -51,6 +52,14 @@ function encodePng(width: number, height: number, rgba: Buffer, filter: 0 | 1 = 
 
 const opaqueRed = Buffer.from([200, 20, 20, 255, 200, 20, 20, 255, 200, 20, 20, 255, 200, 20, 20, 255])
 
+function mentionJson(hash: string, png: Buffer, brand = 'claude'): string {
+  return JSON.stringify({
+    pixels: 128,
+    variants: { light: { '#000': { [brand]: hash } } },
+    images: { [hash]: png.toString('base64') },
+  })
+}
+
 describe('rasterMeanDelta', () => {
   it('treats a different PNG filter as the same pixels', () => {
     const none = encodePng(2, 2, opaqueRed, 0)
@@ -78,6 +87,16 @@ describe('rasterMeanDelta', () => {
   it('rejects a different size', () => {
     const wide = Buffer.alloc(3 * 2 * 4, 0)
     expect(() => rasterMeanDelta(encodePng(2, 2, opaqueRed), encodePng(3, 2, wide))).toThrow(/2x2 vs 3x2/)
+  })
+
+  it('accepts a re-encoded mention brand and rejects a different one', () => {
+    const red = encodePng(2, 2, opaqueRed, 0)
+    const samePixels = encodePng(2, 2, opaqueRed, 1)
+    const blue = encodePng(2, 2, Buffer.from([20, 20, 200, 255, 20, 20, 200, 255, 20, 20, 200, 255, 20, 20, 200, 255]))
+    const committed = mentionJson('aa', red)
+    expect(() => assertMentionBrandsCurrent(committed, mentionJson('bb', samePixels))).not.toThrow()
+    expect(() => assertMentionBrandsCurrent(committed, mentionJson('cc', blue))).toThrow(/Mention brand light claude/)
+    expect(() => assertMentionBrandsCurrent(committed, mentionJson('aa', red, 'codex'))).toThrow(/light #000/)
   })
 
   it('decodes the committed Antigravity raster', () => {

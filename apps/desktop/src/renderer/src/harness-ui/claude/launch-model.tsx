@@ -1,5 +1,6 @@
 import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
 import { useMemo } from 'react'
+import { claudeIdToBucket, hasOneM } from '@superone/shared/agent-types'
 import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
 import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { useChatStore } from '@/stores/chat'
@@ -60,7 +61,9 @@ export function ClaudeLaunchModel({
   const base = liveOrProfile(live, profileCatalog)
   const models = useMemo(() => claudeModelsForProvider(base, modelEnv), [base, modelEnv])
   const selected = base.find((entry) => entry.id === model)
-  const label = resolveClaudeDisplayName(selected, modelEnv)
+  const displayModel = selected
+    ?? (model?.startsWith('claude-') ? base.find(entry => entry.id === `${claudeIdToBucket(model)}${hasOneM(model) ? '[1m]' : ''}`) : undefined)
+  const label = resolveClaudeDisplayName(displayModel, modelEnv)
     ?? models.find((entry) => entry.id === model)?.name
     ?? model
     ?? null

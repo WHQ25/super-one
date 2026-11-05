@@ -116,11 +116,9 @@ export function CodexLaunchModel({
   }, [live.models, model, effort, fastMode, serviceTier, offerFastMode, profile?.models])
 
   const profileCatalog = useProfileCatalog(profile)
-  const models = useMemo(
-    () => codexModelsToSelectorOptions(liveOrProfile(live.models, profileCatalog)),
-    [live.models, profileCatalog],
-  )
-  const selected = live.models.find((entry) => entry.id === model)
+  const catalogModels = liveOrProfile(live.models, profileCatalog)
+  const models = useMemo(() => codexModelsToSelectorOptions(catalogModels), [catalogModels])
+  const selected = catalogModels.find((entry) => entry.id === model)
   const effortOptions = useMemo<SelectorEffortOption[]>(() => {
     const efforts = selected?.supportedReasoningEfforts ?? []
     if (efforts.length > 0) {
@@ -167,7 +165,7 @@ export function CodexLaunchModel({
         selectedModelLabel={model ? formatCodexModelName(selected?.name, model) : null}
         onSelectModel={(id) => {
           const next = speedModel(id)
-          const nextEffort = codexEffortFor(live.models.find((entry) => entry.id === id), effort)
+          const nextEffort = codexEffortFor(catalogModels.find((entry) => entry.id === id), effort)
           onChange({
             model: id,
             ...(nextEffort ? { effort: nextEffort } : {}),
@@ -175,7 +173,7 @@ export function CodexLaunchModel({
           })
         }}
         shouldCloseAfterModelSelect={(id) =>
-          (live.models.find((entry) => entry.id === id)?.supportedReasoningEfforts?.length ?? 0) <= 1
+          (catalogModels.find((entry) => entry.id === id)?.supportedReasoningEfforts?.length ?? 0) <= 1
           && codexSpeedOptionParam(speedModel(id), null)?.kind !== 'choice'}
         effortOptions={effortOptions}
         selectedEffort={effort ?? null}

@@ -166,6 +166,7 @@ export function projectTool(block: ContentBlock, ref: string): ContentBlock {
     // The card's collapsed badge (calls · tokens) and its run state; the children behind it are not sent.
     ...(isSubagentToolName(block.toolName) ? { taskUsage: block.taskUsage, taskStatus: block.taskStatus, runInBackground: block.runInBackground, taskThreadId: block.taskThreadId } : {}),
     ...(block.authRequired ? { authRequired: true } : {}),
+    ...('suggestedTask' in block && block.suggestedTask ? { suggestedTask: block.suggestedTask } : {}),
     remoteDetail: ref } as ContentBlock
 }
 export function toolDetail(message: ChatMessage, id: string): string {

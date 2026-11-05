@@ -10,6 +10,8 @@ import { findSuggestedTask, type SuggestedTaskLaunchOptions } from '@superone/sh
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
 import { connectAuthedRpc } from '../test/ws-rpc'
 
+vi.mock('../session/codex-model-catalog', () => ({ getNodeCodexModelCatalog: vi.fn(async () => [{ id: 'gpt-live', name: 'GPT Live', description: '', supportedReasoningEfforts: [{ value: 'high', description: 'High' }] }]) }))
+
 vi.mock('../session/claude-model-catalog', () => ({ getNodeClaudeModelCatalog: vi.fn(async () => [{ id: 'opus', name: 'Opus', supportsFastMode: true }]) }))
 
 const runtimes: NodeRuntime[] = [], dirs: string[] = [], clients: Client[] = []
@@ -60,6 +62,7 @@ describe('suggested tasks stay on their source execution environment', () => {
     const options = await rpc.rpc('session.suggestedTaskLaunchOptions', { sessionId, taskId }) as SuggestedTaskLaunchOptions
     expect(options.initial.agentId).toBe('claude-base')
     expect(options.profiles.find(profile => profile.harnessId === 'claude')?.models).toContainEqual(expect.objectContaining({ id: 'opus', supportsFastMode: true }))
+    expect(options.profiles.find(profile => profile.harnessId === 'codex')?.models).toContainEqual(expect.objectContaining({ id: 'gpt-live', name: 'GPT Live' }))
     rt.sessions.patchSettings(sessionId, { claudeFastMode: true })
     expect(await rpc.rpc('session.load', { sessionId })).toMatchObject({ state: { claudeFastMode: true } })
     expect(rt.sessions.list()).toHaveLength(1)

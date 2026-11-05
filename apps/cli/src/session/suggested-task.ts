@@ -9,6 +9,7 @@ import {
 } from '@superone/shared/suggested-task'
 import { recordApprovedLaunch, CollaborationError } from '@superone/runtime/collaboration'
 import { suggestedTaskToolResult } from '@superone/runtime/collaboration/suggested-task'
+import { listNodeLiveHarnessModels } from './harness-model-catalog'
 import { collaborationLaunchDefaults } from './collaboration-profiles'
 import { resolveProfile, type CollaborationContext } from './collaboration-context'
 import { startCollaboration } from './collaboration-start'
@@ -34,12 +35,31 @@ export function suggestTask(ctx: CollaborationContext, sessionId: string, args: 
 export async function suggestedTaskOptions(ctx: CollaborationContext, sessionId: string, taskId: string): Promise<SuggestedTaskLaunchOptions> {
   const { parent } = pending(ctx, sessionId, taskId)
   const profiles = ctx.listProfiles()
-  if (profiles.some(profile => profile.harnessId === 'claude')) {
-    const { getNodeClaudeModelCatalog } = await import('./claude-model-catalog')
-    const { resolveClaudeBinaryPath } = await import('./claude-turn-runner')
-    const models = await getNodeClaudeModelCatalog({ cwd: parent.cwd || ctx.deps.projects.get(parent.projectId)!.path, binaryPath: resolveClaudeBinaryPath({ harnesses: ctx.deps.harnesses }) })
-    if (models.length) for (const profile of profiles) if (profile.harnessId === 'claude') profile.models = models
-  }
+  const parentProfile = resolveProfile(new Map(profiles.map(item => [item.id, item])), parent.providerId)
+  const catalogs = new Map<string, ReturnType<typeof listNodeLiveHarnessModels>>()
+  await Promise.all(profiles.map(async profile => {
+    const apiProviderId = (profile.id === parentProfile?.id ? parent.apiProviderId : undefined) ?? profile.defaultConfig.apiProviderId ?? null
+    const key = JSON.stringify([profile.harnessId, apiProviderId])
+    let catalog = catalogs.get(key)
+    if (!catalog) {
+      catalog = listNodeLiveHarnessModels({
+        store: ctx.deps.providers, harness: profile.harnessId, apiProviderId, harnesses: ctx.deps.harnesses,
+        options: { experimentalClaudeOpenAiChatEnabled: ctx.deps.experimentalClaudeOpenAiChatEnabled?.() ?? false },
+      })
+      catalogs.set(key, catalog)
+    }
+    const models = await catalog
+    if (!models?.length) return
+    profile.models = models
+    profile.efforts = [...new Set(models.flatMap(model => [
+      ...(model.supportedEffortLevels ?? []), ...(model.supportedReasoningEfforts?.map(effort => effort.value) ?? []),
+    ]))]
+    const preferred = models.find(model => model.isDefault) ?? models[0]
+    // Built-in defaults follow the live catalog instead of the offline slug table.
+    if (profile.followsDefaults || !profile.defaultConfig.model || !models.some(model => model.id === profile.defaultConfig.model)) {
+      profile.defaultConfig = { ...profile.defaultConfig, model: preferred.id }
+    }
+  }))
   const profile = resolveProfile(new Map(profiles.map(item => [item.id, item])), parent.providerId)
   const initial = suggestedTaskInitialChoice(profiles, profile?.id ?? parent.providerId, {
     ...(parent.model ? { model: parent.model } : {}),

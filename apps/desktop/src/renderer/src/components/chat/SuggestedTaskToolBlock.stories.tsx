@@ -378,3 +378,53 @@ export const InTranscript: Story = {
     </Shell>
   ),
 }
+
+
+/** A concrete Claude session id and per-model Codex metadata from a remote node. */
+function RemoteModelCatalogs() {
+  const [claude, setClaude] = useState<SuggestedTaskLaunchChoice>({ agentId: 'claude-base', settings: { model: 'claude-opus-5-5' } })
+  const [codex, setCodex] = useState<SuggestedTaskLaunchChoice>({ agentId: 'codex-base', settings: { model: 'node-custom-model', effort: 'high' } })
+  const state: LaunchOptionsState = { status: 'ready', options: {
+    profiles: [
+      { ...CLAUDE_PROFILE, models: [{ id: 'opus', name: 'Opus' }] },
+      { ...CODEX_PROFILE, models: [{ id: 'node-custom-model', name: 'Node Model', supportedReasoningEfforts: [{ value: 'low' }, { value: 'high' }] }] },
+    ], initial: claude,
+  } }
+  return <Shell width={420}>
+    <SuggestedTaskLaunchControls state={state} choice={claude} onChange={setClaude} catalog="profile" />
+    <SuggestedTaskLaunchControls state={state} choice={codex} onChange={setCodex} catalog="profile" />
+  </Shell>
+}
+
+export const RemoteModels: Story = {
+  render: () => <RemoteModelCatalogs />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Opus')).toBeVisible()
+    await expect(canvas.getByText('Node Model')).toBeVisible()
+    await userEvent.click(canvas.getByText('Node Model'))
+    const page = within(canvasElement.ownerDocument.body)
+    await expect(await page.findByRole('slider')).toBeVisible()
+  },
+}
+export const RemoteModelsDarkChinese: Story = { ...RemoteModels, play: undefined, globals: { theme: 'dark', locale: 'zh' } }
+
+function ReopenedRemoteCard() {
+  const [open, setOpen] = useState(true)
+  return <Shell>
+    <button onClick={() => setOpen(value => !value)}>Switch session</button>
+    {open && <SessionScopeProvider value={{ projectPath: 'remote:source-node:/repo', sessionId: 'remote-source' }}>
+      <SuggestedTaskToolBlock params={PARAMS} result={JSON.stringify({ taskId: TASK_ID })} state={{ status: 'launched', sessionId: 'session-codex' }} />
+    </SessionScopeProvider>}
+  </Shell>
+}
+export const RemoteLaunchedReopened: Story = {
+  render: () => <ReopenedRemoteCard />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Switch session' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Switch session' }))
+    await expect(await canvas.findByText('Launched')).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: 'Launch' })).toBeNull()
+  },
+}

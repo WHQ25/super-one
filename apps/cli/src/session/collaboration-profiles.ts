@@ -43,7 +43,8 @@ function launchResolution(
   launch?: AgentLaunchDefaults,
   followsDefaults = false,
 ) {
-  const harnessModels = listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
+  const harnessModels = harnessId === 'acp' && deps.acpModels?.length
+    ? deps.acpModels : listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
   const defaultModel = harnessModels.find((m) => m.isDefault) ?? harnessModels[0]
   const efforts = new Set<string>()
   for (const m of harnessModels) {

@@ -2732,11 +2732,11 @@ function handleSessionSnapshot(ctx: RpcContext): RpcResult {
   }
 }
 
-function handleCollaborationListProfiles(ctx: RpcContext): RpcResult {
+async function handleCollaborationListProfiles(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   try {
-    return { result: ctx.collaboration.listProfiles() }
+    return { result: await (ctx.collaboration.discoverProfiles?.() ?? ctx.collaboration.listProfiles()) }
   } catch (err) {
     return mapThrown(err)
   }

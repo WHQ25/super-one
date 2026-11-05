@@ -24,6 +24,7 @@ export interface CollaborationDeps {
   projects: ProjectRegistry
   workspaceGit: WorkspaceGitService
   /** Session-layer provider profiles (feeds multi-profile listProfiles). */
+  acpModels?: import('../provider/resolve-service').ModelOptionWire[]
   sessionProviders?: SessionProviderStore
   experimentalClaudeOpenAiChatEnabled?: () => boolean
   experimentalAgentProfilesEnabled?: () => boolean

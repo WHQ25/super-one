@@ -1,3 +1,4 @@
+import { listNodeLiveHarnessModels } from './harness-model-catalog'
 /**
  * Credential-scoped Agent collaboration grants + mailbox (desktop parity).
  *
@@ -91,6 +92,24 @@ export class CollaborationService {
 
   listProfiles(): SessionAgentProfile[] {
     return listCollaborationProfiles(this.deps)
+  }
+
+  private acpDiscovery: Promise<void> | null = null
+  private acpDiscoveredAt = 0
+
+  /** Cold catalog discovery for both the remote picker and the list-agents tool. */
+  async discoverProfiles(): Promise<SessionAgentProfile[]> {
+    if (this.deps.harnesses.isSessionHarnessRunnable('acp') && Date.now() - this.acpDiscoveredAt > 30000) {
+      this.acpDiscovery ??= listNodeLiveHarnessModels({
+        store: this.deps.providers, harness: 'acp', apiProviderId: null, harnesses: this.deps.harnesses,
+      }).then(models => {
+        this.deps.acpModels = models ?? []
+        this.acpDiscoveredAt = Date.now()
+      }).catch(error => { console.warn('[collaboration] ACP model discovery failed:', error) })
+        .finally(() => { this.acpDiscovery = null })
+      await this.acpDiscovery
+    }
+    return this.listProfiles()
   }
 
   suggestTask(sessionId: string, args: unknown) { return suggestTask(this.ctx, sessionId, args) }

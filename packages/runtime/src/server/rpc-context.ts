@@ -204,6 +204,7 @@ export interface CollaborationPort {
    * unsupported. Absent: the whole family.
    */
   readonly servedMethods?: ReadonlySet<string>
+  discoverProfiles?(): Promise<unknown>
   listProfiles(): unknown
   request(input: {
     parentSessionId: string

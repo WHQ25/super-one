@@ -1,5 +1,5 @@
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
-import { resolveGrokRuntime } from '@superone/runtime/harness'
+import { resolveProductionAcpLaunch } from './acp-launch'
 import type { HarnessId } from '@superone/shared/session-types'
 import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
 import { createSimulatedTurnRunner, type TurnRunner } from '@superone/runtime/session'
@@ -74,21 +74,7 @@ export function createMultiHarnessRouter(
  * simulated **only** when `allowSimulatedFallback: true` (tests / CI overlay).
  * Production must pass false or omit — never silently simulate.
  */
-/** Harness-stored grok binary when the catalog has one; otherwise the explicit path. */
-export function resolveProductionAcpLaunch(opts: {
-  harnesses?: HarnessCatalogReader | null
-  acpBinaryPath?: string | null
-}): { binaryPath?: string | null; args?: string[]; agentId?: string } {
-  if (opts.harnesses) {
-    const grok = resolveGrokRuntime(opts.harnesses, {
-      command: opts.acpBinaryPath?.trim() || undefined,
-    })
-    if (grok) {
-      return { binaryPath: grok.command, args: grok.args, agentId: 'grok-build' }
-    }
-  }
-  return { binaryPath: opts.acpBinaryPath ?? null }
-}
+export { resolveProductionAcpLaunch } from './acp-launch'
 
 export function createAcpOpenCodeProductionRouter(opts?: {
   allowSimulatedFallback?: boolean

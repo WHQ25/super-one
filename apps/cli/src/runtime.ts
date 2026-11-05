@@ -150,7 +150,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       },
       listAgents: () => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
-        return collaborationRef.listProfiles()
+        return collaborationRef.discoverProfiles()
       },
       request: async (sessionId, args, signal) => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })

@@ -50,3 +50,20 @@ Upstream behavior SuperOne depends on that the published types do not state.
 - **Observed:** grok-build initialize capability `clientCapabilities.meta["x.ai/folderTrust"]` is separate from top-level initialize `_meta`. Generic `can_present_permission_prompt()` is false.
 - **Depends on it:** `packages/acp/src/run-turn.ts`, `packages/acp/src/client-version.ts`, `apps/cli/src/cli-release-version.ts`, `packages/acp/src/grok-turn-meta.ts`, `packages/acp/src/auth-method.ts`. Production launch: `apps/cli/src/session/harness-runners.ts`. The production router resolves the harness grok binary on each ACP turn.
 - **Guard:** `packages/acp/src/run-turn.test.ts`, `packages/acp/src/simulated-runner.test.ts`, `apps/cli/src/session/grok-production-launch.test.ts`, `apps/cli/src/session/acp-client-version.test.ts`
+
+## Node model discovery and selection
+
+- **Behavior:** Grok 1.0.70 can return its full catalog on `session/new` as both
+  `configOptions` and legacy `models`, and as `_x.ai/models/update`, without a
+  `config_option_update`. Node turns must publish that initial catalog instead
+  of waiting for an update. Standard model select ids win; legacy model entries
+  fill context-window and effort metadata. A non-default selection is applied
+  before `session/prompt`; a refused selection must not run the prompt with a
+  different model. Cold provider queries and collaboration discovery use a
+  bounded, prompt-free session on the node with no MCP servers.
+- **Observed:** issue #100's Grok 1.0.70 session-start capture; SDK 1.4.0
+  `ActiveSession.newSessionResponse` and `session/set_config_option`.
+- **Depends on it:** `packages/acp/src/run-turn.ts`, `packages/acp/src/model-catalog.ts`,
+  `apps/cli/src/session/harness-model-catalog.ts`, `apps/cli/src/session/collaboration.ts`.
+- **Guard:** `packages/acp/src/run-turn.test.ts`, `packages/acp/src/xai-event-map.test.ts`,
+  `packages/acp/src/model-catalog.test.ts`, `apps/cli/src/session/collaboration.test.ts`.

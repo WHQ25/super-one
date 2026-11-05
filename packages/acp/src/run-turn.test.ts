@@ -98,7 +98,7 @@ vi.mock('@agentclientprotocol/sdk', () => ({
   client: vi.fn(() => mocks.app),
   methods: {
     client: { session: { requestPermission: 'session/request_permission' } },
-    agent: { initialize: 'initialize', authenticate: 'authenticate' },
+    agent: { initialize: 'initialize', authenticate: 'authenticate', session: { setConfigOption: 'session/set_config_option' } },
   },
   PROTOCOL_VERSION: 1,
 }))
@@ -171,6 +171,79 @@ describe('ACP production turn runner AgentEvents', () => {
       currentPhase: 'Inspect',
     }))
     expect(mocks.notificationHandlers.size).toBe(XAI_EXT_NOTIFICATION_METHODS.length)
+  })
+
+  it('publishes session/new models and applies the selected model before prompting', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const response = {
+      sessionId: 'acp-provider-1',
+      configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select',
+        currentValue: 'fast', options: [{ value: 'fast', name: 'Fast' }, { value: 'full', name: 'Full' }] }],
+      models: { currentModelId: 'fast', availableModels: [
+        { modelId: 'fast', name: 'Fast', _meta: { totalContextTokens: 200000 } },
+        { modelId: 'full', name: 'Full', _meta: { totalContextTokens: 300000 } },
+      ] },
+    }
+    Object.assign(mocks.active, { newSessionResponse: response })
+    const events: AgentEvent[] = []
+    mocks.connection.agent.request.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === 'session/set_config_option') return { configOptions: [
+        { ...response.configOptions[0], currentValue: 'full' },
+      ] }
+      return {}
+    })
+    const promptCheck = mocks.active.prompt.getMockImplementation()!
+    mocks.active.prompt.mockImplementationOnce(async () => {
+      expect(mocks.connection.agent.request).toHaveBeenCalledWith('session/set_config_option', {
+        sessionId: 'acp-provider-1', configId: 'model', value: 'full',
+      })
+      return promptCheck()
+    })
+    try {
+      await createAcpAgentTurnRunner({ launch: { command: '/fake/acp' } })({
+        session: session(), model: 'full', text: 'go', onDelta: () => {},
+        onAgentEvent: event => events.push(event), signal: new AbortController().signal,
+      })
+      expect(events).toContainEqual(expect.objectContaining({ type: 'acp_models', configId: 'model',
+        selectedModelId: 'full', models: [
+          expect.objectContaining({ id: 'fast', contextWindow: 200000 }),
+          expect.objectContaining({ id: 'full', contextWindow: 300000 }),
+        ] }))
+    } finally {
+      delete (mocks.active as { newSessionResponse?: unknown }).newSessionResponse
+      mocks.connection.agent.request.mockImplementation(async () => ({}))
+    }
+  })
+
+  it.each(['full', 'default'])('uses legacy set_model only for an explicit %s choice', async model => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    mocks.connection.agent.request.mockClear()
+    Object.assign(mocks.active, { newSessionResponse: { sessionId: 'acp-provider-1', models: {
+      currentModelId: 'fast', availableModels: [{ modelId: 'fast', name: 'Fast' }, { modelId: 'full', name: 'Full' }],
+    } } })
+    try {
+      await createAcpAgentTurnRunner({ launch: { command: '/fake/acp' } })({ session: session(), model,
+        text: 'go', onDelta: () => {}, signal: new AbortController().signal })
+      const calls = mocks.connection.agent.request.mock.calls as unknown as Array<[string, unknown]>
+      expect(calls.filter(call => call[0] === 'session/set_model')).toEqual(model === 'default' ? [] : [
+        ['session/set_model', { sessionId: 'acp-provider-1', modelId: 'full' }],
+      ])
+    } finally { delete (mocks.active as { newSessionResponse?: unknown }).newSessionResponse }
+  })
+
+  it('does not send a prompt when the agent rejects the selected model', async () => {
+    mocks.active.prompt.mockClear()
+    mocks.kill.mockClear()
+    mocks.connection.agent.request.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === 'session/set_model') throw new Error('model unavailable')
+      return {}
+    })
+    try {
+      await expect(createAcpAgentTurnRunner({ launch: { command: '/fake/acp' } })({ session: session(), model: 'unavailable',
+        text: 'go', onDelta: () => {}, signal: new AbortController().signal })).rejects.toThrow('model unavailable')
+      expect(mocks.active.prompt).not.toHaveBeenCalled()
+      expect(mocks.kill).toHaveBeenCalledOnce()
+    } finally { mocks.connection.agent.request.mockImplementation(async () => ({})) }
   })
 
   it('parks x.ai/mcp/elicit on onPermission instead of auto-cancelling', async () => {

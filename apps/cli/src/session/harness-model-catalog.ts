@@ -1,3 +1,6 @@
+import { probeAcpModels } from '@superone/acp/model-catalog'
+import { resolveProductionAcpLaunch } from './acp-launch'
+import { resolveCliReleaseVersion } from '../cli-release-version'
 import { homedir } from 'node:os'
 import type { ProviderStore } from '../provider/provider-store'
 import type { HarnessManager } from './harness-manager'
@@ -19,6 +22,12 @@ export async function listNodeLiveHarnessModels({ store, harness, apiProviderId,
     options,
   )
   if (fromProvider.length > 0) return fromProvider
+  if (harness === 'acp') {
+    const launch = resolveProductionAcpLaunch({ harnesses: harnesses as HarnessManager | undefined })
+    if (!launch.binaryPath) return []
+    return probeAcpModels({ launch: { command: launch.binaryPath, args: launch.args, agentId: launch.agentId },
+      cwd: homedir(), clientVersion: resolveCliReleaseVersion() })
+  }
   if (harness === 'claude') {
     // A custom credential with no models of its own keeps the stale slug
     // table. The subscription catalog belongs to a Claude account login.

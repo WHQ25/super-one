@@ -1,3 +1,4 @@
+import { modelsFromSessionResult } from './config-map'
 import { superoneHostContext } from '@superone/shared/superone-system-prompt'
 /**
  * Node ACP agent turn: spawn process → initialize → buildSession → prompt.
@@ -8,7 +9,6 @@ import { superoneHostContext } from '@superone/shared/superone-system-prompt'
 import {
   client,
   methods,
-  PROTOCOL_VERSION,
   type ActiveSessionMessage,
 } from '@agentclientprotocol/sdk'
 import type { TurnRunner } from '@superone/runtime/session'
@@ -17,8 +17,7 @@ import {
   type AcpAgentEventMapper,
 } from './agent-event-mapper'
 import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
-import { pickNonInteractiveAcpAuthMethod } from './auth-method'
-import { resolveNodeAcpClientVersion } from './client-version'
+import { initializeAcpAgent } from './initialize'
 import { grokNodePermissionMeta, isGrokAcpLaunch } from './grok-turn-meta'
 import { spawnAcpProcess, type AcpLaunch } from './process'
 import {
@@ -255,35 +254,7 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       const connection = clientBuilder.connect(processHandle.stream)
       const grok = isGrokAcpLaunch(launch)
 
-      const initResult = await connection.agent.request(methods.agent.initialize, {
-        protocolVersion: PROTOCOL_VERSION,
-        clientInfo: {
-          name: opts.clientName ?? 'superone-node',
-          version: opts.clientVersion?.trim() || resolveNodeAcpClientVersion(),
-        },
-        clientCapabilities: grok
-          ? { fs: { readTextFile: false, writeTextFile: false }, terminal: false }
-          : {},
-        _meta: {
-          askUserQuestion: true,
-          exitPlanMode: true,
-          clientIdentifier: 'superone',
-        },
-      }) as {
-        authMethods?: Array<{ id?: string }>
-        _meta?: Record<string, unknown> | null
-      }
-
-      if (grok) {
-        const authMethods = Array.isArray(initResult.authMethods) ? initResult.authMethods : []
-        const defaultAuthId = typeof initResult._meta?.defaultAuthMethodId === 'string'
-          ? initResult._meta.defaultAuthMethodId
-          : null
-        const methodId = pickNonInteractiveAcpAuthMethod(authMethods, defaultAuthId)
-        if (methodId) {
-          await connection.agent.request(methods.agent.authenticate, { methodId })
-        }
-      }
+      await initializeAcpAgent(connection, grok, opts)
 
       const mcpServers =
         opts.getMcpServers?.(input.session.sessionId) ?? opts.mcpServers ?? []
@@ -299,6 +270,23 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         .start()
       const sessionId = active.sessionId
       if (!sessionId) throw new Error('ACP session/new did not return sessionId')
+
+      let catalog = modelsFromSessionResult(active.newSessionResponse)
+      const model = input.model?.trim()
+      if (model && model !== 'default') {
+        if (catalog?.configId) {
+          const result = await connection.agent.request(methods.agent.session.setConfigOption, {
+            sessionId, configId: catalog.configId, value: model,
+          })
+          catalog = modelsFromSessionResult({
+            ...active.newSessionResponse,
+            configOptions: result.configOptions,
+          }) ?? catalog
+        } else {
+          await connection.agent.request('session/set_model', { sessionId, modelId: model })
+          if (catalog) catalog = { ...catalog, selectedModelId: model }
+        }
+      }
 
       let finalText = ''
       const blockId = `acp-${sessionId}`
@@ -316,6 +304,8 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         }
       }
       pendingXaiNotifications.length = 0
+      if (catalog) input.onAgentEvent?.({ type: 'acp_models', ...catalog,
+        agentId: launch.agentId ?? input.session.acpAgentId ?? undefined, status: 'ready' })
       if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'streaming' })
       // Grok reads `_meta.rules` on session/new. Other ACP agents only see the
       // user prompt, so the host block is prepended there. A leading slash

@@ -15,7 +15,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Antigravity is its own ACP harness on desktop and on the phone. Enabling it downloads that runtime, and the account is separate from Grok. The phone uses that agent's permission modes, models, and slash commands. Steer Now cancels the live turn and sends the queued message; Steer Soon injects it at the next safe point. A finished tool row shows the MCP result, including output that was spilled to a file, and widget arguments are kept. The usage footer counts newly uploaded input. An empty reasoning block is not shown. A queued message leaves the queue when the turn starts.
+- Antigravity is its own ACP harness on desktop and on the phone. Enabling it downloads that runtime, and the account is separate from Grok. The phone uses that agent's permission modes, models, and slash commands. Steer Now cancels the live turn and sends the queued message; Steer Soon injects it at the next safe point. A finished tool row shows the MCP result, including output that was spilled to a file, and widget arguments are kept. A file write stays on the approved card and keeps its diff. The usage footer counts newly uploaded input. An empty reasoning block is not shown. A queued message leaves the queue when the turn starts.
 - The sidebar usage gauge is a multi-account subscription hub showing billing cycles, reset dates, and quota status across connected providers.
 - The Grok usage meter shows the login email.
 - Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
@@ -25,6 +25,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Fixed
 
 - Codex tasks on remote nodes keep running past five minutes, including long tool calls and automatic context compaction, without false timeout or compression failures.
+- A Codex question on a remote node can be answered or dismissed. The reply is stored after the node accepts it, and it survives a retry or a restart.
+- Deferred reasoning collapses when thinking finishes. Opening it by hand after that still stays open.
+- A CLI-only install can load session archive handlers.
 - Antigravity and ACP AskUserQuestion interactions render as interactive question cards in the chat transcript.
 - A running Grok background bash task remains visible in the status bar and holds the session active until finished.
 - The appearance popover aligns to the sidebar's left edge.
@@ -36,6 +39,21 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A remote draft stays hidden once the node assigns the session id.
 - Adding a project grants Grok folder trust without a dialog. Project rules, MCP, hooks, and skills still load.
 - Switching to an ACP harness clears an effort level that harness does not offer.
+
+## [0.77.0-alpha.2] - 2026-11-05
+
+### Fixed
+
+- Codex tasks on remote nodes keep running past five minutes, including long tool calls and automatic context compaction, without false timeout or compression failures.
+- A Codex question on a remote node can be answered or dismissed. The reply is stored after the node accepts it, and it is replayed after a retry or a restart.
+- Deferred reasoning collapses when thinking finishes. Opening it by hand after that still stays open.
+- A remote Codex voice call keeps its connection port, so the node that owns the session can open it.
+- Antigravity file writes stay on the approved card and keep the diff.
+- A CLI-only install can load session archive handlers. The TOON package is declared on the CLI.
+
+### Tests
+
+- Desktop integration servers take an ephemeral port, and the slow suites advance a fake clock instead of sleeping.
 
 ## [0.77.0-alpha.1] - 2026-11-05
 

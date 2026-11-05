@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { X, GitCommitHorizontal, GitBranch, FileDiff, Search, Loader2 } from 'lucide-react'
-import type { GitLogEntry, CodexReviewTarget } from '@superone/shared/agent-types'
+import type { CodexReviewTarget } from '@superone/shared/agent-types'
+import { remoteActiveFileRoot } from '@superone/shared/remote-resource-key'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { readBranchLists } from './git-branch-lists'
 
 type ReviewMode = 'uncommitted' | 'branch' | 'commit'
+type ReviewCommit = { sha: string; message: string }
 
 function HighlightText({ text, indices }: { text: string; indices: number[] }) {
   if (indices.length === 0) return <>{text}</>
@@ -36,11 +38,11 @@ export function ReviewPanel() {
     return s.projectSessions[s.activeProject]?.reviewPanelInitialMode ?? 'uncommitted'
   })
   const sessionCwd = useActiveSession((s) => s._worktreePath ?? s.cwd)
-  const reviewPath = sessionCwd || activeProject
+  const reviewPath = activeProject ? remoteActiveFileRoot(activeProject, sessionCwd) : sessionCwd
 
   const [mode, setMode] = useState<ReviewMode>(initialMode)
   const [branches, setBranches] = useState<string[]>([])
-  const [commits, setCommits] = useState<GitLogEntry[]>([])
+  const [commits, setCommits] = useState<ReviewCommit[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [selectedBranchIndex, setSelectedBranchIndex] = useState(0)
@@ -74,9 +76,10 @@ export function ReviewPanel() {
     if (mode !== 'commit' || !reviewPath) return
     let cancelled = false
     setLoading(true)
-    void window.app.getGitLog(reviewPath).then((entries) => {
+    // The shared ref lookup routes local folders and node worktrees alike.
+    void window.app.listGitMentionRefs(reviewPath, 'commit', '').then((result) => {
       if (cancelled) return
-      setCommits(entries)
+      setCommits(result.ok ? result.refs.map((ref) => ({ sha: ref.id, message: ref.detail })) : [])
       setSelectedCommitIndex(0)
       setLoading(false)
     }).catch(() => {
@@ -95,7 +98,7 @@ export function ReviewPanel() {
   }, [mode])
 
   type ScoredBranch = { name: string; indices: number[]; score: number }
-  type ScoredCommit = GitLogEntry & { msgIndices: number[]; shaIndices: number[] }
+  type ScoredCommit = ReviewCommit & { msgIndices: number[]; shaIndices: number[] }
 
   const filteredBranches: ScoredBranch[] = useMemo(() => {
     const q = query.trim()

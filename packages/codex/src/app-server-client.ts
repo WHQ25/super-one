@@ -70,9 +70,9 @@ export interface CodexAppServerClientOptions {
 export interface CodexAppServerHandle {
   request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
   notify(method: string, params?: Record<string, unknown>): Promise<void>
-  /** Await next server notification (or null when closed). */
+  /** Await next server notification; null means an idle poll, connection closure rejects. */
   nextNotification(timeoutMs?: number): Promise<{ method: string; params: Record<string, unknown> } | null>
-  /** Cumulative user-input wait time; turn budgets exclude this time. */
+  /** Cumulative user-input wait time for diagnostics. */
   getUserInputWaitMs?(): number
   close(): Promise<void>
   /** Redacted stderr snippet for logs only — not for client-facing errors. */
@@ -87,7 +87,6 @@ interface PendingRequest {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const THREAD_TIMEOUT_MS = 60_000
-const TURN_WAIT_TIMEOUT_MS = 300_000
 const MAX_STDERR_CHARS = 8_000
 
 export async function openCodexAppServer(
@@ -326,6 +325,10 @@ export async function openCodexAppServer(
           pushNotification({ method: rec.method, params })
         }
       }
+      if (!closed && !readLoopError) {
+        readLoopError = new Error('Codex app-server connection closed')
+        failAll(readLoopError)
+      }
     } catch (err) {
       readLoopError = err instanceof Error ? err : new Error(String(err))
       failAll(safePublicError('Codex app-server read failed', readLoopError))
@@ -382,7 +385,7 @@ export async function openCodexAppServer(
         return
       }
       if (closed) {
-        resolve(null)
+        reject(new Error('Codex app-server closed'))
         return
       }
       const timer = setTimeout(() => {
@@ -706,9 +709,6 @@ export async function runCodexAppServerTurn(opts: {
   }
 
   let finalText = ''
-  const deadline = Date.now() + TURN_WAIT_TIMEOUT_MS
-  const inputWaitAtStart = opts.client.getUserInputWaitMs?.() ?? 0
-  const remaining = () => deadline - Date.now() + (opts.client.getUserInputWaitMs?.() ?? 0) - inputWaitAtStart
   const agentEventMapper = opts.onAgentEvent
     ? createCodexAgentEventMapper({
         messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
@@ -723,11 +723,12 @@ export async function runCodexAppServerTurn(opts: {
     : null
   agentEventMapper?.start(threadId)
 
-  // Collect notifications until matching turn/completed (or connection dies).
-  while (!opts.signal.aborted && remaining() > 0) {
+  // Long tool work and compaction have no overall deadline. Poll only to
+  // observe cancellation; connection failures still reject immediately.
+  while (!opts.signal.aborted) {
     let note: { method: string; params: Record<string, unknown> } | null
     try {
-      note = await opts.client.nextNotification(Math.min(5_000, Math.max(0, remaining())))
+      note = await opts.client.nextNotification(5_000)
     } catch (err) {
       // Connection/process failure — surface immediately (no hot-loop).
       const error = err instanceof Error ? err : new Error(String(err))
@@ -784,12 +785,8 @@ export async function runCodexAppServerTurn(opts: {
     }
   }
 
-  if (opts.signal.aborted) {
-    agentEventMapper?.fail('Codex turn interrupted', true)
-    throw new Error('Codex turn interrupted')
-  }
-  agentEventMapper?.fail('Codex turn timed out waiting for turn/completed')
-  throw new Error('Codex turn timed out waiting for turn/completed')
+  agentEventMapper?.fail('Codex turn interrupted', true)
+  throw new Error('Codex turn interrupted')
 }
 
 function normalizeCollaborationMode(

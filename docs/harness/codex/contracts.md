@@ -74,6 +74,28 @@ mobile split its display at that cursor while later output keeps the original
 message ID. Accepted async answers capture the same cursor before
 steering, so subsequent output appears below the answer bubble immediately.
 
+## Node turn lifetime
+
+- **Behavior:** A turn can run for more than five minutes, including silent tool
+  work and automatic compaction. A local wait timeout does not interrupt the
+  provider turn: Codex may finish compaction and emit its final response after
+  the host has stopped consuming notifications. A subsequent `turn/start` can
+  still refer to that active provider turn.
+- **Observed:** Packaged node 0.76.0 with Codex 0.163.0, cross-checked against
+  durable node events and the provider rollout. Four local waits failed at
+  300 seconds while Codex continued; a reported compaction failure was followed
+  by a successful provider compaction and eventual task completion.
+- **Depends on it:** `apps/cli/src/session/codex-live-turn.ts` and
+  `packages/codex/src/app-server-client.ts` consume notifications until matching
+  turn completion, cancellation, or a real connection error. There is no overall
+  turn deadline. Five-second notification polls observe cancellation; individual
+  RPCs retain their existing deadlines and user-input budget handling.
+- **Guard:** `codex-live-turn-lifecycle.test.ts` in the node session workspace
+  and `app-server-turn-lifecycle.test.ts` in the Codex package cover long work,
+  compaction completion across five minutes, cancellation and connection errors.
+  `app-server-client.test.ts` verifies explicit close and stdout EOF reject
+  notification reads, rather than returning idle polls to an unbounded turn loop.
+
 ## Turn content
 
 Codex turns reach clients as shared content blocks; see

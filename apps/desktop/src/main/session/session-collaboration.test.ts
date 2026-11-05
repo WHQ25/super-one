@@ -2413,7 +2413,9 @@ describe('spawning a child on another machine', () => {
     // Parent → child is queued here and wakes the child through its machine.
     await sendSessionMessage('parent', { to: 'remote-child', content: 'Also add tests' }, host)
     await vi.waitFor(() => expect(calls.send).toHaveLength(2))
-    expect(calls.send[1]).toMatchObject({ sessionId: 'remote-child', text: expect.stringContaining('session_collab_retrieve') })
+    expect(calls.send[1]).toMatchObject({
+      sessionId: 'remote-child', text: expect.stringContaining('session_collab_retrieve'), source: 'task-notification',
+    })
     const childRead = await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_retrieve', {})
     expect(resultJson(childRead.reply).messages.map((m: { content: string }) => m.content)).toEqual(['Also add tests'])
     // Read for the child only once its machine has the reply.

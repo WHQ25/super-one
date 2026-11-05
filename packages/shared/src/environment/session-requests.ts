@@ -17,6 +17,8 @@ export interface SessionSendRequest extends MessageDisplayFields, SessionSendSel
   text: string
   /** This caller does not optimistically append a user bubble. */
   echoUserMessage?: boolean
+  /** A controller host wake: run its model-facing prompt without a user bubble. */
+  source?: 'task-notification'
   clientMessageId?: string
   /** Desktop project key for AgentEvent routing (`remote:<id>:<path>` for a node). */
   projectPath?: string

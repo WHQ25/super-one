@@ -65,6 +65,7 @@ export function desktopSendRequest(input: Parameters<SessionHostPort['send']>[0]
   }
   return {
     content: input.text,
+    ...(input.source ? { source: input.source } : {}),
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort as SendMessageRequest['effort'] } : {}),

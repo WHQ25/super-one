@@ -256,7 +256,7 @@ export class SessionRuntime {
    */
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
   private readonly queueAdmissions = new Set<string>()
-  private readonly artifactWakes: ArtifactWakes
+  private readonly notificationWakes: ArtifactWakes
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
   private readonly ambientTurns = new Map<string, { messageId: string; text: string }>()
@@ -297,7 +297,7 @@ export class SessionRuntime {
     this.cleanupConfirmTimeoutMs =
       opts?.cleanupConfirmTimeoutMs ?? SESSION_CLEANUP_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
-    this.artifactWakes = new ArtifactWakes(this.hostActions)
+    this.notificationWakes = new ArtifactWakes(this.hostActions)
     this.hostActionChannel = this.hostActions
       ? new HostActionChannel({
           store: this.hostActions,
@@ -1127,6 +1127,8 @@ export class SessionRuntime {
     /** A launch task from the controller's agent; named after the controller here, whatever it claims. */
     collaboration?: MessageDisplayFields['collaboration']
     echoUserMessage?: boolean
+    /** A controller host wake, kept out of the human transcript. */
+    source?: 'task-notification'
     /** Claude-style permission mode for this turn (falls back to session.permissionMode). */
     permissionMode?: string | null
     /** Sandbox policy for this turn (falls back to session.sandboxMode). */
@@ -1213,6 +1215,7 @@ export class SessionRuntime {
         ? { collaboration: { kind: 'initial_task' as const, ...(controller ? { fromSessionTitle: controller } : {}) } }
         : {}),
       echoUserMessage: input.echoUserMessage,
+      source: input.source,
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),
@@ -1233,37 +1236,46 @@ export class SessionRuntime {
       claudeFastMode: input.claudeFastMode ?? session.claudeFastMode ?? undefined,
     }
 
-    // Always accept the user message into the durable transcript (queue or run).
-    if (session.harnessId === 'codex') {
-      assertCodexAccountSwitchAllowed(session.apiProviderId, turnOpts.apiProviderId, session.transcript.length > 0)
-      session.apiProviderId = turnOpts.apiProviderId ?? session.apiProviderId
-    }
-    this.appendUserMessage(session, turnOpts)
+    const submit = async () => {
+      // Always accept the user message into the durable transcript (queue or run).
+      if (session.harnessId === 'codex') {
+        assertCodexAccountSwitchAllowed(session.apiProviderId, turnOpts.apiProviderId, session.transcript.length > 0)
+        session.apiProviderId = turnOpts.apiProviderId ?? session.apiProviderId
+      }
+      this.appendUserMessage(session, turnOpts)
 
-    if (session.status === 'streaming') {
-      // Claude accepts concurrent priority=next sends. Codex only live-injects
-      // an explicit steer; ordinary composer sends serialize through the FIFO.
-      const harnessId = session.harnessId || 'claude'
-      const liveInject =
-        harnessId === 'claude' ||
-        (harnessId === 'codex' && turnOpts.turnKind === 'steer')
-      if (liveInject) {
-        this.beginTurn(session, turnOpts)
+      if (session.status === 'streaming') {
+        // Claude accepts concurrent priority=next sends. Codex only live-injects
+        // an explicit steer; ordinary composer sends serialize through the FIFO.
+        const harnessId = session.harnessId || 'claude'
+        const liveInject =
+          harnessId === 'claude' ||
+          (harnessId === 'codex' && turnOpts.turnKind === 'steer')
+        if (liveInject) {
+          this.beginTurn(session, turnOpts)
+          return this.clone(session)
+        }
+        this.enqueueTurn(session, turnOpts)
+        if (harnessId === 'opencode' && input.steer === 'now' && turnOpts.parkInComposer) {
+          const assertControl = () => this.leases.assertValid({ resource: ref, leaseId: input.leaseId,
+            generation: input.generation, holderClientId: input.client.clientSessionId })
+          // The send is already durable. A refused steer keeps that accepted input
+          // in the queue; do not turn it into a failed send or submit it twice.
+          await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId }, assertControl).catch(() => {})
+        }
         return this.clone(session)
       }
-      this.enqueueTurn(session, turnOpts)
-      if (harnessId === 'opencode' && input.steer === 'now' && turnOpts.parkInComposer) {
-        const assertControl = () => this.leases.assertValid({ resource: ref, leaseId: input.leaseId,
-          generation: input.generation, holderClientId: input.client.clientSessionId })
-        // The send is already durable. A refused steer keeps that accepted input
-        // in the queue; do not turn it into a failed send or submit it twice.
-        await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId }, assertControl).catch(() => {})
-      }
+
+      this.beginTurn(session, turnOpts)
       return this.clone(session)
     }
-
-    this.beginTurn(session, turnOpts)
-    return this.clone(session)
+    // Hidden wakes have no user row to serve as the retry receipt. Keep their
+    // notification IDs in the same durable receipt store as artifact wakes.
+    if (input.source === 'task-notification' && input.clientMessageId) {
+      await this.notificationWakes.deliverOnce(session.sessionId, input.clientMessageId, submit)
+      return this.clone(session)
+    }
+    return submit()
   }
 
   /**
@@ -1374,7 +1386,7 @@ export class SessionRuntime {
     if (!session.controllerClientSessionId || session.controllerClientSessionId !== input.controllerClientSessionId) {
       throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
     }
-    return this.artifactWakes.deliverOnce(input.sessionId, input.notificationId, () =>
+    return this.notificationWakes.deliverOnce(input.sessionId, input.notificationId, () =>
       this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' }))
   }
 

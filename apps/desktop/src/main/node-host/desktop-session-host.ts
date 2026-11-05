@@ -193,13 +193,13 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   private readonly sessionListeners = new Set<() => void>()
   private readonly unsubscribe: () => void
   private readonly hostActions: HostActionChannel
-  private readonly artifactWakes: ArtifactWakes
+  private readonly notificationWakes: ArtifactWakes
   /** MCP App state, resources and provider calls of every session here (`mcpApps.*`). */
   readonly mcpApps: McpAppsPort
 
   constructor(private readonly deps: DesktopSessionHostDeps) {
     super(deps)
-    this.artifactWakes = new ArtifactWakes(deps.hostActions)
+    this.notificationWakes = new ArtifactWakes(deps.hostActions)
     this.mcpApps = createDesktopMcpAppsPort({
       session: (sessionId) => this.live(sessionId),
       projectId: (sessionId) => this.requireRow(sessionId).projectId,
@@ -560,7 +560,12 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
           },
         } : {}),
       }
-      await admitDesktopSessionSend(session, request, input)
+      // A hidden host wake has no transcript row to deduplicate a retried RPC.
+      if (input.source === 'task-notification' && input.clientMessageId) {
+        await this.notificationWakes.deliverOnce(input.sessionId, input.clientMessageId, () => admitDesktopSessionSend(session, request, input))
+      } else {
+        await admitDesktopSessionSend(session, request, input)
+      }
       return this.record(this.requireRow(input.sessionId))
     })
   }
@@ -713,7 +718,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     if (this.requireRow(input.sessionId).controller?.clientSessionId !== input.controllerClientSessionId) {
       throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
     }
-    return this.artifactWakes.deliverOnce(input.sessionId, input.notificationId, () =>
+    return this.notificationWakes.deliverOnce(input.sessionId, input.notificationId, () =>
       runHostReaction(() => this.live(input.sessionId).admitTaskNotification(input.text)))
   }
 

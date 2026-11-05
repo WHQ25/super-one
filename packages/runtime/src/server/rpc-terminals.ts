@@ -30,6 +30,7 @@ function handleTerminalCreate(payload: unknown, ctx: RpcContext): RpcResult {
       title: typeof p.title === 'string' ? p.title : undefined,
       cols: typeof p.cols === 'number' ? p.cols : undefined,
       rows: typeof p.rows === 'number' ? p.rows : undefined,
+      ...(typeof p.bashScript === 'string' ? { bashScript: p.bashScript } : {}),
     })
     return {
       result: {
@@ -38,6 +39,7 @@ function handleTerminalCreate(payload: unknown, ctx: RpcContext): RpcResult {
         title: info.title,
         cols: info.cols,
         rows: info.rows,
+        ...(typeof p.bashScript === 'string' ? { scriptStarted: true } : {}),
       },
     }
   } catch (err) {

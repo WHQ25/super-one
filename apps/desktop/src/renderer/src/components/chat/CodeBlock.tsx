@@ -1,8 +1,13 @@
-import { lazy, useMemo } from 'react'
+import { lazy, useCallback, useMemo } from 'react'
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
+import { useSessionScope } from '@/stores/chat-store/session-scope'
+import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useTerminalStore } from '@/stores/terminal'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { tryCopy } from '@/lib/clipboard'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { codePluginLight } from './code-plugins'
+import { useCodeBlockProject } from './code-block-project-scope'
 import { highlightRhai, isRhaiLanguage } from './rhai-highlight'
 import {
   HighlightedCodeBlockPresenter,
@@ -37,6 +42,20 @@ function runRhaiHighlighter(
 
 export function HighlightedCodeBlock(props: HighlightedCodeBlockProps) {
   const isDark = useIsDark()
+  const scope = useSessionScope()
+  const markdownProject = useCodeBlockProject()
+  const activeProject = useChatStore(s => s.activeProject)
+  const activeSessionId = useActiveSession(s => s._activeSessionId)
+  const projectPath = scope?.projectPath ?? markdownProject ?? activeProject
+  const sessionId = scope?.sessionId ?? activeSessionId
+  const runBash = useCallback(async (bashScript: string) => {
+    if (!projectPath) return
+    // Omit sessionId: create resolves the project root, even when chat uses a worktree.
+    const item = await window.terminal.create({ projectPath, title: 'Bash', bashScript })
+    const terminal = useTerminalStore.getState()
+    terminal.upsertTab(projectPath, item, true)
+    terminal.setOpen(sessionId ? projectSessionKey(projectPath, sessionId) : null, true)
+  }, [projectPath, sessionId])
   const ports = useMemo<HighlightedCodeBlockPresenterPorts>(() => ({
     isDark,
     lightCodePlugin: codePluginLight,
@@ -45,7 +64,7 @@ export function HighlightedCodeBlock(props: HighlightedCodeBlockProps) {
     highlightRhai: runRhaiHighlighter,
   }), [isDark])
 
-  return <HighlightedCodeBlockPresenter {...props} ports={ports} />
+  return <HighlightedCodeBlockPresenter {...props} ports={ports} runBash={projectPath ? runBash : null} />
 }
 
 const desktopStreamdownCodePorts: StreamdownCodePresenterPorts = {

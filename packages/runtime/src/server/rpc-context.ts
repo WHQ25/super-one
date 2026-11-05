@@ -81,6 +81,7 @@ export interface TerminalsPort {
   create(opts: {
     cwd: string
     projectPath?: string
+    bashScript?: string
     title?: string
     cols?: number
     rows?: number

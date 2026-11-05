@@ -51,6 +51,35 @@ async function freeTab(gateway: Partial<TerminalGateway> = {}) {
 }
 
 describe('RemoteTerminalController', () => {
+  it('creates a script tab on the project node without sending a session worktree', async () => {
+    const { node } = fakeNode()
+    const original = node.rpc
+    node.rpc = vi.fn(async (method: string, payload: unknown) => method === 'terminal.create'
+      ? { terminalId: 't2', cwd: '/srv/p', title: 'Bash', scriptStarted: true } as never
+      : original(method, payload))
+    node.terminals = { acquireControl: async () => lease(), releaseControl: async () => {} } as unknown as TerminalGateway
+    const controller = new RemoteTerminalController({ node: () => node, projectId, onEvent: () => {} })
+    try {
+      const script = "pwd\nprintf '%s\\n' '你好'"
+      const item = await controller.create({ projectPath: remoteProjectKey('c', '/srv/p'), bashScript: script })
+      expect(node.rpc).toHaveBeenCalledWith('terminal.create', expect.objectContaining({ projectId: 'p1', bashScript: script }))
+      const request = vi.mocked(node.rpc).mock.calls.find(([method]) => method === 'terminal.create')![1]
+      expect(request).not.toHaveProperty('sessionId')
+      expect(item).toMatchObject({ terminalId: remoteTerminalKey('c', 't2'), cwd: remoteProjectKey('c', '/srv/p') })
+    } finally { controller.dispose() }
+  })
+
+  it('removes the unused shell and reports an older node that cannot run Bash scripts', async () => {
+    const { node } = fakeNode()
+    const kill = vi.fn(async () => {})
+    node.terminals = { acquireControl: async () => lease(), releaseControl: async () => {}, kill } as unknown as TerminalGateway
+    const controller = new RemoteTerminalController({ node: () => node, projectId, onEvent: () => {} })
+    try {
+      await expect(controller.create({ projectPath: remoteProjectKey('c', '/srv/p'), bashScript: 'pwd' })).rejects.toThrow('does not support Bash scripts')
+      expect(kill).toHaveBeenCalled()
+    } finally { controller.dispose() }
+  })
+
   it("lists a node's tabs under project keys and keeps them current from its pushed list", async () => {
     const { node, streams } = fakeNode()
     const events: TerminalEvent[] = []

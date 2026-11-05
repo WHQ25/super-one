@@ -81,7 +81,7 @@ export class NodeTerminalManager {
   }
   private emit(event: TerminalEvent): void { for (const listener of this.events) listener(event) }
 
-  create(opts: { cwd: string; title?: string; cols?: number; rows?: number; shell?: string }): NodeTerminalInfo {
+  create(opts: { cwd: string; title?: string; cols?: number; rows?: number; shell?: string; bashScript?: string }): NodeTerminalInfo {
     if (!existsSync(opts.cwd)) {
       throw Object.assign(new Error(`cwd does not exist: ${opts.cwd}`), { code: 'invalid_argument' })
     }
@@ -101,8 +101,11 @@ export class NodeTerminalManager {
       sequence: 0,
     }
 
-    const shell = opts.shell || defaultShell()
-    const proc = spawn(shell, [], {
+    const scripted = opts.bashScript !== undefined
+    const shell = scripted ? 'bash' : opts.shell || defaultShell()
+    // Keep the result visible in an interactive Bash even when the script calls `exit`.
+    const args = scripted ? ['-c', 'bash -c "$1"; result=$?; printf "\\n[exit %s]\\n" "$result"; exec bash -i', 'bash', opts.bashScript!] : []
+    const proc = spawn(shell, args, {
       cwd: opts.cwd,
       env: { ...process.env, TERM: 'xterm-256color' },
       name: 'xterm-256color',

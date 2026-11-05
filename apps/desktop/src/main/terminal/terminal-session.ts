@@ -29,6 +29,7 @@ export interface TerminalSessionOptions {
   onEvent: (event: TerminalEvent) => void
   env?: Record<string, string>
   shell?: string
+  bashScript?: string
   coalesceMs?: number
   snapshotSoftLimit?: number
   /** Tab opened by an agent tool rather than the user. */
@@ -98,7 +99,7 @@ export class TerminalSession {
     this._rows = opts.rows
     this.agentSessionId = opts.agentSessionId
     this.openedInActivity = opts.openedInActivity ?? false
-    this.shellName = processBaseName(opts.shell || defaultShell())
+    this.shellName = processBaseName(opts.bashScript !== undefined ? 'bash' : opts.shell || defaultShell())
 
     this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES })
     this.serializer = new SerializeAddon()
@@ -111,6 +112,7 @@ export class TerminalSession {
       rows: opts.rows,
       env: opts.env,
       shell: opts.shell,
+      bashScript: opts.bashScript,
     })
     this.pty.onData((data) => this.onPtyData(data))
     this.pty.onExit(({ exitCode, signal }) => this.onPtyExit(exitCode, signal))

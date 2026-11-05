@@ -18,7 +18,7 @@ export interface TerminalIpcDeps {
 export function registerTerminalIpc(deps: TerminalIpcDeps): void {
   deps.ipc.handle(
     AgentIpcChannels.TERMINAL_CREATE,
-    async (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }) => {
+    async (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean; bashScript?: string }) => {
       if (parseRemoteProjectKey(opts.projectPath)) {
         return deps.remote.create(opts)
       }
@@ -33,6 +33,7 @@ export function registerTerminalIpc(deps: TerminalIpcDeps): void {
         cols: opts.cols,
         rows: opts.rows,
         openedInActivity: opts.openedInActivity,
+        bashScript: opts.bashScript,
       })
       return session.listItem()
     },

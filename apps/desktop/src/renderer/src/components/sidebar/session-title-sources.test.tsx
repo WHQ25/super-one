@@ -8,6 +8,7 @@ import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { DEFAULT_SESSION_TITLE, selectSessionTitle } from '@/lib/session-title'
+import { mapRemoteSessionRow } from '../../../../main/environment/remote-session-row'
 import { MiniWindowHeader } from '@/components/MiniWindowApp'
 import { collectAllActiveRows } from '@/components/chat/SessionSwitcherPopup'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
@@ -65,6 +66,47 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('session title sources across surfaces', () => {
+  it.each(['sidebar', 'store'] as const)('keeps the first remote message title while the %s list has an unnamed row', (source) => {
+    vi.useFakeTimers()
+    const projectPath = 'remote:node:/work/app'
+    const title = 'Fix the remote sidebar title'
+    const project = createDefaultProjectState()
+    project._activeSessionId = SID
+    project._sessions[SID] = { ...createDefaultPerSessionState(),
+      messages: [message(title)], _historyHydrated: true, _animateInitialTitle: true }
+    useChatStore.setState({ activeProject: projectPath, projectSessions: { [projectPath]: project }, agentTitles: {} })
+    const row = (entry: ReturnType<typeof mapRemoteSessionRow>) => <SessionRow folderPath={projectPath} session={entry} {...callbacks} />
+    const initial = mapRemoteSessionRow({ sessionId: SID, title, harnessId: 'codex', messageCount: 1 })
+    const { container, rerender } = render(row(initial))
+    expect(container.querySelector('.animated-title-inner')).toHaveTextContent(title)
+
+    // session.create publishes an unnamed row before session.send gives it a
+    // title. On a remote node this gap can outlast the entire title animation.
+    const unnamed = mapRemoteSessionRow({ sessionId: SID, title: null, harnessId: 'codex', messageCount: 0 })
+    if (source === 'store') {
+      act(() => { useChatStore.setState((state) => ({ projectSessions: {
+        ...state.projectSessions, [projectPath]: { ...state.projectSessions[projectPath], sessions: [unnamed] },
+      } })) })
+    }
+    rerender(row(unnamed))
+    expect(selectSessionTitle(useChatStore.getState(), projectPath, SID, unnamed.title)).toBe(title)
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'in')
+    act(() => { vi.advanceTimersByTime(3000) })
+    expect(container.querySelector('.animated-title-inner')).toHaveTextContent(title)
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+
+    act(() => { useChatStore.getState().handleAgentEvent({ type: 'session_title_changed',
+      projectPath, sessionId: SID, title: 'Remote sidebar repair', source: 'agent' }) })
+    act(() => { vi.advanceTimersByTime(3000) })
+    expect(container.querySelector('.animated-title-inner')).toHaveTextContent('Remote sidebar repair')
+  })
+
+  it.each(['New session', 'Untitled'])('preserves an explicit live title named %s', (title) => {
+    seed({ liveTitle: title, savedTitle: title, messages: [message('First request')] })
+    renderTitles(title)
+    expectTitles(title)
+  })
+
   it.each(['claude', 'codex'] as const)('plays the sidebar entrance after the first %s send', async (provider) => {
     vi.useFakeTimers()
     seed({ messages: [], provider })

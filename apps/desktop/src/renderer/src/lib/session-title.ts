@@ -17,14 +17,16 @@ export function getSessionTitle(messages: ChatMessage[] | undefined): string | n
   return null
 }
 
-/** Saved titles outrank message summaries, including Codex voice delegation prompts. */
+/** Named titles outrank message summaries; an unnamed list row must not replace a summary. */
 export function resolveSessionTitle(
   agentTitle: string | null | undefined,
   messages: ChatMessage[] | undefined,
   savedTitle: string | null | undefined,
   terminal: string = DEFAULT_SESSION_TITLE,
 ): string {
-  return agentTitle ?? savedTitle ?? getSessionTitle(messages) ?? terminal
+  if (agentTitle != null) return agentTitle
+  const namedTitle = savedTitle === DEFAULT_SESSION_TITLE || savedTitle === 'Untitled' ? null : savedTitle
+  return namedTitle ?? getSessionTitle(messages) ?? savedTitle ?? terminal
 }
 
 /** One source selection for headers, sidebar rows, and the session switcher. */
@@ -36,11 +38,12 @@ export function selectSessionTitle(
 ): string {
   const project = projectPath ? state.projectSessions[projectPath] : undefined
   const session = sessionId ? project?._sessions[sessionId] : undefined
-  const savedTitle = session?._title
-    ?? project?.sessions?.find((entry) => entry.sessionId === sessionId)?.title
+  const savedTitle = project?.sessions?.find((entry) => entry.sessionId === sessionId)?.title
     ?? persistedTitle
   return resolveSessionTitle(
-    sessionId ? state.agentTitles[sessionId] : undefined,
+    // Explicit live titles remain authoritative even when a user deliberately
+    // names a session "New session" or "Untitled". Only list fallbacks yield.
+    (sessionId ? state.agentTitles[sessionId] : undefined) ?? session?._title,
     session?.messages,
     savedTitle,
   )

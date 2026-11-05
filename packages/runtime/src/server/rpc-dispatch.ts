@@ -125,6 +125,7 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 
 function serves(ctx: HostRpcContext, method: string): boolean {
   if (ctx.unservedMethods?.has(method)) return false
+  if (method === 'workspace.resolveCwd' && !ctx.workspaceFs?.atRoot) return false
   if (Object.hasOwn(SESSION_OPERATION_HANDLERS, method) && !ctx.sessions?.servedOperations?.has(method)) return false
   if (method === 'session.fork' && !ctx.sessions?.forkOnHost && !ctx.hooks.forkHarnessResume) return false
   // Desktop sessions stay on the local MCP handler. Only a host that can open
@@ -270,6 +271,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'project.update': (payload, ctx) => handleProjectUpdate(payload, ctx),
   'project.remove': (payload, ctx) => handleProjectRemove(payload, ctx),
   'fs.listDir': (payload, ctx) => handleFsListDir(payload, ctx),
+  'workspace.resolveCwd': (payload, ctx) => handleWorkspaceResolveCwd(payload, ctx),
   'workspace.listDir': (payload, ctx) => handleWorkspaceListDir(payload, ctx),
   'workspace.listFiles': (payload, ctx) => handleWorkspaceListFiles(payload, ctx),
   'workspace.listSkills': (payload, ctx) => handleWorkspaceListSkills(payload, ctx),
@@ -954,27 +956,58 @@ function handleFsListDir(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleWorkspaceListDir(payload: unknown, ctx: RpcContext): RpcResult {
+/** Keep worktree file reads/writes under the original project identity. */
+async function workspaceFsForCwd(ctx: RpcContext, payload: Record<string, unknown>) {
+  if (payload.cwd === undefined) return ctx.workspaceFs
+  if (typeof payload.cwd !== 'string' || !isAbsolute(payload.cwd)
+    || !await isAllowedSessionCwd(ctx, String(payload.projectId ?? ''), payload.cwd)) {
+    throw Object.assign(new Error('cwd is not a checkout of this project'), { code: 'invalid_argument' })
+  }
+  if (!ctx.workspaceFs.atRoot) {
+    throw Object.assign(new Error('worktree file operations are not supported'), { code: 'unsupported' })
+  }
+  return ctx.workspaceFs.atRoot(String(payload.projectId ?? ''), payload.cwd)
+}
+
+/** Also negotiates checkout-aware file operations with older controllers/nodes. */
+async function handleWorkspaceResolveCwd(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    if (typeof p.cwd !== 'string' || !p.cwd) {
+      throw Object.assign(new Error('cwd is required'), { code: 'invalid_argument' })
+    }
+    await workspaceFsForCwd(ctx, p)
+    return { result: { cwd: pathResolve(p.cwd) } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleWorkspaceListDir(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.listDir(String(p.projectId ?? ''), String(p.relativePath ?? '.')),
+      result: fs.listDir(String(p.projectId ?? ''), String(p.relativePath ?? '.')),
     }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-function handleWorkspaceListFiles(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceListFiles(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
       result: {
-        files: ctx.workspaceFs.listFiles(String(p.projectId ?? ''), {
+        files: fs.listFiles(String(p.projectId ?? ''), {
           relativePath: typeof p.relativePath === 'string' ? p.relativePath : undefined,
           maxDepth: typeof p.maxDepth === 'number' ? p.maxDepth : undefined,
           maxFiles: typeof p.maxFiles === 'number' ? p.maxFiles : undefined,
@@ -986,26 +1019,28 @@ function handleWorkspaceListFiles(payload: unknown, ctx: RpcContext): RpcResult 
   }
 }
 
-function handleWorkspaceListSkills(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceListSkills(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.listSkillsAndCommands(String(p.projectId ?? '')),
+      result: fs.listSkillsAndCommands(String(p.projectId ?? '')),
     }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-function handleWorkspaceReadFile(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceReadFile(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.readFile(String(p.projectId ?? ''), String(p.relativePath ?? ''), {
+      result: fs.readFile(String(p.projectId ?? ''), String(p.relativePath ?? ''), {
         offset: typeof p.offset === 'number' ? p.offset : undefined,
         limit: typeof p.limit === 'number' ? p.limit : undefined,
       }),
@@ -1015,7 +1050,7 @@ function handleWorkspaceReadFile(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleWorkspaceWriteFile(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceWriteFile(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
@@ -1034,8 +1069,9 @@ function handleWorkspaceWriteFile(payload: unknown, ctx: RpcContext): RpcResult 
     return { error: { code: 'invalid_argument', message: 'write payload exceeds 10 MiB' } }
   }
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.writeFile(
+      result: fs.writeFile(
         String(p.projectId ?? ''),
         String(p.relativePath ?? ''),
         content,
@@ -1047,13 +1083,14 @@ function handleWorkspaceWriteFile(payload: unknown, ctx: RpcContext): RpcResult 
   }
 }
 
-function handleWorkspaceSearch(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceSearch(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.search(
+      result: fs.search(
         String(p.projectId ?? ''),
         String(p.query ?? ''),
         typeof p.relativePath === 'string' ? p.relativePath : undefined,
@@ -1064,13 +1101,14 @@ function handleWorkspaceSearch(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleWorkspaceRename(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceRename(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.rename(
+      result: fs.rename(
         String(p.projectId ?? ''),
         String(p.relativePath ?? ''),
         String(p.newName ?? ''),
@@ -1081,13 +1119,14 @@ function handleWorkspaceRename(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleWorkspaceMove(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceMove(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.move(
+      result: fs.move(
         String(p.projectId ?? ''),
         String(p.fromPath ?? p.srcRelativePath ?? ''),
         String(p.destDirPath ?? p.destDirRelativePath ?? '.'),
@@ -1098,13 +1137,14 @@ function handleWorkspaceMove(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleWorkspaceDelete(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceDelete(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.delete(
+      result: fs.delete(
         String(p.projectId ?? ''),
         String(p.relativePath ?? ''),
       ),
@@ -1114,13 +1154,14 @@ function handleWorkspaceDelete(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleWorkspaceMkdir(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleWorkspaceMkdir(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    const fs = await workspaceFsForCwd(ctx, p)
     return {
-      result: ctx.workspaceFs.mkdir(
+      result: fs.mkdir(
         String(p.projectId ?? ''),
         String(p.relativePath ?? ''),
       ),
@@ -1247,6 +1288,7 @@ async function handleGitDiff(payload: unknown, ctx: RpcContext): Promise<RpcResu
   try {
     return {
       result: await ctx.workspaceGit.diff(String(p.projectId ?? ''), {
+        cwd: typeof p.cwd === 'string' ? p.cwd : undefined,
         staged: p.staged === true,
         path: typeof p.path === 'string' ? p.path : undefined,
       }),

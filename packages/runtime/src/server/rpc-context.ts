@@ -102,6 +102,8 @@ export interface TerminalsPort {
 
 /** Host-owned workspace filesystem (CLI: WorkspaceFsService). */
 export interface WorkspaceFsPort {
+  /** Scope file operations to an already-validated checkout, without catalog writes. */
+  atRoot?(projectId: string, root: string): WorkspaceFsPort
   listDir(projectId: string, relativePath: string): WorkspaceEntry[]
   readFile(
     projectId: string,
@@ -135,7 +137,7 @@ export interface WorkspaceGitPort {
   readonly servedMethods?: ReadonlySet<string>
   status(projectId: string): Promise<unknown>
   statusAt(projectId: string, absolutePath?: string | null): Promise<unknown>
-  diff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<unknown>
+  diff(projectId: string, opts?: { staged?: boolean; path?: string; cwd?: string }): Promise<unknown>
   branches(projectId: string, absolutePath?: string | null): Promise<unknown>
   switchBranch(
     projectId: string,

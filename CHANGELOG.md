@@ -15,7 +15,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Antigravity is its own ACP harness on desktop and on the phone. Enabling it downloads that runtime, and the account is separate from Grok. The phone uses that agent's permission modes, models, and slash commands. Steer Now cancels the live turn and sends the queued message; Steer Soon injects it at the next safe point. A finished tool row shows the MCP result, including output that was spilled to a file, and widget arguments are kept. A file write stays on the approved card and keeps its diff. The usage footer counts newly uploaded input. An empty reasoning block is not shown. A queued message leaves the queue when the turn starts.
+- Antigravity is its own ACP harness on desktop and on the phone. Enabling it downloads that runtime, and the account is separate from Grok. The phone shows its icon, uses that agent's permission modes, models, and slash commands, and groups usage by model family. Each session keeps the model of the agent it started with. Steer Now cancels the live turn and sends the queued message; Steer Soon injects it at the next safe point. A finished tool row shows that step's MCP result, including output that was spilled to a file, and widget arguments are kept. A file write stays on the approved card and keeps its diff. The usage footer counts newly uploaded input. An empty reasoning block is not shown. A queued message leaves the queue when the turn starts. Switching between Grok and Antigravity on an empty draft clears the previous agent's context.
 - The sidebar usage gauge is a multi-account subscription hub showing billing cycles, reset dates, and quota status across connected providers.
 - The Grok usage meter shows the login email.
 - Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
@@ -30,7 +30,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A CLI-only install can load session archive handlers.
 - Antigravity and ACP AskUserQuestion interactions render as interactive question cards in the chat transcript.
 - A running Grok background bash task remains visible in the status bar and holds the session active until finished.
-- The appearance popover aligns to the sidebar's left edge.
+- The appearance popover matches the usage panel's width and aligns to the sidebar's left edge.
 - The worktree popover stays above the chip and springs to the destination height, including the carry-local-changes row.
 - A remote Codex voice call is placed by the node that owns the session.
 - Session rename, tag, and cleanup run on the owning node. A delete still waits on the confirm card, and a reconnect restores that card.
@@ -39,6 +39,24 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A remote draft stays hidden once the node assigns the session id.
 - Adding a project grants Grok folder trust without a dialog. Project rules, MCP, hooks, and skills still load.
 - Switching to an ACP harness clears an effort level that harness does not offer.
+
+## [0.77.0-alpha.3] - 2026-11-05
+
+### Fixed
+
+- The appearance popover matches the usage panel's width.
+- Switching Grok and Antigravity on an empty draft clears the previous agent's context usage and thread, so the context ring does not carry over.
+- Antigravity usage read from its database counts uncached input once across a multi-step turn. A one-time repair corrects historical input totals that had included cache reads.
+- An Antigravity MCP result stays on its tool row when the stored step index moves.
+- The phone shows the Antigravity icon and groups usage windows by model family. An ACP session keeps its own model. MCP output is kept across thinking updates.
+
+### Tests
+
+- The desktop gateway watch test continues when the filesystem stays quiet, instead of waiting out the timeout.
+
+### CI
+
+- Desktop tests on CI use three workers.
 
 ## [0.77.0-alpha.2] - 2026-11-05
 

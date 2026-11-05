@@ -908,6 +908,11 @@ export class SessionRuntime {
     return this.live.values()
   }
 
+  messageCount(sessionId: string): number {
+    this.requireSessionId(sessionId)
+    return this.readModel?.messageCount(sessionId) ?? this.live.get(sessionId)!.transcript.length
+  }
+
   get(sessionId: string): NodeSessionRecord | null {
     const s = this.live.get(sessionId)
     return s ? this.clone(s) : null

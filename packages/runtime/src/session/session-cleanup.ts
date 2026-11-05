@@ -10,6 +10,7 @@ export const SESSION_CLEANUP_MAX_DELETE = 50
 
 export interface SessionCleanupHost {
   archiveEntries?(): Iterable<Readonly<NodeSessionRecord>>
+  messageCount?(sessionId: string): number
   get(sessionId: string): NodeSessionRecord | null
   setUiFlags(sessionId: string, flags: { isSettled?: boolean }): NodeSessionRecord
   remove(sessionId: string): NodeSessionRecord | null | Promise<NodeSessionRecord | null>
@@ -35,13 +36,13 @@ function titleOf(row: { title: string | null }): string {
   return title ? title : 'Untitled'
 }
 
-function confirmRow(row: NodeSessionRecord): SessionCleanupConfirmSession {
+function confirmRow(row: NodeSessionRecord, host: SessionCleanupHost): SessionCleanupConfirmSession {
   return {
     id: row.sessionId,
     title: titleOf(row),
     harness: row.harnessId,
     acpAgentId: row.acpAgentId ?? null,
-    messageCount: row.transcript.length,
+    messageCount: host.messageCount?.(row.sessionId) ?? row.transcript.length,
     createdAt: new Date(row.createdAt).toISOString(),
     ...(row.projectId ? { projectId: row.projectId } : {}),
   }
@@ -155,7 +156,7 @@ export async function runSessionCleanup(
   }
   const confirmSessions = finalIds.map((id) => {
     const row = byId.get(id) ?? host.get(id)
-    return row ? confirmRow(row) : { id, title: 'Untitled' }
+    return row ? confirmRow(row, host) : { id, title: 'Untitled' }
   })
   const lines = confirmSessions.map((row) => `${row.title} (${row.id.slice(0, 8)})`)
   const message = `Permanently delete ${finalIds.length} session(s)?\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…and ${lines.length - 15} more` : ''}`

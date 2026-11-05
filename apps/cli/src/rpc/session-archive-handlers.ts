@@ -20,7 +20,7 @@ function branding(session: Readonly<NodeSessionRecord>, ctx: RpcContext) {
   return { harness: session.harnessId, acpAgentId: session.harnessId === 'acp' ? config?.agentId ?? null : null }
 }
 function entry(session: Readonly<NodeSessionRecord>, ctx: RpcContext, source?: string) {
-  return { sessionId: session.sessionId, title: session.title ?? 'Untitled', ...branding(session, ctx), projectId: session.projectId, createdAt: date(session.createdAt), lastActiveAt: date(lastActive(session)), messageCount: session.transcript.length, tags: session.tags ?? [], pinned: session.isPinned, hidden: session.isHidden, isSelf: session.sessionId === source }
+  return { sessionId: session.sessionId, title: session.title ?? 'Untitled', ...branding(session, ctx), projectId: session.projectId, createdAt: date(session.createdAt), lastActiveAt: date(lastActive(session)), messageCount: ctx.sessions.messageCount(session.sessionId), tags: session.tags ?? [], pinned: session.isPinned, hidden: session.isHidden, isSelf: session.sessionId === source }
 }
 export const SESSION_ARCHIVE_RPC_METHODS: ReadonlySet<string> = new Set(['session.archive', 'session.linkMetadata'])
 
@@ -104,7 +104,7 @@ function readArchive(request: SessionArchiveRequest, ctx: RpcContext): ArchiveTo
     const query = String(args.query ?? '').toLowerCase()
     const selected = rows.filter(row => (!args.parentOnly || !ctx.collaboration.isSpawnChild(row.sessionId)) && (!query || (row.title ?? '').toLowerCase().includes(query)) && (!args.includePinnedOnly || row.isPinned) && (!args.olderThan || date(lastActive(row)) < String(args.olderThan)) && (!args.newerThan || date(lastActive(row)) > String(args.newerThan)))
     const order = String(args.order ?? 'last_active_desc')
-    const values: Record<string, (row: Readonly<NodeSessionRecord>) => number> = { last_active: lastActive, created: row => row.createdAt, message_count: row => row.transcript.length, size: row => JSON.stringify(row.transcript).length }
+    const values: Record<string, (row: Readonly<NodeSessionRecord>) => number> = { last_active: lastActive, created: row => row.createdAt, message_count: row => ctx.sessions.messageCount(row.sessionId), size: row => JSON.stringify(row.transcript).length }
     const field = order.replace(/_(asc|desc)$/, '')
     if (!/_(asc|desc)$/.test(order) || !values[field]) return result({ status: 'error', message: 'Invalid list order' }, true)
     const sortValue = new Map(selected.map(row => [row.sessionId, values[field](row)]))

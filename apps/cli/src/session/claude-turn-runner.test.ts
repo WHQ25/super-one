@@ -8,6 +8,7 @@ import {
 } from './claude-turn-runner'
 import { createProductionTurnRunner } from './codex-turn-runner'
 import type { NodeSessionRecord } from './session-runtime'
+import { SessionRuntime, EventLog, createSqliteSessionStore } from '@superone/runtime/session'
 import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -181,6 +182,69 @@ describe('createNodeClaudeTurnRunner', () => {
     expect(events.some((e) => e.kind === 'text' && e.delta === 'ok')).toBe(true)
 
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  it.each(['interrupt', 'restart'] as const)('persists the first SDK session before result and resumes it after %s', async (stop) => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-resume-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const queryFn = vi.fn<ClaudeQueryFn>(({ prompt, options }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        yield { type: 'system', subtype: 'init', session_id: 'original-sdk-session', tools: [], mcp_servers: [] } as unknown as SDKMessage
+        // No turn result before shutdown, like an update during the first turn.
+        await new Promise<void>(resolve => options!.abortController!.signal.addEventListener('abort', () => resolve(), { once: true }))
+        return
+      }
+    })() as ReturnType<ClaudeQueryFn>)
+    const makeRunner = (query: ClaudeQueryFn) => createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn: query, mcpMergeMode: 'host-action-only' })
+    const runner = makeRunner(queryFn)
+    const resumedQuery = vi.fn(bridgeQuery(() => success('original-sdk-session', 'done')))
+    const resumedRunner = makeRunner(resumedQuery)
+    let db = openNodeDatabase(join(dir, 'state.sqlite'))
+    const boot = (turnRunner: typeof runner) => new SessionRuntime(createSqliteSessionStore(db), new EventLog(db, 'env'), { assertValid: () => {} }, 'env', turnRunner, { runtimeReaperIntervalMs: 0 })
+    let runtime = boot(runner)
+    const client = { clientSessionId: 'client' }
+    const lease = { leaseId: 'l', generation: '1' }
+    try {
+      const sessionId = runtime.create({ projectId: 'p', harnessId: 'claude' }).sessionId
+      await runtime.send({ sessionId, text: 'original task', client, ...lease })
+      await vi.waitFor(() => expect(queryFn).toHaveBeenCalledOnce())
+      await vi.waitFor(() => expect(createSqliteSessionStore(db).loadAll()[0]?.providerResume).toBe('claude-session:original-sdk-session'))
+      expect(runtime.get(sessionId)?.status).toBe('streaming')
+      if (stop === 'restart') await db.backup(join(dir, 'restart.sqlite'))
+      runtime.interrupt(sessionId, client, lease.leaseId, lease.generation)
+      await runner.disposeAll!()
+      await runtime.dispose()
+      db.close()
+      db = openNodeDatabase(join(dir, stop === 'restart' ? 'restart.sqlite' : 'state.sqlite'))
+      runtime = boot(resumedRunner)
+      expect(runtime.get(sessionId)?.status).toBe('interrupted')
+      await runtime.send({ sessionId, text: 'continue', client, ...lease })
+      await vi.waitFor(() => expect(runtime.get(sessionId)?.status).toBe('idle'))
+      expect(resumedQuery.mock.calls[0][0].options?.resume).toBe('original-sdk-session')
+      expect(runtime.get(sessionId)?.transcript.map(row => row.text)).toEqual(['original task', 'continue', 'done'])
+    } finally {
+      await runner.disposeAll!()
+      await resumedRunner.disposeAll!()
+      await runtime.dispose()
+      db.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it.each([null, 'claude-session:', 'invalid-token'])('refuses to replace prior history when the Claude resume ID is missing (%s)', async (providerResume) => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-missing-resume-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, 'x')
+    const queryFn = vi.fn(bridgeQuery(() => success('blank', 'done')))
+    const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn })
+    try {
+      await expect(runner({ session: session({ providerResume, transcript: [{ id: 'old', role: 'user', text: 'original task', createdAt: 1 }] }), text: 'continue', onDelta: () => {}, signal: new AbortController().signal })).rejects.toThrow(/missing.*resume|resume.*missing/i)
+      expect(queryFn).not.toHaveBeenCalled()
+    } finally {
+      await runner.disposeAll!()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('forwards background notification output after the user turn settles', async () => {

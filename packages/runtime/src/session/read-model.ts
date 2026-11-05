@@ -103,6 +103,21 @@ export class SessionReadModel {
     return this.load(sessionId).core.messages
   }
 
+  /** Metadata uses the same projection as history, without loading cold message bodies. */
+  messageCount(sessionId: string): number {
+    const loaded = this.sessions.get(sessionId)
+    if (loaded) return loaded.core.messages.length
+    const checkpoint = this.db.prepare(`SELECT applied_version FROM session_read_models WHERE session_id = ?`)
+      .get(sessionId) as { applied_version: number } | undefined
+    if (checkpoint?.applied_version === this.log.sessionVersion(sessionId)) {
+      return (this.db.prepare(`SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ?`)
+        .get(sessionId) as { count: number }).count
+    }
+    // Old sessions without a checkpoint, or interrupted turns with later events,
+    // must reduce those events once before their count is authoritative.
+    return this.load(sessionId).core.messages.length
+  }
+
   private forget(sessionId: string): void {
     this.sessions.delete(sessionId)
     this.db.prepare(`DELETE FROM session_messages WHERE session_id = ?`).run(sessionId)

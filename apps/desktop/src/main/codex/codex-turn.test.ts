@@ -313,19 +313,27 @@ describe('resolveThread fallback', () => {
     expect(isCodexThreadNotFoundError(new Error('thread not found'))).toBe(true)
   })
 
-  it('falls back to thread/start when resume hits an empty rollout', async () => {
-    const session = makeSession({ model: 'gpt-5', threadId: 'stale-thread' })
-    const mockConnection = {
-      request: vi.fn()
-        .mockRejectedValueOnce(new Error('rollout at /tmp/rollout.jsonl is empty'))
-        .mockResolvedValueOnce({ thread: { id: 'new-thread-1' } }),
-    } as never
+  it.each(['rollout at /tmp/rollout.jsonl is empty', 'thread not found', 'no rollout found'])(
+    'preserves the stored identity and refuses a blank replacement when resume fails: %s', async (message) => {
+      const session = makeSession({ model: 'gpt-5', threadId: 'original-thread' })
+      const failure = new Error(message)
+      const connection = { request: vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ thread: { id: 'blank-thread' } }) }
+      await expect(resolveThread(connection as never, session, '/project', '/project', permissionProfile as never)).rejects.toThrow(/restore|resume/i)
+      expect(session.threadId).toBe('original-thread')
+      expect(connection.request.mock.calls.map(call => call[0])).toEqual(['thread/resume'])
+    },
+  )
 
-    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
-
-    expect(result).toBe('new-thread-1')
-    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
-    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[1][0]).toBe('thread/start')
+  it('does not replace a resumed thread on an empty-rollout retry', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'original-thread' })
+    const connection = { request: vi.fn().mockRejectedValue(new Error('rollout at /tmp/rollout.jsonl is empty')) }
+    session.connectionHandle = { connection, close: vi.fn(async () => {}), getStderr: () => '', onClosed: () => () => {} } as never
+    session.connectionAuth = { mode: 'auto' }
+    session.notificationDispatcher = {} as never
+    await expect(withThreadConnection(session, { mode: 'auto' }, undefined, '/project', '/project', permissionProfile as never,
+      async ({ threadId }) => threadId, { retryEmptyRollout: true })).rejects.toThrow(/restore|resume/i)
+    expect(session.threadId).toBe('original-thread')
+    expect(connection.request.mock.calls.map(call => call[0])).toEqual(['thread/resume'])
   })
 
   it('retries thread/start once when Codex returns an empty rollout', async () => {
@@ -501,29 +509,6 @@ describe('resolveThread fallback', () => {
 
     expect(threadId).toBe('warm-thread')
     expect(connection.request.mock.calls.map((call) => call[0])).toEqual(['thread/start', 'thread/start'])
-  })
-
-  it('falls back to thread/start when the stored thread does not exist', async () => {
-    const session = makeSession({ model: 'gpt-5', threadId: 'stale-thread' })
-    const mockConnection = {
-      request: vi.fn()
-        .mockRejectedValueOnce(new Error('thread not found'))
-        .mockResolvedValueOnce({ thread: { id: 'new-thread-1' } }),
-    } as never
-
-    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
-
-    expect(result).toBe('new-thread-1')
-    expect(session.threadId).toBe('new-thread-1')
-    expect(session.threadReady).toBe(true)
-    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request).toHaveBeenCalledTimes(2)
-    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
-    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[1][0]).toBe('thread/start')
-    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][1]).toEqual(expect.objectContaining({
-      config: expect.objectContaining({
-        developer_instructions: CODEX_SYSTEM_PROMPT_APPEND,
-      }),
-    }))
   })
 
   it('preserves the stored thread when resume fails because the connection closed', async () => {

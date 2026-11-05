@@ -114,7 +114,7 @@ voices still come from
 | `thread/metadata/update` | unused | No client call or dedicated handler. | — |
 | `thread/name/set` | unused | No client call or dedicated handler. | — |
 | `thread/read` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts` |
-| `thread/resume` | partial | Resumes model/effort/tier; new collaborationMode and disabledPluginIds response fields are unused. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
+| `thread/resume` | partial | Resumes model/effort/tier; preserves the stored identity on failure instead of starting blank. Node persists the identity before turn input. New collaborationMode and disabledPluginIds response fields are unused. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/revert` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/section/move` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `thread/shellCommand` | unused | No client call or dedicated handler. | — |

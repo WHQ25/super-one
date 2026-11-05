@@ -63,6 +63,8 @@ export interface ClaudeLiveTurnInput {
 
 export interface ClaudeLiveSessionOptions {
   cwd: string
+  /** Native identity learned from the SDK, before output or a turn result. */
+  onSessionId?: (sessionId: string) => void
   /** Receives SDK turns started by background notifications between user turns. */
   onAmbientEvent?: (event: AgentEvent) => void
   binaryPath?: string | null
@@ -645,6 +647,13 @@ export class ClaudeLiveSession {
     try {
       for await (const msg of q) {
         if (this.closed) break
+        // Init can arrive while idle, or while draining an interrupted turn.
+        // Persist its identity before any mapper emits output or tool activity.
+        const sessionId = (msg as { session_id?: string }).session_id?.trim()
+        if (sessionId && sessionId !== this.sdkSessionId) {
+          this.sdkSessionId = sessionId
+          this.opts.onSessionId?.(sessionId)
+        }
         this.trackBackgroundTasks(msg)
         const cur = this.active
         if (!cur) {

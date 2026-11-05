@@ -1744,7 +1744,7 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
  * providerResume + bare providerSessionId let desktop "Copy Session ID" match
  * local (harness SDK/thread id, not the SuperOne session UUID).
  */
-function mapSessionRow(s: NodeSessionRecord) {
+function mapSessionRow(s: NodeSessionRecord, ctx: RpcContext) {
   const providerResume = s.providerResume ?? null
   const providerSessionId = providerSessionIdFromResume(providerResume)
   return {
@@ -1754,7 +1754,7 @@ function mapSessionRow(s: NodeSessionRecord) {
     providerId: s.providerId,
     title: s.title,
     status: s.status,
-    messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
+    messageCount: ctx.sessions.messageCount?.(s.sessionId) ?? (Array.isArray(s.transcript) ? s.transcript.length : 0),
     cwd: s.cwd,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -1793,7 +1793,7 @@ function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
     ...(p.rootsOnly === true ? { rootsOnly: true } : {}),
     ...(parentSessionId ? { parentSessionId } : {}),
   })
-  return { result: rows.map(mapSessionRow) }
+  return { result: rows.map(s => mapSessionRow(s, ctx)) }
 }
 
 /**
@@ -1823,7 +1823,7 @@ function handleSessionListPinned(payload: unknown, ctx: RpcContext): RpcResult {
     result: rows.map((s) => {
       const project = s.projectId ? ctx.projects.get(s.projectId) : null
       return {
-        ...mapSessionRow(s),
+        ...mapSessionRow(s, ctx),
         projectPath: project?.path ?? s.cwd ?? '',
         projectName: project?.name ?? '',
       }
@@ -1866,7 +1866,7 @@ function handleSessionListSettled(payload: unknown, ctx: RpcContext): RpcResult 
       sessions: rows.map((s) => {
         const project = s.projectId ? ctx.projects.get(s.projectId) : null
         return {
-          ...mapSessionRow(s),
+          ...mapSessionRow(s, ctx),
           projectPath: project?.path ?? s.cwd ?? '',
           projectName: project?.name ?? '',
         }
@@ -1904,7 +1904,7 @@ function handleSessionSearchTitle(payload: unknown, ctx: RpcContext): RpcResult 
     ranked.push({
       rank,
       row: {
-        ...mapSessionRow(session),
+        ...mapSessionRow(session, ctx),
         projectPath,
         projectName: project?.name ?? '',
       },

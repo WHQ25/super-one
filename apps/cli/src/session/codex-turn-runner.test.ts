@@ -6,6 +6,7 @@ import {
   resolveCodexBinaryPath,
 } from './codex-turn-runner'
 import type { NodeSessionRecord } from './session-runtime'
+import { SessionRuntime, createSqliteSessionStore, type SessionEventLog } from '@superone/runtime/session'
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -343,6 +344,103 @@ describe('createNodeCodexTurnRunner', () => {
     const result = await turnP
     expect(result.providerResume).toBe('thread:prior-1')
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  it.each(['interrupt', 'restart'] as const)('durably records the first thread before completion and resumes it after %s', async (stop) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-restart-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const children: FakeChild[] = []
+    const requests: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const spawnFn: CodexSpawnFn = () => {
+      const child = createFakeChild()
+      children.push(child)
+      child.stdin.on('data', (b: Buffer) => {
+        for (const line of b.toString().split('\n').filter(Boolean)) {
+          const request = JSON.parse(line)
+          if (request.id === undefined) continue
+          requests.push(request)
+          const result = request.method === 'initialize' ? {}
+            : request.method === 'thread/start' || request.method === 'thread/resume' ? { thread: { id: 'original-thread' } }
+            : request.method === 'turn/start' ? { turn: { id: 'turn-1' } } : {}
+          child.stdout.write(`${JSON.stringify({ id: request.id, result })}\n`)
+        }
+      })
+      return asSpawnChild(child)
+    }
+    const makeRunner = () => createNodeCodexTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, spawnFn, mcpMergeMode: 'host-action-only' })
+    const events: SessionEventLog = {
+      headSequence: () => '0', epoch: 'test', streamingAfter: () => [], streaming: () => [],
+      onAppend: () => () => {}, listAfter: () => [], appendSession: () => {},
+    }
+    const leases = { assertValid: () => {} }
+    const client = { clientSessionId: 'client' }
+    const runner = makeRunner()
+    const restartedRunner = makeRunner()
+    let db = openNodeDatabase(join(dir, 'state.sqlite'))
+    let runtime = new SessionRuntime(createSqliteSessionStore(db), events, leases, 'env', runner)
+    let sessionId: string | undefined
+    try {
+      sessionId = runtime.create({ projectId: 'p1', harnessId: 'codex' }).sessionId
+      await runtime.send({ sessionId, text: 'original task', client, leaseId: 'l', generation: '1' })
+      await vi.waitFor(() => expect(requests.some(r => r.method === 'turn/start')).toBe(true))
+      // The update arrives while the first turn is still streaming, with no result.
+      expect(runtime.get(sessionId)?.status).toBe('streaming')
+      expect(createSqliteSessionStore(db).loadAll()[0]?.providerResume).toBe('thread:original-thread')
+      // Keep the streaming checkpoint to model abrupt node loss, without any finally/result writes.
+      if (stop === 'restart') await db.backup(join(dir, 'restart.sqlite'))
+      runtime.interrupt(sessionId, client, 'l', '1')
+      await runner.disposeAll!()
+      await runtime.dispose()
+      db.close()
+      db = openNodeDatabase(join(dir, stop === 'restart' ? 'restart.sqlite' : 'state.sqlite'))
+      runtime = new SessionRuntime(createSqliteSessionStore(db), events, leases, 'env', restartedRunner)
+      expect(runtime.get(sessionId)?.status).toBe('interrupted')
+      expect(runtime.get(sessionId)?.transcript[0]?.text).toBe('original task')
+      requests.length = 0
+      await runtime.send({ sessionId, text: 'continue', client, leaseId: 'l', generation: '1' })
+      await vi.waitFor(() => expect(requests.some(r => r.method === 'turn/start')).toBe(true))
+      expect(requests.find(r => r.method === 'thread/resume')?.params?.threadId).toBe('original-thread')
+      expect(requests.some(r => r.method === 'thread/start')).toBe(false)
+      children.at(-1)!.stdout.write(`${JSON.stringify({ method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed' } } })}\n`)
+      await vi.waitFor(() => expect(runtime.get(sessionId!)?.status).toBe('idle'))
+    } finally {
+      if (sessionId) runtime.interrupt(sessionId, client, 'l', '1')
+      await runner.disposeAll!()
+      await restartedRunner.disposeAll!()
+      await runtime.dispose()
+      db.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it.each([null, 'thread:', 'invalid-token'])('refuses a cold send with prior history but missing resume identity (%s)', async (providerResume) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-no-resume-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, 'x')
+    const spawnFn = vi.fn(() => {
+      const child = createFakeChild()
+      child.stdin.on('data', (b: Buffer) => {
+        for (const line of b.toString().split('\n').filter(Boolean)) {
+          const request = JSON.parse(line)
+          if (!request.id) continue
+          child.stdout.write(`${JSON.stringify({ id: request.id, result: request.method.startsWith('thread/') ? { thread: { id: 'blank-thread' } } : request.method === 'turn/start' ? { turn: { id: 't' } } : {} })}\n`)
+          if (request.method === 'turn/start') child.stdout.write(`${JSON.stringify({ method: 'turn/completed', params: { turn: { id: 't', status: 'completed' } } })}\n`)
+        }
+      })
+      return asSpawnChild(child)
+    })
+    const runner = createNodeCodexTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, spawnFn })
+    try {
+      await expect(runner({
+        session: session({ providerResume, transcript: [{ id: 'old', role: 'user', text: 'original task', createdAt: 1 }] }),
+        text: 'continue', signal: new AbortController().signal, onDelta: () => {},
+      })).rejects.toThrow(/resume.*missing|missing.*resume/i)
+      expect(spawnFn).not.toHaveBeenCalled()
+    } finally {
+      await runner.disposeAll!()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('requires a matching durable identity to reopen a released MCP App thread', async () => {

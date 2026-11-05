@@ -54,6 +54,21 @@ re-check an entry when an upgrade touches its area.
 
 ## Sessions, resume and fork
 
+### Native identity must survive an interrupted first turn
+
+- **Behavior:** SDK messages carry `session_id` before `result`; `system/init`
+  may arrive before a user turn is active. Keeping this identity only in the live
+  query loses the association on a host restart, even when chat events survive.
+- **Observed:** SDK 0.3.310 message shapes and SDK-shaped live stream fixtures.
+- **Depends on it:** `ClaudeLiveSession` reports a newly learned identity before
+  mapping output, including idle init and cancelled-turn drain. The node runner
+  binds the latest persistence sink and immediately forwards an already-known
+  identity, so reopening a live process never depends on a turn result. A cold
+  send with prior history but no valid identity fails instead of starting blank.
+- **Guard:** `claude-live-session.test.ts` covers idle init, output ordering and
+  queued turns; node `claude-turn-runner.test.ts` checkpoints SQLite before the
+  first result and verifies `Options.resume` after interruption or restart.
+
 ### Resume reports cumulative usage
 
 - **Behavior:** Since 0.3.277 the first `result` after resume or fork carries the

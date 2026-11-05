@@ -8,7 +8,13 @@ import type {
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
+import { resolveProvider, type ProviderResolvableSession } from '../helpers/provider-routing'
 import type { ChatStore, PerSessionState } from '../types'
+
+/** Grok and Antigravity share this harness. The id comparison stays in this module. */
+export function sessionUsesAcpHarness(session: ProviderResolvableSession): boolean {
+  return resolveProvider(session) === 'acp'
+}
 
 export function applyAcpResources(
   s: ChatStore,

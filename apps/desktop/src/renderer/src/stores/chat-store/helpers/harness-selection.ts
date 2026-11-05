@@ -1,7 +1,7 @@
 import type { ModelOption, SlashCommandInfo } from '@superone/shared/agent-types'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { resetHostSession } from '@/lib/session-client'
-import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
+import { getCachedAcpCatalog, sessionPatchFromAcpCatalog, sessionUsesAcpHarness } from '../harness/acp-handler'
 import type { ChatProvider, ChatStore } from '../types'
 import { clearContextUsageHold, holdContextUsageUntilAgent } from './context-usage-hold'
 import type { ChatStoreSet } from './lifecycle'
@@ -195,7 +195,7 @@ export function setAcpAgentIdImpl(
   // Grok and Antigravity share harness `acp`, so the picker never goes through
   // setPreferredProvider. An empty draft must still drop the previous agent's
   // initialization usage, or that ring stays on the next agent.
-  const switchingEmptyAcpAgent = resolveProvider(session) === 'acp'
+  const switchingEmptyAcpAgent = sessionUsesAcpHarness(session)
     && session.acpAgentId != null
     && session.acpAgentId !== agentId
     && session.messages.length === 0

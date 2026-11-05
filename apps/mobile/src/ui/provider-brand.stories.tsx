@@ -21,3 +21,4 @@ export const OpenAI = {}
 export const Claude = { args: { brandKey: 'claude', name: 'Claude Code (Official)' } }
 export const OpenRouter = { args: { brandKey: 'openrouter', name: 'OpenRouter' } }
 export const Grok = { args: { brandKey: 'grok', name: 'Grok Build' } }
+export const Antigravity = { args: { brandKey: 'antigravity', name: 'Antigravity' } }

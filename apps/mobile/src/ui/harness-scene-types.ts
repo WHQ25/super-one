@@ -2,7 +2,14 @@ export type IconState = 'default' | 'running' | 'background' | 'unseen' | 'autom
 export type IconBrand = 'claude' | 'codex' | 'acp' | 'grok' | 'antigravity' | 'cursor' | 'opencode' | 'dsh'
 export type ScaledLength = { multiplier: number; offset: number }
 export type SceneStyle = Record<string, number | string | ScaledLength>
-export type IconScene = { style: SceneStyle; animations: string[]; xml?: string; children?: IconScene[] }
+export type IconScene = {
+  style: SceneStyle
+  animations: string[]
+  xml?: string
+  /** Key in `harnessRasters`. Set when the mark's SVG filters cannot be drawn natively. */
+  raster?: string
+  children?: IconScene[]
+}
 export type MotionFrame = { at: number; opacity?: number; transform?: string }
 export type IconMotion = { duration: number; easing: string; frames: MotionFrame[] }
 export type HarnessSceneData = {

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -8,6 +8,7 @@ import {
   TIGHT_COMBINE_SPACE_MULTIPLE,
   TIGHT_COMBINE_TEXT_MULTIPLE,
 } from '../../desktop/src/renderer/src/components/TightCombine'
+import { rasterizeSvg, sizedSvg } from './rasterize-svg'
 
 /**
  * The desktop draws API-provider brands as a `TightCombine` lockup: the icon
@@ -15,10 +16,13 @@ import {
  * unit. That crop needs `getBBox`, which only a real engine can answer, so we
  * measure once here and ship the cropped SVG plus its aspect. React Native
  * then reproduces the same layout with `react-native-svg` — vector, and mono
- * marks still follow the theme through `currentColor`.
+ * marks still follow the theme through `currentColor`. A cropped mark that
+ * still contains SVG filters is rasterized in this same browser; native SVG
+ * filters do not match the desktop mark.
  */
-type Mark = { svg: string; aspect: number }
-type Brand = { icon: Mark; text?: Mark; extra?: string }
+type VectorMark = { svg: string; aspect: number }
+type Mark = VectorMark | { png: string; aspect: number }
+type Brand = { icon: Mark; text?: VectorMark; extra?: string }
 
 /** Strip the intrinsic box and the DOM-only style hint; the caller sizes it. */
 function bare(markup: string): string {
@@ -37,11 +41,15 @@ for (const key of PROVIDER_BRAND_KEYS) {
   })
 }
 
+const check = process.argv.includes('--check')
 const browser = await chromium.launch()
 const brands: Record<string, Brand> = {}
+const rasters: Array<{ key: string; png: Buffer }> = []
 try {
   const page = await browser.newPage()
+  const rasterPage = await browser.newPage({ deviceScaleFactor: 8 })
   await page.route('**/*', (route) => route.abort())
+  await rasterPage.route('**/*', (route) => route.abort())
   for (const entry of pending) {
     const svgs = [entry.icon, ...(entry.text ? [entry.text] : [])]
     await page.setContent(`<body style="margin:0">${svgs.map((svg, i) => `<span data-i="${i}">${svg}</span>`).join('')}</body>`)
@@ -49,7 +57,7 @@ try {
       const box = (node as SVGSVGElement).getBBox()
       return { x: box.x, y: box.y, width: box.width, height: box.height }
     }))
-    const crop = (svg: string, index: number): Mark => {
+    const crop = (svg: string, index: number): VectorMark => {
       const box = boxes[index]
       if (!box?.width || !box.height) throw new Error(`Brand "${entry.key}" mark ${index} has an empty ink box`)
       // getBBox differs between platforms in the 1e-7 range; a viewBox does not
@@ -60,14 +68,35 @@ try {
         aspect: r(box.width / box.height),
       }
     }
+    const icon = crop(entry.icon, 0)
+    const text = entry.text ? crop(entry.text, 1) : undefined
+    if (icon.svg.includes('<filter')) {
+      const cssHeight = 64
+      const cssWidth = Math.max(1, Math.round(cssHeight * icon.aspect))
+      rasters.push({
+        key: entry.key,
+        png: await rasterizeSvg(rasterPage, sizedSvg(icon.svg, cssWidth, cssHeight)),
+      })
+    }
     brands[entry.key] = {
-      icon: crop(entry.icon, 0),
-      ...(entry.text ? { text: crop(entry.text, 1) } : {}),
+      icon: icon.svg.includes('<filter') ? { png: entry.key, aspect: icon.aspect } : icon,
+      ...(text ? { text } : {}),
       ...(entry.extra ? { extra: entry.extra } : {}),
     }
   }
 } finally {
   await browser.close()
+}
+
+const rasterDirectory = resolve(import.meta.dirname, '../src/ui/provider-rasters')
+if (!check && rasters.length) mkdirSync(rasterDirectory, { recursive: true })
+const rasterMap = readFileSync(resolve(rasterDirectory, '../provider-rasters.ts'), 'utf8')
+for (const raster of rasters) {
+  if (!rasterMap.includes(`${raster.key}:`)) throw new Error(`Add ${raster.key} to provider-rasters.ts before generating its raster`)
+  const file = resolve(rasterDirectory, `${raster.key}.png`)
+  if (check) {
+    if (!readFileSync(file).equals(raster.png)) throw new Error(`Provider raster ${raster.key} is stale. Run generate:icons`)
+  } else writeFileSync(file, raster.png)
 }
 
 const target = resolve(import.meta.dirname, '../src/ui/provider-brands.generated.json')
@@ -76,7 +105,7 @@ const output = JSON.stringify({
   spaceMultiple: TIGHT_COMBINE_SPACE_MULTIPLE,
   brands,
 }, null, 2) + '\n'
-if (process.argv.includes('--check')) {
+if (check) {
   const committed = JSON.parse(readFileSync(target, 'utf8')) as { brands: Record<string, Brand> }
   // Name the marks that moved: a bare "stale" cannot tell a source edit from a
   // measurement that differs between this engine and the one that generated it.

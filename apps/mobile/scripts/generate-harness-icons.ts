@@ -1,9 +1,11 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createElement, type ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom'
+import { chromium } from '@playwright/test'
 import postcss from 'postcss'
+import { rasterizeSvg, sizedSvg } from './rasterize-svg'
 import { ClaudeSessionIcon, type SessionIconProps } from '../../../packages/ui/src/components/harness/ClaudeSessionIcon'
 import { CodexSessionIcon } from '../../../packages/ui/src/components/harness/CodexSessionIcon'
 import { AcpSessionIcon } from '../../../packages/ui/src/components/harness/AcpSessionIcon'
@@ -137,9 +139,46 @@ for (const [brand, Component] of Object.entries(components)) {
   }
   scenes[brand as IconBrand] = states
 }
+
+// react-native-svg paints feGaussianBlur as a directional smear. Replace those
+// marks with one Chromium raster per brand; status chrome stays in the scene.
+const filterMarks = new Map<string, string>()
+function bakeFilters(node: IconScene, brand: string) {
+  if (node.xml?.includes('<filter')) {
+    filterMarks.set(brand, node.xml)
+    node.raster = brand
+    delete node.xml
+  }
+  node.children?.forEach((child) => bakeFilters(child, brand))
+}
+for (const [brand, states] of Object.entries(scenes)) {
+  for (const levels of Object.values(states)) {
+    for (const node of Object.values(levels)) bakeFilters(node, brand)
+  }
+}
+const check = process.argv.includes('--check')
+if (filterMarks.size) {
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ deviceScaleFactor: 16 })
+    const directory = resolve(root, 'apps/mobile/src/ui/harness-rasters')
+    if (!check) mkdirSync(directory, { recursive: true })
+    const rasterMap = readFileSync(resolve(root, 'apps/mobile/src/ui/harness-rasters.ts'), 'utf8')
+    for (const [brand, svg] of filterMarks) {
+      if (!rasterMap.includes(`${brand}:`)) throw new Error(`Add ${brand} to harness-rasters.ts before generating its raster`)
+      const png = await rasterizeSvg(page, sizedSvg(svg, 24, 24))
+      const file = resolve(directory, `${brand}.png`)
+      if (check) {
+        if (!readFileSync(file).equals(png)) throw new Error(`Harness raster ${brand} is stale. Run generate-harness-icons.ts`)
+      } else writeFileSync(file, png)
+    }
+  } finally {
+    await browser.close()
+  }
+}
 const output = `${JSON.stringify({ scenes, motions })}\n`
 const target = resolve(root, 'apps/mobile/src/ui/harness-scenes.generated.json')
-if (process.argv.includes('--check')) {
+if (check) {
   if (readFileSync(target, 'utf8') !== output) throw new Error('Harness icons are stale. Run generate-harness-icons.ts')
 } else writeFileSync(target, output)
-console.log(`Harness scenes: ${Object.keys(scenes).length} brands × 5 states × 2 detail levels; ${Object.keys(motions).length} desktop animations`)
+console.log(`Harness scenes: ${Object.keys(scenes).length} brands × 5 states × 2 detail levels; ${Object.keys(motions).length} desktop animations; ${filterMarks.size} filter rasters`)

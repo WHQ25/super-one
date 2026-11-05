@@ -9,6 +9,7 @@ const brands: { label: string; provider: HarnessId; acpAgentId?: string }[] = [
   { label: 'Claude', provider: 'claude' }, { label: 'Codex', provider: 'codex' },
   { label: 'Cursor', provider: 'cursor' }, { label: 'OpenCode', provider: 'opencode' },
   { label: 'DeepSeek', provider: 'dsh' }, { label: 'Grok', provider: 'acp', acpAgentId: 'grok' },
+  { label: 'Antigravity', provider: 'acp', acpAgentId: 'antigravity' },
   { label: 'ACP', provider: 'acp' },
 ]
 const states = ['default', 'running', 'background', 'unseen', 'automation'] as const
@@ -21,7 +22,7 @@ export function IconGallery() {
     <Text accessibilityRole="header" style={{ fontSize: 17, fontWeight: '500', color: colors.foreground }}>Desktop icon parity</Text>
     <Text style={{ fontSize: 12, color: colors.mutedForeground }}>Idle · Running · Background · Unread · Automation</Text>
     {brands.map((brand) => <View key={brand.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      <Text style={{ width: 64, fontSize: 12, color: colors.foreground }}>{brand.label}</Text>
+      <Text style={{ width: 92, fontSize: 12, color: colors.foreground }}>{brand.label}</Text>
       {states.map((status) => <View key={status} accessibilityLabel={`${brand.label}: ${status}`} style={{ flex: 1, height: 44, alignItems: 'center', justifyContent: 'center' }}>
         <HarnessIcon {...brand} status={status} size={26} />
       </View>)}

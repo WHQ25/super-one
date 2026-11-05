@@ -159,7 +159,9 @@ the conversation actually loads (`loadingConversation`).
 **Icon and harness artwork is generated from desktop sources, never hand-maintained**:
 `bun --filter @superone/mobile generate:icons` writes `src/ui/*.generated.json`
 (file icons, harness scenes, permission modes, mention artwork, provider brands);
-`check:icons` fails on drift.
+`check:icons` fails on drift. Marks whose SVG depends on filters (Antigravity)
+are Chromium PNGs next to those files. `react-native-svg` does not reproduce
+`feGaussianBlur`, so a raw copy of the desktop SVG paints a different logo.
 
 **The session's todos have exactly one surface**: `ui/todo-panel.tsx`, a strip
 between the transcript and the composer, matching the desktop's

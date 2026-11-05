@@ -45,6 +45,23 @@ export const ScheduledSendsNarrow = {
   render: () => <MobileThemeProvider><SessionScheduledSendGallery width={240} /></MobileThemeProvider>,
 }
 
+const antigravity = {
+  ...idle,
+  session: { ...idle.session, sessionId: 'agy', title: 'Antigravity session', provider: 'acp' as const, acpAgentId: 'antigravity' },
+}
+
+/** The mark is a Chromium raster of the desktop color logo, including unread and automation chrome. */
+export const Antigravity = {
+  render: () => <MobileThemeProvider>
+    <View style={{ width: 300, padding: 12, gap: 4 }}>
+      <SessionRowContent branded item={antigravity} subtitle="super-one" />
+      <SessionRowContent branded item={{ ...antigravity, session: { ...antigravity.session, status: 'streaming' } }} />
+      <SessionRowContent branded item={{ ...antigravity, session: { ...antigravity.session, isUnseen: true } }} />
+      <SessionRowContent branded item={{ ...antigravity, session: { ...antigravity.session, isAutomation: true } }} />
+    </View>
+  </MobileThemeProvider>,
+}
+
 const automation = { ...idle, session: { ...idle.session, sessionId: 'auto', title: 'Nightly dependency audit', isPinned: false, isAutomation: true } }
 
 /** Desktop precedence: running and unseen outrank the automation mark, which outranks the idle glyph. */

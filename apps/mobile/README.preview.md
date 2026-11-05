@@ -73,10 +73,12 @@ After upgrading that package, run `bun run generate:icons` from `apps/mobile`;
 SVG data, not the package's DOM components. The upstream MIT license is retained
 in `src/ui/SYMBOLS-LICENSE.txt`.
 
-The **Icons** page shows seven harness brands across idle, running, background,
+The **Icons** page shows eight harness brands across idle, running, background,
 unread and automation states, large landing marks, and file/folder identities.
 Harness scene geometry and motion profiles are generated from desktop components
 and `theme.css`; `generate:icons` and `check:icons` cover both icon families.
+Antigravity's color mark is a Chromium raster of that scene, because its SVG
+filters do not survive `react-native-svg`.
 Native animations use the native driver, pause while the app is backgrounded,
 and respect the OS Reduce Motion setting. Use that setting for static screenshot
 comparison; it retains state artwork and freezes motion at its initial frame.

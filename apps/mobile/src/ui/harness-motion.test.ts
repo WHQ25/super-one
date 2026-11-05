@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { motionTracks, motionTransforms } from './harness-motion'
 import data from './harness-scenes.generated.json'
+import brands from './provider-brands.generated.json'
 
 describe('desktop animation translation', () => {
   it('preserves relative jumping and rotation without rotating the Codex glyph', () => {
@@ -24,6 +27,18 @@ describe('desktop animation translation', () => {
     // row colour; the generated scenes must follow the source, not a stale copy.
     expect(data.motions).not.toHaveProperty('codex-session-veil')
     expect(JSON.stringify(data.scenes.codex.background)).not.toContain('veil')
+  })
+
+  it('ships the Antigravity mark as a raster instead of SVG filters', () => {
+    const scene = JSON.stringify(data.scenes.antigravity)
+    expect(scene).toContain('"raster":"antigravity"')
+    expect(scene).not.toContain('feGaussianBlur')
+    expect(scene).not.toContain('<filter')
+    expect(brands.brands.antigravity.icon).toMatchObject({ png: 'antigravity' })
+    expect(brands.brands.antigravity.icon).not.toHaveProperty('svg')
+    for (const file of ['harness-rasters/antigravity.png', 'provider-rasters/antigravity.png']) {
+      expect(readFileSync(resolve(import.meta.dirname, file)).subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+    }
   })
 
   it('omits decorative continuous motion from compact resting icons', () => {

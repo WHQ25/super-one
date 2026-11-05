@@ -114,6 +114,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   private static readonly CLAUDE_ACCOUNTS_TTL_MS = 60_000
   private static readonly DESCRIPTOR_KEY = 'descriptor'
   private readonly descriptors = new AsyncCoalescer<ExecutionEnvironmentDescriptor>(RemoteEnvironmentGateway.DESCRIPTOR_TTL_MS)
+  // Refresh freshness must not erase connection identity or capability gates.
+  private connectionDescriptor: ExecutionEnvironmentDescriptor | null = null
+  private descriptorGeneration = 0
   private fixedEnvironmentId: string | null = null
   /**
    * Host-level provider lists die with the connection, not with a session switch.
@@ -144,7 +147,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   /**
    * The node's side of the session sync zone, or null when the node serves
-   * none (no `artifact.put`). Read from the descriptor cached at connect; the
+   * none (no `artifact.put`). Read from the last validated descriptor; the
    * root is compared textually, never resolved here.
    */
   syncZone(): { syncRoot: string; os: ExecutionEnvironmentDescriptor['platform']['os'] } | null {
@@ -256,20 +259,22 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     }
   }
 
-  /** Descriptor fetched at connect. Null until then, after the socket drops, and once the TTL passes. */
+  /** Last validated descriptor for this connection, retained until the socket drops. */
   get cachedDescriptor(): ExecutionEnvironmentDescriptor | null {
-    return this.descriptors.peek(RemoteEnvironmentGateway.DESCRIPTOR_KEY) ?? null
+    return this.connectionDescriptor
   }
 
   /** Seed the cache from a descriptor `client.getDescriptor()` already identity-checked. */
   rememberDescriptor(descriptor: ExecutionEnvironmentDescriptor): void {
+    this.descriptorGeneration++
+    this.connectionDescriptor = descriptor
     this.fixedEnvironmentId = descriptor.environmentId
     this.descriptors.remember(RemoteEnvironmentGateway.DESCRIPTOR_KEY, descriptor)
   }
 
   /**
    * Patch advertised harness ids from a `harness_catalog_changed` event.
-   * No descriptor is dialed. A missing cache waits for the next `getDescriptor`.
+   * No descriptor is dialed. A missing connection snapshot waits for the next `getDescriptor`.
    */
   replaceAdvertisedHarnesses(harnessIds: readonly HarnessId[]): void {
     const current = this.cachedDescriptor
@@ -284,6 +289,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   /** Drop the cached descriptor. The environment binding stays so a late call still fails closed. */
   clearDescriptor(): void {
+    this.descriptorGeneration++
+    this.connectionDescriptor = null
     this.descriptors.invalidate(RemoteEnvironmentGateway.DESCRIPTOR_KEY)
   }
 
@@ -307,8 +314,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   }
 
   private loadDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    const generation = this.descriptorGeneration
     return this.client.getDescriptor().then((descriptor) => {
-      this.fixedEnvironmentId = descriptor.environmentId
+      // A disconnected socket or a newer remembered descriptor fences late replies.
+      if (generation === this.descriptorGeneration) {
+        this.connectionDescriptor = descriptor
+        this.fixedEnvironmentId = descriptor.environmentId
+      }
       return descriptor
     })
   }

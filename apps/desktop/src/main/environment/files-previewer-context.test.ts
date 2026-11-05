@@ -7,12 +7,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { WorkspaceEntry } from '@superone/shared/environment'
+import type { ExecutionEnvironmentDescriptor, WorkspaceEntry } from '@superone/shared/environment'
+import type { EnvironmentRpcClient } from './environment-rpc-client'
+import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 
 const state = vi.hoisted(() => ({ userData: '' }))
 // The zone's delivery record: a table that cannot be read protects every zone file (R5).
 vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
+vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { resolveRemotePreviewerContext, statPreviewerFileForRoot, type PreviewerHost } from './files-previewer-context'
 
@@ -51,6 +54,43 @@ function fakeHost(opts: {
 }
 
 describe('remote previewer context', () => {
+  it('previews a session-zone image beyond the descriptor TTL without a hardware refresh', async () => {
+    vi.useFakeTimers()
+    try {
+      const getDescriptor = vi.fn()
+      const gateway = new RemoteEnvironmentGateway({ getDescriptor } as unknown as EnvironmentRpcClient)
+      gateway.rememberDescriptor({
+        environmentId: 'env-1',
+        label: 'node',
+        platform: { os: 'linux', arch: 'x64' },
+        nodeVersion: 'v22.0.0',
+        protocolVersion: 1,
+        syncRoot: '/home/node/.superone/node/sync',
+        capabilities: { methods: ['artifact.put'], harnessIds: ['claude'], coldSessionResume: true, turnReattach: false, hostActionV1: true },
+      } satisfies ExecutionEnvironmentDescriptor)
+      const host = fakeHost({ project: {}, zone: { 'agent/preview-check.png': Buffer.from('pngdata') } })
+      host.getSyncZone = () => gateway.syncZone()
+      const path = '/home/node/.superone/node/sync/s1/agent/preview-check.png'
+      // Rebuild the context each time: a card created before expiry already captured its zone.
+      for (const elapsed of [59_999, 1, 1, 60_000]) {
+        vi.advanceTimersByTime(elapsed)
+        const ctx = await resolveRemotePreviewerContext('c1', 's1', host)
+        expect(await ctx!.resolveOne({ path })).toMatchObject({ kind: 'image', size: 7, absolutePath: path })
+        expect(await statPreviewerFileForRoot(ctx!.root!, path, { host, projectIdFor: async () => 'p1' }))
+          .toMatchObject({ kind: 'image', size: 7 })
+        expect(await ctx!.resolveOne({ path: '/tmp/preview-check.png' }))
+          .toMatchObject({ kind: 'unpreviewable', reason: 'outside_readable_roots' })
+      }
+      expect(getDescriptor).not.toHaveBeenCalled()
+      gateway.clearDescriptor()
+      const disconnected = await resolveRemotePreviewerContext('c1', 's1', host)
+      expect(await disconnected!.resolveOne({ path }))
+        .toMatchObject({ kind: 'unpreviewable', reason: 'outside_readable_roots' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keys the payload by the project host path and resolves files where they live', async () => {
     const host = fakeHost({ project: { docs: [{ name: 'plan.md', path: 'docs/plan.md', type: 'file', size: 12 }] } })
     const ctx = await resolveRemotePreviewerContext('c1', 's1', host)

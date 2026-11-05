@@ -67,6 +67,26 @@ async function pump(): Promise<void> {
 }
 
 describe('codex app-server client (Stage 4)', () => {
+  it.each(['close', 'stdout end'] as const)('rejects notification reads on %s instead of returning idle polls', async reason => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-close-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child) })
+    await pump()
+    child.stdout.write(`${JSON.stringify({ id: JSON.parse(lines[0]).id, result: {} })}\n`)
+    const client = await opening
+    try {
+      if (reason === 'close') await client.close()
+      else {
+        child.stdout.end()
+        await pump()
+      }
+      await expect(client.nextNotification(10)).rejects.toThrow(/closed/)
+    } finally { await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('keeps RPC replies and per-thread notifications ordered while input is pending', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'codex-form-'))
     const bin = join(dir, 'codex')

@@ -4,6 +4,7 @@ import { RATE_LIMIT_TERMINAL_REASONS } from '@superone/shared/agent-error'
 /** i18n leaf under `chat.error.title` / `chat.error.hint`. */
 export type AgentErrorKind =
   | 'auth'
+  | 'verificationRequired'
   | 'orgNotAllowed'
   | 'billing'
   | 'rateLimit'
@@ -39,6 +40,9 @@ const BY_TERMINAL_REASON: Record<string, AgentErrorKind> = {
 /** SDK `SDKAssistantMessageError` codes. */
 const BY_CODE: Record<string, AgentErrorKind> = {
   authentication_failed: 'auth',
+  // A 403 whose code is this is an account check, not a dead login. Status
+  // fallback would otherwise paint every 403 as sign-in expired.
+  verification_required: 'verificationRequired',
   oauth_org_not_allowed: 'orgNotAllowed',
   account_on_hold: 'billing',
   billing_error: 'billing',

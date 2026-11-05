@@ -2261,6 +2261,7 @@ export const zh: Messages = {
       copied: '已复制',
       title: {
         auth: '登录已过期',
+        verificationRequired: '需要身份验证',
         orgNotAllowed: '账号无权限',
         billing: '账单异常',
         rateLimit: '用量已达上限',
@@ -2278,6 +2279,7 @@ export const zh: Messages = {
       },
       hint: {
         auth: '保存的登录凭证被拒绝了。到设置 → 账号重新登录后重发这条消息即可,历史不会丢。',
+        verificationRequired: '这个账号需要先完成身份验证,Claude 才会继续回复。打开错误细节里的链接,或前往 portal.anthropic.com 完成验证后重发这条消息,历史不会丢。',
         orgNotAllowed: '组织策略不允许这个账号使用该模型。换一个账号,或让管理员开通权限。',
         billing: '账号额度不足,或支付方式有问题。处理完账单后重发这条消息。',
         rateLimit: '当前用量已达上限。等额度恢复后重发,或在模型选择里换一个模型。',

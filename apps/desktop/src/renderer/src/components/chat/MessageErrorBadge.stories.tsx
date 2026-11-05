@@ -22,6 +22,16 @@ const SAMPLES: Array<{ note: string; info: AgentErrorInfo }> = [
     },
   },
   {
+    note: 'Account verification still outstanding',
+    info: {
+      raw: "Failed to authenticate. API Error: 403 Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://portal.anthropic.com/verify",
+      code: 'verification_required',
+      httpStatus: 403,
+      terminalReason: 'api_error',
+      subtype: 'error_during_execution',
+    },
+  },
+  {
     note: 'Org policy blocks the account',
     info: {
       raw: 'This organization does not allow access to the requested model',
@@ -157,7 +167,7 @@ export const Expanded: Story = {
 
 /** Retry ladder — the one detail the old footer could never show. */
 export const WithRetryLadder: Story = {
-  args: { info: SAMPLES[4]!.info },
+  args: { info: SAMPLES[5]!.info },
   render: (args) => (
     <div className="max-w-2xl">
       <FooterRow info={args.info} note="Three retries burned before giving up" />
@@ -167,7 +177,7 @@ export const WithRetryLadder: Story = {
 
 /** Nothing mapped: the badge degrades to "request failed" and leads with raw text. */
 export const UnmappedFallback: Story = {
-  args: { info: SAMPLES[15]!.info },
+  args: { info: SAMPLES[16]!.info },
   render: (args) => (
     <div className="max-w-2xl">
       <FooterRow info={args.info} note="No typed code, no terminal reason, no status" />

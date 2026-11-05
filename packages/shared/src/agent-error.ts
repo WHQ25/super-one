@@ -14,6 +14,7 @@ import type { AgentErrorInfo } from './agent-types'
 /** Vocabulary shared with the SDK's `SDKAssistantMessageError`, so one UI map serves every harness. */
 export type AgentErrorCode =
   | 'authentication_failed'
+  | 'verification_required'
   | 'oauth_org_not_allowed'
   | 'billing_error'
   | 'rate_limit'
@@ -38,6 +39,8 @@ const TEXT_PATTERNS: Array<{ pattern: RegExp; code: AgentErrorCode; terminalReas
   { pattern: /context (?:length|window)|prompt is too long|too many tokens|maximum context/i, code: 'invalid_request', terminalReason: 'prompt_too_long' },
   { pattern: /\brate[ _-]?limit|too many requests|quota exceeded|usage limit/i, code: 'rate_limit' },
   { pattern: /overloaded|capacity|try again (?:in a )?(?:few )?(?:moments|minutes)/i, code: 'overloaded' },
+  // Before the authentication phrase: Claude prefixes this 403 with "Failed to authenticate".
+  { pattern: /verification[ _-]?required|verification portal|can(?:not|'t) receive replies/i, code: 'verification_required' },
   { pattern: /unauthorized|authentication|invalid api[ _-]?key|expired token|not logged in|please (?:sign|log) in/i, code: 'authentication_failed' },
   { pattern: /\bbilling\b|payment required|insufficient (?:credit|balance|funds)|credit balance/i, code: 'billing_error' },
   { pattern: /model .{0,40}(?:not found|not available|unknown)|unknown model|unsupported model/i, code: 'model_not_found' },

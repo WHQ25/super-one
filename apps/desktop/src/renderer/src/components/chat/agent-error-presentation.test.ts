@@ -34,6 +34,20 @@ describe('resolveAgentErrorKind', () => {
     expect(resolveAgentErrorKind({ raw: 'Bad gateway', httpStatus: 502 })).toBe('serverError')
   })
 
+  it('keeps a 403 verification_required distinct from a rejected sign-in', () => {
+    expect(resolveAgentErrorKind({
+      raw: "Your account can't receive replies from Claude right now",
+      code: 'verification_required',
+      httpStatus: 403,
+      terminalReason: 'api_error',
+    })).toBe('verificationRequired')
+    expect(resolveAgentErrorKind({
+      raw: 'OAuth token has expired or been revoked',
+      code: 'authentication_failed',
+      httpStatus: 401,
+    })).toBe('auth')
+  })
+
   it('lands on unknown when nothing maps, so the raw text becomes the display', () => {
     expect(resolveAgentErrorKind({ raw: 'spawn ENOENT' })).toBe('unknown')
     expect(resolveAgentErrorKind({ raw: 'weird', code: 'brand_new_code', terminalReason: 'brand_new_reason' })).toBe('unknown')

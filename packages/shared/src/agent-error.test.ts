@@ -17,6 +17,9 @@ describe('classifyAgentErrorText', () => {
     expect(classifyAgentErrorText('You have hit the rate limit for your plan').code).toBe('rate_limit')
     expect(classifyAgentErrorText('Overloaded, please retry').code).toBe('overloaded')
     expect(classifyAgentErrorText('Invalid API key provided').code).toBe('authentication_failed')
+    expect(classifyAgentErrorText(
+      "Failed to authenticate. API Error: 403 Your account can't receive replies from Claude right now. Anthropic Verification Portal: https://portal.anthropic.com/verify",
+    )).toMatchObject({ code: 'verification_required', httpStatus: 403 })
     expect(classifyAgentErrorText('Insufficient credit on this account').code).toBe('billing_error')
     expect(classifyAgentErrorText('model grok-4 is not available').code).toBe('model_not_found')
     expect(classifyAgentErrorText('Internal server error').code).toBe('server_error')

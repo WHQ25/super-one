@@ -2158,6 +2158,7 @@ export type Messages = {
       copied: string
       title: {
         auth: string
+        verificationRequired: string
         orgNotAllowed: string
         billing: string
         rateLimit: string
@@ -2175,6 +2176,7 @@ export type Messages = {
       }
       hint: {
         auth: string
+        verificationRequired: string
         orgNotAllowed: string
         billing: string
         rateLimit: string
@@ -6976,6 +6978,7 @@ export const en: Messages = {
       copied: 'Copied',
       title: {
         auth: 'Sign-in Expired',
+        verificationRequired: 'Verification Required',
         orgNotAllowed: 'Account Not Allowed',
         billing: 'Billing Problem',
         rateLimit: 'Usage Limit Reached',
@@ -6993,6 +6996,7 @@ export const en: Messages = {
       },
       hint: {
         auth: 'The saved credentials were rejected. Sign in again from Settings → Account, then resend this message — nothing is lost.',
+        verificationRequired: 'This account still needs verification before Claude will reply. Open the link in the error details, or go to portal.anthropic.com, finish the check, then resend this message — nothing is lost.',
         orgNotAllowed: 'Your organization blocks this account from using the model. Switch accounts, or ask an admin to grant access.',
         billing: 'The account has no available credit, or its payment method needs attention. Sort out billing, then resend.',
         rateLimit: 'You have hit the usage limit for now. Wait for it to reset, or switch to another model in the model picker.',

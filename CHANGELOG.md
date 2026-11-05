@@ -21,6 +21,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
 - One desktop process per userData profile, so a second Windows shortcut does not claim the same remote session. A named instance and a side-by-side alpha still start.
 - A markdown table can be transposed so each record reads down one column. Header marks stay on the cells that had them, and the original first column stays body text. Original Layout restores the table.
+- Chat and the phone can preview temporary files on a remote node, including files outside a registered project. Reads are scoped and transferred in chunks. A missing file is reported as missing. Both the desktop and the node need this version.
 
 ### Fixed
 
@@ -39,6 +40,36 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A remote draft stays hidden once the node assigns the session id.
 - Adding a project grants Grok folder trust without a dialog. Project rules, MCP, hooks, and skills still load.
 - Switching to an ACP harness clears an effort level that harness does not offer.
+- A suggested task on a remote node opens its linked checkout under the owning project. An unknown worktree path is not registered as its own sidebar project.
+- An unnamed remote session keeps the title taken from its first message. A title set explicitly stays.
+- A remote suggested task keeps the model, effort, and settled state it was launched with.
+- Review branches and commits are read from the repository on the session's host.
+- Git status for a remote worktree is read on the node that owns it.
+- A sent remote draft stays deleted after refresh.
+- A remote node's capabilities and sync roots stay until it disconnects.
+- A remote collaboration wake stays out of the chat. It is not shown as a message the user sent, and a retry does not deliver it twice.
+
+## [0.77.0-alpha.4] - 2026-11-06
+
+### Added
+
+- Chat and the phone can preview temporary files on a remote node, including files outside a registered project. Reads are scoped and transferred in chunks. A missing file is reported as missing. Both the desktop and the node need this version.
+
+### Fixed
+
+- A suggested task's linked checkout stays under its project, including when Git reports the macOS `/private` temp path. It is not registered as a separate sidebar project. A node that cannot browse a checkout is not asked to read or edit the main checkout.
+- An unnamed remote session keeps the title taken from its first message. A title that was set explicitly stays.
+- A remote suggested task keeps the model, effort, and settled state it was launched with when the transcript is projected or the session is reopened.
+- Review branches and commits are read from the repository on the session's host.
+- Git status for a remote worktree is read on the node that owns it, including after a turn and for a restored session.
+- Sending a remote draft consumes it with the composer's edit lease, so it stays gone after refresh. The draft marker remains only while that session has not been sent.
+- A remote node's capabilities and sync roots stay in place until it disconnects. A late reply cannot revive a disconnected snapshot.
+- A remote collaboration wake stays out of the chat. It keeps its notification source, so it is not shown as a message the user sent, and a retry does not deliver it twice.
+- The phone's Antigravity mark is a raster of the desktop icon. The SVG blur does not survive react-native-svg, so the color mark no longer paints as a smear.
+
+### CI
+
+- Icon generators are excluded from the mobile runtime diff, so a phone icon change is not treated as a new native runtime.
 
 ## [0.77.0-alpha.3] - 2026-11-05
 

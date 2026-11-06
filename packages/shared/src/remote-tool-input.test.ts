@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from './remote-tool-input'
 
 describe('remote tool input exemptions', () => {
+  it.each(['image-gallery', 'video-gallery', 'files-previewer'])('keeps only the %s header because its result owns the native surface', (type) => {
+    const input = JSON.stringify({ title: 'Files', template: `@native/${type}`, data: { images: [{ base64: 'a'.repeat(56_604) }] } })
+    expect(JSON.parse(sanitizeRemoteToolInput('mcp__superone__widget_show', input))).toEqual({ title: 'Files', template: `@native/${type}` })
+  })
+
+  it('preserves code widgets, saved templates, unknown native templates and partial inputs', () => {
+    for (const input of [
+      JSON.stringify({ title: 'Chart', widget_code: '<svg />', data: { x: [1, 2] } }),
+      JSON.stringify({ title: 'Chart', template: 'saved-chart', data: { x: [1, 2] } }),
+      JSON.stringify({ template: '@native/future', data: { value: 'unknown' } }),
+      '{"template":',
+    ]) expect(sanitizeRemoteToolInput('mcp__superone__widget_show', input)).toBe(input)
+  })
+
   it('projects patch file headers and code-mode identity without patch bodies or JavaScript source', () => {
     const patchText = '*** Begin Patch\n*** Update File: /repo/a.ts\n@@\n-secret-old\n+secret-new\n*** End Patch'
     for (const name of ['Patch', 'patch', 'apply_patch']) {

@@ -5,14 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { ChatMessage as ChatMessageView } from './ChatMessage'
 import { withCodexContent } from '@superone/shared/codex-content'
-import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { createDefaultPerSessionState, createDefaultProjectState, SessionScopeProvider, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { PlanFullscreenContext } from './plan-fullscreen-context'
 
 vi.mock('./CopyableMarkdown', async (importOriginal) => ({
   ...await importOriginal<typeof import('./CopyableMarkdown')>(),
-  CopyableMarkdown: ({ text }: { text: string }) => <div>{text}</div>,
+  CopyableMarkdown: ({ text, projectPath }: { text: string; projectPath?: string | null }) => <div data-markdown-project={projectPath}>{text}</div>,
 }))
 
 // Commands keep their real row (the parsed command block); other tools are stubs.
@@ -97,6 +97,18 @@ beforeEach(() => {
 })
 
 describe('Codex turns in the shared turn body', () => {
+  it('resolves screenshot Markdown against its remote pane while another project is active', () => {
+    setupActiveSession()
+    const root = 'remote:node:/home/node/project'
+    const message = createMessage({ status: 'complete', content: [{ type: 'text', text: '![Screenshot](/home/node/sync/s1/agent/shot.png)' }] })
+    const { container } = render(
+      <SessionScopeProvider value={{ projectPath: root, sessionId: 'remote-session' }}>
+        <CodexTurn message={message} isStreaming={false} isLastAssistant />
+      </SessionScopeProvider>,
+    )
+    expect(container.querySelector('[data-markdown-project]')).toHaveAttribute('data-markdown-project', root)
+  })
+
   it('does not show thinking placeholder before the first codex item arrives', () => {
     render(<CodexTurn message={createMessage()} isStreaming isLastAssistant />)
 

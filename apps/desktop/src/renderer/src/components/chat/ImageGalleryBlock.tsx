@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ImageIcon, AlertCircle } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
+import { useGalleryImagePaths } from './use-gallery-image-paths'
 import {
   ImageInteractive,
   ImageSkeleton,
@@ -52,7 +53,8 @@ function GalleryThumb({ item, onOpen }: { item: ImageGenerationItem; onOpen: () 
   )
 }
 
-export function ImageGalleryBlock({ items }: { items: ImageGenerationItem[] }) {
+export function ImageGalleryBlock({ items: sourceItems, projectPath }: { items: ImageGenerationItem[]; projectPath?: string | null }) {
+  const items = useGalleryImagePaths(sourceItems, projectPath)
   const [viewerOpen, setViewerOpen] = useState(false)
   const [index, setIndex] = useState(0)
 

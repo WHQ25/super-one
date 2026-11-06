@@ -52,8 +52,9 @@ import { localBranchList, type LocalBranchList } from '@superone/runtime/git'
 import { createKeyedGitReadCache } from '../git/keyed-git-read-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
-import { resolveSessionFile, resolverDepsFor } from './session-file-resolver'
+import { materializeRemoteProjectFile, resolveSessionFile, resolverDepsFor } from './session-file-resolver'
 import { toLocalFileUrl } from '@superone/shared/path-display'
+import { mediaFileGrants } from '../media-file-grants'
 
 /** Coalesce status-bar + file-tree git.status RPCs (same as local 1.5s window). */
 const REMOTE_GIT_STATUS_TTL_MS = 1_500
@@ -750,9 +751,9 @@ export function fileContentFromBuffer(filePath: string, buf: Buffer): GitFileCon
 
 /**
  * Read a file for FilePreview / source control under a remote root.
- * Media on the node returns a `data:` URI in `content` so the renderer can
- * preview without a local path; media in the session zone returns the
- * `local-file://` URL of its desktop mirror instead, which has no size cap.
+ * Project images return the `local-file://` URL of a validated local cache
+ * copy, so galleries can preview, download and edit a real file. Other project
+ * media returns data URIs; session-zone media streams from its desktop mirror.
  *
  * The path goes through `resolveSessionFile` first (session-sync-zone.md §4.2):
  * a node-zone artifact is served from the desktop mirror, a desktop-zone path
@@ -794,16 +795,35 @@ export async function readRemoteProjectFile(
   if (!ctx) return null
   const rel = resolution.relativePath
   try {
+    if (mediaLanguage(filePath) === 'image') {
+      const project = projectRef(ctx)
+      const local = await materializeRemoteProjectFile(ctx.connectionId, folderPath, rel, {
+        stat: async relativePath => {
+          const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : '.'
+          const entries = await host.workspace().listDir({ project, relativePath: parent })
+          const entry = entries.find(file => file.name === relativePath.slice(relativePath.lastIndexOf('/') + 1))
+          if (!entry || entry.type === 'directory') return null
+          if ((entry.size ?? 0) > MAX_TRANSFER_BYTES) throw Object.assign(new Error('project image too large'), { code: 'image_too_large' })
+          return { size: entry.size ?? NaN, mtimeMs: entry.mtimeMs ?? NaN }
+        },
+        read: async relativePath => bufferFromWorkspaceContent((await host.workspace().readFile({ project, relativePath })).content),
+      })
+      if (!local) return { path: filePath, content: '', language: 'text', error: 'missing' }
+      // Grant the completed copy, never its containing directory or partials.
+      mediaFileGrants().add(local)
+      return { path: filePath, content: toLocalFileUrl(local), language: 'image' }
+    }
     const raw = await host.workspace().readFile({
       project: projectRef(ctx),
       relativePath: rel,
     })
     return fileContentFromBuffer(filePath, bufferFromWorkspaceContent(raw.content))
   } catch (err) {
+    const code = (err as { code?: string }).code
+    if (code === 'image_too_large') return { path: filePath, content: '', language: 'too-large' }
     // An unreadable remote file used to fall through as empty text, which the
     // preview renders as a blank editor — indistinguishable from an empty file.
     console.warn(`[remote-file] read failed: ${folderPath} :: ${filePath}`, err)
-    const code = (err as { code?: string }).code
     return {
       path: filePath,
       content: '',

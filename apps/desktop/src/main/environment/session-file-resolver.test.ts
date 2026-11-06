@@ -117,4 +117,34 @@ describe('materializeRemoteProjectFile', () => {
   it('returns null for a file the node does not have', async () => {
     expect(await materializeRemoteProjectFile('c1', 'remote:c1:/proj', 'nope.md', { stat: async () => null, read: async () => Buffer.alloc(0) })).toBeNull()
   })
+
+  it('shares concurrent downloads of the same project image', async () => {
+    const read = vi.fn(async () => { await new Promise(resolve => setTimeout(resolve, 5)); return Buffer.from('image') })
+    const results = await Promise.allSettled(Array.from({ length: 3 }, () => materializeRemoteProjectFile('parallel', 'remote:parallel:/proj', 'shot.png', {
+      stat: async () => ({ size: 5, mtimeMs: 1_700_000_000_000 }), read,
+    })))
+    const paths = results.flatMap(result => result.status === 'fulfilled' && result.value ? [result.value] : [])
+    try {
+      expect(results.every(result => result.status === 'fulfilled')).toBe(true)
+      expect(new Set(paths).size).toBe(1)
+      expect(read).toHaveBeenCalledTimes(1)
+    } finally {
+      for (const path of paths) rmSync(join(path, '..', '..'), { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a truncated project image instead of committing a partial cache file', async () => {
+    await expect(materializeRemoteProjectFile('truncated', 'remote:truncated:/proj', 'shot.png', {
+      stat: async () => ({ size: 100, mtimeMs: 1_700_000_000_000 }),
+      read: async () => Buffer.from('short'),
+    })).rejects.toThrow(/changed|truncated/)
+  })
+
+  it('rejects an image changed during transfer even when its size stays the same', async () => {
+    const stat = vi.fn().mockResolvedValueOnce({ size: 5, mtimeMs: 1_700_000_000_000 })
+      .mockResolvedValue({ size: 5, mtimeMs: 1_700_000_000_001 })
+    await expect(materializeRemoteProjectFile('changed', 'remote:changed:/proj', 'shot.png', {
+      stat, read: async () => Buffer.from('image'),
+    })).rejects.toThrow(/changed/)
+  })
 })

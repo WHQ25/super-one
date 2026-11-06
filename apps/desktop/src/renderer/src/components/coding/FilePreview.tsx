@@ -17,8 +17,8 @@ import type { ModelPreviewViewState } from './ModelPreview'
 
 /**
  * What a media preview loads. The host answers with bytes (a data URI) for a
- * file on a node, with the URL of the desktop mirror for a file in the
- * session zone, and with nothing for a plain local file — which is then
+ * file on a node, with a local-file URL for a cached project image or a
+ * session-zone mirror, and with nothing for a plain local file — which is then
  * loaded from its own path. Streams (video, audio) go through the media
  * server when a local path is known, so a large mirror plays by range.
  */

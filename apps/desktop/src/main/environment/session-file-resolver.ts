@@ -9,12 +9,12 @@
  *   local root                                → the path itself
  *
  * A node project file is not a zone artifact and never lands in the zone; a
- * phone that needs real bytes for one gets a transient copy under the OS temp
+ * reader that needs real bytes for one gets a transient copy under the OS temp
  * directory instead (`materializeRemoteProjectFile`), validated by the size
  * and mtime `workspace.listDir` reports.
  */
-import { createHash } from 'node:crypto'
-import { mkdirSync, renameSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactStatResult } from '@superone/shared/environment'
@@ -105,9 +105,13 @@ export async function resolveSessionFile(
   return { kind: 'remote-project', connectionId: remote.connectionId, folderPath: root!, relativePath }
 }
 
-/** Where node project files are staged for the phone; transient by design. */
+let projectCacheRoot: string | undefined
+const projectDownloads = new Map<string, Promise<string | null>>()
+const projectStamps = new Map<string, { size: number; mtimeMs: number }>()
+
+/** Private, transient copies for desktop galleries and phone file consumers. */
 export function remoteProjectCacheRoot(): string {
-  return join(tmpdir(), 'super-one-remote-project-cache')
+  return projectCacheRoot ??= mkdtempSync(join(tmpdir(), 'super-one-remote-project-cache-'))
 }
 
 export interface RemoteProjectFileSource {
@@ -121,31 +125,46 @@ export interface RemoteProjectFileSource {
  * cached copy while the node's size and mtime still match. Returns null when
  * the node has no such file.
  */
-export async function materializeRemoteProjectFile(
+export function materializeRemoteProjectFile(
   connectionId: string,
   folderPath: string,
   relativePath: string,
   source: RemoteProjectFileSource,
 ): Promise<string | null> {
-  const remote = await source.stat(relativePath)
-  if (!remote) return null
   const key = createHash('sha1').update(`${folderPath}\0${relativePath}`).digest('hex').slice(0, 16)
   const localPath = join(remoteProjectCacheRoot(), connectionId, key, basename(relativePath))
+  const running = projectDownloads.get(localPath)
+  if (running) return running
+  const pending = copyRemoteProjectFile(localPath, relativePath, source).finally(() => projectDownloads.delete(localPath))
+  projectDownloads.set(localPath, pending)
+  return pending
+}
+
+async function copyRemoteProjectFile(localPath: string, relativePath: string, source: RemoteProjectFileSource): Promise<string | null> {
+  const remote = await source.stat(relativePath)
+  if (!remote) return null
+  if (!Number.isSafeInteger(remote.size) || remote.size < 0 || !Number.isFinite(remote.mtimeMs)) throw new Error('invalid project file metadata')
   try {
     const st = statSync(localPath)
-    if (st.isFile() && st.size === remote.size && Math.floor(st.mtimeMs) === Math.floor(remote.mtimeMs)) return localPath
+    const stamp = projectStamps.get(localPath)
+    if (stamp?.size === remote.size && stamp.mtimeMs === remote.mtimeMs && st.isFile() && st.size === remote.size && Math.floor(st.mtimeMs) === Math.floor(remote.mtimeMs)) return localPath
   } catch {
     /* not cached */
   }
   const bytes = await source.read(relativePath)
+  const final = await source.stat(relativePath)
+  if (bytes.length !== remote.size || final?.size !== remote.size || final.mtimeMs !== remote.mtimeMs) {
+    throw new Error('project file changed or transfer was truncated; retry the preview')
+  }
   mkdirSync(dirname(localPath), { recursive: true })
-  const part = `${localPath}.part.${process.pid}`
-  writeFileSync(part, bytes)
-  renameSync(part, localPath)
+  const part = `${localPath}.part.${randomUUID()}`
   try {
-    utimesSync(localPath, remote.mtimeMs / 1000, remote.mtimeMs / 1000)
-  } catch {
-    /* re-fetched next time */
+    writeFileSync(part, bytes, { flag: 'wx', mode: 0o600 })
+    utimesSync(part, remote.mtimeMs / 1000, remote.mtimeMs / 1000)
+    renameSync(part, localPath)
+    projectStamps.set(localPath, remote)
+  } finally {
+    rmSync(part, { force: true })
   }
   return localPath
 }

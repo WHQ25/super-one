@@ -237,6 +237,8 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   sessionsOnly?: boolean
   /** Finished sessions for every open project. This row keeps its own folder. */
   settledSessions?: PinnedSessionEntry[]
+  /** Project focus renders one shared settled group below all environments. */
+  showSettled?: boolean
   /** This project's settled list has another page below the rows already shown. */
   settledHasMore?: boolean
   /** Settled sessions in this project, including pages not loaded yet. */
@@ -306,6 +308,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   sessionPresentation,
   sessionsOnly = false,
   settledSessions = EMPTY_SETTLED_SESSIONS,
+  showSettled = true,
   settledHasMore = false,
   settledCount,
   onLoadMoreSettled,
@@ -873,7 +876,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             </div>
           ) : null}
         </MorphHeight>
-        {open && !historyMode && projectSettled.length > 0 && (
+        {showSettled && open && !historyMode && projectSettled.length > 0 && (
           <div className={cn(fill && 'shrink-0')}>
           <SettledSection
             folderPath={folder.path}

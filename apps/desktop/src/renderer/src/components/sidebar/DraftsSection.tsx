@@ -28,6 +28,8 @@ interface DraftsSectionProps {
   onToggleCollapsed?: () => void
   /** When set, only drafts for this renderer project key are listed. */
   projectKey?: string
+  /** Project focus can include checkouts of the same origin on several hosts. */
+  projectKeys?: readonly string[]
 }
 
 const NO_CONNECTIONS: readonly string[] = []
@@ -145,6 +147,7 @@ export const DraftsSection = memo(function DraftsSection({
   collapsed: collapsedProp,
   onToggleCollapsed,
   projectKey,
+  projectKeys,
 }: DraftsSectionProps) {
   const { t } = useTranslation()
   const [storedCollapsed, toggleStored] = useSidebarSectionCollapsed('drafts')
@@ -156,17 +159,19 @@ export const DraftsSection = memo(function DraftsSection({
   const byConnection = useDraftsStore((s) => s.byConnection)
   // Draft ids are unique across environments, so one id → owner map routes resume and delete.
   const { drafts, ownerOf } = useMemo(() => {
+    const allowedProjects = projectKeys ? new Set(projectKeys) : projectKey ? new Set([projectKey]) : null
     const owner = new Map<string, string>()
     const rows: DraftListEntry[] = []
     for (const connectionId of connectionIds) {
       for (const draft of byConnection[connectionId] ?? []) {
-        if (projectKey && draftProjectKey(connectionId, draft.projectPath) !== projectKey) continue
+        const key = draftProjectKey(connectionId, draft.projectPath)
+        if (allowedProjects && (!key || !allowedProjects.has(key))) continue
         owner.set(draft.id, connectionId)
         rows.push(draft)
       }
     }
     return { drafts: rows, ownerOf: owner }
-  }, [byConnection, connectionIds, projectKey])
+  }, [byConnection, connectionIds, projectKey, projectKeys])
   const loadDrafts = useDraftsStore((s) => s.loadDrafts)
   const resumingDraftId = useDraftsStore((s) => s.resumingDraftId)
   const activeProject = useChatStore((s) => s.activeProject)

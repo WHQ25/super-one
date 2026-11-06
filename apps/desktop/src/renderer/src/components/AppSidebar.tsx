@@ -775,6 +775,7 @@ export const AppSidebar = memo(function AppSidebar() {
             connectionIds={focusDrafts ? focusDrafts.connectionIds : draftConnectionIds}
             offlineConnectionIds={focusDrafts ? focusDrafts.offlineConnectionIds : offlineDraftConnectionIds}
             projectKey={focusDrafts?.projectKey}
+            projectKeys={focusDrafts?.projectKeys}
             collapsed={focusContext ? focusCollapsed.drafts : undefined}
             onToggleCollapsed={focusContext ? focusCollapsed.toggleDrafts : undefined}
           />

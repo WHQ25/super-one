@@ -136,3 +136,14 @@ describe('DesktopSessionReads.list', () => {
     expect(page.find((entry) => entry.sessionId === 'live-grok')?.acpAgentId).toBe('grok-live')
   })
 })
+
+it('finds an external-parent child on a paired desktop using the parent filter', () => {
+  const child = { ...row('external-child'), controller: { clientSessionId: 'controller', label: 'Parent host', externalParent: { sessionId: 'parent-on-controller' } } }
+  const reads = new Reads({
+    environmentId: 'desktop', sessions: { getSession: () => null, onSession: () => () => {} } as never,
+    rows: { get: () => null, list: () => [child, row('other')], loadMessages: () => ({ messages: [], cursor: null, hasMore: false }) },
+    events: { headSequence: () => '0', readSessionEventsAfter: () => [] } as never,
+  })
+  expect(reads.list('p1', { limit: 20, offset: 0, parentSessionId: 'parent-on-controller' }).map((entry) => entry.sessionId)).toEqual(['external-child'])
+  expect(reads.list('p1', { limit: 20, offset: 0, rootsOnly: true }).map((entry) => entry.sessionId)).toContain('external-child')
+})

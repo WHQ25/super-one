@@ -33,6 +33,17 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
 - Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
 - Switching composers overlays the handoff instead of resizing the transcript. A deliberate jump to the tail still happens when the overlay shrinks, and the scroll controls stay above the active composer. (#168)
+- A New Session click in the sidebar opens that environment and project. A local checkout stays on this machine. An open new-session page switches to the clicked checkout; a conversation that has already started gets a new session there.
+- Restoring focus no longer scrolls the chat history. The gap above the composer stays clear, and question and permission cards cover that gap so the transcript does not show through the composer.
+- Multi-question prompts number their tabs on desktop and on the phone, so a long question title cannot push later questions out of view. The full title stays as the tab tooltip and accessible name, and an answered question still shows a check. (#170)
+
+## [0.78.1-alpha.1] - 2026-11-07
+
+### Fixed
+
+- A New Session click in the sidebar opens that environment and project. A local checkout stays on this machine. An open new-session page switches to the clicked checkout; a conversation that has already started gets a new session there.
+- Restoring focus no longer scrolls the chat history. The gap above the composer stays clear, and question and permission cards cover that gap so the transcript does not show through the composer.
+- Multi-question prompts number their tabs on desktop and on the phone, so a long question title cannot push later questions out of view. The full title stays as the tab tooltip and accessible name, and an answered question still shows a check. (#170)
 
 ## [0.78.1-alpha] - 2026-11-07
 

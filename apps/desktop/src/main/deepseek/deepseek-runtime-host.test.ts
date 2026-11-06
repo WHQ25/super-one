@@ -27,14 +27,18 @@ describe('DeepSeek runtime model catalog', () => {
     expect(accepting).toEqual(['deepseek-flash'])
   })
 
-  it('leaves context capacity to the adapter on every route', () => {
-    // A `contextWindow` written here IS the number — DeepSeek reports none —
-    // and `compaction-basic` derives its trigger from it, so an
-    // under-guess compacts a healthy conversation away early. Omitting it
-    // defers to the adapter's own default, which is DeepSeek's published
-    // figure and moves with the pin.
-    const declared = DEEPSEEK_MODEL_CATALOG.filter((model) => 'contextWindow' in model)
+  it('uses the official capacities instead of the smaller generic fallback', () => {
+    // Both official models declare this capacity in the pinned upstream
+    // catalog; omitting it would use the generic decimal 1M fallback.
+    const capacities = DEEPSEEK_MODEL_CATALOG.map((model) =>
+      'contextWindow' in model ? model.contextWindow : undefined,
+    )
 
-    expect(declared).toEqual([])
+    expect(capacities).toEqual([1_048_576, 1_048_576])
+  })
+
+  it('keeps Flash tool additions in history as required by its upstream route', () => {
+    expect(DEEPSEEK_MODEL_CATALOG.find((model) => model.id === 'deepseek-flash'))
+      .toMatchObject({ systemPromptUpdate: 'in-history', toolUpdate: 'addition-only' })
   })
 })

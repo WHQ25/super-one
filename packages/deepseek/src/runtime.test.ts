@@ -101,6 +101,7 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
   it('preserves configured model display names in the live catalog', async () => {
     const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
       persona: 'test agent',
+      credentialLookup: () => 'test-key-not-used',
       deepseekAdapter: {
         models: [
           { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', contextWindow: 128_000 },
@@ -120,6 +121,7 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
   it('carries each model’s reasoning efforts, which the advisory listing omits', async () => {
     const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
       persona: 'test agent',
+      credentialLookup: () => 'test-key-not-used',
       deepseekAdapter: { models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }] },
     })
 
@@ -136,6 +138,7 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
   it('advertises only `off` when the deployment disables thinking', async () => {
     const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS,
       persona: 'test agent',
+      credentialLookup: () => 'test-key-not-used',
       deepseekAdapter: {
         models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }],
         thinking: 'disabled',

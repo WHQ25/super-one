@@ -13,11 +13,11 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
 import * as ImageOffload from '@deepseek-ai/dsh-compaction-image-offload'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
-import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek'
+import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
 import type { SubagentModelSelectionSettings } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
@@ -250,8 +250,8 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // description is derived from `provider.inheritsParentContext`, so the model
   // is told which of the two it is choosing.
   //
-  // The shipped rows delegate in the background by default (`continuable`);
-  // the runtime reports such children, and background jobs, as tasks the
+  // Delegation returns an immediate child identity; the runtime reports
+  // those children, and background jobs, as tasks the
   // background list shows and the user can stop (`background-work.ts`).
   ctx.plugin(SubagentRuntime)
   ctx.plugin(SubagentSpawnInProcess, { providerName: 'spawn' })
@@ -345,7 +345,9 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   }
 
   if (options.persistenceRoot) {
-    ctx.plugin(JsonlSessionPersistence, { root: options.persistenceRoot })
+    // Preserve the zstd encoding used by the previous published dsh runtime.
+    // The backend refuses a root containing the other physical encoding.
+    ctx.plugin(JsonlSessionPersistence, { root: options.persistenceRoot, compression: 'zstd' })
     ctx.plugin(CheckpointPolicy)
   }
 

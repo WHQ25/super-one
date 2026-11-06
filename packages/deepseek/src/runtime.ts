@@ -2,7 +2,7 @@ import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachme
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, type ImageBlock } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId, type ImageBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 // Side-effect type imports: each declaration-merges one service onto `Context`,
@@ -22,7 +22,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { UserQuestionError, type AskUserQuestionAnswer, type AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
 import { admitImageBlocks, encodeComposerImages, modelAcceptsImages } from './images'
-import { extractSubagentDiagnostic } from './subagent-diagnostic'
+import { SUBAGENT_DIAGNOSTIC_MAX_BYTES, truncateUtf8 } from './subagent-diagnostic'
 import { DeepseekEventMapper } from './event-map'
 import {
   installPermissionGate,
@@ -158,8 +158,8 @@ export interface DeepseekAgentHandle {
   cancel(): void
   /**
    * Change the route for subsequent requests without rebuilding the agent.
-   * `AgentOptions` is create-time and readonly, so the switch rides the
-   * documented `agent/request` waterfall instead.
+   * The selection is recorded in the session log before the next step, so it
+   * survives resume and is captured consistently for prompt assembly/retries.
    */
   setRoute(route: { provider?: string; model?: string; reasoningEffort?: string }): void
   whenIdle(): Promise<void>
@@ -182,12 +182,6 @@ export interface DeepseekCatalogEntry {
   defaultReasoningEffort?: string
 }
 
-interface RouteOverride {
-  provider?: string
-  model?: string
-  reasoningEffort?: string
-}
-
 interface AgentRecord {
   agent: Agent
   mapper: DeepseekEventMapper
@@ -198,7 +192,6 @@ interface AgentRecord {
    */
   started: boolean
   onEvent: (event: AgentEvent) => void
-  route: RouteOverride
   /** This session's permission answerer, also used by its delegated children. */
   requestPermission?: (request: DeepseekToolPermissionRequest) => Promise<ToolApprovalDecision>
   askUser?: CreateDeepseekAgentOptions['askUser']
@@ -232,6 +225,8 @@ interface SubagentRun {
    * Task block's chip and the background list follow it through task events.
    */
   background: boolean
+  /** Last local turn failure; lifecycle events carry no provider diagnostic. */
+  diagnostic?: string
 }
 
 /** Child-session events worth a Task-chip refresh; the rest are stream noise. */
@@ -255,14 +250,6 @@ export class DeepseekRuntime {
   private records = new Map<string, AgentRecord>()
   /** Live delegated children, keyed by the child's own dsh session id. */
   private subagentRuns = new Map<string, SubagentRun>()
-  /**
-   * Task id of a delegation that has already ended, keyed by its `subagent`
-   * call. The run itself is gone from `subagentRuns` by the time the tool
-   * rejects, but the diagnostic that arrives then still has to reach the Task
-   * block it belongs to. Entries are consumed on use, and a run that ends
-   * cleanly has its entry dropped rather than left to accumulate.
-   */
-  private endedSubagentTasks = new Map<string, string>()
   private adapterFiber: { dispose: () => Promise<void> } | null = null
   /** Open trajectory folds, keyed by dsh session id. */
   private readonly folds = new Map<string, { fold: TrajectoryFold; live: boolean }>()
@@ -347,6 +334,9 @@ export class DeepseekRuntime {
       const run = runtime.subagentRuns.get(id)
       if (!run) return
       run.mapper.handle(event)
+      if (event.type === 'turn/end' && event.data.reason.kind === 'error') {
+        run.diagnostic = truncateUtf8(event.data.reason.error.message, SUBAGENT_DIAGNOSTIC_MAX_BYTES)
+      }
       // The chip shows tool count, tokens and elapsed time; refreshing it on
       // every chunk would be one store write per streamed token.
       if (TASK_PROGRESS_EVENTS.has(event.type)) runtime.emitTaskProgress(run)
@@ -364,11 +354,9 @@ export class DeepseekRuntime {
 
     // Carry the calling tool and agent into everything the tool awaits.
     //
-    // `subagent/start` carries the child's id and a run id — and nothing else a
-    // host can use: its declared `parent: Agent` argument never reaches a
-    // listener, because dsh's contained emitter dispatches with the parent as the
-    // scope *carrier* and invokes each callback as `callback(info)`. A job's
-    // registration names no tool call either. A "last call wins" variable would
+    // `subagent/start` carries child/run identity, with the parent used only
+    // as a scope carrier rather than a callback argument. A job's registration
+    // names no tool call either. A "last call wins" variable would
     // not do — a parent may run several calls in one assistant message — so both
     // ride the async context of this span, which is exactly the one
     // `provider.start()` and `jobs.start()` run inside.
@@ -391,24 +379,7 @@ export class DeepseekRuntime {
       }
       const args = exec.arguments as { description?: unknown } | undefined
       span.delegation = { description: typeof args?.description === 'string' ? args.description : 'subagent' }
-      return toolCallSpan.run(
-        span,
-        // A delegation that ends badly rejects here, and that rejection is the
-        // ONLY place a provider's `SubagentResult.diagnostic` is observable:
-        // `subagent/end`, which is what closes the Task block, does not carry
-        // one. Catching it here — rather than re-reading the rendered tool
-        // result later — keeps the failure detail attached to the exact call it
-        // belongs to. The error is re-thrown untouched, so dsh still turns it
-        // into the model-facing tool error it always did.
-        () => next().catch((error: unknown) => {
-          runtime.reportSubagentDiagnostic(
-            String(agentSessionId),
-            toolUseId,
-            error instanceof Error ? error.message : String(error),
-          )
-          throw error
-        }).finally(settle),
-      )
+      return toolCallSpan.run(span, () => next().finally(settle))
     }) as never)
     runtime.unsubscribeJobs = runtime.jobs.subscribe()
 
@@ -428,22 +399,6 @@ export class DeepseekRuntime {
       const record = runtime.records.get(String(agent.id))
       if (!record) return
       record.onEvent({ type: 'status_change', status: status === 'running' ? 'streaming' : 'idle' })
-    })
-
-    // In-place route switching: AgentOptions is create-time and readonly, so a
-    // model/effort change rides this waterfall instead of forcing a rebuild.
-    bridge.on('agent/request', async (payload, next) => {
-      const config = await next()
-      const route = runtime.records.get(String(payload.agent.id))?.route
-      if (!route) return config
-      return {
-        ...config,
-        ...(route.provider !== undefined ? { provider: route.provider } : {}),
-        ...(route.model !== undefined ? { model: route.model } : {}),
-        ...(route.reasoningEffort !== undefined
-          ? { reasoningEffort: route.reasoningEffort as typeof config.reasoningEffort }
-          : {}),
-      }
     })
 
     if (options.onApproval) {
@@ -543,8 +498,8 @@ export class DeepseekRuntime {
   }
 
   /**
-   * Open a Task block for one delegated child and start routing its session
-   * events into the parent's transcript.
+   * Open a background Task block for one delegated child and route its usage
+   * and progress to the parent's task list.
    *
    * Both halves of the link come from the delegation span, because the event
    * carries neither: the tool call id, and the delegating agent — walked to its
@@ -565,7 +520,8 @@ export class DeepseekRuntime {
       runId: String(info.runId),
       description: span.delegation.description,
       startedAt: Date.now(),
-      background: false,
+      // Delegation always returns an activation receipt in dsh 0.2.2.
+      background: true,
       mapper: new DeepseekEventMapper({
         sessionId: childSessionId,
         emit: (event) => {
@@ -588,9 +544,8 @@ export class DeepseekRuntime {
   }
 
   /**
-   * One tool call returned. Work it started and left running is background
-   * work from here on: jobs become tasks, and a delegated child that is still
-   * live stops rendering into the parent's message.
+   * One tool call returned: jobs it left running become background tasks.
+   * Delegated children are already background tasks from activation.
    */
   private settleToolCall(span: ToolCallSpan): void {
     this.jobs.settleCall(span)
@@ -644,7 +599,7 @@ export class DeepseekRuntime {
   /**
    * Interrupt a background child's current turn and close its task.
    *
-   * dsh keeps an interrupted continuable child's Activation — it is idle and can
+   * dsh keeps an interrupted child's Activation — it is idle and can
    * be messaged again — so no `subagent/end` is guaranteed to follow. The task
    * the user stopped is closed here instead.
    */
@@ -658,12 +613,12 @@ export class DeepseekRuntime {
 
   /**
    * A session is going away: close its tasks, and tear down everything it
-   * left running — continuable children below it and its background jobs.
+   * left running — delegated children below it and its background jobs.
    */
   private async releaseBackgroundWork(record: AgentRecord): Promise<void> {
     for (const run of this.backgroundRunsOf(record)) this.closeRun(run, 'stopped')
     this.jobs.forget(record)
-    await this.bridge.get('subagents')?.drainContinuableDescendants([record.agent]).catch(() => undefined)
+    await this.bridge.get('subagents')?.drainDescendants([record.agent]).catch(() => undefined)
   }
 
   private closeRun(run: SubagentRun, taskStatus: 'completed' | 'failed' | 'stopped'): void {
@@ -677,6 +632,7 @@ export class DeepseekRuntime {
       // not a path SuperOne's "open full view" can read yet. The reducer treats
       // an empty path as absent and keeps whatever it already had.
       outputFile: '',
+      ...(taskStatus === 'failed' && run.diagnostic ? { diagnostic: run.diagnostic } : {}),
       usage: {
         totalTokens: stats.totalTokens,
         toolUses: stats.toolUses,
@@ -713,47 +669,8 @@ export class DeepseekRuntime {
     this.subagentRuns.delete(childSessionId)
 
     const kind = typeof info.stopReason === 'string' ? info.stopReason : info.stopReason?.kind
-    // Only a non-clean ending can carry a diagnostic, so only that case leaves
-    // an entry for the tool rejection to find.
-    if (kind === 'completed') this.endedSubagentTasks.delete(run.toolUseId)
-    else this.endedSubagentTasks.set(run.toolUseId, run.runId)
-    this.closeRun(run, kind === 'completed' ? 'completed' : kind === 'aborted' ? 'stopped' : 'failed')
-  }
 
-  /**
-   * Attach a failed delegation's provider diagnostic to its Task block.
-   *
-   * A second `task_notification` for the same task rather than a field on the
-   * first, because the two facts become available in that order and cannot be
-   * merged at the source: `subagent/end` closes the block and carries no
-   * diagnostic, and the diagnostic only exists once the tool rejects, which
-   * happens after. The reducer merges a later notification onto the entry it
-   * already has — omitted usage and summary keep their previous values — so
-   * this adds detail without disturbing anything already shown.
-   *
-   * Nothing is emitted for a failure that carried no diagnostic, which leaves
-   * the chip exactly as it was rather than replacing a real message with a
-   * blank one.
-   * @param agentSessionId - the DELEGATING agent's session.
-   * @param toolUseId - the `subagent` call this failure belongs to.
-   * @param message - the error text the tool rejected with.
-   */
-  private reportSubagentDiagnostic(agentSessionId: string, toolUseId: string, message: string): void {
-    const taskId = this.endedSubagentTasks.get(toolUseId)
-    if (taskId === undefined) return
-    this.endedSubagentTasks.delete(toolUseId)
-    const diagnostic = extractSubagentDiagnostic(message)
-    if (diagnostic === undefined) return
-    const owner = this.ownerOf(agentSessionId)
-    if (!owner) return
-    owner.onEvent({
-      type: 'task_notification',
-      taskId,
-      toolUseId,
-      taskStatus: 'failed',
-      outputFile: '',
-      diagnostic,
-    })
+    this.closeRun(run, kind === 'completed' ? 'completed' : kind === 'aborted' ? 'stopped' : 'failed')
   }
 
   /**
@@ -883,7 +800,6 @@ export class DeepseekRuntime {
       // The one explicit history read this needs, done once at resume.
       started: stored !== undefined && !sessionIsBlank(stored.events),
       onEvent: options.onEvent,
-      route: {},
       ...(toolPlane ? { requestPermission: toolPlane.requestPermission } : {}),
       ...(options.askUser ? { askUser: options.askUser } : {}),
       cwd: options.cwd,
@@ -908,7 +824,13 @@ export class DeepseekRuntime {
         record.agent.cancel({ kind: 'user' })
       },
       setRoute(route) {
-        Object.assign(record.route, route)
+        const current = record.agent.model.current() ?? { provider: options.provider, model: options.model }
+        record.agent.model.select({
+          ...current,
+          ...(route.provider !== undefined ? { provider: route.provider } : {}),
+          ...(route.model !== undefined ? { model: route.model } : {}),
+          ...(route.reasoningEffort !== undefined ? { reasoningEffort: ReasoningEffortId(route.reasoningEffort) } : {}),
+        })
       },
       whenIdle: () => record.agent.whenIdle(),
       status: () => record.agent.status,
@@ -984,8 +906,7 @@ export class DeepseekRuntime {
     }
     // The route a request would actually take: `setRoute` overrides the model
     // picked at creation, and the capability belongs to whichever one wins.
-    const provider = record.route.provider ?? created.provider
-    const model = record.route.model ?? created.model
+    const { provider, model } = record.agent.model.current() ?? created
     const info = await this.bridge.llm.resolveModelInfo(provider, model)
     if (!modelAcceptsImages(info.inputModalities)) {
       throw new Error(`deepseek images: model "${model}" does not accept image input`)
@@ -1034,12 +955,15 @@ export class DeepseekRuntime {
       throw new Error(`deepseek fork: nothing to fork before seq ${String(boundary)}`)
     }
 
+    // An ordinary fork starts an independent root even when its source was a
+    // delegated child. Seed lineage is recorded by the inherited marker, while
+    // parentSession/origin/delegationDepth belong only to actual delegation.
+    const { parentSession: _parent, origin: _origin, delegationDepth: _depth, ...forkHeader } = source.header
     const handle = await persistence.create(
       {
-        ...source.header,
+        ...forkHeader,
         id: SessionId(childSessionId),
-        // Lineage dsh reads back: where this branched, and that it carries seed.
-        parentSession: SessionId(sourceSessionId),
+        // The inherited prefix remains explicit without a subagent parent.
         isSeeded: true,
         createdAt: Date.now(),
       },
@@ -1340,9 +1264,9 @@ export class DeepseekRuntime {
    * Compact one session's history now, on the user's explicit request.
    *
    * Automatic compaction needs no seam — `compaction-basic` mounts its own
-   * step-boundary pressure listener. This is the manual path, and it goes
-   * straight to `ctx.compaction.compactNow()` rather than through
-   * `dsh-command-compact`, because SuperOne owns the slash surface.
+   * step-boundary pressure listener. The manual path invokes the preset's
+   * `dsh-command-compact` through the command registry, so it resolves the
+   * compaction engine in the preset's own isolated realm.
    *
    * The whole bracket (`compaction/start` … `compaction/end`) lands on the
    * session log, so the transcript-facing events come from the mapper like any

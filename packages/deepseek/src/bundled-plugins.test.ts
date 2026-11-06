@@ -24,12 +24,12 @@ describe('bundled dsh plugin catalog', () => {
 
     expect(plugins).toContainEqual({
       name: '@deepseek-ai/dsh-tool-todo',
-      version: '0.1.7-rc.1',
+      version: '0.2.2-rc.1',
       scopes: ['ptc', 'standard'],
     })
     expect(plugins).toContainEqual({
       name: '@deepseek-ai/dsh-agent-loop',
-      version: '0.1.7-rc.1',
+      version: '0.2.2-rc.1',
       scopes: ['core'],
     })
   })
@@ -53,7 +53,16 @@ describe('bundled dsh plugin catalog', () => {
       expect.objectContaining({ name: '@deepseek-ai/dsh-tool-todo', scopes: ['cordis', 'ptc', 'standard'] }),
       expect.objectContaining({ name: '@deepseek-ai/dsh-tool-cordis', scopes: ['cordis'] }),
       expect.objectContaining({ name: '@deepseek-ai/dsh-tool-bash-persistent', scopes: ['minimal'] }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-time-context', scopes: ['cordis', 'ptc', 'standard'] }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-tool-executor-ptc', scopes: ['ptc'] }),
     ]))
+    for (const hostOwnedTool of [
+      '@deepseek-ai/dsh-tool-schedule',
+      '@deepseek-ai/dsh-plugin-manager/tools',
+      '@deepseek-ai/dsh-plugin-market/tools',
+    ]) {
+      expect(plugins.map((plugin) => plugin.name)).not.toContain(hostOwnedTool)
+    }
     for (const plugin of plugins) {
       const packageName = plugin.name.match(/^@deepseek-ai\/[^/]+/)?.[0]
       expect(plugin.version, plugin.name).toBe(manifest.dependencies[packageName!])

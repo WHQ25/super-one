@@ -7,11 +7,11 @@
  * second property true; this test is what would catch that changing.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ReasoningEffortId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
 import { TEST_PRESET_OPTIONS } from './test-presets'
@@ -19,9 +19,11 @@ import { TEST_PRESET_OPTIONS } from './test-presets'
 /** Records every transcript it is asked to complete, then answers plainly. */
 class RecordingAdapter extends LlmAdapter {
   readonly transcripts: string[] = []
+  readonly routes: Array<{ provider: string; model: string; reasoningEffort?: string }> = []
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.transcripts.push(JSON.stringify(options.messages))
+    this.routes.push({ provider: options.provider, model: options.model, ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) })
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text: 'ok' }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: 'ok' } }
@@ -37,7 +39,7 @@ class RecordingAdapter extends LlmAdapter {
   }
 
   override async resolveModel(provider: string, model: string) {
-    return { provider, id: model, name: 'Mock One', context: { contextWindow: 1000 } }
+    return { provider, id: model, name: 'Mock One', context: { contextWindow: 1000 }, reasoning: { efforts: [{ id: ReasoningEffortId('high'), name: 'High' }] } }
   }
 }
 
@@ -66,6 +68,28 @@ afterEach(async () => {
 })
 
 describe('deepseek cold resume', () => {
+  // The unmodified published artifact records a POSIX /tmp working directory.
+  it.skipIf(process.platform === 'win32')('resumes an unchanged session artifact written by published 0.1.7-rc.1', async () => {
+    const persistenceRoot = mkdtempSync(join(tmpdir(), 'dsh-legacy-resume-'))
+    dirs.push(persistenceRoot)
+    const sessionId = 'dsh-0.1.7-rc.1-fixture'
+    const sessionRoot = join(persistenceRoot, '--tmp--', sessionId)
+    mkdirSync(sessionRoot, { recursive: true })
+    const storageFile = join(sessionRoot, 'session.v4.jsonl.zstd')
+    copyFileSync(new URL('./fixtures/dsh-0.1.7-rc.1/session.v4.jsonl.zstd', import.meta.url), storageFile)
+    const { runtime, adapter } = await bootRuntime(persistenceRoot)
+    const agent = await runtime.createAgent({
+      sessionId, cwd: '/tmp', provider: 'mock', model: 'mock-1', resume: true, onEvent: () => {},
+    })
+    await runTurn(agent, 'continue the old session')
+    expect(adapter.transcripts.join('\n')).toContain('legacy persisted codeword is marigold')
+    expect(adapter.transcripts.join('\n')).toContain('legacy persisted answer')
+    expect(adapter.transcripts.join('\n')).toContain('continue the old session')
+    await agent.dispose()
+    expect(existsSync(storageFile)).toBe(true)
+    expect(existsSync(join(sessionRoot, 'session.v4.jsonl'))).toBe(false)
+  })
+
   it('restores the conversation for the model without replaying it into the transcript', async () => {
     const persistenceRoot = mkdtempSync(join(tmpdir(), 'dsh-resume-'))
     dirs.push(persistenceRoot)
@@ -110,6 +134,29 @@ describe('deepseek cold resume', () => {
     )
     expect(userTurns.length).toBeGreaterThan(0)
     expect(JSON.stringify(events)).not.toContain('the codeword is banana')
+  })
+
+  it('records route changes before the next step and restores them on cold resume', async () => {
+    const persistenceRoot = mkdtempSync(join(tmpdir(), 'dsh-route-resume-'))
+    dirs.push(persistenceRoot)
+    const sessionId = randomUUID()
+    const first = await bootRuntime(persistenceRoot)
+    const agent = await first.runtime.createAgent({
+      sessionId, cwd: process.cwd(), provider: 'mock', model: 'mock-1', onEvent: () => {},
+    })
+    agent.setRoute({ model: 'mock-2', reasoningEffort: 'high' })
+    await runTurn(agent, 'use the selected route')
+    expect(first.adapter.routes).toContainEqual({ provider: 'mock', model: 'mock-2', reasoningEffort: 'high' })
+    await agent.dispose()
+    await first.runtime.dispose()
+    runtimes.pop()
+
+    const second = await bootRuntime(persistenceRoot)
+    const resumed = await second.runtime.createAgent({
+      sessionId, cwd: process.cwd(), provider: 'mock', model: 'mock-1', resume: true, onEvent: () => {},
+    })
+    await runTurn(resumed, 'continue with the recorded choice')
+    expect(second.adapter.routes).toContainEqual({ provider: 'mock', model: 'mock-2', reasoningEffort: 'high' })
   })
 
   it('starts a fresh session when there is nothing to resume', async () => {

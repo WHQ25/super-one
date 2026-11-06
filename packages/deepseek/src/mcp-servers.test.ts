@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -151,8 +152,8 @@ describe('third-party MCP servers', () => {
   it('reaches every session, because dsh composes per deployment', async () => {
     const runtime = await bootRuntime()
     const specs = [httpServer('repo', 'http://a')]
-    const a = await startAgent(runtime, '/projects/a', specs)
-    const b = await startAgent(runtime, '/projects/b', specs)
+    const a = await startAgent(runtime, process.cwd(), specs)
+    const b = await startAgent(runtime, tmpdir(), specs)
 
     await runTurn(a.agent, 'CALL mcp__repo__ping {}')
     await runTurn(b.agent, 'CALL mcp__repo__ping {}')
@@ -165,12 +166,12 @@ describe('third-party MCP servers', () => {
   it('mounts a server once even as sessions come and go', async () => {
     const runtime = await bootRuntime()
     const specs = [httpServer('repo', 'http://a')]
-    const first = await startAgent(runtime, '/projects/a', specs)
+    const first = await startAgent(runtime, process.cwd(), specs)
     await first.agent.dispose()
 
     // A second mount under the same name would throw on the process-wide
     // reservation the real client keeps, so this is the regression that matters.
-    const second = await startAgent(runtime, '/projects/a', specs)
+    const second = await startAgent(runtime, process.cwd(), specs)
     await runTurn(second.agent, 'CALL mcp__repo__ping {}')
 
     expect(toolResults(second.events)).toContain('pong:repo:http://a')
@@ -178,10 +179,10 @@ describe('third-party MCP servers', () => {
 
   it('re-mounts when the config changed and drops what is gone', async () => {
     const runtime = await bootRuntime()
-    const first = await startAgent(runtime, '/projects/a', [httpServer('repo', 'http://a')])
+    const first = await startAgent(runtime, process.cwd(), [httpServer('repo', 'http://a')])
     await first.agent.dispose()
 
-    const second = await startAgent(runtime, '/projects/a', [httpServer('repo', 'http://b')])
+    const second = await startAgent(runtime, process.cwd(), [httpServer('repo', 'http://b')])
     await runTurn(second.agent, 'CALL mcp__repo__ping {}')
 
     // Same name, new endpoint: the old mount had to go before the new one
@@ -253,7 +254,7 @@ describe('third-party MCP servers', () => {
 
   it('lets the model read a configured server\'s resources', async () => {
     const runtime = await bootRuntime()
-    const { agent, events } = await startAgent(runtime, '/projects/a', [httpServer('docs', 'http://a')])
+    const { agent, events } = await startAgent(runtime, process.cwd(), [httpServer('docs', 'http://a')])
 
     await runTurn(agent, 'CALL read_mcp_resource {"server":"docs","uri":"memo://a"}')
 
@@ -266,7 +267,7 @@ describe('third-party MCP servers', () => {
       (runtime as unknown as { mcpServers: DeepseekMcpServers }).mcpServers,
       'sync',
     )
-    const { agent } = await startAgent(runtime, '/projects/a', [])
+    const { agent } = await startAgent(runtime, process.cwd(), [])
 
     await runTurn(agent, 'hello')
 

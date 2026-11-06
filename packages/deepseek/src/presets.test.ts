@@ -47,6 +47,7 @@ async function rosterRuntime() {
   const runtime = await DeepseekRuntime.create({
     persona: 'test agent',
     persistenceRoot,
+    attachmentHome: join(persistenceRoot, 'images'),
     presetRoot: PRESET_ROOT,
   })
   disposers.push(() => runtime.dispose())
@@ -137,6 +138,7 @@ describe('agent preset session identity', () => {
     expect(second.sessionPreset(sessionId)).toBe('minimal')
     const trajectory = await second.trajectorySnapshot(sessionId)
     const catalog = (trajectory?.headers.at(-1)?.tools ?? []).map((tool) => tool.name).sort()
+    // These resumed fixtures have no attachment store, so read_image is absent.
     expect(catalog).toEqual(['bash'])
   })
 
@@ -213,14 +215,23 @@ describe('agent preset roster', () => {
     ]))
   })
 
-  it('sends the minimal preset exactly its one tool', async () => {
+  it('sends the minimal preset its persistent shell and image reader', async () => {
     const runtime = await rosterRuntime()
 
     const catalog = await catalogFor(runtime, 'minimal')
 
-    // This is the whole point of the preset mechanism: the same harness reaches
-    // the model as a one-tool agent, with none of the standard catalog.
-    expect(catalog).toEqual(['bash'])
+    // Minimal keeps the persistent shell and image reader, without the rest
+    // of the standard coding catalog.
+    expect(catalog).toEqual(['bash', 'read_image'])
+  })
+
+  it('selects the PTC executor without changing the native preset catalog', async () => {
+    const runtime = await rosterRuntime()
+
+    expect(await catalogFor(runtime, 'ptc')).toEqual(['run_code'])
+    const standard = await catalogFor(runtime, 'standard')
+    expect(standard).toContain('read')
+    expect(standard).not.toContain('run_code')
   })
 
   it('keeps two sessions on different presets apart', async () => {

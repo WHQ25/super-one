@@ -44,6 +44,8 @@ export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
  * adapter's defaults. Since 0.1.5 that catalog is V4.1 `deepseek-flash` —
  * text and image input, with the system prompt kept in history so a prompt
  * change does not invalidate the provider cache — beside `deepseek-v4-pro`.
+ * Flash also keeps tool additions in history rather than rewriting the
+ * earlier tool declaration, matching its `addition-only` update contract.
  * The retired `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` ids still
  * pass through for existing sessions, as text-only routes.
  *
@@ -53,23 +55,20 @@ export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
  * pixel and byte budgets are deliberately left off: omitted, the adapter fills
  * in exactly the values its own default entry carries.
  *
- * No entry declares `contextWindow`, on purpose. Nothing in the DeepSeek API
- * reports capacity, so whatever is written here IS the number — and it is not
- * only a progress ring: `compaction-basic` computes its trigger from it
- * (`contextWindow * 0.8`), so a value below the truth compacts a healthy
- * conversation away early. Omitted, the adapter's own `defaultContextWindow`
- * answers, which is the figure DeepSeek's harness team publishes for these
- * exact model ids and which then tracks upstream on every bump instead of
- * ageing here. It also keeps a catalogued route and an unlisted pass-through
- * id — which always reads that same default — from disagreeing.
+ * Both official entries now publish a 1,048,576-token context window in the
+ * upstream catalog. Keep that exact capacity here: the adapter's generic
+ * fallback is decimal 1M, and `compaction-basic` derives its trigger from this
+ * value. Review these fields with the upstream catalog on each harness bump.
  */
 export const DEEPSEEK_MODEL_CATALOG = [
-  { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro' },
+  { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro', contextWindow: 1_048_576 },
   {
     id: 'deepseek-flash',
     name: 'DeepSeek V4.1 Flash',
+    contextWindow: 1_048_576,
     inputModalities: ['text', 'image'],
     systemPromptUpdate: 'in-history',
+    toolUpdate: 'addition-only',
   },
 ] as const satisfies DeepseekAdapterOptions['models']
 

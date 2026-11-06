@@ -23,15 +23,19 @@ const SRC = dirname(fileURLToPath(import.meta.url))
 const PACKAGE_ROOT = join(SRC, '..')
 const DESKTOP_MANIFEST = join(PACKAGE_ROOT, '..', '..', 'apps', 'desktop', 'package.json')
 
-/** `@scope/name` even when the import reaches a subpath. */
-const DSH_IMPORT = /['"](@deepseek-ai\/[a-z0-9][a-z0-9-]*)(?:\/[^'"]*)?['"]/g
+/** Import/export module specifiers, not package names mentioned in assertions. */
+const DSH_IMPORT = /(?:^\s*(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\bfrom\s*)?|\bimport\s*\(\s*)['"](@deepseek-ai\/[a-z0-9][a-z0-9-]*)(?:\/[^'"]*)?['"]/gm
+
+function importedDshPackages(source: string): string[] {
+  return [...source.matchAll(DSH_IMPORT)].map(([, name]) => name!)
+}
 
 function dshImports(predicate: (file: string) => boolean): string[] {
   const found = new Set<string>()
   for (const file of readdirSync(SRC)) {
     if (!file.endsWith('.ts') || !predicate(file)) continue
     const source = readFileSync(join(SRC, file), 'utf8')
-    for (const [, name] of source.matchAll(DSH_IMPORT)) found.add(name)
+    for (const name of importedDshPackages(source)) found.add(name)
   }
   return [...found].sort()
 }
@@ -50,6 +54,22 @@ function declaredIn(manifestPath: string): Set<string> {
 const isTest = (file: string) => file.endsWith('.test.ts')
 
 describe('dsh dependency declarations', () => {
+  it('scans module specifiers without treating omitted-tool assertions as imports', () => {
+    const source = [
+      "import { Context } from '@deepseek-ai/cordis'",
+      "import type { Agent } from '@deepseek-ai/dsh-agent'",
+      "import type {} from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'",
+      "export { Context } from '@deepseek-ai/cordis'",
+      "const tools = await import('@deepseek-ai/dsh-tools')",
+      "expect(names).not.toContain('@deepseek-ai/dsh-tool-schedule')",
+    ].join('\n')
+
+    expect(importedDshPackages(source)).toEqual([
+      '@deepseek-ai/cordis', '@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-tool-subagent',
+      '@deepseek-ai/cordis', '@deepseek-ai/dsh-tools',
+    ])
+  })
+
   it('declares every dsh package this workspace imports', () => {
     const declared = declaredIn(join(PACKAGE_ROOT, 'package.json'))
     const undeclared = dshImports(() => true).filter((name) => !declared.has(name))

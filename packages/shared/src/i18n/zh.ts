@@ -2427,6 +2427,7 @@ export const zh: Messages = {
       addedToChat: '已添加到聊天',
     },
     worktree: {
+      searchBranchesPlaceholder: '搜索分支…',
       searchPlaceholder: '搜索工作树…',
       existingHeading: '已有工作树',
       createFromHeading: '从分支新建工作树',

@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
+import type { SessionActivity } from '@superone/shared/session-activity'
 
 const FOLDER = '/storybook/collaboration'
 const parent: SessionHistoryEntry = {
@@ -90,6 +91,62 @@ export const ChildHydration: Story = {
 }
 
 export const NarrowChildHydration: Story = { ...ChildHydration, args: { width: 220 } }
+
+const REMOTE_FOLDER = 'remote:storybook-node:/work/app'
+
+/** Remote list summaries arrive without a child page or any transcript messages. */
+function RemoteChildPreview({ width = 280, expanded = true }: { width?: number; expanded?: boolean }) {
+  useLayoutEffect(() => {
+    const previous = useChatStore.getState()
+    useChatStore.setState({ activeProject: null, projectSessions: {}, agentTitles: {} })
+    return () => { useChatStore.setState(previous) }
+  }, [])
+  const activity: SessionActivity = {
+    sessionId: 'remote-child', projectPath: REMOTE_FOLDER, status: 'streaming', provider: 'codex',
+    title: 'Check the remote build', parentSessionId: 'parent',
+    pendingCount: 0, pendingReason: { en: null, zh: null },
+  }
+  const publish = (patch: Partial<SessionActivity>, completed = false) => {
+    useChatStore.getState().handleAgentEvent({ type: 'session_activity', activity: { ...activity, ...patch }, completed })
+  }
+  return (
+    <div style={{ width }}>
+      <div className="mb-3 flex flex-wrap gap-2 text-xs">
+        <button className="rounded border px-2 py-1" onClick={() => publish({})}>Start remote child</button>
+        <button className="rounded border px-2 py-1" onClick={() => publish({ status: 'idle', completedMessageId: 'done' }, true)}>Finish child</button>
+        <button className="rounded border px-2 py-1" onClick={() => publish({ status: 'idle', completedMessageId: 'done', seenCompletedMessageId: 'done' })}>Read completion</button>
+      </div>
+      <div className="bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+        <ProjectSidebarRow
+          {...callbacks}
+          folder={{ id: 'remote', name: 'Remote project', path: REMOTE_FOLDER, addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
+          sessions={[{ ...parent, childCount: 30 }]}
+          isExpanded={expanded}
+        />
+      </div>
+    </div>
+  )
+}
+
+export const RemoteChildActivity: Story = {
+  render: () => <RemoteChildPreview />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByText('Check the remote build')).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'Start remote child' }))
+    const title = await canvas.findByText('Check the remote build')
+    await expect(title.closest('.group\\/session')?.querySelector('.lucide-corner-down-right')).not.toBeNull()
+    await userEvent.click(canvas.getByRole('button', { name: 'Finish child' }))
+    await expect(canvas.getByText('Check the remote build')).toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'Read completion' }))
+    await expect(canvas.queryByText('Check the remote build')).not.toBeInTheDocument()
+  },
+}
+
+export const NarrowCollapsedRemoteChildActivity: Story = {
+  ...RemoteChildActivity,
+  render: () => <RemoteChildPreview width={220} expanded={false} />,
+}
 
 export const SessionsOnly: Story = {
   render: () => (

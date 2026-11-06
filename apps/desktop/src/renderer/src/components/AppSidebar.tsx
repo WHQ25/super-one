@@ -725,7 +725,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const pinnedAndDrafts = (showPinned || showDrafts) ? (
     <>
       {showPinned && (
-        <div className="flex flex-col px-2 pb-1">
+        <div className="flex flex-col px-2 pt-1 pb-1">
           <SidebarSectionLabel
             section="pinned"
             count={pinnedForList.length}

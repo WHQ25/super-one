@@ -7,12 +7,17 @@ import { useChatStore, useSessionScope } from '@/stores/chat'
 /**
  * The harness catalog of the machine that runs the pane's project: this
  * desktop's own (`localCatalog`), or a node's from its descriptor, read again
- * whenever that node connects. Null while a node's descriptor is unknown.
+ * whenever that node connects. A landing without a project can supply its
+ * selected host explicitly. Null while a node's descriptor is unknown.
  */
-export function useProjectHarnessCatalog(localCatalog: HarnessCatalogStatus[] | null): HarnessCatalogStatus[] | null {
+export function useProjectHarnessCatalog(
+  localCatalog: HarnessCatalogStatus[] | null,
+  hostConnectionId?: string,
+): HarnessCatalogStatus[] | null {
   const scope = useSessionScope()
   const projectPath = useChatStore((s) => scope?.projectPath ?? s.activeProject)
-  const connectionId = projectPath ? parseRemoteProjectKey(projectPath)?.connectionId ?? null : null
+  const host = hostConnectionId ?? (projectPath ? parseRemoteProjectKey(projectPath)?.connectionId : null)
+  const connectionId = host && host !== 'local' ? host : null
   const [remote, setRemote] = useState<{ connectionId: string; catalog: HarnessCatalogStatus[] } | null>(null)
   useEffect(() => {
     if (!connectionId) return

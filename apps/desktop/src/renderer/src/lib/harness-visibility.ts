@@ -9,7 +9,7 @@
 
 import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
-import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
+import { NODE_HARNESS_DEFINITIONS, sessionHarnessIdToNodeHarnessId } from '@superone/shared/environment/harness-installation'
 import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 export interface HarnessCatalogStatus {
@@ -44,8 +44,11 @@ export function isCatalogHarnessDisabled(
 }
 
 export function catalogFromHarnessIds(harnessIds: readonly string[]): HarnessCatalogStatus[] {
+  // Legacy `acp` advertises Grok, not every agent that speaks ACP. Preserve
+  // concrete catalog identities when a host supplies them.
+  const catalogIds = new Set(harnessIds.map(sessionHarnessIdToNodeHarnessId))
   return NODE_HARNESS_DEFINITIONS.map((def) => {
-    const runnable = harnessIds.includes(def.sessionHarnessId)
+    const runnable = catalogIds.has(def.id)
     return { id: def.id, enabled: runnable, state: runnable ? 'ready' : 'disabled' }
   })
 }

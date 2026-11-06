@@ -90,9 +90,12 @@ function optionLabel(option: SuggestionHarnessOption): string {
 
 export function ProviderSelector({
   disableAutoApply = false,
+  hostConnectionId,
 }: {
   /** Draft surface: show the tabs, never re-pin the empty-session default harness. */
   disableAutoApply?: boolean
+  /** Empty landing follows the selected host even before its project opens. */
+  hostConnectionId?: string
 } = {}) {
   const { t } = useTranslation()
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
@@ -110,9 +113,10 @@ export function ProviderSelector({
   const [localHarnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(
     () => appHarnessCatalog ?? rememberedHarnessCatalog,
   )
-  // Pickers offer what the project's machine runs; harness bootstrap below stays on this desktop's.
-  const harnessCatalog = useProjectHarnessCatalog(localHarnessCatalog)
   const sessionScope = useSessionScope()
+  // Scoped panes stay on their session's machine. An unscoped landing follows
+  // the host selector before that host has a project to bind to.
+  const harnessCatalog = useProjectHarnessCatalog(localHarnessCatalog, sessionScope ? undefined : hostConnectionId)
   const foreground = useSessionPaneForeground()
   const selectedAndLoaded = useChatStore((s) => isSelectedSessionScope(s, sessionScope)
     && (!sessionScope || !!s.projectSessions[sessionScope.projectPath]?._sessions[sessionScope.sessionId]?._historyHydrated))
@@ -807,7 +811,7 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
     const isProjectLoading = isSwitchingHostProject || loading
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
-        <ProviderSelector />
+        <ProviderSelector hostConnectionId={connectionId} />
         {isProjectLoading ? (
           <div role="status" className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
             <Loader2 aria-hidden="true" className="size-4 animate-spin" />
@@ -879,7 +883,7 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
       data-draft={draft || undefined}
       inert={locked}
     >
-      <ProviderSelector disableAutoApply={draft} />
+      <ProviderSelector disableAutoApply={draft} hostConnectionId={draft ? undefined : connectionId} />
       <ProjectSelector
         align="center"
         carryOpenDraft

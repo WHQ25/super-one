@@ -276,6 +276,7 @@ afterEach(() => {
   hoisted.sessionState.acpAgentId = null
   hoisted.sessionState._providerSessionId = null
   hoisted.sessionState.status = 'idle'
+  hoisted.sessionState.awaitingAssistantReply = false
 })
 
 it('keeps the remote draft composer below its observation notice and disconnect action', async () => {
@@ -1357,5 +1358,27 @@ describe('ChatContent transcript density', () => {
     } finally {
       rectSpy.mockRestore()
     }
+  })
+})
+
+
+describe('ChatContent pending send', () => {
+  it('shows sending below the staged user bubble until the assistant starts or the send fails', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.draftId = null
+    hoisted.sessionState.messages = [{
+      id: 'first-user', role: 'user', status: 'complete', providerId: 'local',
+      createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'First remote message' }],
+    }]
+    hoisted.sessionState.awaitingAssistantReply = true
+    useAppStore.setState({ harnessCatalog: null })
+    const { rerender } = renderContent()
+    const bubble = screen.getByText('First remote message')
+    const sending = screen.getByText('Sending…')
+    expect(bubble.compareDocumentPosition(sending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    hoisted.sessionState.awaitingAssistantReply = false
+    rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+    expect(screen.queryByText('Sending…')).toBeNull()
   })
 })

@@ -191,6 +191,91 @@ describe('sendMessageImpl: remote node', () => {
     }
   })
 
+  it('paints the first turn immediately while the remote worktree is still preparing', async () => {
+    seedProject(remotePath, 'local-draft-sid', { preferredProvider: 'claude' })
+    mockWorktreeState.pendingBaseBranch = 'main'
+    mockWorktreeState.pendingBranchName = 'feature-x'
+    let finishWorktree!: (value: { ok: true; path: string }) => void
+    mockActivateWorktree.mockReturnValueOnce(new Promise(resolve => { finishWorktree = resolve }))
+
+    const sending = useChatStore.getState().sendMessage('hello')
+    const staged = getActiveSession(remotePath)
+    expect(staged.messages).toHaveLength(1)
+    expect(staged.messages[0]).toMatchObject({ role: 'user', content: [{ type: 'text', text: 'hello' }] })
+    expect(staged.awaitingAssistantReply).toBe(true)
+    expect(mockEnvCreateSession).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(mockActivateWorktree).toHaveBeenCalled())
+
+    finishWorktree({ ok: true, path: '/work/feature-x' })
+    await sending
+
+    const session = getActiveSession(remotePath)
+    expect(session.messages.map(message => message.id)).toEqual([staged.messages[0].id])
+    expect(session.cwd).toBe('/work/feature-x')
+    expect(sentTurn()).toMatchObject({ cwdHostPath: '/work/feature-x', clientMessageId: staged.messages[0].id })
+  })
+
+  it('keeps the staged send on its original session when focus changes during worktree preparation', async () => {
+    seedProject(remotePath, 'original', { preferredProvider: 'claude' })
+    mockWorktreeState.pendingBaseBranch = 'main'
+    mockWorktreeState.pendingBranchName = 'feature-x'
+    let finishWorktree!: (value: { ok: true; path: string }) => void
+    mockActivateWorktree.mockReturnValueOnce(new Promise(resolve => { finishWorktree = resolve }))
+    const sending = useChatStore.getState().sendMessage('original turn')
+    await vi.waitFor(() => expect(mockActivateWorktree).toHaveBeenCalled())
+    useChatStore.setState(state => {
+      const project = state.projectSessions[remotePath]
+      return { projectSessions: { ...state.projectSessions, [remotePath]: {
+        ...project, _activeSessionId: 'sibling', _sessions: {
+          ...project._sessions, sibling: createDefaultPerSessionState(),
+        },
+      } } }
+    })
+    finishWorktree({ ok: true, path: '/work/feature-x' })
+    await sending
+    const project = useChatStore.getState().projectSessions[remotePath]
+    expect(project._activeSessionId).toBe('sibling')
+    expect(project._sessions.sibling.messages).toEqual([])
+    expect(project._sessions.sibling.cwd).toBe('')
+    expect(project._sessions['node-sid-1'].messages[0].content).toEqual([{ type: 'text', text: 'original turn' }])
+    expect(sentTurn()).toMatchObject({ sessionId: 'node-sid-1', cwdHostPath: '/work/feature-x' })
+  })
+
+  it('paints before reading a mentioned resource and keeps its returned text on the sent message', async () => {
+    seedProject(remotePath, 'local-draft-sid', { preferredProvider: 'claude' })
+    const resource = { server: 'docs', uri: 'docs://intro', text: 'Resource contents' }
+    let finishRead!: (value: { ok: true; value: typeof resource[] }) => void
+    const readResource = vi.fn().mockReturnValue(new Promise(resolve => { finishRead = resolve }))
+    window.environment.mcpAppMentionRead = readResource
+    const sending = useChatStore.getState().sendMessage('Read this', undefined, [
+      { kind: 'mcp-resource', value: 'docs:docs://intro', displayName: 'Intro' },
+    ])
+    const staged = getActiveSession(remotePath).messages[0]
+    expect(staged.content).toEqual([{ type: 'text', text: 'Read this' }])
+    await vi.waitFor(() => expect(readResource).toHaveBeenCalled())
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+    finishRead({ ok: true, value: [resource] })
+    await sending
+    expect(getActiveSession(remotePath).messages[0].content).toEqual(sentTurn().userMessageContent)
+    expect(sentText()).toContain('Resource contents')
+    expect(staged.content).toHaveLength(1)
+  })
+
+  it('keeps a failed worktree preparation on the staged bubble and settles sending', async () => {
+    seedProject(remotePath, 'local-draft-sid', { preferredProvider: 'claude' })
+    mockWorktreeState.pendingBaseBranch = 'main'
+    mockWorktreeState.pendingBranchName = 'feature-x'
+    mockActivateWorktree.mockResolvedValueOnce({ ok: false, error: 'Branch already exists' })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const session = getActiveSession(remotePath)
+    expect(session.messages).toHaveLength(1)
+    expect(session.messages[0].metadata?.sendFailure?.error).toBe('Branch already exists')
+    expect(session.awaitingAssistantReply).toBe(false)
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+  })
+
   it('paints the user bubble before the node creates the session', async () => {
     seedProject(remotePath, 'local-draft-sid', {
       preferredProvider: 'claude',
@@ -547,7 +632,7 @@ describe('sendMessageImpl: worktree activation', () => {
 
     expect(mockActivateWorktree).not.toHaveBeenCalled()
     expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
-    expect(mockToastError).toHaveBeenCalledWith('Branch mode requires a branch name')
+    expect(getActiveSession('/proj').messages[0].metadata?.sendFailure?.error).toBe('Branch mode requires a branch name')
   })
 
   it('aborts when activateWorktree returns ok=false', async () => {
@@ -561,7 +646,7 @@ describe('sendMessageImpl: worktree activation', () => {
 
     expect(mockSetActiveWorktree).not.toHaveBeenCalled()
     expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
-    expect(mockToastError).toHaveBeenCalledWith('dirty tree')
+    expect(getActiveSession('/proj').messages[0].metadata?.sendFailure?.error).toBe('dirty tree')
   })
 })
 

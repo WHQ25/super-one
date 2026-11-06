@@ -72,7 +72,8 @@ export async function sendMessageImpl(
   const projectPath = target?.projectPath ?? get().activeProject
   if (!projectPath) return
 
-  const writeScope = createSendWriteScope(set, get, projectPath, target)
+  const sessionId = target?.sessionId ?? getProject(get(), projectPath)._activeSessionId
+  const writeScope = createSendWriteScope(set, get, projectPath, sessionId ? { projectPath, sessionId } : target)
   const resolveWriteSid = writeScope.sessionId
   const patchSession = writeScope.patch
 
@@ -138,14 +139,12 @@ export async function sendMessageImpl(
     })
   }
 
-  if (!await applyPendingWorktree(projectPath, writeScope)) return
+  // Existing conversations retain their worktree/harness reset order. A first
+  // turn stages immediately, before preparing its working directory below.
+  const stageBeforeWorktree = initialSession.messages.length === 0
+  if (!stageBeforeWorktree && !await applyPendingWorktree(projectPath, writeScope)) return
 
   const session = getScopedPerSession(get(), writeScope.target)
-  const project = getProject(get(), projectPath)
-  const {
-    selectedModel,
-    selectedEffort,
-  } = session
   const annotations = session.browserAnnotations ?? []
   const annotationImages: ImageAttachment[] = annotations
     .filter((a) => a.screenshot)
@@ -310,8 +309,8 @@ export async function sendMessageImpl(
   // MCP server items: the host reads their text now so the model need not call a tool for it.
   // No session yet means no server answered a search either, so there is nothing to read.
   const mcpMentionSid = resolveWriteSid()
-  const mcpResourceSuffix = mcpMentionSid && mentions.some((m) => m.kind === 'mcp-resource')
-    ? await import('../../../components/mcp-apps/mention-content').then(({ mcpMentionContentForModel }) =>
+  const readMcpResources = async () => mcpMentionSid && mentions.some((m) => m.kind === 'mcp-resource')
+    ? import('../../../components/mcp-apps/mention-content').then(({ mcpMentionContentForModel }) =>
       mcpMentionContentForModel(projectPath, mcpMentionSid, mentions))
     : ''
   // desktop-app reminder is appended only after grant IPC succeeds (below).
@@ -324,7 +323,6 @@ export async function sendMessageImpl(
     environmentReminderSuffix +
     agentReminderSuffix +
     capabilityReminderSuffix +
-    mcpResourceSuffix +
     annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)
   // Note: codex command is re-built after grant if desktop-app reminder is added.
@@ -491,10 +489,6 @@ export async function sendMessageImpl(
     if (ran) return
   }
 
-  // Activation can replay an older host selection. This turn keeps the choices
-  // the composer displayed when it was sent; later turns use subsequent picks.
-  const turnChoices = getScopedPerSession(get(), writeScope.target)
-
   const attachmentBlock = (att: ImageAttachment): ContentBlock =>
     att.mimeType === 'application/pdf'
       ? { type: 'document' as const, name: att.name, id: att.id }
@@ -504,7 +498,7 @@ export async function sendMessageImpl(
   // blocks so the sent message preserves each chip's inline position. Browser
   // annotation screenshots have no inline anchor, so they trail at the end.
   const hasInlineAttachments = !!segments?.some((s) => 'attachmentId' in s)
-  const userContent: ContentBlock[] = hasInlineAttachments
+  let userContent: ContentBlock[] = hasInlineAttachments
     ? [
         ...segments!.flatMap((seg): ContentBlock[] => {
           if ('attachmentId' in seg) {
@@ -521,10 +515,6 @@ export async function sendMessageImpl(
           ? segments.flatMap((s) => ('attachmentId' in s ? [] : [{ type: 'text' as const, text: s.text, isPaste: s.isPaste }]))
           : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
       ]
-
-  // Keep what the host read for mentioned MCP resources with the message, so its
-  // chips can show what the agent got. The bubble and copy text strip the block.
-  if (mcpResourceSuffix) userContent.push({ type: 'text', text: mcpResourceSuffix.trim() })
 
   const userMessageId = newMessageId('user')
   const messageContexts = activeContexts.length > 0
@@ -562,9 +552,25 @@ export async function sendMessageImpl(
     })),
     isOpen: true,
   }))
-  // The bubble is on screen before the host session exists, the way a phone
-  // stages a turn. A create the host refuses marks that same bubble failed.
+  // A first turn paints before worktree or host round trips. Keep that row
+  // when worktree activation resets the transcript, and write to this pane.
+  let turnChoices = getScopedPerSession(get(), writeScope.target)
   try {
+    if (stageBeforeWorktree) {
+      await applyPendingWorktree(projectPath, writeScope, { stagedMessageId: userMessageId })
+    }
+    // Activation can replay an older host selection. Keep this turn's choices,
+    // including the worktree it just prepared, before activating the host.
+    turnChoices = getScopedPerSession(get(), writeScope.target)
+    const mcpResourceSuffix = await readMcpResources()
+    if (mcpResourceSuffix) {
+      finalContent += mcpResourceSuffix
+      userContent = [...userContent, { type: 'text', text: mcpResourceSuffix.trim() }]
+      patchSession(s => ({
+        messages: s.messages.map(message => message.id === userMessageId ? { ...message, content: userContent } : message),
+        queuedMessages: s.queuedMessages.map(message => message.id === userMessageId ? { ...message, content: userContent } : message),
+      }))
+    }
     await ensureHostSession(set, get, projectPath, writeScope)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -592,11 +598,7 @@ export async function sendMessageImpl(
 
   if (resetLock.current) await resetLock.current
 
-  // Re-read the write session id from the live store when unscoped. A first-turn
-  // codex switch above assigns a fresh _activeSessionId via set(), which the
-  // snapshot at the top of this function does NOT reflect — using that stale
-  // value here silently skipped mini-app tool authorization on the very first
-  // codex @-mention. Scoped sends track rotations on writeScope.target instead.
+  // Follow any draft-to-host or Codex id rotation before authorizing tools.
   const resolvedSessionId = writeScope.target?.sessionId
     ?? getProject(get(), projectPath)._activeSessionId
     ?? undefined

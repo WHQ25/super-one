@@ -32,6 +32,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - An image annotation can extend past the picture. The exported padding uses the preview background. Add to Chat stays compact, and the toolbar stays on one row. (#152)
 - A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
 - Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
+- Switching composers overlays the handoff instead of resizing the transcript. A deliberate jump to the tail still happens when the overlay shrinks, and the scroll controls stay above the active composer. (#168)
 
 ## [0.78.1-alpha] - 2026-11-07
 
@@ -54,6 +55,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - An image annotation can extend past the picture. The exported padding uses the preview background. Add to Chat stays compact, and the toolbar stays on one row. (#152)
 - A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
 - Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
+- Switching composers overlays the handoff instead of resizing the transcript. A deliberate jump to the tail still happens when the overlay shrinks, and the scroll controls stay above the active composer. (#168)
 
 ### Tests
 

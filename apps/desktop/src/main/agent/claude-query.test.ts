@@ -60,6 +60,7 @@ import {
   buildUserMessage,
   buildClaudeOptions,
   createSessionQuery,
+  denySubagentSessionRename,
   iterateMessages,
   isResumeDropsTurnRefusal,
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
@@ -74,9 +75,9 @@ beforeEach(() => {
 })
 
 describe('buildClaudeOptions resume truncation', () => {
-  it('registers the authorization hook with fail-closed error handling', () => {
+  it('registers the subagent session-rename authorization hook', () => {
     const options = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo' })
-    expect(options.hooks?.PreToolUse?.[0]).toMatchObject({ onFailure: 'block' })
+    expect(options.hooks?.PreToolUse?.[0]?.hooks).toEqual([denySubagentSessionRename])
   })
 
   it('passes resumeSessionAt and resumeDropsTurn through to SDK options', () => {

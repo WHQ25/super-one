@@ -1,5 +1,6 @@
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { SessionProviderState } from './SessionProviderState'
+import { PendingTurnIndicator } from '@superone/chat-view/presenters/ChatMessageIndicators'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
@@ -314,6 +315,7 @@ function ChatTranscript({
                 </div>
               )
             }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
+            {awaitingAssistantReply && !isCompacting && !isRecapping && !apiRetry && <PendingTurnIndicator phase="sending" />}
             <SessionProviderState />
             {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">

@@ -54,7 +54,11 @@ function pendingCreateOf(
   }
 }
 
-export async function applyPendingWorktree(projectPath: string, writeScope: SendWriteScope): Promise<boolean> {
+export async function applyPendingWorktree(
+  projectPath: string,
+  writeScope: SendWriteScope,
+  options: { stagedMessageId?: string } = {},
+): Promise<boolean> {
   const { useAppStore } = await import('../../app')
   const { useChatStore } = await import('../index')
   const state = useChatStore.getState()
@@ -72,6 +76,7 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
   const { baseBranch, mode } = pending
   const branchName = pending.branchName.trim()
   const fail = (message: string) => {
+    if (options.stagedMessageId) throw new Error(message)
     toast.error(message)
     return false
   }
@@ -92,9 +97,9 @@ export async function applyPendingWorktree(projectPath: string, writeScope: Send
   })
   const branch = mode === 'branch' ? branchName : baseBranch
   useAppStore.getState().setActiveWorktree(projectPath, result.path)
-  writeScope.patch(() => ({
+  writeScope.patch(current => ({
     cwd: result.path,
-    messages: [],
+    messages: current.messages.filter(message => message.id === options.stagedMessageId),
     totalCostUsd: 0,
     contextTokens: 0,
     session: null,

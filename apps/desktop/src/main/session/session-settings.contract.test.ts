@@ -323,6 +323,38 @@ describe('settings carried by a queued turn on other harnesses', () => {
     expect(f.backend.rebuild).toHaveBeenCalledOnce()
     expect(f.backend.send).toHaveBeenCalledTimes(3)
   })
+
+  it('keeps an ACP queued send on the live runtime when the Claude effort column differs', async () => {
+    const f = fixture('acp')
+    await f.session.send({ content: 'Warm the backend' })
+    let finishTurn!: () => void
+    f.backend.send.mockImplementationOnce(() => new Promise<void>((resolve) => { finishTurn = resolve }))
+    const running = f.session.send({ content: 'Long turn' })
+    await vi.waitFor(() => expect(f.backend.send).toHaveBeenCalledTimes(2))
+
+    const queued = f.session.send(desktopSendRequest({ sessionId: f.session.id, text: 'Insert soon',
+      client: { clientSessionId: 'phone' }, leaseId: 'test-lease', generation: '1', priority: 'next', clientMessageId: 'queued', effort: 'high' }, 'acp'), { providerOrigin: 'remote' })
+    await vi.waitFor(() => expect(f.backend.send).toHaveBeenCalledTimes(3))
+    expect(f.backend.rebuild).not.toHaveBeenCalled()
+    expect(f.session.getSelectedEffort()).toBe('low')
+
+    f.emit({ type: 'queued_message_consumed', clientMessageId: 'queued' })
+    expect(f.session.getSelectedEffort()).toBe('high')
+    finishTurn()
+    await Promise.all([running, queued])
+    await f.session.send({ content: 'Next turn' })
+    expect(f.backend.rebuild).not.toHaveBeenCalled()
+  })
+
+  it('does not restart a running ACP session when a later send carries a different effort', async () => {
+    const f = fixture('acp')
+    await f.session.send({ content: 'Warm the backend' })
+    await f.session.send(desktopSendRequest({ sessionId: f.session.id, text: 'Next turn',
+      client: { clientSessionId: 'phone' }, leaseId: 'test-lease', generation: '1', effort: 'high' }, 'acp'), { providerOrigin: 'remote' })
+    expect(f.backend.rebuild).not.toHaveBeenCalled()
+    expect(f.session.getSelectedEffort()).toBe('high')
+    expect(f.backend.send).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('a queued send promoted to run after the current turn', () => {

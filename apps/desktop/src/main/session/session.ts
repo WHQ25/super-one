@@ -830,9 +830,12 @@ export class Session implements SessionContract {
       // back through here. Flagging a rebuild would therefore land one turn too
       // late, so a changed root set takes the existing promote-to-normal path.
       const queuedDirsChanged = this.dirsReachBackend() && !sameStringArray(this.resolveEffectiveDirs(), this.additionalDirectories)
-      // Outside Codex an effort change restarts the runtime, so it takes that path too.
+      // Claude restarts the runtime to apply an effort change, so that send cannot
+      // ride the in-flight process. Codex applies effort in place. ACP reasoning
+      // effort is a live session mode; the Claude-shaped `effort` on a Grok send
+      // is filled from `selectedEffort` and is not a change of that mode.
       const queuedEffort = sessionRequestSelection(this.harnessId, request).effort
-      const queuedEffortChanged = this.harnessId !== 'codex' && queuedEffort !== undefined && queuedEffort !== this.effort
+      const queuedEffortChanged = this.effortChangeRestartsRuntime() && queuedEffort !== undefined && queuedEffort !== this.effort
       if (!this.backendStarted) {
         log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
       } else if (this._needsRebuild) {
@@ -2823,7 +2826,12 @@ export class Session implements SessionContract {
     const model = (codex ? patch.selectedCodexModel : patch.selectedModel) ?? undefined
     const effort = ((codex ? patch.selectedCodexReasoningEffort : patch.selectedEffort) ?? undefined) as SendMessageRequest['effort']
     const current = this.getUiSettings()
-    const effortChanged = effort !== undefined && effort !== this.effort
+    // ACP applies reasoning effort live. A differing `request.effort` still
+    // updates the stored column below, but it must not restart the process:
+    // Grok's slider writes the session mode, and `selectedEffort` is filled
+    // later from the agent's own model notification. Codex keeps its own
+    // restart decision; only the queue gate above skips Codex.
+    const effortChanged = this.harnessId !== 'acp' && effort !== undefined && effort !== this.effort
     if (effort !== undefined) this.effort = effort
     if (model !== undefined) this.model = model
     const changed = Object.fromEntries(Object.entries(patch)
@@ -2851,6 +2859,14 @@ export class Session implements SessionContract {
     }
     if (Object.keys(changed).length > 0) this.forwardEvent({ type: 'agent_setting_change', patch: changed })
     return effortChanged
+  }
+
+  /**
+   * Claude applies a new effort by restarting the runtime. Codex updates the
+   * thread in place. ACP reasoning effort is a live session mode.
+   */
+  private effortChangeRestartsRuntime(): boolean {
+    return this.harnessId !== 'codex' && this.harnessId !== 'acp'
   }
 
   /** What crosses the runtime boundary: the turn plus session-owned defaults it omitted. */

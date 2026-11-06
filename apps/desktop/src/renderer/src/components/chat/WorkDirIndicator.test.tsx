@@ -513,7 +513,11 @@ describe('worktree creation picker', () => {
 
   it('preselects the current branch with creation options and keeps branch choices collapsed', async () => {
     await openWorktree()
-    expect(screen.getByRole('button', { name: 'Base branch: feat/current' })).toHaveAttribute('aria-expanded', 'false')
+    const base = screen.getByRole('button', { name: 'Base branch: feat/current' })
+    expect(base).toHaveAttribute('aria-expanded', 'false')
+    expect(base.parentElement).toHaveClass('border-t')
+    expect(base.className).toContain('focus-visible:shadow-none')
+    expect(base.className).not.toMatch(/ring/)
     expect(screen.getByRole('button', { name: 'New branch' })).toBeTruthy()
     expect(screen.getByPlaceholderText('e.g. fix/login-bug')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'develop' })).toBeNull()
@@ -536,6 +540,8 @@ describe('worktree creation picker', () => {
     // Both tab bodies stay mounted for the height animation; scope to the branch picker.
     const branchList = document.querySelector('[data-slot="workdir-base-list"]') as HTMLElement
     const base = screen.getByRole('button', { name: 'Base branch: feat/current' })
+    expect(base.parentElement).not.toHaveClass('border-t')
+    expect(branchSearch.closest('form')).toHaveClass('border-b')
     // The same base row precedes the branches, so it moves up as existing worktrees collapse.
     expect(base.compareDocumentPosition(branchList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const list = within(branchList)

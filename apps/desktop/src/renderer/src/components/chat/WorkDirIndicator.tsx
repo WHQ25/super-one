@@ -278,14 +278,15 @@ function WorktreeDraftPanel({
           )}
         </div>
       </PanelHeight>
-      <div className="border-t px-3 pt-3 pb-2">
+      {/* Search already has border-b. border-t here only splits off the worktree list. */}
+      <div className={branchesOpen ? 'px-2 pt-2 pb-1.5' : 'border-t px-2 pt-2 pb-1.5'}>
         <button
           type="button"
           aria-label={`${t('chat.worktree.baseBranchLabel')}: ${pendingBase}`}
           aria-expanded={branchesOpen}
           aria-controls={branchesId}
           onClick={onToggleBranches}
-          className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:shadow-none"
         >
           <span className="shrink-0">{t('chat.worktree.baseBranchLabel')}:</span>
           <GitBranch className="ml-1 size-3 shrink-0" />

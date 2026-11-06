@@ -57,3 +57,25 @@ it.each([
     await i18n.changeLanguage(previousLocale)
   }
 })
+
+it.each([
+  { story: 'RemoteFirstSend' as const, locale: 'en', dark: false },
+  { story: 'NarrowFocusedRemoteFirstSend' as const, locale: 'zh', dark: true },
+])('keeps one first-send row across network boundaries in $story in $locale', async ({ story, locale, dark }) => {
+  const previousLocale = i18n.language
+  document.documentElement.classList.toggle('dark', dark)
+  await i18n.changeLanguage(locale)
+  const { container, unmount } = render(stories[story].render!({} as never, {} as never))
+  try {
+    for (const action of ['Publish empty host row', 'Finish session creation', 'Start reply']) {
+      fireEvent.click(screen.getByRole('button', { name: action }))
+      expect(screen.queryByText('New session')).toBeNull()
+      expect(screen.getByText('Fix the remote sidebar')).toBeInTheDocument()
+      expect(container.querySelectorAll('.group\\/session')).toHaveLength(1)
+    }
+  } finally {
+    unmount()
+    document.documentElement.classList.remove('dark')
+    await i18n.changeLanguage(previousLocale)
+  }
+})

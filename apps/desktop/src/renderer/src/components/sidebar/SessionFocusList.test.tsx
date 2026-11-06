@@ -69,6 +69,17 @@ it('offers retry on a failed environment and does not contact offline hosts', as
   await screen.findByText('Recovered child')
 })
 
+it('lists children directly when only one environment has them', async () => {
+  vi.spyOn(window.environment, 'listSessions').mockImplementation(async (connectionId) => (
+    connectionId === 'local' ? [child('Only local child')] : []
+  ) as never)
+  const { container } = render(<SidebarFocusView {...props()} />)
+  await screen.findByText('Only local child')
+  const children = container.querySelector('[data-session-focus-children]')! as HTMLElement
+  expect(within(children).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+  expect(within(children).queryByRole('button', { name: /Build server/ })).not.toBeInTheDocument()
+})
+
 it('ignores an old response when a session-change notification starts a newer read', async () => {
   let changed: ((path?: string) => void) | undefined
   let resolveOld!: (rows: unknown[]) => void

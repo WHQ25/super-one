@@ -221,7 +221,7 @@ describe('project focus checkout boundaries', () => {
     expect(props.onLoadFolderSessions).toHaveBeenCalledWith(focusRemote.pathKey)
   })
 
-  it('combines several checkouts on one environment under one settled heading', () => {
+  it('lists a single environment directly and keeps every checkout under one settled heading', () => {
     const copy = { ...focusLocal, pathKey: '/src/super-one-copy', hostPath: '/src/super-one-copy', projectId: 'copy' }
     const copiedSession = { ...focusSettled[0]!, sessionId: 'copy-settled', folderPath: copy.pathKey, title: 'Copy settled' }
     const { props } = renderProject({
@@ -229,14 +229,30 @@ describe('project focus checkout boundaries', () => {
       folderSessions: { ...focusSessions, [copy.pathKey]: [focusSessionEntry('copy-active', 'Copy active')] },
       settledSessions: [...focusSettled, copiedSession],
     })
-    expect(screen.getByText('Copy active')).toBeInTheDocument()
+    const active = document.querySelector('[data-project-focus-active]')! as HTMLElement
+    expect(within(active).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+    expect(within(active).getByText('Copy active')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Settled/ }))
     const section = document.querySelector('[data-project-focus-settled]')! as HTMLElement
-    expect(within(section).getAllByRole('button', { name: /This computer/ })).toHaveLength(1)
-    fireEvent.click(within(section).getByRole('button', { name: /This computer/ }))
+    expect(within(section).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
     expect(within(section).getByText('Local settled session')).toBeInTheDocument()
+    expect(within(section).getByText('Copy settled')).toBeInTheDocument()
     fireEvent.click(within(section).getByText('Copy settled'))
     expect(props.onSwitchSession).toHaveBeenCalledWith(copy.pathKey, 'copy-settled', { revealProject: false })
+  })
+
+  it('keeps active environment groups when only one of them has settled sessions', () => {
+    renderProject({
+      settledSessions: focusSettled.filter((session) => session.folderPath === focusLocal.pathKey),
+      settledCounts: { [focusLocal.pathKey]: 21 },
+    })
+    const active = document.querySelector('[data-project-focus-active]')! as HTMLElement
+    expect(within(active).getByRole('button', { name: /This computer/ })).toHaveAttribute('data-sidebar-section', 'environment')
+    expect(within(active).getByRole('button', { name: /Build server/ })).toHaveAttribute('data-sidebar-section', 'environment')
+    fireEvent.click(screen.getByRole('button', { name: /Settled/ }))
+    const section = document.querySelector('[data-project-focus-settled]')! as HTMLElement
+    expect(within(section).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+    expect(within(section).getByText('Local settled session')).toBeInTheDocument()
   })
 })
 

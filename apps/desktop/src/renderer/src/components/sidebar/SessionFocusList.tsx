@@ -49,6 +49,7 @@ export function SessionFocusList({ folderPath, sessionId, props }: {
   const { pages, load } = useFocusSessionChildren(sessionId, projects, initial)
   const pending = projects.some((project) => project.connected && (!pages[project.path] || pages[project.path]?.loading))
   const visible = sections.filter((section) => section.bucket.connection === 'offline' || section.projects.some((project) => pages[project.path]?.sessions.length || pages[project.path]?.error))
+  const grouped = visible.length > 1
 
   const projectRows = (project: FocusChildProject, bucket: EnvironmentBucket) => {
     const page = pages[project.path]
@@ -76,27 +77,32 @@ export function SessionFocusList({ folderPath, sessionId, props }: {
   }
   return (
     <ScrollArea type="scroll" edgeFade className="sidebar-scroll h-full min-h-0 flex-1" data-session-focus-children>
-      {visible.map(({ bucket, projects }) => (
-        <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} initiallyExpanded>
-          {bucket.connection === 'offline' && projects.every((project) => !pages[project.path]?.sessions.length) && (
-            <button type="button" className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70" onClick={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}>
-              {t('sidebar.sessionOffline')}
-            </button>
-          )}
-          <ActiveSessionList
-            kind="child"
-            hasMore={projects.some((project) => project.connected && pages[project.path]?.hasMore)}
-            onLoadMore={() => Promise.all(projects.map((project) => load(project, true))).then(() => {})}
-          >
-            {projects.flatMap((project) => projectRows(project, bucket) ?? [])}
-          </ActiveSessionList>
-          {projects.some((project) => pages[project.path]?.error) && (
-            <button type="button" className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70" onClick={() => {
-              for (const project of projects) if (pages[project.path]?.error) void load(project)
-            }}>{t('sidebar.focusChildrenLoadFailed')}</button>
-          )}
-        </FocusEnvironmentGroup>
-      ))}
+      {visible.map(({ bucket, projects }) => {
+        const body = (
+          <>
+            {bucket.connection === 'offline' && projects.every((project) => !pages[project.path]?.sessions.length) && (
+              <button type="button" className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70" onClick={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}>
+                {t('sidebar.sessionOffline')}
+              </button>
+            )}
+            <ActiveSessionList
+              kind="child"
+              hasMore={projects.some((project) => project.connected && pages[project.path]?.hasMore)}
+              onLoadMore={() => Promise.all(projects.map((project) => load(project, true))).then(() => {})}
+            >
+              {projects.flatMap((project) => projectRows(project, bucket) ?? [])}
+            </ActiveSessionList>
+            {projects.some((project) => pages[project.path]?.error) && (
+              <button type="button" className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70" onClick={() => {
+                for (const project of projects) if (pages[project.path]?.error) void load(project)
+              }}>{t('sidebar.focusChildrenLoadFailed')}</button>
+            )}
+          </>
+        )
+        return grouped
+          ? <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} initiallyExpanded>{body}</FocusEnvironmentGroup>
+          : <div key={bucket.environmentId}>{body}</div>
+      })}
       {pending && <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>}
       {!pending && visible.length === 0 && <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>}
     </ScrollArea>

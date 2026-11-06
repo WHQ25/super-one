@@ -51,7 +51,101 @@ export function FocusEnvironmentGroup({
   )
 }
 
-/** All checkouts of the focused origin, with one shared Settled → environment tree. */
+/** One environment's checkouts in project focus. The environment heading is optional. */
+function ActiveFocusSessions({
+  bucket, checkouts, focusedPath, checkoutActionsRef, props,
+}: {
+  bucket: EnvironmentBucket
+  checkouts: EnvironmentBucket['checkouts']
+  focusedPath: string
+  checkoutActionsRef: RefObject<ProjectFocusActions | null>
+  props: SidebarFocusViewProps
+}) {
+  const { t } = useTranslation()
+  if (bucket.connection === 'offline') {
+    return (
+      <button
+        type="button"
+        className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground"
+        disabled={props.connectionBusyId === bucket.connectionId}
+        onClick={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}
+      >
+        {t('sidebar.sessionOffline')}
+      </button>
+    )
+  }
+  return (
+    <>
+      {checkouts.some((checkout) => !props.folderSessions[checkout.pathKey] || props.loadingFolders[checkout.pathKey]) && (
+        <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
+      )}
+      {checkouts.every((checkout) => props.folderSessions[checkout.pathKey]?.length === 0 && !props.loadingFolders[checkout.pathKey]) && (
+        <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
+      )}
+      {checkouts.map((checkout) => (
+        <ProjectSidebarRow
+          key={checkout.pathKey}
+          folder={checkoutToRecentFolder(checkout)}
+          repoIdentity={checkout.repoIdentity}
+          sessionsOnly
+          isExpanded
+          showSettled={false}
+          focusEnvironmentId={bucket.environmentId}
+          focusActionsRef={checkout.pathKey === focusedPath ? checkoutActionsRef : undefined}
+          sessions={props.folderSessions[checkout.pathKey] ?? []}
+          sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey]}
+          onLoadMoreSessions={props.onLoadMoreSessions}
+          childSessions={props.childSessions?.[checkout.pathKey]}
+          childSessionsHasMore={props.childSessionsHasMore?.[checkout.pathKey]}
+          onLoadChildSessions={props.onLoadChildSessions}
+          onLoadMoreChildSessions={props.onLoadMoreChildSessions}
+          settledSessions={props.settledSessions}
+          sessionsLoading={props.loadingFolders[checkout.pathKey]}
+          openingSessionId={props.openingSession?.folderPath === checkout.pathKey ? props.openingSession.sessionId : null}
+          onToggleExpand={props.onToggleProject}
+          onSwitchSession={props.onSwitchSession}
+          onPinSession={props.onPinSession}
+          onSettleSession={props.onSettleSession}
+          onEditProject={props.onEditProject}
+          onRemoveProject={props.onRemoveProject}
+          onRenameSession={props.onRenameSession}
+          onDeleteSession={props.onDeleteSession}
+          onNewSession={props.onNewSession}
+          sessionPresentation={presenterFor(bucket, checkout.name, checkout.pathKey)}
+        />
+      ))}
+    </>
+  )
+}
+
+function SettledFocusSessions({
+  bucket, checkouts, sessions, paths, props,
+}: {
+  bucket: EnvironmentBucket
+  checkouts: EnvironmentBucket['checkouts']
+  sessions: NonNullable<SidebarFocusViewProps['settledSessions']>
+  paths: readonly string[]
+  props: SidebarFocusViewProps
+}) {
+  return (
+    <SettledSessionList
+      sessions={sessions}
+      hasMore={bucket.connection !== 'offline' && checkouts.some((checkout) => props.settledHasMore?.[checkout.pathKey])}
+      onLoadMore={() => Promise.all(checkouts
+        .filter((checkout) => props.settledHasMore?.[checkout.pathKey])
+        .map((checkout) => props.onLoadMoreSettled?.(checkout.pathKey))).then(() => {})}
+      openingSessionId={props.openingSession && paths.includes(props.openingSession.folderPath) ? props.openingSession.sessionId : null}
+      presentation={(session) => presenterFor(bucket, session.folderName, session.folderPath)(session)}
+      onSwitchSession={(folderPath, sessionId) => props.onSwitchSession(folderPath, sessionId, { revealProject: false })}
+      onPinSession={props.onPinSession}
+      onSettleSession={props.onSettleSession}
+      onRenameSession={props.onRenameSession}
+      onDeleteSession={props.onDeleteSession}
+    />
+  )
+}
+
+/** All checkouts of the focused origin. Environment headings appear only when more than one environment has rows. */
 export function ProjectFocusList({
   paths, focusedPath, actionsRef, props,
 }: {
@@ -85,63 +179,28 @@ export function ProjectFocusList({
     return { ...section, sessions, count }
   }).filter((section) => section.count > 0)
   const settledCount = settledSections.reduce((total, section) => total + section.count, 0)
+  const groupActive = sections.length > 1
+  const groupSettled = settledSections.length > 1
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-2 pb-0.5">
       <ScrollArea type="scroll" edgeFade data-project-focus-active className="sidebar-scroll min-h-0 flex-1">
-        {sections.map(({ bucket, checkouts }) => (
-          <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} initiallyExpanded revealKey={checkouts.some((checkout) => checkout.pathKey === focusedPath) ? revealKey : 0} upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}>
-            {bucket.connection === 'offline' ? (
-              <button
-                type="button"
-                className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground"
-                disabled={props.connectionBusyId === bucket.connectionId}
-                onClick={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}
-              >
-                {t('sidebar.sessionOffline')}
-              </button>
-            ) : (<>
-              {checkouts.some((checkout) => !props.folderSessions[checkout.pathKey] || props.loadingFolders[checkout.pathKey]) && (
-                <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
-              )}
-              {checkouts.every((checkout) => props.folderSessions[checkout.pathKey]?.length === 0 && !props.loadingFolders[checkout.pathKey]) && (
-                <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
-              )}
-              {checkouts.map((checkout) => (
-                <ProjectSidebarRow
-                  key={checkout.pathKey}
-                  folder={checkoutToRecentFolder(checkout)}
-                  repoIdentity={checkout.repoIdentity}
-                  sessionsOnly
-                  isExpanded
-                  showSettled={false}
-                  focusEnvironmentId={bucket.environmentId}
-                  focusActionsRef={checkout.pathKey === focusedPath ? checkoutActionsRef : undefined}
-                  sessions={props.folderSessions[checkout.pathKey] ?? []}
-                  sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey]}
-                  onLoadMoreSessions={props.onLoadMoreSessions}
-                  childSessions={props.childSessions?.[checkout.pathKey]}
-                  childSessionsHasMore={props.childSessionsHasMore?.[checkout.pathKey]}
-                  onLoadChildSessions={props.onLoadChildSessions}
-                  onLoadMoreChildSessions={props.onLoadMoreChildSessions}
-                  settledSessions={props.settledSessions}
-                  sessionsLoading={props.loadingFolders[checkout.pathKey]}
-                  openingSessionId={props.openingSession?.folderPath === checkout.pathKey ? props.openingSession.sessionId : null}
-                  onToggleExpand={props.onToggleProject}
-                  onSwitchSession={props.onSwitchSession}
-                  onPinSession={props.onPinSession}
-                  onSettleSession={props.onSettleSession}
-                  onEditProject={props.onEditProject}
-                  onRemoveProject={props.onRemoveProject}
-                  onRenameSession={props.onRenameSession}
-                  onDeleteSession={props.onDeleteSession}
-                  onNewSession={props.onNewSession}
-                  sessionPresentation={presenterFor(bucket, checkout.name, checkout.pathKey)}
-                />
-              ))}
-            </>)}
-          </FocusEnvironmentGroup>
-        ))}
+        {sections.map(({ bucket, checkouts }) => {
+          const body = (
+            <ActiveFocusSessions
+              bucket={bucket}
+              checkouts={checkouts}
+              focusedPath={focusedPath}
+              checkoutActionsRef={checkoutActionsRef}
+              props={props}
+            />
+          )
+          return groupActive ? (
+            <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} initiallyExpanded revealKey={checkouts.some((checkout) => checkout.pathKey === focusedPath) ? revealKey : 0} upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}>
+              {body}
+            </FocusEnvironmentGroup>
+          ) : <div key={bucket.environmentId}>{body}</div>
+        })}
       </ScrollArea>
       {settledCount > 0 && (
         <div data-project-focus-settled className="flex min-h-0 max-h-[50%] shrink-0 flex-col">
@@ -156,25 +215,17 @@ export function ProjectFocusList({
           >
             {t('sidebar.settled')}
           </SidebarSectionLabel>
-          <div id={settledPanelId} hidden={!settledExpanded} className="min-h-0 overflow-y-auto pl-1">
-            {settledExpanded && settledSections.map(({ bucket, checkouts, sessions, count }) => (
-              <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} count={count} unmountCollapsed>
-                <SettledSessionList
-                  sessions={sessions}
-                  hasMore={bucket.connection !== 'offline' && checkouts.some((checkout) => props.settledHasMore?.[checkout.pathKey])}
-                  onLoadMore={() => Promise.all(checkouts
-                    .filter((checkout) => props.settledHasMore?.[checkout.pathKey])
-                    .map((checkout) => props.onLoadMoreSettled?.(checkout.pathKey))).then(() => {})}
-                  openingSessionId={props.openingSession && paths.includes(props.openingSession.folderPath) ? props.openingSession.sessionId : null}
-                  presentation={(session) => presenterFor(bucket, session.folderName, session.folderPath)(session)}
-                  onSwitchSession={(folderPath, sessionId) => props.onSwitchSession(folderPath, sessionId, { revealProject: false })}
-                  onPinSession={props.onPinSession}
-                  onSettleSession={props.onSettleSession}
-                  onRenameSession={props.onRenameSession}
-                  onDeleteSession={props.onDeleteSession}
-                />
-              </FocusEnvironmentGroup>
-            ))}
+          <div id={settledPanelId} hidden={!settledExpanded} className={groupSettled ? 'min-h-0 overflow-y-auto pl-1' : 'min-h-0 overflow-y-auto'}>
+            {settledExpanded && settledSections.map(({ bucket, checkouts, sessions, count }) => {
+              const body = (
+                <SettledFocusSessions bucket={bucket} checkouts={checkouts} sessions={sessions} paths={paths} props={props} />
+              )
+              return groupSettled ? (
+                <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} count={count} unmountCollapsed>
+                  {body}
+                </FocusEnvironmentGroup>
+              ) : <div key={bucket.environmentId}>{body}</div>
+            })}
           </div>
         </div>
       )}

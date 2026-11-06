@@ -217,14 +217,14 @@ export const Drill: Story = {
   },
 }
 
-function CrossEnvironmentFocus({ state = 'ready', narrow = false, crowded = false }: { state?: 'ready' | 'loading' | 'offline' | 'empty'; narrow?: boolean; crowded?: boolean }) {
+function CrossEnvironmentFocus({ state = 'ready', narrow = false, crowded = false, single = false }: { state?: 'ready' | 'loading' | 'offline' | 'empty'; narrow?: boolean; crowded?: boolean; single?: boolean }) {
   useLayoutEffect(() => {
     focusProject(focusLocal.pathKey, focusLocal.environmentId)
     return () => applySidebarFocus(null)
   }, [])
   const props: SidebarFocusViewProps = {
     ...callbacks,
-    environments: focusEnvironments.map((bucket) => bucket.kind === 'local' ? bucket : {
+    environments: (single ? focusEnvironments.slice(0, 1) : focusEnvironments).map((bucket) => bucket.kind === 'local' ? bucket : {
       ...bucket,
       label: narrow ? 'Build server with a very long environment name' : bucket.label,
       connection: state === 'offline' ? 'offline' : 'connected',
@@ -296,6 +296,25 @@ export const CrossEnvironmentEmpty: Story = {
   render: () => <CrossEnvironmentFocus state="empty" />,
 }
 
+/** One checkout host: sessions and Settled sit directly under the project, with no environment heading. */
+export const OneEnvironment: Story = {
+  render: () => <CrossEnvironmentFocus single />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Local active session')).toBeVisible()
+    await expect(canvas.queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: /Settled/ }))
+    const settled = canvasElement.querySelector('[data-project-focus-settled]') as HTMLElement
+    await expect(within(settled).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+    await expect(within(settled).getByText('Local settled session')).toBeVisible()
+  },
+}
+
+export const OneEnvironmentDark: Story = {
+  ...OneEnvironment,
+  globals: { theme: 'dark' },
+}
+
 export const CrossEnvironmentOverflow: Story = {
   render: () => <CrossEnvironmentFocus crowded />,
   play: async ({ canvasElement }) => {
@@ -312,7 +331,7 @@ export const CrossEnvironmentOverflow: Story = {
 }
 
 const parentFocusOpened = fn()
-function ParentSessionFocus({ state = 'ready', narrow = false }: { state?: 'ready' | 'empty' | 'offline' | 'loading' | 'error'; narrow?: boolean }) {
+function ParentSessionFocus({ state = 'ready', narrow = false, single = false }: { state?: 'ready' | 'empty' | 'offline' | 'loading' | 'error'; narrow?: boolean; single?: boolean }) {
   useLayoutEffect(() => {
     parentFocusOpened.mockClear()
     const listSessions = window.environment.listSessions
@@ -322,7 +341,8 @@ function ParentSessionFocus({ state = 'ready', narrow = false }: { state?: 'read
     focusSession(focusLocal.pathKey, 'parent', focusLocal.environmentId)
     return () => { applySidebarFocus(null); mockIpc('environment', 'listSessions', (...args) => Reflect.apply(listSessions, window.environment, args)) }
   }, [state])
-  const childSessions = Object.fromEntries([focusLocal, focusRemote, focusFork].map((checkout) => [checkout.pathKey, {
+  const hosts = single ? [focusLocal] : [focusLocal, focusRemote, focusFork]
+  const childSessions = Object.fromEntries(hosts.map((checkout) => [checkout.pathKey, {
     parent: state === 'empty' ? [] : [{
       ...focusSessionEntry(`child-${checkout.projectId}`, checkout === focusLocal ? 'Review SDK upgrade' : checkout === focusRemote ? 'Run integration tests' : 'Verify companion project'),
       parentSessionId: 'parent',
@@ -330,7 +350,7 @@ function ParentSessionFocus({ state = 'ready', narrow = false }: { state?: 'read
   }]))
   const props: SidebarFocusViewProps = {
     ...callbacks, onSwitchSession: parentFocusOpened,
-    environments: focusEnvironments.map((bucket) => state === 'offline' && bucket.kind !== 'local' ? { ...bucket, connection: 'offline' } : bucket),
+    environments: (single ? focusEnvironments.slice(0, 1) : focusEnvironments).map((bucket) => state === 'offline' && bucket.kind !== 'local' ? { ...bucket, connection: 'offline' } : bucket),
     folders: [], localHostLabel: 'This computer', sort: 'recent', expandedProjectKeys: new Set(),
     folderSessions: { [focusLocal.pathKey]: [focusSessionEntry('parent', 'Upgrade Claude Agent SDK and adapt SuperOne')] },
     childSessions: state === 'loading' || state === 'error' ? {} : childSessions,
@@ -356,6 +376,21 @@ export const ParentSession: Story = {
     await expect(parentFocusOpened).toHaveBeenCalledWith(focusRemote.pathKey, `child-${focusRemote.projectId}`, { revealProject: false })
   },
 }
+/** One host has children, so they sit directly under the parent with no environment heading. */
+export const ParentSessionOneEnvironment: Story = {
+  render: () => <ParentSessionFocus single />,
+  play: async ({ canvasElement }) => {
+    const children = canvasElement.querySelector('[data-session-focus-children]') as HTMLElement
+    await expect(within(children).getByText('Review SDK upgrade')).toBeVisible()
+    await expect(within(children).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+  },
+}
+
+export const ParentSessionOneEnvironmentDark: Story = {
+  ...ParentSessionOneEnvironment,
+  globals: { theme: 'dark' },
+}
+
 export const ParentSessionDark: Story = { ...ParentSession, globals: { theme: 'dark' } }
 export const ParentSessionNarrow: Story = { render: () => <ParentSessionFocus narrow />, globals: { locale: 'zh' } }
 export const ParentSessionOffline: Story = { render: () => <ParentSessionFocus state="offline" /> }

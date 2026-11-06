@@ -45,8 +45,20 @@ function intrinsicSize(node: IconScene, dimension: 'width' | 'height', size: num
   return lengths.length ? Math.max(...lengths) : undefined
 }
 
-export const HarnessScene = memo(function HarnessScene({ node, size, color, background, motion }: {
-  node: IconScene; size: number; color: string; background: string; motion: boolean
+type SceneFrame = { width?: number; height?: number }
+
+/** Points for this node. A `"100%"` length is the parent's resolved box, not the bitmap. */
+function sceneLength(value: unknown, parent: number | undefined): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && parent != null && value.endsWith('%')) {
+    const ratio = Number.parseFloat(value) / 100
+    if (Number.isFinite(ratio)) return ratio * parent
+  }
+  return undefined
+}
+
+export const HarnessScene = memo(function HarnessScene({ node, size, color, background, motion, frame }: {
+  node: IconScene; size: number; color: string; background: string; motion: boolean; frame?: SceneFrame
 }) {
   const style: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(node.style)) {
@@ -55,18 +67,23 @@ export const HarnessScene = memo(function HarnessScene({ node, size, color, back
   }
   if (style.width == null && !(style.left != null && style.right != null)) style.width = intrinsicSize(node, 'width', size)
   if (style.height == null && !(style.top != null && style.bottom != null)) style.height = intrinsicSize(node, 'height', size)
+  const frameWidth = sceneLength(style.width, frame?.width)
+  const frameHeight = sceneLength(style.height, frame?.height)
+  const childFrame = { width: frameWidth ?? frame?.width, height: frameHeight ?? frame?.height }
   const ink = typeof node.style.color === 'string' ? node.style.color : color
   const raster = node.raster && Object.hasOwn(harnessRasters, node.raster)
     ? harnessRasters[node.raster as keyof typeof harnessRasters]
     : undefined
-  // The raster is a full-resolution PNG. Percentage width on `Image` follows
-  // the bitmap's intrinsic box, so pin it to this scene box instead.
+  // Antigravity ships as a 384px PNG. `Image` ignores a percentage box and
+  // `right`/`bottom` stretch, then paints the bitmap from the slot's top-left.
+  // Give it the scene box in points and clip the view to that box.
+  if (raster) style.overflow = 'hidden'
   let content: ReactNode = raster
     ? <Image testID="harness-raster" source={raster} resizeMode="contain" accessible={false}
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+      style={{ position: 'absolute', top: 0, left: 0, width: frameWidth, height: frameHeight }} />
     : node.xml
       ? <SvgXml xml={node.xml} width="100%" height="100%" color={ink} accessible={false} />
-      : node.children?.map((child, index) => <HarnessScene key={index} node={child} size={size} color={ink} background={background} motion={motion} />)
+      : node.children?.map((child, index) => <HarnessScene key={index} node={child} size={size} color={ink} background={background} motion={motion} frame={childFrame} />)
   if (node.animations.length && style.backgroundColor) {
     content = <><View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: style.backgroundColor as string, borderRadius: style.borderRadius as number }} />{content}</>
     delete style.backgroundColor

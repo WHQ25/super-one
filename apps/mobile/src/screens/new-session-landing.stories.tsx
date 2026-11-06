@@ -72,6 +72,18 @@ export const PoweredByCodex = {
   args: { provider: 'codex', activeHarnessKey: 'codex' },
 }
 
+export const Antigravity = {
+  name: 'Antigravity · mark stays in the icon slot',
+  args: {
+    provider: 'acp' as const,
+    activeHarnessKey: 'acp:antigravity',
+    harnessOptions: [
+      ...harnessOptions,
+      { key: 'acp:antigravity', provider: 'acp' as const, acpAgentId: 'antigravity', label: 'Antigravity' },
+    ],
+  },
+}
+
 export const ShortBranch = {
   name: 'Short branch · press Local or main to inspect centered feedback',
   args: { branch: 'main' },

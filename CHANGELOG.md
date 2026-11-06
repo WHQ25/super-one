@@ -15,40 +15,52 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Codex 0.167.0 supports native command and file approvals on desktop and remote nodes. Managed checkpoints require a fresh one-time approval even when other commands use automatic review. A provider's approval lifetime is kept: a turn-scoped prompt clears when that turn is interrupted, and a prompt the node owns stays until it is answered.
-- Claude Code system notices and storage warnings stay in the chat history on desktop and phone, including warnings received after a reply finishes. Startup failures explain invalid configuration, unavailable required sandboxes, and initialization errors.
-- Markdown shell fences (bash, sh, shell, and zsh) run in the login shell in a new terminal tab. The script runs in a child of that shell, so exiting the script leaves the tab open.
-- Fullscreen image preview can annotate a picture: pen, rectangle, ellipse, line, arrow, text, step marker, redact or mosaic, and recognize text. Shapes and text rotate from a handle. Dragging an edge reflows text without changing the font, and dragging a corner scales it. Arrow heads stay a fixed size for the stroke. Text editing starts at the caret, Enter inserts a line, and Esc leaves text or mosaic mode before closing the editor. The result can be saved or added to the chat.
-- Sidebar focus groups a repository and its collaboration family across hosts. Project focus follows the normalized origin, and session focus follows the parent identity, so switching environments does not hide related work. Finished work stays in one environment-grouped section, and the focused parent can be opened. When only one environment is visible, the rows show directly. Two or more still group, and an offline host still counts. (#136)
-- The worktree picker keeps base-branch choices collapsed and can search branches. The current branch starts selected. A new branch name stays when a base is chosen, and the selected worktree stays while browsing bases. The base-branch row uses one divider and does not draw a focus ring.
+- Each environment's project list uses the session-list height cap. A wheel already at the edge continues into the parent list, so one host's projects do not push the others off screen. (#154)
+- Project focus actions name the environment they apply to. Search results stay under that host, and an automation runs on the host that owns the project. (#150)
 
 ### Changed
 
-- DeepSeek harness is upgraded to 0.2.2-rc.1 with refreshed presets, native/PTC tool execution, immediate background subagents, and model choices preserved on resume. Existing compressed session history remains readable, and official model context/tool-update capabilities match the new runtime.
-- Codex runtime 0.167.0.
-- Claude Agent SDK 0.3.318.
+- DeepSeek harness is 0.2.2-rc.1. Presets, native and PTC tool execution, and background subagents follow that runtime. A resumed session keeps its model choice, and a session saved by 0.1.7-rc.1 still opens. Embedded plugins must target the 0.2.2 family. The embedded runtime and the external Windows PTC Node require Node 24.9 or newer; the Electron runtime bundled with the desktop app already does. (#144)
 
 ### Fixed
 
-- Codex clears approvals and forms when their provider request ends, including child-thread and remote-node requests, and ignores late replies. Recorded reasoning and image-generation times survive history reload.
-- Claude sessions use Agent SDK 0.3.318 and its matching runtime. MCP OAuth credential lookup matches the runtime when no custom headers are configured. Shutdown preserves storage warnings without marking a finished reply unread. Startup errors retain their recovery instructions, and retry starts a fresh process after it exits.
-- Linux Claude sessions select the bundled binary for the host's libc, so installing both glibc and musl packages no longer causes startup to fail. Explicit and managed binary paths keep their existing priority.
-- A queued Grok message steers the live turn with interject. Grok no longer offers a separate steer-soon action. Antigravity still cancels the live turn on steer now. Reasoning effort copied from the agent's model notification does not pull a queued Grok send off that path or restart the process.
-- A running remote child stays reachable under a collapsed parent. The sidebar keeps its title and spawn parent when the activity has no transcript.
-- The Antigravity mark fits inside its icon box.
-- The sidebar leaves 8px between the app drawer and the environment list.
-- A Claude verification_required response is no longer shown as an expired sign-in.
-- Remote file edits keep their diffs and line counts. A trailing newline no longer adds a blank line or an empty diff row. (#122)
-- A node discovers Grok models from session creation and from xAI notifications, and applies an explicit model selection. (#100)
-- Claude sessions on a node can queue a message and steer it. (#101)
-- An interrupted harness turn keeps its conversation, so the next send resumes it instead of starting blank. (#116)
-- Remote usage lists load every subscription. Account details, refresh, and retry stay on the selected node. (#124)
-- A remote first send stays visible while the host prepares the session. (#126)
-- Remote bash rows keep the summary before expansion, including while details load or fail. (#130)
-- The remote worktree picker loads change statistics. (#129)
-- Remote suggested-task detail shows the original prompt. (#134)
+- Pinned and draft headings use the same gap under the app drawer as an environment heading. That gap is absent when the draft section is empty. (#166)
+- Images stay with their message when a long transcript is split across windows. Preview and download of an image on a remote node use the same readable file, including a file outside the sync zone. (#162)
+- A collaboration task started on a node keeps a link back to the session it came from. (#160)
+- Stopping a remote turn waits until that cancellation finishes. Repeating the stop does not cancel a later turn, and an error from the stop stays on screen. (#157)
+- Starting a remote session no longer lists a second empty chat next to the draft. (#155)
+- An image annotation can extend past the picture. The exported padding uses the preview background. Add to Chat stays compact, and the toolbar stays on one row. (#152)
+- A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
+- Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
 
-## [0.78.0-alpha] - 2026-11-06
+## [0.78.1-alpha] - 2026-11-07
+
+### Added
+
+- Each environment's project list uses the session-list height cap. A wheel already at the edge continues into the parent list, so one host's projects do not push the others off screen. (#154)
+- Project focus actions name the environment they apply to. Search results stay under that host, and an automation runs on the host that owns the project. (#150)
+
+### Changed
+
+- DeepSeek harness is 0.2.2-rc.1. Presets, native and PTC tool execution, and background subagents follow that runtime. A resumed session keeps its model choice, and a session saved by 0.1.7-rc.1 still opens. Embedded plugins must target the 0.2.2 family. The embedded runtime and the external Windows PTC Node require Node 24.9 or newer; the Electron runtime bundled with the desktop app already does. (#144)
+
+### Fixed
+
+- Pinned and draft headings use the same gap under the app drawer as an environment heading. That gap is absent when the draft section is empty. (#166)
+- Images stay with their message when a long transcript is split across windows. Preview and download of an image on a remote node use the same readable file, including a file outside the sync zone. (#162)
+- A collaboration task started on a node keeps a link back to the session it came from. (#160)
+- Stopping a remote turn waits until that cancellation finishes. Repeating the stop does not cancel a later turn, and an error from the stop stays on screen. (#157)
+- Starting a remote session no longer lists a second empty chat next to the draft. (#155)
+- An image annotation can extend past the picture. The exported padding uses the preview background. Add to Chat stays compact, and the toolbar stays on one row. (#152)
+- A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
+- Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
+
+### Tests
+
+- Session event projection ignores the host capabilities announcement and checks runner events in order. (#164)
+- A queued Grok turn does not show Steer Soon.
+
+## [0.78.0] - 2026-11-06
 
 ### Added
 
@@ -83,17 +95,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Remote bash rows keep the summary before expansion, including while details load or fail. (#130)
 - The remote worktree picker loads change statistics. (#129)
 - Remote suggested-task detail shows the original prompt. (#134)
-
-### Tests
-
-- Mention-brand and icon screenshots are compared by pixels, so a Linux Chromium blur does not fail the check.
-- Source line-count fixtures follow the rule that a trailing newline is not an extra line.
-- The Claude send guard is checked with a field the node does not accept.
-- The suggested-task lease-loss retry has the same 20s budget as the other launch test.
-
-### CI
-
-- Package-root markdown is ignored in the OTA runtime diff.
 
 ## [0.77.0] - 2026-11-06
 

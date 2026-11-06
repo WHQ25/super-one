@@ -182,6 +182,25 @@ describe('createAppServerConnection', () => {
     await handle.close()
   })
 
+  it('keeps the RPC deadline running while an ordinary approval is parked without a user consumer', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+    const connecting = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await connecting
+    try {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+      const outcome = vi.fn()
+      void handle.connection.request('thread/resume', { threadId: 'root' }).catch(outcome)
+      await nextTick()
+      writeLineToChild(child, { id: 9, method: 'item/commandExecution/requestApproval', params: { threadId: 'root', kind: 'command', command: 'build' } })
+      await handle.connection.nextNotification()
+      await vi.advanceTimersByTimeAsync(70_001)
+      expect(outcome).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('timed out') }))
+    } finally { await handle.close() }
+  })
+
   it('logs retry and waiting diagnostics in production without exposing credentials or turn content', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
@@ -246,6 +265,7 @@ describe('createAppServerConnection', () => {
     const firstPayload = stdinLines.join('').split('\n').filter(Boolean)[0]
     const parsed = JSON.parse(firstPayload)
     expect(parsed.method).toBe('initialize')
+    expect(parsed.params.capabilities.requiredHumanApproval).toBe(true)
     expect(parsed.id).toBe(1)
     // Codex forwards these to MCP servers (`openai/standard-form-input` stays in Codex).
     expect(parsed.params.capabilities.extensions).toEqual({

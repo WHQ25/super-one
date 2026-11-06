@@ -389,3 +389,39 @@ describe('Codex per-conversation accounts', () => {
     await runtime.dispose()
   })
 })
+
+describe('fresh human approval', () => {
+  it.each(['default', 'bypassPermissions', 'dontAsk', 'acceptEdits'])('does not auto-approve a checkpoint in %s mode', async permissionMode => {
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-human', async ({ onPermission }) => {
+      await onPermission!({ interactionId: 'human', kind: 'permission', createdAt: Date.now(), toolName: 'Bash', requiresHumanApproval: true, allowAlwaysAllow: false })
+      return { finalText: 'done', providerResume: null }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    try {
+      await runtime.send({ sessionId: session.sessionId, text: 'go', permissionMode: permissionMode as never, client, ...lease })
+      await waitForPending(runtime, session.sessionId, 'permission')
+      expect(() => runtime.respondPermission({ sessionId: session.sessionId, interactionId: 'human', decision: 'allow_always', client, ...lease })).toThrow(/once/)
+      runtime.respondPermission({ sessionId: session.sessionId, interactionId: 'human', decision: 'allow', client, ...lease })
+      await waitIdle(runtime, session.sessionId)
+      expect(runtime.get(session.sessionId)?.alwaysAllowedTools).toEqual([])
+    } finally { await runtime.dispose() }
+  })
+  it('does not reuse an earlier remembered tool grant for a checkpoint', async () => {
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-human', async ({ onPermission }) => {
+      await onPermission!({ interactionId: 'remember', kind: 'permission', createdAt: Date.now(), toolName: 'Bash', allowAlwaysAllow: true })
+      await onPermission!({ interactionId: 'human', kind: 'permission', createdAt: Date.now(), toolName: 'Bash', requiresHumanApproval: true, allowAlwaysAllow: false })
+      return { finalText: 'done', providerResume: null }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    try {
+      await runtime.send({ sessionId: session.sessionId, text: 'go', client, ...lease })
+      await waitForPending(runtime, session.sessionId, 'permission')
+      runtime.respondPermission({ sessionId: session.sessionId, interactionId: 'remember', decision: 'allow_always', client, ...lease })
+      expect(await waitForPending(runtime, session.sessionId, 'permission')).toBe('human')
+      runtime.respondPermission({ sessionId: session.sessionId, interactionId: 'human', decision: 'deny', client, ...lease })
+      await waitIdle(runtime, session.sessionId)
+    } finally { await runtime.dispose() }
+  })
+})

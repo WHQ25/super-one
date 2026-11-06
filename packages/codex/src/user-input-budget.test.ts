@@ -37,3 +37,16 @@ it('removes a cancelled deadline even while input is pending', async () => {
   await vi.advanceTimersByTimeAsync(1000)
   expect(expire).not.toHaveBeenCalled()
 })
+
+it('keeps the input deadline paused when another thread resolves the same raw id', async () => {
+  vi.useFakeTimers()
+  const budget = new CodexUserInputBudget(), expire = vi.fn()
+  budget.deadline(100, expire)
+  budget.begin(0, 'child')
+  budget.end(0, 'other')
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(expire).not.toHaveBeenCalled()
+  budget.end(0, 'child')
+  await vi.advanceTimersByTimeAsync(100)
+  expect(expire).toHaveBeenCalledOnce()
+})

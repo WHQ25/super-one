@@ -1,3 +1,5 @@
+import { codexNativeApprovalRequest } from '@superone/codex/native-approval'
+import { isCodexDescendantThread } from '@superone/codex/thread-ancestry'
 import { createCodexMcpAppsProvider, prewarmCodexMcpAppView } from '@superone/codex/mcp-apps'
 import { MOD_UI_UNAVAILABLE } from '@superone/shared/mod-ui'
 import { McpAppsError } from '@superone/shared/mcp-apps'
@@ -169,6 +171,10 @@ interface LiveCodexConnection {
   busyCount: number
   lastActivityAt: number
   onElicitation?: Parameters<TurnRunner>[0]['onElicitation']
+  onPermissionResponse?: Parameters<TurnRunner>[0]['onPermissionResponse']
+  approvalRootThreadId?: string | null
+  nativeApprovalEnabled: boolean
+  nativeApprovalAbort: AbortController
   promptPrediction: CodexPromptPrediction
   onPromptSuggestion?: (suggestion: string) => void
   /** True while a voice call must drain every app-server notification. */
@@ -207,12 +213,16 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     binary: string,
     authEnv: NodeJS.ProcessEnv,
     cwd: string,
+    permissionHandler?: Parameters<TurnRunner>[0]['onPermissionResponse'],
   ): Promise<LiveCodexConnection> => {
     const providerEnvKey = providerEnvKeyOf(authEnv)
     const existing = liveBySession.get(sessionId)
-    if (existing && existing.cwd === cwd && existing.providerEnvKey === providerEnvKey) {
+    if (existing && existing.cwd === cwd && existing.providerEnvKey === providerEnvKey
+      && (!permissionHandler || existing.nativeApprovalEnabled)) {
+      if (permissionHandler) existing.onPermissionResponse = permissionHandler
       return existing
     }
+    const providerPermission = permissionHandler ?? existing?.onPermissionResponse
     if (existing) await disposeLive(sessionId)
 
     const promptPrediction = createCodexPromptPrediction({
@@ -235,6 +245,31 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         }
         return (live?.promptPrediction ?? promptPrediction).observe(notification)
       },
+      ...(providerPermission ? { onNativeApproval: async (request, signal) => {
+        const live = liveBySession.get(sessionId)
+        if (!live) return { decision: 'decline' }
+        const approvalSignal = AbortSignal.any([signal, live.nativeApprovalAbort.signal])
+        const handle = async () => {
+          const root = live.threadId ?? live.approvalRootThreadId
+          const threadId = request.params.threadId ?? request.params.thread_id
+          if (approvalSignal.aborted) return { decision: 'cancel' }
+          if (!root || typeof threadId !== 'string' || !live.onPermissionResponse) return { decision: 'decline' }
+          try {
+            if (!await isCodexDescendantThread(live.client.request.bind(live.client), root, threadId, { signal: approvalSignal })) return { decision: 'decline' }
+          } catch { return { decision: approvalSignal.aborted ? 'cancel' : 'decline' } }
+          if (approvalSignal.aborted || liveBySession.get(sessionId) !== live) return { decision: 'cancel' }
+          const permission = codexNativeApprovalRequest(`codex-native-${randomUUID()}`, request.method, request.params)
+          if (!permission) return { decision: 'decline' }
+          const response = await live.onPermissionResponse({ ...permission, interactionId: permission.requestId, kind: 'permission', createdAt: Date.now() }, approvalSignal)
+          return { decision: response.cancel ? 'cancel' : response.decision === 'deny' ? 'decline'
+            : response.decision === 'allow_always' && permission.allowAlwaysAllow && !permission.requiresHumanApproval ? 'acceptForSession' : 'accept' }
+        }
+        // The runtime serializes native requests and every other controller interaction.
+        live.busyCount += 1
+        const pending = handle()
+        try { return await pending }
+        finally { live.busyCount = Math.max(0, live.busyCount - 1); live.lastActivityAt = Date.now() }
+      } } : {}),
       onServerRequest: async (request, signal) => {
         const live = liveBySession.get(sessionId)
         if (live) {
@@ -263,6 +298,9 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       cwd,
       providerEnvKey,
       chain: Promise.resolve(),
+      nativeApprovalEnabled: Boolean(providerPermission),
+      nativeApprovalAbort: new AbortController(),
+      onPermissionResponse: providerPermission,
       busyCount: 0,
       lastActivityAt: Date.now(),
       promptPrediction,
@@ -395,7 +433,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       }
     }
 
-    const live = await openLive(sessionId, binary, authEnv, cwd)
+    const live = await openLive(sessionId, binary, authEnv, cwd, input.onPermissionResponse)
 
     const fullTurn = async (): Promise<{
       finalText: string
@@ -405,10 +443,17 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       const conn = liveBySession.get(sessionId)
       if (!conn) throw new Error('Codex connection disposed')
       const interactionAbort = new AbortController()
+      if (conn.nativeApprovalAbort.signal.aborted) conn.nativeApprovalAbort = new AbortController()
+      const abortApprovals = () => { const previous = conn.nativeApprovalAbort; conn.nativeApprovalAbort = new AbortController(); previous.abort() }
+      input.signal.addEventListener('abort', abortApprovals, { once: true })
+      if (input.signal.aborted) abortApprovals()
       const onElicitation: LiveCodexConnection['onElicitation'] = input.onElicitation
         ? (interaction, signal) => input.onElicitation!(interaction, AbortSignal.any([input.signal, interactionAbort.signal, ...(signal ? [signal] : [])]))
         : undefined
       conn.onElicitation = onElicitation
+      // Session-owned waiter stays usable for child approvals after the root turn ends.
+      conn.onPermissionResponse = input.onPermissionResponse ?? conn.onPermissionResponse
+      conn.approvalRootThreadId = priorThread ?? conn.threadId
       // Retain the session-owned ambient sink after this request's abort scope ends.
       conn.onPromptSuggestion = suggestion => (input.onAmbientEvent ?? input.onAgentEvent)?.({ type: 'prompt_suggestion', suggestion })
       const onInputAccepted = (): void => {
@@ -508,6 +553,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         }
         throw err
       } finally {
+        input.signal.removeEventListener('abort', abortApprovals)
         interactionAbort.abort()
         if (conn.onElicitation === onElicitation) conn.onElicitation = undefined
       }
@@ -539,7 +585,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
     const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
     if (binding.configFingerprint !== mcpServerConfigFingerprint(prepared.mcpServers[binding.server])) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
-    const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
+    const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, host?.onPermissionResponse)
+    live.approvalRootThreadId = origin.providerSessionId
     if (!live.threadId) live.threadId = await ensureCodexThread({ client: live.client, cwd: prepared.cwd, threadId: origin.providerSessionId,
       threadConfig: prepared.threadConfig, permissionPreset: session.permissionPreset, signal: new AbortController().signal })
     if (live.threadId !== origin.providerSessionId) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
@@ -554,6 +601,11 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       finally { live.busyCount = Math.max(0, live.busyCount - 1); live.lastActivityAt = Date.now() }
     })
   }
+  runner.interruptSession = sessionId => {
+    const live = liveBySession.get(sessionId)
+    if (live) { const previous = live.nativeApprovalAbort; live.nativeApprovalAbort = new AbortController(); previous.abort() }
+    if (live?.threadId && live.activeTurnId) return live.client.request('turn/interrupt', { threadId: live.threadId, turnId: live.activeTurnId }).then(() => undefined)
+  }
   runner.disposeSession = async (sessionId) => {
     await disposeLive(sessionId)
   }
@@ -567,16 +619,17 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     busy: live.busyCount > 0,
   }))
   runner.codexVoice = {
-    async open(session) {
+    async open(session, host) {
       if ((session.harnessId || 'codex') !== 'codex') {
         throw Object.assign(new Error('Voice is unavailable for this agent.'), { code: 'failed_precondition' })
       }
       const binary = resolveCodexBinaryPath(opts)
       if (!binary) throw Object.assign(new Error('Codex binary unavailable'), { code: 'failed_precondition' })
       const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
-      const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
+      const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, host?.onPermissionResponse)
       if (!live.threadId) {
         const prior = session.providerResume?.startsWith('thread:') ? session.providerResume.slice('thread:'.length) : null
+        live.approvalRootThreadId = prior
         live.threadId = await ensureCodexThread({
           client: live.client,
           cwd: prepared.cwd,
@@ -679,7 +732,9 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   }
   runner.servedOperations = acpOpenCode.servedOperations
   runner.steer = acpOpenCode.steer
-  runner.interruptSession = acpOpenCode.interruptSession
+  runner.interruptSession = async sessionId => {
+    await Promise.all([codex.interruptSession?.(sessionId), acpOpenCode.interruptSession?.(sessionId)])
+  }
   runner.disposeSession = async (sessionId) => {
     await Promise.all([
       claude.disposeSession?.(sessionId),

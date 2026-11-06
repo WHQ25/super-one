@@ -1024,7 +1024,9 @@ export class Session implements SessionContract {
     if (this._status === 'interrupting') return true
     // Not `_status`-only: a continuation turn runs with `_status === 'ended'`,
     // and refusing here is what let the agent keep streaming past Stop.
-    if (!this.isStreaming()) return false
+    // Child/voice/View approvals can also wait while their root is idle.
+    const wasStreaming = this.isStreaming()
+    if (!wasStreaming && this.backend.getPendingInteractions().length === 0) return false
     this.touchRuntimeActivity()
     const prev = this._status
     const generation = this.liveness.streamGeneration
@@ -1043,7 +1045,7 @@ export class Session implements SessionContract {
       log.debug('[Session] interrupt error:', err)
     } finally {
       if ((this._status as SessionStatus) !== 'disposed') {
-        this._status = prev === 'starting' ? 'idle' : 'ended'
+        this._status = wasStreaming ? (prev === 'starting' ? 'idle' : 'ended') : prev
       }
       // The backend owns the terminal event, but an interrupt that never lands
       // one must not leave the session permanently "busy". Only clear the run we

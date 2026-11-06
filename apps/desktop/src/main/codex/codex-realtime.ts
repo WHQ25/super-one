@@ -375,7 +375,7 @@ async function pumpRealtimeDelegatedTurns(
     session.activeTurnId = null
     session.steerFn = null
     session.interruptFn = null
-    rejectPendingApprovals(session, 'Codex realtime turn interrupted')
+    rejectPendingApprovals(session, 'Codex realtime turn interrupted', { threadId, signal: controller.signal })
     if (session.runningController === controller) session.runningController = null
   }
 }

@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.165.0` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.167.0` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.165.0.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.167.0.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`
@@ -35,7 +35,7 @@ voices still come from
 | `account/rateLimits/read` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts` |
 | `account/read` | used | Calls the app-server RPC. | `packages/codex/src/account-manager.ts`, `packages/codex/src/codex-admin.ts` |
 | `account/sendAddCreditsNudgeEmail` | unused | No client call or dedicated handler. | — |
-| `account/usage/read` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
+| `account/usage/read` | used | Preserves nativeUsageUsdMicros independently of credit estimates. Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `account/workspaceMessages/read` | unused | No client call or dedicated handler. | — |
 | `app/installed` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `app/list` | unused | No client call or dedicated handler. | — |
@@ -68,7 +68,7 @@ voices still come from
 | `fs/writeFile` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `fuzzyFileSearch` | unused | No client call or dedicated handler. | — |
 | `hooks/list` | used | Calls the app-server RPC. `preModelRequest` and `postModelRequest` are dropped by the event allowlist. | `apps/desktop/src/main/codex/codex-hooks-service.ts` |
-| `initialize` | used | Advertises io.modelcontextprotocol/ui with text/html;profile=mcp-app in extensions. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
+| `initialize` | partial | Desktop and production node connections advertise requiredHumanApproval with one-time human enforcement. Administrative clients without a native handler omit it. Advertises io.modelcontextprotocol/ui with text/html;profile=mcp-app in extensions. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
 | `marketplace/add` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
 | `marketplace/remove` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
 | `marketplace/upgrade` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
@@ -139,6 +139,9 @@ voices still come from
 | `account/bedrock/checkGovCloudRequirements` | unused | No Bedrock GovCloud onboarding flow. | — |
 | `account/bedrock/discover` | unused | No client call or dedicated handler. | — |
 | `account/bedrock/setup` | unused | No client call or dedicated handler. | — |
+| `account/gcp/setup` | unused | No native GCP onboarding flow. | — |
+| `accountSession/list` | unused | SuperOne owns isolated account profiles. | — |
+| `accountSession/switch` | unused | Conversations remain bound to their selected account. | — |
 | `collaborationMode/list` | unused | No client call or dedicated handler. | — |
 | `environment/add` | unused | No client call or dedicated handler. | — |
 | `environment/info` | unused | No client call or dedicated handler. | — |
@@ -176,11 +179,12 @@ voices still come from
 | `thread/backgroundTerminals/list` | unused | No client call or dedicated handler. | — |
 | `thread/backgroundTerminals/terminate` | unused | No client call or dedicated handler. | — |
 | `thread/decrement_elicitation` | unused | No client call or dedicated handler. | — |
+| `thread/guardianReview` | unused | No injected-command review caller. | — |
 | `thread/increment_elicitation` | unused | No client call or dedicated handler. | — |
 | `thread/items/read` | unused | Experimental bounded item lookup; SuperOne owns transcript pagination. | — |
 | `thread/memory/read` | unused | Experimental memory-summary read. No client call. | — |
 | `thread/memoryMode/set` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/request` | unused | 0.165.0 still rejects the placeholder method as not implemented. | — |
+| `thread/prediction/request` | unused | Unused; last live probe on 0.165.0 rejected the placeholder method as not implemented. Not re-probed in this upgrade. | — |
 | `thread/queue/add` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/delete` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
@@ -215,12 +219,12 @@ voices still come from
 | `applyPatchApproval` | partial | Legacy request routing on desktop; shared client does not implement the old approval shape. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `attestation/generate` | unused | No client call or dedicated handler. | — |
 | `execCommandApproval` | unused | No client call or dedicated handler. | — |
-| `item/commandExecution/requestApproval` | partial | Desktop interactive approval; minimal shared client denies. | `packages/codex/src/server-request.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `item/fileChange/requestApproval` | partial | Desktop interactive approval; minimal shared client denies. | `packages/codex/src/server-request.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
+| `item/commandExecution/requestApproval` | partial | Both hosts support native command/network decisions, humanCommand checkpoints and visible additional grants. Node decisions use the lease-gated durable permission channel, bounded child ancestry validation and shared interaction FIFO, including resume/idle/voice paths. | `packages/codex/src/native-approval.ts`, `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
+| `item/fileChange/requestApproval` | used | Both hosts route native file-change approvals through the existing permission UI. Node responses are lease-gated; session grants remain provider-owned. | `packages/codex/src/native-approval.ts`, `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `item/permissions/requestApproval` | unused | No client call or dedicated handler. | — |
 | `item/tool/call` | unused | No client call or dedicated handler. | — |
 | `item/tool/requestUserInput` | partial | Desktop/production CLI question handling; minimal shared client denies. | `packages/codex/src/server-request.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `mcpServer/elicitation/request` | partial | Form responses on desktop and production nodes, including matched standalone View calls between turns; node forms use durable lease-gated permission waiters and preserve notification ordering. Local desktop supports trusted stdio `userOptions` picking and `resource_link` previews. Tool previews, remote/phone pickers and previews remain deferred. URL responses remain desktop-specific; user verification cancels without explicit opt-in. | `packages/codex/src/app-server-client.ts`, `packages/codex/src/elicitation.ts`, `packages/codex/src/mcp-app-elicitation.ts`, `apps/desktop/src/main/codex/codex-form-resources.ts`, `packages/codex/src/server-request.ts` |
+| `mcpServer/elicitation/request` | partial | Desktop structured _meta.tool_name is preferred for host-tool mapping, with an older-message fallback. Form responses on desktop and production nodes, including matched standalone View calls between turns; node forms use durable lease-gated permission waiters and preserve notification ordering. Local desktop supports trusted stdio `userOptions` picking and `resource_link` previews. Tool previews, remote/phone pickers and previews remain deferred. URL responses remain desktop-specific; user verification cancels without explicit opt-in. | `packages/codex/src/app-server-client.ts`, `packages/codex/src/elicitation.ts`, `packages/codex/src/mcp-app-elicitation.ts`, `apps/desktop/src/main/codex/codex-form-resources.ts`, `packages/codex/src/server-request.ts` |
 
 ## Experimental server requests
 
@@ -255,7 +259,7 @@ voices still come from
 | `item/autoApprovalReview/started` | unused | No client call or dedicated handler. | — |
 | `item/commandExecution/outputDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/commandExecution/terminalInteraction` | unused | No client call or dedicated handler. | — |
-| `item/completed` | partial | Captures data-only subAgentActivity metadata without adding transcript card items. Maps native MCP Apps presentation and private View results onto the translated tool blocks. Harness-neutral host updates persist snapshots/context on those blocks and node catalog rows. Desktop and paired-node View acceptance passes, including public Excalidraw, real next-turn context, native fullscreen/PiP lifecycle and restart activation gating. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/mcp-apps/executor.ts` |
+| `item/completed` | partial | Recorded reasoning times and image durations are mapped on both hosts. Captures data-only subAgentActivity metadata without adding transcript card items. Maps native MCP Apps presentation and private View results onto the translated tool blocks. Harness-neutral host updates persist snapshots/context on those blocks and node catalog rows. Desktop and paired-node View acceptance passes, including public Excalidraw, real next-turn context, native fullscreen/PiP lifecycle and restart activation gating. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/mcp-apps/executor.ts` |
 | `item/fileChange/outputDelta` | unused | No client call or dedicated handler. | — |
 | `item/fileChange/patchUpdated` | unused | No client call or dedicated handler. | — |
 | `item/mcpToolCall/progress` | unused | No client call or dedicated handler. | — |
@@ -276,7 +280,7 @@ voices still come from
 | `process/outputDelta` | unused | No client call or dedicated handler. | — |
 | `project/changed` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `remoteControl/status/changed` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
-| `serverRequest/resolved` | unused | No client call or dedicated handler. | — |
+| `serverRequest/resolved` | used | Cancels matching pending requests by connection, thread and raw request id; suppresses late replies and releases input budgets on desktop and node. Both hosts also clear requests when their owning turn completes. | `packages/codex/src/server-request-lifecycle.ts`, `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `skills/changed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/archived` | unused | No client call or dedicated handler. | — |
 | `thread/attachment/updated` | unused | No client call or dedicated handler. | — |
@@ -288,7 +292,7 @@ voices still come from
 | `thread/goal/cleared` | unused | No client call or dedicated handler. | — |
 | `thread/goal/updated` | unused | No client call or dedicated handler. | — |
 | `thread/name/updated` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; 0.165.0 still has no producer. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
+| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; No generator is integrated; last provider producer check was on 0.165.0. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
 | `thread/project/updated` | unused | No client call or dedicated handler. | — |
 | `thread/queue/changed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/readState/changed` | unused | Generated in the stable bundle but source marks the feature experimental; host unread state remains authoritative. | — |
@@ -304,6 +308,7 @@ voices still come from
 | `thread/realtime/transcript/delta` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/transcript/done` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/reverted` | unused | No client call or dedicated handler. | — |
+| `thread/section/changed` | n/a | SuperOne owns sidebar organization. | — |
 | `thread/settings/updated` | partial | Diagnostic logging only; no complete settings reducer. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/started` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/status/changed` | partial | Diagnostic logging/routing only; UI state follows session lifecycle. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |

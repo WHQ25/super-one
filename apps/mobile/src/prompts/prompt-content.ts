@@ -29,6 +29,7 @@ export function permissionToolContent(request: PermissionRequest) {
 }
 
 export function showRememberPermission(request: PermissionRequest): boolean {
+  if (request.requiresHumanApproval) return false
   if (request.permissionDetails && !request.requestKind) return canRememberPermission(request)
   if (request.requestKind) return true
   return request.allowAlwaysAllow && !request.suggestions?.length

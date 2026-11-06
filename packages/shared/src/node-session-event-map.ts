@@ -263,6 +263,9 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
     const payload = asRecord(envelope.payload)
     const out: AgentEvent[] = []
     const push = (event: AgentEvent, positioned = true) => {
+      if (event.type === 'permission_request' || event.type === 'ask_user_question' || event.type === 'plan_approval') {
+        event = { ...event, request: { ...event.request, lifetime: 'session' } } as AgentEvent
+      }
       // The envelope time is when the node logged the event, not when this client saw it.
       out.push(stamp(stampCompletedAt(event, new Date(envelope.timestamp).toISOString()), ctx, positioned ? envelope : undefined))
     }
@@ -540,7 +543,11 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           toolName,
           toolUseId: asString(payload.toolUseId),
           input: asRecord(payload.input),
+          ...(asString(payload.decisionReason) ? { decisionReason: asString(payload.decisionReason)! } : {}),
+          ...(asString(payload.blockedPath) ? { blockedPath: asString(payload.blockedPath)! } : {}),
+          ...(payload.requiresHumanApproval === true ? { requiresHumanApproval: true } : {}),
           allowAlwaysAllow:
+            payload.requiresHumanApproval === true ? false :
             requestKind === 'session_agents_confirm' || requestKind === 'session_cleanup_confirm'
               ? false
               : payload.allowAlwaysAllow !== false,

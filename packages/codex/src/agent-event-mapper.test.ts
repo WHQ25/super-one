@@ -305,3 +305,17 @@ describe('Codex AgentEvent mapper', () => {
     })
   })
 })
+
+describe('provider item lifecycle timestamps', () => {
+  it('restores recorded reasoning times instead of timing history parsing', () => {
+    expect(mapCodexThreadItem({ type: 'reasoning', id: 'r', summary: ['done'], startedAtMs: 1000, completedAtMs: 1300 }, undefined, () => 9000))
+      .toMatchObject({ startedAt: 1000, endedAt: 1300 })
+    expect(mapCodexThreadItem({ type: 'reasoning', id: 'old', summary: ['old'], startedAtMs: null, completedAtMs: null }, undefined, () => 9000))
+      .toMatchObject({ startedAt: 9000, endedAt: 9000 })
+  })
+  it('uses recorded generation duration and ignores reversed timestamps', () => {
+    expect(mapCodexThreadItem({ type: 'imageGeneration', id: 'image', savedPath: '/tmp/image.png', startedAtMs: 1000, completedAtMs: 1800 }))
+      .toMatchObject({ generationMs: 800, savedPath: '/tmp/image.png' })
+    expect(mapCodexThreadItem({ type: 'imageGeneration', id: 'bad', startedAtMs: 1800, completedAtMs: 1000 })).not.toHaveProperty('generationMs')
+  })
+})

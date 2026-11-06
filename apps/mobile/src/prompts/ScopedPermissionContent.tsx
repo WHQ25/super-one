@@ -32,6 +32,10 @@ export function ScopedPermissionContent({ request, presentation, remembering }: 
     {message ? <Text selectable style={styles.meta}>{message}</Text> : null}
     {presentation.command ? <View style={styles.card}><Text selectable style={styles.code}>{`$ ${presentation.command}`}</Text></View> : null}
     {presentation.directory ? <Text selectable style={styles.meta}>{t('Working directory: {{path}}').replace('{{path}}', presentation.directory)}</Text> : null}
+    {presentation.additionalScope ? <View style={styles.card}>
+      <Text style={styles.label}>{t('Requested scope')}</Text>
+      <Text selectable style={styles.code}>{presentation.additionalScope}</Text>
+    </View> : null}
     {!presentation.command && presentation.lines.length ? <View style={styles.card}>
       <Text style={styles.label}>{t('Requested scope')}</Text>
       <Text selectable style={styles.code}>{presentation.lines.join('\n')}</Text>

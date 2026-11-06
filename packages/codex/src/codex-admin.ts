@@ -253,6 +253,7 @@ function parseThreadUsage(raw: unknown): CodexAccountUsage['threadUsage'] {
     threadId,
     estimatedUsageCreditsMicros: credits,
     estimatedUsageUsdMicros: readNumericLike(rec?.estimatedUsageUsdMicros),
+    ...(rec?.nativeUsageUsdMicros !== undefined ? { nativeUsageUsdMicros: readNumericLike(rec.nativeUsageUsdMicros) } : {}),
     groups,
   }
 }

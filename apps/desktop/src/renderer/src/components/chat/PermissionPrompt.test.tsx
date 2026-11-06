@@ -103,6 +103,28 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('PermissionPrompt', () => {
+  it('shows the command and additional grants before approving a native request', async () => {
+    const { codexNativeApprovalRequest } = await import('@superone/codex/native-approval')
+    activeSessionState.pendingPermissions = [codexNativeApprovalRequest('extra', 'item/commandExecution/requestApproval', {
+      kind: 'humanCommand', command: 'build release', cwd: '/project',
+      additionalPermissions: { fileSystem: { write: ['/outside'], read: ['/reference'] }, network: { enabled: true } },
+    })!]
+    renderInChat(<PermissionPrompt />)
+    expect(screen.getByText('$ build release')).toBeVisible()
+    expect(screen.getByText(/"fileSystem"/)).toBeVisible()
+    expect(screen.getByText(/"fileSystem"/)).toHaveTextContent('/outside')
+    expect(screen.getByText(/"fileSystem"/)).toHaveTextContent('network')
+  })
+  it('offers only a one-time decision for a human checkpoint even with stale remember metadata', () => {
+    activeSessionState.pendingPermissions[0].requiresHumanApproval = true
+    renderInChat(<PermissionPrompt />)
+    expect(screen.queryByRole('button', { name: /allow for this session/i })).toBeNull()
+    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+    expect(chatState.respondToPermission).not.toHaveBeenCalledWith('req-1', true, true)
+    fireEvent.click(screen.getByRole('button', { name: /^allow/i }))
+    expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', true)
+  })
+
   it('reviews a scoped remembered grant before replying, supports cancellation, and never submits on key repeat', async () => {
     activeSessionState.sessionProvider = 'opencode'
     activeSessionState.pendingPermissions = [{ requestId: 'per_scope', toolName: 'external_directory', input: {}, allowAlwaysAllow: true,

@@ -21,7 +21,7 @@ export type NodeTranscriptBlock = {
   createdAt?: number
 }
 
-export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> & {
+export type NodePendingInteraction = Pick<PermissionRequest, 'decisionReason' | 'blockedPath' | 'requiresHumanApproval' | 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> & {
   interactionId: string
   kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm' | 'session_cleanup_confirm'
   toolName?: string
@@ -92,6 +92,7 @@ export function nodePendingToPermissionRequest(
     }
     return {
       requestId: pending.interactionId,
+      lifetime: 'session',
       toolName: pending.toolName || 'session_collab_request',
       toolUseId: pending.toolUseId ?? pending.interactionId,
       input: pending.input && typeof pending.input === 'object' ? pending.input : {},
@@ -109,6 +110,7 @@ export function nodePendingToPermissionRequest(
       : []
     return {
       requestId: pending.interactionId,
+      lifetime: 'session',
       toolName: pending.toolName || 'mcp__superone__session_cleanup',
       toolUseId: pending.toolUseId ?? pending.interactionId,
       input: pending.input && typeof pending.input === 'object' ? pending.input : {},
@@ -125,6 +127,7 @@ export function nodePendingToPermissionRequest(
     if (!pending.inputRequest || !pending.schemaForm) return null
     return {
       requestId: pending.interactionId,
+      lifetime: 'session',
       toolName: pending.toolName || 'composer_request',
       toolUseId: pending.toolUseId ?? pending.interactionId,
       input: {},
@@ -146,10 +149,14 @@ export function nodePendingToPermissionRequest(
   const requestKind = pending.requestKind === 'mcp_elicitation' ? 'mcp_elicitation' as const : undefined
   return {
     requestId: pending.interactionId,
+    lifetime: 'session',
     toolName: pending.toolName || 'tool',
     toolUseId: pending.toolUseId,
     input,
-    allowAlwaysAllow: requestKind === 'mcp_elicitation' ? !schemaForm && pending.allowAlwaysAllow === true : pending.allowAlwaysAllow !== false,
+    ...(pending.decisionReason ? { decisionReason: pending.decisionReason } : {}),
+    ...(pending.blockedPath ? { blockedPath: pending.blockedPath } : {}),
+    ...(pending.requiresHumanApproval ? { requiresHumanApproval: true } : {}),
+    allowAlwaysAllow: pending.requiresHumanApproval ? false : requestKind === 'mcp_elicitation' ? !schemaForm && pending.allowAlwaysAllow === true : pending.allowAlwaysAllow !== false,
     ...(requestKind ? { requestKind } : {}),
     ...(pending.message ? { message: pending.message } : {}),
     ...(pending.permissionDetails ? { permissionDetails: pending.permissionDetails } : {}),
@@ -226,6 +233,7 @@ export function nodePendingToQuestionRequest(
   )
   return {
     requestId: pending.interactionId,
+    lifetime: 'session',
     questions,
     ...(previewFormat ? { previewFormat } : {}),
   }
@@ -261,6 +269,7 @@ export function nodePendingToPlanApprovalRequest(
           : 'Plan approval required'
   return {
     requestId: pending.interactionId,
+    lifetime: 'session',
     planContent: plan,
     planFilePath:
       typeof (input as { planFilePath?: unknown }).planFilePath === 'string'

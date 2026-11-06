@@ -1365,6 +1365,8 @@ export interface ElicitationFormField {
 
 export interface PermissionRequest {
   requestId: string
+  /** Host-owned prompts survive turn events and close only on interaction_resolved. */
+  lifetime?: 'session'
   toolName: string
   toolUseId?: string
   input: Record<string, unknown>
@@ -1384,6 +1386,8 @@ export interface PermissionRequest {
   }
   blockedPath?: string
   allowAlwaysAllow: boolean
+  /** A fresh human decision is required; saved or automatic approval cannot satisfy it. */
+  requiresHumanApproval?: boolean
   /**
    * The harness asked that this prompt open on its decline option with no
    * one-key approve shortcut (Claude SDK `defaultToNo`): approving must take a
@@ -1718,6 +1722,7 @@ export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry'
 
 export interface PlanApprovalRequest {
   requestId: string
+  lifetime?: 'session'
   planContent: string
   planFilePath: string
   allowedPrompts: Array<{ tool: string; prompt: string }>
@@ -3659,6 +3664,8 @@ export interface CodexThreadUsage {
   threadId: string
   estimatedUsageCreditsMicros: number
   estimatedUsageUsdMicros: number | null
+  /** Native billing dollars, independent of the credit estimate; absent/null is unknown. */
+  nativeUsageUsdMicros?: number | null
   groups: CodexThreadUsageBreakdownGroup[]
 }
 

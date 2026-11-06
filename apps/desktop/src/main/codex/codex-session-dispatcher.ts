@@ -1,3 +1,5 @@
+import { processServerRequest } from './codex-turn'
+import log from '../logger'
 import { createCodexPromptPrediction } from '@superone/codex/prompt-prediction'
 import type { AppServerConnection } from './app-server-connection'
 import { createNotificationDispatcher, type NotificationDispatcher } from './codex-notification-dispatcher'
@@ -14,7 +16,17 @@ export function createCodexSessionDispatcher(session: CodexSession, connection: 
   })
   session.promptPrediction = prediction
   return createNotificationDispatcher(connection, {
-    onNotification: notification => prediction.observe(notification),
+    onNotification: notification => {
+      // Checkpoints can be replayed during resume, before a turn inbox has a reader.
+      if (notification.requestIdRaw !== undefined
+        && notification.method === 'item/commandExecution/requestApproval'
+        && notification.params.kind === 'humanCommand' && session.forkCallbacks) {
+        void processServerRequest(notification, connection, session, session.forkCallbacks, notification.params.threadId === session.threadId ? session.runningController?.signal : undefined)
+          .catch(error => log.warn('[codex] human checkpoint failed:', error))
+        return true
+      }
+      return prediction.observe(notification)
+    },
     onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
     onQueueChanged: threadId => session.queueChangedFn?.(threadId),
     isMainTurnActive: () => Boolean(session.runningController),

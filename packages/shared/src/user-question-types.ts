@@ -24,6 +24,8 @@ export type QuestionAnnotations = Record<string, QuestionAnnotation>
 
 export interface AskUserQuestionRequest {
   requestId: string
+  /** A node owns resolution independently of its root turn. */
+  lifetime?: 'session'
   questions: UserQuestion[]
   previewFormat?: QuestionPreviewFormat
 }

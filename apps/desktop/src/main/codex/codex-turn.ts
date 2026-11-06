@@ -1,3 +1,6 @@
+import { codexNativeApprovalRequest } from '@superone/codex/native-approval'
+import { codexItemDuration, withCodexReasoningTiming } from '@superone/codex/item-timing'
+import { claimCodexServerRequest, finishCodexServerRequest } from '@superone/codex/server-request-lifecycle'
 import { mapCodexCollabItem, withCodexChildTurn } from '@superone/codex/collab-item'
 import { isCodexReviewWorkerTurn, readCodexSubagentActivity, readCodexTurnProvenance } from '@superone/codex/protocol-v162'
 import type { CodexSubagentActivity, CodexTurnProvenance, CodexRequestedTurnProvenance } from '@superone/shared/codex-metadata'
@@ -106,10 +109,17 @@ export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>([...MAIN_T
  * come from superone-host-owned-tools. Fixed miniapp_call and legacy mini-app
  * tools (`appId__tool`) always rewrite so isToolPreapproved can match.
  */
-export function extractSuperoneMiniAppToolName(message: string): string | null {
+export function extractSuperoneMiniAppToolName(message: string, toolName?: unknown): string | null {
+  if (typeof toolName === 'string') {
+    if (!/^[a-z0-9_]+$/i.test(toolName)) return null
+    return qualifySuperoneApprovalTool(toolName)
+  }
   const match = message.match(SUPERONE_MCP_TOOL_NAME_PATTERN)
   if (!match) return null
-  const namespacedName = match[1]
+  return qualifySuperoneApprovalTool(match[1])
+}
+
+function qualifySuperoneApprovalTool(namespacedName: string): string | null {
   const isMiniAppTool = namespacedName.includes('__')
   const isFixedMiniappCall = namespacedName === 'miniapp_call'
   if (!isMiniAppTool && !isFixedMiniappCall && !isHostOwnedSuperoneBareName(namespacedName)) return null
@@ -146,6 +156,7 @@ export interface CodexRunStreamCallbacks {
     durationMs?: number
   }) => void
   onCompactionFailed?: (error: string) => void
+  onInteractionResolved?: (event: Extract<AgentEvent, { type: 'interaction_resolved' }>) => void
   onPermissionRequest?: (request: PermissionRequest) => void
   onAskUserQuestion?: (request: AskUserQuestionRequest) => void
   onMcpServerStatus?: (servers: CodexMcpServerStartup[]) => void
@@ -340,7 +351,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
         || summaryText
         || contentText
         || (previous?.type === 'reasoning' ? previous.text : '')
-      return buildReasoningItem(id, text, previous)
+      return withCodexReasoningTiming(buildReasoningItem(id, text, previous), rec)
     }
 
     case 'command_execution':
@@ -427,7 +438,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       const status = readString(rec.status) ?? prev?.status ?? 'in_progress'
       const revisedPrompt = readString(rec.revisedPrompt ?? rec.revised_prompt) ?? prev?.revisedPrompt
       const savedPath = readString(rec.savedPath ?? rec.saved_path) ?? prev?.savedPath
-      const generationMs = prev?.generationMs
+      const generationMs = codexItemDuration(rec) ?? prev?.generationMs
       const failure = readCodexImageGenerationFailure(rec.failure) ?? prev?.failure
       return {
         id,
@@ -647,45 +658,8 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
   const requestId = notification.requestId
   if (!requestId) return null
 
-  if (notification.method === 'item/commandExecution/requestApproval') {
-    const command = readString(notification.params.command) ?? ''
-    const cwd = readString(notification.params.cwd) ?? undefined
-    const reason = readString(notification.params.reason) ?? undefined
-    return {
-      responseKind: 'decision',
-      request: {
-        requestId,
-        toolName: 'Bash',
-        toolUseId: requestId,
-        input: compactRecord({
-          command,
-          cwd,
-        }),
-        decisionReason: reason,
-        allowAlwaysAllow: true,
-      },
-    }
-  }
-
-  if (notification.method === 'item/fileChange/requestApproval') {
-    const grantRoot = readString(notification.params.grantRoot) ?? undefined
-    const reason = readString(notification.params.reason) ?? undefined
-    return {
-      responseKind: 'decision',
-      request: {
-        requestId,
-        toolName: 'FileChange',
-        toolUseId: requestId,
-        input: compactRecord({
-          file_path: grantRoot,
-          kind: 'grant_root',
-        }),
-        decisionReason: reason,
-        blockedPath: grantRoot,
-        allowAlwaysAllow: true,
-      },
-    }
-  }
+  const nativeApproval = codexNativeApprovalRequest(requestId, notification.method, notification.params)
+  if (nativeApproval) return { responseKind: 'decision', request: { ...nativeApproval, toolUseId: requestId } }
 
   if (notification.method === 'mcpServer/elicitation/request') {
     const message = readString(notification.params.message) ?? ''
@@ -704,7 +678,7 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
     const form = elicitationFormRequest(notification.params.requestedSchema)
 
     const miniAppToolName = serverName === 'superone' && !form.schemaForm
-      ? extractSuperoneMiniAppToolName(message)
+      ? extractSuperoneMiniAppToolName(message, meta?.tool_name)
       : null
     if (miniAppToolName) {
       // Codex ≥ 0.129 carries the call's arguments in `_meta.tool_params`, which is
@@ -768,13 +742,15 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
   return null
 }
 
-export function rejectPendingApprovals(session: CodexSession, message: string): void {
+export function rejectPendingApprovals(session: CodexSession, message: string, owner?: { threadId: string | null; signal: AbortSignal }): void {
   if (session.pendingApprovals.size === 0) return
   const error = new Error(message)
-  for (const pending of session.pendingApprovals.values()) {
-    pending.reject(error)
+  for (const [id, pending] of session.pendingApprovals) {
+    if (owner && (pending.ownerThreadId !== owner.threadId || pending.ownerSignal !== owner.signal)) continue
+    if (pending.cancel) pending.cancel()
+    else pending.reject(error)
+    session.pendingApprovals.delete(id)
   }
-  session.pendingApprovals.clear()
 }
 
 export async function processServerRequest(
@@ -783,6 +759,30 @@ export async function processServerRequest(
   session: CodexSession,
   callbacks: CodexRunStreamCallbacks | undefined,
   abortSignal?: AbortSignal,
+): Promise<boolean> {
+  if (notification.requestIdRaw === undefined) return false
+  const pending = claimCodexServerRequest(connection, notification.requestIdRaw, notification.params)
+  if (!pending) return true
+  const signal = AbortSignal.any([pending.controller.signal, ...(abortSignal ? [abortSignal] : [])])
+  // The facade suppresses replies after a provider-side cancellation, including async gates.
+  const scopedConnection: AppServerConnection = { ...connection,
+    respond: async (id, result) => { if (!pending.resolved) await connection.respond(id, result) },
+    respondError: async (id, code, message) => { if (!pending.resolved) await connection.respondError(id, code, message) },
+  }
+  try { return await processServerRequestImpl(notification, scopedConnection, session, callbacks, signal, abortSignal) }
+  finally {
+    connection.endUserInput?.(notification.requestIdRaw)
+    finishCodexServerRequest(connection, notification.requestIdRaw, pending)
+  }
+}
+
+async function processServerRequestImpl(
+  notification: AppServerNotification,
+  connection: AppServerConnection,
+  session: CodexSession,
+  callbacks: CodexRunStreamCallbacks | undefined,
+  abortSignal: AbortSignal,
+  ownerSignal?: AbortSignal,
 ): Promise<boolean> {
   if (notification.requestIdRaw === undefined) return false
 
@@ -877,19 +877,26 @@ export async function processServerRequest(
       await respondToServer(notification.requestIdRaw, fallbackResponse)
       return true
     }
+    connection.beginUserInput?.(notification.requestIdRaw, notification.params.threadId)
+    parsedApprovalRequest.request.lifetime = 'session'
     let abortPending: (() => void) | undefined
     let releaseFormResources: (() => void) | undefined
+    let pendingEvent: AgentEvent | undefined
     try {
-      const pendingEvent: AgentEvent = parsedApprovalRequest.responseKind === 'user_input'
+      const requestEvent: AgentEvent = parsedApprovalRequest.responseKind === 'user_input'
         ? { type: 'ask_user_question', request: parsedApprovalRequest.request }
         : { type: 'permission_request', request: parsedApprovalRequest.request }
+      pendingEvent = requestEvent
       const responsePromise = new Promise<PendingCodexApprovalResponse>((resolve, reject) => {
         session.pendingApprovals.set(parsedApprovalRequest.request.requestId, {
           responseKind: parsedApprovalRequest.responseKind,
           questions: parsedApprovalRequest.responseKind === 'user_input'
             ? parsedApprovalRequest.questions
             : undefined,
-          event: pendingEvent,
+          event: requestEvent,
+          ownerThreadId: readString(notification.params.threadId) ?? session.threadId,
+          ownerSignal,
+          cancel: () => abortPending?.(),
           resolve,
           reject,
         })
@@ -897,9 +904,10 @@ export async function processServerRequest(
         abortPending = () => {
           if (session.pendingApprovals.get(parsedApprovalRequest.request.requestId)?.event === pendingEvent) {
             session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
+            callbacks?.onInteractionResolved?.({ type: 'interaction_resolved', interactionType: parsedApprovalRequest.responseKind === 'user_input' ? 'question' : 'permission', requestId: parsedApprovalRequest.request.requestId })
           }
           resolve(parsedApprovalRequest.responseKind === 'elicitation'
-            ? { action: 'cancel', content: null, _meta: null } : fallbackResponse)
+            ? { action: 'cancel', content: null, _meta: null } : parsedApprovalRequest.responseKind === 'decision' ? { decision: 'cancel' } : fallbackResponse)
         }
         abortSignal?.addEventListener('abort', abortPending, { once: true })
       })
@@ -914,7 +922,9 @@ export async function processServerRequest(
     } finally {
       releaseFormResources?.()
       if (abortPending) abortSignal?.removeEventListener('abort', abortPending)
-      session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
+      if (session.pendingApprovals.get(parsedApprovalRequest.request.requestId)?.event === pendingEvent) {
+        session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
+      }
     }
   }
 
@@ -2625,7 +2635,7 @@ export async function runCodexTurn(
     }
     throw error
   } finally {
-    rejectPendingApprovals(session, 'Codex run interrupted')
+    rejectPendingApprovals(session, 'Codex run interrupted', { threadId: session.threadId, signal: controller.signal })
     if (session.runningController === controller) {
       session.runningController = null
     }
@@ -2685,7 +2695,7 @@ export async function startCodexQueuedTurn(
     if (controller.signal.aborted) throw new Error('Codex run interrupted')
     throw error
   } finally {
-    rejectPendingApprovals(session, 'Codex run interrupted')
+    rejectPendingApprovals(session, 'Codex run interrupted', { threadId: session.threadId, signal: controller.signal })
     if (session.runningController === controller) session.runningController = null
   }
 }
@@ -2767,7 +2777,7 @@ export async function reviewCodexTurn(
     }
     throw error
   } finally {
-    rejectPendingApprovals(session, 'Codex run interrupted')
+    rejectPendingApprovals(session, 'Codex run interrupted', { threadId: session.threadId, signal: controller.signal })
     if (session.runningController === controller) {
       session.runningController = null
     }
@@ -2827,7 +2837,7 @@ export async function compactCodexTurn(
     }
     throw error
   } finally {
-    rejectPendingApprovals(session, 'Codex run interrupted')
+    rejectPendingApprovals(session, 'Codex run interrupted', { threadId: session.threadId, signal: controller.signal })
     if (session.runningController === controller) {
       session.runningController = null
     }
@@ -2835,7 +2845,9 @@ export async function compactCodexTurn(
 }
 
 export function interruptCodex(session: CodexSession): boolean {
-  if (!session.runningController) return false
+  const hadApprovals = session.pendingApprovals.size > 0
+  rejectPendingApprovals(session, 'User interrupted')
+  if (!session.runningController) return hadApprovals
   session.promptPrediction?.invalidate()
   const controller = session.runningController
   const interruptFn = session.interruptFn
@@ -2891,7 +2903,7 @@ export function respondToCodexPermission(
   const resolvedDecision: CodexApprovalDecision = decision === 'cancel'
     ? 'cancel'
     : allow
-      ? (alwaysAllow ? 'acceptForSession' : 'accept')
+      ? (alwaysAllow && pending.event.type === 'permission_request' && pending.event.request.allowAlwaysAllow && !pending.event.request.requiresHumanApproval ? 'acceptForSession' : 'accept')
       : 'decline'
   pending.resolve({ decision: resolvedDecision })
   return true

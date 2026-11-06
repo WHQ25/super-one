@@ -1,3 +1,4 @@
+import { codexItemDuration, withCodexReasoningTiming } from './item-timing'
 import { mapCodexCollabItem } from './collab-item'
 import { readCodexSubagentActivity, readCodexTurnProvenance } from './protocol-v162'
 import { applyCodexSubagentActivity, collectCodexCollabMetadata, mergeCodexTurnProvenance, type CodexRequestedTurnProvenance, type CodexSubagentMetadata, type CodexTurnProvenance } from '@superone/shared/codex-metadata'
@@ -209,7 +210,7 @@ export function mapCodexThreadItem(
         || readTextParts(rec.summary).join('\n\n')
         || readTextParts(rec.content).join('\n\n')
         || (previous?.type === 'reasoning' ? previous.text : '')
-      return buildCodexReasoningItem(id, text, previous, now)
+      return withCodexReasoningTiming(buildCodexReasoningItem(id, text, previous, now), rec)
     }
     case 'command_execution':
     case 'commandExecution':
@@ -282,6 +283,7 @@ export function mapCodexThreadItem(
       const revisedPrompt = readString(rec.revisedPrompt ?? rec.revised_prompt) ?? prev?.revisedPrompt
       const savedPath = readString(rec.savedPath ?? rec.saved_path) ?? prev?.savedPath
       const failure = readCodexImageGenerationFailure(rec.failure) ?? prev?.failure
+      const generationMs = codexItemDuration(rec) ?? prev?.generationMs
       return {
         id,
         type: 'image_generation',
@@ -289,7 +291,7 @@ export function mapCodexThreadItem(
         ...(revisedPrompt ? { revisedPrompt } : {}),
         ...(savedPath ? { savedPath } : {}),
         ...(failure ? { failure } : {}),
-        ...(prev?.generationMs !== undefined ? { generationMs: prev.generationMs } : {}),
+        ...(generationMs !== undefined ? { generationMs } : {}),
       }
     }
     case 'todo_list':

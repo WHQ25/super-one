@@ -155,7 +155,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
 
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
-  const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow ?? false
+  const allowAlwaysAllow = !pendingPermission?.requiresHumanApproval && (pendingPermission?.allowAlwaysAllow ?? false)
   const isScopedPermission = !!pendingPermission?.permissionDetails && !pendingPermission.requestKind
   const hasScopedAlways = !!pendingPermission && canRememberPermission(pendingPermission)
   const rememberPreview = rememberRequestId === requestId && hasScopedAlways

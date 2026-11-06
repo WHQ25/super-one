@@ -1,3 +1,4 @@
+import { registerCodexServerRequest, resolveCodexServerRequest, resolveCodexTurnRequests, cancelCodexServerRequests } from '@superone/codex/server-request-lifecycle'
 import type { AppServerConnection, AppServerNotification } from './app-server-connection'
 import { trace } from '../agent/event-trace'
 import log from '../logger'
@@ -217,6 +218,7 @@ export function createNotificationDispatcher(
     close: (reason) => {
       if (dispatcherClosed) return
       dispatcherClosed = true
+      cancelCodexServerRequests(connection)
       cancelCodexMcpAppInvocations(connection)
       const err = reason ? new Error(reason) : undefined
       closeInboxState(mainState, err)
@@ -241,6 +243,7 @@ export function createNotificationDispatcher(
       try {
         notif = await connection.nextNotification()
       } catch (err) {
+        cancelCodexServerRequests(connection)
         cancelCodexMcpAppInvocations(connection)
         const error = err instanceof Error ? err : new Error(String(err))
         closeInboxState(mainState, error)
@@ -254,6 +257,9 @@ export function createNotificationDispatcher(
         return
       }
       if (dispatcherClosed) return
+      if (notif.requestIdRaw !== undefined) registerCodexServerRequest(connection, notif.requestIdRaw, notif.params)
+      if (notif.method === 'serverRequest/resolved') resolveCodexServerRequest(connection, notif.params)
+      if (notif.method === 'turn/completed') resolveCodexTurnRequests(connection, notif.params)
       if (notif.method === 'mcpServer/elicitation/request' && notif.requestIdRaw !== undefined) {
         const pending = dispatchCodexMcpAppElicitation(connection, { id: notif.requestIdRaw, params: notif.params })
         if (pending) {

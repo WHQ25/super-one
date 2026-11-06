@@ -3,6 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { AskUserQuestionRequest } from '@superone/shared/agent-types'
+import { codexAsyncQuestionRequest } from '@superone/shared/codex-async-question'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 // jsdom has no ResizeObserver; the answer fields grow with their text through one.
@@ -148,9 +149,34 @@ it('touch: numbers the tabs and keeps the whole question outside the scrolling o
   expect(question.previousElementSibling?.textContent).toBe('Platforms')
 })
 
-it('keyboard: tabs keep their headers', async () => {
-  const second = { question: 'Which platforms?', header: 'Platforms', multiSelect: true, options: [{ label: 'iOS', description: '' }] }
-  const { button } = await mount({ request: { ...request, questions: [request.questions[0]!, second] }, keyboard: { inScope: () => true, mac: true } })
-  expect(button('Platforms')).toBeDefined()
-  expect(button('Q2')).toBeUndefined()
+it.each([false, true])('numbers long Codex question tabs and preserves answers (keyboard: %s)', async (keyboard) => {
+  const titles = [
+    'Which environments should receive the release after all verification steps have completed?',
+    '发布前是否需要同时检查桌面端、手机端以及远程节点上的完整用户流程？',
+    'Which checks should block the release when a supported platform cannot be verified?',
+  ]
+  const request = codexAsyncQuestionRequest({ id: 'long-questions', type: 'agent_message', text: '', questions: titles.map(title => ({ title, options: ['Yes', 'No'] })) })
+  const { onSubmit, button } = await mount({ request, keyboard: keyboard ? { inScope: () => true, mac: false } : undefined })
+  for (let i = 0; i < titles.length; i++) {
+    const tab = button(`Q${i + 1}`)
+    expect(tab?.textContent).toBe(`Q${i + 1}`)
+    expect(tab.title).toBe(titles[i])
+    expect(tab.getAttribute('aria-label')).toBe(`Q${i + 1}: ${titles[i]}`)
+  }
+  await act(async () => button('Q3').click())
+  expect(container!.textContent).toContain(titles[2])
+  expect(button('Q3').getAttribute('aria-pressed')).toBe('true')
+  await act(async () => button('No').click())
+  expect(button('Q3').textContent).toBe('Q3✓')
+  await act(async () => button('Q1').click())
+  await act(async () => button('Yes').click())
+  await act(async () => {
+    if (keyboard) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    else button('Q2').click()
+  })
+  expect(button('Q2').getAttribute('aria-pressed')).toBe('true')
+  expect(container!.textContent).toContain(titles[1])
+  await act(async () => button('Yes').click())
+  await act(async () => button('chat.askUser.submit').click())
+  expect(onSubmit).toHaveBeenCalledWith({ '0': 'Yes', '1': 'Yes', '2': 'No' }, undefined)
 })

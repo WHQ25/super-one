@@ -478,11 +478,14 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
             <button
               key={questionKey(q)}
               type="button"
+              title={q.header || q.question}
+              aria-label={`Q${i + 1}: ${q.question}`}
+              aria-pressed={activeTab === i}
               onClick={() => setActiveTab(i)}
               className={cn('relative shrink-0 cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition', activeTab === i ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground')}
             >
-              {/* Touch numbers the tabs; the header moves above the question, which is shown whole. */}
-              {keys ? q.header : `Q${i + 1}`}
+              {/* Full question titles can hide every later tab, even on desktop. */}
+              {`Q${i + 1}`}
               {isAnswered(q, selections, otherTexts) && <span className="ml-1 text-xs text-green-500">&#10003;</span>}
             </button>
           ))}

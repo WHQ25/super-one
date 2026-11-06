@@ -156,7 +156,7 @@ describe('AcpBackend queued send / interject', () => {
     await backend.close()
   })
 
-  it('steers now with session/prompt sendNow and keeps interject for soon', async () => {
+  it('steers a Grok queued message with x.ai/interject and does not cancel the turn', async () => {
     const calls: PromptCall[] = []
     const interjects: string[] = []
     const { backend, events } = await startBackend(calls, {
@@ -181,26 +181,19 @@ describe('AcpBackend queued send / interject', () => {
     await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-now', priority: 'now' })
     await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-soon', priority: 'next' })
 
-    expect(interjects).toEqual(['after this tool'])
-    expect(calls.map((call) => call.sendNow)).toEqual([false, true])
-    expect(calls[1]?.text).toContain('cut in')
-    expect(calls[1]?.messageId).toBe('a-now')
-
-    calls[1]?.onEvent({
-      type: 'content_delta',
-      messageId: 'a-now',
-      delta: { type: 'text', text: 'cut' },
-    })
+    expect(interjects).toEqual(['cut in', 'after this tool'])
+    expect(calls.map((call) => call.sendNow)).toEqual([false])
     expect(events.some((event) => event.type === 'queued_message_consumed' && event.clientMessageId === 'u-now')).toBe(true)
-    expect(messageStarts(events)).toContain('a-now')
+    expect(events.some((event) => event.type === 'queued_message_consumed' && event.clientMessageId === 'u-soon')).toBe(true)
+    expect(messageStarts(events)).toEqual(['a1', 'a-now', 'a-soon'])
+
+    await backend.send({ content: 'while the turn runs', clientMessageId: 'u3', assistantMessageId: 'a3', priority: 'next' })
+    expect(calls).toHaveLength(1)
 
     calls[0]?.finish()
-    await backend.send({ content: 'while replacement runs', assistantMessageId: 'a3' })
-    expect(calls).toHaveLength(2)
-
-    calls[1]?.finish()
-    await vi.waitFor(() => expect(calls).toHaveLength(3))
-    expect(calls[2]?.text).toContain('while replacement runs')
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]?.text).toContain('while the turn runs')
+    expect(calls[1]?.sendNow).toBe(false)
     await backend.close()
   })
 
@@ -235,7 +228,7 @@ describe('AcpBackend queued send / interject', () => {
     const backend = new AcpBackend()
     const events: AgentEvent[] = []
     backend.onEvent((event) => events.push(event))
-    await backend.start(acpStartOpts({ agentId: 'grok-build' }))
+    await backend.start(acpStartOpts({ agentId: 'antigravity' }))
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))

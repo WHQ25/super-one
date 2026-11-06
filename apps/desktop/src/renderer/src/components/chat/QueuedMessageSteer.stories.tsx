@@ -36,7 +36,7 @@ const queuedMessages: ChatMessage[] = [
   },
 ]
 
-type SteerProvider = 'claude' | 'codex' | 'opencode'
+type SteerProvider = 'claude' | 'codex' | 'opencode' | 'acp'
 
 function seedQueuedMessages(provider: SteerProvider, nativeV2 = false): void {
   const project = createDefaultProjectState()
@@ -46,6 +46,7 @@ function seedQueuedMessages(provider: SteerProvider, nativeV2 = false): void {
     sessionProvider: provider,
     preferredProvider: provider,
     queuedMessages,
+    ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
     ...(provider === 'opencode' ? { runtimeCapabilities: { harnessId: 'opencode' as const, supportsQueuedSteer: nativeV2, supportsQueuedSteerSoon: false } } : {}),
   }
 
@@ -119,10 +120,11 @@ function QueueSteerDemo({ provider, nativeV2 }: { provider: SteerProvider; nativ
   return (
     <div className="flex w-[720px] flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : 'OpenCode'} turn.
+        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : provider === 'acp' ? 'Grok' : 'OpenCode'} turn.
         {provider === 'claude'
           ? ' Claude offers both: the chevrons-up icon delivers at the next step boundary, the ship wheel interrupts the tool in flight.'
           : provider === 'codex' ? ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'
+          : provider === 'acp' ? ' Grok offers only the ship wheel. It calls x.ai/interject and leaves the live turn running.'
           : nativeV2 ? ' OpenCode V2 admits the input at its next safe point without cancelling the running tool.' : ' OpenCode V1 keeps messages queued for the next turn.'}
       </p>
       <div className="@container flex h-[460px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -165,3 +167,4 @@ export const StreamingClaude: Story = {
 }
 export const OpenCodeV2: Story = { args: { provider: 'opencode', nativeV2: true }, globals: { harness: 'opencode' } }
 export const OpenCodeV1: Story = { args: { provider: 'opencode', nativeV2: false }, globals: { harness: 'opencode' } }
+export const StreamingGrok: Story = { args: { provider: 'acp' }, globals: { harness: 'acp' } }

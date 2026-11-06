@@ -42,10 +42,11 @@ own injected MCP server remain separate authorization domains.
 
 ## Queued messages and background output
 
-Steer now is a replacement `session/prompt` with `_meta.sendNow`. The backend
-keeps the session busy until that replacement completes. Steer soon uses
-`x.ai/interject`; self-minted interjection IDs suppress the echoed user message.
-A host queue remains as fallback when interjection is unavailable.
+Queued steer uses `x.ai/interject`. The host admits the message immediately
+and Grok merges it into the live turn at the next safe point; the turn is not
+cancelled. The queue has no separate steer-soon action. Self-minted
+interjection IDs suppress the echoed user message. A host queue remains as
+fallback when interjection is unavailable.
 
 An agent-initiated wake can produce assistant content while no host prompt is
 active. The runtime creates a wake scope on content and closes it on durable

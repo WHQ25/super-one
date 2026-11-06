@@ -234,9 +234,10 @@ export type BackendCommand =
       kind: 'acp.steer_queued'
       clientMessageId: string
       /**
-       * `now` sends `session/prompt` with `_meta.sendNow` (cancel the live turn,
-       * run this message next). `next` is `x.ai/interject` (no abort). Omitted
-       * means `next`, matching the original interject-only command.
+       * Grok ignores this and always uses `x.ai/interject` (same turn, next
+       * safe point, no abort). Antigravity `now` sends `session/prompt` with
+       * `_meta.sendNow` (cancel the live turn). `next` is `x.ai/interject`.
+       * Omitted means `next`.
        */
       priority?: ClaudeSteerPriority
     }

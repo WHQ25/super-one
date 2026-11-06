@@ -8,7 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
 import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
@@ -1978,10 +1978,9 @@ export class AcpBackend implements SessionBackend {
     const taken = this.pendingQueued.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued ACP message not found: ${cmd.clientMessageId}`)
     try {
-      if (
-        cmd.priority === 'now'
-        && (isGrokAcpAgent(this.config.agentId) || this.config.agentId === 'antigravity')
-      ) {
+      // Grok steer is x.ai/interject on the live turn. Antigravity steer now
+      // still replaces the turn with session/prompt _meta.sendNow.
+      if (cmd.priority === 'now' && isAntigravityAcpAgent(this.config.agentId)) {
         this.steerNow(taken)
         return
       }
@@ -1994,13 +1993,13 @@ export class AcpBackend implements SessionBackend {
   }
 
   /**
-   * Steer now: a new `session/prompt` with `_meta.sendNow`. Grok cancels the
-   * live turn (the running command is backgrounded, not killed) and runs this
-   * message next. Steer soon stays on `x.ai/interject`.
+   * Antigravity steer now: a new `session/prompt` with `_meta.sendNow`.
+   * The live turn is cancelled, then this message runs. Grok does not use
+   * this path; its steer is `x.ai/interject`.
    */
   private steerNow(taken: TakenQueuedUserMessage): void {
     const runtime = this.runtime
-    if (!runtime) throw new Error('Grok sendNow is unavailable')
+    if (!runtime) throw new Error('ACP sendNow is unavailable')
     const request = taken.request
     const messageId = request.assistantMessageId
       ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`

@@ -258,8 +258,10 @@ export interface AcpRuntime {
     onEvent: (event: AgentEvent) => void,
     images?: ImageAttachment[],
     /**
-     * `sendNow` stamps `_meta.sendNow` so Grok cancels the live turn and runs
-     * this prompt next. The previous turn is marked superseded and must not
+     * `sendNow` stamps `_meta.sendNow`. Grok's agent then cancels the live
+     * turn and runs this prompt next. SuperOne's Grok queue steer does not
+     * use it; that button calls `interject`. Antigravity steer now still
+     * passes this flag. The previous turn is marked superseded and must not
      * emit idle over the replacement. `onInputAccepted` runs just before
      * session/prompt goes out (see `SendDelivery`).
      */

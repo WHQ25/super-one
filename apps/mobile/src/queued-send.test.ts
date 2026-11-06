@@ -34,14 +34,15 @@ describe('queued composer send', () => {
     })
   })
 
-  it('offers steer on Claude, Codex and Grok, and soon on Claude and Grok', () => {
+  it('offers steer on Claude, Codex and Grok, and soon on Claude and Antigravity', () => {
     expect(canSteerQueued('claude')).toBe(true)
     expect(canSteerQueued('codex')).toBe(true)
     expect(canSteerQueued('acp')).toBe(true)
     expect(canSteerQueued('opencode')).toBe(false)
     expect(canSteerQueuedSoon('claude')).toBe(true)
     expect(canSteerQueuedSoon('acp')).toBe(false)
-    expect(canSteerQueuedSoon('acp', 'grok-build')).toBe(true)
+    expect(canSteerQueuedSoon('acp', 'grok-build')).toBe(false)
+    expect(canSteerQueuedSoon('acp', 'antigravity')).toBe(true)
     expect(canSteerQueuedSoon('acp', 'custom-agent')).toBe(false)
     expect(canSteerQueuedSoon('codex')).toBe(false)
   })

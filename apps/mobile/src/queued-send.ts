@@ -1,5 +1,5 @@
 import type { AgentStatus, ChatMessage, HarnessId } from '@superone/shared/agent-types'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 import type { HarnessRuntimeCapabilities } from '@superone/shared/harness/session-catalog'
 
@@ -42,7 +42,9 @@ export function canSteerQueued(harness: HarnessId, runtime?: HarnessRuntimeCapab
 }
 
 export function canSteerQueuedSoon(harness: HarnessId, acpAgentId?: string | null, runtime?: HarnessRuntimeCapabilities): boolean {
-  if (harness === 'acp' && !isGrokAcpAgent(acpAgentId)) return false
+  // Grok steer is x.ai/interject, so the queue has no second "soon" action.
+  // Antigravity keeps soon: its steer now still cancels the live turn.
+  if (harness === 'acp' && !isAntigravityAcpAgent(acpAgentId)) return false
   return resolveHarnessCapabilities(harness, runtime).supportsQueuedSteerSoon === true
 }
 

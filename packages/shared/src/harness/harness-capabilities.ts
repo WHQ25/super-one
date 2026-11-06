@@ -227,9 +227,9 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // Host intercepts `/compact` → `x.ai/compact_conversation`.
     supportsCompact: true,
     supportsStreamingToolInput: false,
-    // Mid-turn send queues. Steer (`now`) is a new `session/prompt` with
-    // `_meta.sendNow`, which cancels the live turn and runs the message next.
-    // Steer soon is `x.ai/interject`: next safe point, the tool in flight stays.
+    // Mid-turn send queues. Grok steer is `x.ai/interject` on the live turn,
+    // so its queue has no second soon button. Antigravity steer now is
+    // `session/prompt` `_meta.sendNow`; its soon action stays `x.ai/interject`.
     supportsQueuedSteer: true,
     supportsQueuedSteerSoon: true,
     // session/new additionalDirectories, gated per agent capability.

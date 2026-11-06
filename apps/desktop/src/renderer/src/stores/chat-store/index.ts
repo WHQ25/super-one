@@ -727,7 +727,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       set((s) => {
         const proj = getProject(s, activeProject)
         const current = proj._sessions[sessionId]
-        applied = keepRendererOwnedState(current, hydrated)
+        applied = keepRendererOwnedState(current, hydrated, prev)
         stillActive = proj._activeSessionId === sessionId
         return {
           projectSessions: {

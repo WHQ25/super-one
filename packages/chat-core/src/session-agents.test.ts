@@ -3,6 +3,12 @@ import { createDefaultChatCoreSession } from './defaults'
 import { applyEventToSession } from './reducer'
 
 describe('session_agents', () => {
+  it('updates host controls independently of the native catalog', () => {
+    const session = { ...createDefaultChatCoreSession(), sessionAgents: [{ id: 'agent', name: 'Native agent' }] }
+    const capabilities = { harnessId: 'acp' as const, supportsQueuedSteer: false, supportsQueuedSteerSoon: false }
+    expect(applyEventToSession(session, { type: 'session_capabilities', capabilities })).toEqual({ runtimeCapabilities: capabilities })
+  })
+
   const agents = [{ id: 'build', name: 'Build' }, { id: 'reviewer', name: 'Reviewer' }]
 
   it('keeps a project-defined selection the project list offers', () => {

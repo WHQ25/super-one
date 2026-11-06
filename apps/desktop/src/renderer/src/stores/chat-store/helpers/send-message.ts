@@ -23,7 +23,7 @@ import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
 import { resolveProvider } from './provider-routing'
-import { applyPendingWorktree, deliverSessionTurn, ensureHostSession, queuesBehindTurn, sessionTurnRequest } from './session-turn'
+import { applyPendingWorktree, deliverSessionTurn, ensureHostSession, sessionTurnRequest } from './session-turn'
 import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
 
 async function isOfficialCodexProvider(apiProviderId: string | null): Promise<boolean> {
@@ -330,7 +330,7 @@ export async function sendMessageImpl(
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null
   const isRunSend = !resolvedCodexCommand || resolvedCodexCommand.kind === 'run'
-  const isQueuedSend = queuesBehindTurn(projectPath, shouldQueueUserSend(effectiveProvider, session.status, isRunSend), session)
+  const isQueuedSend = shouldQueueUserSend(effectiveProvider, session.status, isRunSend)
   const startsStreaming = sendStartsStreaming(effectiveProvider, isQueuedSend)
 
 

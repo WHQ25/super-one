@@ -50,7 +50,7 @@ vi.stubGlobal('window', {
 const { useChatStore } = await import('../index')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
 const { prepareComposerSession } = await import('@/lib/prepare-composer-session')
-const { ensureHostSession, sessionTurnRequest, queuesBehindTurn } = await import('./session-turn')
+const { ensureHostSession, sessionTurnRequest } = await import('./session-turn')
 const { createSendWriteScope } = await import('./send-write-scope')
 const { _resetDraftSessionMap, claimDraftForSession, getDraftIdForSession } = await import('./draft-promote')
 const { useDraftsStore } = await import('@/stores/drafts')
@@ -323,14 +323,9 @@ describe('ensureHostSession', () => {
 
 describe('sessionTurnRequest', () => {
   const turn = { text: 'hello', clientMessageId: 'u1' }
-  it('parks node OpenCode input only after native queue capability negotiation', () => {
-    seed(NODE, 'oc', { sessionProvider: 'opencode' })
-    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'oc', { ...turn, queued: true })).not.toHaveProperty('priority')
-    expect(queuesBehindTurn(NODE, true)).toBe(false)
-    const runtimeCapabilities = { harnessId: 'opencode' as const, supportsQueuedSteer: true }
-    seed(NODE, 'oc', { sessionProvider: 'opencode', runtimeCapabilities })
-    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'oc', { ...turn, queued: true })).toMatchObject({ priority: 'next' })
-    expect(queuesBehindTurn(NODE, true, { runtimeCapabilities })).toBe(true)
+  it.each(['claude', 'codex', 'acp', 'opencode'] as const)('sends %s queue priority without requiring steer support', provider => {
+    seed(NODE, 'queued', { sessionProvider: provider })
+    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'queued', { ...turn, queued: true })).toMatchObject({ priority: 'next' })
   })
 
   function codexSession(path: string) {
@@ -377,7 +372,8 @@ describe('sessionTurnRequest', () => {
     })
 
     expect(request).toMatchObject({ sessionId: 'codex-sid', projectPath: NODE, providerId: 'codex', turnKind: 'run', additionalDirectories: [], permissionPreset: 'auto-review' })
-    for (const key of ['priority', 'inputRequest', 'serviceTier', 'threadId', 'agent', 'modelParams']) {
+    expect(request.priority).toBe('next')
+    for (const key of ['inputRequest', 'serviceTier', 'threadId', 'agent', 'modelParams']) {
       expect(request).not.toHaveProperty(key)
     }
   })

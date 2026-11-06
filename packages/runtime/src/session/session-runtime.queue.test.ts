@@ -1,5 +1,5 @@
 /**
- * Node-side turn queue (desktop Claude priority=next parity).
+ * Node-side composer queue and explicit steering (desktop parity).
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -59,6 +59,33 @@ const client = { clientSessionId: 'c1' }
 const lease = { leaseId: 'l1', generation: 'g1' }
 
 describe('SessionRuntime send queue', () => {
+  it('steers a queued Codex card into the active turn once, and restores a refused steer', async () => {
+    let finish!: () => void
+    let refuse = true
+    const inputs: Array<{ text: string; kind: string | null | undefined }> = []
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-codex-steer', async input => {
+      inputs.push({ text: input.text, kind: input.turnKind })
+      if (input.turnKind === 'steer' && refuse) throw new Error('no active turn')
+      input.onInputAccepted?.()
+      if (input.text === 'first') await new Promise<void>(resolve => { finish = resolve })
+      return { finalText: '', skipAssistantTranscript: input.turnKind === 'steer' }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    const send = (text: string) => runtime.send({ sessionId: session.sessionId, text, clientMessageId: text, client, ...lease })
+    try {
+      await send('first'); await send('second')
+      await expect(runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second' })).rejects.toThrow('no active turn')
+      expect(runtime.get(session.sessionId)?.transcript.find(row => row.id === 'second')).toMatchObject({ queuedInComposer: true })
+      refuse = false
+      await expect(runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second' })).resolves.toEqual({ ok: true })
+      expect(runtime.get(session.sessionId)?.transcript.find(row => row.id === 'second')?.queuedInComposer).toBeUndefined()
+      finish()
+      await waitIdle(runtime, session.sessionId)
+      expect(inputs).toEqual([{ text: 'first', kind: undefined }, { text: 'second', kind: 'steer' }, { text: 'second', kind: 'steer' }])
+    } finally { finish?.(); await runtime.dispose() }
+  })
+
   it('claude mid-stream composer sends stay in the host FIFO until the active turn ends', async () => {
     let active = 0
     let maxActive = 0

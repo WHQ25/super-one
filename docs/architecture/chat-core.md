@@ -68,6 +68,25 @@ already owned by a backend keeps its captured execution parameters; a newer
 pick remains the host default for later sends, which restart when needed.
 A queued send promoted to that path for any reason drops the selections replaced since
 its admission, so it runs on the session's newer state.
+Queue presentation follows the harness's send policy on every environment;
+steering support does not decide whether input can queue. A queued request
+carries `priority: next`. Headless nodes keep those rows out of the transcript,
+publish `queued_messages_changed`, and move a row into history with
+`queued_message_consumed` when it runs. They also consume a queue-priority
+request that arrives after the active turn ended, clearing the sender's
+optimistic card. Editing or deleting a pending card withdraws it with the
+lease-fenced `session.dequeue` operation. Reopening a remote session restores
+host queue membership while preserving local attachment copies and queue
+changes made during the read.
+
+Host-specific control overrides arrive through `session_capabilities`, separate
+from native agent catalogs. Node Claude supports both steer priorities; node
+Codex supports immediate steer using the active app-server connection. OpenCode
+reports its negotiated controls through `session_agents`; other node adapters
+do not advertise steering until implemented. A refused promotion restores the
+card in its original queue position, and input handoff rechecks the admitted
+control proof.
+
 An omitted field keeps the current value; an explicit `null`/off clears it.
 Model, effort, credential and Codex tier are stored; Ultracode, presets and
 modes are live-session state. A settings patch reaches a warm non-Codex runtime

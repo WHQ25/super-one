@@ -12,7 +12,7 @@ function fixture(submitted: boolean) {
     steer: vi.fn<NonNullable<TurnRunner['steer']>>(async (_session, _input, callbacks) => { if (submitted) callbacks.onInputAccepted(); await delivery }),
   })
   const deps = { session, queue, runner, admitting: new Set<string>(), assertControl: () => {},
-    consumed: vi.fn(), dequeued: vi.fn(), abandoned: vi.fn() }
+    consumed: vi.fn(), dequeued: vi.fn(), abandoned: vi.fn(), settled: vi.fn() }
   const operation = operateNodeQueue('session.steer', { clientMessageId: 'steered', priority: 'now' }, deps)
   void operation.catch(() => {})
   return { deps, operation, reject }
@@ -27,6 +27,7 @@ describe('node queued steering races', () => {
     expect(deps.queue.map(turn => turn.clientMessageId)).toEqual(['first', 'steered', 'last'])
     expect(deps.consumed).not.toHaveBeenCalled()
     expect(deps.admitting.size).toBe(0)
+    expect(deps.settled).toHaveBeenCalledOnce()
   })
   it.each([false, true])('never restores input after Stop when native admission is %s', async submitted => {
     const { deps, operation, reject } = fixture(submitted)

@@ -128,7 +128,7 @@ voices still come from
 | `threadSection/update` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `turn/interrupt` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts`, `apps/desktop/src/main/codex/connection-diagnostics.ts` |
 | `turn/start` | used | Accepts explicit provider parentTurnId/rootTurnId; records returned rootTurnId separately from requested attribution. Direct user work supplies neither by default. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-live-turn.ts` |
-| `turn/steer` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
+| `turn/steer` | used | Steers the live desktop or node turn; node queue promotion rechecks control before input handoff. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `packages/runtime/src/session/queued-controls.ts` |
 | `windowsSandbox/readiness` | unused | No client call or dedicated handler. | — |
 | `windowsSandbox/setupStart` | unused | No client call or dedicated handler. | — |
 

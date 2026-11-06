@@ -897,9 +897,11 @@ url = "https://mcp.linear.app/mcp"
 
     // Async answers use run: the runner selects steer while the turn is live.
     const onInputAccepted = vi.fn()
+    const beforeInput = vi.fn()
     const steerP = runner({
       session: session({ sessionId: 'steer-s', providerResume: 'thread:t-s' }),
       text: 'nudge',
+      beforeInput,
       images: [PNG_ATTACHMENT],
       turnKind,
       onInputAccepted,
@@ -915,6 +917,8 @@ url = "https://mcp.linear.app/mcp"
     const steerResult = await steerP
     expect(steerResult.skipAssistantTranscript).toBe(true)
     expect(onInputAccepted).toHaveBeenCalledOnce()
+    expect(beforeInput).toHaveBeenCalledOnce()
+    expect(beforeInput.mock.invocationCallOrder[0]).toBeLessThan(onInputAccepted.mock.invocationCallOrder[0])
 
     // Complete original turn
     child.stdout.write(

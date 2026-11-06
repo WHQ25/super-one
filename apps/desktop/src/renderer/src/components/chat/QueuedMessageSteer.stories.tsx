@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
@@ -16,6 +17,13 @@ const STORY_SESSION = 'sb'
 mockIpc('app', 'listPlatforms', async () => [])
 mockIpc('app', 'listCredentials', async () => [])
 mockIpc('app', 'listBindings', async () => [])
+mockIpc('app', 'codexListAccounts', async () => [])
+mockIpc('app', 'codexListModels', async () => [])
+mockIpc('app', 'claudeListAccounts', async () => [])
+mockIpc('environment', 'listRemoteClaudeAccounts', async () => [])
+mockIpc('environment', 'listRemoteCredentials', async () => [])
+mockIpc('environment', 'listRemoteBindings', async () => [])
+mockIpc('environment', 'listRemoteCustomPlatforms', async () => [])
 
 const queuedMessages: ChatMessage[] = [
   {
@@ -38,7 +46,10 @@ const queuedMessages: ChatMessage[] = [
 
 type SteerProvider = 'claude' | 'codex' | 'opencode' | 'acp'
 
-function seedQueuedMessages(provider: SteerProvider, nativeV2 = false): void {
+const projectKey = (remote = false) => remote ? 'remote:queue-node:/work/app' : STORY_PROJECT
+
+function seedQueuedMessages(provider: SteerProvider, nativeV2 = false, remote = false): void {
+  const path = projectKey(remote)
   const project = createDefaultProjectState()
   const session = {
     ...createDefaultPerSessionState(),
@@ -46,14 +57,15 @@ function seedQueuedMessages(provider: SteerProvider, nativeV2 = false): void {
     sessionProvider: provider,
     preferredProvider: provider,
     queuedMessages,
+    ...(remote ? { runtimeCapabilities: { harnessId: provider, supportsQueuedSteer: provider !== 'acp', supportsQueuedSteerSoon: provider === 'claude' } } : {}),
     ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
     ...(provider === 'opencode' ? { runtimeCapabilities: { harnessId: 'opencode' as const, supportsQueuedSteer: nativeV2, supportsQueuedSteerSoon: false } } : {}),
   }
 
   useChatStore.setState({
-    activeProject: STORY_PROJECT,
+    activeProject: path,
     projectSessions: {
-      [STORY_PROJECT]: {
+      [path]: {
         ...project,
         _activeSessionId: STORY_SESSION,
         _sessions: { [STORY_SESSION]: session },
@@ -68,16 +80,16 @@ function seedQueuedMessages(provider: SteerProvider, nativeV2 = false): void {
   })
 }
 
-function removeQueuedMessage(messageId: string): void {
+function removeQueuedMessage(path: string, messageId: string): void {
   useChatStore.setState((state) => {
-    const project = state.projectSessions[STORY_PROJECT]
+    const project = state.projectSessions[path]
     const session = project?._sessions[STORY_SESSION]
     if (!project || !session) return state
 
     return {
       projectSessions: {
         ...state.projectSessions,
-        [STORY_PROJECT]: {
+        [path]: {
           ...project,
           _sessions: {
             ...project._sessions,
@@ -92,36 +104,43 @@ function removeQueuedMessage(messageId: string): void {
   })
 }
 
-mockIpc('agent', 'steerQueuedMessage', async (_projectPath, messageId) => {
-  if (typeof messageId !== 'string') return false
-  removeQueuedMessage(messageId)
-  return true
+mockIpc('environment', 'listItems', async () => [{ connectionId: 'queue-node', capabilities: { methods: ['session.dequeue', 'session.steer'] } }])
+mockIpc('environment', 'callSession', async (_connectionId, _sessionId, method, input) => {
+  const messageId = (input as { clientMessageId?: string }).clientMessageId
+  const path = useChatStore.getState().activeProject
+  if (!messageId || !path) return { ok: false, removed: false }
+  if (method === 'session.dequeue') {
+    removeQueuedMessage(path, messageId)
+    return { removed: true }
+  }
+  if (method === 'session.steer') {
+    useChatStore.getState().handleAgentEvent({ type: 'queued_message_consumed',
+      projectPath: path, sessionId: STORY_SESSION, clientMessageId: messageId })
+    return { ok: true }
+  }
+  return { ok: false }
 })
 
-function SeedQueuedMessages({ children, provider, nativeV2 }: { children: ReactNode; provider: SteerProvider; nativeV2?: boolean }) {
-  useState(() => {
-    seedQueuedMessages(provider, nativeV2)
-    return null
-  })
+function SeedQueuedMessages({ children, provider, nativeV2, remote }: { children: ReactNode; provider: SteerProvider; nativeV2?: boolean; remote?: boolean }) {
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    // The global harness decorator seeds its own session after the first render.
-    // Re-apply this scenario once that effect has completed.
-    const timer = window.setTimeout(() => seedQueuedMessages(provider, nativeV2), 0)
-    return () => window.clearTimeout(timer)
-  }, [provider, nativeV2])
+    seedQueuedMessages(provider, nativeV2, remote)
+    setReady(true)
+  }, [provider, nativeV2, remote])
 
-  return <>{children}</>
+  return ready ? <>{children}</> : null
 }
 
-function QueueSteerDemo({ provider, nativeV2 }: { provider: SteerProvider; nativeV2?: boolean }) {
+function QueueSteerDemo({ provider, nativeV2, remote, narrow }: { provider: SteerProvider; nativeV2?: boolean; remote?: boolean; narrow?: boolean }) {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
 
   return (
-    <div className="flex w-[720px] flex-col gap-2">
+    <div className={narrow ? "flex w-[360px] flex-col gap-2" : "flex w-[720px] flex-col gap-2"}>
       <p className="text-xs text-muted-foreground">
         Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : provider === 'acp' ? 'Grok' : 'OpenCode'} turn.
-        {provider === 'claude'
+        {remote && ' Remote node queue; Edit and Delete withdraw the input from its host.'}
+        {remote && provider === 'acp' ? ' This node supports the queue without advertising native steering.' : provider === 'claude'
           ? ' Claude offers both: the chevrons-up icon delivers at the next step boundary, the ship wheel interrupts the tool in flight.'
           : provider === 'codex' ? ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'
           : provider === 'acp' ? ' Grok offers only the ship wheel. It calls x.ai/interject and leaves the live turn running.'
@@ -142,12 +161,12 @@ const meta: Meta<typeof QueueSteerDemo> = {
     docs: {
       description: {
         component:
-          'A local turn is streaming with two SuperOne-visible queued messages. Hover either message to reveal the steer actions plus Edit and Delete; steering removes that message from the queue and injects it into the active Claude or Codex turn. Claude additionally offers a non-interrupting steer (SDK priority `next`), which is why the Claude story shows one more icon than the Codex one.',
+          'A local or remote turn is streaming with two SuperOne-visible queued messages. Hover either message to reveal the steer actions plus Edit and Delete; steering removes that message from the queue and injects it into the active Claude or Codex turn. Claude additionally offers a non-interrupting steer (SDK priority `next`), which is why the Claude story shows one more icon than the Codex one.',
       },
     },
   },
   decorators: [(Story, context) => (
-    <SeedQueuedMessages provider={context.args.provider} nativeV2={context.args.nativeV2}>
+    <SeedQueuedMessages key={`${context.args.provider}:${context.args.remote}`} provider={context.args.provider} nativeV2={context.args.nativeV2} remote={context.args.remote}>
       <Story />
     </SeedQueuedMessages>
   )],
@@ -168,3 +187,19 @@ export const StreamingClaude: Story = {
 export const OpenCodeV2: Story = { args: { provider: 'opencode', nativeV2: true }, globals: { harness: 'opencode' } }
 export const OpenCodeV1: Story = { args: { provider: 'opencode', nativeV2: false }, globals: { harness: 'opencode' } }
 export const StreamingGrok: Story = { args: { provider: 'acp' }, globals: { harness: 'acp' } }
+
+
+export const RemoteCodex: Story = { args: { provider: 'codex', remote: true }, globals: { harness: 'codex' } }
+export const RemoteClaude: Story = { args: { provider: 'claude', remote: true }, globals: { harness: 'claude' } }
+export const RemoteQueueWithoutSteer: Story = { args: { provider: 'acp', remote: true }, globals: { harness: 'acp' } }
+export const RemoteCodexDark: Story = { ...RemoteCodex, globals: { harness: 'codex', theme: 'dark' } }
+export const RemoteCodexNarrow: Story = { ...RemoteCodex, args: { provider: 'codex', remote: true, narrow: true } }
+export const RemoteWithdraw: Story = {
+  ...RemoteCodex,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await waitFor(() => expect(canvas.getAllByRole('button', { name: 'Delete Queued Message' })).toHaveLength(2))
+    await userEvent.click(canvas.getAllByRole('button', { name: 'Delete Queued Message' })[0])
+    await waitFor(() => expect(canvas.getAllByRole('button', { name: 'Delete Queued Message' })).toHaveLength(1))
+  },
+}

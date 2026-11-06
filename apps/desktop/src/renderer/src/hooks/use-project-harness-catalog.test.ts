@@ -44,4 +44,22 @@ describe('useProjectHarnessCatalog', () => {
     act(() => statusListener?.({ connectionId: 'node-1', state: 'connected' }))
     await waitFor(() => expect(isCatalogHarnessEnabled(result.current, 'claude')).toBe(true))
   })
+
+  it('uses an explicit landing host before a project is open and drops the previous host while switching', async () => {
+    useChatStore.setState({ activeProject: null })
+    listItems.mockResolvedValue(node(['codex']))
+    const { result, rerender } = renderHook(
+      ({ host }) => useProjectHarnessCatalog(LOCAL, host),
+      { initialProps: { host: 'local' } },
+    )
+    expect(result.current).toBe(LOCAL)
+    rerender({ host: 'node-1' })
+    expect(result.current).toBeNull()
+    await waitFor(() => expect(isCatalogHarnessEnabled(result.current, 'codex')).toBe(true))
+    expect(isCatalogHarnessEnabled(result.current, 'claude')).toBe(false)
+    rerender({ host: 'node-2' })
+    expect(result.current).toBeNull()
+    rerender({ host: 'local' })
+    expect(result.current).toBe(LOCAL)
+  })
 })

@@ -1,9 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSettingsStore } from '@/stores/settings'
-import { ProviderSelector } from './ChatSuggestions'
+import { ChatSuggestions, ProviderSelector } from './ChatSuggestions'
+import { useAppStore } from '@/stores/app'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
+import type { EnvironmentListItem, HarnessInstallationStatus } from '@superone/shared/environment'
 import { createDefaultPerSessionState, createDefaultProjectState, SessionScopeProvider, useChatStore } from '@/stores/chat'
 import { getActiveSessionView } from '@/stores/chat-store/selectors'
 import { mosaicTileId, useMosaicStore } from '@/components/mosaic/mosaic-store'
@@ -118,5 +121,99 @@ describe('ProviderSelector harness catalog', () => {
         screen.queryByText('Install this CLI on your machine, then restart SuperOne.'),
       ).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('Chat Suggestions host selection', () => {
+  const appState = useAppStore.getState()
+  const chatState = useChatStore.getState()
+  const environment = window.environment
+  const localCatalog: HarnessInstallationStatus[] = [
+    { id: 'codex', enabled: true, state: 'ready', runtimeSource: 'managed', requiresAuth: true },
+    { id: 'acp-antigravity', enabled: true, state: 'ready', runtimeSource: 'managed', requiresAuth: false },
+  ]
+  const listItems = vi.fn()
+
+  beforeEach(() => {
+    resetEnvironmentListCache()
+    const node: EnvironmentListItem = {
+      connectionId: 'node-1', environmentId: 'env-1', label: 'Remote node',
+      kind: 'remote', state: 'connected', endpointProfiles: [],
+      capabilities: { methods: [], harnessIds: ['codex', 'acp'], coldSessionResume: true, turnReattach: false, hostActionV1: false },
+    }
+    listItems.mockReset().mockResolvedValue([node])
+    window.environment = new Proxy(environment, {
+      get: (target, key) => key === 'listItems' ? listItems
+        : key === 'listProjects' ? async () => [] : Reflect.get(target, key),
+    })
+    useAppStore.setState({
+      currentFolder: null, tmpFolder: null, selectedHostConnectionId: 'local',
+      isSwitchingHostProject: false, harnessCatalog: localCatalog,
+      experimentalAgentsEnabled: false, enabledExperimentalAgents: [], recentFolders: [],
+    })
+    useChatStore.setState({
+      activeProject: null, projectSessions: {},
+      initializeHarness: vi.fn(async () => {}),
+      harnessResources: {
+        claude: null, codex: null,
+        acp: {
+          agents: [
+            { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+            { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' },
+          ],
+          selectedAgentId: 'antigravity', modelsByAgentId: {}, configByAgentId: {},
+        },
+      },
+    })
+    window.app.listHarnesses = vi.fn(async () => localCatalog)
+    window.app.queryHarnessSessionRanks = vi.fn(async () => [])
+    window.app.getAppSettings = vi.fn(async () => ({}) as never)
+    useSettingsStore.setState({ bindings: [], credentials: [], platforms: [], fetchProviderData: async () => {} })
+  })
+
+  afterEach(() => {
+    cleanup()
+    resetEnvironmentListCache()
+    window.environment = environment
+    useAppStore.setState(appState)
+    useChatStore.setState(chatState)
+  })
+
+  it('replaces local Antigravity with the selected node’s Grok before opening a project, then restores it on local', async () => {
+    render(<ChatSuggestions />)
+    expect(await screen.findByRole('tab', { name: 'Antigravity' })).toBeInTheDocument()
+
+    act(() => useAppStore.setState({ selectedHostConnectionId: 'node-1' }))
+    // The previous machine must disappear immediately, even while discovery is pending.
+    expect(screen.queryByRole('tab', { name: 'Antigravity' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'Grok Build' })).toBeInTheDocument()
+    expect(screen.queryByText('Antigravity')).not.toBeInTheDocument()
+    expect(useChatStore.getState().activeProject).toBeNull()
+
+    act(() => useAppStore.setState({ selectedHostConnectionId: 'local' }))
+    expect(await screen.findByRole('tab', { name: 'Antigravity' })).toBeInTheDocument()
+    expect(screen.queryByText('Grok Build')).not.toBeInTheDocument()
+  })
+
+  it('does not offer local Antigravity when the selected node has no ready harnesses', async () => {
+    listItems.mockResolvedValue([{ connectionId: 'node-1', state: 'connected', capabilities: { harnessIds: [] } }])
+    useAppStore.setState({ selectedHostConnectionId: 'node-1' })
+    render(<ChatSuggestions />)
+    await waitFor(() => expect(listItems).toHaveBeenCalled())
+    expect(screen.getByText(NO_HARNESS)).toBeInTheDocument()
+    expect(screen.queryByText('Antigravity')).not.toBeInTheDocument()
+  })
+
+  it('keeps a scoped pane on its project’s machine when the landing host changes', async () => {
+    const projectPath = 'remote:node-1:/repo'
+    const session = { ...createDefaultPerSessionState(), preferredProvider: 'codex' as const, harnessUserChosen: true, _historyHydrated: true }
+    useChatStore.setState({
+      activeProject: projectPath,
+      projectSessions: { [projectPath]: { ...createDefaultProjectState(), _activeSessionId: 's1', _sessions: { s1: session } } },
+    })
+    useAppStore.setState({ currentFolder: projectPath, selectedHostConnectionId: 'local' })
+    render(<SessionScopeProvider value={{ projectPath, sessionId: 's1' }}><ChatSuggestions /></SessionScopeProvider>)
+    expect(await screen.findByRole('tab', { name: 'Grok Build' })).toBeInTheDocument()
+    expect(screen.queryByText('Antigravity')).not.toBeInTheDocument()
   })
 })

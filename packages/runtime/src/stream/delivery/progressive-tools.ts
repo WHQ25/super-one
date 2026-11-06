@@ -6,6 +6,7 @@ import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from '@superone/sh
 import { isAlwaysHiddenToolName, isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { isPatchToolCall, isPatchToolName, patchToolFiles } from '@superone/shared/patch-tool'
 import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
+import { isSuggestTaskTool } from '@superone/shared/suggested-task'
 import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, remoteContentPorts, stripMessagesForRemote } from './remote-content'
 
 const SHELL_INPUT_MAX = 1024
@@ -198,10 +199,13 @@ export function toolDetail(message: ChatMessage, id: string): string {
   const output = result && 'summary' in result ? result.summary : tool.liveOutput
   const projectedTool = projected && 'toolName' in projected ? projected : undefined
   const input = parseInput(tool.input) ?? {}
+  // The card's shell carries title/tldr only. Its detail must restore the brief
+  // so desktop and phone can offer the full-prompt toggle.
+  const detailInput = isSuggestTaskTool(tool.toolName) ? tool.input : projectedTool?.input ?? tool.input
   return JSON.stringify({
     // Like Edit's toolDiff, patch bodies are fetched only when the phone opens
     // details. Never send the raw patch wrapper in the collapsed transcript.
-    input: isPatchToolCall(tool.toolName, input) ? JSON.stringify({ patch: true, files: patchToolFiles(input) }) : projectedTool?.input ?? tool.input,
+    input: isPatchToolCall(tool.toolName, input) ? JSON.stringify({ patch: true, files: patchToolFiles(input) }) : detailInput,
     result: output,
     exitCode: result?.type === 'tool_result' ? result.exitCode : undefined,
     // A background task's `result` is only its launch receipt; the run's own

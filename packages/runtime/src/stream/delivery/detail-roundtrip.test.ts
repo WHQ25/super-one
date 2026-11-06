@@ -40,6 +40,23 @@ function link(messages: () => ChatMessage[]) {
 }
 
 describe('detail round trip', () => {
+  it.each(['claude', 'grok', 'codex'])('returns the full %s suggested-task prompt only in its detail', async providerId => {
+    const input = { title: 'Fix login', tldr: 'The clock leaks between tests.', prompt: 'Restore the mock clock.\nVerify twenty repeated runs pass.' }
+    const message: ChatMessage = { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId, content: [
+      { type: 'tool_use', toolName: 'mcp__superone__session_suggest_task', toolUseId: 'suggest', input: JSON.stringify(input), status: 'complete' },
+      { type: 'tool_result', toolUseId: 'suggest', summary: '{"taskId":"0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b"}' },
+    ] }
+    const { expand, host } = link(() => [message])
+    const [projected] = host.messages([message], 's')
+    const shell = projected!.content[0] as { input: string; remoteDetail: string }
+    expect(JSON.parse(shell.input)).toEqual({ title: input.title, tldr: input.tldr })
+    expect(JSON.stringify(projected)).not.toContain('Restore the mock clock')
+    const row = await expand(shell.remoteDetail, true)
+    expect(row.state.error).toBe('')
+    expect(JSON.parse(JSON.parse(row.state.text).input)).toEqual(input)
+    row.close()
+  })
+
   it('expands a subagent card into its children and follows them as they stream', async () => {
     let message: ChatMessage = { id: 'm', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'claude', content: [
       { type: 'tool_use', toolName: 'Agent', toolUseId: 'agent', input: JSON.stringify({ description: 'Explore', prompt: 'look around' }), status: 'streaming' },

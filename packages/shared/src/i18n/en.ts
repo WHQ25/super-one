@@ -517,6 +517,9 @@ export type Messages = {
     refreshFiles: string
     createFailed: string
     search: {
+      allEnvironments: string
+      noSessions: string
+      loadFailed: string
       placeholder: string
       noResults: string
     }
@@ -4433,6 +4436,8 @@ export type Messages = {
       createTitle: string
       editDescription: string
       createDescription: string
+      executionEnvironment: string
+      environmentUnavailable: string
       name: string
       namePlaceholder: string
       provider: string
@@ -5302,6 +5307,9 @@ export const en: Messages = {
     refreshFiles: 'Refresh file tree',
     createFailed: 'Could not create {{name}}: {{error}}',
     search: {
+      allEnvironments: 'All Environments',
+      noSessions: 'No matching sessions',
+      loadFailed: 'Could not load sessions on some environments.',
       placeholder: 'Search files...',
       noResults: 'No matching files',
     },
@@ -9277,6 +9285,8 @@ export const en: Messages = {
       createTitle: 'Create Automation',
       editDescription: 'Update scheduled task configuration',
       createDescription: 'Set up a scheduled task for this project',
+      executionEnvironment: 'Execution Environment',
+      environmentUnavailable: 'Unavailable',
       name: 'Name',
       namePlaceholder: 'Daily code review',
       provider: 'Provider',

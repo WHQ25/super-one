@@ -1,3 +1,4 @@
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { useLayoutEffect } from 'react'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import type { Meta, StoryObj } from '@storybook/react-vite'
@@ -217,13 +218,20 @@ export const Drill: Story = {
   },
 }
 
+const environmentSessionCreated = fn()
 function CrossEnvironmentFocus({ state = 'ready', narrow = false, crowded = false, single = false }: { state?: 'ready' | 'loading' | 'offline' | 'empty'; narrow?: boolean; crowded?: boolean; single?: boolean }) {
   useLayoutEffect(() => {
+    environmentSessionCreated.mockClear()
+    const previousEnvironments = useMultiHostSidebarStore.getState().environments
+    useMultiHostSidebarStore.setState({ environments: focusEnvironments })
+    mockIpc('environment', 'listProjects', async () => focusEnvironments[1]!.checkouts.map((checkout) => ({ projectId: checkout.projectId, path: checkout.hostPath })))
+    mockIpc('environment', 'listSessions', async (_connection, projectId) => Object.entries(focusSessions).find(([path]) => path === projectId || (projectId === focusRemote.projectId && path === focusRemote.pathKey))?.[1] ?? [])
     focusProject(focusLocal.pathKey, focusLocal.environmentId)
-    return () => applySidebarFocus(null)
+    return () => { applySidebarFocus(null); useMultiHostSidebarStore.setState({ environments: previousEnvironments }) }
   }, [])
   const props: SidebarFocusViewProps = {
     ...callbacks,
+    onNewSession: environmentSessionCreated,
     environments: (single ? focusEnvironments.slice(0, 1) : focusEnvironments).map((bucket) => bucket.kind === 'local' ? bucket : {
       ...bucket,
       label: narrow ? 'Build server with a very long environment name' : bucket.label,
@@ -278,6 +286,119 @@ export const CrossEnvironmentDark: Story = {
   ...CrossEnvironment,
   globals: { theme: 'dark' },
 }
+
+export const NewSessionFromEnvironment: Story = {
+  render: () => <CrossEnvironmentFocus />,
+  play: async ({ canvasElement }) => {
+    const active = canvasElement.querySelector('[data-project-focus-active]') as HTMLElement
+    for (const checkout of [focusLocal, focusRemote]) {
+      const group = active.querySelector(`[data-focus-environment="${checkout.environmentId}"]`) as HTMLElement
+      const heading = group.querySelector('[data-sidebar-section="environment"]') as HTMLElement
+      const create = within(group).getByLabelText(/New Session|新建会话/)
+      await userEvent.unhover(group)
+      await expect(create).not.toBeVisible()
+      heading.focus()
+      await expect(create).toBeVisible()
+      await userEvent.tab()
+      await expect(within(group).getByLabelText(/Search sessions|搜索会话/)).toHaveFocus()
+      await userEvent.tab()
+      await expect(within(group).getByLabelText(/New Automation|新建自动化/)).toHaveFocus()
+      await userEvent.tab()
+      await expect(create).toHaveFocus()
+      await userEvent.keyboard('{Enter}')
+      await expect(environmentSessionCreated).toHaveBeenLastCalledWith(checkout.pathKey)
+      await expect(heading).toHaveAttribute('aria-expanded', 'true')
+      await userEvent.click(heading)
+      await userEvent.click(create)
+      await expect(heading).toHaveAttribute('aria-expanded', 'false')
+      await expect(environmentSessionCreated).toHaveBeenLastCalledWith(checkout.pathKey)
+      await userEvent.click(heading)
+      heading.blur()
+    }
+    await expect(useSidebarFocusStore.getState().target).toEqual({
+      kind: 'project', folderPath: focusLocal.pathKey, environmentId: focusLocal.environmentId,
+    })
+  },
+}
+
+export const NewSessionFromEnvironmentDark: Story = {
+  ...NewSessionFromEnvironment,
+  globals: { theme: 'dark' },
+}
+
+export const NewSessionFromEnvironmentNarrow: Story = {
+  ...NewSessionFromEnvironment,
+  render: () => <CrossEnvironmentFocus narrow />,
+  globals: { locale: 'zh' },
+}
+
+export const EnvironmentActions: Story = {
+  render: () => <CrossEnvironmentFocus />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const active = canvasElement.querySelector('[data-project-focus-active]') as HTMLElement
+    const remote = active.querySelector('[data-focus-environment="server"]') as HTMLElement
+    await userEvent.click(within(remote).getByLabelText('Search sessions…'))
+    await expect(within(remote).getByPlaceholderText('Search sessions…')).toBeVisible()
+    await userEvent.type(within(remote).getByPlaceholderText('Search sessions…'), 'Remote')
+    await expect(within(remote).getByText('Remote active session')).toBeVisible()
+    await userEvent.click(within(remote).getByRole('button', { name: 'Close' }))
+    await userEvent.click(within(remote).getByLabelText('New Automation'))
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(body.getByRole('combobox', { name: 'Execution Environment' })).toHaveTextContent('Build server')
+    await userEvent.click(body.getByRole('button', { name: 'Cancel' }))
+    const barActions = canvasElement.querySelector('[data-sidebar-focus-actions]') as HTMLElement
+    await userEvent.click(within(barActions).getByLabelText('Search sessions…'))
+    await expect(canvasElement.querySelector('[data-project-focus-search="all"]')).toBeVisible()
+    await userEvent.type(canvas.getByPlaceholderText('Search sessions…'), 'active')
+    await expect(canvas.getByText('Local active session')).toBeVisible()
+    await expect(canvas.getByText('Remote active session')).toBeVisible()
+    await expect(canvas.queryByText('Unrelated fork session')).not.toBeInTheDocument()
+  },
+}
+
+export const EnvironmentActionsDark: Story = { ...EnvironmentActions, globals: { theme: 'dark' } }
+
+export const SearchAllEnvironments: Story = {
+  render: () => <CrossEnvironmentFocus />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const actions = canvasElement.querySelector('[data-sidebar-focus-actions]') as HTMLElement
+    await userEvent.click(within(actions).getByLabelText('Search sessions…'))
+    const input = canvas.getByPlaceholderText('Search sessions…')
+    const active = canvasElement.querySelector('[data-project-focus-active]')!
+    await expect(active.contains(input)).toBe(false)
+    const local = active.querySelector('[data-focus-environment="desktop"] [data-sidebar-section]')!
+    await expect(input.getBoundingClientRect().bottom).toBeLessThanOrEqual(local.getBoundingClientRect().top)
+    await userEvent.type(input, 'active')
+    await expect(canvas.getByText('Local active session')).toBeVisible()
+    await expect(canvas.getByText('Remote active session')).toBeVisible()
+    await expect(canvas.getAllByPlaceholderText('Search sessions…')).toHaveLength(1)
+  },
+}
+
+async function searchOneEnvironment(canvasElement: HTMLElement, environmentId: string) {
+  const group = canvasElement.querySelector(`[data-project-focus-active] [data-focus-environment="${environmentId}"]`) as HTMLElement
+  const heading = group.querySelector('[data-sidebar-section]') as HTMLElement
+  await userEvent.click(within(group).getByLabelText('Search sessions…'))
+  const input = within(group).getByPlaceholderText('Search sessions…')
+  await expect(input.getBoundingClientRect().top).toBeGreaterThanOrEqual(heading.getBoundingClientRect().bottom)
+  await userEvent.type(input, 'active')
+  await expect(within(group).getByText(environmentId === 'desktop' ? 'Local active session' : 'Remote active session')).toBeVisible()
+  await expect(within(canvasElement).getAllByPlaceholderText('Search sessions…')).toHaveLength(1)
+}
+
+export const SearchThisComputer: Story = {
+  render: () => <CrossEnvironmentFocus />,
+  play: async ({ canvasElement }) => searchOneEnvironment(canvasElement, 'desktop'),
+}
+export const SearchBuildServer: Story = {
+  render: () => <CrossEnvironmentFocus />,
+  play: async ({ canvasElement }) => searchOneEnvironment(canvasElement, 'server'),
+}
+export const SearchAllEnvironmentsDark: Story = { ...SearchAllEnvironments, globals: { theme: 'dark' } }
+export const SearchThisComputerDark: Story = { ...SearchThisComputer, globals: { theme: 'dark' } }
+export const SearchBuildServerDark: Story = { ...SearchBuildServer, globals: { theme: 'dark' } }
 
 export const CrossEnvironmentNarrow: Story = {
   render: () => <CrossEnvironmentFocus narrow />,

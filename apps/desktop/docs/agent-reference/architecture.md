@@ -70,6 +70,23 @@ details live in [session-links.md](../../../../docs/features/session-links.md).
 
 When adding or refactoring session (or project/workspace) product surfaces, extend the Environment gateway first and thin-wrap legacy IPC only if needed for back-compat. Do not add new permanent `if (remote) … else app…` branches in the renderer.
 
+### Automation ownership
+
+Automation forms and project rows use `lib/automation-client.ts` →
+`window.environment.callAutomation` → the selected host's `automation.*` RPCs.
+The local desktop uses its in-process domain and existing automation store;
+a remote node uses its own store and scheduler. The form matches checkouts by
+repository origin, shows the selected host's project path, and keeps an existing
+automation on its owning host when editing. Legacy `window.app` automation IPC
+remains available for older callers.
+
+Project focus offers environment-scoped search, automation creation, and session
+creation on each host heading. The resident project search covers all matching
+checkouts; history results keep `(project path, session id)` identity across
+hosts, and each host's history is paged independently. The project-wide search
+input stays above the scrolling environment list and filters results under
+each host heading. A host-specific search input sits directly below its heading.
+
 ### Renderer session client
 
 `lib/session-client.ts` owns session routing; `lib/session-list-ops.ts` owns

@@ -5016,6 +5016,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_DISCONNECT_SESSION_CONTROLLER: 'environment:disconnectSessionController',
   ENVIRONMENT_CALL_COMPOSER: 'environment:callComposer',
   ENVIRONMENT_CALL_SESSION_LIST: 'environment:callSessionList',
+  ENVIRONMENT_CALL_AUTOMATION: 'environment:callAutomation',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
   /** One op on a session's mod surface (`@superone/shared/mod-ui`), local or remote. */

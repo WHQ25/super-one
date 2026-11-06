@@ -113,6 +113,8 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  callAutomation: <M extends import('@superone/shared/environment/automation-rpc').AutomationCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['input']) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CALL_AUTOMATION, connectionId, method, input) as Promise<import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['result']>,
   reloadPlugins: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_RELOAD, projectPath),
 

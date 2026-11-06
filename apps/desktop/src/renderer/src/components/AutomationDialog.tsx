@@ -1,6 +1,12 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { CalendarClock, Check, ChevronDown, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@superone/ui/components/ui/select'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
+import { projectFocusPaths } from '@/lib/multi-host/project-focus'
+import type { EnvironmentBucket } from '@/lib/multi-host/types'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { createProjectAutomation, updateProjectAutomation, deleteProjectAutomation } from '@/lib/automation-client'
 import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import {
@@ -194,16 +200,42 @@ export function AutomationDialog({
   editAutomation,
   projectPath,
   onSaved,
+  initialEnvironmentId,
+  environments: suppliedEnvironments,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   editAutomation: Automation | null
   projectPath: string
   onSaved?: () => void
+  initialEnvironmentId?: string
+  environments?: EnvironmentBucket[]
 }) {
   const { t } = useTranslation()
   const [form, setForm] = useState<FormState>(() => initForm(editAutomation))
   const [showAgentSettings, setShowAgentSettings] = useState(false)
+  const catalog = useMultiHostSidebarStore((state) => state.environments)
+  const environments = suppliedEnvironments ?? catalog
+  const targets = useMemo(() => {
+    const paths = projectFocusPaths(projectPath, environments)
+    const rows = environments.flatMap((bucket) => {
+      const matches = bucket.checkouts.filter((checkout) => paths.includes(checkout.pathKey))
+      const checkout = matches.find((entry) => entry.pathKey === projectPath) ?? matches.find((entry) => !entry.missing) ?? matches[0]
+      return checkout ? [{ path: checkout.pathKey, environmentId: bucket.environmentId, label: bucket.label, hostPath: checkout.hostPath, disabled: bucket.connection !== 'connected' || checkout.missing === true }] : []
+    })
+    if (!rows.some((row) => row.path === projectPath)) {
+      const remote = parseRemoteProjectKey(projectPath)
+      rows.unshift({ path: projectPath, environmentId: remote?.connectionId ?? 'local', label: remote?.connectionId ?? t(window.app.platform === 'darwin' ? 'sidebar.thisMac' : 'sidebar.thisPc'), hostPath: remote?.path ?? projectPath, disabled: false })
+    }
+    return rows
+  }, [projectPath, environments, t])
+  const defaultTarget = targets.find((target) => target.environmentId === initialEnvironmentId)?.path ?? projectPath
+  const [executionPath, setExecutionPath] = useState(defaultTarget)
+  const environmentLabelId = useId()
+  const submitting = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const selectedTarget = targets.find((target) => target.path === executionPath)
 
   const availableModels = useChatStore(selectClaudeModels)
   const cachedCodexModels = useChatStore(selectCodexModels)
@@ -212,26 +244,40 @@ export function AutomationDialog({
     if (open) {
       setForm(initForm(editAutomation))
       setShowAgentSettings(!!editAutomation)
+      setExecutionPath(defaultTarget)
+      setError(null)
     }
-  }, [open, editAutomation])
+  }, [open, editAutomation, defaultTarget])
 
   const handleSubmit = async () => {
-    const agentConfig = formAgentConfig(form)
-    const data = { name: form.name, prompt: form.prompt, agentConfig, schedule: form.schedule }
-    if (editAutomation) {
-      await window.app.updateAutomation(editAutomation.id, { ...data, enabled: form.enabled })
-    } else {
-      await window.app.createAutomation(projectPath, data)
-    }
-    onSaved?.()
-    onOpenChange(false)
+    if (submitting.current || !selectedTarget || selectedTarget.disabled || !form.name.trim() || !form.prompt.trim()) return
+    submitting.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      const agentConfig = formAgentConfig(form)
+      const data = { name: form.name.trim(), prompt: form.prompt, agentConfig, schedule: form.schedule }
+      if (editAutomation) await updateProjectAutomation(editAutomation.projectPath, editAutomation.id, { ...data, enabled: form.enabled })
+      else await createProjectAutomation(executionPath, data)
+      onSaved?.()
+      onOpenChange(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally { submitting.current = false; setBusy(false) }
   }
 
   const handleDelete = async () => {
-    if (!editAutomation) return
-    await window.app.deleteAutomation(editAutomation.id)
-    onSaved?.()
-    onOpenChange(false)
+    if (!editAutomation || submitting.current) return
+    submitting.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteProjectAutomation(editAutomation.projectPath, editAutomation.id)
+      onSaved?.()
+      onOpenChange(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally { submitting.current = false; setBusy(false) }
   }
 
   const updateClaude = (patch: Partial<ClaudeRunConfig>) => {
@@ -250,7 +296,7 @@ export function AutomationDialog({
     setForm((f) => ({ ...f, opencodeConfig: { ...f.opencodeConfig, ...patch } }))
   }
 
-  const isValid = form.name.trim() && form.prompt.trim()
+  const isValid = form.name.trim() && form.prompt.trim() && selectedTarget && !selectedTarget.disabled
 
   const claudeModelOptions = [
     { id: '', label: t('resources.automation.defaultValue') },
@@ -282,7 +328,7 @@ export function AutomationDialog({
   ]
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next) }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -304,6 +350,21 @@ export function AutomationDialog({
               placeholder={t('resources.automation.namePlaceholder')}
             />
           </label>
+
+          <div className="flex flex-col gap-1">
+            <span id={environmentLabelId} className="text-xs font-medium text-muted-foreground">{t('resources.automation.executionEnvironment')}</span>
+            <Select value={executionPath} onValueChange={setExecutionPath} disabled={busy || !!editAutomation}>
+              <SelectTrigger aria-labelledby={environmentLabelId} className="w-full min-w-0"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectGroup>
+                {targets.map((target) => (
+                  <SelectItem key={target.path} value={target.path} disabled={target.disabled}>
+                    {target.label}{target.disabled ? ` · ${t('resources.automation.environmentUnavailable')}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectGroup></SelectContent>
+            </Select>
+            <span className="truncate text-xs text-muted-foreground" title={selectedTarget?.hostPath}>{selectedTarget?.hostPath}</span>
+          </div>
 
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">{t('resources.automation.provider')}</span>
@@ -481,17 +542,18 @@ export function AutomationDialog({
           </div>
         </div>
 
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <DialogFooter className="flex-row justify-between sm:justify-between">
           <div>
             {editAutomation && (
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleDelete}>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleDelete} disabled={busy}>
                 <Trash2 className="size-3.5" /> {t('resources.providerDialog.delete')}
               </Button>
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-            <Button onClick={handleSubmit} disabled={!isValid}>{editAutomation ? t('resources.automation.save') : t('resources.automation.create')}</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t('common.cancel')}</Button>
+            <Button onClick={handleSubmit} disabled={!isValid || busy}>{busy ? t('common.loading') : editAutomation ? t('resources.automation.save') : t('resources.automation.create')}</Button>
           </div>
         </DialogFooter>
       </DialogContent>

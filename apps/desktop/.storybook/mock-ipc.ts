@@ -33,6 +33,7 @@ const values: Record<string, Record<string, unknown>> = {
     // Every expanded project row lists its automations.
     listAutomations: async () => [],
   },
+  environment: { callAutomation: async (_connection: unknown, method: unknown) => method === 'automation.list' ? { automations: [] } : Promise.reject(new Error('No automation mutation mock')) },
   // The mini-app store reads this at module init, before any story mock runs,
   // and stores the result as its `hosts` array.
   miniapp: { hostList: async () => [] },

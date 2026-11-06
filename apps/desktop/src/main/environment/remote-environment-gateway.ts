@@ -1165,6 +1165,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('automation.list', { projectId })
   }
 
+  callAutomation<M extends import('@superone/shared/environment/automation-rpc').AutomationCallMethod>(method: M, input: import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['input']): Promise<import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['result']> {
+    return this.client.rpc(method, input)
+  }
+
   async automationCreate(input: {
     projectId: string
     name: string

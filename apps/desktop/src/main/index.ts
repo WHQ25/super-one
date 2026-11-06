@@ -2392,6 +2392,10 @@ function registerIpcHandlers(): void {
     const { getEnvironmentHost } = await import('./environment')
     return getEnvironmentHost().callSessionList(connectionId, method, input)
   })
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_AUTOMATION, async (_e, connectionId: string, method: import('@superone/shared/environment/automation-rpc').AutomationCallMethod, input: import('@superone/shared/environment/automation-rpc').AutomationCallMethods[import('@superone/shared/environment/automation-rpc').AutomationCallMethod]['input']) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().callAutomation(connectionId, method, input)
+  })
   sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_CALL_SESSION,
     async (_e, connectionId: string, sessionId: string, method: SessionCallMethod, input: SessionCallMethods[SessionCallMethod]['input']) => {

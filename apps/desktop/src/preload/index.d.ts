@@ -862,6 +862,7 @@ interface TerminalAPI {
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI extends MediaComposerAPI {
+  callAutomation<M extends import('@superone/shared/environment/automation-rpc').AutomationCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['input']): Promise<import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['result']>
   reloadPlugins(projectPath: string): Promise<boolean>
   listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
   listDirectoryForAddDir(projectPath: string, rawInput: string): Promise<{ absolutePath: string; entries: ListDirEntry[] }>

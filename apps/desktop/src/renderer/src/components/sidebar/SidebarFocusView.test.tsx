@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react'
 import { act, fireEvent, screen, waitFor, within, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
-import { applySidebarFocus, focusEnvironment, focusProject, focusSession } from './sidebar-focus'
+import { applySidebarFocus, focusEnvironment, focusProject, focusSession, useSidebarFocusStore } from './sidebar-focus'
 import { SidebarFocusView } from './SidebarFocusView'
 import { focusEnvironments, focusFork, focusLocal, focusRemote, focusSessions, focusSessionEntry, focusSettled } from './project-focus.fixtures'
 
@@ -128,6 +128,38 @@ describe('project focus across origins', () => {
     window.app.listAutomations = vi.fn(async () => [])
   })
 
+  it('starts sessions in each environment’s project without changing focus or folding the group', () => {
+    const { container, props } = renderProject()
+    const active = container.querySelector('[data-project-focus-active]')! as HTMLElement
+    for (const checkout of [focusLocal, focusRemote]) {
+      const group = active.querySelector(`[data-focus-environment="${checkout.environmentId}"]`)! as HTMLElement
+      const heading = group.querySelector('[data-sidebar-section="environment"]')!
+      const create = within(group).getByRole('button', { name: 'New Session', hidden: true })
+      expect(create.closest('[data-slot="section-actions"]')).toHaveClass('invisible', 'group-hover:visible', 'group-focus-within:visible')
+      fireEvent.click(create)
+      expect(props.onNewSession).toHaveBeenLastCalledWith(checkout.pathKey)
+      expect(heading).toHaveAttribute('aria-expanded', 'true')
+      fireEvent.click(heading)
+      fireEvent.click(create)
+      expect(props.onNewSession).toHaveBeenLastCalledWith(checkout.pathKey)
+      expect(heading).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(useSidebarFocusStore.getState().target).toEqual({
+      kind: 'project', folderPath: focusLocal.pathKey, environmentId: focusLocal.environmentId,
+    })
+  })
+
+  it('does not offer creation for unavailable environments or missing checkouts', () => {
+    const { container } = renderProject({ environments: focusEnvironments.map((bucket) => ({
+      ...bucket,
+      ...(bucket.kind === 'local'
+        ? { checkouts: bucket.checkouts.map((checkout) => ({ ...checkout, missing: true })) }
+        : { connection: 'offline' as const }),
+    })) })
+    const active = container.querySelector('[data-project-focus-active]')! as HTMLElement
+    expect(within(active).queryByRole('button', { name: 'New Session', hidden: true })).toBeNull()
+  })
+
   it('shows local and remote sessions for the same normalized origin and keeps forks out', async () => {
     const { props } = renderProject()
     await waitFor(() => expect(screen.getByText('Remote active session')).toBeInTheDocument())
@@ -171,14 +203,60 @@ describe('project focus across origins', () => {
     expect(active.compareDocumentPosition(settled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('reveals a folded environment when the focus bar searches its sessions', async () => {
+  it('searches all environments from the project bar and only one from its host action', async () => {
+    const listSessions = vi.fn(async () => [])
+    Object.assign(window.environment, {
+      listSessions,
+      listProjects: vi.fn(async () => [{ projectId: focusRemote.projectId, path: focusRemote.hostPath }]),
+    })
     const { container } = renderProject()
     const active = container.querySelector('[data-project-focus-active]')! as HTMLElement
-    const local = within(active).getByRole('button', { name: /This computer/ })
-    fireEvent.click(local)
-    expect(local).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(screen.getByRole('button', { name: /Search sessions/ }))
-    await waitFor(() => expect(local).toHaveAttribute('aria-expanded', 'true'))
+    const remote = active.querySelector('[data-focus-environment="server"]')! as HTMLElement
+    const heading = remote.querySelector('[data-sidebar-section="environment"]')!
+    fireEvent.click(heading)
+    fireEvent.click(within(remote).getByRole('button', { name: /Search sessions/, hidden: true }))
+    await waitFor(() => expect(listSessions).toHaveBeenCalledWith('node-1', focusRemote.projectId, expect.objectContaining({ includeSettled: true })))
+    expect(heading).toHaveAttribute('aria-expanded', 'true')
+    const scopedInput = screen.getByPlaceholderText('Search sessions…')
+    expect(remote).toContainElement(scopedInput)
+    expect(heading.compareDocumentPosition(scopedInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(listSessions).not.toHaveBeenCalledWith('local', expect.anything(), expect.anything())
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    listSessions.mockClear()
+    const localHeading = within(active).getByRole('button', { name: 'This computer' })
+    fireEvent.click(localHeading)
+    expect(localHeading).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(within(container.querySelector('[data-sidebar-focus-actions]')! as HTMLElement).getByRole('button', { name: /Search sessions/ }))
+    const allInput = screen.getByPlaceholderText('Search sessions…')
+    expect(active).not.toContainElement(allInput)
+    expect(allInput.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(active).getByRole('button', { name: 'This computer' })).toBeInTheDocument()
+    expect(within(active).getByRole('button', { name: 'Build server' })).toBeInTheDocument()
+    expect(screen.getAllByPlaceholderText('Search sessions…')).toHaveLength(1)
+    expect(localHeading).toHaveAttribute('aria-expanded', 'true')
+    await waitFor(() => expect(listSessions).toHaveBeenCalledWith('local', focusLocal.pathKey, expect.anything()))
+    await waitFor(() => expect(listSessions).toHaveBeenCalledWith('node-1', focusRemote.projectId, expect.anything()))
+    expect(listSessions).not.toHaveBeenCalledWith('node-1', focusFork.projectId, expect.anything())
+    fireEvent.change(allInput, { target: { value: 'review' } })
+    fireEvent.click(within(remote).getByRole('button', { name: /Search sessions/, hidden: true }))
+    const movedInput = screen.getByPlaceholderText('Search sessions…')
+    expect(remote).toContainElement(movedInput)
+    expect(movedInput).toHaveValue('review')
+    expect(container.querySelector('[data-project-focus-search="all"]')).toBeNull()
+    expect(screen.getAllByPlaceholderText('Search sessions…')).toHaveLength(1)
+    fireEvent.keyDown(movedInput, { key: 'Escape' })
+    expect(movedInput).toHaveValue('')
+    fireEvent.keyDown(movedInput, { key: 'Escape' })
+    expect(screen.queryByPlaceholderText('Search sessions…')).toBeNull()
+  })
+
+  it('preselects the clicked host when opening automation from its hover action', () => {
+    const { container } = renderProject()
+    const active = container.querySelector('[data-project-focus-active]')! as HTMLElement
+    const remote = active.querySelector('[data-focus-environment="server"]')! as HTMLElement
+    fireEvent.click(within(remote).getByRole('button', { name: 'New Automation', hidden: true }))
+    expect(screen.getByRole('combobox', { name: 'Execution Environment' })).toHaveTextContent('Build server')
+    expect(screen.getByText(focusRemote.hostPath)).toBeInTheDocument()
   })
 
   it('can fold an active environment independently of its settled sessions', async () => {

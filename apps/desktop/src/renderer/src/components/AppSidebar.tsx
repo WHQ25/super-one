@@ -64,6 +64,7 @@ import { AppDrawer } from '@/components/sidebar/AppDrawer'
 import { SidebarFocusView } from '@/components/sidebar/SidebarFocusView'
 import { useSidebarFocusStore } from '@/components/sidebar/sidebar-focus'
 import { startNewSessionFromFocus } from '@/lib/new-session-from-focus'
+import { startNewSessionOnCheckout } from '@/lib/start-new-session-on-checkout'
 import {
   draftScopeForFocus,
   focusContextKey,
@@ -102,7 +103,6 @@ export const AppSidebar = memo(function AppSidebar() {
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const localHostLabel = isMac ? t('sidebar.thisMac') : t('sidebar.thisPc')
-  const resetSession = useChatStore((s) => s.resetSession)
   const switchSession = useChatStore((s) => s.switchSession)
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
@@ -614,38 +614,13 @@ export const AppSidebar = memo(function AppSidebar() {
     }
   }, [executeDeleteSession])
 
-  const createNewSession = useCallback(async () => {
-    const before = useChatStore.getState()
-    const projectPath = before.activeProject
-    const previousSessionId = projectPath ? before.projectSessions[projectPath]?._activeSessionId : null
-    await resetSession()
-    if (!projectPath) return
-    const sessionId = useChatStore.getState().projectSessions[projectPath]?._activeSessionId
-    if (sessionId && sessionId !== previousSessionId) {
-      useMosaicStore.getState().focusOrReplaceFocused(projectPath, sessionId)
-    }
-  }, [resetSession])
-
   const handleNewSession = useCallback((folderPath: string) => {
-    const remote = parseRemoteProjectKey(folderPath)
-    if (remote) {
-      // Same lifecycle as local: open project → mint renderer draft only.
-      // The host creates the session on its first send (ensureHostSession) with the UI harness.
-      void (async () => {
-        const project = sessionProjectsRef.current.find((p) => p.path === folderPath)
-        await selectProject(folderPath, {
-          connectionId: remote.connectionId,
-          projectId: project?.id,
-        })
-        await createNewSession()
-        setExpandedFolders((prev) =>
-          prev.has(folderPath) ? prev : new Set([...prev, folderPath]),
-        )
-      })()
-      return
-    }
-    void selectProject(folderPath).then(createNewSession)
-  }, [selectProject, createNewSession])
+    const projectId = sessionProjectsRef.current.find((project) => project.path === folderPath)?.id
+    void startNewSessionOnCheckout(folderPath, projectId).then(() => {
+      if (!parseRemoteProjectKey(folderPath)) return
+      setExpandedFolders((prev) => (prev.has(folderPath) ? prev : new Set([...prev, folderPath])))
+    })
+  }, [])
 
   const refreshOneEnvironment = useCallback((connectionId: string) => {
     setRefreshingConnectionId(connectionId)

@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CalendarClock, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { cn } from '@superone/ui/lib/utils'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -22,6 +23,7 @@ import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 import { focusEnvironment } from '@/components/sidebar/sidebar-focus'
+import { chainSessionListWheel, SESSION_LIST_SCROLL_CLASS } from '@/components/sidebar/session-list-scroll'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
@@ -209,20 +211,24 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               />
               {/* Projects sit one step inside their environment, hover fill included. */}
               <div className="pl-1">
-                {expanded && bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
-                  <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
+                {expanded && (
+                  <EnvironmentProjectScroll>
+                    {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
+                      <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
+                    )}
+                    {bucket.projectsStatus === 'error' && checkouts.length === 0 && (
+                      <ProjectLoadError
+                        bucket={bucket}
+                        className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
+                        onRetry={props.onRefreshEnvironment}
+                      />
+                    )}
+                    {bucket.projectsStatus === 'ready' && checkouts.length === 0 && bucket.connection !== 'offline' && (
+                      <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
+                    )}
+                    {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
+                  </EnvironmentProjectScroll>
                 )}
-                {expanded && bucket.projectsStatus === 'error' && checkouts.length === 0 && (
-                  <ProjectLoadError
-                    bucket={bucket}
-                    className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
-                    onRetry={props.onRefreshEnvironment}
-                  />
-                )}
-                {expanded && bucket.projectsStatus === 'ready' && checkouts.length === 0 && bucket.connection !== 'offline' && (
-                  <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
-                )}
-                {expanded && checkouts.map((checkout) => checkoutRow(checkout, bucket))}
               </div>
             </div>
           )
@@ -312,6 +318,25 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         </div>
       )}
     </div>
+  )
+}
+
+/** Share session-list sizing and wheel chaining, leaving the device name outside. */
+function EnvironmentProjectScroll({ children }: { children: ReactNode }) {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  return (
+    <ScrollArea
+      type="scroll"
+      edgeFade
+      data-environment-project-list=""
+      className={SESSION_LIST_SCROLL_CLASS}
+      viewportRef={viewportRef}
+      onWheel={(event) => {
+        if (viewportRef.current) chainSessionListWheel(viewportRef.current, event)
+      }}
+    >
+      {children}
+    </ScrollArea>
   )
 }
 

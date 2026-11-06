@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SubscriptionUsage } from '@superone/shared/environment'
 
 const hoisted = vi.hoisted(() => {
   const sessionState = {
@@ -229,6 +230,103 @@ describe('UsageStatusIcon rate-limit tip', () => {
     await act(async () => { await Promise.resolve() })
     expect(window.app.claudeGetRateLimits).not.toHaveBeenCalled()
     expect(screen.getByRole('status')).toHaveTextContent('settings.harnesses.codexAccount.usageUnavailable')
+  })
+
+  it('loads every remote subscription in one list request and inspects and refreshes a different account on the node', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    const accounts: SubscriptionUsage[] = [
+      { harness: 'claude', account: 'node@anthropic.test', apiProviderId: null, planType: 'max', windows: [{ label: '5h', usedPercent: 60, resetsAt: null }] },
+      { harness: 'claude', account: 'work@anthropic.test', apiProviderId: 'claude-account:/node/work', planType: 'team', windows: [{ label: '5h', usedPercent: 10, resetsAt: null }] },
+      { harness: 'codex', account: 'node@openai.test', apiProviderId: 'codex-account:work', planType: 'pro', windows: [{ label: 'Weekly', usedPercent: 30, resetsAt: null }] },
+      { harness: 'grok', account: 'node@x.ai', planType: 'Heavy', windows: [] },
+      { harness: 'cursor', account: 'node@cursor.test', planType: 'pro', windows: [] },
+      { harness: 'opencode', account: null, planType: 'Go', windows: [] },
+    ]
+    const getUsage = vi.fn(async () => ({ accounts }))
+    vi.stubGlobal('environment', { getUsage })
+    render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve() })
+    getUsage.mockClear()
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+    expect(getUsage).toHaveBeenCalledExactlyOnceWith('node-1', false)
+    for (const account of accounts.filter((row) => row.account)) {
+      expect(screen.getByRole('button', { name: new RegExp(account.account!) })).toBeInTheDocument()
+    }
+    expect(screen.getByRole('button', { name: /OpenCode.*Go/ })).toBeInTheDocument()
+    expect(screen.getByText('2 accounts')).toBeInTheDocument()
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /work@anthropic.test/ })) })
+    expect(screen.getByText('90% left')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Claude Usage' })).toHaveTextContent('40%')
+    expect(getUsage).toHaveBeenCalledTimes(1)
+
+    getUsage.mockResolvedValue({ accounts: accounts.map((row) => row.account === 'work@anthropic.test'
+      ? { ...row, windows: [{ label: '5h', usedPercent: 20, resetsAt: null }] }
+      : row) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'common.refresh' })) })
+    expect(getUsage).toHaveBeenLastCalledWith('node-1', true)
+    expect(screen.getByText('80% left')).toBeInTheDocument()
+    expect(window.app.claudeListAccounts).not.toHaveBeenCalled()
+    expect(window.app.claudeGetRateLimits).not.toHaveBeenCalled()
+    expect(window.app.codexGetRateLimits).not.toHaveBeenCalled()
+    expect(window.app.acpGetRateLimits).not.toHaveBeenCalled()
+  })
+
+  it('shows loading and an empty result for a remote node without subscriptions', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.sessionState.sessionProvider = 'cursor'
+    let resolve!: (value: { accounts: [] }) => void
+    vi.stubGlobal('environment', { getUsage: vi.fn(() => new Promise((done) => { resolve = done })) })
+    render(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+    expect(screen.getByRole('status')).toHaveTextContent('Updating…')
+    await act(async () => { resolve({ accounts: [] }) })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getAllByText('No usage information available').length).toBeGreaterThan(0)
+    expect(window.app.claudeListAccounts).not.toHaveBeenCalled()
+    expect(window.app.acpGetRateLimits).not.toHaveBeenCalled()
+  })
+
+  it('retries a failed remote list without reading subscriptions from the controller', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.sessionState.sessionProvider = 'cursor'
+    const getUsage = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ accounts: [
+      { harness: 'codex', account: 'node@openai.test', planType: 'pro', windows: [], error: 'expired login' },
+    ] })
+    vi.stubGlobal('environment', { getUsage })
+    render(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+    expect(screen.getByRole('status')).toHaveTextContent('settings.harnesses.codexAccount.usageUnavailable')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'common.retry' })) })
+    expect(screen.getByRole('button', { name: /node@openai.test/ })).toHaveTextContent('settings.harnesses.codexAccount.usageUnavailable')
+    expect(getUsage).toHaveBeenNthCalledWith(1, 'node-1', false)
+    expect(getUsage).toHaveBeenNthCalledWith(2, 'node-1', false)
+    expect(window.app.claudeListAccounts).not.toHaveBeenCalled()
+    expect(window.app.codexGetRateLimits).not.toHaveBeenCalled()
+    expect(window.app.acpGetRateLimits).not.toHaveBeenCalled()
+  })
+
+  it('ignores a late subscription list from a node after switching to another node', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.sessionState.sessionProvider = 'cursor'
+    let resolve!: (value: unknown) => void
+    const getUsage = vi.fn().mockImplementationOnce(() => new Promise((done) => { resolve = done }))
+      .mockResolvedValueOnce({ accounts: [
+        { harness: 'codex', account: 'second@openai.test', planType: 'pro', windows: [] },
+      ] })
+    vi.stubGlobal('environment', { getUsage })
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+    hoisted.chatState.activeProject = 'remote:node-2:/home/me/app'
+    rerender(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+    await act(async () => { resolve({ accounts: [
+      { harness: 'codex', account: 'first@openai.test', planType: 'pro', windows: [] },
+    ] }) })
+    expect(getUsage).toHaveBeenLastCalledWith('node-2', false)
+    expect(screen.getByRole('button', { name: /second@openai.test/ })).toBeInTheDocument()
+    expect(screen.queryByText('first@openai.test')).not.toBeInTheDocument()
   })
 
   it('names the ChatGPT account in the Codex gauge, but not when a third-party key is in use', async () => {

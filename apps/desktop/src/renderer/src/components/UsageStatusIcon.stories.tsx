@@ -1,5 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState, type ReactNode } from 'react'
+import { userEvent, within } from 'storybook/test'
+import i18n from 'i18next'
+import type { EnvironmentUsageReport } from '@superone/shared/environment'
 import { Settings, Wifi } from 'lucide-react'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 import {
@@ -289,6 +292,49 @@ export const MultiAccountSubscriptionsHub: Story = {
   name: 'Multi-account subscriptions hub',
   render: () => <Playground />,
 }
+
+const NODE_SUBSCRIPTIONS: EnvironmentUsageReport = { accounts: [
+  { harness: 'claude', account: 'personal@remote.test', apiProviderId: null, planType: 'Max', windows: [{ label: '5h', usedPercent: 62, resetsAt: null }] },
+  { harness: 'claude', account: 'a-very-long-work-account-name@remote-company.example', apiProviderId: 'claude-account:/node/work', planType: 'Team', windows: [{ label: '5h', usedPercent: 12, resetsAt: null }] },
+  { harness: 'codex', account: 'work@remote.test', apiProviderId: 'codex-account:work', planType: 'Pro', windows: [{ label: 'Weekly', usedPercent: 44, resetsAt: null }] },
+  { harness: 'grok', account: 'grok@remote.test', planType: 'Heavy', windows: [{ label: 'Weekly', usedPercent: 22, resetsAt: null }] },
+  { harness: 'cursor', account: 'cursor@remote.test', planType: 'Pro', windows: [], error: 'Expired login' },
+  { harness: 'opencode', account: null, planType: 'Go', windows: [{ label: 'Monthly', usedPercent: 5, resetsAt: null }] },
+] }
+
+function RemoteSubscriptionsPreview({ state = 'loaded' }: { state?: 'loaded' | 'loading' | 'empty' | 'error' }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    let attempts = 0
+    mockIpc('environment', 'getUsage', async () => {
+      if (state === 'loading') return new Promise<EnvironmentUsageReport>(() => {})
+      if (state === 'error' && ++attempts === 1) throw new Error('Node offline')
+      return state === 'empty' ? { accounts: [] } : NODE_SUBSCRIPTIONS
+    })
+    const key = 'remote:storybook-node:/workspace/app'
+    const project = createDefaultProjectState()
+    project._activeSessionId = SB_SESSION
+    const provider = state === 'error' ? 'cursor' : 'claude'
+    project._sessions = { [SB_SESSION]: {
+      ...createDefaultPerSessionState(), preferredProvider: provider, sessionProvider: provider, status: 'idle',
+    } }
+    useChatStore.setState({ activeProject: key, projectSessions: { [key]: project } })
+    setReady(true)
+  }, [state])
+  return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
+}
+
+const openRemoteList: Story['play'] = async ({ canvasElement }) => {
+  const canvas = within(canvasElement)
+  await userEvent.click(await canvas.findByRole('button', { name: new RegExp(`${i18n.t('usageGauge.claudeTitle')}|Cursor`) }))
+  const body = within(canvasElement.ownerDocument.body)
+  await userEvent.click(await body.findByRole('button', { name: i18n.t('usageGauge.switchAccount') }))
+}
+
+export const RemoteSubscriptions: Story = { render: () => <RemoteSubscriptionsPreview />, play: openRemoteList }
+export const RemoteSubscriptionsLoading: Story = { render: () => <RemoteSubscriptionsPreview state="loading" />, play: openRemoteList }
+export const RemoteSubscriptionsEmpty: Story = { render: () => <RemoteSubscriptionsPreview state="empty" />, play: openRemoteList }
+export const RemoteSubscriptionsRetry: Story = { render: () => <RemoteSubscriptionsPreview state="error" />, play: openRemoteList }
 
 /** Approaching limit tip + amber highlight for 6s. */
 export const ApproachingRateLimit: Story = {

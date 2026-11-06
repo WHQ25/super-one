@@ -23,6 +23,7 @@ import { USAGE_POLL_MS, usageWindowTone, type UsageWindow } from '@superone/shar
 import { formatUsageDuration } from '@superone/shared/subscription-usage-presentation'
 import { useSubscriptionAlert } from './use-subscription-alert'
 import type { SubscriptionAlert } from '@superone/shared/subscription-alerts'
+import type { SubscriptionHarness, SubscriptionUsage } from '@superone/shared/environment'
 import { useCodexUsage } from './use-codex-usage'
 
 const TAB_PANEL_SPRING = { type: 'spring', bounce: 0.15, duration: 0.3 } as const
@@ -300,6 +301,21 @@ function codexHubKey(apiProviderId: string | null | undefined): string {
   return `codex:${apiProviderId ?? '__default__'}`
 }
 
+const SUBSCRIPTION_BRANDS: Record<SubscriptionHarness, { brandKey?: string; title: string }> = {
+  claude: { brandKey: 'claude', title: 'Claude' },
+  codex: { brandKey: 'openai', title: 'Codex' },
+  grok: { brandKey: 'grok', title: 'Grok' },
+  cursor: { brandKey: 'cursor', title: 'Cursor' },
+  opencode: { title: 'OpenCode' },
+}
+
+function subscriptionHubKey(row: SubscriptionUsage): string {
+  if (row.harness === 'claude') return claudeHubKey(claudeAccountCredentialDir(row.apiProviderId))
+  if (row.harness === 'codex') return codexHubKey(row.apiProviderId)
+  if (row.harness === 'grok') return 'acp:grok-build'
+  return row.harness
+}
+
 function PanelHeight({ open, children }: { open: boolean; children: ReactNode }) {
   const reduceMotion = useReducedMotion()
   return (
@@ -451,6 +467,7 @@ function RateLimitGauge({
   const remoteProject = activeProject ? parseRemoteProjectKey(activeProject) : null
   const isRemoteProject = Boolean(remoteProject)
   const localProjectPath = !isRemoteProject ? activeProject : null
+  const connectionId = remoteProject?.connectionId ?? null
 
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'detail' | 'list'>('detail')
@@ -472,6 +489,34 @@ function RateLimitGauge({
   const [acpMeters, setAcpMeters] = useState<Record<string, { loading?: boolean; limits?: ProviderRateLimits | null }>>({})
   const [now, setNow] = useState(() => Date.now())
   const prefetchedRef = useRef(false)
+  const [nodeUsage, setNodeUsage] = useState<{
+    accounts: SubscriptionUsage[]; loading: boolean; error: boolean
+  }>({ accounts: [], loading: false, error: false })
+  const nodeRequestVersion = useRef(0)
+
+  useEffect(() => {
+    prefetchedRef.current = false
+    setOpen(false)
+    setView('detail')
+    setHasOpenedList(false)
+    setSelectedAccountKey(null)
+    setNodeUsage({ accounts: [], loading: false, error: false })
+    return () => { nodeRequestVersion.current++ }
+  }, [connectionId])
+
+  const loadNodeSubscriptions = useCallback(async (force: boolean) => {
+    if (!connectionId) return
+    const version = ++nodeRequestVersion.current
+    setNodeUsage((prev) => ({ ...prev, loading: true, error: false }))
+    try {
+      const report = await window.environment.getUsage(connectionId, force)
+      if (version !== nodeRequestVersion.current) return
+      setNodeUsage({ accounts: report.accounts, loading: false, error: false })
+    } catch {
+      if (version !== nodeRequestVersion.current) return
+      setNodeUsage((prev) => ({ ...prev, loading: false, error: true }))
+    }
+  }, [connectionId])
 
   const toggleGroup = useCallback((groupKey: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }))
@@ -583,8 +628,11 @@ function RateLimitGauge({
   }, [isRemoteProject, localProjectPath])
 
   const prefetchSubscriptions = useCallback(() => {
-    if (isRemoteProject) return
     prefetchedRef.current = true
+    if (isRemoteProject) {
+      void loadNodeSubscriptions(false)
+      return
+    }
     for (const account of claudeAccounts) {
       void loadClaudeMeter(account.credentialDir, false, true)
     }
@@ -622,7 +670,7 @@ function RateLimitGauge({
     for (const agent of ACP_HUB_AGENTS) {
       void loadAcpMeter(agent.agentId, false)
     }
-  }, [isRemoteProject, localProjectPath, claudeAccounts, codexAccounts, claudeMeters, codexMeters, loadClaudeMeter, loadCodexMeter, loadAcpMeter])
+  }, [isRemoteProject, localProjectPath, claudeAccounts, codexAccounts, claudeMeters, codexMeters, loadClaudeMeter, loadCodexMeter, loadAcpMeter, loadNodeSubscriptions])
 
   const handleOpenList = useCallback(() => {
     setHasOpenedList(true)
@@ -632,28 +680,34 @@ function RateLimitGauge({
     }
   }, [prefetchSubscriptions])
 
-  const selectedClaudeAccount = selectedAccountKey?.startsWith('claude:')
+  const selectedClaudeAccount = !isRemoteProject && selectedAccountKey?.startsWith('claude:')
     ? claudeAccounts.find((a) => claudeHubKey(a.credentialDir) === selectedAccountKey) ?? null
     : null
   const selectedClaudeMeter = selectedAccountKey ? claudeMeters[selectedAccountKey] : undefined
 
-  const selectedCodexAccount = selectedAccountKey?.startsWith('codex:')
+  const selectedCodexAccount = !isRemoteProject && selectedAccountKey?.startsWith('codex:')
     ? codexAccounts.find((a) => codexHubKey(codexAccountProviderId(a.id)) === selectedAccountKey) ?? null
     : null
   const selectedCodexMeter = selectedAccountKey ? codexMeters[selectedAccountKey] : undefined
 
-  const selectedAcpAgent = selectedAccountKey?.startsWith('acp:')
+  const selectedAcpAgent = !isRemoteProject && selectedAccountKey?.startsWith('acp:')
     ? ACP_HUB_AGENTS.find((a) => a.key === selectedAccountKey) ?? null
     : null
   const selectedAcpMeter = selectedAccountKey ? acpMeters[selectedAccountKey] : undefined
+  const selectedNodeSubscription = isRemoteProject
+    ? nodeUsage.accounts.find((row) => subscriptionHubKey(row) === selectedAccountKey)
+    : undefined
 
-  const activeFetchedAt = selectedClaudeAccount
-    ? (selectedClaudeMeter?.limits?.fetchedAt ?? null)
-    : selectedCodexAccount
-      ? (selectedCodexMeter?.limits?.fetchedAt ?? null)
-      : selectedAcpAgent
-        ? (selectedAcpMeter?.limits?.fetchedAt ?? null)
-        : fetchedAt
+  // The node report does not include source timestamps; do not borrow the session's.
+  const activeFetchedAt = selectedNodeSubscription
+    ? null
+    : selectedClaudeAccount
+      ? (selectedClaudeMeter?.limits?.fetchedAt ?? null)
+      : selectedCodexAccount
+        ? (selectedCodexMeter?.limits?.fetchedAt ?? null)
+        : selectedAcpAgent
+          ? (selectedAcpMeter?.limits?.fetchedAt ?? null)
+          : fetchedAt
 
   useEffect(() => {
     if (!open || activeFetchedAt == null) return
@@ -680,43 +734,61 @@ function RateLimitGauge({
     }
   }, [onOpen, prefetchSubscriptions])
 
-  const detailTitle = selectedClaudeAccount
-    ? <ProviderLabel brandKey="claude" size={14} />
-    : selectedCodexAccount
-      ? <ProviderLabel brandKey="openai" size={14} />
-      : selectedAcpAgent
-        ? <ProviderLabel brandKey={selectedAcpAgent.brandKey} size={14} />
-        : title
-  const detailPlan = selectedClaudeAccount
-    ? (selectedClaudeMeter?.limits?.planType ?? selectedClaudeAccount.subscriptionType ?? null)
-    : selectedCodexAccount
-      ? (selectedCodexMeter?.limits?.planType ?? selectedCodexAccount.planType ?? null)
-      : selectedAcpAgent
-        ? (selectedAcpMeter?.limits?.planType ?? null)
-        : planType
-  const detailSubtitle = selectedClaudeAccount
-    ? [selectedClaudeAccount.email, selectedClaudeAccount.orgName].filter(Boolean).join(' · ')
-    : selectedCodexAccount
-      ? (selectedCodexAccount.email ?? null)
-      : selectedAcpAgent
-        ? (selectedAcpMeter?.limits?.account ?? selectedAcpMeter?.limits?.email ?? null)
-        : subtitle
-  const detailRefreshing = selectedClaudeAccount
-    ? Boolean(selectedClaudeMeter?.loading)
-    : selectedCodexAccount
-      ? Boolean(selectedCodexMeter?.loading)
-      : selectedAcpAgent
-        ? Boolean(selectedAcpMeter?.loading)
-        : refreshing
-  const detailOnRefresh = selectedClaudeAccount
-    ? () => { void loadClaudeMeter(selectedClaudeAccount.credentialDir, true, false) }
-    : selectedCodexAccount
-      ? () => { void loadCodexMeter(selectedCodexAccount.id, true, false, true) }
-      : selectedAcpAgent
-        ? () => { void loadAcpMeter(selectedAcpAgent.agentId, true) }
-        : onRefresh
+  const detailTitle = selectedNodeSubscription
+    ? <ProviderLabel brandKey={SUBSCRIPTION_BRANDS[selectedNodeSubscription.harness].brandKey} fallback={SUBSCRIPTION_BRANDS[selectedNodeSubscription.harness].title} size={14} />
+    : selectedClaudeAccount
+      ? <ProviderLabel brandKey="claude" size={14} />
+      : selectedCodexAccount
+        ? <ProviderLabel brandKey="openai" size={14} />
+        : selectedAcpAgent
+          ? <ProviderLabel brandKey={selectedAcpAgent.brandKey} size={14} />
+          : title
+  const detailPlan = selectedNodeSubscription
+    ? selectedNodeSubscription.planType
+    : selectedClaudeAccount
+      ? (selectedClaudeMeter?.limits?.planType ?? selectedClaudeAccount.subscriptionType ?? null)
+      : selectedCodexAccount
+        ? (selectedCodexMeter?.limits?.planType ?? selectedCodexAccount.planType ?? null)
+        : selectedAcpAgent
+          ? (selectedAcpMeter?.limits?.planType ?? null)
+          : planType
+  const detailSubtitle = selectedNodeSubscription
+    ? selectedNodeSubscription.account
+    : selectedClaudeAccount
+      ? [selectedClaudeAccount.email, selectedClaudeAccount.orgName].filter(Boolean).join(' · ')
+      : selectedCodexAccount
+        ? (selectedCodexAccount.email ?? null)
+        : selectedAcpAgent
+          ? (selectedAcpMeter?.limits?.account ?? selectedAcpMeter?.limits?.email ?? null)
+          : subtitle
+  const detailRefreshing = selectedNodeSubscription
+    ? nodeUsage.loading
+    : selectedClaudeAccount
+      ? Boolean(selectedClaudeMeter?.loading)
+      : selectedCodexAccount
+        ? Boolean(selectedCodexMeter?.loading)
+        : selectedAcpAgent
+          ? Boolean(selectedAcpMeter?.loading)
+          : refreshing
+  const detailOnRefresh = selectedNodeSubscription
+    ? () => { void loadNodeSubscriptions(true) }
+    : selectedClaudeAccount
+      ? () => { void loadClaudeMeter(selectedClaudeAccount.credentialDir, true, false) }
+      : selectedCodexAccount
+        ? () => { void loadCodexMeter(selectedCodexAccount.id, true, false, true) }
+        : selectedAcpAgent
+          ? () => { void loadAcpMeter(selectedAcpAgent.agentId, true) }
+          : onRefresh
 
   const renderDetailBody = (): ReactNode => {
+    if (selectedNodeSubscription) {
+      return (
+        <>
+          {selectedNodeSubscription.windows.length > 0 ? <GroupedWindowBars windows={selectedNodeSubscription.windows} /> : <EmptyUsageState />}
+          {(selectedNodeSubscription.error || nodeUsage.error) && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+        </>
+      )
+    }
     if (selectedClaudeAccount) {
       const limits = selectedClaudeMeter?.limits
       const hasData = Boolean(limits && (limits.windows.length > 0 || limits.extraUsage || limits.error))
@@ -790,7 +862,10 @@ function RateLimitGauge({
   const isAcpActiveInList = ACP_HUB_AGENTS.some(
     (agent) => activeAccountKey === agent.key && (Boolean(acpMeters[agent.key]?.limits) || Boolean(acpMeters[agent.key]?.loading) || hasUsage),
   )
-  const showCurrentSessionGroup = !isClaudeActiveInList && !isCodexActiveInList && !isAcpActiveInList
+  const isNodeActiveInList = isRemoteProject && nodeUsage.accounts.some((row) => subscriptionHubKey(row) === activeAccountKey)
+  const showCurrentSessionGroup = isRemoteProject
+    ? !isNodeActiveInList
+    : !isClaudeActiveInList && !isCodexActiveInList && !isAcpActiveInList
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -868,7 +943,56 @@ function RateLimitGauge({
                   className="sidebar-scroll -mx-2 max-h-104 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]]:px-2 [&_[data-slot=scroll-area-viewport]>div]:block!"
                 >
                   <div className="flex flex-col gap-3">
-                    {claudeAccounts.length > 0 && (
+                    {isRemoteProject && (
+                      <>
+                        {nodeUsage.loading && <p role="status" className="text-muted-foreground">{t('usageGauge.updating')}</p>}
+                        {nodeUsage.error && (
+                          <div className="flex items-center justify-between gap-2">
+                            <p role="status" className="text-muted-foreground">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>
+                            <Button size="sm" variant="ghost" onClick={() => { void loadNodeSubscriptions(false) }}>{t('common.retry')}</Button>
+                          </div>
+                        )}
+                        {!nodeUsage.loading && !nodeUsage.error && nodeUsage.accounts.length === 0 && <EmptyUsageState />}
+                        {(Object.keys(SUBSCRIPTION_BRANDS) as SubscriptionHarness[]).map((harness) => {
+                          const accounts = nodeUsage.accounts.filter((row) => row.harness === harness)
+                          if (accounts.length === 0) return null
+                          const brand = SUBSCRIPTION_BRANDS[harness]
+                          return (
+                            <SubscriptionGroup
+                              key={harness}
+                              title={<ProviderLabel brandKey={brand.brandKey} fallback={brand.title} size={12} />}
+                              count={accounts.length}
+                              collapsed={Boolean(collapsedGroups[harness])}
+                              onToggle={() => toggleGroup(harness)}
+                            >
+                              {accounts.map((row) => {
+                                const key = subscriptionHubKey(row)
+                                const isSelected = (selectedAccountKey ?? activeAccountKey) === key
+                                return (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => { setSelectedAccountKey(key); setView('detail') }}
+                                    className={cn(
+                                      'flex w-full flex-col gap-1.5 rounded-md border p-2 text-left transition-colors',
+                                      isSelected ? 'border-primary/50 bg-accent/50' : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
+                                    )}
+                                  >
+                                    <div className="flex h-4 items-center justify-between gap-2">
+                                      <span className="truncate font-medium">{row.account || brand.title}</span>
+                                      {row.planType && <span className="shrink-0 text-[11px] capitalize opacity-50">{row.planType}</span>}
+                                    </div>
+                                    <AccountCardWindows windows={row.windows} />
+                                    {row.error && <p className="text-muted-foreground">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+                                  </button>
+                                )
+                              })}
+                            </SubscriptionGroup>
+                          )
+                        })}
+                      </>
+                    )}
+                    {!isRemoteProject && claudeAccounts.length > 0 && (
                       <SubscriptionGroup
                         title={<ProviderLabel brandKey="claude" size={12} />}
                         count={claudeAccounts.length}
@@ -925,7 +1049,7 @@ function RateLimitGauge({
                       </SubscriptionGroup>
                     )}
 
-                    {codexAccounts.length > 0 && (
+                    {!isRemoteProject && codexAccounts.length > 0 && (
                       <SubscriptionGroup
                         title={<ProviderLabel brandKey="openai" size={12} />}
                         count={codexAccounts.length}
@@ -986,7 +1110,7 @@ function RateLimitGauge({
                       </SubscriptionGroup>
                     )}
 
-                    {ACP_HUB_AGENTS.map((agent) => {
+                    {!isRemoteProject && ACP_HUB_AGENTS.map((agent) => {
                       const isCurrent = activeAccountKey === agent.key
                       const meter = acpMeters[agent.key]
                       const limits = meter?.limits
@@ -1175,8 +1299,7 @@ function ClaudeRateLimitIcon({ credentialDir, remoteConnectionId, apiProviderId,
   const [loaded, setLoaded] = useState(false)
   const tip = useSubscriptionAlert(limits?.quotaKey ?? `claude:${credentialDir ?? 'default'}`, limits?.windows ?? [], liveTip, loaded)
   const highlight: GaugeHighlight = tip ? (tip.severity >= 2 ? 'error' : 'warning') : null
-  // Only this session's own account. Reading every account here would cost one throttled usage
-  // request each per popover open; the Providers settings panel is where the full picture lives.
+  // Only this session's own account; the subscription hub loads the other accounts on open.
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
 
   const requestVersion = useRef(0)
@@ -1240,7 +1363,7 @@ function ClaudeRateLimitIcon({ credentialDir, remoteConnectionId, apiProviderId,
   const badgeWindow = limits?.windows.find((w) => w.label === '5h') ?? limits?.windows[0]
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
   const hasUsage = Boolean(limits && (limits.windows.length > 0 || limits.error))
-  const activeAccountKey = remoteConnectionId ? 'session:current' : claudeHubKey(credentialDir)
+  const activeAccountKey = claudeHubKey(credentialDir)
 
   return (
     <RateLimitTipHost tip={tip}>
@@ -1435,6 +1558,7 @@ function UntrackedRateLimitIcon({ providerId, acpAgentId, tip, highlight }: { pr
         planType={null}
         badgeRemaining={null}
         hasUsage={false}
+        activeAccountKey={providerId ?? 'session:current'}
         highlight={highlight}
       />
     </RateLimitTipHost>

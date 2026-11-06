@@ -67,6 +67,7 @@ import {
   toggleOcrRegionMosaic,
   undoHistory,
   updateAnnotationStyle,
+  type BoxRect,
   type EditorTool,
   type ImageAnnotation,
   type OcrTextRegion,
@@ -240,7 +241,10 @@ export function ImageAnnotationEditor({
   onCloseViewer,
 }: ImageAnnotationEditorProps) {
   const { t } = useTranslation()
+  const editorRef = useRef<HTMLDivElement | null>(null)
+  const imageFrameRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [viewport, setViewport] = useState<BoxRect | null>(null)
   const textInputRef = useRef<HTMLTextAreaElement | null>(null)
   const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null)
   const [tool, setTool] = useState<EditorTool>('pen')
@@ -289,23 +293,36 @@ export function ImageAnnotationEditor({
 
   const nextMarkerNum = useMemo(() => nextMarkerNumber(annotations), [annotations])
 
+  // Keep image placement independent of annotations, so extending a stroke never
+  // moves/rescales the image under the pointer. The canvas covers the entire preview.
   useLayoutEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !imageEl) return
+    const editor = editorRef.current
+    const frame = imageFrameRef.current
+    if (!editor || !frame || !imageEl) return
     const width = imageEl.naturalWidth || imageEl.width
-    if (width <= 0) return
     const update = () => {
-      const cssWidth = canvas.clientWidth
-      if (cssWidth <= 0) return
-      const next = cssWidth / width
-      setCanvasCssScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next))
+      const rect = frame.getBoundingClientRect()
+      const stage = editor.getBoundingClientRect()
+      if (rect.width <= 0 || stage.width <= 0 || stage.height <= 0) return
+      const scale = rect.width / width
+      setCanvasCssScale(scale / zoom)
+      setViewport({
+        x: (stage.left - rect.left) / scale,
+        y: (stage.top - rect.top) / scale,
+        width: stage.width / scale,
+        height: stage.height / scale,
+      })
     }
     update()
-    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
-    observer.observe(canvas)
+    observer.observe(editor)
+    observer.observe(frame)
     return () => observer.disconnect()
-  }, [imageEl])
+  }, [imageEl, zoom, pan])
+
+  const previewBackground = useCallback(() => {
+    return editorRef.current ? getComputedStyle(editorRef.current).backgroundColor : undefined
+  }, [])
 
   const dismissEditingText = useCallback(() => {
     editingTextRef.current = null
@@ -423,18 +440,20 @@ export function ImageAnnotationEditor({
     const width = imageEl.naturalWidth || imageEl.width
     const height = imageEl.naturalHeight || imageEl.height
     if (width <= 0 || height <= 0) return
-    const cssWidth = canvas.clientWidth > 0 ? canvas.clientWidth : width
-    const backingScale = computeCanvasBackingScale(width, height, cssWidth, zoom)
-    const targetW = Math.max(1, Math.round(width * backingScale))
-    const targetH = Math.max(1, Math.round(height * backingScale))
+    const visible = viewport ?? { x: 0, y: 0, width, height }
+    const cssWidth = canvas.clientWidth > 0 ? canvas.clientWidth : visible.width
+    const backingScale = computeCanvasBackingScale(visible.width, visible.height, cssWidth)
+    const targetW = Math.max(1, Math.round(visible.width * backingScale))
+    const targetH = Math.max(1, Math.round(visible.height * backingScale))
     if (canvas.width !== targetW) canvas.width = targetW
     if (canvas.height !== targetH) canvas.height = targetH
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const screenWidth = canvas.getBoundingClientRect().width
-    const uiScale = width / Math.max(1, screenWidth > 0 ? screenWidth : cssWidth * zoom)
+    const uiScale = visible.width / Math.max(1, screenWidth > 0 ? screenWidth : cssWidth)
     renderAnnotatedCanvas(ctx, imageEl, annotations, {
       interactive: true,
+      viewport: visible,
       selectedId,
       draftAnnotation,
       editingTextId: editingText?.id ?? null,
@@ -444,7 +463,7 @@ export function ImageAnnotationEditor({
       backingScale,
       uiScale,
     })
-  }, [imageEl, annotations, draftAnnotation, selectedId, editingText?.id, ocrRegions, tool, showOcrBoxes, hoveredOcrKey, zoom])
+  }, [imageEl, annotations, draftAnnotation, selectedId, editingText?.id, ocrRegions, tool, showOcrBoxes, hoveredOcrKey, zoom, viewport])
 
   // Run OCR text recognition when switching to mosaic tool (or when user clicks Recognize Text)
   const runOcr = useCallback(async () => {
@@ -491,18 +510,18 @@ export function ImageAnnotationEditor({
 
   const getCanvasPoint = useCallback(
     (clientX: number, clientY: number): { pt: Point; tolerance: number; uiScale: number } | null => {
-      const canvas = canvasRef.current
-      if (!canvas) return null
-      const rect = canvas.getBoundingClientRect()
+      const frame = imageFrameRef.current
+      if (!frame || !imageEl) return null
+      const rect = frame.getBoundingClientRect()
       if (rect.width <= 0 || rect.height <= 0) return null
-      const logicalWidth = imageEl ? imageEl.naturalWidth || imageEl.width || canvas.width : canvas.width
-      const logicalHeight = imageEl ? imageEl.naturalHeight || imageEl.height || canvas.height : canvas.height
+      const logicalWidth = imageEl.naturalWidth || imageEl.width
+      const logicalHeight = imageEl.naturalHeight || imageEl.height
       const scaleX = logicalWidth / rect.width
       const scaleY = logicalHeight / rect.height
       return {
         pt: {
-          x: Math.max(0, Math.min(logicalWidth, (clientX - rect.left) * scaleX)),
-          y: Math.max(0, Math.min(logicalHeight, (clientY - rect.top) * scaleY)),
+          x: (clientX - rect.left) * scaleX,
+          y: (clientY - rect.top) * scaleY,
         },
         tolerance: Math.max(4, 10 * Math.max(scaleX, scaleY)),
         uiScale: logicalWidth / rect.width,
@@ -601,7 +620,7 @@ export function ImageAnnotationEditor({
     if (!imageEl || saving) return
     const finalAnnotations = getAnnotationsWithPendingText()
     dismissEditingText()
-    const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png')
+    const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png', previewBackground())
     if (!exported) {
       toast.error(t('chat.imageEditor.saveFailed', { error: 'Export failed' }))
       return
@@ -644,6 +663,7 @@ export function ImageAnnotationEditor({
     }
   }, [
     imageEl,
+    previewBackground,
     saving,
     getAnnotationsWithPendingText,
     dismissEditingText,
@@ -660,7 +680,7 @@ export function ImageAnnotationEditor({
     if (!imageEl || saving) return
     const finalAnnotations = getAnnotationsWithPendingText()
     dismissEditingText()
-    const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png')
+    const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png', previewBackground())
     if (!exported) {
       toast.error(t('chat.imageEditor.saveFailed', { error: 'Export failed' }))
       return
@@ -680,7 +700,7 @@ export function ImageAnnotationEditor({
     } finally {
       setSaving(false)
     }
-  }, [imageEl, saving, getAnnotationsWithPendingText, dismissEditingText, t, alt, filePath, fileName])
+  }, [imageEl, previewBackground, saving, getAnnotationsWithPendingText, dismissEditingText, t, alt, filePath, fileName])
 
   const handleAddToChat = useCallback(async () => {
     if (!imageEl || saving) return
@@ -695,7 +715,7 @@ export function ImageAnnotationEditor({
         ;(onCloseViewer ?? onExitEdit)()
         return
       }
-      const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png')
+      const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png', previewBackground())
       if (!exported) {
         toast.error(t('chat.imageEditor.saveFailed', { error: 'Export failed' }))
         return
@@ -712,7 +732,7 @@ export function ImageAnnotationEditor({
     } finally {
       setSaving(false)
     }
-  }, [imageEl, saving, getAnnotationsWithPendingText, dismissEditingText, alt, filePath, fileName, t, onCloseViewer, onExitEdit])
+  }, [imageEl, previewBackground, saving, getAnnotationsWithPendingText, dismissEditingText, alt, filePath, fileName, t, onCloseViewer, onExitEdit])
 
   // Keyboard shortcuts for tools, Undo, Redo, Save, Save As, Add to Chat, Delete, Space-pan, Escape
   useEffect(() => {
@@ -1340,7 +1360,8 @@ export function ImageAnnotationEditor({
 
   return (
     <div
-      className="relative flex h-full w-full select-none flex-col items-center justify-center overflow-hidden"
+      ref={editorRef}
+      className="relative flex h-full w-full select-none flex-col items-center justify-center overflow-hidden bg-background"
       onWheel={handleWheel}
       data-testid="image-annotation-editor"
     >
@@ -1348,7 +1369,7 @@ export function ImageAnnotationEditor({
       <div
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         className={cn(
-          'absolute left-1/2 z-30 flex max-w-[96vw] -translate-x-1/2 flex-col items-center gap-1.5',
+          'absolute left-1/2 z-30 flex max-w-[96%] -translate-x-1/2 flex-col items-center gap-1.5',
           isWindows ? 'top-12' : 'top-3',
         )}
         onClick={(e) => e.stopPropagation()}
@@ -1356,7 +1377,7 @@ export function ImageAnnotationEditor({
         data-testid="image-editor-toolbar"
       >
         {/* Row 1: Main tools, Undo/Redo/Clear, Save/SaveAs/AddToChat/Exit */}
-        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-background/90 px-2 py-1.5 shadow-lg backdrop-blur-md">
+        <div className="flex max-w-full shrink-0 flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-border/60 bg-background/90 px-2 py-1.5 shadow-lg backdrop-blur-md [&>*]:shrink-0">
           {toolButtons.map((item) => (
             <IconButton
               key={item.id}
@@ -1483,27 +1504,24 @@ export function ImageAnnotationEditor({
           </IconButton>
 
           {!onReplaceAttachment && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    disabled={saving || !imageEl}
-                    onClick={() => void handleAddToChat()}
-                    aria-label={t('chat.imageEditor.addToChat')}
-                    data-testid="image-editor-add-to-chat"
-                    className="h-7 gap-1 rounded-lg px-2.5 text-xs"
-                  >
-                    <MessageSquarePlus className="size-3.5" />
-                    <span>{t('chat.image.addToChat')}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" sideOffset={4}>
-                  <CommandShortcut className="ml-0">{addToChatShortcut}</CommandShortcut>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              disabled={saving || !imageEl}
+              onClick={() => void handleAddToChat()}
+              aria-label={t('chat.imageEditor.addToChat')}
+              data-testid="image-editor-add-to-chat"
+              tooltip={
+                <>
+                  <span>{t('chat.image.addToChat')}</span> <CommandShortcut>{addToChatShortcut}</CommandShortcut>
+                </>
+              }
+              tooltipSide="bottom"
+              tooltipSideOffset={4}
+              className="size-8 rounded-lg"
+            >
+              <MessageSquarePlus className="size-4" />
+            </IconButton>
           )}
 
           <div className="mx-0.5 h-5 w-px bg-border/70" />
@@ -1658,7 +1676,25 @@ export function ImageAnnotationEditor({
       </div>
 
       {/* Canvas Stage */}
-      <div className="flex h-full w-full items-center justify-center overflow-hidden px-[5vw] pt-24 pb-14">
+      {imageEl && (
+        <canvas
+          ref={canvasRef}
+          style={{
+            cursor: hoverCursor,
+          }}
+          onDoubleClick={handleDoubleClick}
+          onMouseDown={(e) => {
+            if (tool === 'text') e.preventDefault()
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          data-testid="image-editor-canvas"
+          className="absolute inset-0 size-full touch-none"
+        />
+      )}
+      <div className="pointer-events-none flex h-full w-full items-center justify-center overflow-hidden px-[5vw] pt-24 pb-14">
         {!imageEl ? (
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         ) : (
@@ -1670,23 +1706,14 @@ export function ImageAnnotationEditor({
             }}
           >
             <div className="relative inline-flex max-h-full max-w-full items-center justify-center">
-              <canvas
-                ref={canvasRef}
+              <div
+                ref={imageFrameRef}
+                data-testid="image-editor-image-frame"
                 style={{
-                  cursor: hoverCursor,
                   width: `min(${imgWidth}px, 90vw, calc((100vh - 9rem) * ${imgWidth / imgHeight}))`,
                   aspectRatio: `${imgWidth} / ${imgHeight}`,
                 }}
-                onDoubleClick={handleDoubleClick}
-                onMouseDown={(e) => {
-                  if (tool === 'text') e.preventDefault()
-                }}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                data-testid="image-editor-canvas"
-                className="max-h-[calc(100vh-9rem)] max-w-[90vw] rounded-sm object-contain shadow-lg"
+                className="max-h-[calc(100vh-9rem)] max-w-[90vw]"
               />
               {editingText && editingLayout && (
                 <textarea
@@ -1749,7 +1776,7 @@ export function ImageAnnotationEditor({
                     transform: editingText.rotation ? `rotate(${editingText.rotation}rad)` : undefined,
                     transformOrigin: 'center center',
                   }}
-                  className="absolute z-20 resize-none outline-none"
+                  className="pointer-events-auto absolute z-20 resize-none outline-none"
                 />
               )}
             </div>

@@ -1,5 +1,7 @@
 import {
   annotationRotation,
+  annotationFrame,
+  rotatePoint,
   getAnnotationHandles,
   getTextBox,
   isOcrRegionRedacted,
@@ -14,6 +16,9 @@ import {
 } from './image-editor-model'
 
 export interface RenderCanvasOptions {
+  /** Visible/exported rectangle in original image coordinates. */
+  viewport?: BoxRect
+  backgroundColor?: string
   interactive?: boolean
   selectedId?: string | null
   editingTextId?: string | null
@@ -46,7 +51,9 @@ export function computeCanvasBackingScale(
   const minLongSidePixels = 2200 * Math.min(2, Math.max(1, zoom))
   const desired = Math.min(6, Math.max(dpr, screenToImageRatio * dpr, minLongSidePixels / longSide))
   const maxAllowed = 4800 / longSide
-  return Math.max(1, Math.min(desired, Math.max(1, maxAllowed)))
+  // A viewport can span many image pixels when zoomed out; allow downsampling
+  // rather than allocating an image-sized (or larger) screen canvas.
+  return Math.min(desired, maxAllowed)
 }
 
 function drawMosaicRect(
@@ -58,15 +65,16 @@ function drawMosaicRect(
 ): void {
   const rx = Math.max(0, Math.floor(ann.x))
   const ry = Math.max(0, Math.floor(ann.y))
-  const rw = Math.min(canvasWidth - rx, Math.ceil(ann.width))
-  const rh = Math.min(canvasHeight - ry, Math.ceil(ann.height))
+  const rw = Math.min(canvasWidth, Math.ceil(ann.x + ann.width)) - rx
+  const rh = Math.min(canvasHeight, Math.ceil(ann.y + ann.height)) - ry
   if (rw <= 0 || rh <= 0) return
 
   const blockSize = Math.max(8, Math.round(Math.min(canvasWidth, canvasHeight) / 55))
 
   try {
-    const pxX = Math.max(0, Math.floor(rx * backingScale))
-    const pxY = Math.max(0, Math.floor(ry * backingScale))
+    const transform = ctx.getTransform?.()
+    const pxX = Math.max(0, Math.floor(rx * backingScale + (transform?.e ?? 0)))
+    const pxY = Math.max(0, Math.floor(ry * backingScale + (transform?.f ?? 0)))
     const maxPxW = (ctx.canvas?.width || Math.ceil(canvasWidth * backingScale)) - pxX
     const maxPxH = (ctx.canvas?.height || Math.ceil(canvasHeight * backingScale)) - pxY
     const pxW = Math.max(1, Math.min(maxPxW, Math.ceil(rw * backingScale)))
@@ -475,6 +483,60 @@ function drawOcrBoxes(
   ctx.restore()
 }
 
+/** Include painted geometry, excluding selection handles and OCR overlays. */
+export function annotatedImageBounds(
+  width: number,
+  height: number,
+  annotations: readonly ImageAnnotation[],
+): BoxRect {
+  let left = 0
+  let top = 0
+  let right = width
+  let bottom = height
+  const imageScale = scaleForImage(width, height)
+  const include = (x: number, y: number, padding: number) => {
+    left = Math.min(left, x - padding)
+    top = Math.min(top, y - padding)
+    right = Math.max(right, x + padding)
+    bottom = Math.max(bottom, y + padding)
+  }
+  for (const ann of annotations) {
+    // Redaction only affects existing image pixels.
+    if (ann.kind === 'mosaic') continue
+    const stroke = Math.max(1.5, ann.strokeWidth * imageScale)
+    if (ann.kind === 'pen') {
+      for (const point of ann.points) include(point.x, point.y, stroke / 2)
+    } else if (ann.kind === 'marker') {
+      include(ann.x, ann.y, Math.max(8, ann.radius) + Math.max(2, 6 * imageScale))
+    } else if (ann.kind === 'line' || ann.kind === 'arrow') {
+      include(ann.x1, ann.y1, stroke / 2)
+      include(ann.x2, ann.y2, stroke / 2)
+      if (ann.kind === 'arrow') {
+        const angle = Math.atan2(ann.y2 - ann.y1, ann.x2 - ann.x1)
+        const head = arrowHeadLength(Math.hypot(ann.x2 - ann.x1, ann.y2 - ann.y1), stroke, imageScale)
+        for (const side of [-1, 1]) {
+          const theta = angle + side * Math.PI / 6.2
+          include(ann.x2 - head * Math.cos(theta), ann.y2 - head * Math.sin(theta), stroke / 2)
+        }
+      }
+    } else {
+      const frame = annotationFrame(ann)
+      if (!frame) continue
+      const center = { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 }
+      const padding = ann.kind === 'text' ? Math.max(1.5, ann.fontSize * 0.11) / 2 : stroke / 2
+      for (const x of [frame.x, frame.x + frame.width]) {
+        for (const y of [frame.y, frame.y + frame.height]) {
+          const point = rotatePoint({ x, y }, center, frame.rotation)
+          include(point.x, point.y, padding)
+        }
+      }
+    }
+  }
+  left = Math.floor(left)
+  top = Math.floor(top)
+  return { x: left, y: top, width: Math.ceil(right) - left, height: Math.ceil(bottom) - top }
+}
+
 export function renderAnnotatedCanvas(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -486,17 +548,28 @@ export function renderAnnotatedCanvas(
   if (width <= 0 || height <= 0) return
 
   const backingScale = options.backingScale ?? 1
+  const viewport = options.viewport ?? { x: 0, y: 0, width, height }
   const imageScale = scaleForImage(width, height)
   const uiScale = options.uiScale ?? imageScale
 
   ctx.save()
   if (typeof ctx.setTransform === 'function') {
-    ctx.setTransform(backingScale, 0, 0, backingScale, 0, 0)
+    ctx.setTransform(backingScale, 0, 0, backingScale, -viewport.x * backingScale, -viewport.y * backingScale)
   }
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
 
-  ctx.clearRect(0, 0, width, height)
+  ctx.clearRect(viewport.x, viewport.y, viewport.width, viewport.height)
+  if (options.backgroundColor) {
+    // Fill only the extension, preserving transparency in the original image.
+    ctx.fillStyle = options.backgroundColor
+    const right = viewport.x + viewport.width
+    const bottom = viewport.y + viewport.height
+    if (viewport.y < 0) ctx.fillRect(viewport.x, viewport.y, viewport.width, -viewport.y)
+    if (bottom > height) ctx.fillRect(viewport.x, height, viewport.width, bottom - height)
+    if (viewport.x < 0) ctx.fillRect(viewport.x, 0, -viewport.x, height)
+    if (right > width) ctx.fillRect(width, 0, right - width, height)
+  }
   ctx.drawImage(image, 0, 0, width, height)
 
   const all = options.draftAnnotation ? [...annotations, options.draftAnnotation] : annotations
@@ -536,21 +609,23 @@ export function exportAnnotatedImage(
   image: HTMLImageElement,
   annotations: readonly ImageAnnotation[],
   mimeType = 'image/png',
+  backgroundColor?: string,
 ): { dataUrl: string; base64: string; mimeType: string } | null {
   const width = image.naturalWidth || image.width
   const height = image.naturalHeight || image.height
   if (!width || !height) return null
 
+  const viewport = annotatedImageBounds(width, height, annotations)
   const longSide = Math.max(width, height)
   const exportScale = longSide < 1600 ? Math.min(3, Math.max(2, Math.ceil(1600 / longSide))) : 1
 
   const canvas = document.createElement('canvas')
-  canvas.width = Math.round(width * exportScale)
-  canvas.height = Math.round(height * exportScale)
+  canvas.width = Math.round(viewport.width * exportScale)
+  canvas.height = Math.round(viewport.height * exportScale)
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
 
-  renderAnnotatedCanvas(ctx, image, annotations, { interactive: false, backingScale: exportScale })
+  renderAnnotatedCanvas(ctx, image, annotations, { interactive: false, backingScale: exportScale, viewport, backgroundColor })
   try {
     const outMime = mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png'
     const dataUrl = canvas.toDataURL(outMime)

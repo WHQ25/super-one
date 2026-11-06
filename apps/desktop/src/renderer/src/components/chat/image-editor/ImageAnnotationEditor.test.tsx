@@ -145,6 +145,46 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     vi.restoreAllMocks()
   })
 
+  it('keeps strokes outside the image and expands saved bounds with the preview background', async () => {
+    render(<ImageAnnotationEditor src="data:image/png;base64,AAA=" alt="demo.png" onExitEdit={vi.fn()} />)
+    const canvas = await screen.findByTestId('image-editor-canvas') as HTMLCanvasElement
+    vi.spyOn(screen.getByTestId('image-editor-image-frame'), 'getBoundingClientRect').mockReturnValue({
+      left: 100, top: 100, right: 400, bottom: 300, width: 300, height: 200,
+      x: 100, y: 100, toJSON: () => ({}),
+    })
+    canvas.setPointerCapture = vi.fn()
+    canvas.releasePointerCapture = vi.fn()
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 70, clientY: 80, pointerId: 1 })
+    fireEvent.pointerMove(canvas, { clientX: 440, clientY: 340, pointerId: 1 })
+    fireEvent.pointerUp(canvas, { button: 0, clientX: 440, clientY: 340, pointerId: 1 })
+
+    fireEvent.click(screen.getByTestId('image-editor-save-as'))
+    await waitFor(() => expect(mockSaveBrowserImage).toHaveBeenCalled())
+    const exportedCanvas = vi.mocked(HTMLCanvasElement.prototype.toDataURL).mock.instances.at(-1)! as HTMLCanvasElement
+    expect(exportedCanvas.width).toBeGreaterThan(300 * 3)
+    expect(exportedCanvas.height).toBeGreaterThan(200 * 3)
+    const exportContext = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.results.at(-1)!.value as CanvasRenderingContext2D
+    expect(exportContext.moveTo).toHaveBeenCalledWith(-30, -20)
+    expect(exportContext.lineTo).toHaveBeenCalledWith(340, 240)
+    expect(exportContext.fillRect).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('image-editor-undo'))
+    fireEvent.click(screen.getByTestId('image-editor-save-as'))
+    await waitFor(() => expect(mockSaveBrowserImage).toHaveBeenCalledTimes(2))
+    const originalCanvas = vi.mocked(HTMLCanvasElement.prototype.toDataURL).mock.instances.at(-1)! as HTMLCanvasElement
+    expect(originalCanvas.width).toBe(900)
+    expect(originalCanvas.height).toBe(600)
+  })
+
+  it('uses a compact icon for Add to Chat alongside the other toolbar actions', async () => {
+    render(<ImageAnnotationEditor src="data:image/png;base64,AAA=" alt="demo.png" onExitEdit={vi.fn()} />)
+    await screen.findByTestId('image-editor-canvas')
+    const action = screen.getByTestId('image-editor-add-to-chat')
+    expect(action.textContent).toBe('')
+    expect(action).toHaveAttribute('aria-label', 'chat.imageEditor.addToChat')
+    expect(action.querySelector('svg')).toBeTruthy()
+  })
+
   it('places top toolbar, supports sequential markers, undo/redo/clear, and replaces composer attachment on Save', async () => {
     const onReplaceAttachment = vi.fn()
     const onExitEdit = vi.fn()
@@ -160,7 +200,7 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
 
     expect(screen.getByTestId('image-editor-toolbar')).toBeTruthy()
     const canvas = await screen.findByTestId('image-editor-canvas')
-    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+    vi.spyOn(screen.getByTestId('image-editor-image-frame'), 'getBoundingClientRect').mockReturnValue({
       x: 0,
       y: 0,
       left: 0,
@@ -228,7 +268,7 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     )
 
     const canvas = await screen.findByTestId('image-editor-canvas')
-    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+    vi.spyOn(screen.getByTestId('image-editor-image-frame'), 'getBoundingClientRect').mockReturnValue({
       x: 0,
       y: 0,
       left: 0,
@@ -274,7 +314,7 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     )
 
     const canvas = await screen.findByTestId('image-editor-canvas')
-    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+    vi.spyOn(screen.getByTestId('image-editor-image-frame'), 'getBoundingClientRect').mockReturnValue({
       x: 0,
       y: 0,
       left: 0,

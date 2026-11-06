@@ -109,7 +109,11 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
       apiProviderId: config.apiProviderId,
       // The parent agent's words, not the user's: never stamped human-typed.
       source: 'collaboration',
-      collaboration: { kind: 'initial_task', ...(parentTitle ? { fromSessionTitle: parentTitle } : {}) },
+      collaboration: {
+        kind: 'initial_task',
+        fromSessionId: grant.parent_session_id,
+        ...(parentTitle ? { fromSessionTitle: parentTitle } : {}),
+      },
       requestId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     })
   } catch {

@@ -1231,7 +1231,7 @@ export function ImageAnnotationEditor({
     {
       id: 'marker',
       icon: (
-        <span className="inline-flex size-4.5 items-center justify-center rounded-full border-[1.75px] border-current text-[10px] font-bold leading-none tabular-nums">
+        <span className="inline-flex size-4.5 items-center justify-center rounded-full border-[1.75px] border-current text-2xs font-bold leading-none tabular-nums">
           {nextMarkerNum}
         </span>
       ),
@@ -1664,7 +1664,7 @@ export function ImageAnnotationEditor({
         >
           <ZoomOut className="size-3.5" />
         </button>
-        <span className="min-w-10 text-center font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="min-w-10 text-center font-mono text-2xs tabular-nums text-muted-foreground">
           {Math.round(zoom * 100)}%
         </span>
         <button

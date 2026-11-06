@@ -60,6 +60,13 @@ function pinToBottom(el: HTMLElement, revealed: boolean): void {
   el.scrollTop = top
 }
 
+/** Publish geometry only when the untransformed composer resizes, not while it slides. */
+export function publishComposerOverhang(root: HTMLElement | null, px: number): void {
+  if (!root || root.style.getPropertyValue('--composer-overhang') === `${px}px`) return
+  root.style.setProperty('--composer-overhang', `${px}px`)
+  root.dispatchEvent(new Event('composerresize'))
+}
+
 /** How far a taller composer standing in rises above the text composer's resting top (ChatContent publishes it). */
 function composerOverhang(el: HTMLElement): number {
   const overhang = parseFloat(el.closest<HTMLElement>('[data-chat-root]')?.style.getPropertyValue('--composer-overhang') ?? '')
@@ -116,6 +123,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   // Space held below the content when the viewport grew at the end, so history
   // stays put and new content appends into it.
   const reserveRef = useRef(0)
+  const overlayRef = useRef(0)
   const clientHeightRef = useRef(0)
   const rootHeightRef = useRef(0)
   const allowStationaryBottomResumeRef = useRef(false)
@@ -126,8 +134,8 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const SETTLE_TIMEOUT = 300
 
   /**
-   * A viewport growing at the end (a taller composer leaving, the text composer
-   * shrinking) makes the browser clamp scrollTop and drop history by the growth.
+   * Released overlay allowance and a growing base viewport must not clamp a
+   * deliberately revealed tail. Composer transforms never change this geometry.
    * Hold that much as bottom padding and restore the offset instead. Only growth
    * inside the chat root counts: a resized window or a closed terminal panel
    * changes the root itself, and the tail stays at the bottom then. The reserve
@@ -136,7 +144,17 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
    * after the resize callback, so both run this before recording the offset.
    */
   const settleTail = useCallback((el: HTMLElement) => {
-    if (composerOverhang(el) === 0) revealedRef.current = false
+    const overlap = composerOverhang(el)
+    if (overlap === 0) revealedRef.current = false
+    // Keep enough of the released scroll allowance to preserve a deliberately
+    // revealed tail. Compute before changing padding, so the browser never clamps.
+    const oldPadding = overlayRef.current + reserveRef.current
+    const visiblePadding = Math.max(0, el.scrollTop + el.clientHeight - (el.scrollHeight - oldPadding))
+    if (overlap < overlayRef.current) {
+      reserveRef.current = Math.max(reserveRef.current, Math.min(oldPadding, visiblePadding + AT_BOTTOM_EPSILON_PX) - overlap)
+    }
+    const overlayChanged = overlap !== overlayRef.current
+    overlayRef.current = overlap
     const grew = el.clientHeight - clientHeightRef.current
     clientHeightRef.current = el.clientHeight
     const rootHeight = el.closest('[data-chat-root]')?.clientHeight ?? 0
@@ -147,19 +165,19 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const clamped = el.scrollTop >= el.scrollHeight - el.clientHeight - AT_BOTTOM_EPSILON_PX
     const dropped = pausedScrollTopRef.current - el.scrollTop
     let reserve = reserveRef.current
-    // Growth comes in whole pixels as the slot eases down; only sub-pixel noise is ignored.
+    // Base-height changes can still grow the viewport; ignore sub-pixel noise.
     if (grew > 0 && clamped && dropped > 0.5 && !external) reserve += Math.min(grew, dropped)
     else if (reserve > 0) {
       // How much of the reserve is on screen. Heights are whole pixels while the
       // clamped offset is fractional, so this reads up to a pixel short at the
       // end; shrinking by that would clamp a pixel and repeat every frame.
-      const shown = el.scrollTop + el.clientHeight - (el.scrollHeight - reserve)
+      const shown = el.scrollTop + el.clientHeight - (el.scrollHeight - oldPadding) - overlap
       reserve = shown <= AT_BOTTOM_EPSILON_PX ? 0 : Math.min(reserve, shown + AT_BOTTOM_EPSILON_PX)
     }
-    if (reserve === reserveRef.current) return
+    if (reserve === reserveRef.current && !overlayChanged) return
     const held = reserve - reserveRef.current
     reserveRef.current = reserve
-    el.style.paddingBottom = reserve > 0 ? `${reserve}px` : ''
+    el.style.paddingBottom = overlap + reserve > 0 ? `${overlap + reserve}px` : ''
     if (held > 0) el.scrollTop += held
   }, [])
 
@@ -179,9 +197,11 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const el = scrollViewportRef.current
     if (el) {
       reserveRef.current = 0
+      overlayRef.current = 0
       el.style.paddingBottom = ''
       clientHeightRef.current = el.clientHeight
       rootHeightRef.current = el.closest('[data-chat-root]')?.clientHeight ?? 0
+      settleTail(el)
       pinToBottom(el, false)
       pausedScrollTopRef.current = el.scrollTop
       if (import.meta.env.DEV) {
@@ -388,9 +408,16 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
         sessionSwitchTimerRef.current = setTimeout(() => { sessionSwitchRef.current = false }, SETTLE_TIMEOUT)
       }
     })
+    const root = viewport.closest('[data-chat-root]')
+    const onComposerResize = () => {
+      settleTail(viewport)
+      pausedScrollTopRef.current = viewport.scrollTop
+    }
+    root?.addEventListener('composerresize', onComposerResize)
+    onComposerResize()
     observer.observe(content)
     observer.observe(viewport)
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); root?.removeEventListener('composerresize', onComposerResize) }
   }, [sessionKey, viewKey, viewportMounted, scrollViewportRef, followTail, settleTail])
 
   const scrollToBottom = useCallback(() => {

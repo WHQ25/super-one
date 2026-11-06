@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComposerSwitch } from './ComposerSwitch'
 
@@ -29,46 +29,34 @@ const render_ = (kind: 'voice' | 'text') => (
 )
 
 describe('ComposerSwitch', () => {
-  const measuredSlot = (kind: 'short' | 'tall') => (
-    <ComposerSwitch kind={kind} render={shown => <div data-measured-height={shown === 'short' ? 80 : 240} />} />
-  )
   const measureStage = () => vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    if (this.dataset.testid === 'composer-slot') return parseFloat(this.style.height) || 0
     return Number(this.querySelector('[data-measured-height]')?.getAttribute('data-measured-height') ?? 0)
   })
 
-  it('expands the slot while the taller composer rises, before its entrance ends', () => {
+  it('keeps the baseline slot while tall composers leave and enter above it', () => {
     stubMotion(false)
     measureStage()
-    const { rerender } = render(measuredSlot('short'))
-    rerender(measuredSlot('tall'))
-    const stage = screen.getByTestId('composer-switch')
+    const preview = (kind: 'short' | 'tall') => <ComposerSwitch kind={kind}
+      align={{ kind: 'tall', to: 'short' }}
+      render={shown => <div data-measured-height={shown === 'short' ? 80 : 240} />} />
+    const { rerender } = render(preview('short'))
     const slot = screen.getByTestId('composer-slot')
+    const stage = screen.getByTestId('composer-switch')
+    expect(slot.style.height).toBe('80px')
+    expect(stage).toHaveClass('absolute', 'bottom-0')
+    rerender(preview('tall'))
+    endAnimation(stage)
     expect(slot.style.height).toBe('80px')
     endAnimation(stage)
-    expect(stage).toHaveAttribute('data-phase', 'entering')
-    expect(slot.style.height).toBe('240px')
-    expect(slot).toHaveClass('transition-[height]', 'duration-240', 'ease-[ease-out]')
-    endAnimation(stage)
-    expect(stage).toHaveAttribute('data-phase', 'steady')
-    expect(slot.style.height).toBe('')
-  })
-
-  it('holds the taller slot until the shorter composer has risen, then shrinks it', () => {
-    stubMotion(false)
-    measureStage()
-    const { rerender } = render(measuredSlot('tall'))
-    rerender(measuredSlot('short'))
-    const stage = screen.getByTestId('composer-switch')
-    const slot = screen.getByTestId('composer-slot')
-    endAnimation(stage)
-    expect(stage).toHaveAttribute('data-phase', 'entering')
-    expect(slot.style.height).toBe('240px')
-    endAnimation(stage)
-    expect(stage).toHaveAttribute('data-phase', 'settling')
+    rerender(preview('short'))
     expect(slot.style.height).toBe('80px')
-    fireEvent.transitionEnd(slot, { propertyName: 'height' })
+    endAnimation(stage)
+    expect(slot.style.height).toBe('80px')
+    endAnimation(stage)
     expect(stage).toHaveAttribute('data-phase', 'steady')
-    expect(slot.style.height).toBe('')
+    expect(slot.style.height).toBe('80px')
+    expect(slot.className).not.toContain('transition-[height]')
   })
 
   it('drops the outgoing composer, then raises the incoming one', () => {
@@ -82,20 +70,20 @@ describe('ComposerSwitch', () => {
     expect(stage).toHaveAttribute('data-phase', 'leaving')
     expect(screen.getByTestId('voice-composer')).toBeInTheDocument()
     expect(screen.queryByTestId('text-composer')).toBeNull()
-    // The slot holds its height so the transcript above cannot claim the space mid-swap.
+    // Only the baseline occupies layout; the outgoing stage slides over history.
     expect(screen.getByTestId('composer-slot').style.height).not.toBe('')
 
     endAnimation(stage)
     expect(stage).toHaveAttribute('data-phase', 'entering')
     expect(screen.getByTestId('text-composer')).toBeInTheDocument()
     expect(screen.queryByTestId('voice-composer')).toBeNull()
-    // Equal heights do not need to grow while the newcomer rises.
+    // Entrance does not resize the baseline either.
     expect(screen.getByTestId('composer-slot').style.height).not.toBe('')
 
-    // jsdom measures every box as 0, so the settle is a no-op and completes at once.
+    // Entrance completes directly, without a height-settling phase.
     endAnimation(stage)
     expect(stage).toHaveAttribute('data-phase', 'steady')
-    expect(screen.getByTestId('composer-slot').style.height).toBe('')
+    expect(screen.getByTestId('composer-slot').style.height).not.toBe('')
   })
 
   it('clips only the bottom during a handoff so landing-page content above the composer does not blink', () => {
@@ -132,30 +120,47 @@ describe('ComposerSwitch', () => {
         render={shown => <div data-measured-height={shown === 'short' ? 80 : 240} />} />
     )
     const { rerender, unmount } = render(slot('short'))
-    notify()
+    act(() => notify())
     expect(onOverhangChange).toHaveBeenLastCalledWith(0)
     rerender(slot('tall'))
     const stage = screen.getByTestId('composer-switch')
     endAnimation(stage)
     endAnimation(stage)
-    notify()
+    act(() => notify())
     expect(onOverhangChange).toHaveBeenLastCalledWith(160)
     rerender(slot('short'))
     endAnimation(stage)
     endAnimation(stage)
     endAnimation(stage)
-    notify()
+    act(() => notify())
     expect(onOverhangChange).toHaveBeenLastCalledWith(0)
     // The base composer growing with its draft, without a render, counts too.
     const draft = stage.querySelector('[data-measured-height]')!
     draft.setAttribute('data-measured-height', '120')
-    notify()
+    act(() => notify())
     expect(onOverhangChange).toHaveBeenLastCalledWith(40)
     draft.setAttribute('data-measured-height', '80')
-    notify()
+    act(() => notify())
     expect(onOverhangChange).toHaveBeenLastCalledWith(0)
     unmount()
     expect(onOverhangChange).toHaveBeenLastCalledWith(0)
+    vi.unstubAllGlobals()
+  })
+
+  it('preserves the baseline while a pane is hidden', () => {
+    measureStage()
+    let resize = () => {}
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { resize = cb }
+      observe() {}
+      disconnect() {}
+    })
+    render(<ComposerSwitch kind="text" render={() => <div data-measured-height="80" />} />)
+    const slot = screen.getByTestId('composer-slot')
+    expect(slot.style.height).toBe('80px')
+    screen.getByTestId('composer-switch').firstElementChild!.setAttribute('data-measured-height', '0')
+    act(() => resize())
+    expect(slot.style.height).toBe('80px')
     vi.unstubAllGlobals()
   })
 
@@ -167,7 +172,8 @@ describe('ComposerSwitch', () => {
         render={() => <div>text</div>}
       />,
     )
-    expect((screen.getByTestId('composer-slot') as HTMLDivElement).style.maxHeight).toBe('440px')
+    expect(screen.getByTestId('composer-switch').style.maxHeight).toBe('440px')
+    expect(screen.getByTestId('composer-slot').style.maxHeight).toBe('')
   })
 
   it('retains the outgoing height cap until its exit finishes', () => {
@@ -179,7 +185,7 @@ describe('ComposerSwitch', () => {
     const slot = screen.getByTestId('composer-slot')
     expect(stage).toHaveAttribute('data-phase', 'leaving')
     expect(stage.style.maxHeight).toBe('120px')
-    expect(slot.style.maxHeight).toBe('120px')
+    expect(slot.style.maxHeight).toBe('')
     endAnimation(stage)
     expect(stage).toHaveAttribute('data-phase', 'entering')
     expect(stage.style.maxHeight).toBe('')

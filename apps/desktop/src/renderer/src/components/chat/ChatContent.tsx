@@ -1,3 +1,4 @@
+import { publishComposerOverhang as publishOverhang } from '@/hooks/useChatScroll'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { SessionProviderState } from './SessionProviderState'
 import { PendingTurnIndicator } from '@superone/chat-view/presenters/ChatMessageIndicators'
@@ -381,6 +382,7 @@ function ChatTranscript({
         {showScrollButton && scrollToBottom && displayMessages.length > 0 && (
           <motion.button
             onClick={scrollToBottom}
+            style={{ bottom: 'calc(var(--composer-overhang, 0px) + var(--spacing) * 3)' }}
             className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -525,11 +527,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     }),
   }), [])
 
-  // Read by the empty-pane landing (ChatSuggestions) and the transcript's follow
-  // line (useChatScroll) to stay put while a composer other than the text one
-  // occupies the slot.
+  // The transcript uses overlap as scroll allowance, without changing its viewport.
   const publishComposerOverhang = useCallback((px: number) => {
-    containerRef.current?.style.setProperty('--composer-overhang', `${px}px`)
+    publishOverhang(containerRef.current, px)
   }, [])
   const composerFocus = useRestoreChatInputFocus((needsDecision || !!appInput || !!openedComposer) && decisionAvailable, containerRef,
     projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)

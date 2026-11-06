@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode, type TransitionEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 
-type Phase = 'steady' | 'leaving' | 'entering' | 'settling'
+type Phase = 'steady' | 'leaving' | 'entering'
 
 const ANIMATION_DEADLINE_MS = 600
 
@@ -16,20 +16,12 @@ interface ComposerSwitchProps<K extends string> {
   /** Distinguishes consecutive requests that use the same composer. */
   transitionKey?: string
   render: (kind: K) => ReactNode
-  /**
-   * `kind` grows to at least `to`'s resting height, so their top edges line up and
-   * the hand-off does not change the slot. The slot grows with a taller newcomer
-   * and shrinks to a shorter one once it has risen.
-   */
+  /** Align the voice composer to the measured resting text height. */
   align?: { kind: K; to: K }
   className?: string
   /** Caps a tall composer while keeping its contents inside a scrollable slot. */
   maxHeight?: number | string
-  /**
-   * Reports, on every slot resize, how much taller the slot is than `align.to`'s
-   * shortest resting height. Content above the slot uses it to stay put while
-   * another composer stands in or the base one grows with its draft.
-   */
+  /** Untransformed overlap above the baseline, for user-controlled tail reveal. */
   onOverhangChange?: (px: number) => void
 }
 
@@ -40,29 +32,15 @@ function motionEnabled(): boolean {
     && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-/**
- * Hands the composer slot from one composer to another as a hand-off rather than
- * a cut: the outgoing one drops out through the bottom edge, then the incoming
- * one rises from where it left. Both directions (voice → text on hang-up, text →
- * voice on start) use the same choreography so the swap reads as one gesture.
- *
- * The slot holds the outgoing height during exit, then grows with a taller
- * newcomer's rise so its top stays inside the clipping edge. A shorter newcomer
- * keeps the outgoing space until it has fully risen, then the slot eases down;
- * chat history does not reclaim that space while the composer is still entering.
- * The slot reports its overhang above the base composer's resting height, and a
- * following transcript pins its tail to that resting line instead of the slot's
- * top: history stays still through the whole visit, and anything a taller
- * composer covers stays reachable by scrolling.
- *
- * The outgoing composer stays mounted until its exit animation ends, so a call
- * that ends mid-caption still slides away intact instead of vanishing.
+/** Bottom-anchored overlay. Only the resting base height participates in layout;
+ * the outgoing card drops, then the incoming card rises over the transcript.
+ * Neither transform changes the viewport or waits for space to be reclaimed.
  */
 export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, render, align, className, maxHeight, onOverhangChange }: ComposerSwitchProps<K>) {
   const [shown, setShown] = useState(kind)
   const [shownKey, setShownKey] = useState(transitionKey)
   const [phase, setPhase] = useState<Phase>('steady')
-  const [height, setHeight] = useState<number | null>(null)
+  const [baseHeight, setBaseHeight] = useState<number | null>(null)
   const slotRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   // Keep the outgoing request's props intact until it drops out. Reading the
@@ -77,7 +55,8 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
   // hand-off time would pin a collapsed slot. Measure only while nothing is
   // changing hands.
   const restingHeights = useRef<Partial<Record<K, number>>>({})
-  const base = align?.to
+  const initialKind = useRef(kind)
+  const base = align?.to ?? initialKind.current
   // The base composer at rest updates the baseline. It can grow without a render
   // (an editor wrapping a line), so the observer measures it, not a commit.
   const baseAtRest = useRef(false)
@@ -95,29 +74,31 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
   })
   const floor = align?.kind === shown ? restingHeights.current[align.to] : undefined
 
-  // ResizeObserver delivers after layout and before paint, so the report lands
-  // in the same frame as each step of the slot's height transition. It is
-  // created in a layout effect, ahead of the transcript's observer, which reads
-  // the report in that same delivery.
+  // Observe the untransformed stage, never animation frames. A fixed baseline
+  // leaves the transcript laid out and painted underneath the moving composer.
   useLayoutEffect(() => {
     const slot = slotRef.current
-    if (!slot || !onOverhangChange || base === undefined) return
-    const observer = new ResizeObserver(() => {
+    const stage = stageRef.current
+    if (!slot || !stage) return
+    const measure = () => {
       const width = slot.offsetWidth
-      if (baseline.current?.width !== width) baseline.current = null
-      if (baseAtRest.current && stageRef.current) {
-        const height = stageRef.current.offsetHeight
-        baseline.current = { width, height: Math.min(height, baseline.current?.height ?? height) }
+      // Hidden panes report zero; do not turn that into a permanent baseline.
+      if (baseAtRest.current && stage.offsetHeight > 0) {
+        const previous = baseline.current?.width === width ? baseline.current.height : Infinity
+        baseline.current = { width, height: Math.min(stage.offsetHeight, previous) }
+        setBaseHeight(baseline.current.height)
+        slot.style.height = `${baseline.current.height}px`
       }
-      const resting = baseline.current?.height ?? restingHeights.current[base]
-      onOverhangChange(resting === undefined ? 0 : slot.offsetHeight - resting)
-    })
-    observer.observe(slot)
-    return () => {
-      observer.disconnect()
-      onOverhangChange(0)
+      onOverhangChange?.(Math.max(0, stage.offsetHeight - slot.offsetHeight))
     }
-  }, [base, onOverhangChange])
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(stage)
+    observer.observe(slot)
+    return () => observer.disconnect()
+  }, [phase, shown, base, onOverhangChange])
+
+  useLayoutEffect(() => () => onOverhangChange?.(0), [onOverhangChange])
 
   useEffect(() => {
     if (sameEntry) {
@@ -134,27 +115,9 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
       return
     }
     if (phase === 'steady') {
-      setHeight(restingHeights.current[shown] ?? stageRef.current?.offsetHeight ?? null)
       setPhase('leaving')
     }
   }, [kind, transitionKey, phase, shown, sameEntry, render])
-
-  // Growth shares the rise's duration and easing: the clipping edge moves up at
-  // least as fast as the newcomer's top. Shrinking waits until the rise finishes.
-  useLayoutEffect(() => {
-    if (phase === 'steady') {
-      setHeight(null)
-      return
-    }
-    const target = stageRef.current?.offsetHeight ?? null
-    if (phase === 'entering') {
-      if (target !== null && height !== null && target > height) setHeight(target)
-      return
-    }
-    if (phase !== 'settling') return
-    if (target === null || target === height) setPhase('steady')
-    else setHeight(target)
-  }, [phase]) // `height` is only compared, never driven, here
 
   const advance = () => {
     if (phase === 'leaving') {
@@ -164,16 +127,11 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
       setShownKey(transitionKey)
       setPhase('entering')
     } else if (phase === 'entering') {
-      setPhase('settling')
-    } else if (phase === 'settling') {
       setPhase('steady')
     }
   }
   const handleAnimationEnd = (event: AnimationEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) advance()
-  }
-  const handleTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget && event.propertyName === 'height' && phase === 'settling') advance()
   }
   // An animation that never ends (hidden window, display:none) must not strand
   // the wrong composer on screen; the deadline sits well past the longest step.
@@ -187,15 +145,8 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
     <div
       ref={slotRef}
       data-testid="composer-slot"
-      data-height-lock={height === null ? undefined : 'on'}
-      onTransitionEnd={handleTransitionEnd}
       className={cn(
-        // Composers hug the slot's bottom edge, so a shorter newcomer rises to the
-        // same baseline the outgoing one dropped from.
-        'flex shrink-0 flex-col justify-end',
-        heightCap !== undefined && 'overflow-hidden',
-        phase === 'entering' && 'transition-[height] duration-240 ease-[ease-out]',
-        phase === 'settling' && 'transition-[height] duration-200 ease-out',
+        'relative isolate shrink-0 pointer-events-none',
         className,
       )}
       style={{
@@ -205,8 +156,8 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
         // Clip the slide at the bottom without cutting off the empty chat's
         // directory hint (absolute bottom-full) before it can leave with the box.
         ...(phase === 'steady' ? {} : { clipPath: 'inset(-100vh 0 0)' }),
-        ...(height === null ? {} : { height }),
-        ...(heightCap === undefined ? {} : { maxHeight: heightCap }),
+        // Sessions can open directly on a decision before text has been measured.
+        height: baseHeight ?? 'calc(var(--spacing) * 28.5)',
       }}
     >
       <div
@@ -217,8 +168,9 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
         onAnimationEnd={handleAnimationEnd}
         style={{ ...(floor === undefined ? {} : { minHeight: floor }), ...(heightCap === undefined ? {} : { maxHeight: heightCap }) }}
         className={cn(
-          // Measure the newcomer's own (capped) height, independently of the locked slot.
-          'flex shrink-0 flex-col',
+          // Its own capped height controls motion and hit testing, not layout.
+          'absolute inset-x-0 bottom-0 flex flex-col bg-background pointer-events-auto',
+          heightCap !== undefined && 'overflow-hidden',
           phase === 'leaving' && 'animate-[composer-drop_200ms_ease-in_forwards]',
           phase === 'entering' && 'animate-[composer-rise_240ms_ease-out]',
         )}

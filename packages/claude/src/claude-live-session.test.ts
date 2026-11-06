@@ -52,6 +52,34 @@ function successTurn(sessionId: string, text: string): Array<Record<string, unkn
 }
 
 describe('ClaudeLiveSession', () => {
+  it('drains a process storage warning emitted only after input EOF during dispose', async () => {
+    const events: AgentEvent[] = []
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) yield* successTurn('s', 'done') as SDKMessage[]
+      yield { type: 'system', subtype: 'session_writes_lost', session_id: 's', uuid: 'exit', error_code: 'ENOSPC', lost: ['transcript'] } as unknown as SDKMessage
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn, onAmbientEvent: event => events.push(event) })
+    await live.sendTurn({ content: 'hello', onAgentEvent: () => {} })
+    await live.dispose()
+    expect(events).toContainEqual(expect.objectContaining({ type: 'user_message_appended', message: expect.objectContaining({
+      metadata: expect.objectContaining({ systemNotice: expect.objectContaining({ code: 'ENOSPC' }) }),
+    }) }))
+  })
+
+  it('delivers a storage warning on the idle path after a successful result', async () => {
+    const ambient: AgentEvent[] = []
+    const queryFn = bridgeAwareQuery(() => [
+      ...successTurn('s', 'done'),
+      { type: 'system', subtype: 'session_writes_lost', session_id: 's', uuid: 'late', error_code: 'EDQUOT', lost: ['transcript'] },
+    ])
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn, onAmbientEvent: event => ambient.push(event) })
+    try {
+      await expect(live.sendTurn({ content: 'hello', onAgentEvent: () => {} })).resolves.toMatchObject({ finalText: 'done' })
+      await vi.waitFor(() => expect(ambient).toContainEqual(expect.objectContaining({ type: 'user_message_appended' })))
+      expect(ambient.some(event => event.type === 'message_error' || event.type === 'message_start')).toBe(false)
+    } finally { await live.dispose() }
+  })
+
   it('reports the session identity from idle init before mapping output and deduplicates it across turns', async () => {
     const onSessionId = vi.fn()
     const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
@@ -393,13 +421,15 @@ describe('ClaudeLiveSession', () => {
         for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
           if (index++ === 0) {
             await gate
+            yield { type: 'system', subtype: 'informational', level: 'warning', content: 'Hook failed while stopping', uuid: '00000000-0000-0000-0000-000000000001', session_id: 's' } as SDKMessage
             yield { type: 'result', subtype: 'success', is_error: false, result: 'old' } as SDKMessage
           } else {
             yield { type: 'result', subtype: 'success', is_error: false, result: 'new' } as SDKMessage
           }
         }
       })() as ReturnType<ClaudeQueryFn>
-    const live = ClaudeLiveSession.open({ cwd: dir, binaryPath: bin, queryFn })
+    const ambient: AgentEvent[] = []
+    const live = ClaudeLiveSession.open({ cwd: dir, binaryPath: bin, queryFn, onAmbientEvent: event => ambient.push(event) })
     const firstController = new AbortController()
     const first = live.sendTurn({ content: 'first', signal: firstController.signal })
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -408,6 +438,7 @@ describe('ClaudeLiveSession', () => {
     release!()
     await expect(first).rejects.toThrow(/interrupted/)
     await expect(second).resolves.toMatchObject({ finalText: 'new' })
+    expect(ambient).toContainEqual(expect.objectContaining({ type: 'user_message_appended' }))
     await live.dispose()
     rmSync(dir, { recursive: true, force: true })
   })

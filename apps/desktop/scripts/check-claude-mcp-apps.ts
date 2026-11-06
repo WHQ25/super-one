@@ -62,6 +62,11 @@ const dispatch = (input: Omit<Parameters<typeof dispatchMcpAppsProviderRequest>[
   dispatchMcpAppsProviderRequest({ binding, origin: { providerSessionId: sessionId ?? '' }, ...input }, makeProvider(), signal)
 
 try {
+  // initialize no longer implies that async MCP connection has completed.
+  const connectDeadline = Date.now() + 15_000
+  while ((await q.mcpServerStatus()).find(s => s.name === 'fixture')?.status === 'pending' && Date.now() < connectDeadline) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
   const checks = {
     ready: await dispatch({ operation: 'ready' }),
     tools: await dispatch({ operation: 'tools' }),

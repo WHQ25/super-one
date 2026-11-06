@@ -8,7 +8,7 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 
 | # | Capability | Since | Benefit | Cost / risk | Decision |
 |---|---|---|---|---|---|
-| 1 | `system/informational` messages | 0.3.283 (sent during turns) | Shows warnings and notices the CLI raises mid-turn, such as a UserPromptSubmit hook's block reason; both mappers drop them today | Needs a chat row style per `level`; both mappers change | open |
+| 1 | `system/informational` messages | 0.3.283 (sent during turns) | Shows warnings and notices the CLI raises, such as hook failures and block reasons | Shared plaintext system rows on desktop/mobile and both host mappers | adopt ([0.3.318](upgrades/0.3.318.md)) |
 | 2 | `plugin_errors` on `system/init` | 0.3.283 | Explains why a plugin did not load instead of it silently missing | Small; needs a place in plugin settings or an init notice | adopt ([0.3.287](upgrades/0.3.287.md)): transcript error notice. A hooks module that fails to load is not reported there |
 | 3 | `./core` entry point | 0.3.282 | Smaller SDK load in the main process | Must confirm it covers `startup`, `forkSession`, `getSubagentMessages`; uses our installed zod and MCP SDK | open |
 | 4 | `prewarm()` / `SpareProcess.claim()` | 0.3.282 (alpha) | Warm a process before cwd is known; could replace `WarmupManager.keyOf`'s hand-kept list | Alpha API; `ClaimOptions` covers only some options, so the keyed pool stays for the rest | open, wait for stable |
@@ -33,6 +33,11 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 23 | `get_usage` `recommendations` / `fix` | 0.3.305 | Show what drives usage and offer the CLI's one-tap fix in the usage meter | `fix` sends user messages (`/effort`, a prompt) into the session; needs a confirm step | open |
 | 24 | `command_lifecycle` `wakeup_source` / `scheduled_for` | 0.3.307 | Label which scheduled wakeup or task started a turn | `command_lifecycle` is still undeclared in `sdk.d.ts` | open |
 | 25 | `getContextUsage()` `mcpInstructions`, `pluginId`, `path` | 0.3.304 | Per-server MCP instruction cost and links to the agent/skill file in the context breakdown | Absent on remote/forwarded replies; stdio only | open |
+| 26 | AskUserQuestion `unanswered` annotations | 0.3.312 | Distinguish skip, chat reply and dismiss | Shared question outcomes and init-capability gating on both runtimes; answers text still required | open, deferred from [0.3.318](upgrades/0.3.318.md) |
+| 27 | ModelUsage cache-lifetime counters | 0.3.311 | Per-model 5-minute and 1-hour cache-write accounting | Optional, potentially partial counts; already included in the aggregate | open, deferred from [0.3.318](upgrades/0.3.318.md) |
+| 28 | `result.credential_expires_at` | 0.3.318 | Stored login expiry reminder | Account-domain binding; can be estimated and is not an authentication verdict | open, deferred from [0.3.318](upgrades/0.3.318.md) |
+| 29 | File-tool boundaries and auto-mode Settings | 0.3.312–0.3.318 | Host read exemptions and tighter file writes | Not a shell/MCP/Hook sandbox; write boundary disables worktree tools; keep defaults unchanged | open, deferred from [0.3.318](upgrades/0.3.318.md) |
+| 30 | Private Mod UI `ui_attach.draws` and `ui_prompt_paint` | Native 2.1.318 observed | Backdrop/mobile input opt-ins and prompt decoration | Host does not advertise these; absent `draws` preserves existing behavior. Needs explicit shared UI support before enabling | open |
 
 ## Integration gaps
 
@@ -41,7 +46,7 @@ declares less than upstream offers.
 
 | # | Gap | Effect | Decision |
 |---|---|---|---|
-| G1 | Remote node registers no `hooks` | `denySubagentSessionRename` does not run on remote nodes, so a subagent can call main-thread-only SuperOne tools there | open |
+| G1 | Remote node has no authorization `PreToolUse` hook (it does have a Stop hook) | `denySubagentSessionRename` does not run on remote nodes, so a subagent can call main-thread-only SuperOne tools there | open |
 | G3 | Remote node does not forward `skipTranscript` / `isBackgrounded` / `spawnDepth` on `task_started` | Background and nested subagents render differently from desktop | open |
 | G4 | Shared `HookEventName` lacks `DirectoryAdded`, `MessageDisplay`, `PreModelSwitch`, `PostModelSwitch` | The settings.json hook editor cannot offer those events | open |
 | G5 | Mod commands registered `immediate: true` queue behind a running turn | The SDK command list carries no `immediate` flag, so SuperOne cannot tell them from other commands | open, wait for the flag in `initializationResult().commands` |

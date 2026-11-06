@@ -57,6 +57,14 @@ describe('MessageBridge', () => {
     expect((await iter.next()).done).toBe(true)
   })
 
+  it('discards queued messages on process shutdown', async () => {
+    const bridge = new MessageBridge()
+    bridge.push(msg('must not run'), 'pending')
+    bridge.close(true)
+    expect((await bridge[Symbol.asyncIterator]().next()).done).toBe(true)
+    expect(bridge.consumedTags).toEqual([])
+  })
+
   it('should ignore push calls after close', async () => {
     const bridge = new MessageBridge()
     bridge.close()

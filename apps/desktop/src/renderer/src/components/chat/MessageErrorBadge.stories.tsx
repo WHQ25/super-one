@@ -110,6 +110,22 @@ const SAMPLES: Array<{ note: string; info: AgentErrorInfo }> = [
     note: 'Unmapped — details open by default, raw text leads',
     info: { raw: 'spawn /usr/local/bin/claude ENOENT' },
   },
+  {
+    note: 'Required sandbox unavailable at startup',
+    info: { raw: 'bubblewrap is not installed on this host', startupFailureReason: 'sandbox_required_unavailable' },
+  },
+  {
+    note: 'Host initialization order refused',
+    info: { raw: 'Expected initialize as the first stdin line', startupFailureReason: 'initialize_not_first' },
+  },
+  {
+    note: 'Damaged configuration with original recovery instructions',
+    info: { raw: 'Invalid JSON in ~/.claude.json. Restore the most recent valid backup.', startupFailureReason: 'config_file_invalid' },
+  },
+  {
+    note: 'Older custom Claude runtime cannot honor fail-closed authorization hooks',
+    info: { raw: 'The process answering initialize does not honor onFailure on hook matchers.', code: 'runtime_upgrade_required' },
+  },
 ]
 
 /** Mimics the real turn footer so the badge is seen in the density it ships at. */

@@ -12,8 +12,8 @@
  * install prompt rather than a silent undefined.
  */
 
-import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
+import { findBundledClaudeBinary } from '@superone/claude/resolve-sdk-binary'
 import { managedHarnessPrefix } from '@superone/runtime/harness'
 import { allowBundledHarnessPlatformPackages } from '../harness/bundled-fallback'
 import { resolveHarnessHomeRoot } from '../harness/home'
@@ -29,30 +29,7 @@ let cached: string | undefined
 
 function resolveBundledSdkBinary(): string | undefined {
   if (!allowBundledHarnessPlatformPackages()) return undefined
-  try {
-    const req = createRequire(import.meta.url)
-    const ext = process.platform === 'win32' ? '.exe' : ''
-    const candidates =
-      process.platform === 'linux'
-        ? [
-            `@anthropic-ai/claude-agent-sdk-linux-${process.arch}-musl/claude${ext}`,
-            `@anthropic-ai/claude-agent-sdk-linux-${process.arch}/claude${ext}`,
-          ]
-        : [`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude${ext}`]
-    for (const c of candidates) {
-      try {
-        let p = req.resolve(c)
-        if (p.includes('/app.asar/')) p = p.replace('/app.asar/', '/app.asar.unpacked/')
-        if (p.includes('\\app.asar\\')) p = p.replace('\\app.asar\\', '\\app.asar.unpacked\\')
-        if (existsSync(p)) return p
-      } catch {
-        /* try next */
-      }
-    }
-  } catch {
-    /* fall through */
-  }
-  return undefined
+  return findBundledClaudeBinary() ?? undefined
 }
 
 function resolveManagedClaudeBinary(): string | undefined {

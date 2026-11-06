@@ -32,6 +32,7 @@ import type { ReductionProjection } from './protocol'
 import { useUserMessageMenu } from './use-user-message-menu'
 import { SendFailureResendButton } from './presenters/SendFailureResendButton'
 import { requestNative } from './bridge'
+import { SystemNoticeRow } from './presenters/SystemNoticeRow'
 
 type PendingPermission = NonNullable<ReductionProjection['pendingPermission']>
 
@@ -162,7 +163,10 @@ export const PortableMessage = memo(function PortableMessage({
   const delegation = isUser && !isCodexAsyncAnswer(message) ? parseRealtimeDelegation(userText) : null
   const fallback = message.metadata?.modelFallback
   const pluginNotice = message.metadata?.pluginNotice
-  const body = fallback
+  const systemNotice = message.metadata?.systemNotice
+  const body = systemNotice
+    ? <SystemNoticeRow meta={systemNotice} text={message.content[0]?.type === 'text' ? message.content[0].text : ''} />
+    : fallback
     ? (
       <div className="my-1 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-xs">
         <RefreshCw className="mt-0.5 size-3 shrink-0" />
@@ -246,7 +250,7 @@ export const PortableMessage = memo(function PortableMessage({
           turnSummary={showFooter && message.metadata?.turnSummary
             ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
             : undefined}
-          assistantFooter={isUser || !showFooter
+          assistantFooter={isUser || systemNotice || !showFooter
             ? undefined
             : (
               <PortableTurnFooter

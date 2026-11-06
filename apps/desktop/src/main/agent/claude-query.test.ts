@@ -74,6 +74,11 @@ beforeEach(() => {
 })
 
 describe('buildClaudeOptions resume truncation', () => {
+  it('registers the authorization hook with fail-closed error handling', () => {
+    const options = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo' })
+    expect(options.hooks?.PreToolUse?.[0]).toMatchObject({ onFailure: 'block' })
+  })
+
   it('passes resumeSessionAt and resumeDropsTurn through to SDK options', () => {
     const options = buildClaudeOptions({
       superoneSessionId: 's1',
@@ -87,6 +92,25 @@ describe('buildClaudeOptions resume truncation', () => {
     expect(options.resume).toBe('sess-1')
     expect(options.resumeSessionAt).toBe('kept-uuid')
     expect(options.resumeDropsTurn).toBe('drop-uuid')
+  })
+})
+
+describe('Claude terminal SDK exceptions', () => {
+  it('retains the structured startup failure when the SDK throws after its error result', async () => {
+    state.messages = [{ type: 'result', subtype: 'error_during_execution', is_error: true,
+      startup_failure_reason: 'config_file_invalid', errors: ['Restore the damaged configuration from backup'] }]
+    state.error = new Error('Claude Code returned an error result: Restore the damaged configuration from backup')
+    const events: AgentEvent[] = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default' }, event => events.push(event),
+      () => 'startup-turn', () => Date.now(), () => false,
+    )
+    await handle.iterationDone
+    expect(events.filter(event => event.type === 'message_error')).toEqual([expect.objectContaining({
+      errorInfo: expect.objectContaining({ startupFailureReason: 'config_file_invalid', raw: 'Restore the damaged configuration from backup' }),
+    })])
+    expect(events.at(-1)).toEqual({ type: 'status_change', status: 'idle' })
   })
 })
 
@@ -281,6 +305,24 @@ describe('buildUserMessage', () => {
 })
 
 describe('createSessionQuery', () => {
+  it('declines late permission and elicitation requests from a retiring runtime', async () => {
+    let closing = false
+    const canUseTool = vi.fn()
+    const onElicitation = vi.fn()
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', canUseTool, onElicitation, isClosing: () => closing },
+      vi.fn(), () => '', () => 0, () => false,
+    )
+    const sdk = state.queryMock.mock.calls[0]![0].options
+    closing = true
+    await expect(sdk.canUseTool('Write', {}, { signal: new AbortController().signal })).resolves.toMatchObject({ behavior: 'deny', interrupt: true })
+    await expect(sdk.onElicitation({})).resolves.toEqual({ action: 'decline' })
+    expect(canUseTool).not.toHaveBeenCalled()
+    expect(onElicitation).not.toHaveBeenCalled()
+    await handle.iterationDone
+  })
+
   it('scopes warmup consumption to the originating SuperOne session', async () => {
     const consume = vi.fn(() => null)
     const handle = createSessionQuery(
@@ -1199,9 +1241,11 @@ describe('createSessionQuery', () => {
 
   it('drops late stream output after interruption while still consuming the final result', async () => {
     state.messages = [
+      { type: 'system', subtype: 'informational', uuid: 'n', session_id: 's', level: 'warning', content: 'Hook callback failed' },
       { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'late text' } } },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'late assistant' }] } },
       { type: 'result', subtype: 'success', usage: {} },
+      { type: 'system', subtype: 'session_writes_lost', uuid: 'lost', session_id: 's', error_code: 'ENOSPC', lost: ['transcript'] },
     ]
 
     const events: Array<Record<string, unknown>> = []
@@ -1217,6 +1261,7 @@ describe('createSessionQuery', () => {
 
     expect(events.some((event) => event.type === 'text_delta')).toBe(false)
     expect(events.some((event) => event.type === 'message_interrupted')).toBe(true)
+    expect(events.filter(event => event.type === 'user_message_appended')).toHaveLength(2)
   })
 
   it('recovers to idle when background_tasks_changed clears a task whose completion bookend was missed', async () => {

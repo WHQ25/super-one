@@ -15,11 +15,14 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Claude Code system notices and storage warnings stay in the chat history on desktop and phone, including warnings received after a reply finishes. Startup failures explain invalid configuration, unavailable required sandboxes, and initialization errors.
 - Markdown shell fences (bash, sh, shell, and zsh) run in the login shell in a new terminal tab. The script runs in a child of that shell, so exiting the script leaves the tab open.
 - Fullscreen image preview can annotate a picture: pen, rectangle, circle, line, arrow, text, step marker, redact or mosaic, and recognize text. The result can be saved or added to the chat.
 
 ### Fixed
 
+- Claude sessions use Agent SDK 0.3.318 and its matching runtime. Authorization hook failures block the tool call, and MCP OAuth credential lookup matches the runtime when no custom headers are configured. Shutdown preserves storage warnings without marking a finished reply unread. Startup errors retain their recovery instructions, and retry starts a fresh process after it exits.
+- Linux Claude sessions select the bundled binary for the host's libc, so installing both glibc and musl packages no longer causes startup to fail. Explicit and managed binary paths keep their existing priority.
 - The Antigravity mark fits inside its icon box.
 - The sidebar leaves 8px between the app drawer and the environment list.
 - A Claude verification_required response is no longer shown as an expired sign-in.

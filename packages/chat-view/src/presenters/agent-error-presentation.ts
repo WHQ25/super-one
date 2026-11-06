@@ -18,6 +18,10 @@ export type AgentErrorKind =
   | 'budgetExhausted'
   | 'malformedToolUse'
   | 'invalidRequest'
+  | 'sandboxUnavailable'
+  | 'initializationError'
+  | 'configInvalid'
+  | 'runtimeUpdateRequired'
   | 'unknown'
 
 /**
@@ -39,6 +43,7 @@ const BY_TERMINAL_REASON: Record<string, AgentErrorKind> = {
 
 /** SDK `SDKAssistantMessageError` codes. */
 const BY_CODE: Record<string, AgentErrorKind> = {
+  runtime_upgrade_required: 'runtimeUpdateRequired',
   authentication_failed: 'auth',
   // A 403 whose code is this is an account check, not a dead login. Status
   // fallback would otherwise paint every 403 as sign-in expired.
@@ -77,6 +82,9 @@ function kindFromStatus(status: number): AgentErrorKind | undefined {
  * popover leads with the raw upstream text.
  */
 export function resolveAgentErrorKind(info: AgentErrorInfo): AgentErrorKind {
+  if (info.startupFailureReason === 'sandbox_required_unavailable') return 'sandboxUnavailable'
+  if (info.startupFailureReason === 'initialize_not_first') return 'initializationError'
+  if (info.startupFailureReason === 'config_file_invalid') return 'configInvalid'
   const byReason = info.terminalReason ? BY_TERMINAL_REASON[info.terminalReason] : undefined
   if (byReason) return byReason
   const byCode = info.code ? BY_CODE[info.code] : undefined
@@ -102,6 +110,7 @@ export function buildAgentErrorDetails(info: AgentErrorInfo): AgentErrorDetailRo
   if (typeof info.httpStatus === 'number') rows.push({ label: 'http', value: String(info.httpStatus) })
   if (info.terminalReason) rows.push({ label: 'terminal_reason', value: info.terminalReason })
   if (info.subtype) rows.push({ label: 'subtype', value: info.subtype })
+  if (info.startupFailureReason) rows.push({ label: 'startup_failure_reason', value: info.startupFailureReason })
   if (info.model) rows.push({ label: 'model', value: info.model })
   if (info.requestId) rows.push({ label: 'request_id', value: info.requestId })
   if (info.retries) {

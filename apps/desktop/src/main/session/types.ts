@@ -365,6 +365,8 @@ export interface SendDelivery {
 }
 
 export interface SessionBackend {
+  /** close() cancels work and drains final provider notices before aborting. */
+  readonly drainsOnClose?: boolean
   readonly kind: HarnessId
   hasActiveRuntime(): boolean
   releaseRuntime(reason: 'idle'): Promise<void>

@@ -15,6 +15,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
 import { mapPluginErrors, mapPluginUiMessage } from './plugin-notice-wire'
 import { artifactResultTitle } from './artifact-result'
+import { mapClaudeSystemNotice } from './system-notice'
 import { mcpResourceLinks, toolResultResourceLinks } from './resource-links'
 
 type Raw = Record<string, any>
@@ -300,6 +301,8 @@ export function createClaudeAgentEventMapper(
   }
 
   const applySystem = (system: Raw) => {
+    const notice = mapClaudeSystemNotice(system)
+    if (notice) { emit(notice); return }
     if (options.onSystem?.(system)) return
     switch (system.subtype) {
       case 'commands_changed':

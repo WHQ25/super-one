@@ -1,3 +1,7 @@
+import { toast } from 'sonner'
+import i18n from 'i18next'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
+import { applyEventToSession } from '../event-reducer'
 import { resetHostSession } from '@/lib/session-client'
 import { isAppInputRequest } from '@superone/shared/input-request-presentation'
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
@@ -42,14 +46,6 @@ import { environmentIdForProjectKey, selectionForNewSession } from '@superone/sh
 import type { SessionEnvironmentSelection } from '@superone/shared/session-location'
 import { interruptSession } from '@/lib/session-client'
 import { stopBashOutputLive } from './bash-output-live'
-
-/**
- * How long to wait for the terminal event of an acked interrupt before
- * reconciling the session to idle. Longer than the backend's own interrupt
- * watchdog so its recovery (synthetic terminal event + runtime rebuild) gets
- * the first shot.
- */
-const INTERRUPT_SETTLE_TIMEOUT_MS = 12_000
 
 export async function focusProjectImpl(
   set: ChatStoreSet,
@@ -380,67 +376,62 @@ export async function interruptImpl(
   get: () => ChatStore,
   target?: SessionWriteTarget,
 ): Promise<void> {
-  // Stop belongs to the pane that rendered it. Resolving the project's active
-  // session instead interrupts the main conversation while the pane that was
-  // actually asked to stop — a side chat, a background mosaic tile — keeps
-  // streaming with no reachable stop control.
-  const { projectPath: activeProject, sessionId: sid } = resolveWriteScope(get(), target)
-  if (!activeProject) return
-  set((s) => commitPerSession(s, target, () => ({ awaitingAssistantReply: false })))
-
-  // The host's turnInterrupted arrives on the session's stream; a session the
-  // host never ran (a draft) is reset here.
-  let interrupted = false
-  if (sid) {
-    try {
-      await interruptSession(activeProject, sid)
-      interrupted = true
-    } catch {
-      interrupted = false
-    }
-  }
-  if (!interrupted) {
-    set((s) => commitPerSession(s, target, current => ({
-      status: 'idle',
-      pendingPermissions: current.pendingPermissions.filter(isAppInputRequest),
-      pendingQuestion: null,
-      pendingPlanApproval: null,
-    })))
+  const { projectPath, sessionId } = resolveWriteScope(get(), target)
+  if (!projectPath) return
+  if (!sessionId) {
+    set(s => commitPerSession(s, target, () => ({ status: 'idle', awaitingAssistantReply: false })))
     return
   }
-  // An acked interrupt normally lands as message_interrupted. A backend that
-  // never delivers one would strand the session in `streaming` — and a
-  // streaming session turns every later message into a queued (priority=next)
-  // send that renders nowhere. Reconcile instead of trusting the event.
-  // Detached: Stop must return as soon as the IPC does.
-  if (sid) armInterruptSettleWatchdog(set, get, activeProject, sid)
+  const before = get().projectSessions[projectPath]?._sessions[sessionId]
+  if (!before || before.interruptPending) return
+  // Capture the pane and turn before the await, including when the user switches
+  // conversations while Stop is in flight.
+  const tailId = before.messages.at(-1)?.id
+  set(s => updatePerSession(s, projectPath, sessionId, () => ({ interruptPending: true })))
+  try {
+    const receipt = await interruptSession(projectPath, sessionId)
+    if (receipt?.status === 'stopped') {
+      settleInterruptedTurn(set, projectPath, sessionId, tailId)
+    } else {
+      // Older hosts acknowledge delivery only. A missing event is reconciled
+      // against the host, never by pretending that a timeout stopped execution.
+      setTimeout(() => { void reconcileLegacyInterrupt(set, get, projectPath, sessionId, tailId) }, 12_000)
+    }
+  } catch (err) {
+    toast.error(i18n.t('chat.interruptFailed'), { description: err instanceof Error ? err.message : String(err) })
+  } finally {
+    set(s => updatePerSession(s, projectPath, sessionId, () => ({ interruptPending: false })))
+  }
 }
 
-function armInterruptSettleWatchdog(
-  set: ChatStoreSet,
-  get: () => ChatStore,
-  projectPath: string,
-  sessionId: string,
-): void {
-  const sessionAt = (): PerSessionState | undefined =>
-    get().projectSessions[projectPath]?._sessions[sessionId]
-  const messages = sessionAt()?.messages ?? []
-  // A new turn appends a new assistant message, so a changed tail means the
-  // interrupted turn is behind us and this watchdog must stand down.
-  const turnTailId = messages[messages.length - 1]?.id ?? null
+function settleInterruptedTurn(set: ChatStoreSet, projectPath: string, sessionId: string, tailId?: string): void {
+  set(s => updatePerSession(s, projectPath, sessionId, current => {
+    if (current.messages.at(-1)?.id !== tailId) return {}
+    // The receipt travels ahead of stream pushes when the connection is behind.
+    // Seal the known running messages even if their terminal event is delayed.
+    let next = current
+    for (const message of current.messages) {
+      if (message.role === 'assistant' && message.status === 'streaming') {
+        next = { ...next, ...applyEventToSession(next, { type: 'message_interrupted', messageId: message.id }) }
+      }
+    }
+    return { ...next, status: 'idle', awaitingAssistantReply: false,
+      pendingPermissions: next.pendingPermissions.filter(isAppInputRequest),
+      pendingQuestion: null, pendingPlanApproval: null }
+  }))
+}
 
-  setTimeout(() => {
-    const session = sessionAt()
-    if (session?.status !== 'streaming') return
-    if ((session.messages[session.messages.length - 1]?.id ?? null) !== turnTailId) return
-    console.warn('[interrupt] no terminal event after interrupt; forcing idle', { projectPath, sessionId })
-    set((s) => updatePerSession(s, projectPath, sessionId, current => ({
-      status: 'idle',
-      pendingPermissions: current.pendingPermissions.filter(isAppInputRequest),
-      pendingQuestion: null,
-      pendingPlanApproval: null,
-    })))
-  }, INTERRUPT_SETTLE_TIMEOUT_MS)
+async function reconcileLegacyInterrupt(
+  set: ChatStoreSet, get: () => ChatStore, projectPath: string, sessionId: string, tailId?: string,
+): Promise<void> {
+  const session = get().projectSessions[projectPath]?._sessions[sessionId]
+  if (session?.status !== 'streaming' || session.messages.at(-1)?.id !== tailId || session.interruptPending) return
+  try {
+    const record = await window.environment.getSession(connectionIdForProjectKey(projectPath), sessionId) as { status?: string } | null
+    if (record && ['idle', 'interrupted', 'ended'].includes(record.status ?? '')) {
+      settleInterruptedTurn(set, projectPath, sessionId, tailId)
+    }
+  } catch { /* Offline is not evidence that the host stopped. Keep Stop available. */ }
 }
 
 export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void {

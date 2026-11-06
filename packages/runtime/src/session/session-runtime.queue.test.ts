@@ -86,6 +86,65 @@ describe('SessionRuntime send queue', () => {
     } finally { finish?.(); await runtime.dispose() }
   })
 
+  it('does not acknowledge Stop or admit the next send until the runner has settled', async () => {
+    let release!: () => void
+    let aborted = false
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-stop', async ({ signal }) => {
+      signal.addEventListener('abort', () => { aborted = true }, { once: true })
+      await new Promise<void>(resolve => { release = resolve })
+      return { finalText: '' }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const send = (text: string) => runtime.send({ sessionId: session.sessionId, text, client, ...lease })
+    try {
+      await send('first')
+      let acknowledged = false
+      const stop = Promise.resolve(runtime.interrupt(session.sessionId, client, lease.leaseId, lease.generation))
+        .then(() => { acknowledged = true })
+      await Promise.resolve()
+      expect(aborted).toBe(true)
+      expect(acknowledged).toBe(false)
+      expect(runtime.get(session.sessionId)?.status).toBe('streaming')
+      await expect(send('too soon')).rejects.toMatchObject({ code: 'failed_precondition' })
+      release()
+      await stop
+      expect(runtime.get(session.sessionId)?.status).toBe('interrupted')
+    } finally { release(); await runtime.dispose() }
+  })
+
+  it('waits for every cancelled peer, emits one terminal signal, and does not wait for another session', async () => {
+    const gates: Record<string, () => void> = {}
+    const signals: Record<string, AbortSignal> = {}
+    const log: Array<{ sessionId: string; eventType: string }> = []
+    const { store, events, leases } = memoryPorts()
+    events.appendSession = event => { log.push(event) }
+    const runtime = new SessionRuntime(store, events, leases, 'env-stop-peers', async ({ text, signal }) => {
+      signals[text] = signal
+      await new Promise<void>(resolve => { gates[text] = resolve })
+      return { finalText: '' }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const other = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    try {
+      await runtime.sendWithoutLease({ sessionId: session.sessionId, text: 'one' })
+      await runtime.sendWithoutLease({ sessionId: session.sessionId, text: 'two' })
+      await runtime.sendWithoutLease({ sessionId: other.sessionId, text: 'other' })
+      const stop = runtime.interrupt(session.sessionId, client, lease.leaseId, lease.generation)
+      expect(runtime.interrupt(session.sessionId, client, lease.leaseId, lease.generation)).toBe(stop)
+      expect(signals.one.aborted && signals.two.aborted).toBe(true)
+      expect(signals.other.aborted).toBe(false)
+      gates.one()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(runtime.get(session.sessionId)?.status).toBe('streaming')
+      expect(log.filter(event => event.eventType === 'session.turn_interrupted')).toHaveLength(0)
+      gates.two()
+      await stop
+      expect(log.filter(event => event.eventType === 'session.turn_interrupted')).toHaveLength(1)
+      expect(runtime.get(other.sessionId)?.status).toBe('streaming')
+    } finally { Object.values(gates).forEach(resolve => resolve()); await runtime.dispose() }
+  })
+
   it('claude mid-stream composer sends stay in the host FIFO until the active turn ends', async () => {
     let active = 0
     let maxActive = 0

@@ -2417,18 +2417,18 @@ async function handleSessionModUi(payload: unknown, ctx: RpcContext): Promise<Rp
   }
 }
 
-function handleSessionInterrupt(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionInterrupt(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
   try {
-    ctx.sessions.interrupt(
+    await ctx.sessions.interrupt(
       String(p.sessionId ?? ''),
       { clientSessionId: ctx.client.clientSessionId },
       String(p.leaseId ?? ''),
       String(p.generation ?? ''),
     )
-    return { result: { ok: true } }
+    return { result: { ok: true, status: 'stopped' } }
   } catch (err) {
     return mapThrown(err)
   }

@@ -438,6 +438,23 @@ when the ranges do not overlap. Generation 3 is the current and oldest
 accepted generation; a generation 2 peer is refused, and the desktop offers
 the node upgrade from the refusal's range.
 
+#### Stop completion receipt
+
+`session.interrupt` validates the caller's lease, signals the currently captured
+execution, and waits for cancellation and runner cleanup. Duplicate Stop calls
+join that work. New sends are refused with `failed_precondition` until it has
+settled. A successful response is `{ ok: true, status: 'stopped' }`; errors must
+reach the caller rather than being reported as success. Existing RPC idempotency
+keys retain that receipt across transport retries.
+
+The controller shows a pending stop ring from activation through the response,
+including across composer remounts. A completion receipt can precede delayed
+stream pushes, so it also seals the controller's known running message. A changed
+turn tail fences that reconciliation from newer work. Failures keep Stop
+available and preserve the running state. Older `{ ok: true }` responses mean
+only delivery: the controller relies on terminal events or one delayed host
+state read, never a timer alone, to reconcile missing completion.
+
 #### Wire framing
 
 On the encrypted channel, messages up to and including the generation

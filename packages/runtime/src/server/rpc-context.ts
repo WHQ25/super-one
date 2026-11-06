@@ -332,7 +332,8 @@ export interface SessionHostPort {
   remove(sessionId: string): NodeSessionRecord | null | Promise<NodeSessionRecord | null>
 
   send(input: SessionRuntimeInput<'send'>): Promise<unknown>
-  interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void
+  /** Resolves after the captured execution and cancellation cleanup have settled. */
+  interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void | Promise<void>
   respondPermission(input: SessionRuntimeInput<'respondPermission'> & { reason?: string; selectedSuggestions?: number[] }): void
   respondQuestion(input: SessionRuntimeInput<'respondQuestion'> & { dismiss?: boolean; annotations?: QuestionAnnotations }): void
   respondPlan(input: SessionRuntimeInput<'respondPlan'>): void | Promise<void>

@@ -1221,7 +1221,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     method: M,
     input: import('@superone/shared/environment/session-requests').SessionCallMethods[M]['input'],
   ): Promise<import('@superone/shared/environment/session-requests').SessionCallMethods[M]['result']>
-  interruptSession(connectionId: string, sessionId: string): Promise<void>
+  interruptSession(connectionId: string, sessionId: string): Promise<import('@superone/shared/environment').SessionInterruptReceipt | void>
   /** Control a session again after the computer it runs on took it back. */
   reclaimSessionControl(connectionId: string, sessionId: string): Promise<void>
   /** One op on a session's mod surface; `connectionId` is `local` for this computer. */

@@ -13,6 +13,12 @@ import type { ProjectRef, SessionRef, TerminalRef } from './refs'
 import type { SessionLoadRequest, SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
 import type { TranscriptFoldRequest, TranscriptFoldResult, TranscriptWindowRequest, TranscriptWindowResult } from './transcript-window'
 
+/** `ok` alone is a legacy receipt of delivery, not proof that execution stopped. */
+export interface SessionInterruptReceipt {
+  ok: true
+  status?: 'stopped'
+}
+
 /**
  * Environment-scoped gateway — the only boundary desktop features should use
  * for project, Session, terminal, and workspace operations.
@@ -188,7 +194,7 @@ export interface SessionGateway {
    * Live catch-up still uses session.events afterSequence.
    */
   listMessages?(input: SessionMessagesListRequest & { session: SessionRef }): Promise<SessionMessagesListResult>
-  interrupt(ref: SessionRef, control: MutatingControlContext): Promise<void>
+  interrupt(ref: SessionRef, control: MutatingControlContext): Promise<SessionInterruptReceipt | void>
   /**
    * One op on a session's mod surface (`@superone/shared/mod-ui`). Mutating ops
    * carry the control lease. Optional: older nodes draw no mods.

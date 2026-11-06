@@ -3714,7 +3714,7 @@ describe('interrupt', () => {
     expect(mockWindowEnvironment.interruptSession).toHaveBeenCalledWith('local', 'codex-a')
   })
 
-  it('clears pending state when interrupt is not accepted', async () => {
+  it('retains running and pending state when interrupt is not accepted', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -3743,11 +3743,11 @@ describe('interrupt', () => {
     await useChatStore.getState().interrupt()
 
     const session = useChatStore.getState().projectSessions['/test']._sessions['codex-a']
-    expect(session.status).toBe('idle')
-    expect(session.awaitingAssistantReply).toBe(false)
-    expect(session.pendingPermissions).toEqual([])
-    expect(session.pendingQuestion).toBeNull()
-    expect(session.pendingPlanApproval).toBeNull()
+    expect(session.status).toBe('streaming')
+    expect(session.awaitingAssistantReply).toBe(true)
+    expect(session.pendingPermissions).toHaveLength(1)
+    expect(session.pendingQuestion).not.toBeNull()
+    expect(session.pendingPlanApproval).not.toBeNull()
   })
 })
 

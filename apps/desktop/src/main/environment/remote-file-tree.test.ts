@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -33,6 +33,8 @@ import {
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import type { EnvironmentHost } from './environment-host'
 import { parseGitStatusOutput } from '../git-status-utils'
+import { localFileUrlToPath } from '@superone/shared/path-display'
+import { mediaFileGrants } from '../media-file-grants'
 
 describe('normalizeHostPath / hostPathsEqual', () => {
   it('strips trailing slashes and unifies separators', () => {
@@ -596,15 +598,81 @@ describe('readRemoteProjectFile / saveRemoteProjectFile', () => {
     })
   })
 
-  it('returns image data URI for png', async () => {
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])
-    const readFile = vi.fn().mockResolvedValue({ content: png })
-    const host = mockHost({
-      workspace: () => ({ readFile }),
+  describe('project image cache', () => {
+    const copies = new Set<string>()
+    beforeEach(() => { zoneState.userData = mkdtempSync(join(tmpdir(), 'rft-image-')) })
+    afterEach(() => {
+      for (const path of copies) rmSync(path, { force: true })
+      copies.clear()
+      rmSync(zoneState.userData, { recursive: true, force: true })
     })
-    const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', 'pic.png')
-    expect(result?.language).toBe('image')
-    expect(result?.content.startsWith('data:image/png;base64,')).toBe(true)
+
+    function imageHost() {
+      let bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])
+      let mtimeMs = 1_700_000_000_000
+      const readFile = vi.fn(async () => ({ content: bytes }))
+      const listDir = vi.fn(async () => [{ name: 'pic.png', type: 'file', size: bytes.length, mtimeMs }])
+      const host = mockHost({ workspace: () => ({ readFile, listDir }) })
+      return { host, readFile, listDir, bytes: () => bytes, replace: () => { bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 1, 1, 1]); mtimeMs += 0.25 } }
+    }
+
+    async function readImage(host: EnvironmentHost) {
+      const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/work/app/output/pic.png')
+      const local = localFileUrlToPath(result?.content)
+      if (local) copies.add(local)
+      return { result, local }
+    }
+
+    it('returns a readable local file for native gallery preview and file actions', async () => {
+      const source = imageHost()
+      const { result, local } = await readImage(source.host)
+      expect(result?.language).toBe('image')
+      expect(local).toBeTruthy()
+      expect(readFileSync(local!)).toEqual(source.bytes())
+      expect(mediaFileGrants().has(local!)).toBe(true)
+      expect(source.readFile).toHaveBeenCalledWith({ project: { environmentId: 'env-1', projectId: 'proj-1' }, relativePath: 'output/pic.png' })
+    })
+
+    it('reuses unchanged images and refreshes a same-size edit within one millisecond', async () => {
+      const source = imageHost()
+      const first = await readImage(source.host)
+      const again = await readImage(source.host)
+      expect(first.local).toBeTruthy()
+      expect(again.local).toBe(first.local)
+      expect(source.readFile).toHaveBeenCalledTimes(1)
+      source.replace()
+      const changed = await readImage(source.host)
+      expect(changed.local).toBe(first.local)
+      expect(readFileSync(changed.local!)).toEqual(source.bytes())
+      expect(source.readFile).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not return a stale cached image after the node deletes it', async () => {
+      const source = imageHost()
+      await readImage(source.host)
+      source.listDir.mockResolvedValue([])
+      const { result, local } = await readImage(source.host)
+      expect(result).toMatchObject({ content: '', error: 'missing' })
+      expect(local).toBeNull()
+    })
+
+    it('keeps the project transfer limit and skips downloading an oversized image', async () => {
+      const source = imageHost()
+      source.listDir.mockResolvedValue([{ name: 'pic.png', type: 'file', size: 11 * 1024 * 1024, mtimeMs: 1_700_000_000_000 }])
+      const { result, local } = await readImage(source.host)
+      expect(result).toMatchObject({ content: '', language: 'too-large' })
+      expect(local).toBeNull()
+      expect(source.readFile).not.toHaveBeenCalled()
+    })
+
+    it('surfaces an offline node instead of falling back to a cached image', async () => {
+      const source = imageHost()
+      await readImage(source.host)
+      source.listDir.mockRejectedValue(new Error('node offline'))
+      const { result, local } = await readImage(source.host)
+      expect(result).toMatchObject({ content: '', error: 'node offline' })
+      expect(local).toBeNull()
+    })
   })
 
   it('saves text via workspace.writeFile', async () => {

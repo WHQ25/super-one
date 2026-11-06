@@ -10,13 +10,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Streamdown, defaultRemarkPlugins } from 'streamdown'
 import { streamdownComponents, streamdownRehypePlugins } from './chat-shared'
 import { remarkMediaPaths } from './remark-media-paths'
+import { decodeRemoteMediaUrl } from '@/lib/remote-media-url'
 
 vi.mock('./markdown-image', () => ({ MarkdownImage: (props: Record<string, unknown>) => createElement('img', props) }))
 vi.mock('./CodeBlock', () => ({ createStreamdownCodeComponent: () => ({}) }))
 vi.mock('@streamdown/code', () => ({ createCodePlugin: () => ({}) }))
 
 async function sources(markdown: string, project = '/projects/app'): Promise<string[]> {
-  const processor = unified().use(remarkParse).use(remarkMediaPaths(project)).use(remarkRehype)
+  const processor = unified().use(remarkParse).use([remarkMediaPaths(project)]).use(remarkRehype)
   const tree = await processor.run(processor.parse(markdown)) as Root
   const result: string[] = []
   visit(tree, 'element', (node) => {
@@ -48,6 +49,41 @@ describe('chat Markdown media destinations', () => {
   it('routes remote project media through the remote file transport', async () => {
     const [src] = await sources('![capture](</home/me/app/screen one.png>)', 'remote:node:/home/me/app')
     expect(src).toMatch(/^remote-media:\/\/ref\//)
+  })
+
+  it('preserves a node screenshot outside the project and a desktop mirror with spaces', async () => {
+    const project = 'remote:node:/home/node/project'
+    for (const path of ['/home/node/sync/s1/agent/image-editor-fixed.png', '/Users/viewer/Library/Application Support/SuperOne/sync/s1/agent/image-editor-fixed.png']) {
+      const markdown = path.includes(' ') ? `![Screenshot](<${path}>)` : `![Screenshot](${path})`
+      const [src] = await sources(markdown, project)
+      expect(decodeRemoteMediaUrl(src)).toEqual({ projectPath: project, relativePath: path })
+      const html = renderToStaticMarkup(createElement(Streamdown, {
+        remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkMediaPaths(project)],
+        rehypePlugins: streamdownRehypePlugins,
+        components: streamdownComponents,
+        children: markdown,
+      }))
+      expect(html).toContain('<img')
+      expect(html).toContain(src)
+    }
+  })
+
+  it('isolates cached processors when switching between local projects and remote nodes', () => {
+    for (const project of ['/projects/one', 'remote:node-a:/repo', '/projects/two', 'remote:node-b:/repo', '/projects/one']) {
+      const html = renderToStaticMarkup(createElement(Streamdown, {
+        remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkMediaPaths(project)],
+        rehypePlugins: streamdownRehypePlugins,
+        components: streamdownComponents,
+        children: '![Screenshot](./shot.png)',
+      }))
+      const src = html.match(/<img[^>]* src="([^"]+)"/)?.[1]
+      expect(src).toBeDefined()
+      if (project.startsWith('remote:')) {
+        expect(decodeRemoteMediaUrl(src!)).toEqual({ projectPath: project, relativePath: 'shot.png' })
+      } else {
+        expect(src).toBe(`local-file://${project}/shot.png`)
+      }
+    }
   })
   it.each([['png', 'img'], ['mp4', 'video'], ['mp3', 'audio']])('renders %s as a %s in the actual chat Markdown pipeline', (ext, tag) => {
     const html = renderToStaticMarkup(createElement(Streamdown, {

@@ -1,6 +1,7 @@
 import { normalizeTranscriptTool, parseMcpToolName } from './tool-ui'
 import { isPatchToolName, patchToolFiles } from './patch-tool'
 import { CODEX_IMAGE_GENERATION_TOOL } from './codex-content'
+import { nativeTypeFromTemplateId } from './generative-ui/native-widgets'
 
 /**
  * Block type a tool call is remapped to before it leaves for a remote surface, so the
@@ -432,6 +433,19 @@ export function sanitizeRemoteToolInput(toolName: string, input: string): string
   }
   const mcp = parseMcpToolName(toolName)
   if (mcp) toolName = `mcp__${mcp.serverName}__${mcp.mcpToolName}`
+  if (toolName === 'mcp__superone__widget_show') {
+    try {
+      const params = JSON.parse(input)
+      if (typeof params?.template === 'string' && nativeTypeFromTemplateId(params.template)) {
+        // Native surfaces render the prepared result, never the source data.
+        // Keeping base64 here can omit the entire call at the fragment ceiling,
+        // orphaning its small result so the turn-end gallery loses the image.
+        const header: Record<string, unknown> = {}
+        copyDefined(params, header, ['title', 'template'])
+        return JSON.stringify(header)
+      }
+    } catch { /* incomplete input keeps the ordinary widget projection */ }
+  }
   if (shouldKeepRemoteToolInput(toolName)) return input
   return sanitizeBuiltinInput(toolName, input)
     || sanitizeSuperoneRowInput(toolName, input)

@@ -253,10 +253,15 @@ local root                                → the path itself
 
 An out-of-project absolute node path is checked through the node's read-only
 temporary-file RPCs. An authorized temporary file gets a private local cache
-copy; other paths resolve to `missing`, never spliced into the project. A phone
-that needs real bytes of a node *project* file gets a
-transient copy under the OS temp directory (`materializeRemoteProjectFile`),
-not a zone file.
+copy; other paths resolve to `missing`, never spliced into the project. Desktop
+galleries and phone readers that need real bytes of a node *project* image use
+`materializeRemoteProjectFile`, not a zone file. It keeps a private, transient
+copy under the OS temp directory, checks size + mtime before reuse, coalesces
+concurrent downloads and validates the completed bytes before atomic commit.
+Desktop image reads return its `local-file:` URL and grant only the completed
+file to both media transports, so preview, download and editing share the same
+file. Project images retain the workspace transfer size limit; non-image
+project reads keep their existing text/data-URI response.
 
 The mirror (`environment/session-file-mirror.ts#mirrorNodeArtifact`) is
 **cache-through, validated by size + mtime** from `artifact.stat`, not by an

@@ -150,7 +150,9 @@ export const ChatMessage = memo(function ChatMessage({
   anchors,
 }: ChatMessageProps) {
   const { t } = useTranslation()
-  const projectPath = useChatStore((s) => s.activeProject)
+  const scope = useSessionScope()
+  const activeProject = useChatStore((s) => s.activeProject)
+  const projectPath = scope?.projectPath ?? activeProject
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const isUser = message.role === 'user'
   const asyncQuestions = useActiveSession(session => codexAsyncAnswerQuestions(message, session.messages))
@@ -199,9 +201,7 @@ export const ChatMessage = memo(function ChatMessage({
   // A `<realtime_delegation>` envelope is what the voice agent asked Codex to do:
   // an ordinary user bubble under a Voice label, linking back to the spoken turn.
   const delegation = isUser && !isCodexAsyncAnswer(message) ? parseRealtimeDelegation(userText) : null
-  // Resolved on click, not subscribed: every bubble mounts this component and
-  // only the rare delegation row needs to know which session it belongs to.
-  const scope = useSessionScope()
+  // Resolve the voice navigation target on click, within this pane's session.
   const jumpToVoiceTurn = () => {
     const sessionId = scope?.sessionId ?? getActiveSessionView(scope)._activeSessionId
     if (!sessionId) return
@@ -298,7 +298,7 @@ export const ChatMessage = memo(function ChatMessage({
           : undefined}
         body={body}
         imageGallery={generatedImages.length > 0
-          ? <ImageGalleryBlock items={generatedImages} />
+          ? <ImageGalleryBlock items={generatedImages} projectPath={projectPath} />
           : undefined}
         videoGallery={generatedVideos.length > 0
           ? <VideoGalleryBlock items={generatedVideos} />

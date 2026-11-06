@@ -150,3 +150,54 @@ describe('ProjectHistoryList — in-sidebar scrollable session history', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
+
+describe('history across environment checkouts', () => {
+  const remotePath = 'remote:node-1:/srv/project'
+  beforeEach(() => {
+    Object.assign(window.environment, {
+      listSessions,
+      listProjects: vi.fn(async () => [{ projectId: 'remote-project', path: '/srv/project' }]),
+    })
+    listSessions.mockReset()
+  })
+
+  it('keeps same-id results from different hosts and opens each on its owning project', async () => {
+    listSessions.mockImplementation(async (connection) => [dbEntry('same-id', connection === 'local' ? 'Local review' : 'Remote review')])
+    const onSwitchSession = vi.fn()
+    const { container, getByText } = render(<ProjectHistoryList folderPath="/proj" folderPaths={['/proj', remotePath]} onClose={vi.fn()} onSwitchSession={onSwitchSession} {...noopCallbacks} />)
+    await waitFor(() => expect(titleRows(container)).toEqual(['Local review', 'Remote review']))
+    fireEvent.click(getByText('Local review'))
+    fireEvent.click(getByText('Remote review'))
+    expect(onSwitchSession.mock.calls).toEqual([['/proj', 'same-id'], [remotePath, 'same-id']])
+  })
+
+  it('searches beyond the first page on every host and ignores results from an old scope', async () => {
+    let remoteResolve!: (value: SessionHistoryEntry[]) => void
+    listSessions.mockImplementation(async (connection, _id, options) => {
+      if (connection !== 'local') return new Promise((resolve) => { remoteResolve = resolve })
+      return (options?.offset ?? 0) === 0 ? Array.from({ length: 30 }, (_, i) => dbEntry(`l${i}`, `Recent ${i}`)) : [dbEntry('ancient', 'Ancient review')]
+    })
+    const props = { folderPath: '/proj', onClose: vi.fn(), onSwitchSession: vi.fn(), ...noopCallbacks }
+    const { container, rerender, getByPlaceholderText } = render(<ProjectHistoryList {...props} folderPaths={['/proj', remotePath]} />)
+    await waitFor(() => expect(remoteResolve).toBeTypeOf('function'))
+    rerender(<ProjectHistoryList {...props} folderPaths={['/proj']} />)
+    fireEvent.change(getByPlaceholderText(/search/i), { target: { value: 'ancient' } })
+    await waitFor(() => expect(titleRows(container)).toContain('Ancient review'))
+    remoteResolve([dbEntry('stale', 'Ancient remote stale result')])
+    await waitFor(() => expect(titleRows(container)).not.toContain('Ancient remote stale result'))
+    expect(listSessions).toHaveBeenCalledWith('local', '/proj', { limit: 30, offset: 30, includeSettled: true })
+  })
+
+  it('retains reachable host results when another host fails and offers retry', async () => {
+    listSessions.mockImplementation(async (connection) => {
+      if (connection !== 'local') throw new Error('offline')
+      return [dbEntry('local', 'Local result')]
+    })
+    const { container, getByRole } = render(<ProjectHistoryList folderPath="/proj" folderPaths={['/proj', remotePath]} onClose={vi.fn()} onSwitchSession={vi.fn()} {...noopCallbacks} />)
+    await waitFor(() => expect(titleRows(container)).toContain('Local result'))
+    expect(getByRole('alert')).toBeInTheDocument()
+    listSessions.mockResolvedValue([dbEntry('recovered', 'Recovered result')])
+    fireEvent.click(getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(titleRows(container)).toHaveLength(2))
+  })
+})

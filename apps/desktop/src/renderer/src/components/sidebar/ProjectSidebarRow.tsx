@@ -1,3 +1,4 @@
+import { listProjectAutomations, deleteProjectAutomation, runProjectAutomation, onProjectAutomationsChanged } from '@/lib/automation-client'
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect, type RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
@@ -540,7 +541,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   const refreshAutomations = useCallback(() => {
     if (folder.missing) return
-    window.app.listAutomations(folder.path).then((next) => {
+    listProjectAutomations(folder.path).then((next) => {
       setProjectAutomations((prev) => {
         if (prev.length !== next.length) return next
         for (let i = 0; i < prev.length; i++) {
@@ -558,6 +559,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   useEffect(() => {
     if (open) refreshAutomations()
   }, [open, refreshAutomations])
+
+  useEffect(() => onProjectAutomationsChanged((path) => {
+    if (path === folder.path) refreshAutomations()
+  }), [folder.path, refreshAutomations])
 
   // MCP / IPC list mutations + run lifecycle (status dots) while this project is expanded.
   useEffect(() => {
@@ -750,10 +755,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               <div className="flex flex-col py-0.5 pl-2">
                 {projectAutomations.map((automation) => {
                   const automationMenuItems: AdaptiveMenuEntry[] = [
-                    { kind: 'item', id: 'run', label: t('sidebar.contextMenu.runNow'), icon: Play, onSelect: () => { window.app.runAutomationNow(automation.id).catch(() => {}) } },
+                    { kind: 'item', id: 'run', label: t('sidebar.contextMenu.runNow'), icon: Play, onSelect: () => { runProjectAutomation(folder.path, automation.id).catch(() => {}) } },
                     { kind: 'item', id: 'edit', label: t('sidebar.contextMenu.edit'), icon: Pencil, onSelect: () => openEditDialog(automation) },
                     { kind: 'separator' },
-                    { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => { window.app.deleteAutomation(automation.id).then(refreshAutomations).catch(() => {}) } },
+                    { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => { deleteProjectAutomation(folder.path, automation.id).then(refreshAutomations).catch(() => {}) } },
                   ]
                   return (
                   <AdaptiveContextMenu key={automation.id} items={automationMenuItems}>

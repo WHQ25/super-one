@@ -2297,6 +2297,19 @@ export class EnvironmentHost {
     return gateway.callSession(method, { ...input, sessionId, ...control })
   }
 
+  async callAutomation<M extends import('@superone/shared/environment/automation-rpc').AutomationCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['input']): Promise<import('@superone/shared/environment/automation-rpc').AutomationCallMethods[M]['result']> {
+    const { AUTOMATION_CALL_METHODS } = await import('@superone/shared/environment/automation-rpc')
+    if (!AUTOMATION_CALL_METHODS.has(method)) throw Object.assign(new Error('invalid automation operation'), { code: 'invalid_argument' })
+    const { gateway, local } = this.resolveSession(connectionId)
+    const projectId = input.projectId
+    if (local && projectId && /[/\\]/.test(projectId)) {
+      const resolved = (await gateway.listProjects()).find((project) => project.path === projectId)?.projectId
+      if (!resolved) throw Object.assign(new Error('Project not found'), { code: 'not_found' })
+      return gateway.callAutomation(method, { ...input, projectId: resolved })
+    }
+    return gateway.callAutomation(method, input)
+  }
+
   async callSessionList<M extends SessionListOperationMethod>(connectionId: string, method: M, input: SessionListOperationMethods[M]['input']): Promise<SessionListOperationMethods[M]['result']> {
     if (!SESSION_LIST_OPERATION_METHODS.has(method)) throw Object.assign(new Error('invalid session list operation'), { code: 'invalid_argument' })
     const { gateway, environmentId } = this.resolveSession(connectionId)

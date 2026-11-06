@@ -542,6 +542,9 @@ export const zh: Messages = {
     refreshFiles: '刷新文件树',
     createFailed: '无法创建 {{name}}：{{error}}',
     search: {
+      allEnvironments: '全部环境',
+      noSessions: '没有匹配的会话',
+      loadFailed: '部分环境的会话加载失败。',
       placeholder: '搜索文件...',
       noResults: '没有匹配的文件',
     },
@@ -4500,6 +4503,8 @@ export const zh: Messages = {
       createTitle: '创建自动化',
       editDescription: '更新该自动化的配置',
       createDescription: '为该项目设置一个定时任务',
+      executionEnvironment: '执行环境',
+      environmentUnavailable: '不可用',
       name: '名称',
       namePlaceholder: '每日代码审查',
       provider: '服务商',

@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from 'react'
 import { CircleCheck, NotebookPen, Pin } from 'lucide-react'
-import { SidebarHoverChevron } from './hover-disclosure'
+import { cn } from '@superone/ui/lib/utils'
+import { SidebarHoverChevron, sidebarRowActionsClass } from './hover-disclosure'
 import { sidebarSectionPanelId, type SidebarSectionId } from './sidebar-section-collapse'
 
 /**
@@ -19,6 +20,7 @@ export function SidebarSectionLabel({
   chevronWhenExpanded = false,
   children,
   icon,
+  actions,
 }: {
   section: SidebarSectionId | 'environment'
   count: number
@@ -31,16 +33,21 @@ export function SidebarSectionLabel({
   /** While open, leave the down chevron in the icon slot instead of the section glyph. */
   chevronWhenExpanded?: boolean
   icon?: ReactElement<{ className?: string }>
+  /** Sibling controls revealed on row hover or keyboard focus. */
+  actions?: ReactNode
   children: ReactNode
 }) {
-  return (
+  const label = (
     <button
       type="button"
       data-sidebar-section={section}
       aria-expanded={!collapsed}
       aria-controls={controlsId ?? (section === 'environment' ? undefined : sidebarSectionPanelId(section))}
       onClick={onToggle}
-      className="group flex w-full min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+      className={cn(
+        'flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring',
+        actions ? 'flex-1' : 'group w-full hover:bg-sidebar-hover',
+      )}
     >
       <SidebarHoverChevron
         expanded={!collapsed}
@@ -69,5 +76,14 @@ export function SidebarSectionLabel({
         </>
       )}
     </button>
+  )
+  if (!actions) return label
+  return (
+    <div className="group flex min-w-0 items-center rounded-md pr-1.5 hover:bg-sidebar-hover">
+      {label}
+      <div data-slot="section-actions" className={cn(sidebarRowActionsClass, 'group-focus-within:visible group-focus-within:w-auto group-focus-within:opacity-100')}>
+        {actions}
+      </div>
+    </div>
   )
 }

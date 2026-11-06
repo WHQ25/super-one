@@ -77,3 +77,16 @@ export interface AutomationRunNowResult {
   status: string
   sessionId?: string
 }
+
+/** Typed desktop-to-host automation calls; the scheduler stays on its owning host. */
+export interface AutomationCallMethods {
+  'automation.list': { input: AutomationListRequest; result: AutomationListResult }
+  'automation.create': { input: AutomationCreateRequest; result: AutomationCreateResult }
+  'automation.update': { input: AutomationUpdateRequest; result: AutomationUpdateResult }
+  'automation.delete': { input: AutomationDeleteRequest; result: AutomationDeleteResult }
+  'automation.runNow': { input: AutomationRunNowRequest; result: AutomationRunNowResult }
+}
+export type AutomationCallMethod = keyof AutomationCallMethods
+export const AUTOMATION_CALL_METHODS: ReadonlySet<string> = new Set([
+  'automation.list', 'automation.create', 'automation.update', 'automation.delete', 'automation.runNow',
+])

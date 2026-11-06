@@ -119,6 +119,9 @@ export interface AppServerConnection {
   request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
   respond(requestId: JsonRpcRequestId, result?: Record<string, unknown>): Promise<void>
   respondError(requestId: JsonRpcRequestId, code: number, message: string): Promise<void>
+  /** Pause RPC deadlines only once a native request has a user-facing consumer. */
+  beginUserInput?(requestId: JsonRpcRequestId, threadId: unknown): void
+  endUserInput?(requestId: JsonRpcRequestId): void
   notify(method: string, params?: Record<string, unknown>): Promise<void>
   nextNotification(): Promise<AppServerNotification>
   pollNotification?(timeoutMs: number): Promise<AppServerNotification | null>
@@ -783,7 +786,11 @@ export async function createAppServerConnection(
         }
 
         if (method) {
-          if (method === 'mcpServer/elicitation/request' && rawId !== undefined) inputBudget.begin(rawId)
+          if (rawId !== undefined && method === 'mcpServer/elicitation/request') inputBudget.begin(rawId, asRecord(msg.params)?.threadId)
+          if (method === 'serverRequest/resolved') {
+            const requestId = asRecord(msg.params)?.requestId
+            if (typeof requestId === 'string' || typeof requestId === 'number') inputBudget.end(requestId, asRecord(msg.params)?.threadId)
+          }
           dispatchNotification({
             requestIdRaw: rawId,
             requestId: rawId !== undefined ? String(rawId) : undefined,
@@ -859,6 +866,9 @@ export async function createAppServerConnection(
       }
       throw lastError instanceof Error ? lastError : new Error(String(lastError))
     },
+
+    beginUserInput: (requestId, threadId) => inputBudget.begin(requestId, threadId),
+    endUserInput: requestId => inputBudget.end(requestId),
 
     respond: async (requestId, result) => {
       if (isDev) trace('codex.appserver.respond', 'client_response', { requestId, result }, String(requestId))
@@ -944,6 +954,7 @@ export async function createAppServerConnection(
       },
       capabilities: compactRecord({
         experimentalApi: true,
+        requiredHumanApproval: true,
         extensions: CODEX_CLIENT_EXTENSIONS,
         optOutNotificationMethods: APP_SERVER_OPT_OUT_NOTIFICATIONS.length > 0
           ? [...APP_SERVER_OPT_OUT_NOTIFICATIONS]

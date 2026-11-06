@@ -61,6 +61,10 @@ function PermissionBody({ presentation }: { presentation: NonNullable<ReturnType
   return <div className="max-h-[min(60vh,32rem)] min-w-0 space-y-2 overflow-y-auto text-xs">
     {presentation.command ? <pre className="select-text whitespace-pre-wrap break-all rounded bg-muted/50 px-2 py-1.5 font-mono">{`$ ${presentation.command}`}</pre> : null}
     {presentation.directory ? <p className="break-all font-mono text-muted-foreground">{t('chat.permission.scoped.workingDirectory', { path: presentation.directory })}</p> : null}
+    {presentation.additionalScope ? <section className="space-y-1">
+      <p className="text-muted-foreground">{t('chat.permission.details.resources')}</p>
+      <pre className="select-text whitespace-pre-wrap break-all rounded bg-muted/50 px-2 py-1.5 font-mono">{presentation.additionalScope}</pre>
+    </section> : null}
     {!presentation.command && presentation.lines.length ? <div className="space-y-1">
       <p className="text-muted-foreground">{t('chat.permission.scoped.patterns')}</p>
       <pre className="select-text whitespace-pre-wrap break-all rounded bg-muted/50 px-2 py-1.5 font-mono">{presentation.lines.join('\n')}</pre>

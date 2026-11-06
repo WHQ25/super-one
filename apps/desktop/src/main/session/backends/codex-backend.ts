@@ -400,6 +400,7 @@ export class CodexBackend implements SessionBackend {
       opts.systemPromptAppend,
       opts.serviceTier ?? null,
     )
+    this.session.forkCallbacks = this.buildCallbacks()
     this.session.queueChangedFn = (threadId) => this.scheduleDurableQueueRefresh(threadId)
     await this.adoptWarmHandle()
     this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, (providerId) => {
@@ -635,6 +636,7 @@ export class CodexBackend implements SessionBackend {
         requestedServiceTier,
       )
       this.session = created
+      created.forkCallbacks = this.buildCallbacks()
       return created
     }
 
@@ -1375,6 +1377,7 @@ export class CodexBackend implements SessionBackend {
         let requestId: string | undefined
         try {
           await processServerRequest({ method: 'mcpServer/elicitation/request', requestIdRaw: incoming.id, requestId: String(incoming.id), params: incoming.params }, connection, session, {
+            onInteractionResolved: event => this.emit(event),
             onPermissionRequest: permission => { requestId = permission.requestId; this.emit({ type: 'permission_request', request: permission }) },
           }, signal)
           return {}
@@ -1988,6 +1991,7 @@ export class CodexBackend implements SessionBackend {
       onCompactionFailed: (error) => {
         this.emit({ type: 'status_indicator', indicator: null, compactResult: 'failed', compactError: error })
       },
+      onInteractionResolved: event => this.emit(event),
       onPermissionRequest: (request) => {
         this.emit({ type: 'permission_request', request })
       },

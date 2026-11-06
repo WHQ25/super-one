@@ -7,12 +7,12 @@ interface Deadline {
 
 /** Connection-local timeout budgets exclude overlapping user-input waits once. */
 export class CodexUserInputBudget {
-  private readonly waits = new Set<string | number>()
+  private readonly waits = new Map<string | number, unknown>()
   private readonly deadlines = new Set<Deadline>()
   private startedAt: number | undefined
   private elapsedMs = 0
 
-  begin(id: string | number): void {
+  begin(id: string | number, threadId?: unknown): void {
     if (!this.waits.size) {
       this.startedAt = Date.now()
       for (const deadline of this.deadlines) {
@@ -21,10 +21,11 @@ export class CodexUserInputBudget {
         deadline.remainingMs = Math.max(0, deadline.deadlineAt - Date.now())
       }
     }
-    this.waits.add(id)
+    this.waits.set(id, threadId)
   }
 
-  end(id: string | number): void {
+  end(id: string | number, threadId?: unknown): void {
+    if (threadId !== undefined && this.waits.get(id) !== threadId) return
     this.waits.delete(id)
     if (!this.waits.size && this.startedAt !== undefined) {
       this.elapsedMs += Math.max(0, Date.now() - this.startedAt)

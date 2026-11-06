@@ -168,7 +168,7 @@ export interface TranscriptBlock extends MessageDisplayFields {
   queuedInComposer?: boolean
 }
 
-export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> {
+export interface PendingInteraction extends Pick<PermissionRequest, 'decisionReason' | 'blockedPath' | 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails' | 'serverLabel' | 'elicitationUrl' | 'elicitationId' | 'elicitationAcceptOnOpen'> {
   interactionId: string
   kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm' | 'session_cleanup_confirm'
   toolName?: string
@@ -189,6 +189,7 @@ export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm'
   requestKind?: string
   message?: string
   serverName?: string
+  requiresHumanApproval?: boolean
   allowAlwaysAllow?: boolean
 }
 
@@ -213,6 +214,7 @@ export interface SessionCleanupConfirmInput {
 }
 
 export type PermissionDecision = 'allow' | 'deny'
+export type ProviderPermissionHandler = (interaction: PendingInteraction, signal: AbortSignal) => Promise<{ decision: 'allow' | 'deny' | 'allow_always'; cancel?: boolean }>
 
 export interface ElicitationDecision {
   action: 'accept' | 'decline' | 'cancel'
@@ -334,6 +336,8 @@ export type TurnRunner = ((input: {
   /** Harness output produced after this user turn has settled. */
   onAmbientEvent?: (event: AgentEvent) => void
   onPermission?: (interaction: PendingInteraction) => Promise<PermissionDecision>
+  /** Provider-requested decisions always reach the controller; persistence is owned by the provider. */
+  onPermissionResponse?: ProviderPermissionHandler
   /** Form input always waits for the controller, including full-access sessions. */
   onElicitation?: (interaction: PendingInteraction, signal?: AbortSignal) => Promise<ElicitationDecision>
   /** Optional user-question waiter (lease-gated via SessionRuntime.respondQuestion). */
@@ -354,7 +358,7 @@ export type TurnRunner = ((input: {
   interruptSession?: (sessionId: string) => void | Promise<void>
   /** Tear down long-lived harness state for one SuperOne session id. */
   getMcpAppsProvider?: (session: NodeSessionRecord, binding: McpAppsBinding, origin: McpAppOrigin,
-    host?: { onElicitation: (interaction: PendingInteraction, signal: AbortSignal) => Promise<ElicitationDecision> }) => Promise<McpAppsProvider>
+    host?: { onPermissionResponse?: ProviderPermissionHandler; onElicitation: (interaction: PendingInteraction, signal: AbortSignal) => Promise<ElicitationDecision> }) => Promise<McpAppsProvider>
   disposeSession?: (sessionId: string) => void | Promise<void>
   /**
    * One op on the live runtime's mod surface (Claude Code mods). Never starts a
@@ -374,7 +378,7 @@ export type TurnRunner = ((input: {
    * Absent when the runner has no Codex process.
    */
   codexVoice?: {
-    open(session: NodeSessionRecord): Promise<CodexVoiceConnection>
+    open(session: NodeSessionRecord, host?: { onPermissionResponse?: ProviderPermissionHandler }): Promise<CodexVoiceConnection>
   }
 }
 

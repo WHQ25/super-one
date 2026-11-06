@@ -637,3 +637,109 @@ items still map to Agent cards.
   passed to a narrower DOM matcher). Full typechecks still report those errors.
 - Harness API inventory and whitespace checks pass. Authenticated native subagent
   turns and a physical phone session were not exercised in this change.
+
+
+## Managed command checkpoints require a fresh human decision
+
+Observed: 0.167.0 tagged protocol/README and generated binary schema.
+`kind: humanCommand` requires the `requiredHumanApproval` initialization opt-in.
+Only one-time `accept`, `decline`, and `cancel` decisions are valid. The checkpoint
+is not an execution item, and unavailable capable clients cause rejection.
+Desktop carries `requiresHumanApproval` through shared permission data, hides
+remember actions, and clamps old-client always-allow responses to one-time accept.
+The generic node runtime does not bypass this semantic flag via permission mode
+or previously saved tool grants. The initial upgrade omitted the node opt-in; that restriction was retired by the remote-native-approval follow-up on 2026-11-06 (below).
+
+Guards: `codex-turn.test.ts` checkpoint/replay tests,
+`app-server-connection.test.ts` initialization, shared node event/snapshot replay,
+`PermissionPrompt.test.tsx`, and runtime `session-runtime.interaction.test.ts`
+fresh-human scenarios. Live authenticated managed-policy execution is unverified.
+
+## Server resolution ends the host interaction independently of a turn
+
+Observed: 0.167.0; the notification itself predates this upgrade.
+`serverRequest/resolved` can mean another client answered or the underlying request
+ended. It is scoped by connection, thread and raw JSON-RPC request ID. A resolved
+request can still be waiting in a turn inbox, so registration precedes inbox
+routing. A cancelled waiter must not send a late answer, and the input deadline
+must resume without waiting for that answer. Root, child, standalone MCP App and
+idle checkpoint paths use the same connection-local tracker. A connection closing
+aborts its waiters. Answered requests remain deduplicated until acknowledgement.
+
+Guards: `packages/codex/src/server-request-lifecycle.test.ts`,
+`app-server-client.test.ts`, `user-input-budget.test.ts` and desktop
+`codex-turn.test.ts`. Existing form resources are released by the waiter finally
+path. UI cancellation uses the shared `interaction_resolved` event.
+
+## Thread item timing remains flat and nullable
+
+Observed: 0.166.0–0.167.0 tagged protocol. Internal Rust `ThreadItemPayload` is
+flattened on the JSON wire. `startedAtMs` and `completedAtMs` may be absent/null
+for older history. Both host mappers prefer valid recorded times for reasoning
+and image generation, retaining the old live fallback when absent. Reversed
+recorded times never produce a negative duration. Native dollar usage is separate
+from credit-derived estimates; absent/null is unknown, and zero is a valid value.
+
+Guards: `packages/codex/src/agent-event-mapper.test.ts`,
+`codex-admin.test.ts`, and shared `item-timing.ts` used by both host mappers.
+
+
+## Remote native approval ownership and lifetime
+
+Observed: 0.167.0 host integration, completed 2026-11-06. Production node
+connections opt into `requiredHumanApproval` only when a native handler is present.
+The handler maps command/file/network requests into the existing durable
+permission channel. `SessionRuntime` owns pending snapshots, event replay and
+control-lease checks; its provider-response callback skips host auto-approval and
+preserves explicit allow/deny/cancel/session decisions. Session-wide approvals
+are returned to Codex, not copied into a blanket host tool grant. Checkpoints
+cannot become session grants, even with a stale or incorrectly behaving client.
+
+The callback is session-owned rather than bound to the latest text turn. Saved
+View and voice-opened sessions install it before thread resume; ordinary text
+runs also install it before resume/start. Native child requests must resolve
+through a bounded provider ancestry chain to the session root, without resuming
+or changing the child. An independent 15-second ancestry deadline and the
+approval's abort signal bound reads even while user input pauses RPC deadlines.
+The runtime controller slot serializes native permissions, MCP forms, questions,
+plans, agent-launch confirms and cleanup confirms in runtime admission order.
+Child ancestry checks precede admission, so a later root request may be
+presented before a child whose origin check is still running.
+Root completion clears root requests without cancelling another child turn.
+Stop aborts pending and queued decisions, including while the root is idle;
+normal turn completion retains child approval support. Connection loss aborts
+its waiters. The transport still suppresses replies for provider-resolved requests.
+
+Desktop turn cleanup selects approvals by thread and owning controller, including
+realtime worker turns. Child/idle requests survive root completion. Both desktop
+and node Stop cancel the currently pending requests while idle as well as active;
+future requests can ask again without requiring a new text turn. Desktop user
+wait budgets begin when a native approval is presented, so an ordinary approval
+parked in an idle inbox cannot suspend unrelated RPC deadlines. Terminal cleanup
+releases the budget even when provider resolution suppresses the reply.
+
+Node live/snapshot prompt projections use `lifetime: session`; a late root
+`message_interrupted` cannot remove a newly presented queued prompt. The host's
+`interaction_resolved` event owns removal. Desktop Codex prompts use the same
+explicit lifetime. Decision reasons, blocked paths and additional permission
+grants survive projection. Extra filesystem/network grants appear next to the
+command before confirmation on both desktop and phone; the exact metadata also
+remains available in technical details. Extra-grant approvals are one-time, and
+both wire responders clamp unavailable persistent decisions to `accept`.
+
+Guards: `apps/cli/src/session/codex-native-approval.test.ts` exercises the real
+runner + SessionRuntime + durable pending state and lease gate with a fake stdio
+process. It covers resume replay, descendant validation, root/child completion,
+FIFO decisions, active/idle Stop, disconnect, voice-first ownership, file/network
+approval and stale controller generations. Core `app-server-client.test.ts` tests
+wire-level one-time enforcement when a host incorrectly returns `acceptForSession`.
+Desktop turn/connection tests cover owner cleanup, idle Stop, turn resolution and
+idle RPC deadlines. `session.test.ts` also checks the production Session interrupt
+entrypoint reaches a backend with pending approvals in idle/ended states,
+preserves that state after cancellation, and remains a no-op without a prompt.
+Chat-core's `node-interaction-interrupt.test.ts` covers queued
+prompt survival through root cancellation in both live and snapshot projections.
+`PermissionPrompt.test.tsx` and mobile `ScopedPermissionContent.test.tsx` check
+the command and extra grants are visible without opening technical details.
+No authenticated remote model invocation or physical controller UI was used in
+these checks.

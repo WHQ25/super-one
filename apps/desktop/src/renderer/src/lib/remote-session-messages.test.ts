@@ -28,6 +28,7 @@ describe('nodePendingToPermissionRequest', () => {
     })
     expect(req).toEqual({
       requestId: 'i1',
+      lifetime: 'session',
       toolName: 'Bash',
       toolUseId: 'tu1',
       input: { command: 'ls' },

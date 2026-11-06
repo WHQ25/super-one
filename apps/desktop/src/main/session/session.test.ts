@@ -348,6 +348,35 @@ describe('Session state machine', () => {
     expect(backend.interruptCalls).toBe(0)
   })
 
+  it.each(['idle', 'ended'] as const)('interrupt() reaches a pending Codex approval while %s', async status => {
+    const { session, backend } = makeSession({ harnessId: 'codex', providerId: 'codex-base' })
+    if (status === 'ended') {
+      const send = session.send({ content: 'start' })
+      await vi.waitFor(() => expect(backend.resolveSend).not.toBeNull())
+      backend.resolveSend!()
+      await send
+    }
+    const request: AgentEvent = { type: 'permission_request', request: {
+      requestId: 'idle-checkpoint', toolName: 'Bash', input: { command: 'build' },
+      requiresHumanApproval: true, allowAlwaysAllow: false, lifetime: 'session',
+    } }
+    backend.pendingInteractions = [request]
+    const resolved = vi.fn()
+    session.on(event => { if (event.type === 'interaction_resolved') resolved(event) })
+    const interrupt = vi.spyOn(backend, 'interrupt').mockImplementation(async () => {
+      backend.pendingInteractions = []
+      backend.emit({ type: 'interaction_resolved', interactionType: 'permission', requestId: 'idle-checkpoint' })
+    })
+    expect(session.isStreaming()).toBe(false)
+    expect(await session.interrupt()).toBe(true)
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(resolved).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'idle-checkpoint' }))
+    expect(backend.getPendingInteractions()).toEqual([])
+    expect(session.snapshot.status).toBe(status)
+    expect(await session.interrupt()).toBe(false)
+    expect(interrupt).toHaveBeenCalledTimes(1)
+  })
+
   it('interrupt() reaches the backend during a continuation turn the send() call no longer covers', async () => {
     // Claude's queued send returns as soon as the message is pushed, so the turn
     // it eventually runs streams with `_status === 'ended'`.

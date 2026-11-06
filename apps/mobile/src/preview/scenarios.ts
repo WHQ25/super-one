@@ -16,6 +16,16 @@ const plan: PlanApprovalRequest = {
 }
 
 export const nativeScenarios: NativeScenario[] = [
+  { id: 'permission/additional-grants', category: 'Permissions', title: 'Command with additional grants', description: 'Command, extra filesystem scope, and network access visible before approval.', request: {
+    requestId: 'preview-additional-grants', toolName: 'Bash', input: { command: 'build release', cwd: '/workspace/project' },
+    requiresHumanApproval: true, allowAlwaysAllow: false,
+    permissionDetails: { action: 'shell', resources: [], source: { toolName: 'Bash', input: { command: 'build release', cwd: '/workspace/project' } },
+      metadata: { additionalPermissions: { fileSystem: { read: ['/outside/参考材料'], write: ['/outside/release-artifacts'] }, network: { enabled: true } } } },
+  } },
+  { id: 'permission/human-checkpoint', category: 'Permissions', title: 'Fresh human checkpoint', description: 'One-time command approval with no saved or automatic grant.', request: {
+    requestId: 'preview-human-checkpoint', toolName: 'Bash', input: { command: 'git push origin release', cwd: '/workspace/project' },
+    requiresHumanApproval: true, allowAlwaysAllow: false, decisionReason: 'This managed command needs a fresh human decision.',
+  } },
   { id: 'permission/command', category: 'Permissions', title: 'Command approval', description: 'Allow, always allow, suggestions, and rejection feedback.', request: ordinaryPermission },
   { id: 'permission/blocked-path', category: 'Permissions', title: 'Blocked path / long content', description: 'Long remote paths and mixed Chinese / English content.', request: {
     ...ordinaryPermission, requestId: 'preview-blocked-path', toolName: 'Read', allowAlwaysAllow: false, suggestions: [], decisionReason: undefined,

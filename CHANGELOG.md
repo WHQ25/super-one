@@ -15,11 +15,13 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Codex 0.167.0 supports native command/file approvals on desktop and remote nodes. Managed checkpoints require a fresh one-time approval even when other commands use automatic review.
 - Markdown shell fences (bash, sh, shell, and zsh) run in the login shell in a new terminal tab. The script runs in a child of that shell, so exiting the script leaves the tab open.
 - Fullscreen image preview can annotate a picture: pen, rectangle, circle, line, arrow, text, step marker, redact or mosaic, and recognize text. The result can be saved or added to the chat.
 
 ### Fixed
 
+- Codex clears approvals and forms when their provider request ends, including child-thread and remote-node requests, and ignores late replies. Recorded reasoning and image-generation times survive history reload.
 - The Antigravity mark fits inside its icon box.
 - The sidebar leaves 8px between the app drawer and the environment list.
 - A Claude verification_required response is no longer shown as an expired sign-in.

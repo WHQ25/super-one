@@ -567,3 +567,78 @@ describe('codex app-server client (Stage 4)', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 })
+
+describe('provider-resolved remote forms', () => {
+  it('aborts only the matching request and suppresses a late host response', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-resolved-form-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    let hostSignal!: AbortSignal
+    let settle!: (result: Record<string, unknown>) => void
+    const onServerRequest = vi.fn((_, signal: AbortSignal) => {
+      hostSignal = signal
+      return new Promise<Record<string, unknown>>(resolve => { settle = resolve })
+    })
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child), onServerRequest })
+    await pump()
+    const init = JSON.parse(lines[0])
+    expect(init.params.capabilities.requiredHumanApproval).toBeUndefined()
+    child.stdout.write(`${JSON.stringify({ id: init.id, result: {} })}\n`)
+    const client = await opening
+    try {
+      const form = { id: 0, method: 'mcpServer/elicitation/request', params: { threadId: 'child', mode: 'form' } }
+      child.stdout.write(`${JSON.stringify(form)}\n${JSON.stringify(form)}\n`)
+      await pump()
+      expect(onServerRequest).toHaveBeenCalledTimes(1)
+      child.stdout.write(`${JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: 'other', requestId: 0 } })}\n`)
+      await pump()
+      expect(hostSignal.aborted).toBe(false)
+      child.stdout.write(`${JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: 'child', requestId: 0 } })}\n`)
+      await pump()
+      expect(hostSignal.aborted).toBe(true)
+      settle({ action: 'accept', content: null, _meta: null })
+      await pump()
+      expect(lines.map(line => JSON.parse(line)).some(message => message.id === 0)).toBe(false)
+    } finally { await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+describe('native approval wire contract', () => {
+  it('declines native requests with a valid protocol decision when no handler exists', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-native-unavailable-')), bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild(), lines = collectLines(child.stdin)
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child) })
+    await pump()
+    const init = JSON.parse(lines[0])
+    expect(init.params.capabilities.requiredHumanApproval).toBeUndefined()
+    child.stdout.write(`${JSON.stringify({ id: init.id, result: {} })}\n`)
+    const client = await opening
+    try {
+      child.stdout.write(`${JSON.stringify({ id: 'native', method: 'item/commandExecution/requestApproval', params: { threadId: 'root', kind: 'command' } })}\n`)
+      await pump()
+      expect(lines.map(line => JSON.parse(line)).find(message => message.id === 'native')).toEqual({ jsonrpc: '2.0', id: 'native', result: { decision: 'decline' } })
+    } finally { await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('enables the human capability only with a native handler and clamps persistent checkpoint answers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-native-wire-')), bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild(), lines = collectLines(child.stdin)
+    const onNativeApproval = vi.fn(async () => ({ decision: 'acceptForSession' }))
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child), onNativeApproval })
+    await pump()
+    const init = JSON.parse(lines[0])
+    expect(init.params.capabilities.requiredHumanApproval).toBe(true)
+    child.stdout.write(`${JSON.stringify({ id: init.id, result: {} })}\n`)
+    const client = await opening
+    try {
+      child.stdout.write(`${JSON.stringify({ id: 0, method: 'item/commandExecution/requestApproval', params: { threadId: 'root', kind: 'humanCommand' } })}\n`)
+      await pump()
+      expect(onNativeApproval).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 0, method: 'item/commandExecution/requestApproval' }), expect.any(AbortSignal))
+      expect(lines.map(line => JSON.parse(line)).find(message => message.id === 0)).toEqual({ jsonrpc: '2.0', id: 0, result: { decision: 'accept' } })
+    } finally { await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+})

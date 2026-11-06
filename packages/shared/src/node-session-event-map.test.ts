@@ -30,6 +30,22 @@ const ctx = {
 }
 
 describe('mapNodeSessionEvents (text-only)', () => {
+  it('preserves the explanation and blocked path in live and replayed native approvals', async () => {
+    const payload = { interactionId: 'explain', kind: 'permission', toolName: 'FileChange', input: {}, createdAt: 1, decisionReason: 'Grant the requested write scope', blockedPath: '/work/reference' }
+    expect(mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload })], ctx))
+      .toMatchObject([{ type: 'permission_request', request: { decisionReason: payload.decisionReason, blockedPath: payload.blockedPath } }])
+    const { nodePendingToPermissionRequest } = await import('./node-session-messages')
+    expect(nodePendingToPermissionRequest(payload)).toMatchObject({ decisionReason: payload.decisionReason, blockedPath: payload.blockedPath })
+  })
+
+  it('retains fresh-human semantics in a remote replay with stale remember metadata', async () => {
+    const payload = { interactionId: 'human', kind: 'permission', toolName: 'Bash', requiresHumanApproval: true, allowAlwaysAllow: true, createdAt: 1 }
+    expect(mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload })], ctx))
+      .toMatchObject([{ type: 'permission_request', request: { requiresHumanApproval: true, allowAlwaysAllow: false } }])
+    const { nodePendingToPermissionRequest } = await import('./node-session-messages')
+    expect(nodePendingToPermissionRequest(payload)).toMatchObject({ requiresHumanApproval: true, allowAlwaysAllow: false })
+  })
+
   it('retains approval scope and tool context in remote permission replay', () => {
     const permissionDetails = { action: 'external_directory', resources: ['/outside/*'], save: ['/outside/*'],
       source: { toolName: 'read', toolUseId: 'call_1', input: { path: '/outside/spec.md' } }, metadata: { reason: 'Reference' } }

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { PermissionPrompt } from './PermissionPrompt'
 import { useChatStore, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
@@ -609,3 +609,46 @@ export const McpUnsupportedForm: Story = {
     </>
   )],
 }
+
+
+const HUMAN_COMMAND: PermissionRequest = {
+  requestId: 'p-human-command', toolName: 'Bash', input: { command: 'git push origin release', cwd: '/workspace/project' },
+  requiresHumanApproval: true, allowAlwaysAllow: false,
+  decisionReason: 'This managed command requires a fresh human decision.',
+}
+
+function HumanCheckpointDemo({ request = HUMAN_COMMAND }: { request?: PermissionRequest } = {}) {
+  const [pending, setPending] = useState(true)
+  const [result, setResult] = useState('Awaiting a fresh human decision')
+  useEffect(() => {
+    const original = useChatStore.getState().respondToPermission
+    useChatStore.setState({ respondToPermission: async (id, allow) => {
+      if (id !== request.requestId) return false
+      setResult(allow ? 'Allowed once' : 'Declined')
+      setPending(false)
+      return true
+    } })
+    return () => { useChatStore.setState({ respondToPermission: original }) }
+  }, [request])
+  return <>
+    <SeedPermission request={pending ? request : null} sessionProvider="codex" />
+    <div className="mb-3 flex flex-wrap gap-2 text-xs">
+      <button onClick={() => { setPending(false); setResult('Resolved by the server; late clicks are ignored') }}>Resolve on server</button>
+      <button onClick={() => { setPending(true); setResult('Unanswered checkpoint replayed after reconnect') }}>Reconnect / replay</button>
+    </div>
+    {pending && <PermissionPrompt request={request} />}
+    <p className="mt-3 text-xs text-muted-foreground">{result}</p>
+  </>
+}
+
+/** Uses production decisions, with local responses and explicit server resolution/replay controls. */
+export const CodexHumanCheckpoint: Story = { render: () => <HumanCheckpointDemo /> }
+export const CodexHumanCheckpointNarrow: Story = { render: () => <StoryShell width={320}><HumanCheckpointDemo /></StoryShell> }
+
+const EXTRA_GRANTS: PermissionRequest = {
+  ...HUMAN_COMMAND, requestId: 'p-additional-grants',
+  permissionDetails: { action: 'shell', resources: [], source: { toolName: 'Bash', input: HUMAN_COMMAND.input },
+    metadata: { additionalPermissions: { fileSystem: { read: ['/outside/参考材料'], write: ['/outside/release-artifacts'] }, network: { enabled: true } } } },
+}
+export const CodexAdditionalGrants: Story = { render: () => <HumanCheckpointDemo request={EXTRA_GRANTS} /> }
+export const CodexAdditionalGrantsNarrow: Story = { render: () => <StoryShell width={320}><HumanCheckpointDemo request={EXTRA_GRANTS} /></StoryShell> }

@@ -71,6 +71,7 @@ const {
   extractSuperoneMiniAppToolName,
   waitForCodexMcpServerReady,
   processServerRequest,
+  rejectPendingApprovals,
   prewarmCodexSession,
   isCodexEmptyRolloutError,
   isCodexThreadNotFoundError,
@@ -94,6 +95,140 @@ function makeSession(overrides: { threadId?: string | null; model?: string } = {
     ...createCodexSession('test-session', '/project', overrides.model, overrides.threadId ?? undefined, undefined, 'default'),
   }
 }
+
+describe('Codex 0.167 command checkpoints and server resolution', () => {
+  const command = (threadId = 'root', kind = 'humanCommand') => ({
+    requestIdRaw: 0, requestId: '0', method: 'item/commandExecution/requestApproval',
+    params: { threadId, turnId: 'turn', itemId: 'item', approvalId: 'checkpoint', kind, command: 'git push', cwd: '/project' },
+  })
+  it('presents a managed checkpoint as a fresh one-time decision', () => {
+    expect(mapApprovalRequest(command())?.request).toMatchObject({ requiresHumanApproval: true, allowAlwaysAllow: false })
+    expect(mapApprovalRequest(command('root', 'command'))?.request.allowAlwaysAllow).toBe(true)
+  })
+  it('clamps an old client always-allow response and deduplicates replay', async () => {
+    const session = makeSession({ threadId: 'root' })
+    const respond = vi.fn(async () => {})
+    const connection = { respond, respondError: vi.fn() } as never
+    const onPermissionRequest = vi.fn()
+    const first = processServerRequest(command(), connection, session, { onPermissionRequest })
+    const replay = processServerRequest(command(), connection, session, { onPermissionRequest })
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+    expect(respondToCodexPermission(session, '0', true, true)).toBe(true)
+    await Promise.all([first, replay])
+    expect(respond).toHaveBeenCalledTimes(1)
+    expect(respond).toHaveBeenCalledWith(0, { decision: 'accept' })
+    expect(respondToCodexPermission(session, '0', true)).toBe(false)
+  })
+  it.each(['root', 'child'])('clears an ended %s approval outside the turn loop without replying twice', async threadId => {
+    const { createNotificationDispatcher } = await import('./codex-notification-dispatcher')
+    let push!: (note: unknown) => void
+    const respond = vi.fn(async () => {})
+    const connection = { respond, respondError: vi.fn(), nextNotification: () => new Promise(resolve => { push = resolve }) } as never
+    const dispatcher = createNotificationDispatcher(connection)
+    const session = makeSession({ threadId: 'root' })
+    const onInteractionResolved = vi.fn()
+    const controller = new AbortController()
+    const handling = processServerRequest(command(threadId), connection, session, { onPermissionRequest: vi.fn(), onInteractionResolved }, controller.signal)
+    try {
+      push({ method: 'serverRequest/resolved', params: { threadId: 'unrelated', requestId: 0 } })
+      await dispatcher.mainInbox.next()
+      expect(session.pendingApprovals.size).toBe(1)
+      push({ method: 'serverRequest/resolved', params: { threadId, requestId: 0 } })
+      await vi.waitFor(() => expect(session.pendingApprovals.size).toBe(0))
+      await handling
+      expect(onInteractionResolved).toHaveBeenCalledWith({ type: 'interaction_resolved', interactionType: 'permission', requestId: '0' })
+      expect(respondToCodexPermission(session, '0', true)).toBe(false)
+      expect(respond).not.toHaveBeenCalled()
+    } finally { controller.abort(); await handling; dispatcher.close() }
+  })
+  it('replays an idle checkpoint through persistent callbacks before any turn reader exists', async () => {
+    const { createCodexSessionDispatcher } = await import('./codex-session-dispatcher')
+    let push!: (note: unknown) => void
+    const respond = vi.fn(async () => {})
+    const connection = { respond, respondError: vi.fn(), nextNotification: () => new Promise(resolve => { push = resolve }) } as never
+    const session = makeSession({ threadId: 'root' })
+    const onPermissionRequest = vi.fn(), onInteractionResolved = vi.fn()
+    session.forkCallbacks = { onPermissionRequest, onInteractionResolved }
+    const dispatcher = createCodexSessionDispatcher(session, connection)
+    try {
+      push(command())
+      await vi.waitFor(() => expect(onPermissionRequest).toHaveBeenCalledTimes(1))
+      push(command())
+      await Promise.resolve()
+      expect(onPermissionRequest).toHaveBeenCalledTimes(1)
+      push({ method: 'serverRequest/resolved', params: { threadId: 'root', requestId: 0 } })
+      await vi.waitFor(() => expect(onInteractionResolved).toHaveBeenCalledTimes(1))
+      expect(session.pendingApprovals.size).toBe(0)
+      expect(respond).not.toHaveBeenCalled()
+    } finally { dispatcher.close() }
+  })
+  it('keeps a child checkpoint alive when root cleanup runs and cancels it cleanly on session reset', async () => {
+    const session = makeSession({ threadId: 'root' }), root = new AbortController()
+    const respond = vi.fn(async () => {}), onInteractionResolved = vi.fn()
+    const connection = { respond, respondError: vi.fn() } as never
+    const child = processServerRequest(command('child'), connection, session, { onPermissionRequest: vi.fn(), onInteractionResolved })
+    rejectPendingApprovals(session, 'root ended', { threadId: 'root', signal: root.signal })
+    expect(session.pendingApprovals.size).toBe(1)
+    rejectPendingApprovals(session, 'session reset')
+    await child
+    expect(respond).toHaveBeenCalledWith(0, { decision: 'cancel' })
+    expect(onInteractionResolved).toHaveBeenCalledWith({ type: 'interaction_resolved', interactionType: 'permission', requestId: '0' })
+    expect(session.pendingApprovals.size).toBe(0)
+  })
+  it('releases a completed child checkpoint and its input budget without sending a late reply', async () => {
+    const { createNotificationDispatcher } = await import('./codex-notification-dispatcher')
+    let push!: (note: unknown) => void
+    const respond = vi.fn(async () => {}), beginUserInput = vi.fn(), endUserInput = vi.fn()
+    const connection = { respond, beginUserInput, endUserInput, respondError: vi.fn(), nextNotification: () => new Promise(resolve => { push = resolve }) } as never
+    const dispatcher = createNotificationDispatcher(connection)
+    try {
+      const session = makeSession({ threadId: 'root' }), onInteractionResolved = vi.fn()
+      const handling = processServerRequest(command('child'), connection, session, { onPermissionRequest: vi.fn(), onInteractionResolved })
+      expect(beginUserInput).toHaveBeenCalledWith(0, 'child')
+      push({ method: 'turn/completed', params: { threadId: 'child', turn: { id: 'turn' } } })
+      await handling
+      expect(session.pendingApprovals.size).toBe(0)
+      expect(onInteractionResolved).toHaveBeenCalledTimes(1)
+      expect(endUserInput).toHaveBeenCalledWith(0)
+      expect(respond).not.toHaveBeenCalled()
+    } finally { dispatcher.close() }
+  })
+  it('maps managed network prompts to the existing destination-specific surface', () => {
+    const note = { ...command('root', 'command'), params: { ...command().params, kind: 'command', networkApprovalContext: { host: 'example.org', protocol: 'https', port: 443 } } }
+    expect(mapApprovalRequest(note)?.request).toMatchObject({ toolName: 'SandboxNetworkAccess', input: { host: 'example.org', protocol: 'https', port: 443 } })
+  })
+  it('clamps a stale persistent answer when the provider only offered one-time decisions', async () => {
+    const session = makeSession({ threadId: 'root' }), respond = vi.fn(async () => {})
+    const base = command('root', 'command')
+    const note = { ...base, params: { ...base.params, availableDecisions: ['accept', 'decline', 'cancel'] } }
+    const handling = processServerRequest(note, { respond, respondError: vi.fn() } as never, session, { onPermissionRequest: vi.fn() })
+    expect(respondToCodexPermission(session, '0', true, true)).toBe(true)
+    await handling
+    expect(respond).toHaveBeenCalledWith(0, { decision: 'accept' })
+  })
+  it('cancels an idle checkpoint on Stop and accepts a new checkpoint afterwards', async () => {
+    const session = makeSession({ threadId: 'root' }), respond = vi.fn(async () => {}), onInteractionResolved = vi.fn()
+    const connection = { respond, respondError: vi.fn() } as never
+    const callbacks = { onPermissionRequest: vi.fn(), onInteractionResolved }
+    const first = processServerRequest(command(), connection, session, callbacks)
+    expect(interruptCodex(session)).toBe(true)
+    await first
+    expect(respond).toHaveBeenCalledWith(0, { decision: 'cancel' })
+    expect(onInteractionResolved).toHaveBeenCalledTimes(1)
+    const next = { ...command(), requestIdRaw: 1, requestId: '1' }
+    const second = processServerRequest(next, connection, session, callbacks)
+    expect(respondToCodexPermission(session, '1', true)).toBe(true)
+    await second
+    expect(respond).toHaveBeenLastCalledWith(1, { decision: 'accept' })
+  })
+  it('uses structured MCP tool names instead of approval message wording', () => {
+    const mapped = mapApprovalRequest({ requestIdRaw: 'm', requestId: 'm', method: 'mcpServer/elicitation/request', params: {
+      threadId: 'root', serverName: 'superone', message: 'Localized approval text', requestedSchema: { type: 'object', properties: {} },
+      _meta: { tool_name: 'terminal_tabs', tool_params: { action: 'run', command: 'echo hello' } },
+    } })
+    expect(mapped?.request).toMatchObject({ toolName: 'mcp__superone__terminal_tabs', input: { action: 'run', command: 'echo hello' } })
+  })
+})
 
 describe('waitForCodexMcpServerReady', () => {
   type Note = { requestIdRaw?: unknown; method: string; params: Record<string, unknown> }
@@ -1151,12 +1286,12 @@ describe('processServerRequest', () => {
 
     mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'allowed' })
     await processServerRequest(notification, connection as never, makeSession() as never, { onPermissionRequest })
-    expect(mockGateTerminalTabsCall).toHaveBeenCalledWith('test-session', { action: 'run', command: 'bun run dev' }, { signal: undefined })
+    expect(mockGateTerminalTabsCall).toHaveBeenCalledWith('test-session', { action: 'run', command: 'bun run dev' }, { signal: expect.any(AbortSignal) })
     expect(respond).toHaveBeenLastCalledWith(42, { action: 'accept', content: null, _meta: null })
 
     mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'rejected', reason: 'no' })
-    await processServerRequest(notification, connection as never, makeSession() as never, { onPermissionRequest })
-    expect(respond).toHaveBeenLastCalledWith(42, { action: 'decline', content: null, _meta: null })
+    await processServerRequest({ ...notification, requestIdRaw: 43, requestId: '43' }, connection as never, makeSession() as never, { onPermissionRequest })
+    expect(respond).toHaveBeenLastCalledWith(43, { action: 'decline', content: null, _meta: null })
     // The generic prompt never opened: the gate owns the UI.
     expect(onPermissionRequest).not.toHaveBeenCalled()
   })

@@ -131,10 +131,11 @@ export function reduceLifecycle(
             content: sealStreamingTools(msg.content),
           }
         }),
-        // App and widget forms belong to their opener, not the turn.
-        pendingPermissions: session.pendingPermissions.filter(isAppInputRequest),
-        pendingQuestion: null,
-        pendingPlanApproval: null,
+        // A node may already have presented a child or queued interaction before
+        // this root interruption arrives. Its resolution events own that prompt.
+        pendingPermissions: session.pendingPermissions.filter(request => request.lifetime === 'session' || isAppInputRequest(request)),
+        pendingQuestion: session.pendingQuestion?.lifetime === 'session' ? session.pendingQuestion : null,
+        pendingPlanApproval: session.pendingPlanApproval?.lifetime === 'session' ? session.pendingPlanApproval : null,
         awaitingAssistantReply: false,
         // A sent `/recap` ends with its turn when the stdout never comes.
         isRecapping: false,

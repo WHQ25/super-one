@@ -22,6 +22,8 @@ export interface PermissionPresentation {
   lines: string[]
   command?: string
   directory?: string
+  /** Additional grants must be visible alongside the triggering action. */
+  additionalScope?: string
   diff?: string
   patch?: string
   editInput?: Record<string, unknown>
@@ -49,7 +51,9 @@ export function permissionPresentation(request: PermissionRequest): PermissionPr
   const resources = details.resources
   const path = text(input.path) || text(input.filePath) || text(input.file_path) || text(input.filepath) || resources[0] || ''
   const action = ({ bash: 'shell', write: 'edit', patch: 'edit', task: 'subagent' } as Record<string, string>)[details.action] ?? details.action
-  const base = { target: path, lines: resources }
+  const base = { target: path, lines: resources,
+    ...(metadata.additionalPermissions && typeof metadata.additionalPermissions === 'object'
+      ? { additionalScope: JSON.stringify(metadata.additionalPermissions, null, 2) } : {}) }
   switch (action) {
     case 'external_directory': return { ...base, kind: 'externalDirectory', icon: 'folder', target: permissionDirectory(text(metadata.parentDir) || text(metadata.filepath) || resources[0] || '') }
     case 'read': return { ...base, kind: 'read', icon: 'file-text' }
@@ -79,5 +83,5 @@ export function permissionPresentationTitle(presentation: PermissionPresentation
 }
 
 export function canRememberPermission(request: PermissionRequest): boolean {
-  return !request.requestKind && request.allowAlwaysAllow && (request.permissionDetails?.save?.length ?? 0) > 0
+  return !request.requiresHumanApproval && !request.requestKind && request.allowAlwaysAllow && (request.permissionDetails?.save?.length ?? 0) > 0
 }

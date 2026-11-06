@@ -156,6 +156,11 @@ export function permissionSuggestionLabel(suggestion: Record<string, unknown>): 
 }
 
 export function permissionSheetPresentation(request: PermissionRequest): PermissionSheetPresentation {
+  const presentation = permissionSheetDetails(request)
+  return request.requiresHumanApproval ? { ...presentation, alwaysLabel: undefined, sessionLabel: undefined } : presentation
+}
+
+function permissionSheetDetails(request: PermissionRequest): PermissionSheetPresentation {
   switch (request.requestKind) {
     case 'input_request':
       return { title: request.inputRequest?.title ?? request.message ?? 'Input requested', description: request.inputRequest?.description, approveLabel: request.inputRequest?.submitLabel ?? 'Submit', denyLabel: 'Cancel', items: [] }

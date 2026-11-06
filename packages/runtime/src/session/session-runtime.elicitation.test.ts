@@ -95,3 +95,52 @@ describe('durable elicitation on the permission channel', () => {
     await vi.waitFor(() => expect(observed).toEqual({ action: 'accept', content: { count: 2 }, _meta: null }))
   })
 })
+
+describe('one controller slot across interaction kinds', () => {
+  it('queues a provider approval, question, plan and host confirms without replacing any prompt', async () => {
+    let nativeResult: unknown, questionResult: unknown, planResult: unknown
+    const runner: TurnRunner = async input => {
+      const native = input.onPermissionResponse!({ interactionId: 'native', kind: 'permission', createdAt: 1, toolName: 'Bash', requiresHumanApproval: true, allowAlwaysAllow: false }, input.signal).then(value => { nativeResult = value })
+      const question = input.onQuestion!({ interactionId: 'question', kind: 'question', createdAt: 1 }).then(value => { questionResult = value })
+      const plan = input.onPlan!({ interactionId: 'plan', kind: 'plan', createdAt: 1 }).then(value => { planResult = value })
+      await Promise.all([native, question, plan])
+      return { finalText: 'done' }
+    }
+    const f = fixture(runner)
+    try {
+      await f.runtime.send({ sessionId: f.session.sessionId, text: 'queue', client, ...lease })
+      await vi.waitFor(() => expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.interactionId).toBe('native'))
+      const agents = f.runtime.requestAgentsConfirm({ sessionId: f.session.sessionId, launches: [], profiles: [] })
+      const cleanup = f.runtime.requestCleanupConfirm({ sessionId: f.session.sessionId, sessions: [], finalIds: [], message: 'Confirm cleanup' })
+      expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.interactionId).toBe('native')
+      f.respond({ interactionId: 'native' })
+      await vi.waitFor(() => expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.kind).toBe('question'))
+      f.runtime.respondQuestion({ sessionId: f.session.sessionId, interactionId: 'question', answers: { answer: 'yes' }, client, ...lease })
+      await vi.waitFor(() => expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.kind).toBe('plan'))
+      f.runtime.respondPlan({ sessionId: f.session.sessionId, interactionId: 'plan', decision: 'approve', client, ...lease })
+      await vi.waitFor(() => expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.kind).toBe('session_agents_confirm'))
+      f.respond({ interactionId: f.runtime.get(f.session.sessionId)!.pendingInteraction!.interactionId })
+      await expect(agents).resolves.toMatchObject({ action: 'accept' })
+      await vi.waitFor(() => expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.kind).toBe('session_cleanup_confirm'))
+      f.respond({ interactionId: f.runtime.get(f.session.sessionId)!.pendingInteraction!.interactionId })
+      await expect(cleanup).resolves.toMatchObject({ action: 'accept' })
+      expect(nativeResult).toMatchObject({ decision: 'allow' })
+      expect(questionResult).toEqual({ answer: 'yes' })
+      expect(planResult).toMatchObject({ decision: 'approve' })
+      expect(f.log.filter(event => event.eventType.endsWith('_aborted'))).toHaveLength(0)
+    } finally { await f.runtime.dispose() }
+  })
+  it('cancels queued input promptly without replacing the active form', async () => {
+    const f = fixture(), controller = new AbortController()
+    try {
+      const first = f.runtime.requestElicitation(f.session.sessionId, form, new AbortController().signal)
+      const queued = f.runtime.requestElicitation(f.session.sessionId, { ...form, interactionId: 'queued' }, controller.signal)
+      controller.abort()
+      await expect(queued).resolves.toMatchObject({ action: 'cancel' })
+      expect(f.runtime.get(f.session.sessionId)?.pendingInteraction?.interactionId).toBe(form.interactionId)
+      f.respond({ decision: 'deny' })
+      await expect(first).resolves.toMatchObject({ action: 'decline' })
+      expect(f.log.filter(event => event.eventType === 'session.permission_requested')).toHaveLength(1)
+    } finally { await f.runtime.dispose() }
+  })
+})

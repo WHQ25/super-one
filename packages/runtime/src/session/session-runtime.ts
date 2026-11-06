@@ -1,3 +1,4 @@
+import { SessionInteractionQueue } from './interaction-queue'
 import { createMcpAppResourceGc } from '../mcp-apps/resource-gc'
 import type { McpAppResourceStore, McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
@@ -107,6 +108,14 @@ export type {
 } from './types'
 export type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 
+interface SessionAgentsConfirmInput {
+  sessionId: string
+  launches: unknown[]
+  profiles: unknown[]
+  signal?: AbortSignal
+  requestId?: string
+}
+
 interface PermissionResponse {
   decision: PermissionDecision
   reason: 'responded' | 'aborted'
@@ -116,6 +125,7 @@ interface PermissionResponse {
 }
 
 interface PermissionWaiter {
+  rememberLocally: boolean
   sessionId: string
   /**
    * Single-settlement path for respond / timeout / abort.
@@ -196,6 +206,7 @@ export class SessionRuntime {
    * Active permission waiters keyed by interactionId.
    * respondPermission resolves these; abort/close deny them.
    */
+  private readonly interactionQueue = new SessionInteractionQueue()
   private readonly permissionWaiters = new Map<string, PermissionWaiter>()
   private readonly questionWaiters = new Map<string, QuestionWaiter>()
   private readonly planWaiters = new Map<string, PlanWaiter>()
@@ -213,6 +224,7 @@ export class SessionRuntime {
     const session = this.get(binding.session)
     if (!session || binding.node !== this.environmentId || !this.turnRunner.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps provider is unavailable')
     return this.turnRunner.getMcpAppsProvider(session, binding, origin, {
+      onPermissionResponse: (interaction, signal) => this.requestProviderPermission(session.sessionId, interaction, signal),
       onElicitation: (interaction, signal) => this.requestElicitation(session.sessionId, interaction, signal),
     })
   }
@@ -1535,7 +1547,10 @@ export class SessionRuntime {
 
   /** Live Codex app-server for a voice call on this node. */
   codexVoice(): TurnRunner['codexVoice'] {
-    return this.turnRunner.codexVoice
+    const voice = this.turnRunner.codexVoice
+    return voice ? { open: session => voice.open(session, {
+      onPermissionResponse: (interaction, signal) => this.requestProviderPermission(session.sessionId, interaction, signal),
+    }) } : undefined
   }
 
   /**
@@ -1660,7 +1675,7 @@ export class SessionRuntime {
         createdAt: Date.parse(event.message.createdAt) || Date.now(), ...parseMessageDisplay(event.message) })
     }
     if (session.harnessId === 'opencode' && event.type === 'interaction_resolved'
-      && session.pendingInteraction?.interactionId === event.requestId) this.rejectPendingPermission(session)
+      && session.pendingInteraction?.interactionId === event.requestId) this.rejectPendingPermission(session, false)
     // A mod redrawing is not session activity: deliver it without touching the
     // session's turn state or `updatedAt` (which orders the session list).
     if (event.type.startsWith('mod_')) {
@@ -1795,18 +1810,19 @@ export class SessionRuntime {
           markStarted()
           // Modes that skip interactive permission prompts (desktop parity).
           if (
-            session.harnessId !== 'opencode' && (permissionMode === 'bypassPermissions' ||
+            !interaction.requiresHumanApproval && session.harnessId !== 'opencode' && (permissionMode === 'bypassPermissions' ||
             permissionMode === 'dontAsk' ||
             permissionMode === 'acceptEdits')
           ) {
             return Promise.resolve('allow' as PermissionDecision)
           }
           const tool = interaction.toolName?.trim()
-          if (!interaction.permissionDetails && tool && session.alwaysAllowedTools?.includes(tool)) {
+          if (!interaction.requiresHumanApproval && !interaction.permissionDetails && tool && session.alwaysAllowedTools?.includes(tool)) {
             return Promise.resolve('allow' as PermissionDecision)
           }
           return this.waitForPermissionDecision(session, interaction, abort.signal, requestId)
         },
+        onPermissionResponse: (interaction, signal) => this.requestProviderPermission(session.sessionId, interaction, signal, requestId),
         onElicitation: (interaction, signal) => (markStarted(), this.requestElicitation(session.sessionId, interaction,
           signal ? AbortSignal.any([abort.signal, signal]) : abort.signal, requestId)),
         onQuestion: (interaction) =>
@@ -2247,14 +2263,14 @@ export class SessionRuntime {
     // allow_always: allow this turn and remember the tool for the session
     // (desktop "always allow" parity — session-scoped, not global).
     const decision: PermissionDecision = input.decision === 'deny' || input.cancel ? 'deny' : 'allow'
-    if (input.decision === 'allow_always' && pending.permissionDetails && pending.allowAlwaysAllow === false && !input.cancel) {
+    if (input.decision === 'allow_always' && (pending.requiresHumanApproval || pending.permissionDetails && pending.allowAlwaysAllow === false) && !input.cancel) {
       throw Object.assign(new Error('This native permission request supports allow once or deny'), { code: 'failed_precondition' })
     }
     if (pending.requestKind === 'mcp_elicitation' && decision === 'allow') {
       const accepted = acceptedElicitationContent(pending.schemaForm, input.formAnswers)
       if (!accepted.ok) throw Object.assign(new Error(accepted.reason), { code: 'failed_precondition' })
     }
-    if (input.decision === 'allow_always' && pending.requestKind !== 'mcp_elicitation' && !input.cancel) {
+    if (input.decision === 'allow_always' && waiter.rememberLocally && pending.requestKind !== 'mcp_elicitation' && !input.cancel) {
       const tool = session.pendingInteraction?.toolName?.trim()
       if (tool) {
         const list = session.alwaysAllowedTools ?? []
@@ -2274,6 +2290,14 @@ export class SessionRuntime {
     })
   }
 
+  /** A provider already requested human review; do not apply host auto-approval or store a second grant. */
+  private async requestProviderPermission(sessionId: string, interaction: PendingInteraction, signal: AbortSignal, requestId?: string) {
+    const current = this.live.get(sessionId)
+    if (!current || current.closed || signal.aborted || this.disposing) return { decision: 'deny' as const, cancel: true }
+    const response = await this.waitForPermissionResponse(current, interaction, signal, requestId, false)
+    return { decision: response.clientDecision ?? response.decision, cancel: response.cancel || response.reason === 'aborted' }
+  }
+
   /** Elicitation uses the existing durable permission channel and control lease. */
   async requestElicitation(sessionId: string, interaction: PendingInteraction, signal: AbortSignal, requestId?: string): Promise<ElicitationDecision> {
     const session = this.live.get(sessionId)
@@ -2291,21 +2315,18 @@ export class SessionRuntime {
    * Block until the control-lease holder accepts/declines multi-launch collab.
    * Used by node-local session_collab_request (not Host Action).
    */
-  requestAgentsConfirm(input: {
-    sessionId: string
-    launches: unknown[]
-    profiles: unknown[]
-    signal?: AbortSignal
-    requestId?: string
-  }): Promise<AgentsConfirmOutcome> {
+  requestAgentsConfirm(input: SessionAgentsConfirmInput): Promise<AgentsConfirmOutcome> {
+    const session = this.live.get(input.sessionId)
+    if (!session) return Promise.reject(Object.assign(new Error('session not found'), { code: 'not_found' }))
+    return this.queueInteraction<AgentsConfirmOutcome>(session, input.signal, { action: 'cancel' }, signal => this.presentAgentsConfirm({ ...input, signal }))
+  }
+
+  private presentAgentsConfirm(input: SessionAgentsConfirmInput): Promise<AgentsConfirmOutcome> {
     const session = this.live.get(input.sessionId)
     if (!session) {
       return Promise.reject(
         Object.assign(new Error('session not found'), { code: 'not_found' }),
       )
-    }
-    if (session.pendingInteraction) {
-      this.rejectPendingPermission(session)
     }
 
     const interaction: PendingInteraction = {
@@ -2416,10 +2437,15 @@ export class SessionRuntime {
    */
   requestCleanupConfirm(input: SessionCleanupConfirmInput): Promise<CleanupConfirmOutcome> {
     const session = this.live.get(input.sessionId)
+    if (!session) return Promise.reject(Object.assign(new Error('session not found'), { code: 'not_found' }))
+    return this.queueInteraction<CleanupConfirmOutcome>(session, input.signal, { action: 'cancel', reason: 'aborted' }, signal => this.presentCleanupConfirm({ ...input, signal }))
+  }
+
+  private presentCleanupConfirm(input: SessionCleanupConfirmInput): Promise<CleanupConfirmOutcome> {
+    const session = this.live.get(input.sessionId)
     if (!session) {
       return Promise.reject(Object.assign(new Error('session not found'), { code: 'not_found' }))
     }
-    if (session.pendingInteraction) this.rejectPendingPermission(session)
 
     const interaction: PendingInteraction = {
       interactionId: `sessioncleanup_${Date.now()}_${randomUUID().slice(0, 8)}`,
@@ -2590,17 +2616,22 @@ export class SessionRuntime {
     return this.waitForPermissionResponse(session, interaction, signal, requestId).then(result => result.decision)
   }
 
-  private waitForPermissionResponse(
+  private queueInteraction<T>(session: NodeSessionRecord, signal: AbortSignal | undefined, cancelled: T, present: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (session.closed || this.disposing) return Promise.resolve(cancelled)
+    return this.interactionQueue.run(session.sessionId, signal, cancelled, scoped => session.closed || this.disposing ? Promise.resolve(cancelled) : present(scoped))
+  }
+
+  private waitForPermissionResponse(session: NodeSessionRecord, interaction: PendingInteraction, signal: AbortSignal, requestId?: string, rememberLocally = true): Promise<PermissionResponse> {
+    return this.queueInteraction<PermissionResponse>(session, signal, { decision: 'deny', reason: 'aborted' }, scoped => this.presentPermissionResponse(session, interaction, scoped, requestId, rememberLocally))
+  }
+
+  private presentPermissionResponse(
     session: NodeSessionRecord,
     interaction: PendingInteraction,
     signal: AbortSignal,
     requestId?: string,
+    rememberLocally = true,
   ): Promise<PermissionResponse> {
-    // Only one pending interaction per session (wire contract).
-    if (session.pendingInteraction) {
-      this.rejectPendingPermission(session)
-    }
-
     return new Promise<PermissionResponse>((resolve) => {
       let settled = false
       const onAbort = () => settle({ decision: 'deny', reason: 'aborted' })
@@ -2646,6 +2677,7 @@ export class SessionRuntime {
 
       // No deadline: like the desktop, a prompt waits until answered or the turn is aborted.
       this.permissionWaiters.set(interaction.interactionId, {
+        rememberLocally,
         sessionId: session.sessionId,
         settle,
       })
@@ -2659,7 +2691,8 @@ export class SessionRuntime {
   }
 
   /** Deny and clear any active permission waiter for this session. */
-  private rejectPendingPermission(session: NodeSessionRecord): void {
+  private rejectPendingPermission(session: NodeSessionRecord, cancelQueued = true): void {
+    if (cancelQueued) this.interactionQueue.cancel(session.sessionId)
     const pending = session.pendingInteraction
     if (!pending) return
     if (pending.kind === 'question') {
@@ -2688,15 +2721,16 @@ export class SessionRuntime {
     }
   }
 
-  private waitForQuestionDecision(
+  private waitForQuestionDecision(session: NodeSessionRecord, interaction: PendingInteraction, signal: AbortSignal, requestId?: string): Promise<QuestionAnswers> {
+    return this.queueInteraction<QuestionAnswers>(session, signal, {}, scoped => this.presentQuestionDecision(session, interaction, scoped, requestId))
+  }
+
+  private presentQuestionDecision(
     session: NodeSessionRecord,
     interaction: PendingInteraction,
     signal: AbortSignal,
     requestId?: string,
   ): Promise<QuestionAnswers> {
-    if (session.pendingInteraction) {
-      this.rejectPendingPermission(session)
-    }
     const pending: PendingInteraction = { ...interaction, kind: 'question' }
     return new Promise<QuestionAnswers>((resolve) => {
       let settled = false
@@ -2757,15 +2791,16 @@ export class SessionRuntime {
     })
   }
 
-  private waitForPlanDecision(
+  private waitForPlanDecision(session: NodeSessionRecord, interaction: PendingInteraction, signal: AbortSignal, requestId?: string): Promise<PlanDecisionResult> {
+    return this.queueInteraction<PlanDecisionResult>(session, signal, { decision: 'reject' }, scoped => this.presentPlanDecision(session, interaction, scoped, requestId))
+  }
+
+  private presentPlanDecision(
     session: NodeSessionRecord,
     interaction: PendingInteraction,
     signal: AbortSignal,
     requestId?: string,
   ): Promise<PlanDecisionResult> {
-    if (session.pendingInteraction) {
-      this.rejectPendingPermission(session)
-    }
     const pending: PendingInteraction = { ...interaction, kind: 'plan' }
     return new Promise<PlanDecisionResult>((resolve) => {
       let settled = false

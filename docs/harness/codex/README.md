@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.165.0` · Ledger version: `0.165.0` · Last updated: 2026-10-29
+Pin: `@openai/codex` `0.167.0` · Ledger version: `0.167.0` · Last updated: 2026-11-06
 
 ## Upstream
 
@@ -28,11 +28,21 @@ across desktop and remote node connections. Valid results use the existing share
 `prompt_suggestion` event and composer UI: desktop ghost text / Tab-to-fill and
 mobile tappable rows. The receiver remains active after turn completion and
 filters stale or child-thread results. The dedicated prediction RPC is still
-unimplemented on 0.165.0, but the official app generates suggestions with an experimental
+last probed as unimplemented on 0.165.0 (not re-probed in 0.167.0), but the official app generates suggestions with an experimental
 ephemeral fork plus ordinary `turn/start`; that path is live-verified on the
 pinned binary. SuperOne has not integrated the generator and sends no extra
 prediction call yet. See [prompt-prediction.md](prompt-prediction.md) and the
 [prediction contract](contracts.md#prediction-protocol-declarations-do-not-imply-a-working-suggestion-engine).
+
+Desktop and production remote-node connections declare `requiredHumanApproval`
+and present `humanCommand` checkpoints as fresh one-time decisions, including
+resume replay. Native command/file and managed network approvals use the existing
+lease-gated permission UI on the controlling desktop or phone. The node verifies
+child-thread ancestry, serializes native prompts and retains its session-owned
+handler for child and voice work between text turns. Provider resolution, Stop
+and connection loss clear pending requests without late acceptance. Administrative
+clients without a native handler omit the capability. See the
+[0.167.0 upgrade follow-up](upgrades/0.167.0.md#8-remote-native-approval-completion).
 
 ## Pin locations
 
@@ -55,6 +65,7 @@ prediction call yet. See [prompt-prediction.md](prompt-prediction.md) and the
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.167.0 | 2026-11-06 | executed | [0.167.0](upgrades/0.167.0.md) | — |
 | 0.165.0 | 2026-10-29 | executed | [0.165.0](upgrades/0.165.0.md) | — |
 | 0.163.0 | 2026-10-17 | executed | [0.163.0](upgrades/0.163.0.md) | — |
 | 0.162.1 | 2026-10-11 | executed | [0.162.1](upgrades/0.162.1.md) | — |

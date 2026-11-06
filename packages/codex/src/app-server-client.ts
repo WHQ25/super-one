@@ -1,3 +1,5 @@
+import { CODEX_NATIVE_APPROVAL_METHODS, codexNativeApprovalResult } from './native-approval'
+import { claimCodexServerRequest, finishCodexServerRequest, resolveCodexServerRequest, resolveCodexTurnRequests, cancelCodexServerRequests } from './server-request-lifecycle'
 import { isCodexReviewWorkerTurn, readCodexTurnProvenance } from './protocol-v162'
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
 import { CODEX_CLIENT_EXTENSIONS } from './client-extensions'
@@ -63,6 +65,8 @@ export interface CodexAppServerClientOptions {
     request: { id: string | number; method: string; params: Record<string, unknown> },
     signal: AbortSignal,
   ) => Promise<Record<string, unknown> | undefined>
+  /** Native command/file approval handler; only capable hosts opt into managed human checkpoints. */
+  onNativeApproval?: CodexAppServerClientOptions['onServerRequest']
   /** Kill escalation timeout after SIGTERM (ms). Default 2000. */
   killTimeoutMs?: number
 }
@@ -131,6 +135,7 @@ export async function openCodexAppServer(
   const notificationQueue: Array<{ method: string; params: Record<string, unknown> }> = []
   let nextId = 1
   let closed = false
+  const serverRequests = {}
   const inboundAbort = new AbortController()
   const inbound = new Set<string | number>()
   const inputBudget = new CodexUserInputBudget()
@@ -151,6 +156,7 @@ export async function openCodexAppServer(
   }
 
   const failAll = (err: Error) => {
+    cancelCodexServerRequests(serverRequests)
     inboundAbort.abort()
     for (const [, p] of pending) {
       p.cancelDeadline()
@@ -258,22 +264,28 @@ export async function openCodexAppServer(
           const params = rec.params && typeof rec.params === 'object' && !Array.isArray(rec.params)
             ? rec.params as Record<string, unknown>
             : undefined
-          if (rec.method === 'mcpServer/elicitation/request' && !isCodexUserVerificationElicitation(params) && opts.onServerRequest) {
-            if (!inbound.has(id)) {
+          const nativeApproval = CODEX_NATIVE_APPROVAL_METHODS.has(rec.method)
+          const handler = nativeApproval ? opts.onNativeApproval
+            : rec.method === 'mcpServer/elicitation/request' && !isCodexUserVerificationElicitation(params) ? opts.onServerRequest : undefined
+          if (handler) {
+            const tracked = claimCodexServerRequest(serverRequests, id, params ?? {})
+            if (tracked && !inbound.has(id)) {
+              const requestSignal = AbortSignal.any([inboundAbort.signal, tracked.controller.signal])
               inbound.add(id)
-              inputBudget.begin(id)
+              inputBudget.begin(id, params?.threadId)
               // Do not await user input on readline: native tools can emit notifications
               // and RPC replies while a form is pending.
               void (async () => {
-                let result: Record<string, unknown> = elicitationCancelResult()
+                let result: Record<string, unknown> = nativeApproval ? { decision: 'cancel' } : elicitationCancelResult()
                 try {
-                  result = await opts.onServerRequest!({ id, method: rec.method as string, params: params ?? {} }, inboundAbort.signal)
-                    ?? { action: 'decline', content: null, _meta: null }
+                  result = await handler({ id, method: rec.method as string, params: params ?? {} }, requestSignal)
+                    ?? (nativeApproval ? { decision: 'decline' } : { action: 'decline', content: null, _meta: null })
                 } catch { /* cancelled/failed host request */ }
                 try {
-                  if (!closed && !inboundAbort.signal.aborted) writeLine({ jsonrpc: '2.0', id, result })
+                  if (nativeApproval) result = codexNativeApprovalResult(params ?? {}, result)
+                  if (!closed && !requestSignal.aborted) writeLine({ jsonrpc: '2.0', id, result })
                 } catch { /* connection closed */ }
-                finally { inbound.delete(id); inputBudget.end(id) }
+                finally { inbound.delete(id); inputBudget.end(id); finishCodexServerRequest(serverRequests, id, tracked) }
               })()
             }
             continue
@@ -283,6 +295,8 @@ export async function openCodexAppServer(
               writeLine({ jsonrpc: '2.0', id, result: elicitationCancelResult() })
             } else if (rec.method === 'mcpServer/elicitation/request') {
               writeLine({ jsonrpc: '2.0', id, result: { action: 'decline', content: null, _meta: null } })
+            } else if (nativeApproval) {
+              writeLine({ jsonrpc: '2.0', id, result: { decision: 'decline' } })
             } else if (isKnownCodexServerRequest(rec.method)) {
               writeLine({ jsonrpc: '2.0', id, result: approvalDenyResult() })
             } else {
@@ -322,6 +336,12 @@ export async function openCodexAppServer(
             rec.params && typeof rec.params === 'object'
               ? (rec.params as Record<string, unknown>)
               : {}
+          if (rec.method === 'turn/completed') resolveCodexTurnRequests(serverRequests, params)
+          if (rec.method === 'serverRequest/resolved') {
+            resolveCodexServerRequest(serverRequests, params)
+            const id = params.requestId
+            if (typeof id === 'string' || typeof id === 'number') inputBudget.end(id, params.threadId)
+          }
           pushNotification({ method: rec.method, params })
         }
       }
@@ -408,6 +428,7 @@ export async function openCodexAppServer(
   const close = async () => {
     if (closed) return
     closed = true
+    cancelCodexServerRequests(serverRequests)
     inboundAbort.abort()
     opts.signal?.removeEventListener('abort', onAbort)
     rl.close()
@@ -432,6 +453,7 @@ export async function openCodexAppServer(
       },
       capabilities: {
         experimentalApi: true,
+        ...(opts.onNativeApproval ? { requiredHumanApproval: true } : {}),
         extensions: opts.onServerRequest ? CODEX_CLIENT_EXTENSIONS : MCP_APPS_EXTENSION,
         // requestAttestation stays omitted (default false). Do not implement
         // inbound attestation/generate this round; unknown inbound methods

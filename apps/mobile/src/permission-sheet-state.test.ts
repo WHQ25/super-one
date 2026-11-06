@@ -208,3 +208,11 @@ describe('persistent Profile consent', () => {
     ]))
   })
 })
+
+it('never offers persistent choices for a checkpoint with stale remember metadata', async () => {
+  const request: PermissionRequest = { requestId: 'checkpoint', toolName: 'Bash', input: { command: 'git push' }, requiresHumanApproval: true, allowAlwaysAllow: true }
+  const { showRememberPermission } = await import('./prompts/prompt-content')
+  expect(permissionSheetPresentation(request).alwaysLabel).toBeUndefined()
+  expect(permissionSheetPresentation(request).sessionLabel).toBeUndefined()
+  expect(showRememberPermission(request)).toBe(false)
+})

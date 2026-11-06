@@ -39,7 +39,7 @@ export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.310'
  * in production enable (reproducible remote nodes). Must equal the `@openai/codex`
  * dependency in apps/desktop/package.json (same lockstep test).
  */
-export const OFFICIAL_CODEX_NPM_VERSION = '0.165.0'
+export const OFFICIAL_CODEX_NPM_VERSION = '0.167.0'
 
 export const OFFICIAL_CLAUDE_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 export const OFFICIAL_CODEX_PACKAGE = '@openai/codex'

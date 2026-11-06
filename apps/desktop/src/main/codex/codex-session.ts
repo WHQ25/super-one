@@ -40,6 +40,9 @@ export type PendingCodexApprovalResponse =
   | CodexElicitationResponse
 
 export interface PendingCodexApproval {
+  ownerThreadId?: string | null
+  ownerSignal?: AbortSignal
+  cancel?: () => void
   responseKind: 'decision' | 'user_input' | 'elicitation'
   questions?: AppServerUserInputQuestion[]
   event: AgentEvent

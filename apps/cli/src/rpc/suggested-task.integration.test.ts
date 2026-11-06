@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SESSION_DURABLE_EVENT, type ControlLease } from '@superone/shared/environment'
+import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { findSuggestedTask, type SuggestedTaskLaunchOptions } from '@superone/shared/suggested-task'
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
 import { connectAuthedRpc } from '../test/ws-rpc'
@@ -54,6 +55,7 @@ function card(rt: NodeRuntime, sessionId: string, taskId: string) {
 describe('suggested tasks stay on their source execution environment', () => {
   it('serves the node-local MCP tool, configures a launch through RPC, and persists its outcome', async () => {
     const { rt, rpc, client, sessionId, nodeHome } = await boot()
+    rt.sessions.rename(sessionId, 'Source task', 'agent')
     expect((await client.listTools()).tools.map(tool => tool.name)).toContain('session_suggest_task')
     const result = await client.callTool({ name: 'session_suggest_task', arguments: INPUT })
     expect(result.isError).not.toBe(true)
@@ -77,12 +79,21 @@ describe('suggested tasks stay on their source execution environment', () => {
     expect(rt.sessions.get(launched.sessionId)).toMatchObject({ harnessId: 'codex', model: choice.settings.model, permissionMode: 'bypassPermissions', title: INPUT.title })
     expect(JSON.stringify(rt.sessions.messages(launched.sessionId))).toContain(INPUT.prompt)
     expect(JSON.stringify(rt.sessions.messages(launched.sessionId))).not.toContain('FORGED')
+    const expectedTaskMetadata = {
+      source: 'collaboration',
+      collaboration: { kind: 'initial_task', fromSessionId: sessionId, fromSessionTitle: 'Source task', direction: 'inbound' },
+    }
+    expect(rt.sessions.messages(launched.sessionId).find(message => message.role === 'user')?.metadata).toEqual(expectedTaskMetadata)
+    const mapper = createNodeSessionEventMapper({ sessionId: launched.sessionId })
+    const liveTask = rt.events.listAfter('0').flatMap(event => mapper.map(event)).find(event => event.type === 'user_message_appended')
+    expect(liveTask?.type === 'user_message_appended' ? liveTask.message.metadata : undefined).toEqual(expectedTaskMetadata)
     expect(findSuggestedTask(rt.sessions.messages(sessionId), taskId)?.state).toEqual({ status: 'launched', sessionId: launched.sessionId })
     await expect(rpc.rpc('session.launchSuggestedTask', input)).rejects.toThrow(/already launched/)
     await client.close(); clients.pop()
     await rt.stop(); runtimes.pop()
     const restored = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true }); runtimes.push(restored)
     expect(restored.sessions.get(sessionId)?.claudeFastMode).toBe(true)
+    expect(restored.sessions.messages(launched.sessionId).find(message => message.role === 'user')?.metadata).toEqual(expectedTaskMetadata)
     expect(findSuggestedTask(restored.sessions.messages(sessionId), taskId)?.state).toEqual({ status: 'launched', sessionId: launched.sessionId })
     // Boot, launch, and a second runtime start exceed the 5s default on CI.
   }, 20_000)

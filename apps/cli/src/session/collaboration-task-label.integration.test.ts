@@ -43,7 +43,7 @@ describe('collaboration launch tasks on a node', () => {
       const lease = n.leases.acquire({ resource: { environmentId: 'node', sessionId: session.sessionId }, holderClientId: 'client-a', ttlMs: 30_000 })
       await runtime.send({
         sessionId: session.sessionId, text: 'Fix the flaky upload test', echoUserMessage: true,
-        collaboration: { kind: 'initial_task', fromSessionTitle: 'Someone else' },
+        collaboration: { kind: 'initial_task', fromSessionId: 'forged-session', fromSessionTitle: 'Someone else' },
         client: { clientSessionId: 'client-a' }, leaseId: lease.leaseId, generation: lease.generation,
       })
       const expected = { source: 'collaboration', collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionTitle: 'Desktop A' } }
@@ -61,6 +61,21 @@ describe('collaboration launch tasks on a node', () => {
         collaboration: { kind: 'initial_task', fromSessionTitle: 'Relay refactor' },
       })
       const expected = { source: 'collaboration', collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionTitle: 'Relay refactor' } }
+      expect(await taskMetadata(n, runtime, session.sessionId)).toEqual({ live: expected, history: expected })
+    } finally { n.cleanup() }
+  })
+
+  it('keeps the node-local parent session link in live tasks and restarted history', async () => {
+    const n = node()
+    const runtime = n.start()
+    try {
+      const parent = runtime.create({ projectId: 'project', harnessId: 'claude', title: 'Relay refactor' })
+      const session = runtime.create({ projectId: 'project', harnessId: 'claude' })
+      const collaboration = { kind: 'initial_task' as const, fromSessionId: parent.sessionId, fromSessionTitle: parent.title! }
+      await runtime.sendWithoutLease({
+        sessionId: session.sessionId, text: 'Port the relay client', source: 'collaboration', collaboration,
+      })
+      const expected = { source: 'collaboration', collaboration: { ...collaboration, direction: 'inbound' } }
       expect(await taskMetadata(n, runtime, session.sessionId)).toEqual({ live: expected, history: expected })
     } finally { n.cleanup() }
   })

@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { nodeUserMessage } from '@superone/shared/node-session-event-map'
+import { projectWindowMessage } from '@superone/runtime/stream/delivery/window-projection'
 
 /**
  * The launch task a parent agent hands to a child session. The desktop renders
@@ -71,6 +73,15 @@ describe('PortableMessage collaboration initial task', () => {
       action: 'openSessionLink',
       payload: { ref: { environmentId: 'desktop-1', sessionId: 'parent-1' } },
     }))
+  })
+
+  it('renders a node task sender as a chip pointing to its remote source environment', () => {
+    const message = nodeUserMessage({ sessionId: 'child-1' }, 'task-1', 'Do the thing', '2026-01-01T00:00:00.000Z', {
+      collaboration: { kind: 'initial_task', fromSessionId: 'parent-1', fromSessionTitle: 'Remote source task' },
+    })
+    render(<PortableMessage message={projectWindowMessage(message)} scheme="dark" pendingPermission={null} sourceEnvironmentId="remote-node" />)
+
+    expect(screen.getByRole('link', { name: 'Remote source task' })).toHaveAttribute('href', 'session://remote-node/parent-1')
   })
 
   it('falls back to the generic label when the launching session had no title', () => {

@@ -9,10 +9,10 @@ export interface MessageDisplayFields {
   userSelections?: string[]
   /**
    * The message is a collaboration delivery (a parent's launch task). The host
-   * that runs the session names where it came from, since a parent on another
-   * machine has no session there to link.
+   * that runs the session names where it came from. A parent on the same host
+   * can be linked; a controller on another machine is named without a session ID.
    */
-  collaboration?: { kind: 'initial_task'; fromSessionTitle?: string }
+  collaboration?: { kind: 'initial_task'; fromSessionId?: string; fromSessionTitle?: string }
 }
 
 /** Validate the remote boundary without allowing callers to author arbitrary tool blocks. */
@@ -47,6 +47,7 @@ export function parseMessageDisplay(value: unknown): MessageDisplayFields {
     if (collaboration?.kind !== 'initial_task') throw new Error('Invalid collaboration delivery')
     result.collaboration = {
       kind: 'initial_task',
+      ...(typeof collaboration.fromSessionId === 'string' && collaboration.fromSessionId ? { fromSessionId: collaboration.fromSessionId } : {}),
       ...(typeof collaboration.fromSessionTitle === 'string' && collaboration.fromSessionTitle ? { fromSessionTitle: collaboration.fromSessionTitle } : {}),
     }
   }

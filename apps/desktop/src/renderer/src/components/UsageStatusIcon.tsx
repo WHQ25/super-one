@@ -309,11 +309,16 @@ const SUBSCRIPTION_BRANDS: Record<SubscriptionHarness, { brandKey?: string; titl
   opencode: { title: 'OpenCode' },
 }
 
+const SUBSCRIPTION_HUB_KEY: Record<SubscriptionHarness, (row: SubscriptionUsage) => string> = {
+  claude: (row) => claudeHubKey(claudeAccountCredentialDir(row.apiProviderId)),
+  codex: (row) => codexHubKey(row.apiProviderId),
+  grok: () => 'acp:grok-build',
+  cursor: (row) => row.harness,
+  opencode: (row) => row.harness,
+}
+
 function subscriptionHubKey(row: SubscriptionUsage): string {
-  if (row.harness === 'claude') return claudeHubKey(claudeAccountCredentialDir(row.apiProviderId))
-  if (row.harness === 'codex') return codexHubKey(row.apiProviderId)
-  if (row.harness === 'grok') return 'acp:grok-build'
-  return row.harness
+  return SUBSCRIPTION_HUB_KEY[row.harness](row)
 }
 
 function PanelHeight({ open, children }: { open: boolean; children: ReactNode }) {

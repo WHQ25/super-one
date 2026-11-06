@@ -1,18 +1,25 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useChatScroll } from '@/hooks/useChatScroll'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { publishComposerOverhang, useChatScroll } from '@/hooks/useChatScroll'
 import { ComposerSwitch } from './ComposerSwitch'
 import { COMPOSER_IDS, type ComposerId } from './composer-slot/resolve-composer'
 
 const COMPOSER_HEIGHTS: Record<string, number> = { text: 114, voice: 96, decision: 340, 'app-consent': 180, 'app-input': 560 }
 
-function ComposerSwitchPreview({ narrow = false, landing = false }: { narrow?: boolean; landing?: boolean }) {
+function ComposerSwitchPreview({ narrow = false, landing = false, streaming = false }: { narrow?: boolean; landing?: boolean; streaming?: boolean }) {
+  const [lines, setLines] = useState(1)
+  useEffect(() => {
+    if (!streaming) return
+    const timer = setInterval(() => setLines(value => value + 1), 80)
+    return () => clearInterval(timer)
+  }, [streaming])
   const [kind, setKind] = useState<ComposerId>('text')
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollViewportRef = useRef<HTMLDivElement>(null)
   useChatScroll({ scrollViewportRef })
   const publishOverhang = useCallback((px: number) => {
-    rootRef.current?.style.setProperty('--composer-overhang', `${px}px`)
+    publishComposerOverhang(rootRef.current, px)
   }, [])
   return (
     <div style={{ width: narrow ? 320 : 760 }}>
@@ -34,7 +41,7 @@ function ComposerSwitchPreview({ narrow = false, landing = false }: { narrow?: b
       <div ref={rootRef} data-chat-root="" data-testid="handoff-preview" className="flex h-120 flex-col overflow-hidden rounded-xl border border-border">
         <div data-testid="handoff-transcript" className="relative min-h-0 flex-1 overflow-hidden">
           {landing ? (
-            <div data-testid="handoff-landing" className="flex h-full flex-col items-center justify-center gap-2" style={{ translate: '0 calc(var(--composer-overhang, 0px) / 2)' }}>
+            <div data-testid="handoff-landing" className="flex h-full flex-col items-center justify-center gap-2">
               <div className="size-10 rounded-full bg-muted" />
               <div className="text-sm text-muted-foreground">Chat suggestions</div>
             </div>
@@ -42,6 +49,7 @@ function ComposerSwitchPreview({ narrow = false, landing = false }: { narrow?: b
             <div ref={scrollViewportRef} className="h-full overflow-y-auto">
               <div className="flex flex-col gap-2 p-3">
                 {Array.from({ length: 16 }, (_, index) => <div key={index} data-message-index={index} className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Chat message {index + 1}</div>)}
+                {streaming && <div data-streaming-tail className="whitespace-pre-line text-xs">{Array.from({ length: lines }, () => 'Streaming response…').join('\n')}</div>}
               </div>
             </div>
           )}
@@ -73,7 +81,32 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Handoff: Story = {}
-export const Narrow: Story = { args: { narrow: true } }
+export const Handoff: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const frame = canvas.getByTestId('handoff-transcript')
+    const viewport = frame.firstElementChild as HTMLElement
+    const height = frame.clientHeight
+    const top = viewport.scrollTop
+    for (const kind of ['decision', 'app-input', 'text']) {
+      await userEvent.click(canvas.getByRole('button', { name: kind }))
+      // Check every rendered frame, including the outgoing card's drop.
+      const until = performance.now() + 500
+      while (performance.now() < until) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        expect(frame.clientHeight).toBe(height)
+        expect(Math.abs(viewport.scrollTop - top)).toBeLessThanOrEqual(1)
+      }
+      await waitFor(() => expect(canvas.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady'))
+    }
+  },
+}
+export const Narrow: Story = { ...Handoff, args: { narrow: true } }
+export const Dark: Story = { ...Handoff, globals: { theme: 'dark' } }
 /** Empty pane: the landing keeps its place while other composers stand in. */
 export const Landing: Story = { args: { landing: true } }
+
+/** Continuous content growth exercises the same ResizeObserver follow path as token streaming. */
+export const Streaming: Story = { args: { streaming: true } }
+export const StreamingNarrow: Story = { args: { streaming: true, narrow: true } }
+export const StreamingDark: Story = { args: { streaming: true }, globals: { theme: 'dark' } }

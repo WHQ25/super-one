@@ -3,7 +3,7 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { useChatScroll } from './useChatScroll'
+import { publishComposerOverhang, useChatScroll } from './useChatScroll'
 
 vi.mock('@/stores/chat', () => ({
   useActiveSession: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
@@ -37,14 +37,14 @@ function createMockViewport() {
   const contentChild = document.createElement('div')
   el.appendChild(contentChild)
   Object.defineProperty(el, 'scrollHeight', {
-    get: () => state.scrollHeight,
+    get: () => state.scrollHeight + (parseFloat(el.style.paddingBottom) || 0),
     configurable: true,
   })
   Object.defineProperty(el, 'scrollTop', {
     get: () => state.scrollTop,
     set: (v: number) => {
       state.scrollTopWrites++
-      state.scrollTop = Math.min(v, state.maxScrollTopOverride ?? (state.scrollHeight - state.clientHeight))
+      state.scrollTop = Math.min(v, state.maxScrollTopOverride ?? (el.scrollHeight - state.clientHeight))
     },
     configurable: true,
   })
@@ -180,9 +180,8 @@ describe('useChatScroll', () => {
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
     expect(state.scrollTop).toBe(200)
 
-    // A decision 50px taller than the text composer shrinks the viewport.
-    root.style.setProperty('--composer-overhang', '50px')
-    state.clientHeight = 250
+    // A decision 50px taller than the text composer overlays the unchanged viewport.
+    act(() => publishComposerOverhang(root, 50))
     fireResize(el)
     expect(state.scrollTop).toBe(200)
 
@@ -192,8 +191,7 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(500)
 
     // The text composer returns: the tail appears without moving history.
-    root.style.setProperty('--composer-overhang', '0px')
-    state.clientHeight = 300
+    act(() => publishComposerOverhang(root, 0))
     fireResize(el)
     expect(state.scrollTop).toBe(500)
   })
@@ -220,8 +218,7 @@ describe('useChatScroll', () => {
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
     expect(state.scrollTop).toBe(200)
 
-    root.style.setProperty('--composer-overhang', '50px')
-    state.clientHeight = 250
+    act(() => publishComposerOverhang(root, 50))
     act(() => { fireResize(el) })
     expect(state.scrollTop).toBe(200)
 
@@ -231,10 +228,8 @@ describe('useChatScroll', () => {
     act(() => { fireResize(contentChild) })
     expect(state.scrollTop).toBe(290)
 
-    // The composer leaves and the browser clamps; the released space is held instead.
-    root.style.setProperty('--composer-overhang', '0px')
-    state.clientHeight = 300
-    state.scrollTop = 240
+    // The composer leaves; already revealed space is held without a clamp.
+    act(() => publishComposerOverhang(root, 0))
     act(() => { fireResize(el) })
     expect(state.scrollTop).toBe(290)
     expect(el.style.paddingBottom).toBe('50px')
@@ -298,16 +293,14 @@ describe('useChatScroll', () => {
     const ref = { current: el }
 
     renderHook(() => useChatScroll({ scrollViewportRef: ref }))
-    root.style.setProperty('--composer-overhang', '40px')
-    state.clientHeight = 260
+    act(() => publishComposerOverhang(root, 40))
     act(() => { fireResize(el) })
     act(() => {
       state.scrollTop = 240.4
       el.dispatchEvent(new Event('scroll'))
     })
 
-    root.style.setProperty('--composer-overhang', '0px')
-    state.clientHeight = 300
+    act(() => publishComposerOverhang(root, 0))
     act(() => { fireResize(el) })
     expect(el.scrollTop).toBeCloseTo(240.4)
     for (let frame = 0; frame < 10; frame++) {

@@ -181,6 +181,7 @@ export function CodexRealtimeTranscript({
       {showScrollButton && scrollToBottom && layout.length > 0 && (
         <button
           onClick={scrollToBottom}
+          style={{ bottom: 'calc(var(--composer-overhang, 0px) + var(--spacing) * 3)' }}
           aria-label={t('chat.realtimeVoice.scrollToBottom')}
           className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
         >

@@ -75,6 +75,7 @@ import {
 } from './tool-block-presenters/ConfigToolBlocks'
 import { SuperoneCompactToolRowPresenter } from '@superone/chat-view/presenters/SuperoneCompactToolRow'
 import { InputRequestToolRow } from '@superone/chat-view/presenters/InputRequestToolRow'
+import { bashToolDisplay } from '@superone/chat-view/presenters/bash-tool-display'
 import { WidgetToolRow } from '@superone/chat-view/presenters/WidgetToolRow'
 import { superoneToolDescriptor } from '@superone/chat-view/presenters/superone-tool-display'
 import { LAYOUT_CONTROL_TOOL_NAMES, LayoutControlToolRow } from '@superone/chat-view/presenters/LayoutControlToolRow'
@@ -283,22 +284,16 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   if (isHiddenToolBlock(toolName, result)) return null
 
   if (toolName === 'Bash') {
-    const timeout = typeof params.timeout === 'number' ? params.timeout : undefined
-    const runInBackground = params.run_in_background === true || params.background === true
-    const description = typeof params.description === 'string' ? params.description : undefined
     return ports.renderBash({
       toolUseId: toolUseId ?? '',
-      command: display.summary,
-      description,
+      ...bashToolDisplay(params, toolSummary),
       fallbackResult: isDenied ? undefined : (result ?? liveOutput ?? undefined),
       isStreaming,
       isDenied,
       isError,
-      timeoutMs: timeout,
       isTimedOut,
       resultOutputPath,
       bashEditDiff,
-      runInBackground,
       // A command that edited files is a file diff: it opens on the same setting.
       autoExpand: bashEditDiff ? shouldAutoExpandDiff : effectiveAutoExpand,
       allowExpand,

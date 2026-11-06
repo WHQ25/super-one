@@ -7,6 +7,11 @@ and mobile use the same host observations and shared forecast/risk functions.
 Session token counts are not
 used: the provider's account quota also includes usage from other clients.
 
+For a remote project, the desktop subscription list reads every signed-in
+subscription on that node in one `environment.usage` request. Account details
+reuse that report; manual refresh and retry also target the node. Loading,
+empty and failed reads never substitute the controller desktop's subscriptions.
+
 ## Sampling and estimates
 
 The host tracks each account, quota window and reset independently. Claude

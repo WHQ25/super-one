@@ -207,8 +207,16 @@ The slot reuses the realtime voice composer's handoff: the outgoing composer
 drops for 200 ms, then the incoming one rises for 240 ms. Both are absolute,
 bottom-anchored overlays. Only the text composer's shortest resting height at
 the current width participates in layout; there is no slot-height animation or
-post-entrance settling phase. The moving composer carries its own background,
-so each uncovered part of the transcript is visible immediately. Until text has
+post-entrance settling phase. The moving composer carries the chat card background on an opaque pane,
+so each uncovered part of the transcript is visible immediately. Liquid glass
+already paints that translucent card on the pane, and the stage stays clear
+there so the two layers do not compound. The stage's top gap stays
+transparent, transcript included, above the text composer. Only the extra
+height of a grown composer is clipped, so messages do not show through the
+body of the glass. Question, permission and other scrolling popups draw
+their scroller up through that gap and keep only the focus ring's clearance,
+so the card covers the gap instead of leaving a pane-colored strip above it.
+Glass clips that covered strip as well. Until text has
 been measured, the slot uses a density-scaled default baseline.
 
 The slot reports its untransformed overlap only when geometry changes. The
@@ -228,7 +236,14 @@ motion switches immediately. Plan review keeps its existing full-screen flow.
 Switching sessions discards the previous session's outgoing snapshot.
 The handoff clips at the slot's bottom edge, keeping content suspended above
 the default composer (such as the empty chat's directory hint) visible as it
-slides. Height-capped decision content retains its bounded scrolling area.
+slides. The chat root uses `overflow: clip`, not `hidden`: the base composer
+restores the caret on mount while it is still below the slot, and focus (or the
+editor's scroll-into-view) would otherwise scroll the nearest overflow-hidden
+ancestor, lifting history with it until the rise shrank the overflow again.
+Height-capped decision content retains its bounded scrolling area.
+That scroller is pulled through the stage's top gap and keeps a few pixels
+of padding, enough for the focused card's ring. Matching the full gap would
+leave an empty strip of the pane above the card.
 
 All ten SuperOne host confirmation families emit the same `permission_request`
 event: terminal commands, configuration, automations, video generation,

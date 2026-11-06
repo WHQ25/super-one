@@ -160,11 +160,12 @@ describe('dsh user questions through SuperOne', () => {
     expect(s.lastToolResult()).toMatch(/keep planning; their feedback: add tests/)
   })
 
-  it('refuses exit_plan_mode outside plan mode', async () => {
+  it('does not admit exit_plan_mode outside plan mode', async () => {
     const s = await session(async () => { throw new Error('must not ask') })
 
     await s.run('CALL exit_plan_mode {"plan":"# Ship it"}')
 
-    expect(s.lastToolResult()).toMatch(/only available in plan mode/)
+    // Step-time activation hides and refuses the inactive tool before dispatch.
+    expect(s.lastToolResult()).toMatch(/unknown tool.*exit_plan_mode/)
   })
 })

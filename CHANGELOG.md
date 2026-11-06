@@ -24,6 +24,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- DeepSeek harness is upgraded to 0.2.2-rc.1 with refreshed presets, native/PTC tool execution, immediate background subagents, and model choices preserved on resume. Existing compressed session history remains readable, and official model context/tool-update capabilities match the new runtime.
 - Codex runtime 0.167.0.
 - Claude Agent SDK 0.3.318.
 

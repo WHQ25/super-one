@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime } from './runtime'
@@ -121,6 +122,11 @@ describe('deepseek fork', () => {
     const second = await bootRuntime(persistenceRoot)
     const childId = randomUUID()
     await expect(second.runtime.forkSession(sourceId, childId, boundary)).resolves.toBe(childId)
+    const forkHeader = (await second.runtime.context.get('sessionPersistence')!.stat(SessionId(childId)))?.header
+    expect(forkHeader).toMatchObject({ isSeeded: true })
+    expect(forkHeader?.parentSession).toBeUndefined()
+    expect(forkHeader?.origin).toBeUndefined()
+    expect(forkHeader?.delegationDepth ?? 0).toBe(0)
 
     const child = await second.runtime.createAgent({
       sessionId: childId,

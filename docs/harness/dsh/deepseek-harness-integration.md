@@ -32,7 +32,7 @@ stricter Cordis requirements described in [contracts](contracts.md).
 `tree.ts` is the composition source. Host-plane services include session
 projections, model/tool/agent registries, Loader and its group builtin,
 approvals, persistence, attachment storage, retry/image recovery, sandboxed
-executors, PTC, subagent providers, jobs, skill/goal/web/command registries,
+executors, working-directory service, default native tool executor, PTC, subagent providers, jobs, skill/goal/web/command registries,
 permission presets, token meter and dynamic-Cordis services.
 
 Model-facing tools and persona live in agent presets. The four vendored
@@ -94,13 +94,19 @@ Mid-turn user input is queued; steer uses `agent.steer()` at a step boundary.
 
 `stored-session.ts` reads the handle-based session store, including migrated old
 logs. Fork copies a contiguous prefix ending at a completed turn, creates the
-child log through persistence handles and appends the inherited events. Provider
+child log through persistence handles and appends the inherited events. Ordinary
+forks omit delegation-only `parentSession`/`origin`/depth metadata; the exact
+inherited cut is carried separately. The JSONL provider retains the Zstandard
+encoding used by the previous published runtime. Provider
 session IDs remain distinct from SuperOne session IDs.
 
 Preset identity comes from `SessionHeader.agentPreset` and the
 `agent-preset/selected` projection. A draft setting cannot override a resumed
 session's durable selection. Switching presets is allowed only before a turn
 has opened. Erroring preset rows remain visible with their failure reason.
+
+Model/effort changes use durable `agent.model.select()` before the next step;
+request-waterfall overrides no longer control the captured step route.
 
 ## 8. Permission presets and sandbox
 
@@ -129,12 +135,11 @@ upgrade record and backlog.
 
 Spawn and fork providers are mounted. `tools/execute` opens an AsyncLocalStorage
 span carrying the delegation call ID, description and parent session ID; this
-correlates overlapping child starts safely. Nested foreground output is stamped
-with `parentToolUseId` in the parent's open message. Child todos do not overwrite
+correlates overlapping child starts safely. Child output does not append to the parent's active message. Child todos do not overwrite
 the parent's todo panel; child usage is `subagent_usage`.
 
-Continuable/background delegation is enabled. Work becomes background when the
-launching call returns while it is still running. Live children and jobs emit
+Delegation returns an immediate child identity. Children are represented as
+background tasks from activation, and the model can use wait/notification controls. Live children and jobs emit
 `task_*` events, and background child output stops appending to the parent's
 active message. Row Stop, session Stop, archive and disposal stop the applicable
 work. Background workflows are tracked/stopped but do not yet have a matching
@@ -143,8 +148,9 @@ Workflow row in the status-bar list.
 Per-child model selection is a host opt-in configured through a Loader entry.
 A changed default applies to new sessions; running sessions keep their recorded
 policy. Do not restore the old foreground-only patch when re-copying presets.
-The current vendored deviation removes `tool-plugin-manager`, which needs an
-upstream profile SuperOne does not mount.
+The vendored deviations remove upstream plugin-manager, plugin-market and
+schedule tool rows: SuperOne owns those operations and does not mount their
+profile/market/scheduling services. See the vendored preset README.
 
 ## 10. Verification
 
@@ -157,7 +163,7 @@ vendored deviations survive a refresh.
 The historical [spike](deepseek-harness-spike.mjs) records the original embedding
 experiment; maintained runtime tests are the current upgrade gate. Scripted
 adapter tests are not evidence of a live DeepSeek API turn or every packaged
-platform. The [upgrade record](upgrades/0.1.7-rc.1.md) names those limits.
+platform. The [upgrade record](upgrades/0.2.2-rc.1.md) names those limits.
 
 ## 11. Version and risk strategy
 

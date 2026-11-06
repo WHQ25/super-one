@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { DeepseekRuntime } from './runtime'
 import { TEST_PRESET_OPTIONS } from './test-presets'
 import { ToolCallAdapter } from './test-adapters'
@@ -32,8 +33,8 @@ async function boot() {
   return { runtime, model }
 }
 
-/** The `subagent` tool's parameter names in the first request of a new session. */
-async function subagentParameters(runtime: DeepseekRuntime, model: CatalogAdapter): Promise<string[]> {
+/** Session authorization and the tool's model-selection fields are separate. */
+async function subagentParameters(runtime: DeepseekRuntime, model: CatalogAdapter): Promise<{ parameters: string[]; policy: unknown }> {
   const agent = await runtime.createAgent({
     sessionId: randomUUID(),
     cwd: process.cwd(),
@@ -47,20 +48,36 @@ async function subagentParameters(runtime: DeepseekRuntime, model: CatalogAdapte
   await new Promise((resolve) => setTimeout(resolve, 50))
   await agent.whenIdle()
   const tool = (model.catalogs[0] ?? []).find((candidate) => candidate.name === 'subagent')
-  return Object.keys((tool?.parameters as { properties?: Record<string, unknown> } | undefined)?.properties ?? {})
+  const session = runtime.context.get('sessions')!.get(SessionId(agent.sessionId))!
+  // Upstream's policy event declaration is internal to its published package.
+  const events: readonly { type: string; data: unknown }[] = session.snapshotEvents()
+  const policy = events.find((event) => event.type === 'subagent/model-selection-policy')?.data
+  return { parameters: Object.keys((tool?.parameters as { properties?: Record<string, unknown> } | undefined)?.properties ?? {}), policy }
 }
 
 describe('subagent model selection', () => {
+  it('rejects a model-authored independent route without recorded authorization', async () => {
+    const { runtime, model } = await boot()
+    const agent = await runtime.createAgent({
+      sessionId: randomUUID(), cwd: process.cwd(), provider: 'mock', model: 'mock-1', onEvent: () => {},
+    })
+    disposers.push(() => agent.dispose())
+    await agent.sendText('CALL subagent {"description":"choose another model","prompt":"hello","provider":"mock","model":"mock-2"}')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await agent.whenIdle()
+    expect(model.toolResults.flat().join('\n')).toContain('not allowed for this Session')
+  })
+
   it('is off by default and changes live for the sessions composed after', async () => {
     const { runtime, model } = await boot()
-    // Read through the context each time: an update may restart the service.
-    const current = () => runtime.context.get('subagentModelSelection')?.current()
-    expect(current()).toEqual({ enabled: false, allowedModels: [] })
-    expect(await subagentParameters(runtime, model)).not.toContain('model')
+    const before = await subagentParameters(runtime, model)
+    expect(before.parameters).toContain('model')
+    expect(before.policy).toBeUndefined()
 
     await runtime.setSubagentModelSelection({ enabled: true, allowedModels: [{ provider: 'mock', model: 'mock-1' }] })
 
-    await vi.waitFor(() => expect(current()).toEqual({ enabled: true, allowedModels: [{ provider: 'mock', model: 'mock-1' }] }))
-    expect(await subagentParameters(runtime, model)).toContain('model')
+    const after = await subagentParameters(runtime, model)
+    expect(after.parameters).toContain('model')
+    expect(after.policy).toEqual({ allowedModels: [{ provider: 'mock', model: 'mock-1' }] })
   })
 })

@@ -6,6 +6,8 @@ import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
 import SandboxBashExecutor from '@deepseek-ai/dsh-bash-sandbox'
 import NodePtcRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
@@ -86,8 +88,8 @@ const DENIAL_REASONS: Record<Exclude<ToolApprovalDecision, 'allowed-once'>, (too
  * than inheriting the parent's own agent scope.
  *
  * Per-session correctness comes from the tool boundary, not from mount time:
- * `tool-fs` passes the calling agent's `session.header.cwd` into
- * `ctx.fs.resolve()`, and `tool-bash` defaults `workdir` the same way.
+ * file and shell tools resolve the calling session's effective directory
+ * through `workingDirectory`, independently of the shared executor instance.
  */
 export interface HostToolPlaneOptions {
   /**
@@ -119,14 +121,19 @@ export async function mountHostToolPlane(ctx: Context, options: HostToolPlaneOpt
   // would leave `write` and `edit` unconfined while `bash` was blocked, which
   // is worse than either end of the choice.
   await ctx.plugin(SandboxedFileSystem, {})
+  await ctx.plugin(WorkingDirectory, {})
   await ctx.plugin(SandboxBashExecutor, {})
   await ctx.plugin(ShellEnv, {})
   // Programmatic tool calling: `run_code` and workflows run in a fresh Node
   // process confined by the same sandbox as bash. Host-plane because the
   // presets' `workflow-ptc` rows resolve it from outside their own realm.
   await ctx.plugin(NodePtcRuntime, {
-    ...(options.ptcNodeExecutable !== undefined ? { nodeExecutable: options.ptcNodeExecutable } : {}),
+    ...(options.ptcNodeExecutable !== undefined
+      ? { launch: { kind: 'node-script' as const, executable: options.ptcNodeExecutable } }
+      : {}),
   })
+  // A preset may select PTC for its own scope; other sessions use native tools.
+  await ctx.plugin(NativeToolExecutor)
 }
 
 /**

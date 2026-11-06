@@ -37,6 +37,11 @@ class DelegatingAdapter extends LlmAdapter {
     const transcript = JSON.stringify(options.messages)
     const closing = transcript.includes('"role":"tool"')
 
+    if (!closing && transcript.includes('FAIL-THE-CHILD')) throw new Error('mock child request failed')
+    if (!closing && transcript.includes('FAILURE-DELEGATE')) {
+      yield* toolCall('subagent', { description: 'fail one child', prompt: 'FAIL-THE-CHILD' })
+      return
+    }
     if (!closing && transcript.includes(CHILD_MARKER)) {
       yield* toolCall('write', { file_path: CHILD_FILE, content: CHILD_TEXT })
       return
@@ -49,16 +54,16 @@ class DelegatingAdapter extends LlmAdapter {
       return
     }
     if (!closing && transcript.includes('FORK-DELEGATE')) {
-      yield* toolCall('subagent_fork', { description: 'recall the secret', prompt: RECALL_MARKER, run_in_background: false })
+      yield* toolCall('subagent_fork', { description: 'recall the secret', prompt: RECALL_MARKER })
       return
     }
-    // The shipped rows delegate in the background unless told otherwise.
+    // Delegation always returns an activation receipt; children run independently.
     if (!closing && transcript.includes('BACKGROUND-DELEGATE')) {
       yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER })
       return
     }
     if (!closing && transcript.includes('DELEGATE')) {
-      yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER, run_in_background: false })
+      yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER })
       return
     }
     yield* finalText(transcript.includes(CHILD_MARKER) ? 'child done' : 'parent done')
@@ -174,8 +179,10 @@ describe('deepseek subagents', () => {
   it('gives a delegated child the host tool plane, rooted in the parent workspace', async () => {
     const { cwd, events } = await delegateOnce(() => 'allowed-once')
 
+    await vi.waitFor(() => expect(existsSync(join(cwd, CHILD_FILE))).toBe(true))
     expect(readFileSync(join(cwd, CHILD_FILE), 'utf8')).toBe(CHILD_TEXT)
-    expect(toolResults(events)).toContain('child done')
+    await vi.waitFor(() => expect(events.some((event) => event.type === 'task_notification' && event.taskStatus === 'completed')).toBe(true))
+    expect(toolResults(events)).toContain('started subagent')
   })
 
   /**
@@ -186,15 +193,16 @@ describe('deepseek subagents', () => {
   it('routes a child tool call to the parent answerer, tagged with the child session', async () => {
     const { sessionId, asked } = await delegateOnce(() => 'allowed-once')
 
-    const write = asked.find((request) => request.toolName === 'write')
-    expect(write).toBeDefined()
-    expect(write?.input).toMatchObject({ file_path: CHILD_FILE })
+    await vi.waitFor(() => expect(asked.some((request) => request.toolName === 'write')).toBe(true))
+    const latestWrite = asked.find((request) => request.toolName === 'write')
+    expect(latestWrite).toBeDefined()
+    expect(latestWrite?.input).toMatchObject({ file_path: CHILD_FILE })
     // Delegating is not itself an effect — every effect it causes is gated
     // under the child's own call, so `subagent` must not have asked as well.
     expect(asked.map((request) => request.toolName)).not.toContain('subagent')
     // Attributable to the child, answered by the parent.
-    expect(write?.agentSessionId).toBeDefined()
-    expect(write?.agentSessionId).not.toBe(sessionId)
+    expect(latestWrite?.agentSessionId).toBeDefined()
+    expect(latestWrite?.agentSessionId).not.toBe(sessionId)
   })
 
   /**
@@ -208,6 +216,7 @@ describe('deepseek subagents', () => {
       'FORK-DELEGATE the recall',
     ])
 
+    await vi.waitFor(() => expect(existsSync(join(cwd, CHILD_FILE))).toBe(true))
     expect(readFileSync(join(cwd, CHILD_FILE), 'utf8')).toBe('inherited')
     // Both delegation tools land in the same Task block.
     expect(toolUse(events, 'Task')?.delta.toolName).toBe('Task')
@@ -217,7 +226,7 @@ describe('deepseek subagents', () => {
   it('performs no child effect when the user rejects', async () => {
     const { cwd, asked } = await delegateOnce(() => 'rejected')
 
-    expect(asked.some((request) => request.toolName === 'write')).toBe(true)
+    await vi.waitFor(() => expect(asked.some((request) => request.toolName === 'write')).toBe(true))
     expect(existsSync(join(cwd, CHILD_FILE))).toBe(false)
   })
 })
@@ -237,6 +246,7 @@ describe('deepseek subagent Task block', () => {
   it('opens and closes a task keyed on the delegation call id', async () => {
     const { events } = await delegateOnce(() => 'allowed-once')
 
+    await vi.waitFor(() => expect(events.some((event) => event.type === 'task_notification')).toBe(true))
     const task = toolUse(events, 'Task')
     const started = events.find((event) => event.type === 'task_started')
     const finished = events.find((event) => event.type === 'task_notification')
@@ -254,19 +264,12 @@ describe('deepseek subagent Task block', () => {
       .toBe(finished?.type === 'task_notification' && finished.taskId)
   })
 
-  /**
-   * The renderer rebuilds the subagent subtree from `parentToolUseId` stamps
-   * within ONE message's content, so a child block addressed to a message of
-   * its own would leak out of the Task block as top-level output.
-   */
-  it('attaches child blocks to the parent message under the delegation call', async () => {
+  it('keeps independently running child blocks out of the parent message', async () => {
     const { events } = await delegateOnce(() => 'allowed-once')
-
-    const task = toolUse(events, 'Task')
-    const childWrite = toolUse(events, 'Write')
-    expect(childWrite).toBeDefined()
-    expect(childWrite?.delta.parentToolUseId).toBe(task?.delta.toolUseId)
-    expect(childWrite?.messageId).toBe(task?.messageId)
+    await vi.waitFor(() => expect(events.some((event) => event.type === 'task_notification')).toBe(true))
+    expect(toolUse(events, 'Task')).toBeDefined()
+    expect(toolUse(events, 'Write')).toBeUndefined()
+    expect(blocks(events).some((b) => b.delta.parentToolUseId !== undefined)).toBe(false)
   })
 
   it('publishes no message and no todo panel update for the child', async () => {
@@ -303,6 +306,13 @@ describe('deepseek background subagents', () => {
     await vi.waitFor(() => expect(notification(events, 'completed')).toBeDefined())
     expect(readFileSync(join(cwd, CHILD_FILE), 'utf8')).toBe(CHILD_TEXT)
     expect(blocks(events).some((b) => b.delta.parentToolUseId === task?.delta.toolUseId)).toBe(false)
+  })
+
+  it('attaches a failed child turn to its Task without failing the parent', async () => {
+    const { events } = await delegateOnce(() => 'allowed-once', ['FAILURE-DELEGATE the work'])
+    await vi.waitFor(() => expect(notification(events, 'failed')).toBeDefined())
+    expect(notification(events, 'failed')).toMatchObject({ diagnostic: expect.stringContaining('mock child request failed') })
+    expect(events.some((event) => event.type === 'message_error')).toBe(false)
   })
 
   it('stops a background child from its task, and counts it as background work until then', async () => {

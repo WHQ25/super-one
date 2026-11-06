@@ -19,12 +19,12 @@ export interface BundledDshPlugin {
   scopes: string[]
 }
 
-const DSH_VERSION = '0.1.7-rc.1'
+const DSH_VERSION = '0.2.2-rc.1'
 
 const CORE_PLUGINS: readonly { name: string; version: string }[] = [
-  { name: '@deepseek-ai/cordis-plugin-group', version: '1.0.4' },
-  { name: '@deepseek-ai/cordis-plugin-loader', version: '1.0.5' },
-  { name: '@deepseek-ai/cordis-plugin-timer', version: '1.1.6' },
+  { name: '@deepseek-ai/cordis-plugin-group', version: '1.1.0' },
+  { name: '@deepseek-ai/cordis-plugin-loader', version: '1.1.0' },
+  { name: '@deepseek-ai/cordis-plugin-timer', version: '1.2.0' },
   { name: '@deepseek-ai/dsh-agent', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-agent-loop', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-agent-preset-registry', version: DSH_VERSION },
@@ -38,7 +38,7 @@ const CORE_PLUGINS: readonly { name: string; version: string }[] = [
   { name: '@deepseek-ai/dsh-goal-round-driver', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-jobs-local', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-llm', version: DSH_VERSION },
-  { name: '@deepseek-ai/dsh-llm-deepseek', version: DSH_VERSION },
+  { name: '@deepseek-ai/dsh-llm-deepseek-api-key', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-llm-retry', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-mcp-resources', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-permission-presets', version: DSH_VERSION },
@@ -57,12 +57,14 @@ const CORE_PLUGINS: readonly { name: string; version: string }[] = [
   { name: '@deepseek-ai/dsh-subprocess-local', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-system-prompt', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-token-meter', version: DSH_VERSION },
+  { name: '@deepseek-ai/dsh-tool-executor-native', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-tool-cordis/host', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-tools', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-user-approval', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-user-questions', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-workspace-changes', version: DSH_VERSION },
+  { name: '@deepseek-ai/dsh-working-directory', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-web', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-web-search-deepseek', version: DSH_VERSION },
 ]

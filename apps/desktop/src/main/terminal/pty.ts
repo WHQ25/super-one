@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { scriptedShellArgs } from '@superone/shared/shell-script-launch'
 import { sanitizeEnv } from '../spawn-env'
 
 const nodeRequire = createRequire(import.meta.url)
@@ -23,6 +24,7 @@ export interface PtySpawnOptions {
   rows: number
   env?: Record<string, string>
   shell?: string
+  /** Run this script in `shell`, then leave that shell interactive. */
   bashScript?: string
 }
 
@@ -73,10 +75,9 @@ export const nodePtySpawner: PtySpawner = {
       if (!env.LC_CTYPE) env.LC_CTYPE = 'UTF-8'
     }
     // Use argv rather than terminal input: tabs, newlines and shell quoting stay literal.
-    const scripted = opts.bashScript !== undefined
-    // A separate Bash runs the script so `exit` cannot close the result tab.
-    const args = scripted ? ['-c', 'bash -c "$1"; result=$?; printf "\\n[exit %s]\\n" "$result"; exec bash -i', 'bash', opts.bashScript!] : []
-    const proc = spawn(scripted ? 'bash' : opts.shell || defaultShell(), args, {
+    const shell = opts.shell || defaultShell()
+    const args = opts.bashScript !== undefined ? scriptedShellArgs(shell, opts.bashScript) : []
+    const proc = spawn(shell, args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,

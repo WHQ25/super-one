@@ -75,7 +75,7 @@ describe('RemoteTerminalController', () => {
     node.terminals = { acquireControl: async () => lease(), releaseControl: async () => {}, kill } as unknown as TerminalGateway
     const controller = new RemoteTerminalController({ node: () => node, projectId, onEvent: () => {} })
     try {
-      await expect(controller.create({ projectPath: remoteProjectKey('c', '/srv/p'), bashScript: 'pwd' })).rejects.toThrow('does not support Bash scripts')
+      await expect(controller.create({ projectPath: remoteProjectKey('c', '/srv/p'), bashScript: 'pwd' })).rejects.toThrow('does not support shell scripts')
       expect(kill).toHaveBeenCalled()
     } finally { controller.dispose() }
   })

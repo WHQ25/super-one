@@ -51,7 +51,7 @@ export function HighlightedCodeBlock(props: HighlightedCodeBlockProps) {
   const runBash = useCallback(async (bashScript: string) => {
     if (!projectPath) return
     // Omit sessionId: create resolves the project root, even when chat uses a worktree.
-    const item = await window.terminal.create({ projectPath, title: 'Bash', bashScript })
+    const item = await window.terminal.create({ projectPath, title: 'Shell', bashScript })
     const terminal = useTerminalStore.getState()
     terminal.upsertTab(projectPath, item, true)
     terminal.setOpen(sessionId ? projectSessionKey(projectPath, sessionId) : null, true)

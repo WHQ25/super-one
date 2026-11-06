@@ -99,7 +99,7 @@ export class TerminalSession {
     this._rows = opts.rows
     this.agentSessionId = opts.agentSessionId
     this.openedInActivity = opts.openedInActivity ?? false
-    this.shellName = processBaseName(opts.bashScript !== undefined ? 'bash' : opts.shell || defaultShell())
+    this.shellName = processBaseName(opts.shell || defaultShell())
 
     this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES })
     this.serializer = new SerializeAddon()

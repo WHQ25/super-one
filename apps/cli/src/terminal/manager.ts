@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import type { IPty } from 'node-pty'
 import type { TerminalReadResult } from '@superone/shared/environment'
 import type { TerminalEvent, TerminalListItem, TerminalSnapshot } from '@superone/shared/agent-types'
+import { scriptedShellArgs } from '@superone/shared/shell-script-launch'
 import type { ControlLeaseService } from '@superone/runtime/lease'
 import type { NodeDatabase } from '../db/database'
 
@@ -101,10 +102,9 @@ export class NodeTerminalManager {
       sequence: 0,
     }
 
-    const scripted = opts.bashScript !== undefined
-    const shell = scripted ? 'bash' : opts.shell || defaultShell()
-    // Keep the result visible in an interactive Bash even when the script calls `exit`.
-    const args = scripted ? ['-c', 'bash -c "$1"; result=$?; printf "\\n[exit %s]\\n" "$result"; exec bash -i', 'bash', opts.bashScript!] : []
+    const shell = opts.shell || defaultShell()
+    // A child of the user's shell runs the script so `exit` cannot close the tab.
+    const args = opts.bashScript !== undefined ? scriptedShellArgs(shell, opts.bashScript) : []
     const proc = spawn(shell, args, {
       cwd: opts.cwd,
       env: { ...process.env, TERM: 'xterm-256color' },

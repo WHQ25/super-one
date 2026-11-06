@@ -15,6 +15,11 @@ import { fenceHighlightLanguage } from './fence-language'
 
 const DARK_FG = '#e1e4e8'
 const LIGHT_FG = '#24292e'
+const RUNNABLE_SHELL_LANGUAGES = new Set(['bash', 'sh', 'shell', 'zsh'])
+
+function isRunnableShellLanguage(language: string): boolean {
+  return RUNNABLE_SHELL_LANGUAGES.has(language.trim().toLowerCase())
+}
 
 export function InlineCode({ children, className, ...props }: React.ComponentProps<'code'>) {
   return (
@@ -57,7 +62,7 @@ export interface HighlightedCodeBlockPresenterProps {
   language: string
   codePlugin: CodeHighlighterPlugin
   isComplete?: boolean
-  /** Omit outside a host that can execute scripts. null keeps Bash visibly disabled. */
+  /** Omit outside a host that can execute scripts. null keeps the run button visibly disabled. */
   runBash?: ((code: string) => Promise<void>) | null
   ports: HighlightedCodeBlockPresenterPorts
 }
@@ -85,7 +90,7 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
   const [starting, setStarting] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
   const startingRef = useRef(false)
-  const isBash = language.trim().toLowerCase() === 'bash'
+  const canRun = isRunnableShellLanguage(language)
   const activePlugin = ports.isDark ? codePlugin : ports.lightCodePlugin
   const fallbackFg = ports.isDark ? DARK_FG : LIGHT_FG
   const [copied, setCopied] = useState(false)
@@ -175,7 +180,7 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
       <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
         <span className="opacity-50">{language}</span>
         <div className="flex items-center gap-2">
-          {isBash && runBash !== undefined && (
+          {canRun && runBash !== undefined && (
             <button
               type="button"
               onClick={() => void handleRun()}

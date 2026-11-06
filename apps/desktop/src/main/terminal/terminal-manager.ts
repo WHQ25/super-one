@@ -27,7 +27,7 @@ export interface CreateTerminalOptions {
   rows?: number
   env?: Record<string, string>
   shell?: string
-  /** Run the complete script as a Bash process instead of an interactive shell. */
+  /** Run this script in the user's shell, then leave that shell interactive. */
   bashScript?: string
   /** Session whose agent tool opened the tab — docked in that session's activity panel. */
   agentSessionId?: string

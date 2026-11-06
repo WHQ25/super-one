@@ -39,7 +39,7 @@ export const Launching: Story = {
   },
 }
 export const LaunchErrorAndRetry: Story = {
-  args: { runBash: async () => { throw new Error('Bash could not start. Check that Bash is installed and try again.') } },
+  args: { runBash: async () => { throw new Error('The shell could not start. Check that it is installed and try again.') } },
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getAllByRole('button')[0])
     await expect(within(canvasElement).getByRole('alert')).toBeVisible()
@@ -48,6 +48,7 @@ export const LaunchErrorAndRetry: Story = {
 export const NoProject: Story = { args: { runBash: null } }
 export const Incomplete: Story = { args: { isComplete: false, code: 'for file in' } }
 export const Empty: Story = { args: { code: '' } }
+export const Zsh: Story = { args: { language: 'zsh', code: 'print -l $path' } }
 export const NonBash: Story = { args: { language: 'python', code: 'print("hello")' } }
 export const HostWithoutExecution: Story = { args: { runBash: undefined } }
 export const NarrowLongScript: Story = {

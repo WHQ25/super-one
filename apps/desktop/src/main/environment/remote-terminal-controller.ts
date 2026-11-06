@@ -103,7 +103,7 @@ export class RemoteTerminalController {
     })
     if (input.bashScript !== undefined && !scriptStarted) {
       await this.kill(remoteTerminalKey(remote.connectionId, terminalId))
-      throw new Error('This node does not support Bash scripts. Update SuperOne on the node and try again.')
+      throw new Error('This node does not support shell scripts. Update SuperOne on the node and try again.')
     }
     const item = watch.items.get(terminalId)
       ?? { terminalId, cwd, projectPath: remote.path, title, status: 'running', ownerDeviceId: null }

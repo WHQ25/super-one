@@ -13,6 +13,13 @@ function userMsg(text: string): SDKUserMessage {
 }
 
 describe('MessageBridge', () => {
+  it('discards unconsumed user input when a process is shutting down', async () => {
+    const bridge = new MessageBridge()
+    bridge.push(userMsg('must not run'), 'pending')
+    bridge.close(true)
+    expect((await bridge[Symbol.asyncIterator]().next()).done).toBe(true)
+    expect(bridge.consumedTags).toEqual([])
+  })
   it('delivers a queued push to a waiting consumer', async () => {
     const bridge = new MessageBridge()
     const iter = bridge[Symbol.asyncIterator]()

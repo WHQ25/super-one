@@ -64,7 +64,7 @@ export const SESSION_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
 function lastCompletedMessage(messages: readonly ChatMessage[]): ChatMessage | null {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]!
-    if (message.role === 'assistant' && message.status !== 'streaming') return message
+    if (message.role === 'assistant' && message.providerId !== 'system' && message.status !== 'streaming') return message
   }
   return null
 }

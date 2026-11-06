@@ -98,6 +98,7 @@ import { ensureShellPath, isShellPathReady } from '../shell-path'
 import { checkoutRoot, isSameDirectory } from '../project-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import { buildPluginNoticeMessage, isPluginLogEvent } from './plugin-notice-message'
+import { isSystemNoticeEvent } from '@superone/shared/system-notice'
 import {
   SessionWorktreeRemovedError,
   type BackendCommand,
@@ -1957,12 +1958,15 @@ export class Session implements SessionContract {
     forgetSessionTerminalCommandRules(this.id)
     void this.clearComputerUseVisuals('dispose')
     // Cancel active work before awaiting shutdown: backend.close may wait for it.
-    this.abortController?.abort()
+    const abortController = this.abortController
+    // Providers with bounded close/drain own cancellation once startup finished.
+    // Aborting the spawn first would discard their shutdown diagnostics.
+    if (!this.backend.drainsOnClose || this._startPromise) abortController?.abort()
     this.abortController = null
     try { await this.waitForRuntimeRelease() } catch { /* backend close still needs to run */ }
     // A start already in flight must settle before its newly created runtime is closed.
     try { await this._startPromise } catch { /* cancellation during startup is expected */ }
-    await this.backend.close()
+    try { await this.backend.close() } finally { abortController?.abort() }
     this.lease.dispose()
     for (const unsub of this.unsubs) {
       try { unsub() } catch { /* ignore */ }
@@ -2320,7 +2324,7 @@ export class Session implements SessionContract {
     // A read receipt is about the user, not the agent, and neither a mod
     // redrawing nor the runtime announcing its commands is agent work: none may
     // bump the session's recency nor postpone its idle runtime release.
-    if (event.type !== 'session_seen' && event.type !== 'session_unseen' && event.type !== 'session_commands' && !event.type.startsWith('mod_')) {
+    if (event.type !== 'session_seen' && event.type !== 'session_unseen' && event.type !== 'session_commands' && !event.type.startsWith('mod_') && !isSystemNoticeEvent(event)) {
       this._lastEventAt = Date.now()
       this.touchRuntimeActivity()
     }

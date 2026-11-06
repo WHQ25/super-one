@@ -94,6 +94,58 @@ describe('claude resume helpers', () => {
 })
 
 describe('createNodeClaudeTurnRunner', () => {
+  it('waits for a retiring process before resuming the same transcript', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-node-drain-'))
+    const binary = join(dir, 'claude')
+    writeFileSync(binary, '#!/bin/sh\n')
+    chmodSync(binary, 0o755)
+    let finishExit!: () => void
+    const exitGate = new Promise<void>(resolve => { finishExit = resolve })
+    let exiting = false
+    let opens = 0
+    const queryFn: ClaudeQueryFn = ({ prompt }) => {
+      const index = opens++
+      return (async function* () {
+        for await (const _user of prompt as AsyncIterable<SDKUserMessage>) yield* success('native', 'done') as SDKMessage[]
+        if (index === 0) { exiting = true; await exitGate }
+      })() as ReturnType<ClaudeQueryFn>
+    }
+    const runner = createNodeClaudeTurnRunner({ binaryPath: binary, resolveProjectPath: () => dir, homeDir: dir,
+      queryFn, allowSimulatedFallback: false, mcpMergeMode: 'host-action-only' })
+    try {
+      const input = { session: session({ providerResume: 'claude-session:native' }), text: 'hi', signal: new AbortController().signal, onDelta: () => {} }
+      await runner(input)
+      const disposal = runner.disposeSession!('s1')
+      await vi.waitFor(() => expect(exiting).toBe(true))
+      const second = runner(input)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(opens).toBe(1)
+      finishExit()
+      await Promise.all([disposal, second])
+      expect(opens).toBe(2)
+    } finally { finishExit(); await runner.disposeAll?.(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('delivers exit notices after the live entry is removed from the registry', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-node-exit-'))
+    const binary = join(dir, 'claude')
+    writeFileSync(binary, '#!/bin/sh\n')
+    chmodSync(binary, 0o755)
+    const events: AgentEvent[] = []
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) yield* success('s', 'done') as SDKMessage[]
+      yield { type: 'system', subtype: 'session_writes_lost', session_id: 's', uuid: 'exit', error_code: 'EDQUOT', lost: ['transcript'] } as unknown as SDKMessage
+    })() as ReturnType<ClaudeQueryFn>
+    const runner = createNodeClaudeTurnRunner({ binaryPath: binary, resolveProjectPath: () => dir, homeDir: dir,
+      queryFn, allowSimulatedFallback: false, mcpMergeMode: 'host-action-only' })
+    try {
+      await runner({ session: session(), text: 'hi', signal: new AbortController().signal, onDelta: () => {}, onAmbientEvent: event => events.push(event) })
+      await runner.disposeSession?.('s1')
+      expect(events).toContainEqual(expect.objectContaining({ type: 'user_message_appended' }))
+      expect(runner.listActiveRuntimes?.()).toEqual([])
+    } finally { await runner.disposeAll?.(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it.each(['now', 'next'] as const)('routes %s steering into the existing Claude process and fences stale control', async priority => {
     const dir = mkdtempSync(join(tmpdir(), 'claude-node-steer-'))
     const bin = join(dir, 'claude')

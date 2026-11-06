@@ -22,6 +22,8 @@ import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { SessionScheduleTracker, sessionCronsStopHook } from './session-crons'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import { resolveAskUserQuestion } from './ask-user-question-bridge'
+import { mapClaudeSystemNotice } from './system-notice'
+import { shutdownClaudeQuery } from './query-shutdown'
 import { asQuestionPreviewFormat } from '@superone/shared/ask-user-question'
 import type {
   ClaudeElicitationHandler,
@@ -157,6 +159,7 @@ function buildLiveOptions(
   timing: { pausedMs: number },
   /** Live handles on the in-flight turn — needed to re-emit an answered tool_use. */
   turn: {
+    isClosing: () => boolean
     emitAgentEvent: (event: AgentEvent) => void
     getMessageId: () => string | undefined
   },
@@ -167,7 +170,7 @@ function buildLiveOptions(
   else signal.addEventListener('abort', () => abortController.abort(), { once: true })
 
   const canUseTool: CanUseTool = async (toolName, input, toolOpts) => {
-    if (signal.aborted || toolOpts.signal.aborted) {
+    if (turn.isClosing() || signal.aborted || toolOpts.signal.aborted) {
       return { behavior: 'deny', message: 'Permission aborted' }
     }
     if (isStaticHostOwnedSuperoneToolQualified(toolName)) {
@@ -361,6 +364,8 @@ export class ClaudeLiveSession {
   private readonly terminalNames: { names: string[] | undefined } = { names: undefined }
   private sdkSessionId: string | null
   private closed = false
+  private draining = false
+  private disposal: Promise<void> | null = null
   private readonly iterationDone: Promise<void>
   private readonly processAbort = new AbortController()
   /** Latest permission handler from the active turn (desktop swaps per send). */
@@ -407,6 +412,7 @@ export class ClaudeLiveSession {
       this.processAbort.signal,
       this.timing,
       {
+        isClosing: () => this.closed,
         emitAgentEvent: (e) => this.active?.input.onAgentEvent?.(e),
         getMessageId: () => this.active?.messageId,
       },
@@ -555,9 +561,17 @@ export class ClaudeLiveSession {
     await this.query?.setPermissionMode(mode as NonNullable<Options['permissionMode']>)
   }
 
-  async dispose(): Promise<void> {
-    if (this.closed) return
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal
+    this.disposal = this.disposeQuery()
+    return this.disposal
+  }
+
+  private async disposeQuery(): Promise<void> {
+    const interrupt = this.isBusy || this.hasActiveBackgroundTasks
     this.closed = true
+    this.draining = true
+    this.bridge.stopAccepting()
     for (const p of this.pending.splice(0)) {
       p.reject(new Error('Claude live session disposed'))
     }
@@ -566,11 +580,17 @@ export class ClaudeLiveSession {
       this.active = null
     }
     this.ambient = null
+    this.permissionHandler = undefined
+    this.questionHandler = undefined
+    this.planHandler = undefined
+    this.elicitationHandler = undefined
     this.backgroundTaskIds.clear()
     this.sessionSchedules.clear(true)
-    this.bridge.close()
-    this.processAbort.abort()
-    await this.iterationDone.catch(() => undefined)
+    try {
+      await shutdownClaudeQuery({ query: this.query, interrupt,
+        endInput: () => this.bridge.close(true), iterationDone: this.iterationDone,
+        abort: () => this.processAbort.abort() })
+    } finally { this.draining = false }
   }
 
   private startTurn(item: PendingTurn): void {
@@ -665,7 +685,11 @@ export class ClaudeLiveSession {
   private async iterate(q: AsyncIterable<SDKMessage>): Promise<void> {
     try {
       for await (const msg of q) {
-        if (this.closed) break
+        if (this.closed) {
+          const notice = this.draining && msg.type === 'system' ? mapClaudeSystemNotice(msg as Record<string, unknown>) : null
+          if (notice) this.opts.onAmbientEvent?.(notice)
+          continue
+        }
         // Init can arrive while idle, or while draining an interrupted turn.
         // Persist its identity before any mapper emits output or tool activity.
         const sessionId = (msg as { session_id?: string }).session_id?.trim()
@@ -712,7 +736,11 @@ export class ClaudeLiveSession {
           // message to become active. A shared query cannot safely switch
           // ownership in the middle of a result stream. Mod pushes belong to
           // the process, not the turn, so they still go out.
-          if (msg.type === 'system') this.opts.onSystem?.(msg as Record<string, unknown>)
+          if (msg.type === 'system') {
+            const notice = mapClaudeSystemNotice(msg as Record<string, unknown>)
+            if (notice) this.opts.onAmbientEvent?.(notice)
+            else this.opts.onSystem?.(msg as Record<string, unknown>)
+          }
           if (msg.type === 'result') {
             this.active = null
             this.permissionHandler = undefined

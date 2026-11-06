@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { CircleCheck, NotebookPen, Pin } from 'lucide-react'
 import { SidebarHoverChevron } from './hover-disclosure'
 import { sidebarSectionPanelId, type SidebarSectionId } from './sidebar-section-collapse'
@@ -18,8 +18,9 @@ export function SidebarSectionLabel({
   countTone = 'badge',
   chevronWhenExpanded = false,
   children,
+  icon,
 }: {
-  section: SidebarSectionId
+  section: SidebarSectionId | 'environment'
   count: number
   collapsed: boolean
   onToggle: () => void
@@ -29,6 +30,7 @@ export function SidebarSectionLabel({
   countTone?: 'badge' | 'plain'
   /** While open, leave the down chevron in the icon slot instead of the section glyph. */
   chevronWhenExpanded?: boolean
+  icon?: ReactElement<{ className?: string }>
   children: ReactNode
 }) {
   return (
@@ -36,7 +38,7 @@ export function SidebarSectionLabel({
       type="button"
       data-sidebar-section={section}
       aria-expanded={!collapsed}
-      aria-controls={controlsId ?? sidebarSectionPanelId(section)}
+      aria-controls={controlsId ?? (section === 'environment' ? undefined : sidebarSectionPanelId(section))}
       onClick={onToggle}
       className="group flex w-full min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1.5 text-left hover:bg-sidebar-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
     >
@@ -44,11 +46,11 @@ export function SidebarSectionLabel({
         expanded={!collapsed}
         forceChevron={chevronWhenExpanded && !collapsed}
         className="size-3"
-        glyph={section === 'pinned'
+        glyph={icon ?? (section === 'pinned'
           ? <Pin className="text-sidebar-foreground/45" />
           : section === 'drafts'
             ? <NotebookPen className="text-sidebar-foreground/45" />
-            : <CircleCheck className="text-sidebar-foreground/45" />}
+            : <CircleCheck className="text-sidebar-foreground/45" />)}
       />
       <span className="min-w-0 truncate text-xs font-medium text-sidebar-foreground/70 group-hover:text-sidebar-foreground">
         {children}

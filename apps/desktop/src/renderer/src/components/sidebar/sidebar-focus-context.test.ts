@@ -2,6 +2,7 @@
 import { renderHook, act } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
+import { focusEnvironments, focusLocal, focusRemote, focusFork } from './project-focus.fixtures'
 import {
   draftScopeForFocus,
   pinnedSessionsForFocus,
@@ -30,6 +31,17 @@ describe('focus context lists', () => {
     expect(draftScopeForFocus(focus, environments)).toEqual({
       connectionIds: ['local'],
       projectKey: '/pay',
+      offlineConnectionIds: [],
+    })
+  })
+
+  it('includes pins and drafts from all same-origin checkouts, excluding forks', () => {
+    const focus = { kind: 'project' as const, folderPath: focusLocal.pathKey, environmentId: focusLocal.environmentId }
+    const pins = [pin('here', focusLocal.pathKey), pin('there', focusRemote.pathKey), pin('fork', focusFork.pathKey)]
+    expect(pinnedSessionsForFocus(pins, focus, focusEnvironments).map((item) => item.sessionId)).toEqual(['here', 'there'])
+    expect(draftScopeForFocus(focus, focusEnvironments)).toEqual({
+      connectionIds: ['local', 'node-1'],
+      projectKeys: [focusLocal.pathKey, focusRemote.pathKey],
       offlineConnectionIds: [],
     })
   })

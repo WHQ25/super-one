@@ -16,6 +16,8 @@ import {
 } from '@superone/claude'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-apps'
 import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
+import { mapClaudeSystemNotice } from '@superone/claude/system-notice'
+import { buildClaudeThrownFailure } from '@superone/claude/result-failure'
 import { worktreeCwdChange } from '@superone/claude/worktree-cwd'
 import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { artifactResultTitle } from '@superone/claude/artifact-result'
@@ -40,6 +42,8 @@ export { buildUserMessage } from './claude-user-message'
 export { isResumeDropsTurnRefusal, RESUME_DROPS_TURN_REFUSAL_PREFIX }
 
 export interface SessionQueryOptions {
+  /** A retiring process may emit exit notices, but no more turn output. */
+  isClosing?: () => boolean
   /** SuperOne session id (Session class) — distinct from SDK sessionId (resume) */
   superoneSessionId: string
   projectPath: string
@@ -190,7 +194,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       snapshot: false,
     },
     hooks: {
-      PreToolUse: [{ hooks: [denySubagentSessionRename] }],
+      PreToolUse: [{ hooks: [denySubagentSessionRename], onFailure: 'block' }],
       ...(opts.onSessionCrons ? { Stop: [sessionCronsStopHook(opts.onSessionCrons)] } : {}),
     },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId, opts.projectPath) },
@@ -230,6 +234,7 @@ export function createSessionQuery(
   const originalCanUseTool = options.canUseTool
   const timedCanUseTool: CanUseTool | undefined = originalCanUseTool
     ? async (...args) => {
+        if (options.isClosing?.()) return { behavior: 'deny', message: 'Claude runtime is closing', interrupt: true }
         const start = Date.now()
         const result = await originalCanUseTool(...args)
         timing.pausedMs += Date.now() - start
@@ -241,7 +246,11 @@ export function createSessionQuery(
   log.info('[claude-query] env CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=%s CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=%s', process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING ?? 'unset', process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING ?? 'unset')
   trace('provider.query', 'create_session', { envKeys: options.env ? Object.keys(options.env) : null, model: options.model, resume: options.resume })
 
-  const sdkOptions = buildClaudeOptions({ ...options, canUseTool: timedCanUseTool })
+  const originalOnElicitation = options.onElicitation
+  const sdkOptions = buildClaudeOptions({ ...options, canUseTool: timedCanUseTool,
+    onElicitation: originalOnElicitation ? (...args) => options.isClosing?.()
+      ? Promise.resolve({ action: 'decline' as const }) : originalOnElicitation(...args) : undefined,
+  })
 
   let q: Query
   let spawnAbortController: AbortController
@@ -274,12 +283,14 @@ export function createSessionQuery(
     modelUsageBaseline: options.modelUsageBaseline,
     toolApps: options.toolApps,
     modSurface,
+    isClosing: options.isClosing,
   })
 
   return { query: q, modSurface, iterationDone, spawnAbortController, activeBackgroundTasks }
 }
 
 export interface IterateMessagesOptions {
+  isClosing?: () => boolean
   emit: (event: AgentEvent) => void
   getCurrentMessageId: () => string
   getCurrentStartTime: () => number
@@ -382,6 +393,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let turnMessageId = getCurrentMessageId()
   let turnActive = false
   let resultSeen = false
+  let failedResultMessageId: string | undefined
   /** Queued sends still pending per the last result (SDK `queued_turn_count`). */
   let pendingQueuedTurns = 0
   let turnUserEchoSeen = false
@@ -417,6 +429,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   try {
     for await (const msg of q) {
       let messageId = turnMessageId
+
+      // Storage and hook notices belong to the process, even after Stop/result.
+      const notice = msg.type === 'system' ? mapClaudeSystemNotice(msg as Record<string, unknown>) : null
+      if (notice) { emit(notice); continue }
+      if (opts.isClosing?.()) continue
 
       if (getInterrupted() && msg.type !== 'result') {
         // Mod pushes belong to the process, not the interrupted turn.
@@ -1154,6 +1171,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         }
 
         case 'result': {
+          failedResultMessageId = undefined
           if (lastReplayCheckpointId) {
             const latestMid = getCurrentMessageId() || messageId
             log.info('[checkpoint] captured (flush at result): checkpointId=%s resumePointId=%s messageId=%s', lastReplayCheckpointId, lastTopLevelAssistantUuid, latestMid)
@@ -1236,6 +1254,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               resetsAt: lastRateLimitResetsAt,
             })
             metadata.errorInfo = failure.errorInfo
+            failedResultMessageId = resolveUserMessageAnchor(result) ?? messageId
             if (isResumeDropsTurnRefusal(failure.errorInfo.raw)) {
               // Deterministic refusal: clear any truncating fork target and full-resume only.
               // Re-sending the same resumeSessionAt + resumeDropsTurn pair fails forever.
@@ -1330,7 +1349,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
     }
     log.debug('[iterateMessages] loop ended normally')
   } catch (err) {
+    if (opts.isClosing?.()) return
     const messageId = getCurrentMessageId()
+    // SDK 0.3.318 throws again when a process exits nonzero after its error
+    // result. The typed result already closed this turn; keep its diagnostics.
+    if (resultSeen && !turnActive && pendingQueuedTurns === 0 && failedResultMessageId
+      && (!messageId || messageId === failedResultMessageId)) return
     const interrupted = getInterrupted()
     log.debug(`[iterateMessages] catch — interrupted=${interrupted}, error=${err instanceof Error ? err.message : String(err)}`)
     if (interrupted) {
@@ -1338,21 +1362,18 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
       emit({ type: 'status_change', status: 'idle' })
       return
     }
-    const errMsg = err instanceof Error ? err.message : String(err)
+    const failure = buildClaudeThrownFailure(err, {
+      typedCode: lastAssistantTypedError, model: lastAssistantModel, requestId: lastAssistantRequestId,
+      retries: retryDelaysMs.length > 0
+        ? { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) }
+        : undefined,
+      resetsAt: lastRateLimitResetsAt,
+    })
     emit({
       type: 'message_error',
       messageId,
-      error: errMsg,
-      errorInfo: {
-        raw: errMsg,
-        ...(lastAssistantTypedError ? { code: lastAssistantTypedError } : {}),
-        ...(lastAssistantModel ? { model: lastAssistantModel } : {}),
-        ...(lastAssistantRequestId ? { requestId: lastAssistantRequestId } : {}),
-        ...(retryDelaysMs.length > 0
-          ? { retries: { attempts: retryDelaysMs.length, delaysMs: [...retryDelaysMs], ...(retryMaxRetries === undefined ? {} : { max: retryMaxRetries }) } }
-          : {}),
-        ...(lastRateLimitResetsAt === undefined ? {} : { resetsAt: lastRateLimitResetsAt }),
-      },
+      error: failure.error,
+      errorInfo: failure.errorInfo,
     })
     emit({ type: 'status_change', status: 'error' })
   }

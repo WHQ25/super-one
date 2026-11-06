@@ -54,7 +54,7 @@ export interface MultiHostProjectListProps {
   openingSession: { folderPath: string; sessionId: string } | null
   onToggleProject: (folderPath: string) => void
   onToggleEnvironment: (environmentId: string) => void
-  onSwitchSession: (folderPath: string, sessionId: string) => void
+  onSwitchSession: (folderPath: string, sessionId: string, options?: { revealProject?: boolean }) => void
   onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
   onSettleSession: (sessionId: string, settled: boolean, folderPath: string) => void
   onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void

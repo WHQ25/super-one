@@ -410,6 +410,7 @@ export type Messages = {
     focusSwitchEnvironment: string
     /** Title of the sibling menu when a parent session is focused. */
     focusSwitchSession: string
+    focusChildrenLoadFailed: string
     thisMac: string
     thisPc: string
     hostDisconnected: string
@@ -2153,6 +2154,17 @@ export type Messages = {
       paging: string
       resyncing: string
     }
+    systemNotice: {
+      details: string
+      transcript: string
+      config: string
+      data: string
+      diskFull: string
+      quotaFull: string
+      writeFailed: string
+      storageFailure: string
+      resumeWarning: string
+    }
     error: {
       detailsToggle: string
       copy: string
@@ -2171,6 +2183,10 @@ export type Messages = {
         maxOutputTokens: string
         maxTurns: string
         budgetExhausted: string
+        sandboxUnavailable: string
+        initializationError: string
+        configInvalid: string
+        runtimeUpdateRequired: string
         malformedToolUse: string
         invalidRequest: string
         unknown: string
@@ -2189,6 +2205,10 @@ export type Messages = {
         maxOutputTokens: string
         maxTurns: string
         budgetExhausted: string
+        sandboxUnavailable: string
+        initializationError: string
+        configInvalid: string
+        runtimeUpdateRequired: string
         malformedToolUse: string
         invalidRequest: string
         unknown: string
@@ -2309,6 +2329,7 @@ export type Messages = {
       addedToChat: string
     }
     worktree: {
+      searchBranchesPlaceholder: string
       searchPlaceholder: string
       existingHeading: string
       createFromHeading: string
@@ -5174,6 +5195,7 @@ export const en: Messages = {
     focusLevels: 'Focus Levels',
     focusSwitchEnvironment: 'Select Environment',
     focusSwitchSession: 'Select Session',
+    focusChildrenLoadFailed: 'Could not load child sessions. Retry',
     thisMac: 'This Mac',
     thisPc: 'This PC',
     hostDisconnected: 'Host offline',
@@ -7009,6 +7031,12 @@ export const en: Messages = {
       paging: 'Loading history…',
       resyncing: 'Refreshing transcript…',
     },
+    systemNotice: {
+      details: 'Details', transcript: 'session transcripts', config: 'Claude Code configuration', data: 'session data',
+      diskFull: 'the disk is full', quotaFull: 'the disk quota is exhausted', writeFailed: 'a storage write failed',
+      storageFailure: 'Could not save {{targets}} because {{reason}}.',
+      resumeWarning: 'Resuming affected sessions may omit part of the conversation.',
+    },
     error: {
       detailsToggle: 'Error Details',
       copy: 'Copy',
@@ -7027,6 +7055,10 @@ export const en: Messages = {
         maxOutputTokens: 'Reply Cut Off',
         maxTurns: 'Step Limit Reached',
         budgetExhausted: 'Budget Used Up',
+        sandboxUnavailable: 'Required Sandbox Unavailable',
+        initializationError: 'Session Initialization Failed',
+        configInvalid: 'Invalid Configuration File',
+        runtimeUpdateRequired: 'Claude Runtime Update Required',
         malformedToolUse: 'Tool Call Kept Failing',
         invalidRequest: 'Request Rejected',
         unknown: 'Request Failed',
@@ -7045,6 +7077,10 @@ export const en: Messages = {
         maxOutputTokens: 'The reply hit the output length limit and stopped early. Ask it to continue, or ask for a shorter answer.',
         maxTurns: 'The turn reached its step limit before finishing. Send a follow-up to keep it going.',
         budgetExhausted: 'The turn ran out of its configured budget. Raise the budget, or narrow the task and try again.',
+        sandboxUnavailable: 'The required sandbox could not start. Check sandbox support on the host before retrying.',
+        initializationError: 'The runtime did not receive initialize first. Restart the session; if it persists, check the SDK and runtime versions.',
+        runtimeUpdateRequired: 'Update Claude in Settings → Harnesses, then restart the session. If you configured a custom Claude binary or SDK version, update that override too. The authorization guard stays enabled.',
+        configInvalid: 'A configuration file contains invalid JSON. Follow the original recovery instructions in the error details; keep the damaged file until it is recovered.',
         malformedToolUse: 'The model kept producing malformed tool calls and gave up. Rephrase the request, or try another model.',
         invalidRequest: 'The service rejected this request as invalid. The error details below say what it objected to.',
         unknown: 'The turn failed before it finished. See the error details below, or copy them when reporting the problem.',
@@ -7165,6 +7201,7 @@ export const en: Messages = {
       addedToChat: 'Added to chat',
     },
     worktree: {
+      searchBranchesPlaceholder: 'Search branches…',
       searchPlaceholder: 'Search worktrees…',
       existingHeading: 'Existing worktrees',
       createFromHeading: 'Create new worktree from',

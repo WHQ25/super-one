@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react'
 import { CalendarClock, Check, ChevronDown, Folder, FolderOpen, FolderX, List, Loader2, LogOut, MessageSquare, Monitor, Pin, Plus, Search, SquarePen, Undo2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -14,14 +14,15 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
+import { projectFocusPaths } from '@/lib/multi-host/project-focus'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
-import { ActiveSessionList } from './ActiveSessionList'
+import { SessionFocusList } from './SessionFocusList'
 import { EnvironmentKindIcon, EnvironmentUpgradingIcon } from './multi-host/EnvironmentKindIcon'
 import { EnvironmentRowActions } from './multi-host/EnvironmentSectionHeader'
 import { MultiHostProjectList, type MultiHostProjectListProps } from './multi-host/MultiHostProjectList'
+import { ProjectFocusList } from './ProjectFocusList'
 import { ProjectSidebarRow, type ProjectFocusActions } from './ProjectSidebarRow'
-import { SessionRow } from './SessionRow'
 import {
   applySidebarFocus,
   focusEnvironment,
@@ -134,6 +135,7 @@ export function SidebarFocusBar({
   actions,
   menuLabel,
   onAddProject,
+  onOpenCurrent,
 }: {
   title: string
   siblings: FocusSwitchItem[]
@@ -143,6 +145,8 @@ export function SidebarFocusBar({
   menuLabel?: string
   /** Project focus reuses the chat picker, including its add-project row. */
   onAddProject?: () => void
+  /** A focused session remains directly openable; its sibling picker is a separate control. */
+  onOpenCurrent?: () => void
 }) {
   const { t } = useTranslation()
   const canSwitch = siblings.length > 1
@@ -152,6 +156,47 @@ export function SidebarFocusBar({
     ...levels.filter((level) => level.id !== 'root'),
     ...levels.filter((level) => level.id === 'root'),
   ]
+  const switchMenu = (
+    <DropdownMenuContent
+      align="start"
+      className="w-64 overflow-hidden"
+      onCloseAutoFocus={(event) => event.preventDefault()}
+    >
+      {menuLabel && (
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{menuLabel}</DropdownMenuLabel>
+      )}
+      <ScrollArea
+        type="scroll"
+        edgeFade
+        className="max-h-48 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
+      >
+        {siblings.map((item) => (
+          <DropdownMenuItem
+            key={item.id}
+            className="justify-between focus-visible:shadow-none"
+            onClick={() => {
+              if (!item.current) item.onSelect()
+            }}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              {item.icon}
+              <span className="truncate">{item.label}</span>
+            </span>
+            {item.current && <Check className="size-4 shrink-0 text-primary" aria-hidden />}
+          </DropdownMenuItem>
+        ))}
+      </ScrollArea>
+      {onAddProject && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onAddProject} className="gap-2 focus-visible:shadow-none">
+            <Plus className="size-4 shrink-0" />
+            <span>{t('chat.suggestions.addProject')}</span>
+          </DropdownMenuItem>
+        </>
+      )}
+    </DropdownMenuContent>
+  )
   return (
     <div data-sidebar-focus-bar className="flex h-9 shrink-0 items-center gap-1 px-1.5">
       <div className="group/levels relative shrink-0">
@@ -185,7 +230,7 @@ export function SidebarFocusBar({
           </div>
         </div>
       </div>
-      {canSwitch ? (
+      {canSwitch && !onOpenCurrent ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -202,53 +247,36 @@ export function SidebarFocusBar({
               </span>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-64 overflow-hidden"
-            onCloseAutoFocus={(event) => event.preventDefault()}
-          >
-            {menuLabel && (
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{menuLabel}</DropdownMenuLabel>
-            )}
-            <ScrollArea
-              type="scroll"
-              edgeFade
-              className="max-h-48 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
-            >
-              {siblings.map((item) => (
-                <DropdownMenuItem
-                  key={item.id}
-                  className="justify-between focus-visible:shadow-none"
-                  onClick={() => {
-                    if (!item.current) item.onSelect()
-                  }}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    {item.icon}
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                  {item.current && <Check className="size-4 shrink-0 text-primary" aria-hidden />}
-                </DropdownMenuItem>
-              ))}
-            </ScrollArea>
-            {onAddProject && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onAddProject} className="gap-2 focus-visible:shadow-none">
-                  <Plus className="size-4 shrink-0" />
-                  <span>{t('chat.suggestions.addProject')}</span>
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
+          {switchMenu}
         </DropdownMenu>
       ) : (
+        onOpenCurrent ? (
+          <button
+            type="button"
+            data-sidebar-focus-title
+            onClick={onOpenCurrent}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md text-left text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+          >
+            <span className="flex size-4 shrink-0 items-center justify-center">{currentIcon}</span>
+            <span className="truncate text-sm font-medium">{title}</span>
+          </button>
+        ) : (
         <span data-sidebar-focus-title className="flex min-w-0 flex-1 items-center gap-2">
           {currentIcon && (
             <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground/70">{currentIcon}</span>
           )}
           <span className="truncate text-sm font-medium">{title}</span>
         </span>
+      ))}
+      {canSwitch && onOpenCurrent && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <IconButton size="sm" variant="nested" tooltip={menuLabel ?? t('sidebar.focusSwitchSession')}>
+              <ChevronDown />
+            </IconButton>
+          </DropdownMenuTrigger>
+          {switchMenu}
+        </DropdownMenu>
       )}
       <div data-sidebar-focus-actions className="ml-auto flex shrink-0 items-center gap-0.5">
         {actions}
@@ -352,10 +380,14 @@ function focusSiblingItems(args: {
     || (families?.[session.sessionId]?.length ?? 0) > 0
     || session.sessionId === target.sessionId
   ))
+  if (!parents.some((session) => session.sessionId === target.sessionId)) {
+    parents.unshift({ sessionId: target.sessionId, title: args.sessionTitle, lastActiveAt: '', messageCount: 0 })
+  }
   return parents.map((session) => ({
     id: session.sessionId,
     label: session.sessionId === target.sessionId ? args.sessionTitle : session.title,
     current: session.sessionId === target.sessionId,
+    icon: <MessageSquare className="size-4 shrink-0" aria-hidden />,
     onSelect: () => focusSession(target.folderPath, session.sessionId, target.environmentId),
   }))
 }
@@ -444,55 +476,6 @@ function presenterForFolder(environments: EnvironmentBucket[], folder: RecentFol
   )
 }
 
-function SessionFocusList({
-  folderPath,
-  sessionId,
-  props,
-}: {
-  folderPath: string
-  sessionId: string
-  props: SidebarFocusViewProps
-}) {
-  const { t } = useTranslation()
-  const children = props.childSessions?.[folderPath]?.[sessionId]
-  const folder = resolveFolder(folderPath, props.folders, props.environments)
-  const present = presenterForFolder(props.environments, folder, props.localHostLabel)
-  if (!children) {
-    return <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
-  }
-  if (children.length === 0) {
-    return <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
-  }
-  return (
-    <ActiveSessionList
-      kind="child"
-      layout="fill"
-      hasMore={props.childSessionsHasMore?.[folderPath]?.[sessionId] === true}
-      onLoadMore={() => props.onLoadMoreChildSessions?.(folderPath, sessionId)}
-    >
-      {children.map((child) => {
-        const presentation = present(child)
-        return (
-          <SessionRow
-            key={child.sessionId}
-            session={child}
-            folderPath={folderPath}
-            childSession
-            opening={props.openingSession?.folderPath === folderPath && props.openingSession.sessionId === child.sessionId}
-            onSwitchSession={props.onSwitchSession}
-            onPinSession={props.onPinSession}
-            onSettleSession={props.onSettleSession}
-            onRenameSession={props.onRenameSession}
-            onDeleteSession={props.onDeleteSession}
-            hover={presentation.hover}
-            environmentOffline={presentation.environmentOffline}
-          />
-        )
-      })}
-    </ActiveSessionList>
-  )
-}
-
 /**
  * The list under the app drawer, given over to one environment, project, or
  * parent session. The bar switches siblings and steps up to an ancestor.
@@ -501,23 +484,30 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
   const { t } = useTranslation()
   const target = useSidebarFocusStore((state) => state.target)
   const loadFolderRef = useRef(props.onLoadFolderSessions)
-  const loadChildRef = useRef(props.onLoadChildSessions)
   const projectActionsRef = useRef<ProjectFocusActions | null>(null)
   loadFolderRef.current = props.onLoadFolderSessions
-  loadChildRef.current = props.onLoadChildSessions
   const { folderSessions, childSessions, folders, environments, localHostLabel } = props
+
+  const projectPaths = useMemo(() => target?.kind === 'project'
+    ? projectFocusPaths(target.folderPath, environments)
+    : [], [target, environments])
 
   useEffect(() => {
     if (!target || target.kind === 'environment') return
-    if (!folderSessions[target.folderPath]) loadFolderRef.current(target.folderPath)
-    if (target.kind === 'session') void loadChildRef.current?.(target.folderPath, target.sessionId)
-  }, [target, folderSessions])
+    const paths = target.kind === 'project' ? projectPaths : [target.folderPath]
+    for (const path of paths) {
+      const bucket = environments.find((item) => item.checkouts.some((checkout) => checkout.pathKey === path))
+      if (bucket && bucket.connection !== 'connected') continue
+      if (!folderSessions[path]) loadFolderRef.current(path)
+    }
+  }, [target, projectPaths, environments, folderSessions])
 
   const folder = target && target.kind !== 'environment'
     ? resolveFolder(target.folderPath, folders, environments)
     : null
   const sessionEntry = target?.kind === 'session'
     ? listedSession(folderSessions, childSessions, target.folderPath, target.sessionId)
+      ?? props.settledSessions?.find((session) => session.folderPath === target.folderPath && session.sessionId === target.sessionId)
     : undefined
   const sessionTitle = useSessionTitle(
     target?.kind === 'session' ? target.folderPath : null,
@@ -610,7 +600,10 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
       </ScrollArea>
     )
   } else if (target.kind === 'project' && folder) {
-    body = (
+    const catalogued = environments.some((item) => item.checkouts.some((checkout) => checkout.pathKey === folder.path))
+    body = catalogued ? (
+      <ProjectFocusList paths={projectPaths} focusedPath={folder.path} actionsRef={projectActionsRef} props={props} />
+    ) : (
       <div className="flex min-h-0 flex-1 flex-col px-2">
         <ProjectSidebarRow
           folder={folder}
@@ -658,6 +651,7 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
     <div data-sidebar-focus className="flex min-h-0 flex-1 flex-col">
       <SidebarFocusBar
         title={title}
+        onOpenCurrent={target.kind === 'session' ? () => props.onSwitchSession(target.folderPath, target.sessionId, { revealProject: false }) : undefined}
         siblings={siblings}
         levels={levels}
         menuLabel={target.kind === 'project'

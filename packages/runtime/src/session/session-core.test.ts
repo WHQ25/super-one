@@ -404,3 +404,13 @@ describe('SessionRuntime.rename', () => {
     expect(got.isUserRenamed).toBe(true)
   })
 })
+
+it('pages external-parent children without treating them as local spawn children in the project list', () => {
+  const { store, events, leases, rows } = memoryPorts()
+  rows.set('child', session({ sessionId: 'child', projectId: 'p1', externalParent: { sessionId: 'desktop-parent' } }))
+  rows.set('settled', session({ sessionId: 'settled', projectId: 'p1', externalParent: { sessionId: 'desktop-parent' }, isSettled: true }))
+  rows.set('other', session({ sessionId: 'other', projectId: 'p1', externalParent: { sessionId: 'another-parent' } }))
+  const runtime = new SessionRuntime(store, events, leases, 'node', createSimulatedTurnRunner())
+  expect(runtime.list('p1', { limit: 20, offset: 0, parentSessionId: 'desktop-parent' }).map((entry) => entry.sessionId)).toEqual(['child'])
+  expect(runtime.list('p1', { limit: 20, offset: 0, rootsOnly: true }).map((entry) => entry.sessionId)).toContain('child')
+})

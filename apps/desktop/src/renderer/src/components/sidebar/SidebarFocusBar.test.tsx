@@ -67,3 +67,25 @@ describe('SidebarFocusBar', () => {
     expect(screen.getByText('Only').tagName).toBe('SPAN')
   })
 })
+
+it('opens the focused parent from its title while keeping sibling selection on a separate button', async () => {
+  const open = vi.fn()
+  const switchSibling = vi.fn()
+  const user = userEvent.setup()
+  render(<SidebarFocusBar
+    title="Parent"
+    siblings={[
+      { id: 'parent', label: 'Parent', current: true, icon: <FolderOpen />, onSelect: vi.fn() },
+      { id: 'sibling', label: 'Sibling parent', onSelect: switchSibling },
+    ]}
+    levels={[]}
+    menuLabel="Select Session"
+    onOpenCurrent={open}
+  />)
+  await user.click(screen.getByRole('button', { name: 'Parent' }))
+  expect(open).toHaveBeenCalledTimes(1)
+  expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Select Session' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Sibling parent' }))
+  expect(switchSibling).toHaveBeenCalledTimes(1)
+})

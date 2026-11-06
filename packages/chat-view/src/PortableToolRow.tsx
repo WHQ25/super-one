@@ -23,6 +23,7 @@ import { AnsiText } from './presenters/ansi'
 import { ToolIcon } from './presenters/ToolIcon'
 import { WidgetToolRow, widgetTitleFromInput } from './presenters/WidgetToolRow'
 import { BashTerminalPresenter } from './presenters/BashTerminalPresenter'
+import { bashToolDisplay } from './presenters/bash-tool-display'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { PortableFileDiff } from './PortableFileDiff'
 import { tryPrettifyJson } from './presenters/tool-block-utils'
@@ -100,10 +101,8 @@ function PortableBashTool({
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
     } catch { return {} as Record<string, unknown> }
   }, [input])
-  const command = typeof params.command === 'string' ? params.command : (toolSummary ?? '')
-  const description = typeof params.description === 'string' && params.description.trim()
-    ? params.description
-    : (typeof params.command === 'string' && toolSummary && toolSummary !== params.command ? toolSummary : undefined)
+  const bash = bashToolDisplay(params, toolSummary)
+  const { command } = bash
   const output = result === undefined ? result : stripLegacyCommandEcho(command, result)
   const isDenied = Boolean(output?.startsWith('[denied] '))
   const isPendingPermission = Boolean(pendingPermission
@@ -111,8 +110,7 @@ function PortableBashTool({
   return (
     <BashTerminalPresenter
       toolUseId={toolUseId ?? ''}
-      command={command}
-      description={description}
+      {...bash}
       fallbackResult={isDenied ? undefined : output}
       bashOutput={status === 'streaming' && !isDenied && !isPendingPermission
         ? { content: output ?? '', finished: false }
@@ -120,8 +118,6 @@ function PortableBashTool({
       isStreaming={status === 'streaming'}
       isDenied={isDenied}
       isError={isError}
-      timeoutMs={typeof params.timeout === 'number' ? params.timeout : undefined}
-      runInBackground={params.run_in_background === true || params.background === true}
       allowExpand={allowExpand}
       isPendingPermission={isPendingPermission}
       onExpandedChange={onExpandedChange}

@@ -7,6 +7,33 @@ import {
 } from './agent-event-mapper'
 
 describe('createClaudeAgentEventMapper', () => {
+  it.each(['info', 'notice', 'suggestion', 'warning'])('preserves %s system notices as complete system rows with literal text', (level) => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: '', emit: event => events.push(event) })
+    mapper.apply({ type: 'system', subtype: 'informational', uuid: 'notice-1', session_id: 's', level, content: '<b>Hook failed</b> [retry](https://example.com)' })
+    expect(events).toEqual([expect.objectContaining({
+      type: 'user_message_appended',
+      message: expect.objectContaining({ providerId: 'system', role: 'assistant', status: 'complete',
+        content: [{ type: 'text', text: '<b>Hook failed</b> [retry](https://example.com)' }],
+        metadata: { systemNotice: { source: 'Claude Code', level } },
+      }),
+    })])
+  })
+
+  it.each(['ENOSPC', 'EDQUOT'])('reports %s after result without changing the completed turn', (errorCode) => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: event => events.push(event) })
+    mapper.apply({ type: 'result', subtype: 'success', is_error: false, result: 'done' })
+    mapper.apply({ type: 'system', subtype: 'session_writes_lost', uuid: 'lost', session_id: 's', error_code: errorCode,
+      lost: ['transcript', 'global_config'], transcript_session_ids: ['previous', 's'] })
+    expect(events.filter(e => e.type === 'message_complete')).toHaveLength(1)
+    expect(events.some(e => e.type === 'message_error')).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'user_message_appended', message: {
+      metadata: { systemNotice: { source: 'Claude Code', level: 'warning', code: errorCode,
+        details: { lost: ['transcript', 'global_config'], transcriptSessionIds: ['previous', 's'] } } },
+    } })
+  })
+
   it('maps mod ui messages and shares reported plugin errors across per-turn mappers', () => {
     const events: AgentEvent[] = []
     const reportedPluginErrors = new Set<string>()

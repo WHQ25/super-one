@@ -8,6 +8,8 @@ import type { SuggestedTaskLaunchChoice, SuggestedTaskState } from '@superone/sh
 import { SuggestedTaskCard } from '@superone/chat-view/presenters/SuggestedTaskCard'
 import { SessionLinkContext, type SessionLinkPorts } from '@superone/chat-view/presenters/SessionChip'
 import { createSessionLinkCache } from '@superone/chat-view/presenters/session-link-cache'
+import { createDetailClient } from '@superone/chat-core'
+import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { SuggestedTaskLaunchControls, SuggestedTaskToolBlock, type LaunchOptionsState } from './SuggestedTaskToolBlock'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
@@ -339,6 +341,13 @@ export const MobilePendingChinese: Story = { render: () => <MobileCard />, globa
 
 function RemoteCard({ connectionId }: { connectionId: string }) {
   const [state, setState] = useState<SuggestedTaskState>()
+  const client = useMemo(() => createDetailClient({
+    subscribe: async (target, subscriptionId) => {
+      if (target.environmentId !== connectionId || target.sessionId !== 'remote-source') throw new Error('Wrong detail environment')
+      return { subscriptionId, revision: 0, offset: 0, text: JSON.stringify({ input: JSON.stringify(PARAMS), result: JSON.stringify({ taskId: TASK_ID }) }) }
+    },
+    unsubscribe: () => {},
+  }, { newId: () => crypto.randomUUID() }), [connectionId])
   useMemo(() => {
     mockIpc('environment', 'callSession', async (connection, sessionId, method) => {
       if (connection !== connectionId || sessionId !== 'remote-source') throw new Error('Wrong source environment')
@@ -351,7 +360,11 @@ function RemoteCard({ connectionId }: { connectionId: string }) {
     })
   }, [connectionId])
   return <Shell><SessionScopeProvider value={{ projectPath: `remote:${connectionId}:/repo`, sessionId: 'remote-source' }}>
-    <SuggestedTaskToolBlock params={PARAMS} result={JSON.stringify({ taskId: TASK_ID })} state={state} />
+    <DetailScopeProvider scope={{ client, environmentId: connectionId, sessionId: 'remote-source' }}>
+      <ToolBlock toolName="mcp__superone__session_suggest_task" toolUseId="remote-suggest"
+        input={JSON.stringify({ title: PARAMS.title, tldr: PARAMS.tldr })} status="complete"
+        remoteDetail={JSON.stringify(['remote-turn', 'tool', 'remote-suggest'])} suggestedTask={state} />
+    </DetailScopeProvider>
   </SessionScopeProvider></Shell>
 }
 
@@ -361,8 +374,14 @@ export const RemoteNode: Story = {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('button', { name: 'Agent' })).toBeVisible()
     await expect(await canvas.findByText(/Opus/)).toBeVisible()
+    await userEvent.click(await canvas.findByTitle('Show Full Prompt'))
+    await expect(canvas.getByText('Context')).toBeVisible()
+    await userEvent.click(canvas.getByTitle('Hide Prompt'))
+    await expect(canvas.queryByText('Context')).toBeNull()
     await userEvent.click(canvas.getByRole('button', { name: 'Launch' }))
     await expect(await canvas.findByText('Launched')).toBeVisible()
+    await userEvent.click(canvas.getByTitle('Show Full Prompt'))
+    await expect(canvas.getByText('Context')).toBeVisible()
   },
 }
 export const RemoteDesktop: Story = { ...RemoteNode, render: () => <RemoteCard connectionId="source-desktop" /> }

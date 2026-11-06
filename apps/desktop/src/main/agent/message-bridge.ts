@@ -9,6 +9,7 @@ export class MessageBridge {
   private queue: TaggedMessage[] = []
   private waiter: { resolve: (v: IteratorResult<SDKUserMessage>) => void } | null = null
   private closed = false
+  private accepting = true
   private _consumedTags: string[] = []
   private _onConsumed: ((tag: string) => void) | null = null
 
@@ -25,7 +26,7 @@ export class MessageBridge {
   }
 
   push(msg: SDKUserMessage, tag?: string): void {
-    if (this.closed) return
+    if (this.closed || !this.accepting) return
 
     if (this.waiter) {
       const w = this.waiter
@@ -47,7 +48,13 @@ export class MessageBridge {
     return true
   }
 
-  close(): void {
+  stopAccepting(): void {
+    this.accepting = false
+    this.queue = []
+  }
+
+  close(discardQueued = false): void {
+    if (discardQueued) this.stopAccepting()
     this.closed = true
     if (this.waiter) {
       const w = this.waiter

@@ -2,6 +2,7 @@ import { SessionInteractionQueue } from './interaction-queue'
 import { createMcpAppResourceGc } from '../mcp-apps/resource-gc'
 import type { McpAppResourceStore, McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
+import { isSystemNoticeEvent } from '@superone/shared/system-notice'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
 import { mcpAppResourceHashes, mcpAppModelContextInput, mcpAppModelInput } from '@superone/shared/mcp-apps-state'
@@ -202,6 +203,7 @@ export class SessionRuntime {
   private readonly inFlightTurns = new Set<Promise<void>>()
   /** Set synchronously at the start of dispose(); rejects new send(). */
   private disposing = false
+  private disposed = false
   /**
    * Active permission waiters keyed by interactionId.
    * respondPermission resolves these; abort/close deny them.
@@ -941,7 +943,7 @@ export class SessionRuntime {
     const childCounts = new Map<string, number>()
     let rows: NodeSessionRecord[]
     if (parentSessionId) {
-      rows = inProject.filter((s) => s.parentSessionId === parentSessionId && s.isHidden !== true && s.isSettled !== true)
+      rows = inProject.filter((s) => (s.parentSessionId ?? s.externalParent?.sessionId) === parentSessionId && s.isHidden !== true && s.isSettled !== true)
       rows.sort(byRecency)
     } else if (options?.rootsOnly) {
       const familyUpdated = new Map<string, number>()
@@ -1661,7 +1663,14 @@ export class SessionRuntime {
 
   private handleAmbientEvent(sessionId: string, event: AgentEvent): void {
     const session = this.live.get(sessionId)
-    if (!session || session.closed || this.disposing) return
+    if (!session || this.disposed) return
+    // A closing provider can report unsaved transcript/config writes. Keep the
+    // durable sink alive through shutdown, without reopening a turn or recency.
+    if (isSystemNoticeEvent(event)) {
+      this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event } })
+      return
+    }
+    if (session.closed || this.disposing) return
     if (session.harnessId === 'opencode' && event.type === 'agent_setting_change' && event.patch?.openCodeAgentId !== undefined)
       session.agent = event.patch.openCodeAgentId
     if (event.type === 'transcript_replaced') {
@@ -1669,7 +1678,7 @@ export class SessionRuntime {
         text: message.content.filter(block => block.type === 'text').map(block => block.text).join(''),
         createdAt: Date.parse(message.createdAt) || Date.now(), ...parseMessageDisplay(message) }))
     }
-    if (event.type === 'user_message_appended' && !this.userRow(session, event.message.id)) {
+    if (event.type === 'user_message_appended' && event.message.role === 'user' && !this.userRow(session, event.message.id)) {
       session.transcript.push({ id: event.message.id, role: 'user',
         text: event.message.content.filter(block => block.type === 'text').map(block => block.text).join(''),
         createdAt: Date.parse(event.message.createdAt) || Date.now(), ...parseMessageDisplay(event.message) })
@@ -2948,6 +2957,7 @@ export class SessionRuntime {
     this.aborts.clear()
     // Release long-lived Claude SDK processes after turns have been aborted.
     await Promise.resolve(this.turnRunner.disposeAll?.()).catch(() => undefined)
+    this.disposed = true
   }
 
   private persist(session: NodeSessionRecord): void {

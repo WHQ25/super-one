@@ -34,6 +34,7 @@ import {
 import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } from '@superone/claude/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
+import { isSystemNoticeEvent } from '@superone/shared/system-notice'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE } from '@superone/shared/mod-ui'
 import { sdkSlashCommands } from '@superone/shared/slash-commands'
@@ -225,15 +226,22 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
   /** SuperOne sessionId → long-lived Claude process. */
   const lives = new Map<string, LiveEntry>()
+  const disposals = new Map<string, Promise<void>>()
 
   const disposeEntry = async (sessionKey: string): Promise<void> => {
     const entry = lives.get(sessionKey)
-    if (!entry) return
+    if (!entry) return disposals.get(sessionKey)
     // While the entry is still live, so views hear `mod_ui_state: false`.
     entry.modSurface?.dispose()
     lives.delete(sessionKey)
-    await entry.live.dispose().catch(() => undefined)
-    await entry.hostActionDispose?.().catch(() => undefined)
+    const disposal = (async () => {
+      await entry.live.dispose().catch(() => undefined)
+      await entry.hostActionDispose?.().catch(() => undefined)
+    })()
+    disposals.set(sessionKey, disposal)
+    try { await disposal } finally {
+      if (disposals.get(sessionKey) === disposal) disposals.delete(sessionKey)
+    }
   }
 
   const mcpDiskKeyOf = (diskNames: string[]): string =>
@@ -374,13 +382,15 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       providerSessionId: () => lives.get(sessionKey)?.live.sessionId,
       onCatalogMiss: () => { void refreshCatalog() },
     })
+    let eventEntry: LiveEntry | undefined
     const live = ClaudeLiveSession.open({
       cwd: p.cwd,
       onSessionId: (id) => lives.get(sessionKey)?.onProviderResume?.(formatClaudeSessionResume(id)!),
       onAmbientEvent: (event) => {
-        const current = lives.get(sessionKey)
+        // Keep this process's sink through EOF drain even after registry removal.
+        const current = eventEntry
         if (!current) return
-        current.lastActivityAt = Date.now()
+        if (!isSystemNoticeEvent(event)) current.lastActivityAt = Date.now()
         followReportedMode(current, event, current.onAmbientEvent)
         current.onAmbientEvent?.(event)
       },
@@ -422,6 +432,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       lastActivityAt: Date.now(),
     }
     lives.set(sessionKey, entry)
+    eventEntry = entry
     if (live.query) {
       // Mod redraws are not activity: they reach the session's sink without
       // bumping `lastActivityAt`, so drawing never keeps an idle process alive.
@@ -446,6 +457,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     }
 
     const sessionKey = input.session.sessionId
+    await disposals.get(sessionKey)
     let entry = lives.get(sessionKey)
     // Steering uses the running process and its settings. A queued message's
     // model/effort snapshot must never rebuild the process it is steering.
@@ -494,6 +506,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       const nextAdditionalDirsKey = additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean))
 
       // Another host send may have opened the process while prepare awaited.
+      await disposals.get(sessionKey)
       entry = lives.get(sessionKey)
       // A turn without a say (a host wake) keeps the Ultracode the process had,
       // across a restart too.
@@ -684,7 +697,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         apiProviderId: session.apiProviderId,
         permissionMode: session.permissionMode,
       })
-      entry = openEntry({
+      await disposals.get(session.sessionId)
+      entry = lives.get(session.sessionId) ?? openEntry({
         session,
         binary,
         cwd,
@@ -746,7 +760,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
 
   runner.disposeAll = async () => {
     const keys = [...lives.keys()]
-    await Promise.all(keys.map((id) => disposeEntry(id)))
+    await Promise.all([...keys.map((id) => disposeEntry(id)), ...disposals.values()])
   }
 
   runner.listActiveRuntimes = () => [...lives.entries()].map(([sessionId, entry]) => ({

@@ -255,6 +255,7 @@ export class Session implements SessionContract {
   private providerConfig: unknown
 
   private _status: SessionStatus = 'idle'
+  private _interruptPromise: Promise<boolean> | null = null
   /** Stream, settled status and voice call, from backend events — see `SessionLiveness`. */
   private readonly liveness = new SessionLiveness()
   private _sendChain: Promise<void> = Promise.resolve()
@@ -800,6 +801,7 @@ export class Session implements SessionContract {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertNotDisposed()
     this.assertCanSend(providerOrigin)
+    if (this._interruptPromise) throw Object.assign(new Error('Session is still stopping'), { code: 'failed_precondition' })
     const clientMessageId = request.clientMessageId
     if (clientMessageId && this.sendAlreadyTaken(clientMessageId)) {
       // A Resend from a client that missed the retry: the host already has this
@@ -1024,7 +1026,7 @@ export class Session implements SessionContract {
   async interrupt(): Promise<boolean> {
     this.lease.assertMutation()
     if (this._status === 'disposed') return false
-    if (this._status === 'interrupting') return true
+    if (this._interruptPromise) return this._interruptPromise
     // Not `_status`-only: a continuation turn runs with `_status === 'ended'`,
     // and refusing here is what let the agent keep streaming past Stop.
     // Child/voice/View approvals can also wait while their root is idle.
@@ -1042,23 +1044,53 @@ export class Session implements SessionContract {
     } catch (err) {
       log.warn('[Session] onBeforeInterrupt hook error:', err)
     }
+    const stop = this.finishInterrupt(wasStreaming, prev, generation, this._sendChain)
+    this._interruptPromise = stop
+    try {
+      return await stop
+    } finally {
+      this._interruptPromise = null
+    }
+  }
+
+  private async finishInterrupt(wasStreaming: boolean, prev: SessionStatus, generation: number, sending: Promise<void>): Promise<boolean> {
     try {
       await this.backend.interrupt()
+      if (wasStreaming) await this.waitForInterruptedRun(generation, sending)
     } catch (err) {
-      log.debug('[Session] interrupt error:', err)
-    } finally {
-      if ((this._status as SessionStatus) !== 'disposed') {
-        this._status = wasStreaming ? (prev === 'starting' ? 'idle' : 'ended') : prev
-      }
-      // The backend owns the terminal event, but an interrupt that never lands
-      // one must not leave the session permanently "busy". Only clear the run we
-      // set out to stop: `backend.interrupt()` is awaited, and a queued turn that
-      // opened meanwhile is live work this decision predates.
-      this.liveness.endRunIfCurrent(generation)
-      // Agent no longer controlling — drop software cursor + menu-bar chip.
-      void this.clearComputerUseVisuals('interrupt')
+      // A failed cancellation is not proof that the run ended. Keep liveness
+      // and propagate the failure so the controller can offer Stop again.
+      if ((this._status as SessionStatus) !== 'disposed') this._status = prev
+      throw err
     }
+    if ((this._status as SessionStatus) !== 'disposed') {
+      this._status = wasStreaming ? (prev === 'starting' ? 'idle' : 'ended') : prev
+    }
+    this.liveness.endRunIfCurrent(generation)
+    void this.clearComputerUseVisuals('interrupt')
     return true
+  }
+
+  private waitForInterruptedRun(generation: number, sending: Promise<void>): Promise<void> {
+    // Harness cancellation may acknowledge delivery before its terminal event.
+    // Startup can instead end with no output; the admitted send settling covers
+    // that case. A newer provider run belongs to a different stop decision.
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsubscribe()
+        reject(new Error('The agent has not confirmed the stop. Try again.'))
+      }, 12_000)
+      const check = () => {
+        if (this.liveness.streamGeneration === generation && this.activityStatus() === 'streaming') return
+        clearTimeout(timer)
+        unsubscribe()
+        resolve()
+      }
+      const unsubscribe = () => { this.eventListeners.delete(check) }
+      this.eventListeners.add(check)
+      void sending.then(check, check)
+      check()
+    })
   }
 
   async startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void> {

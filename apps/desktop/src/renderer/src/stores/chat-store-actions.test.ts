@@ -269,9 +269,26 @@ describe('disconnectRemoteSession', () => {
 })
 
 describe('interrupt', () => {
+  it('holds Stop pending through the RPC, deduplicates clicks, and settles from an explicit receipt', async () => {
+    setupProject()
+    patchSession({ status: 'streaming', messages: [{ id: 'm1', role: 'assistant', status: 'streaming', content: [] } as never] })
+    let resolve!: (result: unknown) => void
+    mockWindowEnvironment.interruptSession.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    const stop = useChatStore.getState().interrupt()
+    expect(activeSession().interruptPending).toBe(true)
+    await useChatStore.getState().interrupt()
+    expect(mockWindowEnvironment.interruptSession).toHaveBeenCalledTimes(1)
+    resolve({ ok: true, status: 'stopped' })
+    await stop
+    expect(activeSession().interruptPending).toBe(false)
+    expect(activeSession().status).toBe('idle')
+    expect(activeSession().messages[0].status).toBe('interrupted')
+  })
+
   it('interrupts the session on its environment + resets awaitingAssistantReply', async () => {
     setupProject()
     patchSession({ awaitingAssistantReply: true, status: 'streaming' })
+    mockWindowEnvironment.interruptSession.mockResolvedValueOnce({ ok: true, status: 'stopped' })
 
     await useChatStore.getState().interrupt()
 
@@ -279,15 +296,16 @@ describe('interrupt', () => {
     expect(activeSession().awaitingAssistantReply).toBe(false)
   })
 
-  it('reconciles to idle + clears pendings when the host could NOT interrupt', async () => {
+  it('keeps running state and allows retry when the host could NOT interrupt', async () => {
     setupProject()
     patchSession({ status: 'streaming', pendingPermissions: [{} as never], pendingQuestion: {} as never })
     mockWindowEnvironment.interruptSession.mockRejectedValueOnce(new Error('no running turn'))
 
     await useChatStore.getState().interrupt()
-    expect(activeSession().status).toBe('idle')
-    expect(activeSession().pendingPermissions).toEqual([])
-    expect(activeSession().pendingQuestion).toBeNull()
+    expect(activeSession().status).toBe('streaming')
+    expect(activeSession().pendingPermissions).toHaveLength(1)
+    expect(activeSession().interruptPending).toBe(false)
+    expect(toastMocks.error).toHaveBeenCalled()
   })
 
   it('is a no-op when no project is active', async () => {
@@ -299,7 +317,7 @@ describe('interrupt', () => {
   // forever whenever the backend never delivered a terminal event, and every
   // later message then went out as a queued (priority=next) send that the UI
   // never rendered.
-  it('falls back to idle when an acked interrupt produces no terminal event', async () => {
+  it('does not invent idle when a legacy receipt has no terminal event', async () => {
     vi.useFakeTimers()
     try {
       setupProject()
@@ -308,11 +326,36 @@ describe('interrupt', () => {
       await useChatStore.getState().interrupt()
       await vi.advanceTimersByTimeAsync(30_000)
 
-      expect(activeSession().status).toBe('idle')
-      expect(activeSession().pendingPermissions).toEqual([])
+      expect(activeSession().status).toBe('streaming')
+      expect(activeSession().pendingPermissions).toHaveLength(1)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('recovers a missing legacy terminal event only when the host confirms its final state', async () => {
+    vi.useFakeTimers()
+    try {
+      setupProject()
+      patchSession({ status: 'streaming' })
+      mockWindowEnvironment.getSession.mockResolvedValueOnce({ status: 'interrupted' })
+      await useChatStore.getState().interrupt()
+      expect(activeSession().status).toBe('streaming')
+      await vi.advanceTimersByTimeAsync(12_000)
+      expect(activeSession().status).toBe('idle')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('does not let a delayed receipt settle a newer turn', async () => {
+    setupProject()
+    patchSession({ status: 'streaming', messages: [{ id: 'm1' } as never] })
+    let resolve!: (result: unknown) => void
+    mockWindowEnvironment.interruptSession.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    const stop = useChatStore.getState().interrupt()
+    patchSession({ status: 'streaming', messages: [{ id: 'm1' } as never, { id: 'm2' } as never] })
+    resolve({ ok: true, status: 'stopped' })
+    await stop
+    expect(activeSession().status).toBe('streaming')
   })
 
   it('does not force idle when a new turn started inside the settle window', async () => {

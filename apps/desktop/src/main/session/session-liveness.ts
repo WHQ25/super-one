@@ -26,9 +26,9 @@ export class SessionLiveness {
    */
   private awaitingTurn = false
   /**
-   * Bumped every time a run opens. `interrupt()` clears the stream in a
-   * `finally` that awaits the backend, so a turn started during that await would
-   * otherwise be cleared by a decision made before it existed.
+   * Bumped every time a run opens. Stop awaits cancellation and terminal
+   * observation; a turn started during that wait must not be cleared by a
+   * decision made before it existed.
    *
    * Only monotonicity is contractual, not the count: a normal turn bumps twice
    * (`message_start` then `status_change: 'streaming'`), and OpenCode re-announces
@@ -71,8 +71,8 @@ export class SessionLiveness {
   endSend(): void { this.awaitingTurn = false }
 
   /**
-   * An interrupt that never lands a terminal event must not leave the session
-   * permanently "busy" — but only the run it set out to stop is cleared.
+   * Finish only the run captured by Stop. A provider run that opened while
+   * cancellation was awaited still owns its own liveness.
    */
   endRunIfCurrent(generation: number): void {
     if (this.generation === generation) this.streaming = false

@@ -1758,6 +1758,9 @@ export type Messages = {
     }
   }
   chat: {
+    stopGeneration: string
+    stoppingGeneration: string
+    interruptFailed: string
     sessionContinuation: {
       title: string
       lead: string
@@ -6618,6 +6621,9 @@ export const en: Messages = {
     },
   },
   chat: {
+    stopGeneration: 'Stop Generation',
+    stoppingGeneration: 'Stopping…',
+    interruptFailed: 'Could not confirm the stop. Try again.',
     sessionContinuation: {
       title: 'Hand Off to New Session',
       lead: 'This session has a long context and its cache has expired. Continuing here re-uploads the entire context, which is slow and expensive, and uses up your usage limit faster. Handing off to a new session will:',

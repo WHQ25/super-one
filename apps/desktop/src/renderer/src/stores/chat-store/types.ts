@@ -112,6 +112,8 @@ export interface PerSessionState extends ChatCoreSession {
   _animateInitialTitle: boolean
   messages: ChatMessage[]
   status: AgentStatus
+  /** This pane has an outstanding Stop request; never persisted. */
+  interruptPending: boolean
   awaitingAssistantReply: boolean
   session: SessionInfo | null
   /** Provider-side session id (Claude SDK / ACP agent). Survives harnesses with no SessionInfo. */

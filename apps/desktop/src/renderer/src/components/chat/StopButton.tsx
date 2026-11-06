@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 
 const STOP_COLOR = '#E24B4A'
@@ -7,18 +9,17 @@ const HOLD_DURATION = 600
 const DEAD_ZONE = 100
 
 interface StopButtonProps {
-  onInterrupt: () => void
-  /**
-   * When true (the harness's `softCancel` capability), after the hold ring fills (or a click fires),
-   * keep a segmented rotating red ring until the parent unmounts the button
-   * (turn settled). Hard-interrupt harnesses still clear the ring shortly after trigger.
-   */
-  softCancel?: boolean
+  onInterrupt: () => void | Promise<void>
+  /** Session-scoped request state survives composer remounts and pane switches. */
+  stopping?: boolean
 }
 
-export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps) {
+export function StopButton({ onInterrupt, stopping = false }: StopButtonProps) {
+  const { t } = useTranslation()
+  const reducedMotion = useReducedMotion()
   const [progress, setProgress] = useState(0)
-  const [cancelling, setCancelling] = useState(false)
+  const [requested, setRequested] = useState(false)
+  const cancelling = stopping || requested
   const startTimeRef = useRef<number | null>(null)
   const rafRef = useRef<number>(0)
   const triggeredRef = useRef(false)
@@ -28,23 +29,19 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
     triggeredRef.current = false
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     setProgress(0)
-    setCancelling(false)
+    setRequested(false)
   }, [])
 
   const fireInterrupt = useCallback(() => {
     if (triggeredRef.current) return
     triggeredRef.current = true
-    onInterrupt()
-    if (softCancel) {
-      setProgress(1)
-      setCancelling(true)
-      return
-    }
-    window.setTimeout(reset, 300)
-  }, [onInterrupt, reset, softCancel])
+    setProgress(1)
+    setRequested(true)
+    void Promise.resolve().then(onInterrupt).then(reset, reset)
+  }, [onInterrupt, reset])
 
   const animate = useCallback(() => {
-    if (!startTimeRef.current || triggeredRef.current) return
+    if (startTimeRef.current === null || triggeredRef.current) return
     const elapsed = Date.now() - startTimeRef.current
     if (elapsed < DEAD_ZONE) {
       rafRef.current = requestAnimationFrame(animate)
@@ -60,7 +57,7 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
   }, [fireInterrupt])
 
   const startHold = useCallback(() => {
-    if (startTimeRef.current || triggeredRef.current || cancelling) return
+    if (startTimeRef.current !== null || triggeredRef.current || cancelling) return
     startTimeRef.current = Date.now()
     triggeredRef.current = false
     rafRef.current = requestAnimationFrame(animate)
@@ -91,13 +88,14 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
   const size = 24
   const r = size / 2 - 1
   const circumference = 2 * Math.PI * r
-  // 8 equal dash/gap pairs → segmented ring while soft-cancel is in flight.
+  // Keep the stop square visible while the completion receipt is in flight.
   const segmentLen = circumference / 16
 
   return (
     <IconButton
       variant="ghost"
-      title={cancelling ? 'Stopping…' : undefined}
+      aria-label={t(cancelling ? 'chat.stoppingGeneration' : 'chat.stopGeneration')}
+      title={t(cancelling ? 'chat.stoppingGeneration' : 'chat.stopGeneration')}
       aria-busy={cancelling || undefined}
       aria-disabled={cancelling || undefined}
       onClick={() => {
@@ -109,13 +107,12 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
       ].filter(Boolean).join(' ')}
     >
       {showRing && (
-        <svg
+        <motion.svg
+          aria-hidden="true"
+          animate={{ rotate: cancelling && !reducedMotion ? 360 : 0 }}
+          transition={cancelling && !reducedMotion ? { duration: 0.85, repeat: Infinity, ease: 'linear' } : { duration: 0 }}
           viewBox={`0 0 ${size} ${size}`}
-          className={[
-            'pointer-events-none absolute inset-0 size-full',
-            cancelling ? 'animate-spin' : '',
-          ].filter(Boolean).join(' ')}
-          style={cancelling ? { animationDuration: '0.85s' } : undefined}
+          className="pointer-events-none absolute inset-0 size-full"
         >
           <circle
             cx={size / 2}
@@ -133,9 +130,9 @@ export function StopButton({ onInterrupt, softCancel = false }: StopButtonProps)
             strokeDashoffset={cancelling ? 0 : circumference * (1 - progress)}
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
           />
-        </svg>
+        </motion.svg>
       )}
-      <svg viewBox="0 0 24 24" className="size-3">
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-3">
         <rect
           x="3"
           y="3"

@@ -201,6 +201,8 @@ export class SessionRuntime {
   private readonly live = new Map<string, NodeSessionRecord>()
   /** In-flight turn promises (including runner cleanup / process kill). */
   private readonly inFlightTurns = new Set<Promise<void>>()
+  private readonly sessionTurns = new Map<string, Set<Promise<void>>>()
+  private readonly interrupts = new Map<string, Promise<void>>()
   /** Set synchronously at the start of dispose(); rejects new send(). */
   private disposing = false
   private disposed = false
@@ -1189,6 +1191,9 @@ export class SessionRuntime {
       holderClientId: input.client.clientSessionId,
     })
 
+    if (this.interrupts.has(input.sessionId)) {
+      throw Object.assign(new Error('Session is still stopping'), { code: 'failed_precondition' })
+    }
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
@@ -1328,6 +1333,9 @@ export class SessionRuntime {
     }
     const session = this.live.get(input.sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (this.interrupts.has(input.sessionId)) {
+      throw Object.assign(new Error('Session is still stopping'), { code: 'failed_precondition' })
+    }
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
@@ -1673,8 +1681,13 @@ export class SessionRuntime {
     this.aborts.set(sid, aborts)
     const turnPromise = this.runTurn(session, opts, abort)
     this.inFlightTurns.add(turnPromise)
+    const turns = this.sessionTurns.get(sid) ?? new Set<Promise<void>>()
+    turns.add(turnPromise)
+    this.sessionTurns.set(sid, turns)
     void turnPromise.finally(() => {
       this.inFlightTurns.delete(turnPromise)
+      turns.delete(turnPromise)
+      if (turns.size === 0) this.sessionTurns.delete(sid)
       // activeTurnCounts is decremented inside runTurn.finally *before* idle/FIFO
       // decisions so concurrent completions never both observe a stale count.
     })
@@ -1864,13 +1877,15 @@ export class SessionRuntime {
       if (session.closed) {
         // close() already tombstoned the session; do not overwrite status.
       } else if (abort.signal.aborted) {
-        session.status = 'interrupted'
-        this.events.appendSession({
-          sessionId: session.sessionId,
-          eventType: SESSION_DURABLE_EVENT.turnInterrupted,
-          payload: { reason: 'client_interrupt' },
-          causationRequestId: requestId,
-        })
+        if ((this.activeTurnCounts.get(session.sessionId) ?? 1) <= 1) {
+          session.status = 'interrupted'
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.turnInterrupted,
+            payload: { reason: 'client_interrupt' },
+            causationRequestId: requestId,
+          })
+        }
       } else {
         assistantText = result.finalText || assistantText
         session.providerResume = result.providerResume ?? session.providerResume
@@ -1909,12 +1924,14 @@ export class SessionRuntime {
       if (session.closed) {
         /* keep ended */
       } else if (abort.signal.aborted) {
-        session.status = 'interrupted'
-        this.events.appendSession({
-          sessionId: session.sessionId,
-          eventType: SESSION_DURABLE_EVENT.turnInterrupted,
-          payload: { reason: 'client_interrupt' },
-        })
+        if ((this.activeTurnCounts.get(session.sessionId) ?? 1) <= 1) {
+          session.status = 'interrupted'
+          this.events.appendSession({
+            sessionId: session.sessionId,
+            eventType: SESSION_DURABLE_EVENT.turnInterrupted,
+            payload: { reason: 'client_interrupt' },
+          })
+        }
       } else {
         // Only mark error if this is the last active turn.
         const remainingPeers = Math.max(0, (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1)
@@ -2156,7 +2173,7 @@ export class SessionRuntime {
     void Promise.resolve(this.turnRunner.disposeSession?.(sessionId)).catch(() => {})
   }
 
-  interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void {
+  interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): Promise<void> {
     const session = this.live.get(sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     this.leases.assertValid({
@@ -2165,18 +2182,28 @@ export class SessionRuntime {
       generation,
       holderClientId: client.clientSessionId,
     })
+    const pending = this.interrupts.get(sessionId)
+    if (pending) return pending
+    // A repeated Stop joins the captured work; no later send may sneak into
+    // the cancelled turn's FIFO or be mistaken for that turn's completion.
+    const turns = [...(this.sessionTurns.get(sessionId) ?? [])]
     const aborts = this.aborts.get(sessionId)
     for (const abort of aborts ?? []) abort.abort()
-    if (!aborts?.size) void Promise.resolve(this.turnRunner.interruptSession?.(sessionId)).catch(() => {})
-    // Standalone View forms can be pending while no model turn owns an abort.
     this.rejectPendingPermission(session)
-    // Cancel outstanding host actions so the desktop can abort local work (AbortSignal).
     this.cancelHostActionsForSession(sessionId, 'interrupt')
-    if (session.status === 'streaming') {
-      session.status = 'interrupted'
-      session.updatedAt = Date.now()
-      this.persist(session)
-    }
+    const stop = (async () => {
+      if (!aborts?.size) await this.turnRunner.interruptSession?.(sessionId)
+      await Promise.all(turns)
+      if (!session.closed && session.status === 'streaming') {
+        session.status = 'interrupted'
+        session.updatedAt = Date.now()
+        this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.turnInterrupted,
+          payload: { reason: 'client_interrupt' } })
+        this.persist(session)
+      }
+    })().finally(() => { this.interrupts.delete(sessionId) })
+    this.interrupts.set(sessionId, stop)
+    return stop
   }
 
   // ---------------------------------------------------------------------------

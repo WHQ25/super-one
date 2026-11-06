@@ -73,6 +73,7 @@ export async function sendMessageImpl(
   if (!projectPath) return
 
   const sessionId = target?.sessionId ?? getProject(get(), projectPath)._activeSessionId
+  if (sessionId && getProject(get(), projectPath)._sessions[sessionId]?.interruptPending) return
   const writeScope = createSendWriteScope(set, get, projectPath, sessionId ? { projectPath, sessionId } : target)
   const resolveWriteSid = writeScope.sessionId
   const patchSession = writeScope.patch

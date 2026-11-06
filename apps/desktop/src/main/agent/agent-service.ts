@@ -902,7 +902,9 @@ export class AgentService {
         wireComputerUseStopBridge((sessionId) => {
           const session = this.sessionManager?.getSession(sessionId)
           if (!session) return
-          void session.interrupt()
+          void session.interrupt().catch((err) => {
+            log.warn('[agent-service] computer-use stop failed sid=%s: %s', sessionId, String(err))
+          })
         })
       })
       .catch((err) => {

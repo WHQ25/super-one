@@ -2354,10 +2354,10 @@ export class EnvironmentHost {
       ...(source.kind === 'widget' ? { messageId: source.messageId } : {}), ...control })
   }
 
-  async interruptSession(connectionId: string, sessionId: string): Promise<void> {
+  async interruptSession(connectionId: string, sessionId: string): Promise<import('@superone/shared/environment').SessionInterruptReceipt | void> {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
-    await gateway.sessions.interrupt(
+    return gateway.sessions.interrupt(
       { environmentId, sessionId },
       { leaseId: control.leaseId, generation: control.generation },
     )

@@ -379,6 +379,7 @@ describe('interaction replies: answering a pane must reach that pane', () => {
 
   it('interrupt stops the scoped session, not whichever one is in the foreground', async () => {
     seed({ status: 'streaming', awaitingAssistantReply: true })
+    mockWindowEnvironment.interruptSession.mockResolvedValueOnce({ ok: true, status: 'stopped' })
     await useChatStore.getState().interrupt(TARGET)
     expect(mockWindowEnvironment.interruptSession).toHaveBeenCalledWith('local', PANE)
     expect(sessionOf(PANE).awaitingAssistantReply).toBe(false)

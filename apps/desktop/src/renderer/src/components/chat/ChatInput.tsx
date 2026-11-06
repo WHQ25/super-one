@@ -175,11 +175,12 @@ export function ChatInput({
     const { sendMessage, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
     const mcpRoute = useMcpAppFileRoute(sessionScope)
-    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, openCodeAgentId, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, replyComments, projectExtraDirs, additionalDirs, additionalDirsDirty } =
+    const { text, draftJson, status, interruptPending, attachments, browserAnnotations, mentions, permissionMode, openCodeAgentId, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, replyComments, projectExtraDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         draftJson: s.draftJson,
         status: s.status,
+        interruptPending: s.interruptPending,
         attachments: s.attachments,
         browserAnnotations: s.browserAnnotations,
         mentions: s.mentions,
@@ -374,7 +375,7 @@ export function ChatInput({
     useEffect(() => {
       watchOriginals(attachments.flatMap((a) => (a.originalPath ? [a.originalPath] : [])))
     }, [attachments])
-    const canSend = hasContent && !isRemoteLocked && !codexDirsPendingNextTurn
+    const canSend = hasContent && !interruptPending && !isRemoteLocked && !codexDirsPendingNextTurn
       && !scheduledLoading && !scheduled && !originalsHeld
     const showAgentMentions = activeProviderForResources === 'claude'
 
@@ -2292,10 +2293,10 @@ export function ChatInput({
           <div className="flex min-w-0 items-center gap-1.5">
             <ModSessionMode />
             <ContextUsage />
-            {isStreaming && (
+            {(isStreaming || interruptPending) && (
               <StopButton
                 onInterrupt={scopedInterrupt}
-                softCancel={HARNESS_CAPABILITIES[activeProviderForResources].softCancel}
+                stopping={interruptPending}
               />
             )}
             {(scheduleServed || scheduled) && <ScheduledSendButton

@@ -1562,7 +1562,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       interrupt: async (ref: SessionRef, control: MutatingControlContext) => {
         this.assertEnv(ref.environmentId)
-        await this.client.rpc('session.interrupt', {
+        return this.client.rpc<import('@superone/shared/environment').SessionInterruptReceipt>('session.interrupt', {
           sessionId: ref.sessionId,
           leaseId: control.leaseId,
           generation: control.generation,

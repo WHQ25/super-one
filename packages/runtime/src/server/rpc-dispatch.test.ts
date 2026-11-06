@@ -595,3 +595,21 @@ describe('harness catalog notice', () => {
     expect(ids).toEqual(['claude'])
   })
 })
+
+
+describe('session interrupt receipt', () => {
+  it('waits for host completion and propagates a failed interrupt', async () => {
+    let finish!: () => void
+    const interrupt = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+    const ctx = projectsOnlyHost({ sessions: { interrupt } as unknown as SessionHostPort })
+    let replied = false
+    const response = dispatchRpc('session.interrupt', { sessionId: 's', leaseId: 'l', generation: 'g' }, ctx)
+      .then(result => { replied = true; return result })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(replied).toBe(false)
+    finish()
+    expect(await response).toEqual({ result: { ok: true, status: 'stopped' } })
+    interrupt.mockRejectedValueOnce(Object.assign(new Error('cancel failed'), { code: 'unavailable' }))
+    expect(await dispatchRpc('session.interrupt', { sessionId: 's' }, ctx)).toMatchObject({ error: { message: 'cancel failed' } })
+  })
+})

@@ -1840,6 +1840,9 @@ export const zh: Messages = {
     },
   },
   chat: {
+    stopGeneration: '停止生成',
+    stoppingGeneration: '正在停止…',
+    interruptFailed: '未能确认停止，请重试。',
     sessionContinuation: {
       title: '移交到新会话',
       lead: '该会话较长且缓存已过期，在同一会话继续对话会重新上传整段上下文，速度慢，费用更高，会消耗大量订阅用量。移交到新会话将：',

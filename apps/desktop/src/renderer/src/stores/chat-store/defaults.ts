@@ -21,6 +21,7 @@ export function createSessionId(): string {
 export function createDefaultPerSessionState(): PerSessionState {
   return {
     ...createDefaultChatCoreSession(),
+    interruptPending: false,
     _title: null,
     _animateInitialTitle: false,
     dshPreset: null,

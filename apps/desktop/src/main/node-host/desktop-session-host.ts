@@ -570,9 +570,15 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     })
   }
 
-  interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void {
+  async interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): Promise<void> {
     this.controllerFor(this.requireRow(sessionId), client.clientSessionId)
-    runFencedSessionControl(sessionId, client.clientSessionId, { leaseId, generation }, () => { void this.mutation(sessionId).interrupt() })
+    await runFencedSessionControl(sessionId, client.clientSessionId, { leaseId, generation }, async () => {
+      const session = this.mutation(sessionId)
+      await session.interrupt()
+      if (session.isStreaming()) {
+        throw Object.assign(new Error('A newer agent turn is still running. Stop again to cancel it.'), { code: 'failed_precondition' })
+      }
+    })
   }
 
   /** The live session a client answers a prompt of. */

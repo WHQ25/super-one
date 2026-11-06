@@ -342,6 +342,61 @@ describe('Session state machine', () => {
     expect(backend.interruptCalls).toBe(1)
   })
 
+  it('keeps Stop pending after cancellation delivery until the backend reports a terminal event', async () => {
+    backend.emit({ type: 'message_start', message: { id: 'live', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } })
+    let stopped = false
+    const stop = session.interrupt().then(() => { stopped = true })
+    backend.resolveInterrupt?.()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(stopped).toBe(false)
+    expect(session.isStreaming()).toBe(true)
+    backend.emit({ type: 'message_interrupted', messageId: 'live' })
+    await stop
+    expect(stopped).toBe(true)
+  })
+
+  it('reports an unconfirmed stop instead of inventing idle when no terminal event arrives', async () => {
+    vi.useFakeTimers()
+    backend.emit({ type: 'message_start', message: { id: 'live', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } })
+    try {
+      const stop = session.interrupt()
+      const rejected = expect(stop).rejects.toThrow('not confirmed')
+      backend.resolveInterrupt?.()
+      await vi.advanceTimersByTimeAsync(12_000)
+      await rejected
+      expect(session.isStreaming()).toBe(true)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('duplicate interrupts wait for the same backend cancellation', async () => {
+    const send = session.send({ content: 'x' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const first = session.interrupt()
+    let secondDone = false
+    const second = session.interrupt().then(() => { secondDone = true })
+    await Promise.resolve()
+    expect(secondDone).toBe(false)
+    expect(backend.interruptCalls).toBe(1)
+    backend.resolveInterrupt?.()
+    backend.resolveSend?.()
+    await Promise.all([send, first, second])
+  })
+
+  it('propagates cancellation failures and keeps the live run available for retry', async () => {
+    const send = session.send({ content: 'x' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const original = backend.interrupt.bind(backend)
+    backend.interrupt = async () => { throw new Error('cancel failed') }
+    try {
+      await expect(session.interrupt()).rejects.toThrow('cancel failed')
+      expect(session.isStreaming()).toBe(true)
+    } finally {
+      backend.interrupt = original
+      backend.resolveSend?.()
+      await send
+    }
+  })
+
   it('interrupt() while idle is a no-op', async () => {
     await session.interrupt()
     expect(session.snapshot.status).toBe('idle')
@@ -402,6 +457,7 @@ describe('Session state machine', () => {
     const interruptPromise = session.interrupt()
     await new Promise((r) => setTimeout(r, 0))
     backend.resolveInterrupt?.()
+    backend.emit({ type: 'message_interrupted', messageId: 'a_queued' })
     expect(await interruptPromise).toBe(true)
     expect(backend.interruptCalls).toBe(1)
   })

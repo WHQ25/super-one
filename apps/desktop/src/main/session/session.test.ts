@@ -4083,6 +4083,37 @@ describe('pending interactions survive window reopen', () => {
 })
 
 describe('Session plugin notice transcript row', () => {
+  it('lets a draining backend save its exit warning before aborting the spawn', async () => {
+    const { session, backend } = makeSession()
+    Object.assign(backend, { drainsOnClose: true })
+    const sending = session.send({ content: 'hello' })
+    await vi.waitFor(() => expect(backend.startOpts).not.toBeNull())
+    const controller = backend.startOpts!.abortController
+    backend.close = async () => {
+      expect(controller.signal.aborted).toBe(false)
+      backend.emit({ type: 'user_message_appended', message: { id: 'exit', role: 'assistant', providerId: 'system', status: 'complete', content: [],
+        createdAt: new Date().toISOString(), metadata: { systemNotice: { source: 'Claude Code', level: 'warning' } } } })
+      backend.resolveSend?.()
+    }
+    await session.dispose()
+    await sending.catch(() => undefined)
+    expect(controller.signal.aborted).toBe(true)
+    expect(session.snapshot.messages.some(message => message.id === 'exit')).toBe(true)
+  })
+
+  it('persists a system warning between turns and deduplicates its replay', () => {
+    const stateChanges: SessionStateChange[] = []
+    const { session, backend } = makeSession({ onStateChange: state => stateChanges.push(state) })
+    const message: ChatMessage = { id: 'native-warning', role: 'assistant', providerId: 'system', status: 'complete',
+      content: [{ type: 'text', text: 'Transcript could not be saved' }], createdAt: new Date().toISOString(),
+      metadata: { systemNotice: { source: 'Claude Code', level: 'warning', code: 'ENOSPC' } } }
+    backend.emit({ type: 'user_message_appended', message })
+    backend.emit({ type: 'user_message_appended', message })
+    expect(session.snapshot.messages.filter(row => row.id === message.id)).toEqual([message])
+    expect(stateChanges.length).toBeGreaterThan(0)
+    expect(session.snapshot.status).toBe('idle')
+  })
+
   it('appends a plugin log line to the transcript, between turns too', () => {
     const { session, backend } = makeSession()
     const events: AgentEvent[] = []

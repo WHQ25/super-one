@@ -50,6 +50,7 @@
     "./presenters/BrowserToolBlock": "./src/presenters/BrowserToolBlock.tsx",
     "./presenters/ChatMessage": "./src/presenters/ChatMessage.tsx",
     "./presenters/ChatMessageIndicators": "./src/presenters/ChatMessageIndicators.tsx",
+    "./presenters/SystemNoticeRow": "./src/presenters/SystemNoticeRow.tsx",
     "./presenters/SendFailureResendButton": "./src/presenters/SendFailureResendButton.tsx",
     "./presenters/TurnBody": "./src/presenters/TurnBody.tsx",
     "./presenters/TranscriptFold": "./src/presenters/TranscriptFold.tsx",

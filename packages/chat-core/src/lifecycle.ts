@@ -2,6 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { isAppInputRequest } from '@superone/shared/input-request-presentation'
+import { isSystemNoticeEvent } from '@superone/shared/system-notice'
 import { DEFAULT_PROVIDER } from './transformers'
 import type { ChatCoreSession } from './types'
 import { retractContentBlocks, sealCodexMetadata, sealStreamingTools } from './shared'
@@ -89,7 +90,7 @@ export function reduceLifecycle(
         // takes its timeline order from the event like an assistant start does,
         // and lands ahead of the assistant row of the turn it opened.
         messages: insertCodexTimelineRow(session.messages, stampCodexTimelineOrder(anchorAsyncAnswer(event.message, session.messages), event)),
-        lastEventAt: ports.now(),
+        ...(isSystemNoticeEvent(event) ? {} : { lastEventAt: ports.now() }),
       }
     }
 

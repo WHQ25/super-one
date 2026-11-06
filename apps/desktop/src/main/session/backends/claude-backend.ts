@@ -56,6 +56,7 @@ import { hasRunningDownloadTasks } from '../../browser/browser-download-tasks'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { ModSurface } from '@superone/claude/mod-surface'
 import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
+import { shutdownClaudeQuery } from '@superone/claude/query-shutdown'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -95,6 +96,8 @@ function invalidLocalBackendStartReason(opts: BackendStartOptions): string | nul
 const MCP_APPS_CATALOG_TIMEOUT_MS = 10_000
 
 export class ClaudeBackend implements SessionBackend {
+  readonly drainsOnClose = true
+  private runtimeState: { closing: boolean } | null = null
   readonly kind: HarnessId = 'claude'
 
   private bridge: MessageBridge | null = null
@@ -179,6 +182,8 @@ export class ClaudeBackend implements SessionBackend {
   private terminalSlashCommands: string[] | undefined
   /** In-flight `rebuild()`; a revive waits for it instead of restarting the runtime it replaces. */
   private runtimeRebuild: Promise<void> | null = null
+  /** Prevent a replacement from sharing the transcript with a draining process. */
+  private runtimeRelease: Promise<void> | null = null
   private _spawnedAdditionalDirs: string[] = []
   private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
   /** Crons the live CLI process still holds, as of the last turn end. */
@@ -333,6 +338,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async start(opts: BackendStartOptions): Promise<void> {
+    if (this.runtimeRelease) await this.runtimeRelease
     if (this.bridge) throw new Error('ClaudeBackend already started')
     const invalidStartReason = invalidLocalBackendStartReason(opts)
     if (invalidStartReason) {
@@ -363,9 +369,12 @@ export class ClaudeBackend implements SessionBackend {
     this.stagedProviderSessionId = null
     this.warnOnUnusableResumeTarget(opts)
 
+    const runtimeState = { closing: false }
+    this.runtimeState = runtimeState
     const queryOptions: SessionQueryOptions = {
       ...this.buildQueryOptions(opts),
       warmupManager: this.warmupManager,
+      isClosing: () => runtimeState.closing,
     }
 
     const handle = createSessionQuery(
@@ -401,6 +410,14 @@ export class ClaudeBackend implements SessionBackend {
       buildClaudeOptions(queryOptions),
       queryOptions.superoneSessionId,
     )
+    const onEnded = () => {
+      // An error result may be followed by process exit. Retire that query so
+      // the next send retries initialization rather than writing to dead stdin.
+      if (this.runtimeState === runtimeState && !runtimeState.closing) {
+        void this.releaseRuntime('rebuild').catch(err => log.warn('[ClaudeBackend] exited runtime cleanup failed:', err))
+      }
+    }
+    void handle.iterationDone.then(onEnded, onEnded)
   }
 
   /**
@@ -636,6 +653,15 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async releaseRuntime(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
+    if (this.runtimeRelease) return this.runtimeRelease
+    const release = this.releaseRuntimeNow(reason)
+    this.runtimeRelease = release
+    try { await release } finally {
+      if (this.runtimeRelease === release) this.runtimeRelease = null
+    }
+  }
+
+  private async releaseRuntimeNow(reason: 'idle' | 'rebuild' | 'close'): Promise<void> {
     if (!this.bridge && !this.query) return
     if (reason === 'idle' && (
       this.pendingPermissions.size > 0
@@ -648,6 +674,9 @@ export class ClaudeBackend implements SessionBackend {
       || this.hasActiveBackgroundTasks()
       || this.hasScheduledWakeups()
     )) return
+    const interrupt = this.turnResolves.size > 0 || this.hasActiveBackgroundTasks()
+    if (this.runtimeState) this.runtimeState.closing = true
+    this.runtimeState = null
     // A replaced runtime carries no in-flight turn: never let the latch outlive it.
     this.beginTurn()
     this.sessionSchedules.clear(reason === 'close')
@@ -671,6 +700,7 @@ export class ClaudeBackend implements SessionBackend {
     log.info('[ClaudeBackend.idle-diag] releaseRuntime begin sid=%s reason=%s abortSignalBefore=%s', sid, reason, acAbortedBefore)
     const t0 = Date.now()
     const bridge = this.bridge
+    bridge?.stopAccepting()
     const query = this.query
     const iterationDone = this.iterationDone
     const spawnAbortController = this.spawnAbortController
@@ -687,30 +717,8 @@ export class ClaudeBackend implements SessionBackend {
     this.pendingInlineNotifications = []
     this.queuedUserMessages.clear()
     rejectAllPending(this.pendingPermissions, this.pendingQuestions, this.pendingPlanApprovals, this.pendingElicitations, `backend.${reason}`)
-    if (query) {
-      const t1 = Date.now()
-      try { query.close() } catch { /* ignore */ }
-      log.info('[ClaudeBackend.idle-diag] query.close done sid=%s tookMs=%d', sid, Date.now() - t1)
-    }
-    if (bridge) {
-      const t2 = Date.now()
-      bridge.close()
-      log.info('[ClaudeBackend.idle-diag] bridge.close done sid=%s tookMs=%d', sid, Date.now() - t2)
-    }
-    let iterationOutcome: 'resolved' | 'rejected' | 'timeout-5s' | 'skipped' = 'skipped'
-    if (iterationDone) {
-      const t3 = Date.now()
-      iterationOutcome = await Promise.race([
-        iterationDone.then(() => 'resolved' as const).catch(() => 'rejected' as const),
-        new Promise<'timeout-5s'>((resolve) => setTimeout(() => resolve('timeout-5s'), 5000)),
-      ])
-      log.info('[ClaudeBackend.idle-diag] iterationDone sid=%s outcome=%s tookMs=%d', sid, iterationOutcome, Date.now() - t3)
-    }
-    if (spawnAbortController) {
-      const wasAborted = spawnAbortController.signal.aborted
-      try { spawnAbortController.abort() } catch { /* ignore */ }
-      log.info('[ClaudeBackend.idle-diag] spawn SIGTERM sid=%s alreadyAborted=%s iterationOutcome=%s', sid, wasAborted, iterationOutcome)
-    }
+    await shutdownClaudeQuery({ query, interrupt, endInput: () => bridge?.close(true),
+      iterationDone: iterationDone ?? Promise.resolve(), abort: () => spawnAbortController?.abort() })
     log.info('[ClaudeBackend.idle-diag] releaseRuntime end sid=%s totalMs=%d', sid, Date.now() - t0)
     trace('backend.lifecycle', 'runtime_released', { reason })
   }
@@ -719,7 +727,12 @@ export class ClaudeBackend implements SessionBackend {
     // The release half of a rebuild leaves no runtime while the old iteration
     // drains. Reviving then would start from `_lastStartOpts` — the options being
     // replaced (a moved cwd) — and make the rebuild's own start fail.
-    if (this.runtimeRebuild) await this.runtimeRebuild.catch(() => {})
+    while (this.runtimeRebuild || this.runtimeRelease) {
+      if (this.runtimeRebuild) await this.runtimeRebuild.catch(() => {})
+      else if (this.runtimeRelease) await this.runtimeRelease
+      // A settings rebuild may have arrived while a natural-exit release was
+      // draining. Give it ownership before reviving with the previous options.
+    }
     if (this.bridge && this.query) return
     if (!this._lastStartOpts) throw new Error('ClaudeBackend not started')
     const resumeId = this.providerSessionId ?? undefined
@@ -759,13 +772,11 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
-    if (!this.bridge) {
-      await this.start(opts)
-      return
-    }
-    const resumeId = this.providerSessionId ?? undefined
+    const previousRebuild = this.runtimeRebuild
     const rebuild = (async () => {
+      if (previousRebuild) await previousRebuild.catch(() => {})
       await this.releaseRuntime('rebuild')
+      const resumeId = this.providerSessionId ?? opts.providerSessionId
       await this.start({ ...opts, providerSessionId: resumeId })
     })()
     this.runtimeRebuild = rebuild

@@ -6,6 +6,16 @@ import {
 } from './agent-error-presentation'
 
 describe('resolveAgentErrorKind', () => {
+  it.each([
+    ['sandbox_required_unavailable', 'sandboxUnavailable'],
+    ['initialize_not_first', 'initializationError'],
+    ['config_file_invalid', 'configInvalid'],
+  ])('uses the startup reason %s ahead of generic error codes', (reason, kind) => {
+    const info = { raw: 'original recovery steps', code: 'invalid_request', startupFailureReason: reason }
+    expect(resolveAgentErrorKind(info)).toBe(kind)
+    expect(buildAgentErrorClipboardText(info)).toContain(`startup_failure_reason  ${reason}`)
+  })
+
   it('prefers terminal_reason when it is more specific than the typed code', () => {
     // The SDK reports prompt-length failures as the vague code `invalid_request`;
     // only terminal_reason says what actually went wrong.

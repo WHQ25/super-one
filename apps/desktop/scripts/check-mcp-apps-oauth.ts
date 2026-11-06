@@ -5,7 +5,7 @@
  * temp dirs; nothing touches the user's config or keychain.
  *   bun apps/desktop/scripts/check-mcp-apps-oauth.ts
  */
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -16,6 +16,7 @@ import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provi
 import type { McpAppsBinding, McpAppsProvider } from '@superone/shared/mcp-apps'
 import { startFixtureHttpServer } from '../src/test/fixtures/mcp-apps/fixture-server'
 import { authenticateMcpApp } from '../src/main/mcp-apps/auth'
+import { claudeMcpOAuthKey, claudeMcpTokenFrom } from '../src/main/mcp-apps/claude-mcp-token'
 
 const root = resolve(import.meta.dirname, '../../..')
 const binding: McpAppsBinding = { node: 'check', session: 'check', server: 'fixture', configGeneration: 0, configFingerprint: 'fixture' }
@@ -51,7 +52,7 @@ async function checkClaude(hostCallback: boolean): Promise<boolean> {
     prompt: (async function* () { await gate })() as never,
     options: {
       settingSources: [],
-      env: withMcpAppsHostEnv({ ...process.env, CLAUDE_CONFIG_DIR: configDir }),
+      env: withMcpAppsHostEnv({ ...process.env, CLAUDE_CONFIG_DIR: configDir, CLAUDE_SECURESTORAGE_CONFIG_DIR: configDir }),
       mcpServers: { fixture: { type: 'http', url: server.url } },
     },
   })
@@ -60,13 +61,25 @@ async function checkClaude(hostCallback: boolean): Promise<boolean> {
   // Let the first connection attempt settle so "before" observes needs-auth, not pending.
   for (let i = 0; i < 40 && (await load()).find((s) => s.name === 'fixture')?.status === 'pending'; i++) await new Promise((r) => setTimeout(r, 250))
   try {
-    return await exercise(`claude${hostCallback ? '-remote' : ''}`, () => createClaudeMcpAppsProvider(binding, {
+    const passed = await exercise(`claude${hostCallback ? '-remote' : ''}`, () => createClaudeMcpAppsProvider(binding, {
     assertBinding: () => {},
       query: async () => q,
       providerSessionId: () => '',
       tools: async () => { await catalog.refresh(load, { force: true }); return catalog.tools('fixture') ?? new Map() },
       serverStatus: async () => { await catalog.refresh(load, { force: true }); return catalog.status('fixture') },
     }), '', hostCallback)
+    // Linux file-store verification: test the runtime's actual entry, never print tokens.
+    const credentialFile = join(configDir, '.credentials.json')
+    if (process.platform === 'linux') {
+      const data = JSON.parse(readFileSync(credentialFile, 'utf8'))
+      const config = { type: 'http' as const, url: server.url }
+      const expectedKey = claudeMcpOAuthKey('fixture', config)
+      const keyMatches = Boolean(data.mcpOAuth?.[expectedKey])
+      const tokenReadable = Boolean(claudeMcpTokenFrom(data, 'fixture', config))
+      console.log(JSON.stringify({ kind: 'claude-oauth-store', hostCallback, keyMatches, tokenReadable }))
+      return passed && keyMatches && tokenReadable
+    }
+    return passed
   } finally {
     release()
     q.close()
@@ -94,6 +107,7 @@ async function checkCodex(): Promise<boolean> {
   }
 }
 
-const results = { claude: await checkClaude(false), claudeRemoteRelay: await checkClaude(true), codex: await checkCodex() }
+const results = { claude: await checkClaude(false), claudeRemoteRelay: await checkClaude(true),
+  ...(!process.argv.includes('--claude-only') ? { codex: await checkCodex() } : {}) }
 console.log(JSON.stringify({ kind: 'verdict', ...results }, null, 2))
 if (!Object.values(results).every(Boolean)) process.exitCode = 1

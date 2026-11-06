@@ -52,6 +52,32 @@ re-check an entry when an upgrade touches its area.
   both separators).
 - **Guard:** `apps/desktop/src/main/agent/claude-binary.test.ts`.
 
+### Bundled Linux binary must match the host libc
+
+- **Behavior:** Optional glibc and musl SDK binary packages can coexist, so an
+  existing executable path does not prove that its dynamic loader is available.
+  The bundled lookup selects one variant by the running process's diagnostic
+  report (`header.glibcVersionRuntime` means glibc; a header without it means
+  musl). If reports are unavailable or throw, Alpine/`/lib/ld-musl-*` markers
+  provide the fallback; otherwise the lookup defaults to glibc. A reported glibc
+  takes precedence over an additional musl loader. A missing matching package
+  is a missing runtime, not a reason to choose the other libc variant.
+- **Observed:** SDK/native 0.3.318 on glibc Linux with both packages installed;
+  the previous shared and desktop lookups selected musl and the native process
+  failed to launch. The corrected shared lookup starts `2.1.318 (Claude Code)`.
+- **Depends on it:** `packages/claude/src/resolve-sdk-binary.ts` owns the shared
+  lookup and asar rewrites. Desktop calls its uncached `findBundledClaudeBinary`
+  only after explicit/managed paths and only when developer fallback is enabled.
+  The shared node wrapper retains its cache; desktop misses stay uncached so a
+  later package or managed install is discoverable. No SDK is loaded by this
+  helper, and libc detection starts no subprocess.
+- **Guard:** `packages/claude/src/resolve-sdk-binary.test.ts` (glibc/musl,
+  mismatched/missing packages, report fallbacks, architectures and macOS/Windows
+  asar paths), `apps/desktop/src/main/agent/claude-binary.test.ts` (both variants,
+  precedence, packaged gating and installation races). The opt-in native hook
+  test uses the resolved binary explicitly and passes on real glibc Linux;
+  musl/macOS/Windows behavior has fixture coverage, not native acceptance here.
+
 ## Sessions, resume and fork
 
 ### Native identity must survive an interrupted first turn
@@ -649,3 +675,99 @@ module that runs inside the CLI process. Upstream docs:
 - **Guard:** `packages/runtime/src/session/session-runtime.queue.test.ts`,
   `packages/claude/src/claude-live-session.test.ts`,
   `apps/cli/src/session/claude-turn-runner.test.ts`.
+
+
+## Process-scoped system notices and hook failures
+
+- **Behavior:** `system/informational` is plaintext with an info/notice/suggestion/
+  warning level. `system/session_writes_lost` may arrive as the CLI exits, after
+  its final result. It reports native transcript/global-config loss, not failure
+  of the completed model turn or proof that SuperOne's database lost data.
+  A received result remains valid. Preserve unknown future storage codes/kinds.
+- **Shutdown:** desktop and node stop accepting queued input, interrupt active
+  work and cancel SDK-held queued messages, then end the input generator and
+  drain only notices for up to three seconds before `Query.close()` and abort.
+  Native persistence flushes can wait two seconds; the extra second allows the
+  warning to be emitted. A busy, hung or slower-exiting process can exceed this
+  deadline, so delivery during forced termination is best effort. The sink
+  survives registry removal/session close until drain completes, and a new
+  process for the same session waits for the old release. Notices persist
+  without becoming a new assistant completion or changing session recency.
+- **Observed:** 0.3.318 declarations; both mappers and node lifecycle tested with
+  fixtures after result, while idle and during interruption. A real SDK reader
+  received an EOF-only warning from a fixture process after a completed turn
+  with bidirectional callbacks. Actual ENOSPC/EDQUOT was not induced on a live
+  filesystem. Informational content, including `info`, remains visible in this
+  transcript UI; `tool_use_id` is preserved in diagnostics, without speculative
+  grouping or suppression.
+- **Depends on it:** `packages/claude/src/system-notice.ts` appends complete
+  `providerId: system` messages through `user_message_appended`, with replay-stable
+  ids and `metadata.systemNotice`. The desktop handles them before its interrupt
+  filter. A cancelled node turn routes them through the ambient sink; idle uses
+  the existing system mapper. Node transient model input must not treat these
+  assistant system rows as user prompts. Desktop/mobile share `SystemNoticeRow`.
+- **Guard:** mapper/query/live-session tests; desktop Session persistence test;
+  node SQLite read-model restart test; `query-shutdown` tests and opt-in
+  `query-shutdown.native.test.ts` (`SUPERONE_TEST_CLAUDE_NATIVE=1`);
+  `SystemNoticeRow.test.tsx` (literal text, translated storage warnings,
+  expandable diagnostics and preserving the streaming assistant's identity).
+
+### SDK hook failures can fail closed
+
+- **Behavior:** SDK hook matcher `onFailure: block` blocks the guarded action
+  when its callback throws or returns invalid output. The SDK refuses startup
+  if the runtime cannot honor it or did not register those hooks; a host must
+  not silently retry without it. Stop/SubagentStop/TaskCompleted/TeammateIdle
+  ignore this option.
+- **Observed:** SDK/native 0.3.318; real native process against a local simulated
+  Anthropic API. A Write proposed by the fixture did not create its file for
+  either a thrown callback or invalid output, and a warning was streamed.
+- **Depends on it:** desktop `buildClaudeOptions` protects
+  `denySubagentSessionRename` with `onFailure: block`. It does not replace the
+  node executor's own authorization, or close pre-existing backlog G1.
+  An older/custom runtime that cannot honor it receives an actionable update
+  error. The fallback matches the SDK's internal error-message prefix; its
+  version guard must be rechecked on every upgrade. Retiring desktop runtimes
+  deny new tool permissions and decline elicitation rather than reopening cards.
+- **Guard:** `packages/claude/src/sdk-hooks.native.test.ts`
+  (`SUPERONE_TEST_CLAUDE_NATIVE=1`, no account or paid inference), and desktop
+  Claude query option tests.
+
+### Startup diagnostics survive terminal SDK exceptions
+
+- **Behavior:** an error result may carry `startup_failure_reason` and recovery
+  instructions before the SDK throws on process exit. Preserve that result's
+  structured error rather than overwriting it with the later generic exception.
+  Thrown initialization errors can also carry `startupFailureReason`. An exited
+  query is retired, so repairing configuration and retrying starts a new one.
+- **Guard:** `result-failure.test.ts`, desktop query terminal-exception tests and
+  backend process-exit/retry regression.
+
+### MCP OAuth hash normalizes absent headers
+
+- **Behavior:** The native credential key is `<server>|<sha256-prefix>` over
+  `JSON.stringify({type, url, headers: headers || {}})`, with 16 hex characters.
+  Omitting headers from that object produces the wrong exact key; the previous
+  URL/server fallback could conceal the mismatch. That fallback remains for
+  older entries, with its ambiguity and URL checks unchanged.
+- **Observed:** native 0.3.318 Linux file store, local OAuth fixture, both the
+  CLI-owned callback and a relayed host callback. Both actual keys matched and
+  tokens were readable; no user credentials were read or changed.
+- **Depends on it:** `apps/desktop/src/main/mcp-apps/claude-mcp-token.ts`.
+- **Guard:** `claude-mcp-token.test.ts`, and
+  `bun apps/desktop/scripts/check-mcp-apps-oauth.ts --claude-only` on Linux.
+
+### Additive Mod UI fields in 2.1.318
+
+- **Behavior:** `ui_attach` adds optional `draws` for Backdrop and mobile
+  Input/Select opt-ins. Omission on first attach advertises none; it retains
+  existing opt-ins on repeated attach. `ui_prompt_paint` is a new opt-in host
+  request. SuperOne advertises neither feature and keeps its previous behavior.
+  Existing mapped request schema keys are otherwise unchanged from 2.1.310.
+- **Observed:** both native binaries' schema text; existing recording replay;
+  2.1.318 loaded Anthropic's token-weather, blast-radius and replay-theater
+  through `withModDevFoldersEnv` in an isolated query. The adapter attached,
+  rendered the token-weather tree with all three in `drawn_by`, read panes and
+  detached. This was a protocol smoke, not a desktop/phone UI acceptance test.
+- **Guard:** `packages/claude/src/mod-surface/mod-surface.test.ts`; new opt-ins
+  remain backlog #30 until shared UI and host handlers exist.

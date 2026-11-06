@@ -9,13 +9,13 @@ import type { HostClientConfig, HostClientToken } from './host-client'
  * the CLI shipped with this SDK version; a version test fails on a bump so it
  * is checked again. A layout that no longer matches reads as "not signed in".
  */
-export const CLAUDE_MCP_OAUTH_VERIFIED_SDK = '0.3.310'
+export const CLAUDE_MCP_OAUTH_VERIFIED_SDK = '0.3.318'
 
 type HttpConfig = Extract<HostClientConfig, { type: 'http' | 'sse' }>
 
 /** The CLI's `mcpOAuth` key: server name, then 16 hex chars of SHA-256 over type, url and headers. */
 export function claudeMcpOAuthKey(server: string, config: HttpConfig): string {
-  const hash = createHash('sha256').update(JSON.stringify({ type: config.type, url: config.url, headers: config.headers })).digest('hex').slice(0, 16)
+  const hash = createHash('sha256').update(JSON.stringify({ type: config.type, url: config.url, headers: config.headers || {} })).digest('hex').slice(0, 16)
   return `${server}|${hash}`
 }
 

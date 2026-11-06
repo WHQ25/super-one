@@ -700,6 +700,8 @@ export interface AgentErrorInfo {
   terminalReason?: string
   /** SDK result `subtype` — `error_during_execution`, `error_max_turns`, … */
   subtype?: string
+  /** Provider startup refusal; an open string so newer runtime reasons survive. */
+  startupFailureReason?: string
   /** Model in play when the turn failed. */
   model?: string
   /** Upstream request id, when the SDK surfaced one. */
@@ -898,6 +900,8 @@ export interface MessageMetadata {
    * `plugin_notice` log (see `buildPluginNoticeMessage`); never sent to the model.
    */
   pluginNotice?: PluginNoticeMeta
+  /** A provider's plaintext notice, independent of the model's turn lifecycle. */
+  systemNotice?: SystemNoticeMeta
   /**
    * A user message the host never took: the bubble stays in the transcript with
    * a failure row until it is resent or pulled back into the composer. Local to
@@ -911,6 +915,14 @@ export interface PluginNoticeMeta {
   plugin: string
   /** `error`: the plugin, or one of its components, failed to load. */
   level?: 'error'
+}
+
+export interface SystemNoticeMeta {
+  kind?: 'storage'
+  source: string
+  level: 'info' | 'notice' | 'suggestion' | 'warning'
+  code?: string
+  details?: Record<string, unknown>
 }
 
 export interface SendFailure {

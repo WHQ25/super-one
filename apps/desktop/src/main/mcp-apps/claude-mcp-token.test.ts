@@ -7,6 +7,9 @@ import { CLAUDE_MCP_OAUTH_VERIFIED_SDK, claudeMcpOAuthKey, claudeMcpTokenFrom } 
 const config = { type: 'http' as const, url: 'https://mcp.example.com/mcp', headers: {} }
 
 describe('claudeMcpTokenFrom', () => {
+  it('normalizes absent headers to the empty object the native runtime hashes', () => {
+    expect(claudeMcpOAuthKey('linear', { type: 'http', url: config.url })).toBe(claudeMcpOAuthKey('linear', config))
+  })
   it('derives the CLI key from server name, type, url and headers', () => {
     expect(claudeMcpOAuthKey('linear', config)).toMatch(/^linear\|[0-9a-f]{16}$/)
     expect(claudeMcpOAuthKey('linear', { ...config, headers: { 'X-Team': 'a' } })).not.toBe(claudeMcpOAuthKey('linear', config))

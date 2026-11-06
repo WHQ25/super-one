@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
 import { openNodeDatabase, type NodeDatabase } from '../db'
 import { EventLog } from './event-log'
@@ -64,6 +64,51 @@ const textOf = (message: { content: Array<{ type: string; text?: string }> }) =>
   message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 
 describe('SessionReadModel', () => {
+  it('retains an idle provider warning across restart without turning it into user input', async () => {
+    const path = dbPath()
+    let emitAmbient: ((event: AgentEvent) => void) | undefined
+    const node = boot(path, async ({ onAmbientEvent }) => { emitAmbient = onAmbientEvent; return { finalText: 'done' } })
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'claude' })
+    await node.runtime.send({ sessionId: session.sessionId, text: 'hi', clientMessageId: 'u1', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    const message: ChatMessage = { id: 'storage-warning', role: 'assistant', providerId: 'system', status: 'complete',
+      content: [{ type: 'text', text: 'The native transcript could not be saved' }], createdAt: new Date().toISOString(),
+      metadata: { systemNotice: { source: 'Claude Code', level: 'warning', code: 'EDQUOT' } } }
+    const updatedAt = node.runtime.get(session.sessionId)?.updatedAt
+    emitAmbient!({ type: 'user_message_appended', message })
+    expect(node.runtime.get(session.sessionId)?.updatedAt).toBe(updatedAt)
+    expect(node.runtime.get(session.sessionId)?.transcript.some(row => row.id === message.id)).toBe(false)
+    expect(node.runtime.messages(session.sessionId).find(row => row.id === message.id)).toMatchObject(message)
+    await node.runtime.dispose()
+    node.db.close()
+    const restarted = boot(path)
+    expect(restarted.runtime.messages(session.sessionId).find(row => row.id === message.id)).toMatchObject(message)
+    expect(restarted.runtime.get(session.sessionId)?.status).toBe('idle')
+    await restarted.runtime.dispose()
+  })
+
+  it('persists a provider warning while the node and session are closing', async () => {
+    const path = dbPath()
+    let emit: ((event: AgentEvent) => void) | undefined
+    const message: ChatMessage = { id: 'exit-warning', role: 'assistant', providerId: 'system', status: 'complete', createdAt: new Date().toISOString(),
+      content: [{ type: 'text', text: 'Storage failure' }], metadata: { systemNotice: { source: 'Claude Code', level: 'warning' } } }
+    const runner: TurnRunner = Object.assign(async ({ onAmbientEvent }: Parameters<TurnRunner>[0]) => {
+      emit = onAmbientEvent
+      return { finalText: 'done' }
+    }, { disposeAll: async () => { emit?.({ type: 'user_message_appended', message }) } })
+    const node = boot(path, runner)
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'claude' })
+    await node.runtime.send({ sessionId: session.sessionId, text: 'hi', clientMessageId: 'u1', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    node.runtime.close(session.sessionId)
+    await node.runtime.dispose()
+    expect(node.runtime.messages(session.sessionId).find(row => row.id === message.id)).toMatchObject(message)
+    node.db.close()
+    const restarted = boot(path)
+    expect(restarted.runtime.messages(session.sessionId).find(row => row.id === message.id)).toMatchObject(message)
+    await restarted.runtime.dispose()
+  })
+
   it('fills ACP model names from the catalog when a cold checkpoint stored none', async () => {
     const path = dbPath()
     const node = boot(path, async ({ onAgentEvent }) => {

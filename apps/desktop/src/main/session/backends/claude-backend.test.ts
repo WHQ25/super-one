@@ -34,6 +34,42 @@ describe('ClaudeBackend', () => {
   })
 
   describe('lifecycle', () => {
+    it('starts a fresh runtime when retrying after an error result and process exit', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const first = backend.send({ content: 'first' })
+      await vi.waitFor(() => expect(hoisted.captured.getCurrentMessageId?.()).toBeTruthy())
+      hoisted.captured.emit?.({ type: 'message_error', messageId: hoisted.captured.getCurrentMessageId!(),
+        error: 'Restore configuration', errorInfo: { raw: 'Restore configuration', startupFailureReason: 'config_file_invalid' } })
+      hoisted.captured.iterationDone?.resolve()
+      await first
+      await vi.waitFor(() => expect(backend.hasActiveRuntime()).toBe(false))
+
+      const retry = backend.send({ content: 'retry after repairing config' })
+      await vi.waitFor(() => expect(hoisted.captured.createSessionQueryMock).toHaveBeenCalledTimes(2))
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId!() })
+      await retry
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+    })
+
+    it('keeps the output sink alive until input EOF warnings have drained', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent(event => events.push(event))
+      await backend.start(makeStartOpts())
+      const bridge = hoisted.captured.bridge as { close: () => void }
+      vi.spyOn(bridge, 'close').mockImplementation(() => {
+        if (!hoisted.captured.mockQueryClose.mock.calls.length) hoisted.captured.emit?.({ type: 'user_message_appended',
+          message: { id: 'exit-warning', role: 'assistant', providerId: 'system', status: 'complete', content: [], createdAt: new Date().toISOString(),
+            metadata: { systemNotice: { source: 'Claude Code', level: 'warning', code: 'EDQUOT' } } } })
+        hoisted.captured.iterationDone?.resolve()
+      })
+      await backend.close()
+      expect(events).toContainEqual(expect.objectContaining({ type: 'user_message_appended' }))
+      expect(hoisted.captured.mockQueryClose).toHaveBeenCalledOnce()
+    })
+
     it('start() spawns a session query via createSessionQuery', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
@@ -399,7 +435,6 @@ describe('ClaudeBackend', () => {
         hoisted.captured.mockQueryInterrupt.mockImplementationOnce(() => new Promise(() => {}))
         const backend = new ClaudeBackend()
         await backend.start(makeStartOpts())
-        hoisted.captured.iterationDone?.resolve()
 
         const interrupted = backend.interrupt()
         await vi.advanceTimersByTimeAsync(30_000)
@@ -418,7 +453,6 @@ describe('ClaudeBackend', () => {
         const events: AgentEvent[] = []
         backend.onEvent((e) => events.push(e))
         await backend.start(makeStartOpts())
-        hoisted.captured.iterationDone?.resolve()
 
         const sendPromise = backend.send({ content: 'hello' })
         await vi.advanceTimersByTimeAsync(0)
@@ -947,6 +981,28 @@ describe('ClaudeBackend', () => {
   })
 
   describe('rebuild()', () => {
+    it.each(['send-first', 'rebuild-first'])('serializes %s while an old runtime drains', async order => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const oldIteration = hoisted.captured.iterationDone!
+      const release = backend.releaseRuntime('idle')
+      const changed = { ...makeStartOpts(), cwd: '/tmp/proj/.worktrees/changed' }
+      const operations = order === 'send-first'
+        ? [backend.send({ content: 'retry' }), backend.rebuild(changed)]
+        : [backend.rebuild(changed), backend.send({ content: 'retry' })]
+      // Attach rejection handlers immediately so a failed serialization is an
+      // assertion failure, not an unhandled rejection during the test.
+      const settled = Promise.allSettled([release, ...operations])
+      oldIteration.resolve()
+      await vi.waitFor(() => expect(hoisted.captured.getCurrentMessageId?.()).toBeTruthy())
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId!() })
+      expect((await settled).map(result => result.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled'])
+      const cwds = hoisted.captured.createSessionQueryMock.mock.calls.map(([, opts]) => (opts as { cwd?: string }).cwd)
+      expect(cwds).toEqual(['/tmp/proj', changed.cwd])
+      hoisted.captured.iterationDone?.resolve()
+      await backend.close()
+    })
+
     it('starts the backend when called before start()', async () => {
       const backend = new ClaudeBackend()
       await backend.rebuild(makeStartOpts())

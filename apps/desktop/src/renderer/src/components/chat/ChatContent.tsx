@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ModelFallbackRow } from './ModelFallbackRow'
 import { PluginNoticeRow } from './PluginNotice'
+import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
 import { SideChatEmptyState } from './SideChatEmptyState'
@@ -270,6 +271,11 @@ function ChatTranscript({
             <RemoteTranscriptChrome edge="top" />
             <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={rows.map((row) => {
               const msg = row.message
+              if (msg.metadata?.systemNotice) {
+                return <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
+                  <SystemNoticeRow meta={msg.metadata.systemNotice} text={msg.content[0]?.type === 'text' ? msg.content[0].text : ''} />
+                </div>
+              }
               const fallbackMeta = msg.metadata?.modelFallback
               if (fallbackMeta) {
                 return (

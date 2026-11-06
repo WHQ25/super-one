@@ -143,7 +143,7 @@ describe('SessionRuntime question / plan', () => {
     const { store, events, leases, eventTypes } = memoryPorts()
     const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner())
     const session = runtime.create({ projectId: 'p1', harnessId: 'claude' })
-    await expect(runtime.send({ sessionId: session.sessionId, text: 'queued', priority: 'later', client, ...lease })).rejects.toThrow('does not support desktop composer send selections')
+    await expect(runtime.send({ sessionId: session.sessionId, text: 'queued', agent: 'plan', client, ...lease })).rejects.toThrow('does not support desktop composer send selections')
     expect(runtime.get(session.sessionId)?.transcript).toEqual([])
     expect(eventTypes).not.toContain('session.turn_started')
     await runtime.dispose()

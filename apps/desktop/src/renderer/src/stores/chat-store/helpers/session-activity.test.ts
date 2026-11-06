@@ -48,7 +48,7 @@ describe('session activity from a paired machine', () => {
   it('creates no entry for an idle session it has not seen, and no change when nothing moved', () => {
     const state = store()
     expect(applySessionActivity(state, activity({ status: 'idle' }))).toEqual({})
-    const running = store({ s1: { status: 'streaming', _historyHydrated: false } })
+    const running = apply(state, activity({ status: 'streaming' }))
     expect(applySessionActivity(running, activity({ status: 'streaming' }))).toEqual({})
   })
 
@@ -74,5 +74,29 @@ describe('session activity from a paired machine', () => {
     const state = store({ s1: { status: 'idle', _historyHydrated: false, sessionProvider: 'acp', acpAgentId: 'grok-build' } })
     const next = apply(state, activity({ status: 'streaming', provider: 'acp', acpAgentId: null }))
     expect(projectOf(next)._sessions.s1).toMatchObject({ status: 'streaming', sessionProvider: 'acp', acpAgentId: 'grok-build' })
+  })
+
+  it('keeps the title and spawn parent without loading a remote transcript', () => {
+    const next = apply(store(), activity({ status: 'streaming', title: 'Run checks', parentSessionId: 'parent' }))
+    expect(projectOf(next)._sessions.s1).toMatchObject({
+      status: 'streaming', _title: 'Run checks', _parentSessionId: 'parent',
+      _historyHydrated: false, messages: [],
+    })
+  })
+
+  it('accepts late title and parent metadata even when the status stays the same', () => {
+    const running = apply(store(), activity({ status: 'streaming' }))
+    const named = apply(running, activity({ status: 'streaming', title: 'Run checks', parentSessionId: 'parent' }))
+    expect(projectOf(named)._sessions.s1).toMatchObject({ _title: 'Run checks', _parentSessionId: 'parent' })
+    expect(applySessionActivity(named, activity({ status: 'streaming', title: 'Run checks', parentSessionId: 'parent' }))).toEqual({})
+
+    // Older nodes omit these fields. An omitted value must not erase a relationship.
+    const older = apply(named, activity({ status: 'background' }))
+    expect(projectOf(older)._sessions.s1).toMatchObject({ _title: 'Run checks', _parentSessionId: 'parent' })
+  })
+
+  it('leaves hydrated metadata to the session events', () => {
+    const followed = store({ s1: { status: 'streaming', _historyHydrated: true, _title: 'Current', _parentSessionId: 'current-parent' } })
+    expect(applySessionActivity(followed, activity({ status: 'idle', title: 'Stale', parentSessionId: 'old-parent' }))).toEqual({})
   })
 })

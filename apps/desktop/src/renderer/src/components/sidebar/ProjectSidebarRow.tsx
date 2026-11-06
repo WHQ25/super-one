@@ -355,7 +355,9 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       for (const [sid, data] of Object.entries(proj._sessions)) {
         if (isEphemeralSession(data)) continue
         const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
-        if (data.messages.length === 0 && !hasRealtimeTimeline) continue
+        // Remote activity entries carry a title/status but no transcript.
+        // Include even unnamed placeholders in the signature: their status can
+        // reveal a child whose title/parent came from a loaded list page.
         sig[sid] = [
           data.status ?? '',
           data.messages.length,
@@ -430,7 +432,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       for (const [sid, data] of Object.entries(projectSession._sessions)) {
         if (isEphemeralSession(data)) continue
         const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
-        if (data.messages.length === 0 && !hasRealtimeTimeline) continue
+        if (data.messages.length === 0 && !hasRealtimeTimeline && !data._title) continue
         const title = selectSessionTitle(useChatStore.getState(), folder.path, sid)
         const dbEntry = dbSessionById.get(sid)
         // The active query drops settled rows, so they have no db entry to reject.

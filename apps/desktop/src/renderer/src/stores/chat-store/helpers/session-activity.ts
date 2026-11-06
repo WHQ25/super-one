@@ -18,8 +18,8 @@ function brandFromActivity(activity: SessionActivity): Partial<PerSessionState> 
  * running state and unread dot, as its phones show them. A session whose
  * history this window holds follows its own events, which stay authoritative
  * for its status; the summary only creates a bare entry, never a transcript.
- * That entry keeps the host harness so the sidebar icon is right before the
- * list row arrives.
+ * That entry keeps the host harness, title and spawn parent so an unlisted live
+ * child can appear under its parent before any child page or transcript loads.
  */
 export function applySessionActivity(
   state: Pick<ChatStore, 'projectSessions' | 'activeProject'>,
@@ -30,19 +30,33 @@ export function applySessionActivity(
   const session = project._sessions[sessionId]
   const status = activity.status as AgentStatus
   const followsStatus = session ? !session._historyHydrated && session.status !== status : status !== 'idle'
+  const metadata: Partial<PerSessionState> = !session?._historyHydrated && (session || followsStatus)
+    ? {
+      ...brandFromActivity(activity),
+      ...(activity.title ? { _title: activity.title } : {}),
+      ...(activity.parentSessionId !== undefined ? { _parentSessionId: activity.parentSessionId } : {}),
+    }
+    : {}
+  // The first activity may arrive before the title/relationship is known. A
+  // later summary must fill those in even if the session is still streaming.
+  const metadataChanged = Object.entries(metadata).some(([key, value]) => session?.[key as keyof PerSessionState] !== value)
   const viewing = state.activeProject === projectPath && project._activeSessionId === sessionId
   const unread = !!completed && !!activity.completedMessageId && activity.completedMessageId !== activity.seenCompletedMessageId && !viewing
   const read = !!activity.seenCompletedMessageId && activity.seenCompletedMessageId === activity.completedMessageId
   const unseen = unread && !project.unseenCompletedSessions.has(sessionId) ? new Set([...project.unseenCompletedSessions, sessionId])
     : read && project.unseenCompletedSessions.has(sessionId) ? new Set([...project.unseenCompletedSessions].filter((id) => id !== sessionId))
       : null
-  if (!followsStatus && !unseen) return {}
+  if (!followsStatus && !metadataChanged && !unseen) return {}
   return {
     projectSessions: {
       ...state.projectSessions,
       [projectPath]: {
         ...project,
-        ...(followsStatus ? { _sessions: { ...project._sessions, [sessionId]: { ...(session ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }), ...brandFromActivity(activity), status } } } : {}),
+        ...(followsStatus || metadataChanged ? { _sessions: { ...project._sessions, [sessionId]: {
+          ...(session ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }),
+          ...metadata,
+          ...(followsStatus ? { status } : {}),
+        } } } : {}),
         ...(unseen ? { unseenCompletedSessions: unseen } : {}),
       },
     },

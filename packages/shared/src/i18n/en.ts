@@ -7172,7 +7172,7 @@ export const en: Messages = {
       select: 'Select & Move',
       pen: 'Pen',
       rect: 'Rectangle',
-      ellipse: 'Circle',
+      ellipse: 'Ellipse',
       line: 'Line',
       arrow: 'Arrow',
       text: 'Add Text',

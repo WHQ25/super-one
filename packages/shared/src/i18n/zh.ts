@@ -2398,7 +2398,7 @@ export const zh: Messages = {
       select: '选择与移动',
       pen: '画笔',
       rect: '矩形',
-      ellipse: '圆形',
+      ellipse: '椭圆',
       line: '直线',
       arrow: '箭头',
       text: '添加文字',

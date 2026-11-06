@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Circle,
@@ -46,10 +46,12 @@ import {
   EDITOR_COLORS,
   EDITOR_STROKE_WIDTHS,
   EDITOR_TOOL_SHORTCUTS,
+  annotationRotation,
   findTopmostAnnotationAt,
   hitTestAnnotation,
   hitTestHandle,
   hitTestOcrRegion,
+  layoutText,
   moveAnnotation,
   nextMarkerNumber,
   normalizeBox,
@@ -58,7 +60,10 @@ import {
   redactAllOcrRegions,
   redoHistory,
   resizeAnnotation,
+  rotateAnnotation,
   scaleForImage,
+  TEXT_FONT_FAMILY,
+  TEXT_LINE_HEIGHT,
   toggleOcrRegionMosaic,
   undoHistory,
   updateAnnotationStyle,
@@ -130,6 +135,8 @@ type InteractionState =
     }
 
 interface EditingTextState {
+  /** Identifies this editor session so a blur from the previous field cannot close the next one. */
+  sessionId: string
   id?: string
   x: number
   y: number
@@ -137,6 +144,21 @@ interface EditingTextState {
   color: string
   strokeWidth: number
   fontSize: number
+  width?: number
+  height?: number
+  rotation?: number
+}
+
+function releasePointerCapture(target: HTMLElement, pointerId: number) {
+  try {
+    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
+  } catch {
+    // Synthetic pointer events are not active pointers.
+  }
+}
+
+function focusMovedToControl(target: EventTarget | null, field: HTMLElement): boolean {
+  return target instanceof Element && target !== field && Boolean(target.closest('button, a, input, textarea, label, [role="button"]'))
 }
 
 const SHORTCUT_KEY_TO_TOOL: Record<string, EditorTool> = Object.entries(EDITOR_TOOL_SHORTCUTS).reduce(
@@ -147,24 +169,54 @@ const SHORTCUT_KEY_TO_TOOL: Record<string, EditorTool> = Object.entries(EDITOR_T
   {} as Record<string, EditorTool>,
 )
 
-function cursorForHandle(handle: ResizeHandle): string {
-  switch (handle) {
-    case 'nw':
-    case 'se':
-    case 'scale':
-      return 'nwse-resize'
-    case 'ne':
-    case 'sw':
-      return 'nesw-resize'
-    case 'n':
-    case 's':
-      return 'ns-resize'
-    case 'e':
-    case 'w':
-      return 'ew-resize'
-    case 'start':
-    case 'end':
-      return 'move'
+function cursorForHandle(handle: ResizeHandle, rotation = 0): string {
+  if (handle === 'rotate') return 'grab'
+  if (handle === 'start' || handle === 'end') return 'move'
+  const base = handle === 'n' || handle === 's' ? 90 : handle === 'ne' || handle === 'sw' ? 135 : handle === 'e' || handle === 'w' ? 0 : 45
+  const deg = (((base + (rotation * 180) / Math.PI) % 180) + 180) % 180
+  const snapped = Math.round(deg / 45) % 4
+  if (snapped === 0) return 'ew-resize'
+  if (snapped === 1) return 'nwse-resize'
+  if (snapped === 2) return 'ns-resize'
+  return 'nesw-resize'
+}
+
+/** Keep line breaks from Enter. Drop a draft that is only spaces. */
+function textForCommit(value: string): string {
+  const cleaned = value.replace(/^[ \t]+/, '').replace(/[ \t]+$/, '')
+  return cleaned.trim() ? cleaned : ''
+}
+
+function textAnnotationFromDraft(draft: EditingTextState, id: string, text: string): TextAnnotation {
+  const ann: TextAnnotation = {
+    id,
+    kind: 'text',
+    x: draft.x,
+    y: draft.y,
+    text,
+    color: draft.color,
+    strokeWidth: draft.strokeWidth,
+    fontSize: draft.fontSize,
+  }
+  if (draft.width && draft.width > 0) ann.width = draft.width
+  if (draft.height && draft.height > 0) ann.height = draft.height
+  if (draft.rotation) ann.rotation = draft.rotation
+  return ann
+}
+
+function editingStateFromText(ann: TextAnnotation): EditingTextState {
+  return {
+    sessionId: crypto.randomUUID(),
+    id: ann.id,
+    x: ann.x,
+    y: ann.y,
+    value: ann.text,
+    color: ann.color,
+    strokeWidth: ann.strokeWidth,
+    fontSize: ann.fontSize,
+    width: ann.width,
+    height: ann.height,
+    rotation: ann.rotation,
   }
 }
 
@@ -198,12 +250,16 @@ export function ImageAnnotationEditor({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draftAnnotation, setDraftAnnotation] = useState<ImageAnnotation | null>(null)
   const [editingText, setEditingText] = useState<EditingTextState | null>(null)
+  const editingTextRef = useRef<EditingTextState | null>(null)
+  const textBlurReadyRef = useRef(false)
+  editingTextRef.current = editingText
   const [hoverCursor, setHoverCursor] = useState<string>('crosshair')
 
   // Zoom & Pan state
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
   const [spacePressed, setSpacePressed] = useState(false)
+  const [canvasCssScale, setCanvasCssScale] = useState(1)
 
   // OCR state for mosaic tool
   const [ocrRegions, setOcrRegions] = useState<OcrTextRegion[]>([])
@@ -233,36 +289,56 @@ export function ImageAnnotationEditor({
 
   const nextMarkerNum = useMemo(() => nextMarkerNumber(annotations), [annotations])
 
-  // Auto-focus inline text input when opened
-  useEffect(() => {
-    if (editingText && textInputRef.current) {
-      const el = textInputRef.current
-      el.focus()
-      el.setSelectionRange(el.value.length, el.value.length)
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !imageEl) return
+    const width = imageEl.naturalWidth || imageEl.width
+    if (width <= 0) return
+    const update = () => {
+      const cssWidth = canvas.clientWidth
+      if (cssWidth <= 0) return
+      const next = cssWidth / width
+      setCanvasCssScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next))
     }
-  }, [editingText?.id, editingText?.x, editingText?.y])
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [imageEl])
+
+  const dismissEditingText = useCallback(() => {
+    editingTextRef.current = null
+    setEditingText(null)
+  }, [])
+
+  // Focus after the opening click. Ignore that click's blur until the next turn,
+  // or the empty field commits and disappears immediately.
+  useLayoutEffect(() => {
+    const el = textInputRef.current
+    if (!editingText || !el) return
+    textBlurReadyRef.current = false
+    el.focus()
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+    const timer = window.setTimeout(() => {
+      textBlurReadyRef.current = true
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [editingText?.sessionId])
 
   const commitEditingText = useCallback((draftText: EditingTextState | null) => {
-    if (!draftText) return
-    const trimmed = draftText.value.trim()
+    if (!draftText || editingTextRef.current?.sessionId !== draftText.sessionId) return
+    const trimmed = textForCommit(draftText.value)
+    dismissEditingText()
     if (!trimmed) {
       if (draftText.id) {
         setHistory((prev) => pushHistory(prev, prev.present.filter((a) => a.id !== draftText.id)))
         setSelectedId(null)
       }
-      setEditingText(null)
       return
     }
-    const nextAnn: TextAnnotation = {
-      id: draftText.id ?? crypto.randomUUID(),
-      kind: 'text',
-      x: draftText.x,
-      y: draftText.y,
-      text: trimmed,
-      color: draftText.color,
-      strokeWidth: draftText.strokeWidth,
-      fontSize: draftText.fontSize,
-    }
+    const nextAnn = textAnnotationFromDraft(draftText, draftText.id ?? crypto.randomUUID(), trimmed)
     setHistory((prev) => {
       if (draftText.id) {
         const existing = prev.present.find((a) => a.id === draftText.id)
@@ -270,8 +346,13 @@ export function ImageAnnotationEditor({
           existing &&
           existing.kind === 'text' &&
           existing.text === nextAnn.text &&
+          existing.x === nextAnn.x &&
+          existing.y === nextAnn.y &&
           existing.color === nextAnn.color &&
-          existing.fontSize === nextAnn.fontSize
+          existing.fontSize === nextAnn.fontSize &&
+          existing.width === nextAnn.width &&
+          existing.height === nextAnn.height &&
+          existing.rotation === nextAnn.rotation
         ) {
           return prev
         }
@@ -283,8 +364,7 @@ export function ImageAnnotationEditor({
       return pushHistory(prev, [...prev.present, nextAnn])
     })
     setSelectedId(nextAnn.id)
-    setEditingText(null)
-  }, [])
+  }, [dismissEditingText])
 
   // Load image cleanly so canvas operations (mosaic pixel read + PNG export) are never tainted
   useEffect(() => {
@@ -351,7 +431,8 @@ export function ImageAnnotationEditor({
     if (canvas.height !== targetH) canvas.height = targetH
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const uiScale = width / Math.max(1, cssWidth * zoom)
+    const screenWidth = canvas.getBoundingClientRect().width
+    const uiScale = width / Math.max(1, screenWidth > 0 ? screenWidth : cssWidth * zoom)
     renderAnnotatedCanvas(ctx, imageEl, annotations, {
       interactive: true,
       selectedId,
@@ -409,7 +490,7 @@ export function ImageAnnotationEditor({
   }, [tool, imageEl, runOcr])
 
   const getCanvasPoint = useCallback(
-    (clientX: number, clientY: number): { pt: Point; tolerance: number } | null => {
+    (clientX: number, clientY: number): { pt: Point; tolerance: number; uiScale: number } | null => {
       const canvas = canvasRef.current
       if (!canvas) return null
       const rect = canvas.getBoundingClientRect()
@@ -424,6 +505,7 @@ export function ImageAnnotationEditor({
           y: Math.max(0, Math.min(logicalHeight, (clientY - rect.top) * scaleY)),
         },
         tolerance: Math.max(4, 10 * Math.max(scaleX, scaleY)),
+        uiScale: logicalWidth / rect.width,
       }
     },
     [imageEl],
@@ -468,21 +550,21 @@ export function ImageAnnotationEditor({
   )
 
   const handleUndo = useCallback(() => {
-    setEditingText(null)
+    dismissEditingText()
     setHistory((prev) => undoHistory(prev))
-  }, [])
+  }, [dismissEditingText])
 
   const handleRedo = useCallback(() => {
-    setEditingText(null)
+    dismissEditingText()
     setHistory((prev) => redoHistory(prev))
-  }, [])
+  }, [dismissEditingText])
 
   const handleClearAll = useCallback(() => {
-    setEditingText(null)
+    dismissEditingText()
     setSelectedId(null)
     setDraftAnnotation(null)
     setHistory((prev) => clearHistory(prev))
-  }, [])
+  }, [dismissEditingText])
 
   const handleRedactAllOcr = useCallback(() => {
     if (!imageEl || ocrRegions.length === 0) return
@@ -502,17 +584,13 @@ export function ImageAnnotationEditor({
   }, [imageEl, ocrRegions])
 
   const getAnnotationsWithPendingText = useCallback((): ImageAnnotation[] => {
-    if (!editingText || !editingText.value.trim()) return annotations
-    const nextAnn: TextAnnotation = {
-      id: editingText.id ?? crypto.randomUUID(),
-      kind: 'text',
-      x: editingText.x,
-      y: editingText.y,
-      text: editingText.value.trim(),
-      color: editingText.color,
-      strokeWidth: editingText.strokeWidth,
-      fontSize: editingText.fontSize,
-    }
+    const pendingText = editingText ? textForCommit(editingText.value) : ''
+    if (!editingText || !pendingText) return annotations
+    const nextAnn = textAnnotationFromDraft(
+      editingText,
+      editingText.id ?? crypto.randomUUID(),
+      pendingText,
+    )
     if (editingText.id) {
       return annotations.map((a) => (a.id === editingText.id ? nextAnn : a))
     }
@@ -522,7 +600,7 @@ export function ImageAnnotationEditor({
   const handleSave = useCallback(async () => {
     if (!imageEl || saving) return
     const finalAnnotations = getAnnotationsWithPendingText()
-    if (editingText) setEditingText(null)
+    dismissEditingText()
     const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png')
     if (!exported) {
       toast.error(t('chat.imageEditor.saveFailed', { error: 'Export failed' }))
@@ -568,7 +646,7 @@ export function ImageAnnotationEditor({
     imageEl,
     saving,
     getAnnotationsWithPendingText,
-    editingText,
+    dismissEditingText,
     t,
     onReplaceAttachment,
     filePath,
@@ -581,7 +659,7 @@ export function ImageAnnotationEditor({
   const handleSaveAs = useCallback(async () => {
     if (!imageEl || saving) return
     const finalAnnotations = getAnnotationsWithPendingText()
-    if (editingText) setEditingText(null)
+    dismissEditingText()
     const exported = exportAnnotatedImage(imageEl, finalAnnotations, 'image/png')
     if (!exported) {
       toast.error(t('chat.imageEditor.saveFailed', { error: 'Export failed' }))
@@ -602,12 +680,12 @@ export function ImageAnnotationEditor({
     } finally {
       setSaving(false)
     }
-  }, [imageEl, saving, getAnnotationsWithPendingText, editingText, t, alt, filePath, fileName])
+  }, [imageEl, saving, getAnnotationsWithPendingText, dismissEditingText, t, alt, filePath, fileName])
 
   const handleAddToChat = useCallback(async () => {
     if (!imageEl || saving) return
     const finalAnnotations = getAnnotationsWithPendingText()
-    if (editingText) setEditingText(null)
+    dismissEditingText()
     setSaving(true)
     try {
       const suggested = resolveSuggestedFileName(alt, filePath, fileName)
@@ -634,11 +712,30 @@ export function ImageAnnotationEditor({
     } finally {
       setSaving(false)
     }
-  }, [imageEl, saving, getAnnotationsWithPendingText, editingText, alt, filePath, fileName, t, onCloseViewer, onExitEdit])
+  }, [imageEl, saving, getAnnotationsWithPendingText, dismissEditingText, alt, filePath, fileName, t, onCloseViewer, onExitEdit])
 
   // Keyboard shortcuts for tools, Undo, Redo, Save, Save As, Add to Chat, Delete, Space-pan, Escape
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (editingTextRef.current) {
+          commitEditingText(editingTextRef.current)
+          return
+        }
+        if (tool === 'mosaic') {
+          setTool('select')
+          setHoveredOcrKey(null)
+          return
+        }
+        if (selectedId) {
+          setSelectedId(null)
+          return
+        }
+        onExitEdit()
+        return
+      }
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return
@@ -679,7 +776,7 @@ export function ImageAnnotationEditor({
         if (matchedTool) {
           e.preventDefault()
           e.stopPropagation()
-          if (editingText) commitEditingText(editingText)
+          if (editingTextRef.current) commitEditingText(editingTextRef.current)
           setTool(matchedTool)
           return
         }
@@ -689,18 +786,6 @@ export function ImageAnnotationEditor({
         e.stopPropagation()
         setHistory((prev) => pushHistory(prev, prev.present.filter((a) => a.id !== selectedId)))
         setSelectedId(null)
-        return
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        if (editingText) {
-          setEditingText(null)
-        } else if (selectedId) {
-          setSelectedId(null)
-        } else {
-          onExitEdit()
-        }
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -720,9 +805,9 @@ export function ImageAnnotationEditor({
     handleAddToChat,
     onReplaceAttachment,
     selectedId,
-    editingText,
     commitEditingText,
     onExitEdit,
+    tool,
   ])
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -735,24 +820,18 @@ export function ImageAnnotationEditor({
       setSelectedId(hit.id)
       setColor(hit.color)
       setStrokeWidth(hit.strokeWidth)
-      setEditingText({
-        id: hit.id,
-        x: hit.x,
-        y: hit.y,
-        value: hit.text,
-        color: hit.color,
-        strokeWidth: hit.strokeWidth,
-        fontSize: hit.fontSize,
-      })
+      setEditingText(editingStateFromText(hit))
     }
   }
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0 || !imageEl) return
     e.stopPropagation()
+    // The same click otherwise focuses the canvas and blurs the text field as it opens.
+    if (tool === 'text') e.preventDefault()
 
-    if (editingText) {
-      commitEditingText(editingText)
+    if (editingTextRef.current) {
+      commitEditingText(editingTextRef.current)
     }
 
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -768,11 +847,11 @@ export function ImageAnnotationEditor({
 
     const mapped = getCanvasPoint(e.clientX, e.clientY)
     if (!mapped) return
-    const { pt, tolerance } = mapped
+    const { pt, tolerance, uiScale } = mapped
 
     // 1. Check resize handles on the currently selected annotation
     if (selectedAnnotation) {
-      const handle = hitTestHandle(selectedAnnotation, pt, tolerance * 1.2)
+      const handle = hitTestHandle(selectedAnnotation, pt, tolerance * 1.35, uiScale)
       if (handle) {
         interactionRef.current = {
           mode: 'resize',
@@ -844,8 +923,10 @@ export function ImageAnnotationEditor({
 
     // 3. Tool-specific creation
     if (tool === 'text') {
+      releasePointerCapture(e.currentTarget, e.pointerId)
       setSelectedId(null)
       setEditingText({
+        sessionId: crypto.randomUUID(),
         x: pt.x,
         y: pt.y,
         value: '',
@@ -959,7 +1040,9 @@ export function ImageAnnotationEditor({
 
       if (active.mode === 'resize') {
         active.resized = true
-        const resizedAnn = resizeAnnotation(active.initialAnnotation, active.handle, pt, Math.max(6, 8 * imageScale))
+        const resizedAnn = active.handle === 'rotate'
+          ? rotateAnnotation(active.initialAnnotation, active.start, pt)
+          : resizeAnnotation(active.initialAnnotation, active.handle, pt, Math.max(6, 8 * imageScale))
         setHistory((prev) => ({
           ...prev,
           present: prev.present.map((a) => (a.id === active.annotationId ? resizedAnn : a)),
@@ -1024,12 +1107,12 @@ export function ImageAnnotationEditor({
     }
     const mapped = getCanvasPoint(e.clientX, e.clientY)
     if (!mapped) return
-    const { pt, tolerance } = mapped
+    const { pt, tolerance, uiScale } = mapped
 
     if (selectedAnnotation) {
-      const handle = hitTestHandle(selectedAnnotation, pt, tolerance * 1.2)
+      const handle = hitTestHandle(selectedAnnotation, pt, tolerance * 1.35, uiScale)
       if (handle) {
-        setHoverCursor(cursorForHandle(handle))
+        setHoverCursor(cursorForHandle(handle, annotationRotation(selectedAnnotation)))
         setHoveredOcrKey(null)
         return
       }
@@ -1079,16 +1162,7 @@ export function ImageAnnotationEditor({
           }
         })
       } else if (tool === 'text' && active.initialAnnotation.kind === 'text') {
-        const hitText = active.initialAnnotation
-        setEditingText({
-          id: hitText.id,
-          x: hitText.x,
-          y: hitText.y,
-          value: hitText.text,
-          color: hitText.color,
-          strokeWidth: hitText.strokeWidth,
-          fontSize: hitText.fontSize,
-        })
+        setEditingText(editingStateFromText(active.initialAnnotation))
       }
       return
     }
@@ -1254,8 +1328,15 @@ export function ImageAnnotationEditor({
 
   const imgWidth = imageEl ? imageEl.naturalWidth || imageEl.width || 1 : 1
   const imgHeight = imageEl ? imageEl.naturalHeight || imageEl.height || 1 : 1
-  const canvasDisplayScale =
-    canvasRef.current && canvasRef.current.clientWidth > 0 ? canvasRef.current.clientWidth / imgWidth : 1
+  const editingLayout = editingText
+    ? layoutText({ text: editingText.value, fontSize: editingText.fontSize, width: editingText.width })
+    : null
+  const shrinkCaret = Boolean(editingText && !editingText.value && !(editingText.width && editingText.width > 0))
+  const editingBoxWidth = editingText && editingLayout
+    ? (shrinkCaret ? Math.max(8, editingText.fontSize * 0.35) : editingLayout.width) * canvasCssScale
+    : 0
+  const editingBoxHeight = editingLayout ? editingLayout.height * canvasCssScale : 0
+  const editingFontPx = editingText ? (Math.round(editingText.fontSize * 10) / 10) * canvasCssScale : 0
 
   return (
     <div
@@ -1295,7 +1376,7 @@ export function ImageAnnotationEditor({
                 tool === item.id && 'bg-primary/15 text-primary ring-1 ring-primary/30',
               )}
               onClick={() => {
-                if (editingText) commitEditingText(editingText)
+                if (editingTextRef.current) commitEditingText(editingTextRef.current)
                 setTool(item.id)
               }}
             >
@@ -1597,6 +1678,9 @@ export function ImageAnnotationEditor({
                   aspectRatio: `${imgWidth} / ${imgHeight}`,
                 }}
                 onDoubleClick={handleDoubleClick}
+                onMouseDown={(e) => {
+                  if (tool === 'text') e.preventDefault()
+                }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
@@ -1604,44 +1688,68 @@ export function ImageAnnotationEditor({
                 data-testid="image-editor-canvas"
                 className="max-h-[calc(100vh-9rem)] max-w-[90vw] rounded-sm object-contain shadow-lg"
               />
-              {editingText && (
+              {editingText && editingLayout && (
                 <textarea
                   ref={textInputRef}
                   value={editingText.value}
-                  placeholder={t('chat.imageEditor.textPlaceholder')}
-                  rows={Math.max(1, editingText.value.split('\n').length)}
+                  data-session={editingText.sessionId}
                   data-testid="image-editor-text-input"
+                  aria-label={t('chat.imageEditor.textPlaceholder')}
+                  spellCheck={false}
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onChange={(e) => {
                     const nextValue = e.target.value
-                    setEditingText((prev) => (prev ? { ...prev, value: nextValue } : null))
+                    setEditingText((prev) => {
+                      if (!prev) return null
+                      const next = { ...prev, value: nextValue }
+                      editingTextRef.current = next
+                      return next
+                    })
                   }}
                   onKeyDown={(e) => {
                     e.stopPropagation()
                     if (e.key === 'Escape') {
                       e.preventDefault()
-                      setEditingText(null)
-                      return
-                    }
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      commitEditingText(editingText)
+                      commitEditingText(editingTextRef.current)
                     }
                   }}
-                  onBlur={() => commitEditingText(editingText)}
+                  onBlur={(e) => {
+                    const fieldSession = e.currentTarget.dataset.session
+                    const current = editingTextRef.current
+                    if (!current || current.sessionId !== fieldSession) return
+                    if (!textBlurReadyRef.current && !focusMovedToControl(e.relatedTarget, e.currentTarget)) {
+                      const sessionId = current.sessionId
+                      window.requestAnimationFrame(() => {
+                        if (editingTextRef.current?.sessionId === sessionId) textInputRef.current?.focus()
+                      })
+                      return
+                    }
+                    commitEditingText(current)
+                  }}
                   style={{
                     left: `${(editingText.x / imgWidth) * 100}%`,
                     top: `${(editingText.y / imgHeight) * 100}%`,
+                    width: editingBoxWidth,
+                    height: editingBoxHeight,
                     color: editingText.color,
-                    fontSize: `${Math.max(14, Math.round(editingText.fontSize * canvasDisplayScale))}px`,
-                    lineHeight: 1.25,
-                    textShadow:
-                      editingText.color.toLowerCase() === '#ffffff'
-                        ? '0 1px 3px rgba(0,0,0,0.85)'
-                        : '0 1px 2px rgba(0,0,0,0.45)',
+                    caretColor: editingText.color,
+                    fontFamily: TEXT_FONT_FAMILY,
+                    fontWeight: 600,
+                    fontSize: `${editingFontPx}px`,
+                    lineHeight: TEXT_LINE_HEIGHT,
+                    padding: 0,
+                    margin: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    whiteSpace: editingText.width ? 'pre-wrap' : 'pre',
+                    wordBreak: editingText.width ? 'break-all' : 'normal',
+                    overflow: 'hidden',
+                    transform: editingText.rotation ? `rotate(${editingText.rotation}rad)` : undefined,
+                    transformOrigin: 'center center',
                   }}
-                  className="absolute z-20 min-w-28 resize-none rounded border border-primary bg-black/40 px-1.5 py-0.5 font-bold outline-none ring-2 ring-primary/40 backdrop-blur-[2px] placeholder:font-normal placeholder:text-white/60"
+                  className="absolute z-20 resize-none outline-none"
                 />
               )}
             </div>

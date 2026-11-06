@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockRecognizeImageText, mockWriteImageFile, mockSaveBrowserImage, mockAddImageFromPath, mockAddImageFromBase64 } = vi.hoisted(() => ({
@@ -113,6 +113,9 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
         fillRect: vi.fn(),
         ellipse: vi.fn(),
         arc: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        setTransform: vi.fn(),
         fillText: vi.fn(),
         strokeText: vi.fn(),
         setLineDash: vi.fn(),
@@ -194,6 +197,10 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     const textInput = await screen.findByTestId('image-editor-text-input')
     fireEvent.change(textInput, { target: { value: 'Check this button' } })
     fireEvent.keyDown(textInput, { key: 'Enter' })
+    expect(screen.getByTestId('image-editor-text-input')).toBe(textInput)
+    fireEvent.keyDown(textInput, { key: 'Escape' })
+    expect(screen.queryByTestId('image-editor-text-input')).toBeNull()
+    expect(onExitEdit).not.toHaveBeenCalled()
 
     // Undo and Redo
     fireEvent.click(screen.getByTestId('image-editor-undo'))
@@ -211,13 +218,58 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     })
   })
 
+  it('keeps the text field open when the click that places it blurs the field', async () => {
+    render(
+      <ImageAnnotationEditor
+        src="data:image/png;base64,AAA="
+        alt="attachment.png"
+        onExitEdit={vi.fn()}
+      />,
+    )
+
+    const canvas = await screen.findByTestId('image-editor-canvas')
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 200,
+      width: 300,
+      height: 200,
+      toJSON: () => ({}),
+    })
+    canvas.setPointerCapture = vi.fn()
+    canvas.releasePointerCapture = vi.fn()
+
+    const textTool = screen.getByTestId('image-editor-tool-text')
+    fireEvent.click(textTool)
+    expect(textTool.className).toContain('bg-primary/15')
+
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 80, clientY: 100, pointerId: 1 })
+    fireEvent.mouseDown(canvas, { button: 0, clientX: 80, clientY: 100 })
+    const textInput = screen.getByTestId('image-editor-text-input')
+    // The opening click blurs the field before the user can type.
+    fireEvent.blur(textInput)
+    expect(screen.getByTestId('image-editor-text-input')).toBe(textInput)
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    fireEvent.change(screen.getByTestId('image-editor-text-input'), { target: { value: '标注' } })
+    fireEvent.blur(screen.getByTestId('image-editor-text-input'))
+    expect(screen.queryByTestId('image-editor-text-input')).toBeNull()
+    expect((screen.getByTestId('image-editor-undo') as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('automatically recognizes text in mosaic tool and redacts clicked or all text boxes', async () => {
+    const onExitEdit = vi.fn()
     render(
       <ImageAnnotationEditor
         src="data:image/png;base64,AAA="
         alt="screenshot.png"
         filePath="/workspace/screenshot.png"
-        onExitEdit={vi.fn()}
+        onExitEdit={onExitEdit}
       />,
     )
 
@@ -249,6 +301,11 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     // Clear button should now be enabled because redaction added a mosaic annotation
     const clearBtn = screen.getByTestId('image-editor-clear') as HTMLButtonElement
     expect(clearBtn.disabled).toBe(false)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onExitEdit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('image-editor-tool-select').className).toContain('bg-primary/15')
+    expect(screen.getByTestId('image-editor-tool-mosaic').className).not.toContain('bg-primary/15')
   })
 
   it('supports entering edit mode from ImageLightbox and ⌘↵ shortcut to add image file to chat', async () => {

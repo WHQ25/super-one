@@ -15,7 +15,10 @@ import {
   pushHistory,
   redactAllOcrRegions,
   redoHistory,
+  getTextBox,
   resizeAnnotation,
+  ROTATE_HANDLE_GAP,
+  rotateAnnotation,
   toggleOcrRegionMosaic,
   undoHistory,
   updateAnnotationStyle,
@@ -26,6 +29,7 @@ import {
   type PenAnnotation,
   type TextAnnotation,
 } from './image-editor-model'
+import { arrowHeadLength } from './image-editor-canvas'
 
 describe('image-editor-model', () => {
   it('supports undo, redo, and clear all history transitions', () => {
@@ -111,12 +115,25 @@ describe('image-editor-model', () => {
     expect(hitTestAnnotation(rect, { x: 5, y: 5 }, 4)).toBe(false)
 
     const handles = getAnnotationHandles(rect)
-    expect(handles).toHaveLength(8)
+    expect(handles.map((handle) => handle.handle)).toEqual(['nw', 'ne', 'se', 'sw', 'rotate'])
+    const rotate = handles.find((handle) => handle.handle === 'rotate')
+    expect(rotate).toMatchObject({ x: 70, y: 50 - ROTATE_HANDLE_GAP })
     expect(hitTestHandle(rect, { x: 120, y: 150 }, 8)).toBe('se')
+    expect(hitTestHandle(rect, { x: 120, y: 100 }, 8)).toBe('e')
 
     const resized = resizeAnnotation(rect, 'se', { x: 220, y: 250 }) as BoxShapeAnnotation
     expect(resized.width).toBe(200)
     expect(resized.height).toBe(200)
+    expect(resized.x).toBe(20)
+    expect(resized.y).toBe(50)
+
+    const rotated: BoxShapeAnnotation = { ...rect, rotation: Math.PI / 2 }
+    const rotatedEast = resizeAnnotation(rotated, 'e', { x: 70, y: 180 }) as BoxShapeAnnotation
+    expect(rotatedEast.width).toBeCloseTo(130)
+    expect(rotatedEast.height).toBeCloseTo(100)
+    expect(rotatedEast.x).toBeCloseTo(5)
+    expect(rotatedEast.y).toBeCloseTo(65)
+    expect(rotatedEast.rotation).toBeCloseTo(Math.PI / 2)
 
     const moved = moveAnnotation(resized, 15, -10) as BoxShapeAnnotation
     expect(moved.x).toBe(35)
@@ -169,11 +186,23 @@ describe('image-editor-model', () => {
       fontSize: 24,
     }
     expect(hitTestAnnotation(textAnn, { x: 60, y: 90 }, 6)).toBe(true)
+    const textBox = getTextBox(textAnn)
+    expect(hitTestHandle(textAnn, { x: textBox.x + textBox.width / 2, y: textBox.y + textBox.height / 2 }, 16)).toBeNull()
+    expect(hitTestHandle(textAnn, { x: textBox.x + textBox.width / 2, y: textBox.y + textBox.height }, 16)).toBe('s')
     const textHandles = getAnnotationHandles(textAnn)
-    expect(textHandles).toHaveLength(1)
-    expect(textHandles[0]?.handle).toBe('scale')
-    const scaledText = resizeAnnotation(textAnn, 'scale', { x: 200, y: 140 }) as TextAnnotation
+    expect(textHandles.map((handle) => handle.handle)).toEqual(['nw', 'ne', 'se', 'sw', 'rotate'])
+    const scaledText = resizeAnnotation(textAnn, 'se', { x: 200, y: 140 }) as TextAnnotation
     expect(scaledText.fontSize).toBeGreaterThan(24)
+
+    const wrappedText = resizeAnnotation(textAnn, 'e', { x: 90, y: 95.36 }) as TextAnnotation
+    expect(wrappedText.fontSize).toBe(24)
+    expect(wrappedText.width).toBeCloseTo(40)
+    expect(wrappedText.x).toBeCloseTo(50)
+    expect(getTextBox(wrappedText).height).toBeGreaterThan(getTextBox(textAnn).height)
+
+    const rotatedText = rotateAnnotation(textAnn, { x: 86, y: 40 }, { x: 120, y: 95 })
+    expect(rotatedText.kind).toBe('text')
+    if (rotatedText.kind === 'text') expect(rotatedText.rotation).not.toBe(0)
 
     const pen: PenAnnotation = {
       id: 'p1',
@@ -220,5 +249,12 @@ describe('image-editor-model', () => {
     expect(annotations).toHaveLength(2)
     expect(isOcrRegionRedacted(annotations, regions[0]!)).toBe(true)
     expect(isOcrRegionRedacted(annotations, regions[1]!)).toBe(true)
+  })
+
+  it('keeps the arrow head a fixed size instead of growing with the shaft', () => {
+    const short = arrowHeadLength(80, 4, 1)
+    const long = arrowHeadLength(800, 4, 1)
+    expect(long).toBeCloseTo(short)
+    expect(long).toBeCloseTo(26)
   })
 })

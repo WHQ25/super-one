@@ -13,7 +13,7 @@ export const EDITOR_TOOL_SHORTCUTS: Record<EditorTool, string> = {
   select: 'V',
   pen: 'P',
   rect: 'R',
-  ellipse: 'O',
+  ellipse: 'E',
   line: 'L',
   arrow: 'A',
   text: 'T',
@@ -63,6 +63,8 @@ export interface BoxShapeAnnotation {
   y: number
   width: number
   height: number
+  /** Clockwise radians around the box center. Canvas y grows downward. */
+  rotation?: number
 }
 
 export interface LineShapeAnnotation {
@@ -85,6 +87,12 @@ export interface TextAnnotation {
   x: number
   y: number
   fontSize: number
+  /** Wrap width in image pixels. Omit to shrink-wrap each line. */
+  width?: number
+  /** Frame height in image pixels. Omit to hug the laid-out lines. */
+  height?: number
+  /** Clockwise radians around the text box center. Canvas y grows downward. */
+  rotation?: number
 }
 
 export interface MarkerAnnotation {
@@ -127,8 +135,18 @@ export interface OcrTextRegion {
 
 export type BoxResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type LineResizeHandle = 'start' | 'end'
-export type TextResizeHandle = 'scale'
-export type ResizeHandle = BoxResizeHandle | LineResizeHandle | TextResizeHandle
+export type RotateHandle = 'rotate'
+export type ResizeHandle = BoxResizeHandle | LineResizeHandle | RotateHandle
+
+export const TEXT_LINE_HEIGHT = 1.28
+export const TEXT_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif'
+
+/** Screen pixels from the top edge to the rotation handle center. Scaled by uiScale into image pixels. */
+export const ROTATE_HANDLE_GAP = 12
+
+export function textFont(fontSize: number): string {
+  return `600 ${Math.round(fontSize * 10) / 10}px ${TEXT_FONT_FAMILY}`
+}
 
 export interface HandlePosition {
   handle: ResizeHandle
@@ -199,29 +217,122 @@ export function defaultTextFontSize(strokeWidth: number, imageScale: number): nu
 }
 
 export function estimateTextLineUnits(line: string): number {
+  return Math.max(1, rawTextLineUnits(line))
+}
+
+function rawTextLineUnits(line: string): number {
   let units = 0
   for (const ch of line) {
     units += ch.charCodeAt(0) > 255 ? 1 : 0.6
   }
-  return Math.max(1, units)
+  return units
+}
+
+function wrapTextLine(line: string, maxWidth: number, fontSize: number): string[] {
+  if (!line) return ['']
+  const maxUnits = maxWidth / Math.max(1, fontSize)
+  const out: string[] = []
+  let current = ''
+  let units = 0
+  for (const ch of line) {
+    const u = ch.charCodeAt(0) > 255 ? 1 : 0.6
+    if (current && units + u > maxUnits + 1e-6) {
+      out.push(current)
+      current = ch
+      units = u
+    } else {
+      current += ch
+      units += u
+    }
+  }
+  out.push(current)
+  return out
+}
+
+export interface TextLayout {
+  width: number
+  height: number
+  fontSize: number
+  lineHeight: number
+  lines: string[]
+}
+
+/** Shared by the canvas, the hit target, and the editing field. */
+export function layoutText(annotation: Pick<TextAnnotation, 'text' | 'fontSize' | 'width'>): TextLayout {
+  const fontSize = Math.max(10, annotation.fontSize)
+  const lineHeight = fontSize * TEXT_LINE_HEIGHT
+  const source = annotation.text ?? ''
+  const paragraphs = source.split('\n')
+  const lines: string[] = []
+  const wrapWidth = annotation.width
+  for (const paragraph of paragraphs) {
+    if (wrapWidth && wrapWidth > 0) {
+      lines.push(...wrapTextLine(paragraph, wrapWidth, fontSize))
+    } else {
+      lines.push(paragraph)
+    }
+  }
+  if (lines.length === 0) lines.push('')
+  let maxUnits = 0
+  for (const line of lines) {
+    maxUnits = Math.max(maxUnits, rawTextLineUnits(line))
+  }
+  const contentWidth = Math.max(fontSize * 0.8, Math.max(1, maxUnits) * fontSize)
+  const width = wrapWidth && wrapWidth > 0 ? Math.max(fontSize * 0.8, wrapWidth) : contentWidth
+  const height = Math.max(lineHeight, lines.length * lineHeight)
+  return { width, height, fontSize, lineHeight, lines }
 }
 
 export function getTextBox(annotation: TextAnnotation): BoxRect {
-  const lines = (annotation.text || ' ').split('\n')
-  const lineHeight = annotation.fontSize * 1.28
-  let maxUnits = 1
-  for (const line of lines) {
-    const u = estimateTextLineUnits(line)
-    if (u > maxUnits) maxUnits = u
-  }
-  const width = Math.max(annotation.fontSize * 0.8, maxUnits * annotation.fontSize)
-  const height = Math.max(annotation.fontSize, lines.length * lineHeight)
+  const layout = layoutText(annotation)
   return {
     x: annotation.x,
     y: annotation.y,
-    width,
-    height,
+    width: layout.width,
+    height: Math.max(layout.height, annotation.height ?? 0),
   }
+}
+
+export function annotationRotation(annotation: ImageAnnotation): number {
+  if (annotation.kind === 'rect' || annotation.kind === 'ellipse' || annotation.kind === 'text') {
+    return annotation.rotation ?? 0
+  }
+  return 0
+}
+
+export function rotatePoint(point: Point, center: Point, angle: number): Point {
+  if (!angle) return point
+  const dx = point.x - center.x
+  const dy = point.y - center.y
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dy * cos + dx * sin,
+  }
+}
+
+export function unrotatePoint(point: Point, center: Point, angle: number): Point {
+  return rotatePoint(point, center, -angle)
+}
+
+function boxCenter(box: BoxRect): Point {
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+function normalizeAngle(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle))
+}
+
+export function annotationFrame(annotation: ImageAnnotation): (BoxRect & { rotation: number }) | null {
+  if (annotation.kind === 'rect' || annotation.kind === 'ellipse' || annotation.kind === 'mosaic') {
+    return { x: annotation.x, y: annotation.y, width: annotation.width, height: annotation.height, rotation: annotationRotation(annotation) }
+  }
+  if (annotation.kind === 'text') {
+    const box = getTextBox(annotation)
+    return { ...box, rotation: annotation.rotation ?? 0 }
+  }
+  return null
 }
 
 export function nextMarkerNumber(annotations: readonly ImageAnnotation[]): number {
@@ -245,26 +356,44 @@ export function normalizeBox(x1: number, y1: number, x2: number, y2: number): Bo
   }
 }
 
-export function getAnnotationHandles(annotation: ImageAnnotation): HandlePosition[] {
+function handlesForFrame(frame: BoxRect & { rotation: number }, uiScale: number, withRotate: boolean): HandlePosition[] {
+  const center = boxCenter(frame)
+  const right = frame.x + frame.width
+  const bottom = frame.y + frame.height
+  const corners: Array<[ResizeHandle, number, number]> = [
+    ['nw', frame.x, frame.y],
+    ['ne', right, frame.y],
+    ['se', right, bottom],
+    ['sw', frame.x, bottom],
+  ]
+  const handles: HandlePosition[] = corners.map(([handle, x, y]) => ({
+    handle,
+    ...rotatePoint({ x, y }, center, frame.rotation),
+  }))
+  if (withRotate) {
+    handles.push({
+      handle: 'rotate',
+      ...rotatePoint(
+        { x: frame.x + frame.width / 2, y: frame.y - ROTATE_HANDLE_GAP * uiScale },
+        center,
+        frame.rotation,
+      ),
+    })
+  }
+  return handles
+}
+
+export function getAnnotationHandles(annotation: ImageAnnotation, uiScale = 1): HandlePosition[] {
   switch (annotation.kind) {
     case 'rect':
     case 'ellipse':
+    case 'text': {
+      const frame = annotationFrame(annotation)
+      return frame ? handlesForFrame(frame, uiScale, true) : []
+    }
     case 'mosaic': {
-      const { x, y, width, height } = annotation
-      const cx = x + width / 2
-      const cy = y + height / 2
-      const r = x + width
-      const b = y + height
-      return [
-        { handle: 'nw', x, y },
-        { handle: 'n', x: cx, y },
-        { handle: 'ne', x: r, y },
-        { handle: 'e', x: r, y: cy },
-        { handle: 'se', x: r, y: b },
-        { handle: 's', x: cx, y: b },
-        { handle: 'sw', x, y: b },
-        { handle: 'w', x, y: cy },
-      ]
+      const frame = annotationFrame(annotation)
+      return frame ? handlesForFrame(frame, uiScale, false) : []
     }
     case 'line':
     case 'arrow':
@@ -272,12 +401,6 @@ export function getAnnotationHandles(annotation: ImageAnnotation): HandlePositio
         { handle: 'start', x: annotation.x1, y: annotation.y1 },
         { handle: 'end', x: annotation.x2, y: annotation.y2 },
       ]
-    case 'text': {
-      const box = getTextBox(annotation)
-      return [
-        { handle: 'scale', x: box.x + box.width, y: box.y + box.height },
-      ]
-    }
     case 'marker':
     case 'pen':
       return []
@@ -297,18 +420,85 @@ export function distanceToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
 }
 
+function hitTestFrameEdge(
+  frame: BoxRect & { rotation: number },
+  point: Point,
+  tolerance: number,
+  uiScale: number,
+): BoxResizeHandle | null {
+  const center = boxCenter(frame)
+  const local = unrotatePoint(point, center, frame.rotation)
+  const left = frame.x
+  const right = frame.x + frame.width
+  const top = frame.y
+  const bottom = frame.y + frame.height
+  // A thin band. Short text boxes keep the middle free for moving.
+  const outside = Math.min(tolerance, 4.5 * uiScale)
+  const insideX = Math.min(outside, frame.width * 0.18)
+  const insideY = Math.min(outside, frame.height * 0.18)
+  if (
+    local.x < left - outside ||
+    local.x > right + outside ||
+    local.y < top - outside ||
+    local.y > bottom + outside
+  ) {
+    return null
+  }
+  const edges: Array<[BoxResizeHandle, number, number, boolean]> = [
+    ['n', Math.abs(local.y - top), local.y < top ? outside : insideY, local.x >= left && local.x <= right],
+    ['s', Math.abs(local.y - bottom), local.y > bottom ? outside : insideY, local.x >= left && local.x <= right],
+    ['w', Math.abs(local.x - left), local.x < left ? outside : insideX, local.y >= top && local.y <= bottom],
+    ['e', Math.abs(local.x - right), local.x > right ? outside : insideX, local.y >= top && local.y <= bottom],
+  ]
+  let best: BoxResizeHandle | null = null
+  let bestDist = Infinity
+  for (const [handle, dist, limit, insideSpan] of edges) {
+    if (!insideSpan || dist > limit || dist >= bestDist) continue
+    best = handle
+    bestDist = dist
+  }
+  return best
+}
+
 export function hitTestHandle(
   annotation: ImageAnnotation,
   point: Point,
   tolerance: number,
+  uiScale = 1,
 ): ResizeHandle | null {
-  const handles = getAnnotationHandles(annotation)
-  for (const h of handles) {
-    if (distanceBetween(point, h) <= tolerance) {
-      return h.handle
+  let best: ResizeHandle | null = null
+  let bestDist = Infinity
+  for (const handle of getAnnotationHandles(annotation, uiScale)) {
+    const dist = distanceBetween(point, handle)
+    // The knob sits just above the top edge, so its grab radius stays inside that gap.
+    const limit = handle.handle === 'rotate' ? Math.min(tolerance, 8 * uiScale) : tolerance
+    if (dist <= limit && dist < bestDist) {
+      best = handle.handle
+      bestDist = dist
     }
   }
-  return null
+  if (best) return best
+  const frame = annotationFrame(annotation)
+  if (!frame) return null
+  return hitTestFrameEdge(frame, point, tolerance, uiScale)
+}
+
+function hitTestFrame(frame: BoxRect & { rotation: number }, point: Point, tolerance: number, elliptical: boolean): boolean {
+  const center = boxCenter(frame)
+  const local = unrotatePoint(point, center, frame.rotation)
+  if (elliptical) {
+    const rx = Math.max(1, frame.width / 2) + tolerance
+    const ry = Math.max(1, frame.height / 2) + tolerance
+    const nx = (local.x - center.x) / rx
+    const ny = (local.y - center.y) / ry
+    return nx * nx + ny * ny <= 1
+  }
+  return (
+    local.x >= frame.x - tolerance &&
+    local.x <= frame.x + frame.width + tolerance &&
+    local.y >= frame.y - tolerance &&
+    local.y <= frame.y + frame.height + tolerance
+  )
 }
 
 export function hitTestAnnotation(
@@ -318,32 +508,14 @@ export function hitTestAnnotation(
 ): boolean {
   switch (annotation.kind) {
     case 'rect':
-    case 'mosaic': {
-      const { x, y, width, height } = annotation
-      return (
-        point.x >= x - tolerance &&
-        point.x <= x + width + tolerance &&
-        point.y >= y - tolerance &&
-        point.y <= y + height + tolerance
-      )
-    }
+    case 'mosaic':
     case 'text': {
-      const box = getTextBox(annotation)
-      return (
-        point.x >= box.x - tolerance &&
-        point.x <= box.x + box.width + tolerance &&
-        point.y >= box.y - tolerance &&
-        point.y <= box.y + box.height + tolerance
-      )
+      const frame = annotationFrame(annotation)
+      return frame ? hitTestFrame(frame, point, tolerance, false) : false
     }
     case 'ellipse': {
-      const rx = Math.max(1, annotation.width / 2) + tolerance
-      const ry = Math.max(1, annotation.height / 2) + tolerance
-      const cx = annotation.x + annotation.width / 2
-      const cy = annotation.y + annotation.height / 2
-      const nx = (point.x - cx) / rx
-      const ny = (point.y - cy) / ry
-      return nx * nx + ny * ny <= 1
+      const frame = annotationFrame(annotation)
+      return frame ? hitTestFrame(frame, point, tolerance, true) : false
     }
     case 'line':
     case 'arrow': {
@@ -421,6 +593,166 @@ export function moveAnnotation(annotation: ImageAnnotation, dx: number, dy: numb
   }
 }
 
+function isBoxHandle(handle: ResizeHandle): handle is BoxResizeHandle {
+  return (
+    handle === 'nw' ||
+    handle === 'n' ||
+    handle === 'ne' ||
+    handle === 'e' ||
+    handle === 'se' ||
+    handle === 's' ||
+    handle === 'sw' ||
+    handle === 'w'
+  )
+}
+
+/** Resize a box in its local space and keep the opposite edge fixed in world space. */
+export function resizeRotatedBox(
+  box: BoxRect & { rotation?: number },
+  handle: BoxResizeHandle,
+  point: Point,
+  minWidth: number,
+  minHeight: number,
+): BoxRect {
+  const rotation = box.rotation ?? 0
+  const center = boxCenter(box)
+  const local = unrotatePoint(point, center, rotation)
+  const lx = local.x - center.x
+  const ly = local.y - center.y
+  let left = -box.width / 2
+  let right = box.width / 2
+  let top = -box.height / 2
+  let bottom = box.height / 2
+  const dragW = handle === 'nw' || handle === 'w' || handle === 'sw'
+  const dragE = handle === 'ne' || handle === 'e' || handle === 'se'
+  const dragN = handle === 'nw' || handle === 'n' || handle === 'ne'
+  const dragS = handle === 'sw' || handle === 's' || handle === 'se'
+  if (dragW) left = Math.min(lx, right - minWidth)
+  if (dragE) right = Math.max(lx, left + minWidth)
+  if (dragN) top = Math.min(ly, bottom - minHeight)
+  if (dragS) bottom = Math.max(ly, top + minHeight)
+  const width = right - left
+  const height = bottom - top
+  const offsetX = (left + right) / 2
+  const offsetY = (top + bottom) / 2
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const nextCenterX = center.x + offsetX * cos - offsetY * sin
+  const nextCenterY = center.y + offsetX * sin + offsetY * cos
+  return {
+    x: nextCenterX - width / 2,
+    y: nextCenterY - height / 2,
+    width,
+    height,
+  }
+}
+
+function boxKeepingTop(box: BoxRect, rotation: number, nextHeight: number): BoxRect {
+  const center = boxCenter(box)
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const topLocalY = -box.height / 2
+  const topX = center.x - topLocalY * sin
+  const topY = center.y + topLocalY * cos
+  const half = nextHeight / 2
+  const nextCenterX = topX - half * sin
+  const nextCenterY = topY + half * cos
+  return {
+    x: nextCenterX - box.width / 2,
+    y: nextCenterY - nextHeight / 2,
+    width: box.width,
+    height: nextHeight,
+  }
+}
+
+const TEXT_CORNERS: Record<'nw' | 'ne' | 'se' | 'sw', 'nw' | 'ne' | 'se' | 'sw'> = {
+  nw: 'se',
+  ne: 'sw',
+  se: 'nw',
+  sw: 'ne',
+}
+
+function scaleTextFromCorner(annotation: TextAnnotation, handle: 'nw' | 'ne' | 'se' | 'sw', point: Point): TextAnnotation {
+  const box = getTextBox(annotation)
+  const rotation = annotation.rotation ?? 0
+  const center = boxCenter(box)
+  const halfW = box.width / 2
+  const halfH = box.height / 2
+  const locals = {
+    nw: { x: -halfW, y: -halfH },
+    ne: { x: halfW, y: -halfH },
+    se: { x: halfW, y: halfH },
+    sw: { x: -halfW, y: halfH },
+  }
+  const anchor = locals[TEXT_CORNERS[handle]]
+  const dragged = locals[handle]
+  const base = Math.max(1, Math.hypot(dragged.x - anchor.x, dragged.y - anchor.y))
+  const local = unrotatePoint(point, center, rotation)
+  const next = Math.max(8, Math.hypot(local.x - center.x - anchor.x, local.y - center.y - anchor.y))
+  const nextFont = Math.max(10, Math.min(240, Math.round(annotation.fontSize * (next / base) * 10) / 10))
+  const applied = nextFont / Math.max(1, annotation.fontSize)
+  const newW = box.width * applied
+  const newH = box.height * applied
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const anchorWorldX = center.x + anchor.x * cos - anchor.y * sin
+  const anchorWorldY = center.y + anchor.x * sin + anchor.y * cos
+  const newAnchorX = anchor.x * applied
+  const newAnchorY = anchor.y * applied
+  const nextCenterX = anchorWorldX - (newAnchorX * cos - newAnchorY * sin)
+  const nextCenterY = anchorWorldY - (newAnchorX * sin + newAnchorY * cos)
+  const scaled: TextAnnotation = {
+    ...annotation,
+    fontSize: nextFont,
+    x: nextCenterX - newW / 2,
+    y: nextCenterY - newH / 2,
+  }
+  if (annotation.width && annotation.width > 0) scaled.width = Math.round(annotation.width * applied * 10) / 10
+  if (annotation.height && annotation.height > 0) scaled.height = Math.round(annotation.height * applied * 10) / 10
+  return scaled
+}
+
+function resizeText(annotation: TextAnnotation, handle: BoxResizeHandle, point: Point, minSize: number): TextAnnotation {
+  if (handle === 'nw' || handle === 'ne' || handle === 'se' || handle === 'sw') {
+    return scaleTextFromCorner(annotation, handle, point)
+  }
+  const box = getTextBox(annotation)
+  const rotation = annotation.rotation ?? 0
+  const content = layoutText(annotation)
+  const vertical = handle === 'n' || handle === 's'
+  const resized = resizeRotatedBox(
+    { ...box, rotation },
+    handle,
+    point,
+    vertical ? box.width : Math.max(minSize, annotation.fontSize * 0.8),
+    vertical ? content.height : box.height,
+  )
+  if (vertical) {
+    const next: TextAnnotation = {
+      ...annotation,
+      x: resized.x,
+      y: resized.y,
+    }
+    if (resized.height > content.height + 0.5) next.height = resized.height
+    else delete next.height
+    return next
+  }
+  const wrapped = layoutText({ ...annotation, width: resized.width })
+  const hugged = boxKeepingTop(
+    { x: resized.x, y: resized.y, width: resized.width, height: box.height },
+    rotation,
+    wrapped.height,
+  )
+  const next: TextAnnotation = {
+    ...annotation,
+    x: hugged.x,
+    y: hugged.y,
+    width: Math.round(resized.width * 10) / 10,
+  }
+  delete next.height
+  return next
+}
+
 export function resizeAnnotation(
   annotation: ImageAnnotation,
   handle: ResizeHandle,
@@ -431,49 +763,42 @@ export function resizeAnnotation(
     case 'rect':
     case 'ellipse':
     case 'mosaic': {
-      let left = annotation.x
-      let top = annotation.y
-      let right = annotation.x + annotation.width
-      let bottom = annotation.y + annotation.height
-
-      if (handle === 'nw' || handle === 'w' || handle === 'sw') left = point.x
-      if (handle === 'ne' || handle === 'e' || handle === 'se') right = point.x
-      if (handle === 'nw' || handle === 'n' || handle === 'ne') top = point.y
-      if (handle === 'sw' || handle === 's' || handle === 'se') bottom = point.y
-
-      const box = normalizeBox(left, top, right, bottom)
-      return {
-        ...annotation,
-        x: box.x,
-        y: box.y,
-        width: Math.max(minSize, box.width),
-        height: Math.max(minSize, box.height),
-      }
+      if (!isBoxHandle(handle)) return annotation
+      const box = resizeRotatedBox(
+        { ...annotation, rotation: annotationRotation(annotation) },
+        handle,
+        point,
+        minSize,
+        minSize,
+      )
+      return { ...annotation, ...box }
     }
     case 'line':
     case 'arrow': {
-      if (handle === 'start') {
-        return { ...annotation, x1: point.x, y1: point.y }
-      }
-      if (handle === 'end') {
-        return { ...annotation, x2: point.x, y2: point.y }
-      }
+      if (handle === 'start') return { ...annotation, x1: point.x, y1: point.y }
+      if (handle === 'end') return { ...annotation, x2: point.x, y2: point.y }
       return annotation
     }
     case 'text': {
-      if (handle === 'scale') {
-        const box = getTextBox(annotation)
-        const baseDiag = Math.max(10, Math.hypot(box.width, box.height))
-        const nextDiag = Math.max(10, Math.hypot(Math.max(8, point.x - annotation.x), Math.max(8, point.y - annotation.y)))
-        const ratio = nextDiag / baseDiag
-        const nextFontSize = Math.max(10, Math.min(240, Math.round(annotation.fontSize * ratio * 10) / 10))
-        return { ...annotation, fontSize: nextFontSize }
-      }
-      return annotation
+      if (!isBoxHandle(handle)) return annotation
+      return resizeText(annotation, handle, point, minSize)
     }
     case 'marker':
     case 'pen':
       return annotation
+  }
+}
+
+export function rotateAnnotation(annotation: ImageAnnotation, start: Point, point: Point): ImageAnnotation {
+  if (annotation.kind !== 'rect' && annotation.kind !== 'ellipse' && annotation.kind !== 'text') return annotation
+  const frame = annotationFrame(annotation)
+  if (!frame) return annotation
+  const center = boxCenter(frame)
+  const startAngle = Math.atan2(start.y - center.y, start.x - center.x)
+  const nextAngle = Math.atan2(point.y - center.y, point.x - center.x)
+  return {
+    ...annotation,
+    rotation: normalizeAngle((annotation.rotation ?? 0) + (nextAngle - startAngle)),
   }
 }
 

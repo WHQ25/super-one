@@ -1,8 +1,13 @@
 import {
+  annotationRotation,
   getAnnotationHandles,
   getTextBox,
   isOcrRegionRedacted,
+  layoutText,
+  ROTATE_HANDLE_GAP,
   scaleForImage,
+  textFont,
+  type BoxRect,
   type ImageAnnotation,
   type MosaicAnnotation,
   type OcrTextRegion,
@@ -103,6 +108,30 @@ function drawMosaicRect(
   }
 }
 
+/** Arrow head length in image pixels. Fixed for a stroke size; only shrinks on a very short shaft. */
+export function arrowHeadLength(length: number, lineWidth: number, imageScale: number): number {
+  const size = Math.max(26 * imageScale, lineWidth * 5)
+  return Math.min(length * 0.42, size)
+}
+
+function withLocalRotation(
+  ctx: CanvasRenderingContext2D,
+  box: BoxRect,
+  rotation: number,
+  draw: () => void,
+): void {
+  ctx.save()
+  if (rotation) {
+    const cx = box.x + box.width / 2
+    const cy = box.y + box.height / 2
+    ctx.translate(cx, cy)
+    ctx.rotate(rotation)
+    ctx.translate(-cx, -cy)
+  }
+  draw()
+  ctx.restore()
+}
+
 function drawAnnotationItem(
   ctx: CanvasRenderingContext2D,
   ann: ImageAnnotation,
@@ -148,27 +177,31 @@ function drawAnnotationItem(
     }
     case 'rect': {
       const lineWidth = Math.max(1.5, ann.strokeWidth * imageScale)
-      ctx.strokeStyle = ann.color
-      ctx.lineWidth = lineWidth
-      ctx.lineJoin = 'round'
-      ctx.strokeRect(ann.x, ann.y, ann.width, ann.height)
+      withLocalRotation(ctx, ann, ann.rotation ?? 0, () => {
+        ctx.strokeStyle = ann.color
+        ctx.lineWidth = lineWidth
+        ctx.lineJoin = 'round'
+        ctx.strokeRect(ann.x, ann.y, ann.width, ann.height)
+      })
       break
     }
     case 'ellipse': {
       const lineWidth = Math.max(1.5, ann.strokeWidth * imageScale)
-      ctx.strokeStyle = ann.color
-      ctx.lineWidth = lineWidth
-      ctx.beginPath()
-      ctx.ellipse(
-        ann.x + ann.width / 2,
-        ann.y + ann.height / 2,
-        Math.max(1, ann.width / 2),
-        Math.max(1, ann.height / 2),
-        0,
-        0,
-        Math.PI * 2,
-      )
-      ctx.stroke()
+      withLocalRotation(ctx, ann, ann.rotation ?? 0, () => {
+        ctx.strokeStyle = ann.color
+        ctx.lineWidth = lineWidth
+        ctx.beginPath()
+        ctx.ellipse(
+          ann.x + ann.width / 2,
+          ann.y + ann.height / 2,
+          Math.max(1, ann.width / 2),
+          Math.max(1, ann.height / 2),
+          0,
+          0,
+          Math.PI * 2,
+        )
+        ctx.stroke()
+      })
       break
     }
     case 'line': {
@@ -189,10 +222,10 @@ function drawAnnotationItem(
       const len = Math.hypot(dx, dy)
       if (len < 1) break
       const angle = Math.atan2(dy, dx)
-      const headLen = Math.min(len * 0.75, Math.max(14 * imageScale, lineWidth * 3.4))
+      const headLen = arrowHeadLength(len, lineWidth, imageScale)
       const headAngle = Math.PI / 6.2
-      const shaftEndX = ann.x2 - Math.cos(angle) * (headLen * 0.55)
-      const shaftEndY = ann.y2 - Math.sin(angle) * (headLen * 0.55)
+      const shaftEndX = ann.x2 - Math.cos(angle) * (headLen * 0.72)
+      const shaftEndY = ann.y2 - Math.sin(angle) * (headLen * 0.72)
 
       ctx.strokeStyle = ann.color
       ctx.fillStyle = ann.color
@@ -224,26 +257,23 @@ function drawAnnotationItem(
       break
     }
     case 'text': {
-      const fontSize = Math.max(10, ann.fontSize)
-      const lineHeight = fontSize * 1.28
-      const lines = ann.text.split('\n')
-      ctx.font = `600 ${Math.round(fontSize * 10) / 10}px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif`
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'top'
-      ctx.lineJoin = 'round'
-
-      const isDarkText = ann.color.toLowerCase() === '#18181b'
-      ctx.strokeStyle = isDarkText ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.65)'
-      ctx.lineWidth = Math.max(1.5, fontSize * 0.11)
-      ctx.fillStyle = ann.color
-
-      for (let i = 0; i < lines.length; i++) {
-        const lineY = ann.y + i * lineHeight
-        if (typeof ctx.strokeText === 'function') {
-          ctx.strokeText(lines[i]!, ann.x, lineY)
+      const layout = layoutText(ann)
+      const box = getTextBox(ann)
+      withLocalRotation(ctx, box, ann.rotation ?? 0, () => {
+        ctx.font = textFont(layout.fontSize)
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.lineJoin = 'round'
+        const isDarkText = ann.color.toLowerCase() === '#18181b'
+        ctx.strokeStyle = isDarkText ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.65)'
+        ctx.lineWidth = Math.max(1.5, layout.fontSize * 0.11)
+        ctx.fillStyle = ann.color
+        for (let i = 0; i < layout.lines.length; i++) {
+          const lineY = ann.y + (i + 0.5) * layout.lineHeight
+          if (typeof ctx.strokeText === 'function') ctx.strokeText(layout.lines[i]!, ann.x, lineY)
+          ctx.fillText(layout.lines[i]!, ann.x, lineY)
         }
-        ctx.fillText(lines[i]!, ann.x, lineY)
-      }
+      })
       break
     }
     case 'marker': {
@@ -278,6 +308,98 @@ function drawAnnotationItem(
   ctx.restore()
 }
 
+function drawCornerSquare(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  uiScale: number,
+  backingScale: number,
+): void {
+  const size = 9 * uiScale
+  ctx.save()
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
+  ctx.shadowBlur = 2.5 * uiScale * backingScale
+  ctx.shadowOffsetY = 0.75 * uiScale * backingScale
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(x - size / 2, y - size / 2, size, size)
+  ctx.restore()
+  ctx.strokeStyle = '#2563eb'
+  ctx.lineWidth = 1.5 * uiScale
+  ctx.strokeRect(x - size / 2, y - size / 2, size, size)
+}
+
+function drawRotateKnob(
+  ctx: CanvasRenderingContext2D,
+  box: BoxRect,
+  uiScale: number,
+  backingScale: number,
+): void {
+  const hx = box.x + box.width / 2
+  const hy = box.y - ROTATE_HANDLE_GAP * uiScale
+  const radius = 5.5 * uiScale
+  ctx.save()
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
+  ctx.shadowBlur = 2.5 * uiScale * backingScale
+  ctx.shadowOffsetY = 0.75 * uiScale * backingScale
+  ctx.fillStyle = '#ffffff'
+  ctx.beginPath()
+  ctx.arc(hx, hy, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+  ctx.strokeStyle = '#2563eb'
+  ctx.lineWidth = 1.75 * uiScale
+  ctx.beginPath()
+  ctx.arc(hx, hy, radius, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
+function drawEndpointHandle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  uiScale: number,
+  backingScale: number,
+): void {
+  const radius = 4.5 * uiScale
+  ctx.save()
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
+  ctx.shadowBlur = 2.5 * uiScale * backingScale
+  ctx.shadowOffsetY = 0.75 * uiScale * backingScale
+  ctx.fillStyle = '#ffffff'
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+  ctx.strokeStyle = '#2563eb'
+  ctx.lineWidth = 1.75 * uiScale
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
+function drawBoxChrome(
+  ctx: CanvasRenderingContext2D,
+  box: BoxRect,
+  rotation: number,
+  uiScale: number,
+  backingScale: number,
+  withRotate: boolean,
+): void {
+  withLocalRotation(ctx, box, rotation, () => {
+    const dashUnit = 4.5 * uiScale
+    ctx.strokeStyle = '#3b82f6'
+    ctx.lineWidth = 1.5 * uiScale
+    ctx.setLineDash([dashUnit, dashUnit * 0.85])
+    ctx.strokeRect(box.x, box.y, box.width, box.height)
+    ctx.setLineDash([])
+    drawCornerSquare(ctx, box.x, box.y, uiScale, backingScale)
+    drawCornerSquare(ctx, box.x + box.width, box.y, uiScale, backingScale)
+    drawCornerSquare(ctx, box.x + box.width, box.y + box.height, uiScale, backingScale)
+    drawCornerSquare(ctx, box.x, box.y + box.height, uiScale, backingScale)
+    if (withRotate) drawRotateKnob(ctx, box, uiScale, backingScale)
+  })
+}
+
 function drawSelectionChrome(
   ctx: CanvasRenderingContext2D,
   ann: ImageAnnotation,
@@ -285,18 +407,15 @@ function drawSelectionChrome(
   backingScale = 1,
 ): void {
   ctx.save()
-  const dashUnit = 4.5 * uiScale
-  ctx.strokeStyle = '#3b82f6'
-  ctx.lineWidth = 1.5 * uiScale
-  ctx.setLineDash([dashUnit, dashUnit * 0.85])
-
   if (ann.kind === 'rect' || ann.kind === 'ellipse' || ann.kind === 'mosaic') {
-    ctx.strokeRect(ann.x, ann.y, ann.width, ann.height)
+    drawBoxChrome(ctx, ann, annotationRotation(ann), uiScale, backingScale, ann.kind !== 'mosaic')
   } else if (ann.kind === 'text') {
-    const box = getTextBox(ann)
-    const pad = 4 * uiScale
-    ctx.strokeRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2)
+    drawBoxChrome(ctx, getTextBox(ann), ann.rotation ?? 0, uiScale, backingScale, true)
   } else if (ann.kind === 'marker') {
+    const dashUnit = 4.5 * uiScale
+    ctx.strokeStyle = '#3b82f6'
+    ctx.lineWidth = 1.5 * uiScale
+    ctx.setLineDash([dashUnit, dashUnit * 0.85])
     ctx.beginPath()
     ctx.arc(ann.x, ann.y, ann.radius + 3 * uiScale, 0, Math.PI * 2)
     ctx.stroke()
@@ -311,29 +430,16 @@ function drawSelectionChrome(
       if (pt.x > maxX) maxX = pt.x
       if (pt.y > maxY) maxY = pt.y
     }
+    const dashUnit = 4.5 * uiScale
     const pad = 6 * uiScale
+    ctx.strokeStyle = '#3b82f6'
+    ctx.lineWidth = 1.5 * uiScale
+    ctx.setLineDash([dashUnit, dashUnit * 0.85])
     ctx.strokeRect(minX - pad, minY - pad, maxX - minX + pad * 2, maxY - minY + pad * 2)
-  }
-
-  ctx.setLineDash([])
-  const handles = getAnnotationHandles(ann)
-  const handleRadius = 4.5 * uiScale
-  for (const h of handles) {
-    ctx.save()
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)'
-    ctx.shadowBlur = 2.5 * uiScale * backingScale
-    ctx.shadowOffsetY = 0.75 * uiScale * backingScale
-    ctx.fillStyle = '#ffffff'
-    ctx.beginPath()
-    ctx.arc(h.x, h.y, handleRadius, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
-
-    ctx.strokeStyle = '#2563eb'
-    ctx.lineWidth = 1.75 * uiScale
-    ctx.beginPath()
-    ctx.arc(h.x, h.y, handleRadius, 0, Math.PI * 2)
-    ctx.stroke()
+  } else if (ann.kind === 'line' || ann.kind === 'arrow') {
+    for (const handle of getAnnotationHandles(ann, uiScale)) {
+      drawEndpointHandle(ctx, handle.x, handle.y, uiScale, backingScale)
+    }
   }
   ctx.restore()
 }

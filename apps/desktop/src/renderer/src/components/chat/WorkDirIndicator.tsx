@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback, useMemo, type ComponentType, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, useCallback, useMemo, useId, type ComponentType, type FormEvent, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitCommit, GitFork, ChevronDown, Check, Circle, Plus } from 'lucide-react'
+import { GitBranch, GitCommit, GitFork, ChevronDown, ChevronRight, Check, Circle, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import {
@@ -15,6 +15,7 @@ import {
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
 import { Badge } from '@superone/ui/components/ui/badge'
+import { useScrollEdgeFade } from '@superone/ui/lib/use-scroll-edge-fade'
 import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
@@ -217,6 +218,8 @@ function PanelHeight({ open, children }: { open: boolean; children: ReactNode })
 }
 
 function WorktreeDraftPanel({
+  branchesOpen,
+  branchesId,
   entries,
   metas,
   activePath,
@@ -229,7 +232,10 @@ function WorktreeDraftPanel({
   attachReason,
   onSelectExisting,
   onSelectBase,
+  onToggleBranches,
 }: {
+  branchesOpen: boolean
+  branchesId: string
   entries: WorktreeEntry[]
   metas: Record<string, WtMeta>
   activePath: string | null
@@ -242,58 +248,83 @@ function WorktreeDraftPanel({
   attachReason: (branch: string) => string | null
   onSelectExisting: (entry: WorktreeEntry) => void
   onSelectBase: (base: string) => void
+  onToggleBranches: () => void
 }) {
   const { t } = useTranslation()
   const noBranches = local.length === 0
+  const entriesFade = useScrollEdgeFade<HTMLDivElement>()
+  const branchesFade = useScrollEdgeFade<HTMLDivElement>()
   return (
     <div className="flex flex-col">
-      <div className="max-h-80 overflow-y-auto">
+      <PanelHeight open={!branchesOpen}>
         <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.existingHeading')}</div>
-        {entries.length > 0 ? entries.map((entry) => {
-          const meta = metas[entry.path]
-          const detached = !entry.branch
-          return (
-            <WorktreeEntryRow
-              key={entry.path}
-              label={detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : entry.branch!}
-              detached={detached}
-              dirty={meta?.dirty}
-              isCurrent={sameWorktreePath(entry.path, activePath)}
-              onClick={() => onSelectExisting(entry)}
-            />
-          )
-        }) : (
-          <div className="px-3 py-1 text-xs text-muted-foreground">{emptyEntriesLabel}</div>
-        )}
-
-        <div className="px-3 pt-2 text-xs uppercase text-muted-foreground">{t('chat.worktree.createFromHeading')}</div>
-        {loading && noBranches && (
-          <div className="px-3 py-1 text-xs text-muted-foreground">{t('common.loading')}</div>
-        )}
-        {noBranches && !loading && (
-          <div className="px-3 py-1 text-xs text-muted-foreground">{emptyBranchesLabel}</div>
-        )}
-        {local.map((branch) => {
-          const reason = pending && pendingBase ? attachReason(branch) : null
-          const selected = pending && pendingBase === branch
-          return (
-            <button
-              key={branch}
-              type="button"
-              disabled={!!reason}
-              onClick={() => onSelectBase(branch)}
-              className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-            >
-              <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-1 flex-col text-left">
-                <span className="truncate">{branch}</span>
-                {reason && <span className="truncate text-muted-foreground">{reason}</span>}
-              </span>
-              {selected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
-            </button>
-          )
-        })}
+        {/* Each two-line row is 44px tall: show five before scrolling. */}
+        <div ref={entriesFade} className="scroll-edge-fade-y max-h-55 overflow-y-auto overscroll-contain" data-slot="workdir-existing-list">
+          {entries.length > 0 ? entries.map((entry) => {
+            const meta = metas[entry.path]
+            const detached = !entry.branch
+            return (
+              <WorktreeEntryRow
+                key={entry.path}
+                label={detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : entry.branch!}
+                detached={detached}
+                dirty={meta?.dirty}
+                isCurrent={sameWorktreePath(entry.path, activePath)}
+                onClick={() => onSelectExisting(entry)}
+              />
+            )
+          }) : (
+            <div className="px-3 py-1 text-xs text-muted-foreground">{emptyEntriesLabel}</div>
+          )}
+        </div>
+      </PanelHeight>
+      <div className="border-t px-3 pt-3 pb-2">
+        <button
+          type="button"
+          aria-label={`${t('chat.worktree.baseBranchLabel')}: ${pendingBase}`}
+          aria-expanded={branchesOpen}
+          aria-controls={branchesId}
+          onClick={onToggleBranches}
+          className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <span className="shrink-0">{t('chat.worktree.baseBranchLabel')}:</span>
+          <GitBranch className="ml-1 size-3 shrink-0" />
+          <span className="min-w-0 flex-1 truncate font-mono text-foreground">{pendingBase}</span>
+          <ChevronRight className={`size-3 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${branchesOpen ? 'rotate-90' : ''}`} />
+        </button>
       </div>
+      <PanelHeight open={branchesOpen}>
+        <div id={branchesId} className="pb-2">
+          <div ref={branchesFade} className="scroll-edge-fade-y max-h-64 overflow-y-auto overscroll-contain" data-slot="workdir-base-list">
+            {loading && noBranches && (
+              <div className="px-3 py-1 text-xs text-muted-foreground">{t('common.loading')}</div>
+            )}
+            {noBranches && !loading && (
+              <div className="px-3 py-1 text-xs text-muted-foreground">{emptyBranchesLabel}</div>
+            )}
+            {local.map((branch) => {
+              const reason = pending && pendingBase ? attachReason(branch) : null
+              const selected = pendingBase === branch
+              return (
+                <button
+                  key={branch}
+                  type="button"
+                  disabled={!!reason}
+                  onClick={() => onSelectBase(branch)}
+                  className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col text-left">
+                    <span className="truncate">{branch}</span>
+                    {reason && <span className="truncate text-muted-foreground">{reason}</span>}
+                  </span>
+                  {selected && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </PanelHeight>
     </div>
   )
 }
@@ -337,10 +368,7 @@ function WorktreeCreatePanel({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="border-t p-3">
-      <div className="mb-2 text-xs text-muted-foreground">
-        {t('chat.worktree.baseBranchLabel')}: <span className="font-mono text-foreground">{base}</span>
-      </div>
+    <div className="px-3 pb-3">
       <div className="mb-3 flex gap-1 rounded-md bg-muted p-0.5">
         <ModeButton active={mode === 'branch'} onClick={() => onMode('branch')}>{t('chat.worktree.modeBranch')}</ModeButton>
         {showAttach && (
@@ -420,6 +448,8 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [mode, setMode] = useState<LocationMode>('checkout')
   const [search, setSearch] = useState('')
+  const [branchesOpen, setBranchesOpen] = useState(false)
+  const branchesId = useId()
   const [branchLists, setBranchLists] = useState<GitBranchLists>(EMPTY_BRANCH_LISTS)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [mainBranch, setMainBranch] = useState<string | null>(null)
@@ -570,6 +600,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
     if (open) {
       setEnvironmentError(null)
       setSearch('')
+      setBranchesOpen(false)
       setMode(isGitRepo !== false && location.selection.kind !== 'local' ? 'worktree' : 'checkout')
       void loadPopoverData()
     }
@@ -587,6 +618,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
 
   const selectMode = useCallback((next: string) => {
     setSearch('')
+    setBranchesOpen(false)
     if (next === 'worktree') {
       if (isGitRepo === false) return
       setMode('worktree')
@@ -630,19 +662,28 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
 
   const handleSelectBase = useCallback((baseBranch: string) => {
     if (!currentFolder) return
-    // Default to a named branch. Detach and attach stay one click away, and a
-    // branch name is what the next message needs for branch mode.
-    const carry = location.selection.kind === 'create' && location.selection.carryLocalChanges
+    const previous = location.selection.kind === 'create' ? location.selection : null
+    const carry = previous?.carryLocalChanges ?? false
+    const mode = previous?.mode ?? 'branch'
+    const branchName = previous?.branchName ?? ''
     const store = useAppStore.getState()
     store.setPendingWorktree(currentFolder, baseBranch)
+    store.setPendingMode(currentFolder, mode)
+    store.setPendingBranchName(currentFolder, branchName)
     if (carry) store.setPendingCarryLocalChanges(currentFolder, true)
-    patchFocusedCreate(currentFolder, {
-      baseBranch,
-      mode: 'branch',
-      branchName: '',
-      carryLocalChanges: carry,
-    })
+    patchFocusedCreate(currentFolder, { baseBranch, mode, branchName, carryLocalChanges: carry })
+    setBranchesOpen(false)
+    setSearch('')
   }, [currentFolder, location.selection])
+
+  // Opening the Worktree tab prepares creation from the current checkout.
+  // Keep an existing worktree or a previously edited create selection intact.
+  useEffect(() => {
+    if (!popoverOpen || mode !== 'worktree' || isOldSession || isGitRepo === false) return
+    if (location.selection.kind !== 'local' || checkoutResolvedFolder !== currentFolder) return
+    handleSelectBase(mainBranch || 'HEAD')
+  }, [popoverOpen, mode, isOldSession, isGitRepo, location.selection.kind,
+    checkoutResolvedFolder, currentFolder, mainBranch, handleSelectBase])
 
   const handleSetMode = useCallback((next: WorktreeMode) => {
     if (!currentFolder) return
@@ -755,9 +796,9 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
     })
   }, [existingEntries, wtMetas, lowerQuery, modeValue])
   const filteredLocal = useMemo(() => {
-    if (modeValue !== 'checkout' || !lowerQuery) return branchLists.local
+    if (!lowerQuery) return branchLists.local
     return branchLists.local.filter((branch) => branch.toLowerCase().includes(lowerQuery))
-  }, [branchLists.local, lowerQuery, modeValue])
+  }, [branchLists.local, lowerQuery])
 
   const pending = location.selection.kind === 'create' ? location.selection : null
   const isPending = !!pending
@@ -975,7 +1016,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                         type="text"
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
-                        placeholder={t('chat.worktree.searchPlaceholder')}
+                        placeholder={t(branchesOpen ? 'chat.worktree.searchBranchesPlaceholder' : 'chat.worktree.searchPlaceholder')}
                         className="min-w-0 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                       />
                     </form>
@@ -992,18 +1033,24 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                     ) : (
                       <>
                         <WorktreeDraftPanel
+                          branchesOpen={branchesOpen}
+                          branchesId={branchesId}
                           entries={filteredExisting}
                           metas={wtMetas}
                           activePath={activePath}
-                          local={branchLists.local}
-                          pendingBase={pendingBase}
+                          local={filteredLocal}
+                          pendingBase={pendingBase || location.branch || mainBranch || 'HEAD'}
                           pending={isPending}
                           loading={branchesLoading}
                           emptyEntriesLabel={query && existingEntries.length > 0 ? t('chat.worktree.noMatches') : t('chat.worktree.noneYet')}
-                          emptyBranchesLabel={!query && branchLists.error ? branchLists.error : t('chat.git.noBranches')}
+                          emptyBranchesLabel={query ? t('chat.worktree.noMatches') : branchLists.error || t('chat.git.noBranches')}
                           attachReason={(branch) => pendingMode === 'attach' ? checkedOutReason(branch) : null}
                           onSelectExisting={handleSwitchToExisting}
                           onSelectBase={handleSelectBase}
+                          onToggleBranches={() => {
+                            setBranchesOpen((open) => !open)
+                            setSearch('')
+                          }}
                         />
                         {pending && (
                           <WorktreeCreatePanel

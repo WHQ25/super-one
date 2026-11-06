@@ -2329,6 +2329,7 @@ export type Messages = {
       addedToChat: string
     }
     worktree: {
+      searchBranchesPlaceholder: string
       searchPlaceholder: string
       existingHeading: string
       createFromHeading: string
@@ -7200,6 +7201,7 @@ export const en: Messages = {
       addedToChat: 'Added to chat',
     },
     worktree: {
+      searchBranchesPlaceholder: 'Search branches…',
       searchPlaceholder: 'Search worktrees…',
       existingHeading: 'Existing worktrees',
       createFromHeading: 'Create new worktree from',

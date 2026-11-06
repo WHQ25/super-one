@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AgentStatus, GitInfo, WorktreeInfo } from '@superone/shared/agent-types'
 
@@ -419,6 +419,7 @@ describe('merged status chip', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Worktree' }))
     expect(screen.getByPlaceholderText('Search worktrees…')).toBeTruthy()
+    await user.click(await screen.findByRole('button', { name: 'Base branch: main' }))
     await user.click(await screen.findByRole('button', { name: 'develop' }))
     expect(screen.getByRole('button', { name: 'Detach' })).toBeTruthy()
     expect(screen.getByText('New branch name')).toBeTruthy()
@@ -480,5 +481,116 @@ describe('merged status chip', () => {
     await user.click(chip)
     await user.click(chip)
     expect(screen.queryByText('node refused')).toBeNull()
+  })
+})
+
+
+describe('worktree creation picker', () => {
+  beforeEach(() => {
+    getGitInfo.mockResolvedValue({ branch: 'feat/current' })
+    const info = worktreeInfo('feat/existing')
+    info.entries.push({ path: '/worktrees/other', branch: 'fix/other', head: HEAD, isMain: false, isCurrent: false })
+    getWorktreeInfo.mockResolvedValue(info)
+    Object.assign(window.app, {
+      getGitBranches: vi.fn(async () => ({ local: ['main', 'feat/current', 'develop', 'release/next'] })),
+      getCheckedOutBranches: vi.fn(async () => ['feat/current']),
+    })
+    useAppStore.setState({
+      _worktrees: {
+        [PROJECT]: { pendingBaseBranch: null, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath: null },
+      },
+    })
+  })
+
+  async function openWorktree() {
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    await user.click(screen.getByRole('tab', { name: 'Worktree' }))
+    await screen.findByRole('button', { name: 'Base branch: feat/current' })
+    return user
+  }
+
+  it('preselects the current branch with creation options and keeps branch choices collapsed', async () => {
+    await openWorktree()
+    expect(screen.getByRole('button', { name: 'Base branch: feat/current' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'New branch' })).toBeTruthy()
+    expect(screen.getByPlaceholderText('e.g. fix/login-bug')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'develop' })).toBeNull()
+    expect(screen.getByRole('button', { name: /feat\/existing/ })).toBeTruthy()
+    expect(useAppStore.getState()._worktrees[PROJECT].pendingBaseBranch).toBe('feat/current')
+  })
+
+  it('filters worktrees, replaces them with filtered branches, and preserves the new branch name on selection', async () => {
+    const user = await openWorktree()
+    const worktreeSearch = screen.getByPlaceholderText('Search worktrees…')
+    await user.type(worktreeSearch, 'OTHER')
+    expect(screen.getByRole('button', { name: /fix\/other/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /feat\/existing/ })).toBeNull()
+    await user.type(screen.getByPlaceholderText('e.g. fix/login-bug'), 'feat/new-work')
+
+    await user.click(screen.getByRole('button', { name: 'Base branch: feat/current' }))
+    const branchSearch = screen.getByPlaceholderText('Search branches…')
+    expect(branchSearch).toHaveValue('')
+    expect(screen.queryByRole('button', { name: /fix\/other/ })).toBeNull()
+    // Both tab bodies stay mounted for the height animation; scope to the branch picker.
+    const branchList = document.querySelector('[data-slot="workdir-base-list"]') as HTMLElement
+    const base = screen.getByRole('button', { name: 'Base branch: feat/current' })
+    // The same base row precedes the branches, so it moves up as existing worktrees collapse.
+    expect(base.compareDocumentPosition(branchList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const list = within(branchList)
+    await user.type(branchSearch, 'RELEASE')
+    expect(list.getByRole('button', { name: 'release/next' })).toBeTruthy()
+    expect(list.queryByRole('button', { name: 'develop' })).toBeNull()
+    await user.click(list.getByRole('button', { name: 'release/next' }))
+    expect(screen.getByRole('button', { name: 'Base branch: release/next' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByPlaceholderText('Search worktrees…')).toHaveValue('')
+    expect(screen.getByPlaceholderText('e.g. fix/login-bug')).toHaveValue('feat/new-work')
+    expect(useAppStore.getState()._worktrees[PROJECT]).toMatchObject({ pendingBaseBranch: 'release/next', pendingBranchName: 'feat/new-work' })
+  })
+
+  it('shows no matches for branch search and can collapse without changing the base', async () => {
+    const user = await openWorktree()
+    const base = screen.getByRole('button', { name: 'Base branch: feat/current' })
+    await user.click(base)
+    await user.type(screen.getByPlaceholderText('Search branches…'), 'no-such-branch')
+    const list = within(document.querySelector('[data-slot="workdir-base-list"]') as HTMLElement)
+    expect(list.getByText('No matches')).toBeTruthy()
+    expect(list.queryByRole('button')).toBeNull()
+    await user.click(base)
+    expect(base).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: /feat\/existing/ })).toBeTruthy()
+    expect(screen.getByPlaceholderText('Search worktrees…')).toHaveValue('')
+  })
+
+  it('keeps the selected existing worktree while browsing base branches', async () => {
+    useAppStore.setState({
+      _worktrees: { [PROJECT]: { pendingBaseBranch: null, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath: WT_PATH } },
+    })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    const base = await screen.findByRole('button', { name: /Base branch:/ })
+    await user.click(base)
+    expect(screen.getByPlaceholderText('Search branches…')).toBeTruthy()
+    await user.click(base)
+    expect(base).toHaveAttribute('aria-expanded', 'false')
+    expect(useAppStore.getState()._worktrees[PROJECT]).toMatchObject({ activePath: WT_PATH, pendingBaseBranch: null })
+  })
+
+  it('retains the configured base and mode on reopen and resets the branch expansion', async () => {
+    useAppStore.setState({
+      _worktrees: { [PROJECT]: { pendingBaseBranch: 'develop', pendingMode: 'detach', pendingBranchName: '', pendingCarryLocalChanges: false, activePath: null } },
+    })
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    const base = await screen.findByRole('button', { name: 'Base branch: develop' })
+    await user.click(base)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(screen.getByRole('button'))
+    expect(await screen.findByRole('button', { name: 'Base branch: develop' })).toHaveAttribute('aria-expanded', 'false')
+    expect(useAppStore.getState()._worktrees[PROJECT]).toMatchObject({ pendingBaseBranch: 'develop', pendingMode: 'detach' })
   })
 })

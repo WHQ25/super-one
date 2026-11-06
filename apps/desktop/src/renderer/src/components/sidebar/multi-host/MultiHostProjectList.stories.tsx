@@ -132,6 +132,8 @@ export const ByEnvironment: Story = {
     await expect(environmentButton?.getBoundingClientRect().width).toBe(projectButton?.getBoundingClientRect().width)
     await expect(environment).toHaveClass('invisible', 'opacity-0')
     await expect(project).toHaveClass('invisible', 'opacity-0')
+    const remoteViewport = canvasElement.querySelector<HTMLElement>('[data-environment-id="node-1"] [data-environment-project-list] [data-slot="scroll-area-viewport"]')!
+    await expect(remoteViewport.clientHeight).toBe(36)
   },
 }
 
@@ -154,7 +156,7 @@ const manyRemote = Array.from({ length: 10 }, (_, index) => checkout({
   repoIdentity: `git:remote-${index}`,
 }))
 
-/** The device name stays at the top of a long list, with no fill behind it. */
+/** Each device's projects scroll independently beneath its name. */
 export const LongList: Story = {
   args: {
     groupBy: 'environment',
@@ -182,7 +184,7 @@ export const LongList: Story = {
     const projectIcon = projectRow?.querySelector('.lucide-folder')
     await expect(environmentIcon).not.toBeNull()
     await expect(projectIcon).not.toBeNull()
-    await expect(Math.abs(environmentIcon!.getBoundingClientRect().left - projectIcon!.getBoundingClientRect().left)).toBeLessThan(2)
+    await expect(projectIcon!.getBoundingClientRect().left - environmentIcon!.getBoundingClientRect().left).toBe(8)
     await expect(environmentRow).toHaveClass('hover:bg-sidebar-hover', 'h-9', 'px-1.5')
     await expect(projectRow).toHaveClass('pl-2.5', 'pr-1.5')
     await expect(canvasElement.querySelector('[data-environment-id="desktop"]')?.parentElement).toHaveClass('px-2')
@@ -192,6 +194,25 @@ export const LongList: Story = {
     await expect(pinnedHeader).not.toBeNull()
     await expect(viewport).not.toBeNull()
     await expect(viewport).toHaveClass('scroll-edge-fade-y')
+    const projects = canvasElement.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list] [data-slot="scroll-area-viewport"]')
+    await expect(projects).not.toBeNull()
+    await expect(projects!.clientHeight).toBe(256)
+    await expect(projects!.scrollHeight).toBeGreaterThan(projects!.clientHeight)
+    await expect(projects).toHaveClass('scroll-edge-fade-y')
+    const nextHeader = canvasElement.querySelector<HTMLElement>('[data-environment-id="node-1"] > [data-slot="environment-section-header"]')!
+    const nextTop = nextHeader.getBoundingClientRect().top
+    projects!.scrollTop = 100
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await expect(projects!.scrollTop).toBe(100)
+    await expect(viewport!.scrollTop).toBe(0)
+    await expect(nextHeader.getBoundingClientRect().top).toBe(nextTop)
+
+    // A wheel at the project list's edge continues through the outer sidebar.
+    projects!.scrollTop = projects!.scrollHeight
+    projects!.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true }))
+    await expect(viewport!.scrollTop).toBe(40)
+    viewport!.scrollTop = 0
+    projects!.scrollTop = 0
     const fill = getComputedStyle(pinnedHeader!).backgroundColor
     await expect(fill === 'rgba(0, 0, 0, 0)' || fill === 'transparent').toBe(true)
     await expect(pinnedHeader!.className).not.toContain('bg-')
@@ -212,8 +233,52 @@ export const LongList: Story = {
 
     viewport!.scrollTop = viewport!.scrollHeight
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    await expect(pin!.textContent).toContain('build')
-    await expect(Math.abs(pin!.getBoundingClientRect().top - pinTop)).toBeLessThan(1)
+    // With capped projects the next device is visible before its name reaches the pin.
+    await expect(nextHeader.getBoundingClientRect().top).toBeGreaterThanOrEqual(viewport!.getBoundingClientRect().top)
+    await expect(nextHeader.getBoundingClientRect().bottom).toBeLessThan(viewport!.getBoundingClientRect().bottom)
+    viewport!.scrollTop = 0
+  },
+}
+
+export const NarrowLongList: Story = {
+  ...LongList,
+  render: (args) => (
+    <div className="h-80 w-56 bg-sidebar text-sidebar-foreground">
+      <MultiHostEnvironmentScroll {...args} />
+    </div>
+  ),
+}
+
+/** Session wheels pass into the project's list before the outer sidebar. */
+export const LongListWithSessions: Story = {
+  ...LongList,
+  args: {
+    ...LongList.args,
+    expandedProjectKeys: new Set([manyLocal[0]!.pathKey]),
+    folderSessions: {
+      [manyLocal[0]!.pathKey]: Array.from({ length: 16 }, (_, index) => ({
+        ...session,
+        sessionId: `long-session-${index}`,
+        title: `Session ${index + 1}`,
+      })),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const projects = canvasElement.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list] [data-slot="scroll-area-viewport"]')!
+    const sessions = projects.querySelector<HTMLElement>('[data-active-session-list] [data-slot="scroll-area-viewport"]')!
+    const sidebar = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    await expect(projects.clientHeight).toBe(256)
+    await expect(sessions.scrollHeight).toBeGreaterThan(sessions.clientHeight)
+    sessions.scrollTop = sessions.scrollHeight
+    sessions.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true }))
+    await expect(projects.scrollTop).toBe(40)
+    await expect(sidebar.scrollTop).toBe(0)
+    projects.scrollTop = projects.scrollHeight
+    sessions.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true }))
+    await expect(sidebar.scrollTop).toBe(40)
+    projects.scrollTop = 0
+    sessions.scrollTop = 0
+    sidebar.scrollTop = 0
   },
 }
 
@@ -228,6 +293,16 @@ export const Offline: Story = {
         connection: 'offline',
         projectsStatus: 'idle',
       }),
+    ],
+  },
+  render: (args) => <Frame><MultiHostProjectList {...args} /></Frame>,
+}
+
+export const Loading: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [
+      bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', projectsStatus: 'loading' }),
     ],
   },
   render: (args) => <Frame><MultiHostProjectList {...args} /></Frame>,

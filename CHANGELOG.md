@@ -15,6 +15,51 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Markdown shell fences (bash, sh, shell, and zsh) run in the login shell in a new terminal tab. The script runs in a child of that shell, so exiting the script leaves the tab open.
+- Fullscreen image preview can annotate a picture: pen, rectangle, circle, line, arrow, text, step marker, redact or mosaic, and recognize text. The result can be saved or added to the chat.
+
+### Fixed
+
+- The Antigravity mark fits inside its icon box.
+- The sidebar leaves 8px between the app drawer and the environment list.
+- A Claude verification_required response is no longer shown as an expired sign-in.
+- Remote file edits keep their diffs and line counts. A trailing newline no longer adds a blank line or an empty diff row. (#122)
+- A node discovers Grok models from session creation and from xAI notifications, and applies an explicit model selection. (#100)
+- Claude sessions on a node can queue a message and steer it. (#101)
+- An interrupted harness turn keeps its conversation, so the next send resumes it instead of starting blank. (#116)
+
+## [0.78.0-alpha] - 2026-11-06
+
+### Added
+
+- Markdown shell fences (bash, sh, shell, and zsh) run in the login shell in a new terminal tab. The script runs in a child of that shell, so exiting the script leaves the tab open.
+- Fullscreen image preview can annotate a picture: pen, rectangle, circle, line, arrow, text, step marker, redact or mosaic, and recognize text. The result can be saved or added to the chat.
+
+### Fixed
+
+- The Antigravity mark fits inside its icon box.
+- The sidebar leaves 8px between the app drawer and the environment list.
+- A Claude verification_required response is no longer shown as an expired sign-in.
+- Remote file edits keep their diffs and line counts. A trailing newline no longer adds a blank line or an empty diff row. (#122)
+- A node discovers Grok models from session creation and from xAI notifications, and applies an explicit model selection. (#100)
+- Claude sessions on a node can queue a message and steer it. (#101)
+- An interrupted harness turn keeps its conversation, so the next send resumes it instead of starting blank. (#116)
+
+### Tests
+
+- Mention-brand and icon screenshots are compared by pixels, so a Linux Chromium blur does not fail the check.
+- Source line-count fixtures follow the rule that a trailing newline is not an extra line.
+- The Claude send guard is checked with a field the node does not accept.
+- The suggested-task lease-loss retry has the same 20s budget as the other launch test.
+
+### CI
+
+- Package-root markdown is ignored in the OTA runtime diff.
+
+## [0.77.0] - 2026-11-06
+
+### Added
+
 - Antigravity is its own ACP harness on desktop and on the phone. Enabling it downloads that runtime, and the account is separate from Grok. The phone shows its icon, uses that agent's permission modes, models, and slash commands, and groups usage by model family. Each session keeps the model of the agent it started with. Steer Now cancels the live turn and sends the queued message; Steer Soon injects it at the next safe point. A finished tool row shows that step's MCP result, including output that was spilled to a file, and widget arguments are kept. A file write stays on the approved card and keeps its diff. The usage footer counts newly uploaded input. An empty reasoning block is not shown. A queued message leaves the queue when the turn starts. Switching between Grok and Antigravity on an empty draft clears the previous agent's context.
 - The sidebar usage gauge is a multi-account subscription hub showing billing cycles, reset dates, and quota status across connected providers.
 - The Grok usage meter shows the login email.
@@ -48,102 +93,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A sent remote draft stays deleted after refresh.
 - A remote node's capabilities and sync roots stay until it disconnects.
 - A remote collaboration wake stays out of the chat. It is not shown as a message the user sent, and a retry does not deliver it twice.
-
-## [0.77.0-alpha.4] - 2026-11-06
-
-### Added
-
-- Chat and the phone can preview temporary files on a remote node, including files outside a registered project. Reads are scoped and transferred in chunks. A missing file is reported as missing. Both the desktop and the node need this version.
-
-### Fixed
-
-- A suggested task's linked checkout stays under its project, including when Git reports the macOS `/private` temp path. It is not registered as a separate sidebar project. A node that cannot browse a checkout is not asked to read or edit the main checkout.
-- An unnamed remote session keeps the title taken from its first message. A title that was set explicitly stays.
-- A remote suggested task keeps the model, effort, and settled state it was launched with when the transcript is projected or the session is reopened.
-- Review branches and commits are read from the repository on the session's host.
-- Git status for a remote worktree is read on the node that owns it, including after a turn and for a restored session.
-- Sending a remote draft consumes it with the composer's edit lease, so it stays gone after refresh. The draft marker remains only while that session has not been sent.
-- A remote node's capabilities and sync roots stay in place until it disconnects. A late reply cannot revive a disconnected snapshot.
-- A remote collaboration wake stays out of the chat. It keeps its notification source, so it is not shown as a message the user sent, and a retry does not deliver it twice.
-- The phone's Antigravity mark is a raster of the desktop icon. The SVG blur does not survive react-native-svg, so the color mark no longer paints as a smear.
-
-### CI
-
-- Icon generators are excluded from the mobile runtime diff, so a phone icon change is not treated as a new native runtime.
-
-## [0.77.0-alpha.3] - 2026-11-05
-
-### Fixed
-
-- The appearance popover matches the usage panel's width.
-- Switching Grok and Antigravity on an empty draft clears the previous agent's context usage and thread, so the context ring does not carry over.
-- Antigravity usage read from its database counts uncached input once across a multi-step turn. A one-time repair corrects historical input totals that had included cache reads.
-- An Antigravity MCP result stays on its tool row when the stored step index moves.
-- The phone shows the Antigravity icon and groups usage windows by model family. An ACP session keeps its own model. MCP output is kept across thinking updates.
-
-### Tests
-
-- The desktop gateway watch test continues when the filesystem stays quiet, instead of waiting out the timeout.
-
-### CI
-
-- Desktop tests on CI use three workers.
-
-## [0.77.0-alpha.2] - 2026-11-05
-
-### Fixed
-
-- Codex tasks on remote nodes keep running past five minutes, including long tool calls and automatic context compaction, without false timeout or compression failures.
-- A Codex question on a remote node can be answered or dismissed. The reply is stored after the node accepts it, and it is replayed after a retry or a restart.
-- Deferred reasoning collapses when thinking finishes. Opening it by hand after that still stays open.
-- A remote Codex voice call keeps its connection port, so the node that owns the session can open it.
-- Antigravity file writes stay on the approved card and keep the diff.
-- A CLI-only install can load session archive handlers. The TOON package is declared on the CLI.
-
-### Tests
-
-- Desktop integration servers take an ephemeral port, and the slow suites advance a fake clock instead of sleeping.
-
-## [0.77.0-alpha.1] - 2026-11-05
-
-### Added
-
-- The sidebar usage gauge is a multi-account subscription hub showing billing cycles, reset dates, and quota status across connected providers.
-- A markdown table can be transposed so each record reads down one column. Header marks stay on the cells that had them, and the original first column stays body text. Original Layout restores the table.
-- Antigravity accepts Steer Now and Steer Soon during a turn. Steer Now cancels the live turn and sends the queued message. Steer Soon injects it at the next safe point and leaves the tool that is already running. A cancelled turn does not show "Trajectory was cancelled."
-
-### Fixed
-
-- Antigravity and ACP AskUserQuestion interactions render as interactive question cards in the chat transcript.
-- A running Grok background bash task remains visible in the status bar and holds the session active until finished.
-- Adding a project grants Grok folder trust without a dialog. Project rules, MCP, hooks, and skills load.
-- The phone can select Antigravity. Its permission modes, models, and slash commands stay that agent's. Enabling it in desktop settings reloads the agent list and its models.
-- A finished Antigravity tool call shows the MCP result instead of the preview summary. A standard text envelope unwraps, and output that was spilled to a file is read back. `widget_show` keeps the arguments it was given.
-- Antigravity usage counts newly uploaded input and leaves cache reads out. An empty reasoning block is removed.
-- Switching to an ACP harness clears an effort level that harness does not offer. A queued message leaves the queue when Antigravity starts it.
-
-## [0.77.0-alpha] - 2026-11-04
-
-### Added
-
-- Antigravity is its own ACP harness. Enabling it downloads that runtime, and the account is separate from Grok.
-- The Grok usage meter shows the login email.
-- Streamed markdown and reasoning fade each new commit in over 120ms. Code fences and finished history stay instant, and reduced motion disables the fade.
-- One desktop process per userData profile, so a second Windows shortcut does not claim the same remote session. A named instance and a side-by-side alpha still start.
-
-### Fixed
-
-- The appearance popover aligns to the sidebar's left edge.
-- The worktree popover stays above the chip and springs to the destination height, including the carry-local-changes row.
-- A remote Codex voice call is placed by the node that owns the session.
-- Session rename, tag, and cleanup run on the owning node. A delete still waits on the confirm card, and a reconnect restores that card.
-- A phone learns when its session control is revoked, and the next send asks for control again.
-- A collapsed widget stays folded when the transcript unloads it.
-- A remote draft stays hidden once the node assigns the session id.
-
-### CI
-
-- The OTA guard reads the published native tag when a runner cannot fetch dl.super-one.dev, and treats an unchanged local APK as a shipped runtime.
 
 ## [0.76.0] - 2026-11-03
 

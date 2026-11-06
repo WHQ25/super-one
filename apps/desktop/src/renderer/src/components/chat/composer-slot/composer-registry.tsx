@@ -72,7 +72,7 @@ function OpenedComposer({ entry, Component }: { entry: ComposerHandle; Component
   const appConsent = useHasMcpAppConsent(entry.target.sessionId)
   const active = top?.key === entry.key && available && !needsDecision && !appConsent
   return (
-    <div inert={!active} data-opened-composer={entry.id} className="flex min-h-0 flex-col overflow-y-auto" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
+    <div inert={!active} data-opened-composer={entry.id} data-composer-popup="" className="flex min-h-0 flex-col overflow-y-auto" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
       <Component
         instanceId={entry.key}
         lifetime={entry.lifetime}

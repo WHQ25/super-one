@@ -27,7 +27,7 @@ export function InputRequestComposer({ request }: { request?: PermissionRequest 
   }, [chatRootRef, request?.requestId, active])
   if (!request) return null
   return (
-    <div ref={rootRef} inert={!active} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+    <div ref={rootRef} inert={!active} data-composer-popup="" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
       <InputRequestPrompt request={request} active={active} />
     </div>
   )

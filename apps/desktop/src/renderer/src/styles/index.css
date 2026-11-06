@@ -341,6 +341,52 @@ html[data-platform="win32"].liquid-glass.dark [data-sidebar-inner] > *,
   background-color: transparent;
 }
 
+/* The composer stage paints bg-card so a taller overlay hides the transcript
+   on an opaque pane. Dark glass makes --card translucent, and the chat pane
+   already paints it once. A second layer compounds and the composer reads
+   darker than the pane. Let the pane carry the color.
+   The stage's top gap (3 spacing units, bg-clip-content) stays clear above
+   the text composer, so the transcript shows through it. Only the overhang
+   below that gap is clipped, or a grown composer shows the messages through
+   its body. A question or permission card fills all but the focus ring's
+   share of the gap; clip that covered strip too, or glass shows the
+   transcript through the top of the card. */
+.liquid-glass [data-composer-stage] {
+  background-color: transparent;
+}
+
+/* The lip lives on the chat root: the transcript frame is a sibling of the
+   stage, so a variable set on the stage never reaches the clip. 4px is the
+   ring clearance kept in the popup rule below. */
+[data-chat-root]:has([data-composer-popup]) {
+  --composer-lip: calc(var(--spacing) * 3 - 4px);
+}
+
+.liquid-glass [data-transcript-frame] {
+  clip-path: inset(0 0 calc(var(--composer-overhang, 0px) + var(--composer-lip, 0px)) 0);
+}
+
+/* Question, permission and other scrolling popups would clip the stage's clear
+   top gap, and a focused card's ring with it. Draw the scroller up into that
+   gap. Keep only the ring's clearance (the focus shadow is 3px): padding the
+   full gap back in leaves a pane-colored strip above the card. Keep the
+   negative margin in step with pt-3. */
+[data-composer-stage] [data-composer-popup] {
+  margin-top: calc(var(--spacing) * -3);
+  padding-top: 4px;
+}
+
+/* The global :focus-visible ring is a 3px box-shadow. On the question card it
+   sits in the clearance above the border and reads as a bar; the decision and
+   consent sinks are full-width focus rests, so the same ring reads as a stripe
+   across the card. A pointer click leaves :focus-visible and the bar vanishes.
+   These already draw their own border. outline-none does not clear the shadow. */
+[data-ask-user-question]:focus-visible,
+[data-decision-focus]:focus-visible,
+[data-mcp-app-consent]:focus-visible {
+  box-shadow: none;
+}
+
 /* Dark glass leaves --sidebar transparent because macOS dark vibrancy is itself
    a dark frost. Windows acrylic is not: over an ordinary wallpaper it reads as
    mid-grey, which drops the sidebar's light, partly transparent icons and labels

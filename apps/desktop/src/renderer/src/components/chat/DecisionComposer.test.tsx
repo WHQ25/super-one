@@ -28,6 +28,8 @@ describe('DecisionComposer', () => {
     rerender(<DecisionComposer />)
     expect(screen.getByText('Question q1')).toBeInTheDocument()
     expect(container.textContent).not.toMatch(/\d\s*\/\s*\d/)
+    expect(screen.getByTestId('decision-composer').firstElementChild).toHaveAttribute('data-composer-popup')
+    expect(screen.getByTestId('decision-composer')).not.toHaveClass('overflow-hidden')
   })
 
   it('lets Enter through when a pending decision is already at rest', () => {

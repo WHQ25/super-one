@@ -169,7 +169,14 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
         style={{ ...(floor === undefined ? {} : { minHeight: floor }), ...(heightCap === undefined ? {} : { maxHeight: heightCap }) }}
         className={cn(
           // Its own capped height controls motion and hit testing, not layout.
-          'absolute inset-x-0 bottom-0 flex flex-col bg-background pointer-events-auto',
+          // Opaque panes need the chat card here so a taller composer hides the
+          // transcript. Liquid glass clears it in index.css: the pane already
+          // paints that translucent card, and a second layer compounds.
+          // pt-3 is the gap above every composer. It is inside the measured stage,
+          // so the slot grows with it instead of covering the transcript.
+          // bg-clip-content leaves that gap unpainted so the transcript fade can
+          // run through it and meet the composer.
+          'absolute inset-x-0 bottom-0 flex flex-col bg-card bg-clip-content pt-3 pointer-events-auto',
           heightCap !== undefined && 'overflow-hidden',
           phase === 'leaving' && 'animate-[composer-drop_200ms_ease-in_forwards]',
           phase === 'entering' && 'animate-[composer-rise_240ms_ease-out]',

@@ -39,8 +39,10 @@ export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) 
   if (!current) return null
 
   return (
-    <div ref={containerRef} inert={stale} tabIndex={-1} data-decision-focus="" data-testid="decision-composer" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
-      <div key={requestKey} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+    <div ref={containerRef} inert={stale} tabIndex={-1} data-decision-focus="" data-testid="decision-composer" className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
+      {/* data-composer-popup reaches into the stage's clear top gap and keeps
+          only the focus ring's clearance, so the card covers that gap. */}
+      <div key={requestKey} data-composer-popup="" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {current.kind === 'permission' ? (
           <PermissionPrompt request={current.request} />
         ) : (

@@ -592,10 +592,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     <WorkflowNavigationContext.Provider value={workflowNav}>
     <SubagentNavigationContext.Provider value={subagentNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
+    {/* overflow-clip, never hidden: an incoming composer rises from below the
+        slot, and the base composer restores the caret on mount. Focus and
+        ProseMirror's scrollIntoView scroll every overflow-hidden ancestor to
+        reveal it, so the pane shifted up with history in it, then crept back as
+        the rise shrank the overflow. A clip is not scrollable and keeps the
+        translated stage out of the pane's scrollable overflow. */}
     <div
       ref={containerRef}
       data-chat-root=""
-      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col"
+      className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-clip"
       style={densityStyle}
     >
       <ChatRootContext.Provider value={containerRef}>
@@ -626,11 +632,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       ) : (
         <>
           {/* The fade belongs to arriving at a different session. Switching between
-              the voice timeline and the backing thread keeps the frame. */}
+              the voice timeline and the backing thread keeps the frame.
+              -mb-3 tucks this frame under the composer's top gap so the bottom
+              fade meets the input. The stage leaves that gap unpainted, and
+              glass keeps it clear above the text composer. Glass clips the
+              overhang, plus the part of the gap a question or permission card
+              fills. */}
           <div
             key={`transcript:${displayedSessionId ?? 'default'}`}
             data-transcript-frame=""
-            className="flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_150ms_ease-out]"
+            className="flex min-h-0 min-w-0 flex-1 flex-col -mb-3 animate-[fade-in_150ms_ease-out]"
           >
             {showRealtime ? (
               <CodexRealtimeTranscript

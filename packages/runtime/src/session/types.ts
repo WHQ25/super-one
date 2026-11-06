@@ -327,7 +327,7 @@ export type TurnRunner = ((input: {
   onInputAccepted?: () => void
   /** Recheck admission immediately before handing input to the SDK. */
   beforeInput?: () => void
-  /** Explicit Claude steering from the host-owned composer queue. */
+  /** Explicit queue promotion; Claude accepts both priorities, Codex only now. */
   steerPriority?: 'now' | 'next'
   onDelta: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void

@@ -64,6 +64,48 @@ const textOf = (message: { content: Array<{ type: string; text?: string }> }) =>
   message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 
 describe('SessionReadModel', () => {
+  it('consumes an optimistic queue card when its active turn ended before admission', async () => {
+    const node = boot(dbPath(), async input => { input.onInputAccepted?.(); return { finalText: 'done' } })
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'codex' })
+    await node.runtime.send({ sessionId: session.sessionId, text: 'late', clientMessageId: 'late', priority: 'next', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    const events = node.events.listForSession(session.sessionId, Number.MAX_SAFE_INTEGER)
+    expect(events.some(event => (event.payload as { event?: AgentEvent }).event?.type === 'queued_message_consumed')).toBe(true)
+    expect(node.runtime.load({ sessionId: session.sessionId }).state.queuedMessages).toEqual([])
+    await node.runtime.dispose()
+  })
+
+  it.each(['claude', 'codex', 'acp', 'opencode'] as const)('keeps %s queued input editable and out of history until its turn starts', async harnessId => {
+    let release!: () => void
+    const hold = new Promise<void>(resolve => { release = resolve })
+    const inputs: string[] = []
+    const node = boot(dbPath(), async input => {
+      inputs.push(input.text)
+      input.onInputAccepted?.()
+      await hold
+      return { finalText: input.text }
+    })
+    const session = node.runtime.create({ projectId: 'p', harnessId })
+    const send = (text: string) => node.runtime.send({ sessionId: session.sessionId,
+      text, clientMessageId: text, priority: 'next', client, ...lease })
+    try {
+      expect(node.runtime.servedOperations.has('session.dequeue')).toBe(true)
+      await send('first'); await send('second'); await send('withdraw')
+      const queued = node.runtime.load({ sessionId: session.sessionId })
+      expect(inputs).toEqual(['first'])
+      if (harnessId !== 'opencode') expect(queued.state.runtimeCapabilities).toMatchObject({ harnessId, supportsQueuedSteer: harnessId !== 'acp' })
+      expect(queued.messages.map(row => row.id)).toEqual(['first'])
+      expect((queued.state.queuedMessages as Array<{ id: string }>).map(row => row.id)).toEqual(['second', 'withdraw'])
+      expect(await node.runtime.callOperation(session.sessionId, 'session.dequeue', { clientMessageId: 'withdraw' })).toEqual({ removed: true })
+      release()
+      await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+      expect(inputs).toEqual(['first', 'second'])
+      const consumed = node.runtime.load({ sessionId: session.sessionId })
+      expect(consumed.state.queuedMessages).toEqual([])
+      expect(consumed.messages.filter(row => row.role === 'user').map(row => row.id)).toEqual(['first', 'second'])
+    } finally { release(); await node.runtime.dispose() }
+  })
+
   it('retains an idle provider warning across restart without turning it into user input', async () => {
     const path = dbPath()
     let emitAmbient: ((event: AgentEvent) => void) | undefined

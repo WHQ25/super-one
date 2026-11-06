@@ -1172,6 +1172,28 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 })
 
 describe('sendMessageImpl: queued send (streaming)', () => {
+  it.each(['claude', 'codex', 'acp', 'opencode'] as const)('keeps a remote %s follow-up queued until the host consumes it', async provider => {
+    const path = 'remote:env-1:/work/app'
+    seedProject(path, 'live', { sessionProvider: provider, preferredProvider: provider,
+      hostSessionOwned: true, status: 'streaming', awaitingAssistantReply: false })
+    mockEnvGetSession.mockResolvedValueOnce({ sessionId: 'live', harnessId: provider, status: 'streaming' })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({ sessionId: 'live', harnessId: provider, status: 'streaming' })
+    await useChatStore.getState().sendMessage('follow-up')
+    const queued = getActiveSession(path).queuedMessages
+    expect(queued).toHaveLength(1)
+    expect(getActiveSession(path).messages).toEqual([])
+    expect(getActiveSession(path).awaitingAssistantReply).toBe(false)
+    expect(sentTurn()).toMatchObject({ priority: 'next' })
+    const dispatch = (event: AgentEvent) => useChatStore.getState().handleAgentEvent({ ...event, projectPath: path, sessionId: 'live' })
+    dispatch({ type: 'queued_messages_changed', messages: queued })
+    expect(getActiveSession(path).messages).toEqual([])
+    dispatch({ type: 'queued_message_consumed', clientMessageId: queued[0].id })
+    dispatch({ type: 'user_message_appended', message: queued[0] })
+    expect(getActiveSession(path).queuedMessages).toEqual([])
+    expect(getActiveSession(path).messages.map(message => message.id)).toEqual([queued[0].id])
+    expect(getActiveSession(path).awaitingAssistantReply).toBe(true)
+  })
+
   it('moves a queued send that failed into the transcript with its failure', async () => {
     seedProject('/proj', 'sid-1', {
       status: 'streaming',

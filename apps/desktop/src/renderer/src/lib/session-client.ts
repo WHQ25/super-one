@@ -36,7 +36,7 @@ export function hostPathForProjectKey(projectKey: string): string {
 
 /**
  * Whether the session's host takes this desktop's own choices: the session id
- * a draft keeps, queued turns, the harness pickers (Codex thread and tier,
+ * a draft keeps, the harness pickers (Codex thread and tier,
  * Cursor parameters), widget answers, and the desktop
  * settings a node takes per turn. This desktop's host does; a node refuses
  * them (`unsupported`).

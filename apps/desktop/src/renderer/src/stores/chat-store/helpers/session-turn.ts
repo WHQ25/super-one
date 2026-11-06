@@ -341,7 +341,7 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
     ...(turn.userMessageContent ? { userMessageContent: turn.userMessageContent } : {}),
     ...(turn.contexts ? { contexts: turn.contexts } : {}),
     ...(turn.userSelections?.length ? { userSelections: turn.userSelections } : {}),
-    ...(turn.queued && (desktop || nativeQueue(currentSession)) ? { priority: 'next' as const } : {}),
+    ...(turn.queued ? { priority: 'next' as const } : {}),
     ...(desktop ? {
       ...(turn.inputRequest ? { inputRequest: turn.inputRequest } : {}),
       ...fields.desktop,
@@ -353,15 +353,6 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
 export function scheduledTurnOptions(state: ChatStore, projectPath: string, sessionId: string): ScheduledSendRemoteTurn {
   const { sessionId: _sid, projectPath: _key, text: _text, clientMessageId: _id, ...turn } = sessionTurnRequest(state, projectPath, sessionId, { text: '', clientMessageId: '' })
   return turn as ScheduledSendRemoteTurn
-}
-
-/** Whether a send to this session waits behind the turn it is running. */
-function nativeQueue(session?: Pick<PerSessionState, 'runtimeCapabilities'>): boolean {
-  return session?.runtimeCapabilities?.supportsQueuedSteer === true
-}
-
-export function queuesBehindTurn(projectPath: string, queued: boolean, session?: Pick<PerSessionState, 'runtimeCapabilities'>): boolean {
-  return queued && (hostTakesDesktopChoices(projectPath) || nativeQueue(session))
 }
 
 /**

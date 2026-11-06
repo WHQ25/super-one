@@ -172,10 +172,22 @@ const msg = (id: string, text: string, status: 'streaming' | 'complete' = 'compl
   ({ id, role: 'assistant' as const, status, content: [{ type: 'text' as const, text }], createdAt: '', providerId: 'claude' })
 
 describe('hydrateRemoteSession', () => {
+  it('restores the host queue and its runtime controls when adopting a running session', async () => {
+    getSession.mockResolvedValueOnce({ sessionId: 'queued', harnessId: 'codex', status: 'streaming' })
+    const queued = { ...msg('q1', 'later'), role: 'user' }
+    const runtimeCapabilities = { harnessId: 'codex', supportsQueuedSteer: true, supportsQueuedSteerSoon: false }
+    openRemoteSession.mockResolvedValueOnce({ sessionId: 'queued', messages: [], state: {
+      status: 'streaming', queuedMessages: [queued], runtimeCapabilities,
+    }, before: null, cursor: { sequence: '1', epoch: 'e', version: 1 } })
+    const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'queued', null, { adoptSession: true })
+    expect(hydrated.queuedMessages).toEqual([queued])
+    expect(hydrated.runtimeCapabilities).toEqual(runtimeCapabilities)
+  })
+
   it("replaces the chat's messages and derived state with the node snapshot, and keeps the renderer's own", async () => {
     getSession.mockResolvedValueOnce({ sessionId: 's', harnessId: 'claude', status: 'idle', transcript: [], title: 'Node title', permissionMode: 'auto' })
     openRemoteSession.mockResolvedValueOnce({ sessionId: 's', messages: [msg('a1', 'Hello', 'streaming')], before: null, cursor: { sequence: '1', epoch: 'e', version: 4 },
-      state: { status: 'streaming', awaitingAssistantReply: true, lastAssistantMessageId: 'a1', permissionMode: 'default', queuedMessages: ['node'] } })
+      state: { status: 'streaming', awaitingAssistantReply: true, lastAssistantMessageId: 'a1', permissionMode: 'default', queuedMessages: [] } })
     const previous = { messages: [msg('a1', 'Hello world'), msg('a2', 'stale')], status: 'idle', permissionMode: 'plan', queuedMessages: [], draftText: 'typed' }
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 's', previous as never)
     expect(hydrated.messages).toEqual([msg('a1', 'Hello', 'streaming')])
@@ -302,8 +314,20 @@ describe('pageRemoteTranscript', () => {
 })
 
 describe('keepRendererOwnedState', () => {
+  it('uses the host queue after reconnect and preserves local attachments for matching ids', () => {
+    const local = { ...msg('q1', 'local image'), role: 'user', attachments: [{ base64: 'full-image' }] }
+    const stale = { ...msg('stale', 'already consumed'), role: 'user' }
+    const previous = { queuedMessages: [stale, local], messages: [] }
+    const host = { queuedMessages: [{ ...local, attachments: [] }, { ...msg('q2', 'from phone'), role: 'user' }], messages: [] }
+    const applied = keepRendererOwnedState(previous as never, host as never, previous as never)
+    expect(applied.queuedMessages.map(message => message.id)).toEqual(['q1', 'q2'])
+    expect(applied.queuedMessages[0]).toBe(local)
+  })
+
   it("keeps the composer typed while the snapshot loaded", () => {
-    const applied = keepRendererOwnedState({ draftText: 'typed', queuedMessages: ['q'], messages: [] } as never, { draftText: '', queuedMessages: [], messages: ['node'] } as never)
+    const previous = { queuedMessages: [] }
+    const current = { draftText: 'typed', queuedMessages: ['q'], messages: [] }
+    const applied = keepRendererOwnedState(current as never, { draftText: '', queuedMessages: [], messages: ['node'] } as never, previous as never)
     expect(applied).toMatchObject({ draftText: 'typed', queuedMessages: ['q'], messages: ['node'] })
   })
 

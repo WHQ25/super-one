@@ -420,7 +420,10 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           expectedTurnId: live.activeTurnId,
           skipThreadSetup: true,
           signal: input.signal,
-          onInputAccepted: input.onInputAccepted,
+          onInputAccepted: () => {
+            input.beforeInput?.()
+            input.onInputAccepted?.()
+          },
         })
         return {
           finalText: result.finalText,

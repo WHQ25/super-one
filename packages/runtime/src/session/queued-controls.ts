@@ -7,7 +7,7 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
   admitting: Set<string>
   runner: TurnRunner
   assertControl(): void
-  promoteClaude?(turn: TurnOpts, priority: 'now' | 'next'): Promise<void>
+  promoteTurn?(turn: TurnOpts, priority: 'now' | 'next'): Promise<void>
   restored?(queue: TurnOpts[]): void
   settled?(): void
   consumed(turn: TurnOpts): void
@@ -28,16 +28,18 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
     deps.queue.splice(index, 1); deps.dequeued(turn)
     return { removed: true }
   }
-  if (deps.session.harnessId === 'claude' && deps.promoteClaude) {
+  if ((deps.session.harnessId === 'claude' || deps.session.harnessId === 'codex') && deps.promoteTurn) {
     const priority = input.priority ?? 'now'
     if (priority !== 'now' && priority !== 'next')
-      throw Object.assign(new Error('Invalid Claude steer priority'), { code: 'invalid_argument' })
-    if (deps.session.status !== 'streaming') throw new Error('Queued message can only steer an active Claude turn')
+      throw Object.assign(new Error('Invalid steer priority'), { code: 'invalid_argument' })
+    if (deps.session.harnessId === 'codex' && priority !== 'now')
+      throw Object.assign(new Error('Codex only supports immediate steering'), { code: 'unsupported' })
+    if (deps.session.status !== 'streaming') throw new Error('Queued message can only steer an active turn')
     if (deps.admitting.has(deps.session.sessionId)) throw new Error('Another queued input is being submitted')
     deps.admitting.add(deps.session.sessionId)
     deps.queue.splice(index, 1)
     try {
-      await deps.promoteClaude(turn, priority)
+      await deps.promoteTurn(turn, priority)
       return { ok: true }
     } catch (error) {
       if (!deps.session.closed && !['interrupted', 'error', 'ended'].includes(deps.session.status)) {
@@ -75,5 +77,8 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
       else deps.abandoned(turn)
     }
     throw error
-  } finally { deps.admitting.delete(deps.session.sessionId) }
+  } finally {
+    deps.admitting.delete(deps.session.sessionId)
+    deps.settled?.()
+  }
 }

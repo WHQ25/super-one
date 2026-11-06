@@ -268,6 +268,9 @@ function reduceEvent(
       return patch
     }
 
+    case 'session_capabilities':
+      return { runtimeCapabilities: event.capabilities }
+
     case 'session_agents': {
       // The project's own list is authoritative: a selection it lacks no longer exists.
       const known = session.openCodeAgentId === null || event.agents.some((agent) => agent.id === session.openCodeAgentId)

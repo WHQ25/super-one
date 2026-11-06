@@ -60,7 +60,7 @@ export async function resyncRemoteSession(
       setTranscriptFlag(projectPath, sessionId, 'transcriptResyncing', false, set)
       return
     }
-    patchRemoteSession(projectPath, sessionId, (current) => keepRendererOwnedState(current, hydrated), set)
+    patchRemoteSession(projectPath, sessionId, (current) => keepRendererOwnedState(current, hydrated, previous), set)
   } catch (error) {
     setTranscriptFlag(projectPath, sessionId, 'transcriptResyncing', false, set)
     throw error

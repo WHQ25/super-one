@@ -104,6 +104,7 @@ export function remoteTranscriptEdges(
 /** The fields of a node snapshot's state its event reducer derives; the rest stay the renderer's. */
 const SNAPSHOT_STATE_KEYS = [
   'status', 'awaitingAssistantReply', 'lastAssistantMessageId',
+  'runtimeCapabilities',
   'pendingPermissions', 'pendingQuestion', 'pendingAsyncQuestions', 'pendingPlanApproval',
   'todos', 'showTodos', 'taskProgress', 'totalCostUsd', 'contextTokens', 'contextWindow',
 ] as const satisfies readonly (keyof PerSessionState)[]
@@ -189,12 +190,14 @@ export async function hydrateRemoteSession(
   const page = withCodexContents(loaded.messages)
   const first = loaded.before == null ? -1 : hydrated.messages.findIndex((message) => message.id === page[0]?.id)
   const messages = first > 0 ? [...hydrated.messages.slice(0, first), ...page] : page
+  const localQueue = new Map((hydrated.queuedMessages ?? []).map(message => [message.id, message]))
   return {
     hydrated: {
       ...hydrated,
       ...derived,
       ...catalog,
       messages,
+      queuedMessages: state.queuedMessages?.map(message => localQueue.get(message.id) ?? message) ?? hydrated.queuedMessages,
       _historyHydrated: true,
       transcriptWindow: remoteTranscriptEdges(loaded),
       transcriptResyncing: false,
@@ -227,10 +230,11 @@ export async function pageRemoteTranscript(
   return { messages: withCodexContents(loaded.messages), transcriptWindow: remoteTranscriptEdges(loaded) }
 }
 
-/** A hydrated session with the composer and queue the renderer owns kept from `current`. */
+/** Keep the composer and queue changes made while the host snapshot was loading. */
 export function keepRendererOwnedState(
   current: PerSessionState | null | undefined,
   hydrated: PerSessionState,
+  atRequest?: PerSessionState | null,
 ): PerSessionState {
   if (!current) return hydrated
   // An empty draft's harness click can land while this read is in flight.
@@ -256,7 +260,9 @@ export function keepRendererOwnedState(
     mentions: current.mentions,
     browserAnnotations: current.browserAnnotations,
     replyComments: current.replyComments,
-    queuedMessages: current.queuedMessages,
+    queuedMessages: atRequest && current.queuedMessages !== atRequest.queuedMessages
+      ? current.queuedMessages
+      : hydrated.queuedMessages.map(message => current.queuedMessages.find(local => local.id === message.id) ?? message),
     // Both halves of the same fact: the ghost text and the alternatives beside it.
     // Carrying only one leaves the composer showing half a suggestion set.
     promptSuggestion: current.promptSuggestion,

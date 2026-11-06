@@ -16,7 +16,7 @@ import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import { SESSION_SEND_SELECTION_KEYS, type SessionSendSelections } from '@superone/shared/environment/session-send'
-import { isCodexPermissionPreset, type AgentEvent, type ChatMessage, type ChatMessageSource } from '@superone/shared/agent-types'
+import { isCodexPermissionPreset, type AgentEvent, type ChatMessage, type ChatMessageSource, type HarnessId } from '@superone/shared/agent-types'
 import { isAgentOutputEvent } from '@superone/shared/send-failure'
 import { isVoiceSignalingEvent } from '@superone/shared/realtime-voice'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
@@ -1192,7 +1192,12 @@ export class SessionRuntime {
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
-    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer')) && !(session.harnessId === 'claude' && (key === 'priority' || key === 'steer')) && !(session.harnessId === 'codex' && key === 'permissionPreset'))) {
+    const queuePriority = input.priority === 'next' || input.priority === 'later'
+    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined
+      && !(key === 'priority' && queuePriority)
+      && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer'))
+      && !(session.harnessId === 'claude' && (key === 'priority' || key === 'steer'))
+      && !(session.harnessId === 'codex' && key === 'permissionPreset'))) {
       throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
     }
     if (session.harnessId === 'codex' && input.permissionPreset !== undefined) {
@@ -1226,7 +1231,10 @@ export class SessionRuntime {
 
     const controller = input.collaboration ? this.controllerLabel?.(input.client.clientSessionId) : null
     const turnOpts: TurnOpts = {
-      parkInComposer: input.source !== 'task-notification' && session.status === 'streaming' && (session.harnessId === 'claude' || (session.harnessId === 'opencode' && input.priority !== undefined)),
+      // Explicit queue priority must also be consumed if the live turn ended
+      // while the request was in transit: the sender already staged its card.
+      parkInComposer: input.source !== 'task-notification' && (queuePriority
+        || (session.status === 'streaming' && session.harnessId !== 'cursor' && (!turnKind || turnKind === 'run'))),
       text: input.text,
       clientMessageId: input.clientMessageId,
       ...parseMessageDisplay(input),
@@ -1509,10 +1517,11 @@ export class SessionRuntime {
     if (method === 'session.steer' || method === 'session.dequeue') return operateNodeQueue(method, input, {
       session, queue: this.turnQueues.get(sessionId) ?? [], admitting: this.queueAdmissions,
       runner: this.turnRunner, assertControl,
-      promoteClaude: async (turn, priority) => {
+      promoteTurn: async (turn, priority) => {
         const admission = new InputAdmission({ beforeInput: assertControl,
           onInputAccepted: () => this.consumeComposerQueued(session, turn) })
-        this.beginTurn(session, { ...turn, steerPriority: priority, inputAdmission: admission })
+        this.beginTurn(session, { ...turn, steerPriority: priority, inputAdmission: admission,
+          ...(session.harnessId === 'codex' ? { turnKind: 'steer' } : {}) })
         await admission.promise
       },
       restored: queue => {
@@ -1545,7 +1554,7 @@ export class SessionRuntime {
       onPermission: (interaction, signal) => this.waitForPermissionDecision(session, interaction, signal),
     })
   }
-  get servedOperations(): ReadonlySet<string> { return new Set(['session.answerAsyncQuestion', ...(this.turnRunner.servedOperations ?? [])]) }
+  get servedOperations(): ReadonlySet<string> { return new Set(['session.answerAsyncQuestion', 'session.dequeue', 'session.steer', ...(this.turnRunner.servedOperations ?? [])]) }
 
   /** Live Codex app-server for a voice call on this node. */
   codexVoice(): TurnRunner['codexVoice'] {
@@ -1639,6 +1648,16 @@ export class SessionRuntime {
     this.persist(session)
     // Only emit turnStarted for the first concurrent turn (avoid spam on inject).
     if (prev === 0) {
+      // Host-owned controls are independent of provider-native catalog support.
+      // OpenCode reports its negotiated V1/V2 controls in session_agents.
+      if (session.harnessId !== 'opencode') this.appendAgentEvent(sid, {
+        type: 'session_capabilities',
+        capabilities: {
+          harnessId: session.harnessId as HarnessId,
+          supportsQueuedSteer: session.harnessId === 'claude' || session.harnessId === 'codex',
+          supportsQueuedSteerSoon: session.harnessId === 'claude',
+        },
+      })
       this.events.appendSession({
         sessionId: sid,
         eventType: SESSION_DURABLE_EVENT.turnStarted,
@@ -1952,7 +1971,7 @@ export class SessionRuntime {
       if (
         !session.closed &&
         remainingAfter <= 0 &&
-        !(session.harnessId === 'claude' && this.queueAdmissions.has(sid)) &&
+        !this.queueAdmissions.has(sid) &&
         (session.status === 'idle' || session.status === 'streaming')
       ) {
         const q = this.turnQueues.get(sid)

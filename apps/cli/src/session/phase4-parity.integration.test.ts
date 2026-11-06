@@ -34,6 +34,43 @@ async function boot(opts?: { simulatedHarness?: boolean }) {
 }
 
 describe('Phase 4 harness parity + collaboration', () => {
+  it('exposes the same editable queue through node RPC for every queueing harness', async () => {
+    const nodeHome = mkdtempSync(join(tmpdir(), 'node-queue-parity-'))
+    dirs.push(nodeHome)
+    let release!: () => void
+    let hold = Promise.resolve()
+    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0,
+      simulatedHarness: true, turnRunner: async input => {
+        input.onInputAccepted?.()
+        await hold
+        return { finalText: input.text }
+      } })
+    runtimes.push(rt)
+    const client = await connectAuthedRpc(rt)
+    try {
+      const descriptor = await client.rpc('environment.descriptor') as { capabilities: { methods: string[] } }
+      expect(descriptor.capabilities.methods).toContain('session.dequeue')
+      const project = await client.rpc('project.open', { path: nodeHome }) as { projectId: string }
+      for (const harnessId of ['claude', 'codex', 'acp', 'opencode']) {
+        hold = new Promise<void>(resolve => { release = resolve })
+        const { sessionId } = await client.rpc('session.create', { projectId: project.projectId, harnessId }) as { sessionId: string }
+        const lease = await client.rpc('session.acquireControl', { sessionId, ttlMs: 30_000 }) as { leaseId: string; generation: string }
+        for (const text of ['first', 'next', 'withdraw']) await client.rpc('session.send', { sessionId, text,
+          clientMessageId: text, priority: 'next', ...lease })
+        const queued = await client.rpc('session.load', { sessionId }) as { messages: Array<{ id: string }>; state: { queuedMessages: Array<{ id: string }> } }
+        expect(queued.messages.map(message => message.id)).toEqual(['first'])
+        expect(queued.state.queuedMessages.map(message => message.id)).toEqual(['next', 'withdraw'])
+        expect(await client.rpc('session.dequeue', { sessionId, clientMessageId: 'withdraw', ...lease })).toEqual({ removed: true })
+        release()
+        for (let i = 0; i < 100 && rt.sessions.get(sessionId)?.status !== 'idle'; i++) await new Promise(resolve => setTimeout(resolve, 5))
+        expect(rt.sessions.get(sessionId)?.status).toBe('idle')
+        const done = await client.rpc('session.load', { sessionId }) as { messages: Array<{ id: string; role: string }>; state: { queuedMessages: unknown[] } }
+        expect(done.state.queuedMessages).toEqual([])
+        expect(done.messages.filter(message => message.role === 'user').map(message => message.id)).toEqual(['first', 'next'])
+      }
+    } finally { release?.(); client.close() }
+  })
+
   it('advertises every catalog harness and completes a simulated turn with each', async () => {
     const rt = await boot({ simulatedHarness: true })
     const client = await connectAuthedRpc(rt)

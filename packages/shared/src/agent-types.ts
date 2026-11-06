@@ -1,6 +1,6 @@
 import type { SlashCommandInfo } from './slash-command-types'
 import { WINDOW_LAYOUT_IPC_CHANNELS } from './window-layout'
-import type { SessionAgentsEvent } from './harness/session-catalog'
+import type { HarnessRuntimeCapabilities, SessionAgentsEvent } from './harness/session-catalog'
 // Unified message format used across IPC. Zero SDK imports.
 
 import type { UsageForecast } from './subscription-usage'
@@ -2390,6 +2390,8 @@ export type AgentEventBase =
    * is probed outside any project, for this session.
    */
   | SessionAgentsEvent
+  /** Host/runtime controls independent of the provider's agent catalog. */
+  | { type: 'session_capabilities'; capabilities: HarnessRuntimeCapabilities }
   /**
    * The session runtime's own slash commands after a change (a plugin reload, a
    * mod registering one). Replaces the harness-level list, probed outside any

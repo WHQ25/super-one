@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -146,6 +146,63 @@ export const RemoteChildActivity: Story = {
 export const NarrowCollapsedRemoteChildActivity: Story = {
   ...RemoteChildActivity,
   render: () => <RemoteChildPreview width={220} expanded={false} />,
+}
+
+/** Hold each network boundary so the formerly transient duplicate is reproducible. */
+function RemoteFirstSendPreview({ width = 280, fill = false }: { width?: number; fill?: boolean }) {
+  const [stage, setStage] = useState(0)
+  const title = 'Fix the remote sidebar'
+  useLayoutEffect(() => {
+    const previous = useChatStore.getState()
+    return () => { useChatStore.setState(previous) }
+  }, [])
+  useLayoutEffect(() => {
+    const project = createDefaultProjectState()
+    const sid = stage < 2 ? 'draft' : 'host'
+    project._activeSessionId = sid
+    project._sessions[sid] = {
+      ...createDefaultPerSessionState(), preferredProvider: 'claude',
+      _historyHydrated: stage >= 2, awaitingAssistantReply: stage < 3,
+      status: stage === 3 ? 'streaming' : 'idle',
+      messages: [{ id: 'user', providerId: stage < 3 ? 'local' : 'claude', role: 'user',
+        status: 'complete', createdAt: '', content: [{ type: 'text', text: title }] }],
+    }
+    useChatStore.setState({ activeProject: REMOTE_FOLDER, projectSessions: { [REMOTE_FOLDER]: project }, agentTitles: {} })
+  }, [stage])
+  return (
+    <div style={{ width }}>
+      <div className="mb-3 flex flex-wrap gap-2 text-xs">
+        <button className="rounded border px-2 py-1" onClick={() => setStage(1)}>Publish empty host row</button>
+        <button className="rounded border px-2 py-1" onClick={() => setStage(2)}>Finish session creation</button>
+        <button className="rounded border px-2 py-1" onClick={() => setStage(3)}>Start reply</button>
+      </div>
+      <div className="bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+        <ProjectSidebarRow {...callbacks}
+          folder={{ id: 'remote', name: 'Remote project', path: REMOTE_FOLDER, addedAt: '', lastOpened: '' }}
+          sessions={stage === 0 ? [] : [{ sessionId: 'host', title: stage < 3 ? 'New session' : title,
+            messageCount: stage < 3 ? 0 : 1, lastActiveAt: '', provider: 'claude' }]}
+          isExpanded sessionListLayout={fill ? 'fill' : 'cap'} />
+      </div>
+    </div>
+  )
+}
+
+export const RemoteFirstSend: Story = {
+  render: () => <RemoteFirstSendPreview />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    for (const action of ['Publish empty host row', 'Finish session creation', 'Start reply']) {
+      await userEvent.click(canvas.getByRole('button', { name: action }))
+      await expect(canvas.queryByText('New session')).not.toBeInTheDocument()
+      await expect(canvas.getByText('Fix the remote sidebar')).toBeInTheDocument()
+      await expect(canvasElement.querySelectorAll('.group\\/session')).toHaveLength(1)
+    }
+  },
+}
+
+export const NarrowFocusedRemoteFirstSend: Story = {
+  ...RemoteFirstSend,
+  render: () => <RemoteFirstSendPreview width={220} fill />,
 }
 
 export const SessionsOnly: Story = {

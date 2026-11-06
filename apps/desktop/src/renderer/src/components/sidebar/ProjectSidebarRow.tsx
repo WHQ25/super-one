@@ -20,7 +20,7 @@ import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { Automation, PinnedSessionEntry, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
-import { selectSessionTitle } from '@/lib/session-title'
+import { DEFAULT_SESSION_TITLE, selectSessionTitle } from '@/lib/session-title'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
@@ -420,7 +420,22 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
   const derived = useMemo(() => {
     const projectSession = useChatStore.getState().projectSessions[folder.path]
-    const dbVisibleSessions = listedSessions.filter((session) => isListedSession(session))
+    const dbVisibleSessions = listedSessions.filter((session) => {
+      if (!isListedSession(session)) return false
+      // A node publishes session.created before create returns (settings/cwd
+      // still take round trips). Until the draft adopts that id, listing the
+      // empty host row beside its optimistic first message invents a second chat.
+      // Keep meaningful rows, including voice, collaboration and scheduled work.
+      if (!parseRemoteProjectKey(folder.path) || session.messageCount > 0
+        || (session.title && session.title !== DEFAULT_SESSION_TITLE && session.title !== 'Untitled')
+        || session.parentSessionId || session.childCount || session.isPinned || session.providerSessionId
+        || armedSendFor(scheduledBySession, session.sessionId)
+        || session.sessionId === foregroundSessionId) return true
+      const live = projectSession?._sessions[session.sessionId]
+      const realtime = useCodexRealtimeViewStore.getState().sessions[session.sessionId]
+      return !!live?.messages.length || !!live?._title || !!realtime?.hasTimeline
+        || isLiveSession(live, projectSession?.unseenCompletedSessions.has(session.sessionId), !!realtime?.realtimeSessionId)
+    })
     const dbSessionById = new Map(listedSessions.map((session) => [session.sessionId, session]))
     const settledIds = new Set<string>()
     for (const session of settledSessions) {

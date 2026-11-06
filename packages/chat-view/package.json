@@ -45,6 +45,7 @@
     "./presenters/AgentProfileToolBlock": "./src/presenters/AgentProfileToolBlock.tsx",
     "./presenters/AutomationToolBlock": "./src/presenters/AutomationToolBlock.tsx",
     "./presenters/BashTerminalPresenter": "./src/presenters/BashTerminalPresenter.tsx",
+    "./presenters/bash-tool-display": "./src/presenters/bash-tool-display.ts",
     "./presenters/BrowserListDownloadsView": "./src/presenters/BrowserListDownloadsView.tsx",
     "./presenters/BrowserPageToolsBlock": "./src/presenters/BrowserPageTools.tsx",
     "./presenters/BrowserToolBlock": "./src/presenters/BrowserToolBlock.tsx",

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 import type { ClaudeQueryFn } from '@superone/claude'
 import { createCodexAgentEventMapper } from '@superone/codex'
@@ -138,15 +139,21 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     })
     await waitForIdle(runtime, session.sessionId)
 
-    const rawEvents = published.filter(
-      (event) => event.eventType === SESSION_DURABLE_EVENT.agentEvent,
-    )
-    expect(rawEvents).toHaveLength(4)
-    const first = rawEvents[0]?.payload as { event?: { messageId?: string; delta?: { type?: string } } }
-    expect(first.event).toMatchObject({
-      messageId: expect.any(String),
-      delta: { type: 'thinking' },
-    })
+    const agentEvents = published
+      .filter((event) => event.eventType === SESSION_DURABLE_EVENT.agentEvent)
+      .map((envelope) => (envelope.payload as { event: AgentEvent }).event)
+      // Turn startup also publishes host-owned capabilities, independent of the runner.
+      .filter((event) => event.type !== 'session_capabilities')
+    const messageId = runtime.get(session.sessionId)?.transcript.find(
+      (block) => block.role === 'assistant',
+    )?.id
+    expect(messageId).toEqual(expect.any(String))
+    expect(agentEvents).toEqual([
+      { type: 'content_delta', messageId, delta: { type: 'thinking', thinking: 'reasoning' } },
+      { type: 'prompt_suggestion', suggestion: 'continue' },
+      { type: 'message_complete', messageId, metadata: { costUsd: 0.2 } },
+      { type: 'status_change', status: 'idle' },
+    ])
 
     await runtime.dispose()
     db.close()

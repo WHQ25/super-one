@@ -148,7 +148,8 @@ describe('suggested tasks stay on their source execution environment', () => {
     const launched = await rpc.rpc('session.launchSuggestedTask', { sessionId, taskId, leaseId: retryLease.leaseId, generation: retryLease.generation, choice: { agentId: 'claude-base', settings: { model: 'claude-sonnet-5-5', fastMode: false } } }) as { sessionId: string }
     worktrees.push({ root, path: rt.sessions.get(launched.sessionId)!.cwd! })
     expect(findSuggestedTask(rt.sessions.messages(sessionId), taskId)?.state?.status).toBe('launched')
-  })
+    // Boot, a failed launch, and the retry exceed the 5s default on CI.
+  }, 20_000)
 
   it('keeps suggestions restricted to the main session on a node', async () => {
     const { rt, sessionId } = await boot()

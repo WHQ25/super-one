@@ -243,9 +243,11 @@ export const DraftsSection = memo(function DraftsSection({
   return (
     <>
       {slots.length > 0 && (
-        <SidebarSectionLabel section="drafts" count={slots.length} collapsed={collapsed} onToggle={toggleCollapsed}>
-          {label ?? t('sidebar.drafts.title')}
-        </SidebarSectionLabel>
+        <div className="pt-1">
+          <SidebarSectionLabel section="drafts" count={slots.length} collapsed={collapsed} onToggle={toggleCollapsed}>
+            {label ?? t('sidebar.drafts.title')}
+          </SidebarSectionLabel>
+        </div>
       )}
       <motion.div
         id={sidebarSectionPanelId('drafts')}

@@ -1457,10 +1457,10 @@
      "parentToolUseId": null,
      "toolFilePath": "hello_world.c",
      "toolLineDelta": {
-      "added": 8,
+      "added": 7,
       "removed": 0
      },
-     "toolDiff": "+#include <stdio.h>\n+\n+int main(int argc, char *argv[]) {\n+    const char *name = argc > 1 ? argv[1] : \"World\";\n+    printf(\"Hello, %s!\\n\", name);\n+    return 0;\n+}\n+"
+     "toolDiff": "+#include <stdio.h>\n+\n+int main(int argc, char *argv[]) {\n+    const char *name = argc > 1 ? argv[1] : \"World\";\n+    printf(\"Hello, %s!\\n\", name);\n+    return 0;\n+}"
     },
     "epoch": 1778885072306,
     "seq": 104,
@@ -1485,9 +1485,9 @@
        "destination": "session"
       }
      ],
-     "toolDiff": "+#include <stdio.h>\n+\n+int main(int argc, char *argv[]) {\n+    const char *name = argc > 1 ? argv[1] : \"World\";\n+    printf(\"Hello, %s!\\n\", name);\n+    return 0;\n+}\n+",
+     "toolDiff": "+#include <stdio.h>\n+\n+int main(int argc, char *argv[]) {\n+    const char *name = argc > 1 ? argv[1] : \"World\";\n+    printf(\"Hello, %s!\\n\", name);\n+    return 0;\n+}",
      "toolLineDelta": {
-      "added": 8,
+      "added": 7,
       "removed": 0
      }
     },

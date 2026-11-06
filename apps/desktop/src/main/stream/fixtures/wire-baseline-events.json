@@ -1337,7 +1337,7 @@
         "input": "{\"file_path\":\"/Users/wuhangqi25/.claude/plans/zazzy-tinkering-donut.md\"}",
         "parentToolUseId": null,
         "toolLineDelta": {
-          "added": 8,
+          "added": 7,
           "removed": 0
         },
         "remoteDetail": "[\"msg_1774128968977_qri0yn\",\"tool\",\"toolu_017kaTfjoXckcwtMNcVNpk6s\"]"
@@ -7087,7 +7087,7 @@
         "input": "{\"file_path\":\"/Users/wuhangqi25/Developer/Projects/test-super-one/hello_world.c\"}",
         "parentToolUseId": null,
         "toolLineDelta": {
-          "added": 8,
+          "added": 7,
           "removed": 0
         },
         "remoteDetail": "[\"msg_1778885174202_g4yy2q\",\"tool\",\"toolu_014UmHGACvgz6U2S9ujKbNzf\"]"
@@ -7131,9 +7131,9 @@
             "destination": "session"
           }
         ],
-        "toolDiff": "+#include <stdio.h>\n+\n+int main(int argc, char *argv[]) {\n+    const char *name = argc > 1 ? argv[1] : \"World\";\n+    printf(\"Hello, %s!\\n\", name);\n+    return 0;\n+}\n+",
+        "toolDiff": "+#include <stdio.h>\n+\n+int main(int argc, char *argv[]) {\n+    const char *name = argc > 1 ? argv[1] : \"World\";\n+    printf(\"Hello, %s!\\n\", name);\n+    return 0;\n+}",
         "toolLineDelta": {
-          "added": 8,
+          "added": 7,
           "removed": 0
         }
       },

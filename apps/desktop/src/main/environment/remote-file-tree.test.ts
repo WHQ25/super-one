@@ -277,6 +277,25 @@ describe('getRemoteGitInfo / isRepo / branches', () => {
     expect(await getRemoteGitIsRepo(host, 'remote:conn-1:/work/app')).toBe(true)
   })
 
+  it('reads worktree statistics under the owning project without registering another project', async () => {
+    const gitStatus = vi.fn().mockResolvedValue({
+      isRepo: true,
+      branch: 'task/review',
+      dirty: true,
+      porcelain: ' M a.ts\n?? b.ts\n',
+      insertions: 12,
+      deletions: 3,
+    })
+    const host = mockHost({ getGateway: () => ({ gitStatus }) })
+
+    expect(await getRemoteGitInfo(host, 'remote:conn-1:/work/task')).toEqual({
+      branch: 'task/review',
+      dirty: { files: 2, insertions: 12, deletions: 3 },
+    })
+    expect(gitStatus).toHaveBeenCalledWith('proj-1', { cwd: '/work/task' })
+    expect(host.openProject).not.toHaveBeenCalled()
+  })
+
   it('lists local branches at the host path', async () => {
     const gitBranches = vi.fn().mockResolvedValue({
       current: 'main',

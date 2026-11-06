@@ -157,27 +157,17 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
     if (info?.entries?.length) {
       const nonMain = info.entries.filter((e) => !e.isMain)
       const metas: Record<string, WtMeta> = {}
-      const remote = currentFolder ? parseRemoteProjectKey(currentFolder) : null
-      // Remote: do NOT getGitInfo(worktree host path) — that used to openProject each
-      // worktree path and leave ghost rows in project.list / ChatSuggestions.
-      if (remote) {
-        for (const e of nonMain) {
-          metas[e.path] = {
-            dirty: undefined,
-            shortHead: e.head ? e.head.slice(0, 7) : '',
-            isDetached: !e.branch,
-          }
+      await Promise.all(nonMain.map(async (e) => {
+        // Remote entries carry bare host paths. Route status to their node;
+        // getRemoteGitInfo reads them under the owning project without registering a project.
+        const gitPath = remoteActiveFileRoot(currentFolder, e.path)
+        const wtInfo = await window.app.getGitInfo(gitPath).catch(() => null)
+        metas[e.path] = {
+          dirty: knownDirty(wtInfo),
+          shortHead: e.head ? e.head.slice(0, 7) : '',
+          isDetached: !e.branch,
         }
-      } else {
-        await Promise.all(nonMain.map(async (e) => {
-          const wtInfo = await window.app.getGitInfo(e.path).catch(() => null)
-          metas[e.path] = {
-            dirty: knownDirty(wtInfo),
-            shortHead: e.head ? e.head.slice(0, 7) : '',
-            isDetached: !e.branch,
-          }
-        }))
-      }
+      }))
       setWtMetas(metas)
     } else {
       setWtMetas({})

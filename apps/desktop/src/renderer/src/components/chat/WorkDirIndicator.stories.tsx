@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { useEffect, useState } from 'react'
 import type { GitDirtyStatus, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
@@ -25,6 +26,7 @@ const ENTRIES: WorktreeInfo = {
 }
 
 let worktreeResult: WorktreeInfo = ENTRIES
+let remotePreview = false
 
 const DIRTY: Record<string, GitDirtyStatus | undefined> = {
   [WT('long')]: { files: 67, insertions: 1843, deletions: 212 },
@@ -37,9 +39,15 @@ mockIpc('app', 'getGitBranches', async () => ({
   local: ['main', 'develop', 'release/2.4'],
 }))
 mockIpc('app', 'getCheckedOutBranches', async () => ['main'])
-mockIpc('app', 'getGitInfo', async (path: unknown) => (
-  path === PROJECT ? { branch: 'main', dirty: { files: 2, insertions: 10, deletions: 1 } } : { branch: 'HEAD', dirty: DIRTY[path as string] }
-))
+mockIpc('app', 'getGitInfo', async (path: unknown) => {
+  const remote = parseRemoteProjectKey(path as string)
+  if (remotePreview && !remote) return { branch: null, error: 'Worktree status must be read on its node' }
+  const hostPath = remote?.path ?? path as string
+  if (hostPath === WT('unavailable')) throw new Error('Checkout unavailable')
+  return hostPath === PROJECT
+    ? { branch: 'main', dirty: { files: 2, insertions: 10, deletions: 1 } }
+    : { branch: 'HEAD', dirty: DIRTY[hostPath] }
+})
 
 function Preview({
   activePath = null,
@@ -50,6 +58,7 @@ function Preview({
   started = false,
   narrow = false,
   experiment = true,
+  remote = false,
   hostLabel = null,
   frameClass,
 }: {
@@ -62,30 +71,39 @@ function Preview({
   narrow?: boolean
   /** Remote-nodes experiment. Off shows the pre-branch worktree chip. */
   experiment?: boolean
+  remote?: boolean
   /** Environment name shown on the chip. Long names shrink before the branch. */
   hostLabel?: string | null
   frameClass?: string
 }) {
+  const projectPath = remote ? remoteProjectKey('office', PROJECT) : PROJECT
   const [ready, setReady] = useState(false)
   useEffect(() => {
     worktreeResult = empty
       ? { ...ENTRIES, entries: ENTRIES.entries.filter((entry) => entry.isMain) }
       : ENTRIES
+    remotePreview = remote
+    if (remote && !empty) worktreeResult = {
+      ...worktreeResult,
+      entries: [...worktreeResult.entries, {
+        path: WT('unavailable'), branch: 'task/unavailable', head: HEAD, isMain: false, isCurrent: false,
+      }],
+    }
     const prevApp = useAppStore.getState()
     const prevChat = useChatStore.getState()
-    useChatStore.getState().ensureSession(PROJECT)
-    useChatStore.setState({ activeProject: PROJECT })
+    useChatStore.getState().ensureSession(projectPath)
+    useChatStore.setState({ activeProject: projectPath })
     if (started) {
-      const sid = useChatStore.getState().projectSessions[PROJECT]?._activeSessionId
+      const sid = useChatStore.getState().projectSessions[projectPath]?._activeSessionId
       if (sid) {
         useChatStore.setState((state) => {
-          const project = state.projectSessions[PROJECT]
+          const project = state.projectSessions[projectPath]
           const session = project?._sessions[sid]
           if (!project || !session) return {}
           return {
             projectSessions: {
               ...state.projectSessions,
-              [PROJECT]: {
+              [projectPath]: {
                 ...project,
                 _sessions: {
                   ...project._sessions,
@@ -111,19 +129,19 @@ function Preview({
     }
     useAppStore.setState({
       experimentalRemoteNodesEnabled: experiment,
-      currentFolder: PROJECT,
+      currentFolder: projectPath,
       _worktrees: {
-        [PROJECT]: { pendingBaseBranch: pendingBase, pendingMode, pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
+        [projectPath]: { pendingBaseBranch: pendingBase, pendingMode, pendingBranchName: '', pendingCarryLocalChanges: false, activePath },
       },
     })
     const prevHosts = useMultiHostSidebarStore.getState().environments
-    if (hostLabel) {
+    if (hostLabel || remote) {
       useMultiHostSidebarStore.setState({
         environments: [{
-          environmentId: 'local',
-          connectionId: 'local',
-          label: hostLabel,
-          kind: 'local',
+          environmentId: remote ? 'office' : 'local',
+          connectionId: remote ? 'office' : 'local',
+          label: hostLabel ?? 'Office',
+          kind: remote ? 'cli-node' : 'local',
           connection: 'connected',
           projectsStatus: 'ready',
           projectsError: null,
@@ -133,6 +151,7 @@ function Preview({
     }
     setReady(true)
     return () => {
+      remotePreview = false
       useAppStore.setState({
         experimentalRemoteNodesEnabled: prevApp.experimentalRemoteNodesEnabled,
         currentFolder: prevApp.currentFolder,
@@ -141,7 +160,7 @@ function Preview({
       useChatStore.setState(prevChat)
       useMultiHostSidebarStore.setState({ environments: prevHosts })
     }
-  }, [activePath, empty, experiment, hostLabel, pendingBase, pendingMode, started])
+  }, [activePath, empty, experiment, hostLabel, pendingBase, pendingMode, projectPath, remote, started])
   if (!ready) return null
   return (
     <div className={frameClass ?? (narrow ? 'w-36 p-2 text-xs text-muted-foreground' : 'flex h-96 items-start p-2 text-xs text-muted-foreground')}>
@@ -179,6 +198,26 @@ export const CheckoutBranchesDark: Story = { play: openPopover, globals: { theme
 
 /** Worktree tab: existing worktrees, then create-from. Long branch wraps; clean rows read `clean`. */
 export const WorktreeList: Story = { play: openWorktreeTab }
+
+/** Remote rows use node-qualified paths; one failed checkout does not hide the others. */
+export const RemoteWorktreeList: Story = {
+  args: { remote: true },
+  play: async (context) => {
+    await openWorktreeTab(context)
+    const body = within(context.canvasElement.ownerDocument.body)
+    await waitFor(() => {
+      const dirty = within(body.getByRole('button', { name: /feat\/mobile-live-activity/ }))
+      expect(dirty.getByText('3 files')).toBeTruthy()
+      expect(dirty.getByText('+41')).toBeTruthy()
+      expect(body.getByRole('button', { name: /fix\/sidebar-hover/ })).toHaveTextContent('clean')
+      expect(body.getByRole('button', { name: /task\/unavailable/ })).not.toHaveTextContent(/clean|files/)
+    })
+  },
+}
+
+export const RemoteWorktreeListDark: Story = { ...RemoteWorktreeList, globals: { theme: 'dark' } }
+export const RemoteWorktreeListNarrow: Story = { ...RemoteWorktreeList, args: { remote: true, narrow: true } }
+export const RemoteWorktreeListClassic: Story = { args: { remote: true, experiment: false }, play: openPopover }
 
 /** Worktree tab with no linked worktrees yet. */
 export const EmptyWorktrees: Story = { args: { empty: true }, play: openWorktreeTab }

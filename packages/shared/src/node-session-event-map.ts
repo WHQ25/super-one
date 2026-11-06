@@ -137,7 +137,7 @@ function mapQuestionRequest(
       multiSelect: false,
     })
   }
-  return { requestId: interactionId, questions }
+  return { requestId: interactionId, lifetime: 'session', questions }
 }
 
 function mapPlanRequest(
@@ -162,6 +162,7 @@ function mapPlanRequest(
   }
   return {
     requestId: interactionId,
+    lifetime: 'session',
     planContent: planContent || 'Plan approval required',
     planFilePath: asString(payload.planFilePath) ?? asString(input.planFilePath) ?? '',
     allowedPrompts: Array.isArray(payload.allowedPrompts)
@@ -263,9 +264,9 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
     const payload = asRecord(envelope.payload)
     const out: AgentEvent[] = []
     const push = (event: AgentEvent, positioned = true) => {
-      if (event.type === 'permission_request' || event.type === 'ask_user_question' || event.type === 'plan_approval') {
-        event = { ...event, request: { ...event.request, lifetime: 'session' } } as AgentEvent
-      }
+      // Provider agent events keep the lifetime they already carry. A missing
+      // one stays turn-scoped. Node-owned permission, question, and plan rows
+      // set lifetime when they are built.
       // The envelope time is when the node logged the event, not when this client saw it.
       out.push(stamp(stampCompletedAt(event, new Date(envelope.timestamp).toISOString()), ctx, positioned ? envelope : undefined))
     }
@@ -540,6 +541,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
             : undefined
         const request: PermissionRequest = {
           requestId: interactionId,
+          lifetime: 'session',
           toolName,
           toolUseId: asString(payload.toolUseId),
           input: asRecord(payload.input),

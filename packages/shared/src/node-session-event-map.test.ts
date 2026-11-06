@@ -71,6 +71,33 @@ describe('mapNodeSessionEvents (text-only)', () => {
     } })], ctx)
     expect(events).toMatchObject([{ type: 'permission_request', request: { requestId: 'f1', requestKind: 'input_request', inputRequest, allowAlwaysAllow: false } }])
   })
+  it('keeps a provider approval lifetime and does not invent one on replay', () => {
+    expect(mapNodeSessionEvents([envelope({
+      eventType: 'session.permission_requested',
+      payload: { interactionId: 'child', toolName: 'Bash', input: { command: 'build' } },
+    })], ctx)).toMatchObject([{ type: 'permission_request', request: { requestId: 'child', lifetime: 'session' } }])
+    expect(mapNodeSessionEvents([envelope({
+      eventType: 'session.question_requested',
+      payload: { interactionId: 'q1', questions: [{ question: 'Go?', header: 'Q', options: [{ label: 'Yes', description: '' }], multiSelect: false }] },
+    })], ctx)).toMatchObject([{ type: 'ask_user_question', request: { requestId: 'q1', lifetime: 'session' } }])
+    expect(mapNodeSessionEvents([envelope({
+      eventType: 'session.plan_requested',
+      payload: { interactionId: 'p1', plan: 'Review changes' },
+    })], ctx)).toMatchObject([{ type: 'plan_approval', request: { requestId: 'p1', lifetime: 'session' } }])
+
+    const replayed = mapNodeSessionEvents([envelope({
+      eventType: 'session.agent_event',
+      payload: { event: { type: 'permission_request', request: { requestId: 'file', toolName: 'FileChange', input: {}, allowAlwaysAllow: true } } },
+    })], ctx)
+    const turnScoped = replayed.find((event) => event.type === 'permission_request')
+    expect(turnScoped).toMatchObject({ request: { requestId: 'file' } })
+    expect(turnScoped?.type === 'permission_request' ? turnScoped.request.lifetime : 'missing').toBeUndefined()
+
+    expect(mapNodeSessionEvents([envelope({
+      eventType: 'session.agent_event',
+      payload: { event: { type: 'permission_request', request: { requestId: 'owned', toolName: 'Bash', input: {}, allowAlwaysAllow: false, lifetime: 'session' } } },
+    })], ctx)).toMatchObject([{ type: 'permission_request', request: { requestId: 'owned', lifetime: 'session' } }])
+  })
   it('echoes a host-origin rich message during an existing optimistic send drain', () => {
     const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
     const events = mapNodeSessionEvents([envelope({ eventType: 'session.user_message', payload: { blockId: 'u1', text: '{"part":"dial"}', userMessageContent: [], contexts, echoUserMessage: true } })], { ...ctx, skipUserMessage: true })

@@ -137,7 +137,9 @@ export function listSessionsForProjectId(
   // before those children are read. The child page is that read.
   const baseSql = parentSessionId
     ? `${RELATED_SESSIONS_CTE}${settledClause}
-        AND g.parent_session_id = ?
+        AND COALESCE(g.parent_session_id,
+          CASE WHEN json_valid(s.remote_controller_json)
+            THEN json_extract(s.remote_controller_json, '$.externalParent.sessionId') END) = ?
         AND COALESCE(s.is_hidden, 0) = 0
     )
     SELECT * FROM related_sessions
@@ -176,7 +178,7 @@ export function listSessionsForProjectId(
       : db.prepare(baseSql).all(...binds)
   ) as ListedSessionRow[]
 
-  return rows.map(mapListedSession)
+  return rows.map((row) => mapListedSession(parentSessionId ? { ...row, parent_session_id: parentSessionId } : row))
 }
 
 /**

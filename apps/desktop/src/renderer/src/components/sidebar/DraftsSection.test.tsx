@@ -75,6 +75,19 @@ describe('DraftsSection', () => {
     expect(screen.queryByText('other project')).toBeNull()
   })
 
+  it('filters drafts to matching project keys across environments and resumes on their owner', () => {
+    const local = draft('local', 'local match')
+    const remote = { ...draft('remote', 'remote match'), projectPath: '/srv/repo' }
+    const unrelated = { ...draft('unrelated', 'unrelated repo'), projectPath: '/other' }
+    useDraftsStore.setState({ byConnection: { local: [local, unrelated], node: [remote, unrelated] } })
+    render(<DraftsSection connectionIds={['local', 'node']} projectKeys={['/p', 'remote:node:/srv/repo']} />)
+    expect(screen.getByText('local match')).toBeInTheDocument()
+    expect(screen.getByText('remote match')).toBeInTheDocument()
+    expect(screen.queryByText('unrelated repo')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('remote match'))
+    expect(resumeDraft).toHaveBeenCalledWith('node', remote)
+  })
+
   it('shows its heading only while there are drafts', () => {
     const { rerender } = render(<DraftsSection connectionIds={LOCAL} label={<span>Drafts</span>} />)
     expect(screen.queryByText('Drafts')).toBeNull()

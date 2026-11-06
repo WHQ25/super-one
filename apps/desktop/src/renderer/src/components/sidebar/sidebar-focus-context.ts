@@ -1,12 +1,15 @@
 import { useCallback, useState } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseRemoteProjectKey, projectBelongsToHost } from '@superone/shared/remote-resource-key'
+import { projectFocusPaths } from '@/lib/multi-host/project-focus'
+import type { HostCheckout } from '@/lib/multi-host/types'
 import type { SidebarFocus } from './sidebar-focus'
 
 interface FocusEnvironment {
   environmentId: string
   connectionId: string
   connection: string
+  checkouts?: HostCheckout[]
 }
 
 /** Pinned and drafts stay with an environment or project. A session focus hides both. */
@@ -22,7 +25,10 @@ export function pinnedSessionsForFocus(
   environments: FocusEnvironment[],
 ): PinnedSessionEntry[] {
   if (focus.kind === 'session') return []
-  if (focus.kind === 'project') return sessions.filter((session) => session.folderPath === focus.folderPath)
+  if (focus.kind === 'project') {
+    const paths = new Set(projectFocusPaths(focus.folderPath, environments))
+    return sessions.filter((session) => paths.has(session.folderPath))
+  }
   const bucket = environments.find((item) => item.environmentId === focus.environmentId)
   if (!bucket) return []
   return sessions.filter((session) => projectBelongsToHost(session.folderPath, bucket.connectionId))
@@ -31,9 +37,18 @@ export function pinnedSessionsForFocus(
 export function draftScopeForFocus(
   focus: SidebarFocus,
   environments: FocusEnvironment[],
-): { connectionIds: string[]; projectKey?: string; offlineConnectionIds: string[] } | null {
+): { connectionIds: string[]; projectKey?: string; projectKeys?: string[]; offlineConnectionIds: string[] } | null {
   if (focus.kind === 'session') return null
   if (focus.kind === 'project') {
+    const paths = projectFocusPaths(focus.folderPath, environments)
+    if (paths.length > 1) {
+      const connectionIds = [...new Set(paths.map((path) => parseRemoteProjectKey(path)?.connectionId ?? 'local'))]
+      return {
+        connectionIds,
+        projectKeys: paths,
+        offlineConnectionIds: environments.filter((item) => connectionIds.includes(item.connectionId) && item.connection === 'offline').map((item) => item.connectionId),
+      }
+    }
     const remote = parseRemoteProjectKey(focus.folderPath)
     const connectionId = remote?.connectionId
       ?? environments.find((item) => item.environmentId === focus.environmentId)?.connectionId

@@ -438,6 +438,7 @@ export const zh: Messages = {
     focusLevels: '聚焦层级',
     focusSwitchEnvironment: '选择环境',
     focusSwitchSession: '选择会话',
+    focusChildrenLoadFailed: '无法加载子会话，点击重试',
     thisMac: '这台 Mac',
     thisPc: '这台电脑',
     hostDisconnected: '主机未连接',

@@ -929,7 +929,7 @@ export class SessionRuntime {
     const childCounts = new Map<string, number>()
     let rows: NodeSessionRecord[]
     if (parentSessionId) {
-      rows = inProject.filter((s) => s.parentSessionId === parentSessionId && s.isHidden !== true && s.isSettled !== true)
+      rows = inProject.filter((s) => (s.parentSessionId ?? s.externalParent?.sessionId) === parentSessionId && s.isHidden !== true && s.isSettled !== true)
       rows.sort(byRecency)
     } else if (options?.rootsOnly) {
       const familyUpdated = new Map<string, number>()

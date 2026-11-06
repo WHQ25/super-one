@@ -270,7 +270,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     const rows = this.reads.rows.list(projectId)
     const parentSessionId = options?.parentSessionId?.trim() || ''
     if (parentSessionId) {
-      const children = rows.filter((row) => row.parentSessionId === parentSessionId && row.isHidden !== true && row.isSettled !== true)
+      const children = rows.filter((row) => (row.parentSessionId ?? row.controller?.externalParent?.sessionId) === parentSessionId && row.isHidden !== true && row.isSettled !== true)
       // Siblings share one parent, so the family-extending page would return
       // every remaining child. This page is a plain slice.
       return sliceSessionRows(children, options?.offset ?? 0, options?.limit).map((row) => this.record(row))

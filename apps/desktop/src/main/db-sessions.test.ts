@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
@@ -186,7 +187,7 @@ describe('db-sessions session query + mapping', () => {
     })
 
     listSessionsForProjectId('proj-1', 20, 20, { parentSessionId: 'parent' })
-    expect(sqls[0]).toContain('g.parent_session_id = ?')
+    expect(sqls[0]).toContain('COALESCE(g.parent_session_id,')
     expect(sqls[0]).toContain('COALESCE(s.is_hidden, 0) = 0')
     expect(sqls[0]).not.toContain('WHERE parent_session_id IS NULL')
     expect(params[0]).toEqual(['proj-1', 'parent', 20, 20])
@@ -546,4 +547,26 @@ describe('settleSpawnChildren', () => {
       { sql: 'UPDATE sessions SET seen_completed_message_id = ? WHERE id = ?', params: [null, 'spawn-1'] },
     ])
   })
+})
+
+it('lists external-parent children through the local environment with project and visibility filters', () => {
+  const db = new DatabaseSync(':memory:')
+  db.exec(`CREATE TABLE sessions (
+    id TEXT, project_id TEXT, title TEXT, created_at TEXT, is_worktree INTEGER, is_pinned INTEGER,
+    is_hidden INTEGER DEFAULT 0, is_settled INTEGER DEFAULT 0, git_branch TEXT, worktree_path TEXT,
+    is_automation INTEGER, automation_id TEXT, provider_session_id TEXT, provider_id TEXT, provider TEXT,
+    acp_agent_id TEXT, selected_model TEXT, tags_json TEXT, remote_controller_json TEXT,
+    seen_completed_message_id TEXT, last_user_message_at TEXT
+  ); CREATE TABLE session_collaboration_grants (child_session_id TEXT, parent_session_id TEXT, kind TEXT, config_json TEXT);`)
+  const insert = db.prepare('INSERT INTO sessions (id, project_id, title, created_at, remote_controller_json, is_settled) VALUES (?, ?, ?, ?, ?, ?)')
+  for (const [id, project, parent, settled] of [['child', 'p', 'external-parent', 0], ['other', 'p', 'other-parent', 0], ['elsewhere', 'other', 'external-parent', 0], ['settled', 'p', 'external-parent', 1]] as const) {
+    insert.run(id, project, id, '2026-11-06T00:00:00Z', JSON.stringify({ clientSessionId: 'c', externalParent: { sessionId: parent } }), settled)
+  }
+  getDbMock.mockReturnValue(db)
+  try {
+    const children = listSessionsForProjectId('p', 20, 0, { parentSessionId: 'external-parent' })
+    expect(children.map((row) => row.sessionId)).toEqual(['child'])
+    expect(children[0]?.parentSessionId).toBe('external-parent')
+    expect(listSessionsForProjectId('p', 20, 0, { rootsOnly: true }).map((row) => row.sessionId)).toContain('child')
+  } finally { db.close() }
 })

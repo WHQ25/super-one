@@ -33,29 +33,19 @@ export interface SettledSectionProps extends SessionMenuCallbacks {
   } | null | undefined
 }
 
-/**
- * Finished sessions inside one project. Folded until opened, and absent when
- * this project has nothing settled, so the group does not ask for attention.
- *
- * Rows stay unmounted while folded. Open rows are virtualized: scrolling loads
- * further pages into memory, and reopening must not mount every loaded row.
- */
-export const SettledSection = memo(function SettledSection({
-  folderPath,
+/** Virtualized rows without a heading, also used under focus → Settled → environment. */
+export const SettledSessionList = memo(function SettledSessionList({
   sessions,
   openingSessionId = null,
   hasMore = false,
-  count,
   onLoadMore,
   presentation,
   ...callbacks
-}: SettledSectionProps) {
-  const { t } = useTranslation()
-  const [collapsed, toggleCollapsed] = useProjectSettledCollapsed(folderPath)
+}: Omit<SettledSectionProps, 'count' | 'folderPath'>) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
   const handleScroll = useCallback(() => {
-    if (collapsed || !hasMore || !onLoadMore || loadingMoreRef.current) return
+    if (!hasMore || !onLoadMore || loadingMoreRef.current) return
     const el = scrollRef.current
     if (!el) return
     if (el.scrollTop + el.clientHeight < el.scrollHeight - SETTLED_SCROLL_PREFETCH) return
@@ -63,7 +53,7 @@ export const SettledSection = memo(function SettledSection({
     Promise.resolve(onLoadMore()).finally(() => {
       loadingMoreRef.current = false
     })
-  }, [collapsed, hasMore, onLoadMore])
+  }, [hasMore, onLoadMore])
   const virtualizer = useVirtualizer({
     count: sessions.length,
     getScrollElement: () => scrollRef.current,
@@ -78,14 +68,57 @@ export const SettledSection = memo(function SettledSection({
     if (el) chainSessionListWheel(el, event)
   }, [])
   if (sessions.length === 0) return null
+  return (
+    <ScrollArea
+      type="scroll"
+      edgeFade
+      viewportRef={scrollRef}
+      onScroll={handleScroll}
+      onWheel={handleWheel}
+      data-settled-list=""
+      className={SESSION_LIST_SCROLL_CLASS}
+    >
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }} className="w-full">
+        {virtualizer.getVirtualItems().map((item) => {
+          const session = sessions[item.index]
+          if (!session) return null
+          const row = presentation?.(session)
+          return (
+            <div
+              key={item.key}
+              data-index={item.index}
+              ref={virtualizer.measureElement}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${item.start}px)` }}
+            >
+              <SessionRow
+                session={session}
+                folderPath={session.folderPath}
+                opening={openingSessionId === session.sessionId}
+                hover={row?.hover}
+                environmentOffline={row?.environmentOffline}
+                {...callbacks}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </ScrollArea>
+  )
+})
+
+/** Finished work stays folded until its project heading is opened. */
+export const SettledSection = memo(function SettledSection(props: SettledSectionProps) {
+  const { count, folderPath, ...listProps } = props
+  const { t } = useTranslation()
+  const [collapsed, toggleCollapsed] = useProjectSettledCollapsed(folderPath)
+  if (props.sessions.length === 0) return null
   const panelId = settledPanelId(folderPath)
   return (
     <div className="flex flex-col pb-0.5">
-      {/* pl-1 lines the heading glyph up with a session icon. Rows keep SessionRow's own padding. */}
       <div className="pl-1">
         <SidebarSectionLabel
           section="settled"
-          count={count ?? sessions.length}
+          count={count ?? props.sessions.length}
           collapsed={collapsed}
           onToggle={toggleCollapsed}
           controlsId={panelId}
@@ -95,48 +128,8 @@ export const SettledSection = memo(function SettledSection({
           {t('sidebar.settled')}
         </SidebarSectionLabel>
       </div>
-      <div
-        id={panelId}
-        hidden={collapsed || undefined}
-        inert={collapsed ? true : undefined}
-        aria-hidden={collapsed || undefined}
-      >
-        {collapsed ? null : (
-          <ScrollArea
-            type="scroll"
-            edgeFade
-            viewportRef={scrollRef}
-            onScroll={handleScroll}
-            onWheel={handleWheel}
-            data-settled-list=""
-            className={SESSION_LIST_SCROLL_CLASS}
-          >
-            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }} className="w-full">
-              {virtualizer.getVirtualItems().map((item) => {
-                const session = sessions[item.index]
-                if (!session) return null
-                const row = presentation?.(session)
-                return (
-                  <div
-                    key={item.key}
-                    data-index={item.index}
-                    ref={virtualizer.measureElement}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${item.start}px)` }}
-                  >
-                    <SessionRow
-                      session={session}
-                      folderPath={folderPath}
-                      opening={openingSessionId === session.sessionId}
-                      hover={row?.hover}
-                      environmentOffline={row?.environmentOffline}
-                      {...callbacks}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </ScrollArea>
-        )}
+      <div id={panelId} hidden={collapsed || undefined} inert={collapsed ? true : undefined} aria-hidden={collapsed || undefined}>
+        {!collapsed && <SettledSessionList {...listProps} />}
       </div>
     </div>
   )

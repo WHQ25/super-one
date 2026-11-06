@@ -410,6 +410,7 @@ export type Messages = {
     focusSwitchEnvironment: string
     /** Title of the sibling menu when a parent session is focused. */
     focusSwitchSession: string
+    focusChildrenLoadFailed: string
     thisMac: string
     thisPc: string
     hostDisconnected: string
@@ -5136,6 +5137,7 @@ export const en: Messages = {
     focusLevels: 'Focus Levels',
     focusSwitchEnvironment: 'Select Environment',
     focusSwitchSession: 'Select Session',
+    focusChildrenLoadFailed: 'Could not load child sessions. Retry',
     thisMac: 'This Mac',
     thisPc: 'This PC',
     hostDisconnected: 'Host offline',

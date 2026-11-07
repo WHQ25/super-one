@@ -9,13 +9,13 @@ import { ChipHoverCard } from '@superone/ui/components/ui/ChipHoverCard'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
-import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { useMentionAppIcon } from '@/lib/mention-catalog'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { tryCopy, tryCopyImage } from '@/lib/clipboard'
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { hasTextSelection } from '@/lib/file-link'
-import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
-import { DesktopAppIcon } from './DesktopAppIcon'
+import { useMentionContext } from './use-mention-context'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { FileChipIcon } from './FileChipIcon'
 import { ImageLightbox } from './image-lightbox'
 import { McpMentionChipIcon } from './McpMentionRows'
@@ -25,11 +25,22 @@ import { PdfPreview } from './PdfPreview'
 import { QuoteCodeBody } from './QuoteCodeBody'
 import { WebLink } from './link-preview/WebLink'
 
+function HostMentionAppIcon({ kind, value, label }: { kind: string; value: string; label: string }) {
+  const { projectPath } = useMentionContext()
+  const uri = useMentionAppIcon(projectPath, kind, value)
+  return uri ? <img src={uri} alt="" draggable={false} className="size-3.5 rounded object-contain" />
+    : <DefaultMentionIcon kind={kind} value={value} label={label} />
+}
+
+function MentionFileIcon({ value, label }: { value: string; label: string }) {
+  const { fileRoot } = useMentionContext()
+  return <FileChipIcon name={label} filePath={value} fileRoot={fileRoot} />
+}
+
 function DesktopMentionIcon({ kind, value, label }: { kind: string; value: string; label: string }) {
-  if (kind === 'miniapp') return <MiniAppIcon appId={value} />
-  if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
+  if (kind === 'miniapp' || kind === 'desktop-app') return <HostMentionAppIcon kind={kind} value={value} label={label} />
   if (kind === 'mcp-resource') return <McpMentionChipIcon value={value} />
-  if (kind === 'file') return <FileChipIcon name={label} filePath={value} />
+  if (kind === 'file') return <MentionFileIcon value={value} label={label} />
   return <DefaultMentionIcon kind={kind} value={value} label={label} />
 }
 
@@ -39,6 +50,7 @@ function DesktopMentionIcon({ kind, value, label }: { kind: string; value: strin
  * files, so an extensionless file mention is stat'ed once to recover it.
  */
 function useDesktopMentionKind(kind: UserMentionKind, value: string): UserMentionKind {
+  const { fileRoot } = useMentionContext()
   const [resolved, setResolved] = useState<UserMentionKind>(kind)
   useEffect(() => {
     setResolved(kind)
@@ -47,14 +59,15 @@ function useDesktopMentionKind(kind: UserMentionKind, value: string): UserMentio
     const baseName = bare.split(/[/\\]/).pop() || bare
     if (!bare || baseName.includes('.')) return
     let cancelled = false
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    const projectRoot = fileRoot
+    if (projectRoot && parseRemoteProjectKey(projectRoot)) return
     const abs = bare.startsWith('/') ? bare : projectRoot ? `${projectRoot}/${bare}` : null
     if (!abs) return
     void window.app.pathStat(abs).then((stat) => {
       if (!cancelled && stat?.isDirectory) setResolved('directory')
     })
     return () => { cancelled = true }
-  }, [kind, value])
+  }, [kind, value, fileRoot])
   return resolved
 }
 

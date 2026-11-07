@@ -168,6 +168,10 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       acpAgentId: optionalText(p, 'acpAgentId') ?? null,
       force: p.force === true,
     }),
+    'workspace.mentionCatalog': async (p, ctx) => {
+      const { readMentionCatalog } = await import('../agent/remote-mention-search')
+      return readMentionCatalog(projectPath(ctx, text(p, 'projectId')))
+    },
     'workspace.searchMentions': (p, ctx) =>
       host.agent.remoteSearchMentions(projectPath(ctx, text(p, 'projectId')), typeof p.query === 'string' ? p.query : '', {
         sessionId: optionalText(p, 'sessionId'),

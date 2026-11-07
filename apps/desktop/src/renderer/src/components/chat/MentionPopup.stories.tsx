@@ -1,3 +1,6 @@
+import type { MentionCatalog } from '@superone/shared/mention-catalog'
+import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
+import { buildEnvironmentMentionCandidates } from '@superone/shared/environment-mention'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef, useState } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
@@ -91,6 +94,17 @@ const APP_FOLDERS = [
   { path: '/storybook/app-b', name: 'app' },
 ]
 
+const DEFAULT_MENTION_CATALOG: MentionCatalog = {
+  capabilityIds: ['widget'], apps: [], environments: buildEnvironmentMentionCandidates({ environments: [
+    { kind: 'local', environmentId: 'local', label: 'This Mac', state: 'connected' },
+    { kind: 'remote', environmentId: 'node-1', label: 'studio', state: 'connected' },
+    { kind: 'remote', environmentId: 'desk-1', label: 'Mac mini', state: 'connected', installationProfile: 'local-electron' },
+  ] }),
+}
+let catalogAnswer: () => Promise<MentionCatalog> = async () => DEFAULT_MENTION_CATALOG
+mockIpc('environment', 'getMentionCatalog', () => catalogAnswer())
+mockIpc('environment', 'listRemoteCollabProfiles', async () => [{ id: 'node-reviewer', name: 'Node reviewer', harnessId: 'codex' }])
+
 mockIpc('app', 'getAppSettings', async () => ({ computerUseEnabled: false, cdpEnabled: false }))
 mockIpc('app', 'onAppSettingsChange', () => () => {})
 mockIpc('app', 'getGitMentionCapabilities', async () => capabilities)
@@ -143,7 +157,7 @@ type McpAnswer = (query: string) => Promise<{ ok: true; value: McpMentionSearchR
 const answerWith = (value: McpMentionSearchResult): McpAnswer => async () => ({ ok: true, value })
 let mcpSession = 0
 
-function Preview({ query, repo = true, github = true, refs, files, width = 560, mcp, typeAfter, folders }: { query: string; repo?: boolean; github?: boolean; refs?: RefsAnswer; files?: FilesAnswer; width?: number; mcp?: McpAnswer; typeAfter?: string; folders?: { path: string; name: string }[] }) {
+function Preview({ remote = false, catalog, query, repo = true, github = true, refs, files, width = 560, mcp, typeAfter, folders }: { remote?: boolean; catalog?: () => Promise<MentionCatalog>; query: string; repo?: boolean; github?: boolean; refs?: RefsAnswer; files?: FilesAnswer; width?: number; mcp?: McpAnswer; typeAfter?: string; folders?: { path: string; name: string }[] }) {
   // A fresh session per render keeps the hook's known-sections cache from leaking between stories.
   const [mcpRoute] = useState(() => mcp ? { projectPath: PROJECT, sessionId: `story-mcp-${++mcpSession}` } : null)
   if (mcp) {
@@ -156,6 +170,8 @@ function Preview({ query, repo = true, github = true, refs, files, width = 560, 
   const [log, setLog] = useState<string[]>([])
   const ref = useRef<MentionPopupHandle>(null)
   useEffect(() => {
+    catalogAnswer = catalog ?? (async () => DEFAULT_MENTION_CATALOG)
+    if (remote) useChatStore.getState().ensureSession('remote:storybook-node:/srv/repo')
     capabilities = { repo: repo ? 'ready' : 'not-repo', github: repo && github }
     refsResult = refs ?? defaultRefs
     filesFor = files ?? defaultFiles
@@ -170,7 +186,7 @@ function Preview({ query, repo = true, github = true, refs, files, width = 560, 
       useAppStore.setState({ currentFolder: prevApp.currentFolder, _worktrees: prevApp._worktrees, recentFolders: prevApp.recentFolders })
       useChatStore.setState(prevChat)
     }
-  }, [query, repo, github, refs, files, folders])
+  }, [query, repo, github, refs, files, folders, remote, catalog])
   useEffect(() => {
     if (typeAfter === undefined) return
     const timer = setTimeout(() => setCurrent(typeAfter), 800)
@@ -181,6 +197,7 @@ function Preview({ query, repo = true, github = true, refs, files, width = 560, 
     <div className="flex flex-col gap-2" style={{ width, maxWidth: '100%' }}>
       {/* The popup renders `bottom-full` above the composer; the spacer stands in for it. */}
       <div className="relative mt-80 h-0">
+        <SessionScopeProvider value={remote ? { projectPath: 'remote:storybook-node:/srv/repo', sessionId: 'story-remote' } : null}>
         <MentionPopup
           ref={ref}
           query={current}
@@ -197,6 +214,7 @@ function Preview({ query, repo = true, github = true, refs, files, width = 560, 
             setLog((l) => [...l, `${kind ?? 'file'} · ${displayName ?? value} → ${value}`])
           }}
         />
+        </SessionScopeProvider>
       </div>
       <div className="rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs text-muted-foreground">
         @{current}
@@ -424,3 +442,13 @@ export const McpLongContentNarrow: Story = {
     }] }),
   },
 }
+
+/** The local project stays focused while a remote pane searches its own app catalog. */
+export const RemotePaneApps: Story = { args: { remote: true, query: 'node', catalog: async () => ({
+  capabilityIds: ['computer', 'widget'], apps: [
+    { kind: 'miniapp', path: 'node-board', label: 'Node board' },
+    { kind: 'desktop-app', path: 'com.node.editor', label: 'Node editor' },
+  ], environments: [],
+}) } }
+export const RemoteCatalogLoading: Story = { args: { remote: true, query: '', catalog: () => new Promise(() => {}) } }
+export const RemoteCatalogUnavailable: Story = { args: { remote: true, query: '', catalog: async () => { throw new Error('offline') } } }

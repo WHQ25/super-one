@@ -869,6 +869,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   validateAddDir(projectPath: string, candidate: string): Promise<{ ok: true } | { ok: false; reason: 'not-found' | 'not-directory' | 'same-as-project' | 'same-repo' }>
   findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
   searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
+  listRemoteCollabProfiles(connectionId: string): Promise<unknown>
+  getMentionCatalog(projectPath: string): Promise<import('@superone/shared/mention-catalog').MentionCatalog>
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
   disconnectSessionController(sessionId?: string): Promise<void>
   callComposer<M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']): Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>

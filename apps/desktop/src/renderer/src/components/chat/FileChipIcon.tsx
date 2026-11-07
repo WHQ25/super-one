@@ -12,16 +12,17 @@ import { ChipHoverCard } from '@superone/ui/components/ui/ChipHoverCard'
 import { ImageLightbox } from './image-lightbox'
 
 /** Image art lives inside the existing file drag handle; the image itself never drags. */
-export function FileChipIcon({ name, filePath, size = 16 }: { name: string; filePath?: string; size?: number }) {
+export function FileChipIcon({ name, filePath, size = 16, fileRoot }: { name: string; filePath?: string; size?: number; fileRoot?: string | null }) {
   const iconName = filePath?.split(/[/\\]/).pop() || name
   const ext = /\.[^.]+$/.exec(iconName)?.[0].toLowerCase()
   if (!filePath || !ext || !IMAGE_EXTENSIONS.has(ext)) return <FileIcon name={iconName} size={size} />
-  return <FileImageIcon key={filePath} name={name} filePath={filePath} size={size} />
+  return <FileImageIcon key={filePath} name={name} filePath={filePath} size={size} fileRoot={fileRoot} />
 }
 
-function FileImageIcon({ name, filePath, size }: { name: string; filePath: string; size: number }) {
+function FileImageIcon({ name, filePath, size, fileRoot }: { name: string; filePath: string; size: number; fileRoot?: string | null }) {
   const { t } = useTranslation()
-  const projectRoot = useAppStore(selectEffectiveProjectRoot)
+  const activeRoot = useAppStore(selectEffectiveProjectRoot)
+  const projectRoot = fileRoot ?? activeRoot
   const src = projectRoot ? resolveMediaSrcForProject(filePath, projectRoot) : toLocalFileUrl(filePath)
   const { displaySrc, failed } = useResolvedMediaSrc(src)
   const [brokenSrc, setBrokenSrc] = useState<string>()

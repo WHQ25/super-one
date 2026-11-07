@@ -17,7 +17,7 @@ import { commitPerSession, getProject, getScopedPerSession } from './store-helpe
 import { isControlledElsewhere } from './remote-control'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
-import { resetHostSession } from '@/lib/session-client'
+import { callSession, hostTakesDesktopChoices, resetHostSession } from '@/lib/session-client'
 import { formatEnvironmentMentionReminder } from '@superone/shared/environment-mention'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -605,13 +605,27 @@ export async function sendMessageImpl(
     ?? undefined
 
   // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
+  const desktopAppGrants = mentions
+    .filter((m) => m.kind === 'desktop-app' && m.value)
+    .map((m) => ({ app: m.displayName || m.value, bundleId: m.value }))
+  const remoteMentionApps = !hostTakesDesktopChoices(projectPath)
+  let hostAppGrants: { miniappIds: string[]; desktopAppsGranted: boolean } | null = null
+  if (remoteMentionApps && resolvedSessionId && (miniAppMentions.length || desktopAppGrants.length)) {
+    try {
+      hostAppGrants = await callSession(projectPath, resolvedSessionId, 'session.authorizeMentionApps', {
+        miniappIds: miniAppMentions.map(m => m.value), desktopApps: desktopAppGrants,
+      })
+    } catch (error) {
+      console.warn('[sendMessage] host mention app grants unavailable:', error)
+    }
+  }
   const miniAppAuthorizations = miniAppMentions.map((m) => m.value)
   if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
     try {
-      const granted = new Set(await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId))
+      const granted = new Set(remoteMentionApps ? hostAppGrants?.miniappIds ?? [] : await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId))
       if (granted.size > 0) {
         const { useMiniAppStore } = await import('../../miniapp')
-        const apps = useMiniAppStore.getState().apps
+        const apps = remoteMentionApps ? [] : useMiniAppStore.getState().apps
         const lines: string[] = [
           'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
         ]
@@ -622,10 +636,10 @@ export async function sendMessageImpl(
           const appId = app?.id ?? m.value
           const tools = manifest?.tools ?? []
           // Fixed surface: miniapp_list / miniapp_call. Agents discover tools via miniapp_list.
-          if (getScopedPerSession(get(), writeScope.target).sessionProvider === 'codex' && tools.length > 0) {
+          if (getScopedPerSession(get(), writeScope.target).sessionProvider === 'codex') {
             const toolNames = tools.map((t) => t.name).join(', ')
             lines.push(
-              `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call with tool in [${toolNames}] (use miniapp_list first if unsure)`,
+              `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call ${toolNames ? `with tool in [${toolNames}]` : 'after miniapp_list discovers its tools'} (use miniapp_list first if unsure)`,
             )
           } else {
             lines.push(
@@ -641,12 +655,9 @@ export async function sendMessageImpl(
   }
 
   // Temporary Computer Use grants from @ desktop-app mentions (session-scoped, no HITL).
-  const desktopAppGrants = mentions
-    .filter((m) => m.kind === 'desktop-app' && m.value)
-    .map((m) => ({ app: m.displayName || m.value, bundleId: m.value }))
-  if (desktopAppGrants.length > 0 && resolvedSessionId && window.app?.grantComputerUseSessionApps) {
+  if (desktopAppGrants.length > 0 && resolvedSessionId && (remoteMentionApps || window.app?.grantComputerUseSessionApps)) {
     try {
-      const ok = await window.app.grantComputerUseSessionApps(
+      const ok = remoteMentionApps ? hostAppGrants?.desktopAppsGranted : await window.app.grantComputerUseSessionApps(
         resolvedSessionId,
         desktopAppGrants,
       )

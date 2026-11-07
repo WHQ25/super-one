@@ -5414,8 +5414,9 @@ function registerIpcHandlers(): void {
     if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
-  const authorizeMiniAppsForSession = (appIds: string[], projectDir: string, sessionId: string) =>
+  const authorizeMiniAppsForSession = (appIds: string[], projectDir: string, sessionId: string, assertControl?: () => void) =>
     authorizeMiniAppTools(appIds, projectDir, sessionId, {
+      assertControl,
       prepare: prepareMiniAppHostLaunch,
       start: startMiniAppHost,
       register: (appId, { manifest, basePath }) => {

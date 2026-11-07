@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
 import { CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectActiveCursorSlashItems, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
-import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
+import { useAppStore } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Loader2, X } from 'lucide-react'
 import type { MentionKind, SessionWriteTarget } from '@/stores/chat'
@@ -30,6 +30,7 @@ import { SlashDecoration } from './slash-decoration'
 import { EnvironmentMentionDecoration } from './environment-mention-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
 import { GitMentionDecoration } from './git-mention-decoration'
+import { useMentionContext } from './use-mention-context'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { PromptKeywordDecoration, syncPromptKeywords } from './prompt-keyword-decoration'
@@ -135,18 +136,20 @@ export function ChatInput({
     const initialAutoFocusOnMount = useRef(autoFocusOnMount)
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
+    const { projectPath: mentionProject, fileRoot } = useMentionContext()
     const recentFolders = useAppStore((s) => s.recentFolders)
     const sessionProjectOptions = useMemo(
-      () => sessionProjectsOnHost(recentFolders, activeProject),
-      [recentFolders, activeProject],
+      () => sessionProjectsOnHost(recentFolders, mentionProject),
+      [recentFolders, mentionProject],
     )
-    const fileRoot = useEffectiveProjectRoot()
     // Which of `@git` / `@gh` this root can serve; a portal that is off types as plain text.
     const gitPortals = useEnabledGitMentionPortals(fileRoot)
     // Read from the editor's update handler, which is created once.
+    const mentionProjectRef = useRef(mentionProject)
+    mentionProjectRef.current = mentionProject
     const gitPortalsRef = useRef(gitPortals)
     // Names such as "Mac mini" need their space. Load before the first `@`.
-    useEffect(() => { void loadEnvironmentMentionCandidates() }, [])
+    useEffect(() => { void loadEnvironmentMentionCandidates(mentionProject) }, [mentionProject])
     const storeActions = useChatStore(useShallow((s) => ({
       setDraftText: s.setDraftText,
       setDraftJson: s.setDraftJson,
@@ -1842,7 +1845,7 @@ export function ChatInput({
           // Session grammar needs spaces: @session [project|all] [title…]
           const spaceOk = mentionQueryAllowsSpaces(afterAt, {
             gitPortals: gitPortalsRef.current,
-            environmentLabels: cachedEnvironmentMentionLabels(),
+            environmentLabels: cachedEnvironmentMentionLabels(mentionProjectRef.current),
           })
           if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
@@ -2223,6 +2226,7 @@ export function ChatInput({
 
         {mentionInfoRef.current && mentionActive && matchingCommands.length === 0 && !addDirActive && !workflowSlashActive && (
           <MentionPopup
+            key={`${mentionProject}:${fileRoot}`}
             ref={mentionRef}
             query={mentionInfoRef.current.query}
             selectedIndex={mentionIndex}

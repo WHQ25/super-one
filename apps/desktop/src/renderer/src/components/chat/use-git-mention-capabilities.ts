@@ -16,24 +16,24 @@ const capabilitiesByRoot = new Map<string, GitMentionCapabilities>()
 
 /** `null` until the host has answered for this root (or there is no root). */
 export function useGitMentionCapabilities(fileRoot: string | null): GitMentionCapabilities | null {
-  const [caps, setCaps] = useState<GitMentionCapabilities | null>(
-    () => (fileRoot ? capabilitiesByRoot.get(fileRoot) ?? null : null),
-  )
+  const [answer, setAnswer] = useState<{ root: string | null; caps: GitMentionCapabilities | null }>(() => ({
+    root: fileRoot, caps: fileRoot ? capabilitiesByRoot.get(fileRoot) ?? null : null,
+  }))
   useEffect(() => {
     let cancelled = false
-    setCaps(fileRoot ? capabilitiesByRoot.get(fileRoot) ?? null : null)
+    setAnswer({ root: fileRoot, caps: fileRoot ? capabilitiesByRoot.get(fileRoot) ?? null : null })
     if (!fileRoot) return
     loadGitMentionCapabilities(fileRoot)
       .then((next) => {
         capabilitiesByRoot.set(fileRoot, next)
-        if (!cancelled) setCaps(next)
+        if (!cancelled) setAnswer({ root: fileRoot, caps: next })
       })
       .catch(() => {
-        if (!cancelled) setCaps({ repo: 'not-repo', github: false })
+        if (!cancelled) setAnswer({ root: fileRoot, caps: { repo: 'unsupported', github: false } })
       })
     return () => { cancelled = true }
   }, [fileRoot])
-  return caps
+  return answer.root === fileRoot ? answer.caps : fileRoot ? capabilitiesByRoot.get(fileRoot) ?? null : null
 }
 
 /** Portals whose grammar the composer should honour for this root. */

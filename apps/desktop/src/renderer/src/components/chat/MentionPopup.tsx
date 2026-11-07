@@ -1,16 +1,15 @@
 import { Fragment, useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
-import { Bot, Folder, Globe, Laptop, LayoutDashboard, MessageSquare, Monitor, MousePointer2, Server } from 'lucide-react'
+import { AppWindow, Bot, Folder, Globe, Laptop, LayoutDashboard, MessageSquare, Monitor, MousePointer2, Server } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
-import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
-import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
-import { useMiniAppStore } from '@/stores/miniapp'
-import { mentionCapabilityAvailability } from '@superone/shared/mention-capabilities'
+import { useActiveSession, type MentionKind } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
-import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
-import { DesktopAppIcon } from './DesktopAppIcon'
+import { useMentionContext } from './use-mention-context'
+import { loadMentionCatalog, EMPTY_MENTION_CATALOG } from '@/lib/mention-catalog'
+import type { MentionCatalog } from '@superone/shared/mention-catalog'
 import { useTranslation } from 'react-i18next'
 import type {
   AgentMentionTarget,
@@ -74,11 +73,9 @@ import {
   encodeEnvironmentMentionValue,
   filterEnvironmentMentions,
   parseEnvironmentMentionQuery,
-  type EnvironmentMentionCandidate,
   type EnvironmentMentionRole,
   type EnvironmentMentionStatus,
 } from '@superone/shared/environment-mention'
-import { loadEnvironmentMentionCandidates } from '@/lib/environment-mention-catalog'
 import { useMcpMentionSearch } from '@/components/mcp-apps/mention-search'
 import type { McpAppRoute } from '@/components/mcp-apps/desktop-executor'
 import { McpMentionRow, McpMentionStatus, mcpMentionFlatItems, type McpMentionFlatItem } from './McpMentionRows'
@@ -120,7 +117,7 @@ type FlatItem =
   | { kind: 'file'; path: string; displayPath: string; isDirectory: boolean; matchIndices: number[] }
   | { kind: 'dir-entry'; entry: ListDirEntry; prefix: string }
   | { kind: 'agent'; name: string; model: string; matchIndices: number[] }
-  | { kind: 'miniapp'; appId: string; displayName: string; matchIndices: number[] }
+  | { kind: 'miniapp'; appId: string; displayName: string; matchIndices: number[]; iconDataUri?: string }
   | {
       kind: 'capability'
       id: BuiltinCapabilityId
@@ -179,13 +176,12 @@ type FlatItem =
   | {
       kind: 'desktop-app'
       bundleId: string
+      iconDataUri?: string
       displayName: string
       matchIndices: number[]
     }
   | GitFlatItem
   | McpMentionFlatItem
-
-type InstalledDesktopApp = { app: string; bundleId: string; aliases: string[] }
 
 const DESKTOP_APP_MENTION_LIMIT = 12
 
@@ -323,13 +319,17 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
   )
 }
 
+function MentionAppIcon({ uri, desktop }: { uri?: string; desktop?: boolean }) {
+  return uri ? <img src={uri} alt="" draggable={false} className="size-3.5 shrink-0 rounded object-contain" />
+    : desktop ? <MousePointer2 className="size-3.5 shrink-0 text-emerald-600" /> : <AppWindow className="size-3.5 shrink-0" />
+}
+
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
   function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true, mcpRoute = null }, ref) {
     const { t, i18n } = useTranslation()
     const agentProfilesEnabled = useAppStore((s) => s.experimentalAgentProfilesEnabled)
-    const activeProject = useChatStore((s) => s.activeProject)
+    const { projectPath: activeProject, fileRoot } = useMentionContext()
     const recentFolders = useAppStore((s) => s.recentFolders)
-    const fileRoot = useEffectiveProjectRoot()
     const agents = useActiveSession((s) => s.agents)
     const additionalDirs = useActiveSession((s) => s.additionalDirs)
     const [dirEntries, setDirEntries] = useState<ListDirEntry[]>([])
@@ -347,7 +347,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     // responses from a previous keystroke cannot clobber newer state.
     const requestIdRef = useRef(0)
     const sessionLoadGenRef = useRef(0)
-    const environmentLoadGenRef = useRef(0)
 
     const agentEntries = useMemo(
       () => showAgents ? agents.map((a) => ({ name: a.name, model: a.model || '' })) : [],
@@ -374,9 +373,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
     const [sessionRows, setSessionRows] = useState<PinnedSessionEntry[]>([])
     const [sessionLoading, setSessionLoading] = useState(false)
-    const [environmentRows, setEnvironmentRows] = useState<EnvironmentMentionCandidate[]>([])
-    const [environmentLoading, setEnvironmentLoading] = useState(false)
-    const [environmentSettled, setEnvironmentSettled] = useState(false)
     const [sessionSettledFor, setSessionSettledFor] = useState<string | null>(null)
     const directPending = directSearch && (sessionSettledFor !== query || !git.settled)
 
@@ -546,25 +542,27 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
-    // Load once per visit. `@env` and a typed name both filter this catalog
-    // on the client, and a new keystroke must not blank the list first.
+    const [catalogState, setCatalogState] = useState<{ project: string | null; value: MentionCatalog } | null>(null)
+    const catalog = catalogState?.project === activeProject ? catalogState.value : EMPTY_MENTION_CATALOG
+    const desktopAppsReady = catalogState?.project === activeProject
+    const environmentRows = catalog.environments ?? []
+    const environmentLoading = !desktopAppsReady
+    const environmentSettled = desktopAppsReady
     useEffect(() => {
-      const gen = ++environmentLoadGenRef.current
-      setEnvironmentLoading(true)
-      void loadEnvironmentMentionCandidates()
-        .then((rows) => {
-          if (gen !== environmentLoadGenRef.current) return
-          setEnvironmentRows(rows)
-          setEnvironmentLoading(false)
-          setEnvironmentSettled(true)
+      let cancelled = false
+      const refresh = () => {
+        if (!activeProject) {
+          setCatalogState({ project: activeProject, value: EMPTY_MENTION_CATALOG })
+          return
+        }
+        void loadMentionCatalog(activeProject).then(value => {
+          if (!cancelled) setCatalogState({ project: activeProject, value })
         })
-        .catch(() => {
-          if (gen !== environmentLoadGenRef.current) return
-          setEnvironmentRows([])
-          setEnvironmentLoading(false)
-          setEnvironmentSettled(true)
-        })
-    }, [])
+      }
+      refresh()
+      const unsubscribe = window.app?.onAppSettingsChange?.(refresh)
+      return () => { cancelled = true; unsubscribe?.() }
+    }, [activeProject])
 
     // Reset selection when entering a portal or changing its phase.
     // Typing an environment name stays on the same portal, so the highlight holds.
@@ -579,100 +577,27 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (portalId) onSetSelectedIndex(0)
     }, [portalId, onSetSelectedIndex])
 
-    /** Feature gates for built-in @-capability chips (settings toggles). Widget is always on. */
-    const [capabilityEnabled, setCapabilityEnabled] = useState<Record<BuiltinCapabilityId, boolean>>({
-      computer: false,
-      browser: false,
-      widget: true,
-    })
-    /** False until the first getAppSettings settle — needed before we know whether to wait on apps. */
-    const [capabilitySettingsReady, setCapabilitySettingsReady] = useState(false)
-    useEffect(() => {
-      let cancelled = false
-      const apply = (settings: {
-        computerUseEnabled?: boolean
-        cdpEnabled?: boolean
-      } | null | undefined) => {
-        if (cancelled || !settings) return
-        setCapabilityEnabled(mentionCapabilityAvailability(settings, window.app.platform))
-      }
-      void window.app?.getAppSettings?.()
-        .then((settings) => {
-          apply(settings)
-          if (!cancelled) setCapabilitySettingsReady(true)
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setCapabilityEnabled({ computer: false, browser: false, widget: true })
-            setCapabilitySettingsReady(true)
-          }
-        })
-      const unsub = window.app?.onAppSettingsChange?.((settings) => {
-        apply(settings as {
-          computerUseEnabled?: boolean
-          cdpEnabled?: boolean
-        } | null)
-      })
-      return () => {
-        cancelled = true
-        unsub?.()
-      }
-    }, [])
-
+    const capabilityEnabled = useMemo(() => ({
+      computer: catalog.capabilityIds.includes('computer'),
+      browser: catalog.capabilityIds.includes('browser'),
+      widget: catalog.capabilityIds.includes('widget'),
+    }), [catalog])
     const computerUseEnabled = capabilityEnabled.computer
-
-    const [installedDesktopApps, setInstalledDesktopApps] = useState<InstalledDesktopApp[]>([])
-    /** Catalog fetch finished (or skipped). While false, never report empty to ChatInput. */
-    const [desktopAppsReady, setDesktopAppsReady] = useState(false)
-    useEffect(() => {
-      let cancelled = false
-      // Wait for settings so we don't treat "computer still unknown" as "no apps".
-      if (!capabilitySettingsReady) {
-        setDesktopAppsReady(false)
-        return
-      }
-      // Skip catalog load when Computer Use is off — popup must not match desktop apps.
-      if (!computerUseEnabled) {
-        setInstalledDesktopApps([])
-        setDesktopAppsReady(true)
-        return
-      }
-      setDesktopAppsReady(false)
-      const list = window.app?.listComputerUseInstalledApps
-      if (!list) {
-        setInstalledDesktopApps([])
-        setDesktopAppsReady(true)
-        return
-      }
-      void list()
-        .then((apps) => {
-          if (cancelled) return
-          setInstalledDesktopApps(Array.isArray(apps) ? apps : [])
-          setDesktopAppsReady(true)
-        })
-        .catch(() => {
-          if (cancelled) return
-          setInstalledDesktopApps([])
-          setDesktopAppsReady(true)
-        })
-      return () => {
-        cancelled = true
-      }
-    }, [capabilitySettingsReady, computerUseEnabled])
-
-    const miniApps = useMiniAppStore((s) => s.apps)
+    const miniApps = useMemo(() => catalog.apps.filter(app => app.kind === 'miniapp'), [catalog])
+    const installedDesktopApps = useMemo(() => catalog.apps.filter(app => app.kind === 'desktop-app'), [catalog])
     const matchedMiniApps = useMemo<FlatItem[]>(() => {
       if (!miniApps || miniApps.length === 0) return []
       if (isBrowseMode && query) return []
       const matches: FlatItem[] = []
       for (const app of miniApps) {
-        const name = app.manifest.name
-        const idMatch = fuzzyMatchIndices(app.id, query)
+        const name = app.label
+        const idMatch = fuzzyMatchIndices(app.path, query)
         const nameMatch = fuzzyMatchIndices(name, query)
         if (idMatch === null && nameMatch === null) continue
         matches.push({
           kind: 'miniapp',
-          appId: app.id,
+          appId: app.path,
+          iconDataUri: app.iconDataUri,
           displayName: name,
           matchIndices: nameMatch ?? [],
         })
@@ -685,6 +610,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const [agentTargets, setAgentTargets] = useState<AgentMentionTarget[]>([])
     useEffect(() => {
       let cancelled = false
+      setAgentTargets([])
       void listAgentMentionTargets(activeProject).then((targets) => {
         if (!cancelled) setAgentTargets(targets)
       })
@@ -960,8 +886,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (!query.trim()) return []
       const matches: FlatItem[] = []
       for (const app of installedDesktopApps) {
-        const nameMatch = fuzzyMatchIndices(app.app, query)
-        const idMatch = fuzzyMatchIndices(app.bundleId, query)
+        const nameMatch = fuzzyMatchIndices(app.label, query)
+        const idMatch = fuzzyMatchIndices(app.path, query)
         let aliasMatch: number[] | null = null
         for (const alias of app.aliases ?? []) {
           aliasMatch = fuzzyMatchIndices(alias, query)
@@ -970,8 +896,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         if (nameMatch === null && idMatch === null && aliasMatch === null) continue
         matches.push({
           kind: 'desktop-app',
-          bundleId: app.bundleId,
-          displayName: app.app,
+          bundleId: app.path,
+          iconDataUri: app.iconDataUri,
+          displayName: app.label,
           matchIndices: nameMatch ?? aliasMatch ?? idMatch ?? [],
         })
         if (matches.length >= DESKTOP_APP_MENTION_LIMIT) break
@@ -1492,7 +1419,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            <DesktopAppIcon bundleId={item.bundleId} className="size-3.5" />
+            <MentionAppIcon uri={item.iconDataUri} desktop />
             <span className="min-w-0 flex-1 truncate font-medium">
               <HighlightedPath path={item.displayName} indices={item.matchIndices} />
             </span>
@@ -1513,7 +1440,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseEnter={() => onSetSelectedIndex(i)}
             className={rowClass}
           >
-            <MiniAppIcon appId={item.appId} className="size-3.5 shrink-0" />
+            <MentionAppIcon uri={item.iconDataUri} />
             <span className="min-w-0 truncate font-medium">
               <HighlightedPath path={item.displayName} indices={item.matchIndices} />
             </span>

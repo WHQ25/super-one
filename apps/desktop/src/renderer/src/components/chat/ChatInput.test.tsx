@@ -356,8 +356,8 @@ vi.mock('@/stores/chat', () => ({
 vi.mock('@/stores/app', () => ({
   useEffectiveProjectRoot: () => null,
   selectEffectiveProjectRoot: () => null,
-  useAppStore: (selector: (state: { recentFolders: unknown[] }) => unknown) =>
-    selector({ recentFolders: [] }),
+  useAppStore: (selector: (state: { recentFolders: unknown[]; currentFolder: null; _worktrees: Record<string, never> }) => unknown) =>
+    selector({ recentFolders: [], currentFolder: null, _worktrees: {} }),
 }))
 
 vi.mock('./ContextUsage', () => ({
@@ -513,6 +513,7 @@ beforeEach(() => {
   Object.assign(window, {
     app: {
       ...window.app,
+      getGitMentionCapabilities: vi.fn(async () => ({ repo: 'not-repo', github: false })),
       getMediaServerPort: vi.fn(async () => 0),
       // Spreading `window.app` drops the shared proxy defaults (a proxy over an
       // empty target enumerates nothing), so these have to be named explicitly.

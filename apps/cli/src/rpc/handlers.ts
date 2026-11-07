@@ -1,3 +1,5 @@
+import { OPERATION_SCOPES } from '@superone/shared/environment'
+import { requireScopes } from '@superone/runtime/server/rpc-helpers'
 import { dirname as configDirname } from 'node:path'
 import { SUGGESTED_TASK_RPC_METHODS, dispatchSuggestedTaskRpc } from './suggested-task-handlers'
 import {
@@ -91,6 +93,7 @@ const CLI_CAPABILITY_FLAGS: HostCapabilityFlags = {
 
 /** Every method only the CLI node serves (`dispatchCliRpc`). */
 const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
+  'workspace.mentionCatalog',
   ...SUGGESTED_TASK_RPC_METHODS,
   ...SESSION_ARCHIVE_RPC_METHODS,
   ...RESOURCE_RPC_METHODS,
@@ -133,6 +136,16 @@ function cliResourceHost(ctx: RpcContext): ResourceHost {
 
 /** Method families only the CLI node serves; null hands the method to the shared families. */
 async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
+  if (method === 'workspace.mentionCatalog') {
+    const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+    if (denied) return denied
+    const projectId = (payload as { projectId?: string } | null)?.projectId
+    if (!projectId || !ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
+    // A headless node has no native desktop app/browser catalog. Never borrow its controller's.
+    return { result: { capabilityIds: [], apps: [], environments: [{
+      role: 'local', id: ctx.identity.environmentId, label: ctx.identity.label, status: 'connected',
+    }] } }
+  }
   const voice = await dispatchVoiceRpc(method, payload, ctx)
   if (voice) return voice
   const suggestedTask = await dispatchSuggestedTaskRpc(method, payload, ctx)

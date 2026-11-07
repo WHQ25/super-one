@@ -2,14 +2,14 @@ import { useRef, type MouseEvent } from 'react'
 import { AtSign, Copy, FolderOpen, Globe } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
-import { openBrowserTab, openFileTab } from '@/components/activity/activity-panel-api'
+import { openBrowserTab, openFileTab, openNewFileTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { clickReleasedOnSelection, isAbsoluteLocalPath, isHtmlFilePath, toProjectRelativePath } from '@/lib/file-link'
 import { toLocalFileUrl } from '@/lib/path-utils'
-import { displayHostPath } from '@/lib/remote-project-key'
+import { displayHostPath, parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { useOpenWithMenu } from '@/components/mcp-apps/open-with-menu'
 
@@ -25,15 +25,15 @@ export function absoluteFilePath(filePath: string, projectRoot: string | null | 
 }
 
 /** `onOpen` starts the "Open With" lookup; pass it to the menu so Apps appear once known. */
-export function useFileChipContextMenu(filePath: string | undefined, openInSuperOne: () => void): { items: AdaptiveMenuEntry[]; onOpen: () => void } {
+export function useFileChipContextMenu(filePath: string | undefined, openInSuperOne: () => void, root?: string | null): { items: AdaptiveMenuEntry[]; onOpen: () => void } {
   const { t } = useTranslation()
   const scope = useSessionScope()
-  const absolute = filePath ? absoluteFilePath(filePath, selectEffectiveProjectRoot(useAppStore.getState())) : undefined
+  const projectRoot = root ?? selectEffectiveProjectRoot(useAppStore.getState())
+  const absolute = filePath ? absoluteFilePath(filePath, projectRoot) : undefined
   const openWith = useOpenWithMenu(absolute, { scope, openInSuperOne })
   if (!filePath) return { items: [], onOpen: openWith.prefetch }
 
   const handleOpenFolder = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     const openPath = toProjectRelativePath(filePath, projectRoot)
     if (openPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(openPath)) {
       void window.app.showInFolder(projectRoot ?? openPath, openPath)
@@ -44,7 +44,6 @@ export function useFileChipContextMenu(filePath: string | undefined, openInSuper
   }
 
   const handleAddToChat = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     const mentionPath = toMentionPath(filePath, projectRoot)
     // Not the chip's link text, which may be prose ("补丁"): file mentions label
     // and pick their icon from the basename, as the sent bubble re-derives it.
@@ -52,17 +51,14 @@ export function useFileChipContextMenu(filePath: string | undefined, openInSuper
   }
 
   const handleCopyPath = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     void navigator.clipboard.writeText(absoluteFilePath(filePath, projectRoot))
   }
 
   const handleCopyRelativePath = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     void navigator.clipboard.writeText(toProjectRelativePath(filePath, projectRoot))
   }
 
   const handlePreviewInBrowser = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     openBrowserTab(toLocalFileUrl(absoluteFilePath(filePath, projectRoot)))
   }
 
@@ -70,7 +66,7 @@ export function useFileChipContextMenu(filePath: string | undefined, openInSuper
     ...openWith.entries,
     { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: handleOpenFolder },
     { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: handleAddToChat },
-    ...(isHtmlFilePath(filePath)
+    ...(isHtmlFilePath(filePath) && !(projectRoot && parseRemoteProjectKey(projectRoot))
       ? [{
           kind: 'item' as const,
           id: 'previewInBrowser',
@@ -89,18 +85,19 @@ export function useFileChipContextMenu(filePath: string | undefined, openInSuper
  * (tool rows, markdown links, sent @-mentions). A click right after a drag or one
  * released on a text selection is not an open.
  */
-export function useFileChipActions(filePath: string | undefined, lineNumber?: number) {
+export function useFileChipActions(filePath: string | undefined, lineNumber?: number, root?: string | null) {
   const dragEndRef = useRef(0)
+  const projectRoot = root ?? selectEffectiveProjectRoot(useAppStore.getState())
   const open = (): void => {
     if (!filePath) return
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     const openPath = toProjectRelativePath(filePath, projectRoot)
     // selectFile needs a project root for git/diff IPC; absolute external paths
     // still read via readProjectFile when the path is absolute.
     if (projectRoot) void useSourceControlStore.getState().selectFile(projectRoot, openPath, lineNumber)
-    openFileTab(openPath)
+    if (root) openNewFileTab(absoluteFilePath(filePath, root), { fileRoot: root })
+    else openFileTab(openPath)
   }
-  const menu = useFileChipContextMenu(filePath, open)
+  const menu = useFileChipContextMenu(filePath, open, root)
   const handleClick = (e: MouseEvent): void => {
     if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return

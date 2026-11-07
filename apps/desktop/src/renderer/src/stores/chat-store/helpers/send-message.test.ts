@@ -1368,6 +1368,24 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
   })
 })
 
+it('grants a remote desktop app only on the session host before sending', async () => {
+  const previous = window.app.grantComputerUseSessionApps
+  const localGrant = vi.fn()
+  window.app.grantComputerUseSessionApps = localGrant
+  try {
+    seedProject('remote:env-1:/work/app', 'sid-1', {
+      mentions: [{ kind: 'desktop-app', value: 'com.node.Editor', displayName: 'Node editor' }],
+    })
+    mockEnvCallSession.mockResolvedValueOnce({ miniappIds: [], desktopAppsGranted: true })
+    await useChatStore.getState().sendMessage('use the editor')
+    expect(mockEnvCallSession).toHaveBeenCalledWith('env-1', 'node-sid-1', 'session.authorizeMentionApps', {
+      miniappIds: [], desktopApps: [{ app: 'Node editor', bundleId: 'com.node.Editor' }],
+    })
+    expect(localGrant).not.toHaveBeenCalled()
+    expect(sentText()).toContain('<superone-desktop-app-reminder>')
+  } finally { window.app.grantComputerUseSessionApps = previous }
+})
+
 describe('sendMessageImpl: @agent reminder', () => {
   it('pins the mentioned agent id and tells the model not to look it up', async () => {
     seedProject('/proj', 'sid-1', {
@@ -1492,8 +1510,16 @@ describe('sendMessageImpl: miniapp authorize', () => {
         { kind: 'miniapp', value: 'missing', displayName: 'Missing App' },
       ],
     })
-    mockMiniAppAuthorize.mockResolvedValueOnce(['granted'])
+    if (projectPath.startsWith('remote:')) {
+      mockEnvCallSession.mockResolvedValueOnce({ miniappIds: ['granted'], desktopAppsGranted: false })
+    } else mockMiniAppAuthorize.mockResolvedValueOnce(['granted'])
     await useChatStore.getState().sendMessage('use mentioned apps')
+    if (projectPath.startsWith('remote:')) {
+      expect(mockMiniAppAuthorize).not.toHaveBeenCalled()
+      expect(mockEnvCallSession).toHaveBeenCalledWith('env-1', 'node-sid-1', 'session.authorizeMentionApps', {
+        miniappIds: ['granted', 'missing'], desktopApps: [],
+      })
+    }
     expect(sentText()).toContain('appId="granted"')
     expect(sentText()).not.toContain('appId="missing"')
   })

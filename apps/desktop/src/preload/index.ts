@@ -133,6 +133,9 @@ const environmentAPI = {
   searchFiles: (projectPath: string, query: string, additionalDirs?: string[]) =>
     ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs),
 
+  getMentionCatalog: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MENTION_CATALOG, projectPath) as Promise<import('@superone/shared/mention-catalog').MentionCatalog>,
+
   searchMentions: (projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SEARCH_MENTIONS, projectPath, query, agents, additionalDirs, scopeDir),
 

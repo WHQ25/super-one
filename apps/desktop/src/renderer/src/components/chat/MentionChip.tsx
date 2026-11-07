@@ -8,16 +8,18 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { absoluteFilePath, useFileChipActions } from './file-chip-context-menu'
 import { useFileDragProps } from './DraggableFileIcon'
 import { hasTextSelection } from '@/lib/file-link'
-import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
+import { useMentionContext } from './use-mention-context'
+import { remoteActiveFileRoot } from '@superone/shared/remote-resource-key'
 
 /**
  * A file mention, in the composer or a sent bubble, acts like FileChip: click
  * opens the file, the icon drags it out, right-click shows the file menu.
  */
 export function useFileMentionActions(value: string, label: string) {
-  const filePath = absoluteFilePath(value, selectEffectiveProjectRoot(useAppStore.getState()))
-  const { dragEndRef, menu, handleClick } = useFileChipActions(filePath)
-  const dragProps = useFileDragProps(label, filePath, dragEndRef)
+  const { fileRoot } = useMentionContext()
+  const filePath = absoluteFilePath(value, fileRoot)
+  const { dragEndRef, menu, handleClick } = useFileChipActions(filePath, undefined, fileRoot)
+  const dragProps = useFileDragProps(label, fileRoot ? remoteActiveFileRoot(fileRoot, filePath) : filePath, dragEndRef)
   return {
     menu,
     chipProps: { role: 'button', title: value, onClick: handleClick },

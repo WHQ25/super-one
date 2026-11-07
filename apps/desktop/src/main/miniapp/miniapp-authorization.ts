@@ -5,6 +5,7 @@ interface AuthorizationDeps {
   prepare(appId: string, projectDir: string): Promise<MiniAppHostLaunch>
   start(args: MiniAppHostLaunch['args']): unknown
   register(appId: string, launch: MiniAppHostLaunch): void
+  assertControl?(): void
   markNeedsRebuild(): void
 }
 
@@ -21,6 +22,7 @@ export async function authorizeMiniAppTools(
     if (typeof appId !== 'string' || !appId) continue
     try {
       const launch = await deps.prepare(appId, projectDir)
+      deps.assertControl?.()
       deps.start(launch.args)
       deps.register(appId, launch)
       if (launch.manifest.tools?.length) granted.push(appId)

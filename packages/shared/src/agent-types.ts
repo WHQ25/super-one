@@ -4452,6 +4452,7 @@ export const AgentIpcChannels = {
   FIND_LINE_NUMBER: 'agent:find-line-number',
   SEARCH_FILES: 'agent:search-files',
   SEARCH_MENTIONS: 'agent:search-mentions',
+  ENVIRONMENT_MENTION_CATALOG: 'environment:mention-catalog',
 
   PLUGINS_RELOAD: 'plugins:reload',
 

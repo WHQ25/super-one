@@ -121,13 +121,21 @@ export function getAppToolEntryForSession(
 export interface MiniAppCatalogPort {
   list(projectDir: string): Promise<Array<{ id: string; manifest: { tools?: MiniAppToolDefinition[] } }>>
   /** Returns the app ids whose tools were registered on the session. */
-  authorize(appIds: string[], projectDir: string, sessionId: string): Promise<string[]>
+  authorize(appIds: string[], projectDir: string, sessionId: string, assertControl?: () => void): Promise<string[]>
 }
 
 let miniAppCatalog: MiniAppCatalogPort | null = null
 
 export function setMiniAppCatalog(port: MiniAppCatalogPort | null): void {
   miniAppCatalog = port
+}
+
+/** Native session operations use the host's own catalog, after control admission. */
+export async function authorizeMentionedMiniApps(appIds: string[], projectDir: string, sessionId: string, assertControl: () => void): Promise<string[]> {
+  assertControl()
+  const granted = await miniAppCatalog?.authorize(appIds, projectDir, sessionId, assertControl) ?? []
+  assertControl()
+  return granted
 }
 
 /** Mini-apps belong to the session's local project; a remote-node session has none here. */

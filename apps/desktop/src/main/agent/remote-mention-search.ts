@@ -1,3 +1,4 @@
+import type { MentionCatalog } from '@superone/shared/mention-catalog'
 import { availableMentionCapabilityIds } from '@superone/shared/mention-capabilities'
 import { statSync } from 'node:fs'
 import { nativeImage } from 'electron'
@@ -78,6 +79,8 @@ async function listRemoteMentionApps(
   query: string,
   includeDesktopApps: boolean,
   iconsById: boolean,
+  limit = APP_RESULT_LIMIT,
+  desktopIconsEnabled = true,
 ) {
   const settled = await Promise.allSettled([
     discoverApps(),
@@ -92,15 +95,15 @@ async function listRemoteMentionApps(
   for (const entry of projectApps) if (!ids.has(entry.id)) miniApps.push(entry)
   const matchedMiniApps = miniApps
     .filter((entry) => matchesRemoteMentionApp({ id: entry.id, name: entry.manifest.name }, query))
-    .slice(0, APP_RESULT_LIMIT)
-    .map((entry) => ({ kind: 'miniapp', path: entry.id, label: entry.manifest.name,
+    .slice(0, limit)
+    .map((entry) => ({ kind: 'miniapp' as const, path: entry.id, label: entry.manifest.name,
       description: entry.manifest.description || entry.id, ...icon(miniAppIconDataUri(entry), iconsById) }))
   const matchedDesktopApps = installedApps
     .filter((entry) => matchesRemoteMentionApp({ id: entry.bundleId, name: entry.app, aliases: entry.aliases }, query))
-    .slice(0, APP_RESULT_LIMIT)
-  const desktopIcons = await Promise.allSettled(matchedDesktopApps.map((entry) => resolveAppIconDataUri(entry.bundleId)))
-  return [...matchedMiniApps, ...matchedDesktopApps.map((entry, index) => ({ kind: 'desktop-app', path: entry.bundleId,
-    label: entry.app, description: entry.bundleId,
+    .slice(0, limit)
+  const desktopIcons = await Promise.allSettled(matchedDesktopApps.map((entry) => desktopIconsEnabled ? resolveAppIconDataUri(entry.bundleId) : Promise.resolve(null)))
+  return [...matchedMiniApps, ...matchedDesktopApps.map((entry, index) => ({ kind: 'desktop-app' as const, path: entry.bundleId,
+    label: entry.app, description: entry.bundleId, aliases: entry.aliases,
     ...icon(boundedPngDataUri(desktopIcons[index]?.status === 'fulfilled' ? desktopIcons[index].value : undefined), iconsById) }))]
 }
 
@@ -149,4 +152,16 @@ export async function searchRemoteMentions(
       iconsById: !!options.iconsById,
     },
   }
+}
+
+/** The same catalog for this host's window and its remote controllers. */
+export async function readMentionCatalog(projectPath: string): Promise<MentionCatalog> {
+  const capabilityIds = availableMentionCapabilityIds(readAppSettings(), process.platform)
+  const { readEnvironmentMentionTargets } = await import('../remote/environment-mention-targets')
+  const [apps, environments] = await Promise.all([
+    // The full native app list is metadata only; extracting every installed icon would bloat the relay reply.
+    listRemoteMentionApps(projectPath, '', capabilityIds.includes('computer'), false, Infinity, false),
+    readEnvironmentMentionTargets().catch(() => []),
+  ])
+  return { capabilityIds, apps, environments }
 }

@@ -3,7 +3,7 @@ import { OPERATION_SCOPES } from '@superone/shared/environment'
 const CLIENT_SCOPED = new Set(['client.markSeen', 'client.markUnseen', 'client.appendLog'])
 const ACCESS_METHODS = new Set(['client.mintNodeCode', 'client.pairNode'])
 const WRITE_WORKSPACE = new Set(['files.mkdir', 'files.upload', 'files.uploadComplete', 'widget.saveTemplate'])
-const READ_WORKSPACE = new Set(['files.read', 'files.listDir', 'files.videoPoster', 'files.search', 'git.worktreeInfo'])
+const READ_WORKSPACE = new Set(['files.read', 'files.listDir', 'files.videoPoster', 'files.search', 'git.worktreeInfo', 'workspace.mentionCatalog'])
 
 export function phoneMethodScopes(method: string, sessionOperation: boolean, payload?: Record<string, unknown>) {
   if (method === 'mcpApps.request') {

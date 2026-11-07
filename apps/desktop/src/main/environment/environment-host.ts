@@ -1309,6 +1309,17 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).getUsage(force)
   }
 
+  async getMentionCatalog(projectKey: string): Promise<import('@superone/shared/mention-catalog').MentionCatalog> {
+    if (!parseRemoteProjectKey(projectKey)) {
+      const { readMentionCatalog } = await import('../agent/remote-mention-search')
+      return readMentionCatalog(projectKey)
+    }
+    const { resolveRemoteProjectContext } = await import('./remote-file-tree')
+    const context = await resolveRemoteProjectContext(this, projectKey)
+    if (!context) throw new Error('Mention project not found')
+    return this.asRemoteProviderGw(parseRemoteProjectKey(projectKey)!.connectionId).mentionCatalog(context.projectId)
+  }
+
   async listRemoteCollabProfiles(connectionId: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).collaborationListProfiles()
   }

@@ -30,7 +30,9 @@ vi.mock('./fuzzy-file-search', () => ({ searchMentions: mocks.searchMentions }))
 vi.mock('../session/agent-profiles', () => ({ listAgentMentionTargets: () => [] }))
 vi.mock('@superone/shared/mention-capabilities', () => ({ availableMentionCapabilityIds: () => ['computer'] }))
 
-import { searchRemoteMentions } from './remote-mention-search'
+vi.mock('../remote/environment-mention-targets', () => ({ readEnvironmentMentionTargets: async () => [{ role: 'local', id: 'this-host', label: 'This host', status: 'connected' }] }))
+
+import { readMentionCatalog, searchRemoteMentions } from './remote-mention-search'
 
 describe('remote mention app results', () => {
   beforeEach(() => {
@@ -153,5 +155,23 @@ describe('icons over the wire', () => {
     const id = (result.items[0] as { iconId: string }).iconId
     expect(lookupMentionIcons([id])).toEqual({ [id]: 'data:image/png;base64,ZGVza3RvcA==' })
     expect(lookupMentionIcons(['never-registered'])).toEqual({})
+  })
+})
+
+
+describe('host mention metadata catalog', () => {
+  it('lists all host apps without crawling files or extracting every native app icon', async () => {
+    mocks.discoverApps.mockResolvedValue(Array.from({ length: 20 }, (_, i) => ({ id: `board-${i}`, manifest: { name: `Board ${i}` }, installDir: `/apps/${i}` })))
+    mocks.discoverProjectApps.mockResolvedValue([])
+    mocks.listInstalledApps.mockResolvedValue(Array.from({ length: 30 }, (_, i) => ({ app: `Editor ${i}`, bundleId: `editor-${i}`, aliases: [] })))
+    mocks.resolveAppIconDataUri.mockClear()
+    mocks.searchMentions.mockClear()
+    const catalog = await readMentionCatalog('/node/project')
+    expect(mocks.discoverProjectApps).toHaveBeenLastCalledWith('/node/project')
+    expect(catalog.apps).toHaveLength(50)
+    expect(catalog.capabilityIds).toEqual(['computer'])
+    expect(catalog.environments?.[0]?.id).toBe('this-host')
+    expect(mocks.resolveAppIconDataUri).not.toHaveBeenCalled()
+    expect(mocks.searchMentions).not.toHaveBeenCalled()
   })
 })

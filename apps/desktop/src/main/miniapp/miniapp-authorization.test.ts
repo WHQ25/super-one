@@ -29,3 +29,18 @@ it('does not rebuild when every grant fails', async () => {
   })).resolves.toEqual([])
   expect(rebuild).not.toHaveBeenCalled()
 })
+
+it('does not start or register after control is lost while preparing the app', async () => {
+  const start = vi.fn()
+  const register = vi.fn()
+  const rebuild = vi.fn()
+  const granted = await authorizeMiniAppTools(['app'], '/project', 'sid', {
+    prepare: async () => ({ manifest: { tools: [{ name: 'read' }] }, args: {} }) as unknown as MiniAppHostLaunch,
+    assertControl: () => { throw new Error('lease_stale') },
+    start, register, markNeedsRebuild: rebuild,
+  })
+  expect(granted).toEqual([])
+  expect(start).not.toHaveBeenCalled()
+  expect(register).not.toHaveBeenCalled()
+  expect(rebuild).not.toHaveBeenCalled()
+})

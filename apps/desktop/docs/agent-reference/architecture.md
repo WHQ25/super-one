@@ -115,6 +115,16 @@ controller withdrawal remain window/presence adapters; withdrawal cannot require
 acquiring the phone's own grant. Resource catalogs, files, workspace operations,
 trajectory inspection and realtime voice remain separate from session commands.
 
+Composer mentions use `useMentionContext`: the pane's project owns the environment,
+while its session cwd (including a worktree) owns file and Git reads. They never
+follow the globally focused project. `environment.getMentionCatalog` reads the
+host's `workspace.mentionCatalog` for capabilities, app metadata and `@env`
+targets; headless hosts return an explicit empty desktop app/capability catalog.
+Collaborator profiles and session search likewise query that host. Missing or
+unreachable host resources never fall back to the controller's catalogs. App
+mention grants use the owning desktop host's leased `session.authorizeMentionApps`
+operation; file chips retain their source root through previews and drag paths.
+
 ### Remote host reads
 
 A session switch remounts every hook that reads host-level data, and over the

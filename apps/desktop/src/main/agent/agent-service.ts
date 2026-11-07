@@ -1265,7 +1265,7 @@ export class AgentService {
           return []
         }
       }
-      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+      const cwd = projectPath
       const target = resolve(cwd, relativePath)
       if (!target.startsWith(cwd)) return []
       if (!existsSync(target)) return []
@@ -1338,7 +1338,7 @@ export class AgentService {
           return []
         }
       }
-      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+      const cwd = projectPath
       const roots = [cwd, ...(additionalDirs || [])]
       return searchMentions(roots, query, agents, 20, scopeDir)
     })

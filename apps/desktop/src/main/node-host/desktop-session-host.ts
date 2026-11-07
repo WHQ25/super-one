@@ -232,7 +232,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   }
 
   get servedOperations(): ReadonlySet<string> {
-    return new Set(['session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
+    return new Set(['session.authorizeMentionApps', 'session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
       ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
       'sessionList.deleteOlderThan',
@@ -368,6 +368,10 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
+      case 'session.authorizeMentionApps': {
+        const { authorizeMentionApps } = await import('../session/mention-apps')
+        return authorizeMentionApps(session.id, session.projectPath, input, () => session.lease.assertMutation())
+      }
       case 'session.forceRecover': {
         const { harnessId, providerSessionId } = session.snapshot
         if (harnessId !== 'cursor' || providerSessionId?.startsWith('bc-') || !session.forceRecoverRun) throw Object.assign(new Error('Force recover is only available for Cursor local agents'), { code: 'unsupported' })

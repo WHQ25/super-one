@@ -1108,6 +1108,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   // --- Session-layer provider profiles (session_providers) ---
 
   /** Agents this node can actually launch — the ids its session_collab_request validates against. */
+  mentionCatalog(projectId: string): Promise<import('@superone/shared/mention-catalog').MentionCatalog> {
+    return this.client.rpc('workspace.mentionCatalog', { projectId })
+  }
+
   async collaborationListProfiles(): Promise<unknown> {
     return this.client.rpc('collaboration.listProfiles', {})
   }

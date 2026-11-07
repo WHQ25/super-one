@@ -2,6 +2,10 @@ import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, 
 
 /** Optional session families: a host advertises only the operations it implements. */
 export interface SessionOperationMethods {
+  'session.authorizeMentionApps': {
+    input: { miniappIds: string[]; desktopApps: Array<{ app: string; bundleId: string }> }
+    result: { miniappIds: string[]; desktopAppsGranted: boolean }
+  }
   /** One answer per question of a Codex agent message's async question item. */
   'session.answerAsyncQuestion': { input: { messageId: string; itemId: string; answers: string[] }; result: { reply: string } }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }
@@ -30,6 +34,7 @@ export interface SessionOperationMethods {
 }
 export type SessionOperationMethod = keyof SessionOperationMethods
 export const SESSION_OPERATION_METHODS: ReadonlySet<string> = new Set([
+  'session.authorizeMentionApps',
   'session.answerAsyncQuestion',
   'session.dequeue', 'session.steer',
   'session.reportWorktreeRemoved',

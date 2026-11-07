@@ -147,6 +147,9 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
   )
 
 
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MENTION_CATALOG, async (_e, projectKey: string) =>
+    (await host()).getMentionCatalog(projectKey))
+
   // --- harness.resources + sessionProviders (node discovery path) ---
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_HARNESS_RESOURCES,

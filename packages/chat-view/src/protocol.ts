@@ -2,7 +2,7 @@ import type { AgentEvent, AgentStatus, AskUserQuestionRequest, ChatMessage, Loca
 import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 import type { ChatWindowRange } from './chat-window'
 
-/** Wire shape of the retry banner; mirrors what `ApiRetryIndicator` renders. */
+/** Harness-independent retry state rendered in the active message footer. */
 export interface ProjectedApiRetry {
   attempt: number
   maxRetries?: number

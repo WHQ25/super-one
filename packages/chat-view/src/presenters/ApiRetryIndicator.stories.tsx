@@ -1,8 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ApiRetryIndicator } from './ChatMessageIndicators'
-import { initializeChatViewI18n } from '../i18n'
+import { PortableMessage } from '../PortableMessage'
 
-void initializeChatViewI18n('en')
 
 const dump = 'API error (status 500 Internal Server Error): {"error":"upstream exploded","request_id":"req_123","model":"grok-4"}'
 
@@ -10,13 +9,18 @@ const meta = {
   title: 'Chat/API Retry',
   component: ApiRetryIndicator,
   parameters: { layout: 'padded' },
+  render: ({ info, onRetry }, context) => <PortableMessage message={{
+    id: 'retry', role: 'assistant', status: 'streaming', providerId: 'claude',
+    createdAt: new Date().toISOString(), content: [],
+  }} scheme={context.globals.theme ?? 'light'} pendingPermission={null}
+    isLastAssistant sessionStreaming apiRetry={info} onRetry={onRetry} />,
   decorators: [(Story) => <div className="w-80"><Story /></div>],
 } satisfies Meta<typeof ApiRetryIndicator>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Grok's retry reason is an API dump. The banner keeps the attempt count. */
+/** Grok's retry reason is an API dump. The footer keeps the attempt count. */
 export const Retrying: Story = {
   args: {
     info: { attempt: 2, maxRetries: 5, delayMs: 0, phase: 'retrying', message: dump },
@@ -41,4 +45,8 @@ export const Failed: Story = {
     info: { attempt: 0, delayMs: 0, phase: 'failed', message: 'timeout' },
     onRetry: () => {},
   },
+}
+
+export const DarkChinese: Story = {
+  ...ShortReason, globals: { theme: 'dark', locale: 'zh' },
 }

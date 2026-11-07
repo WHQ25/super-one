@@ -37,8 +37,13 @@ the landing injects `reset` so a previous transcript cannot leak into the
 next first send. The first send itself has no "Starting session…" / loading
 copy: the composer empties, and the user bubble and title are painted, before
 the draft flush and the `create_session` round trip (`ChatRuntime.stageTurn`),
-and a `pendingTurn` line ("Creating session…" → "Sending…") sits under the
-bubble inside the WebView until the assistant's `message_start` lands. Every
+and an empty assistant shell reserves the message footer ("Creating session…" →
+"Sending…") inside the WebView until the assistant's `message_start` lands.
+The live reply uses the same footer layout and replaces the pending label with
+normal duration and token metadata. MCP startup and every harness’s API retry
+state share this footer. Retry counts, countdowns and short reasons use its
+muted styling; retries before an assistant starts reserve the same footer,
+without attaching the new turn’s status to an older answer. Every
 live send paints its own bubble the same way, under the `clientMessageId` the
 host echoes back. Create failures still surface on the status line from the
 host `create_session` error, and hand the cleared draft back to the composer.

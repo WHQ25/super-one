@@ -12,12 +12,17 @@ import { ForkButton } from './ForkButton'
 import { isRealtimeVoiceMessage } from './codex-realtime-messages'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
+import { ApiRetryIndicator } from '@superone/chat-view/presenters/ChatMessageIndicators'
 import { MessageErrorBadge } from './MessageErrorBadge'
 import { MessageTimestamp } from '@superone/chat-view/presenters/MessageTime'
 import {
   formatTerminalReason,
   turnFooterModel,
   ZERO_TURN_TOKENS,
+  type PendingTurnPhase,
+  type TurnRetryInfo,
+  mcpStartupProgress,
+  turnHasOutput,
 } from '@superone/chat-view/presenters/turn-footer-model'
 
 /** Token value with ↑ or ↓ arrow. Highlights while value is actively changing, fades after 1s of inactivity. */
@@ -66,11 +71,17 @@ export function DurationFooter({
   message,
   copyText,
   parentIsStreaming,
+  pendingTurn,
+  apiRetry,
+  onRetry,
   className,
 }: {
   message: ChatMessage
   copyText?: string
   parentIsStreaming: boolean
+  pendingTurn?: PendingTurnPhase
+  apiRetry?: TurnRetryInfo | null
+  onRetry?: () => void
   className?: string
 }) {
   const { t } = useTranslation()
@@ -99,8 +110,10 @@ export function DurationFooter({
       streamingTokens: s.isCompacting ? ZERO_TOKENS : s.streamingTokens,
     }
   }))
-  const isStreaming = parentIsStreaming && !isCompacting
-  const streamingTokens = rawStreamingTokens
+  const terminalRetry = !!apiRetry && apiRetry.phase !== undefined && apiRetry.phase !== 'retrying'
+  const isStreaming = parentIsStreaming && !isCompacting && !terminalRetry
+  const showActivity = isStreaming || (!!apiRetry && !terminalRetry)
+  const streamingTokens = pendingTurn ? ZERO_TOKENS : rawStreamingTokens
   const frozenTokensRef = useRef(ZERO_TOKENS)
   if (isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
     frozenTokensRef.current = streamingTokens
@@ -109,7 +122,7 @@ export function DurationFooter({
   // calibrated for a turn that produces output. A local slash command legitimately
   // emits nothing for minutes, so leaving the heuristic on paints the footer amber
   // then red and tells the user it broke, which is worse than showing nothing.
-  const stallLevel = useStallLevel(isStreaming && !runningSlashCommand)
+  const stallLevel = useStallLevel(isStreaming && !runningSlashCommand && !apiRetry)
   const pausedMsRef = useRef(0)
   const pauseStartRef = useRef(0)
   const startTimeRef = useRef(() => {
@@ -153,7 +166,7 @@ export function DurationFooter({
     isStreaming,
     streamingTokens,
     frozenTokens: frozenTokensRef.current,
-    elapsedMs: elapsed,
+    elapsedMs: pendingTurn ? 0 : elapsed,
   })
   const { tokenInput, tokenOutput, hasTokens, showDuration } = footer
   const [copied, setCopied] = useState(false)
@@ -167,8 +180,10 @@ export function DurationFooter({
   const showCopy = !isStreaming && !!copyText
   // Voice segments carry a synthetic id with no truncation point in the backing
   // Codex thread, so a fork from one could never resolve.
-  const showFork = !isStreaming && message.status !== 'error' && !isRealtimeVoiceMessage(message)
-  const { errorInfo, showError, terminalReason, showTerminalReason } = footer
+  const showFork = !pendingTurn && !apiRetry && !isStreaming && message.status !== 'error' && !isRealtimeVoiceMessage(message)
+  const { errorInfo, terminalReason } = footer
+  const showError = footer.showError && !apiRetry
+  const showTerminalReason = footer.showTerminalReason && !apiRetry
   const mcpStartup = message.metadata?.codex?.mcpStartup
   const mcpServers = mcpStartup ?? []
   // A local slash command (/code-review) can run for minutes emitting nothing at
@@ -177,25 +192,17 @@ export function DurationFooter({
   // happening" slot for MCP startup. Once the turn produces anything the output
   // is itself the progress signal, so both notices retire. Blank text does not
   // count: a streaming turn opens with an empty block before the first token lands.
-  const hasTurnOutput = message.content.some((block) =>
-    block.type === 'text'
-      ? block.text.trim().length > 0
-      : block.type === 'thinking'
-        ? block.thinking.trim().length > 0
-        : true,
-  )
-  const hasStartingMcp = mcpServers.some((server) => server.status === 'starting')
-  const showMcpStartup = isStreaming && hasStartingMcp && !hasTurnOutput
-  const mcpReadyCount = showMcpStartup ? mcpServers.filter((s) => s.status === 'ready').length : 0
+  const hasTurnOutput = turnHasOutput(message)
+  const startup = mcpStartupProgress(message, isStreaming)
   const failedMcp = mcpServers.filter((s) => s.status === 'failed')
   const showMcpFailure = !isStreaming && failedMcp.length > 0
-  const showSlashCommand = isStreaming && !!runningSlashCommand && !hasTurnOutput
-  if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure && !showSlashCommand) return null
+  const showSlashCommand = !apiRetry && !pendingTurn && isStreaming && !!runningSlashCommand && !hasTurnOutput
+  if (!apiRetry && !showActivity && !showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !startup && !showMcpFailure && !showSlashCommand) return null
 
-  const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
+  const stallColor = isStreaming && !apiRetry ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
-    <div className={cn('group/footer mt-2 flex items-center gap-1.5 text-xs transition-colors duration-500', stallColor, className)}>
+    <div data-pending-turn={apiRetry ? undefined : pendingTurn} role={!apiRetry && pendingTurn ? 'status' : undefined} aria-live={!apiRetry && pendingTurn ? 'polite' : undefined} className={cn('group/footer mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs transition-colors duration-500', stallColor, className)}>
       {showCopy && (
         <button
           onClick={handleCopy}
@@ -207,39 +214,41 @@ export function DurationFooter({
           }
         </button>
       )}
-      {showDuration && (isStreaming ? (
+      {(showActivity || showDuration || apiRetry) && (showActivity ? (
         <ModSpinner message={message}>
           {(label) => (
-            <>
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
               <Loader2 className="size-3 animate-spin" />
-              {label && <span>{label}</span>}
-              <span>{footer.durationLabel}</span>
-            </>
+              {apiRetry
+                ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
+                : pendingTurn
+                ? <span>{t(pendingTurn === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
+                : <>
+                  {startup
+                    ? <span>{t('chat.codex.startingMcpServers', startup)}</span>
+                    : label && <span>{label}</span>}
+                  {showDuration && <span>{footer.durationLabel}</span>}
+                </>}
+            </span>
           )}
         </ModSpinner>
       ) : (
         <>
-          <Clock className="size-3" />
-          <span>{footer.durationLabel}</span>
+          {apiRetry ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} /> : <>
+            <Clock className="size-3" />
+            <span>{footer.durationLabel}</span>
+          </>}
         </>
       ))}
       {showSlashCommand && (
         <>
-          {!showDuration && <Loader2 className="size-3 animate-spin" />}
-          {showDuration && <span>·</span>}
+          <span>·</span>
           <span>{t('chat.runningCommand', { command: runningSlashCommand!.command })}</span>
-        </>
-      )}
-      {showMcpStartup && (
-        <>
-          {!showDuration && <Loader2 className="size-3 animate-spin" />}
-          {showDuration && <span>·</span>}
-          <span>{t('chat.codex.startingMcpServers', { ready: mcpReadyCount, total: mcpServers.length })}</span>
         </>
       )}
       {hasTokens && (
         <>
-          {showDuration && <span>·</span>}
+          {(showActivity || showDuration || !!apiRetry) && <span>·</span>}
           <AnimatedToken value={tokenInput} direction="up" active={isStreaming} />
           <AnimatedToken value={tokenOutput} direction="down" active={isStreaming} />
         </>

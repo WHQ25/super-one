@@ -1,7 +1,7 @@
 import { publishComposerOverhang as publishOverhang } from '@/hooks/useChatScroll'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { SessionProviderState } from './SessionProviderState'
-import { PendingTurnIndicator } from '@superone/chat-view/presenters/ChatMessageIndicators'
+import { pendingTurnMessage, sessionFooterTarget } from '@superone/chat-view/presenters/turn-footer-model'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
@@ -13,7 +13,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, ChevronsUp, GitFork, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ModelFallbackRow } from './ModelFallbackRow'
 import { PluginNoticeRow } from './PluginNotice'
 import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
@@ -194,12 +194,33 @@ function ChatTranscript({
   )
   const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)
     ?? lastAssistantMessageId
+  const retryTarget = useMemo(() => apiRetry
+    ? sessionFooterTarget(displayMessages, displayLastAssistantMessageId ?? undefined) : null,
+    [apiRetry, displayMessages, displayLastAssistantMessageId])
+  const pendingMessage = useMemo(() => {
+    if (retryTarget) return retryTarget.placeholder ? retryTarget.message : null
+    if (!parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
+      || !awaitingAssistantReply || isCompacting || isRecapping) return null
+    const user = displayMessages.findLast(message => message.role === 'user')
+    return user ? pendingTurnMessage(user) : null
+  }, [retryTarget, scope?.projectPath, activeProject, awaitingAssistantReply, isCompacting, isRecapping, displayMessages])
+  const retry = useCallback(() => {
+    const lastUser = displayMessages.findLast(message => message.role === 'user')
+    const text = lastUser?.content.find(block => block.type === 'text')
+    if (text?.type === 'text' && text.text.trim()) {
+      void useChatStore.getState().sendMessage(text.text, undefined, undefined, undefined, scope ?? undefined)
+    }
+  }, [displayMessages, scope])
 
   const transcriptRef = useRef<VirtualTranscriptHandle>(null)
   const messageTop = useCallback((id: string) => transcriptRef.current?.topOf(id) ?? null, [])
   const messagesLen = displayMessages.length
   const messagesTailId = displayMessages[messagesLen - 1]?.id
-  const { segments, rows } = useMemo(() => transcriptView(displayMessages), [displayMessages])
+  const { segments, rows: messageRows } = useMemo(() => transcriptView(displayMessages), [displayMessages])
+  // Use the same transcript row spacing before and after message_start.
+  const rows = useMemo(() => pendingMessage
+    ? [...messageRows, ...transcriptView([pendingMessage]).rows]
+    : messageRows, [messageRows, pendingMessage])
   const messagesTailCreatedAt = displayMessages[messagesLen - 1]?.createdAt
   const dateSeparatorAt = useMemo(
     () => dateSeparators(displayMessages, Date.now()),
@@ -248,7 +269,7 @@ function ChatTranscript({
     <div className="relative min-w-0 flex-1 overflow-hidden">
       {displayMessages.length === 0 && !historyHydrated && !hasRealtimeTimeline ? (
         <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-      ) : displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
+      ) : displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply && !apiRetry ? (
         sideChatParentId
           // A side chat is empty on purpose and must never reach ChatSuggestions:
           // picking a harness there switches the project's active session, which
@@ -318,11 +339,10 @@ function ChatTranscript({
               return (
                 <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                   {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={row.final && msg.id === displayLastAssistantMessageId} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following} segmentId={row.id} firstSlice={row.first} anchors={row.anchors} />
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={row.final && (msg.id === pendingMessage?.id || msg.id === displayLastAssistantMessageId)} pendingTurn={msg.id === pendingMessage?.id ? 'sending' : undefined} apiRetry={row.final && row.source.id === retryTarget?.message.id ? apiRetry : undefined} onRetry={row.source.id === retryTarget?.message.id ? retry : undefined} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following} segmentId={row.id} firstSlice={row.first} anchors={row.anchors} />
                 </div>
               )
             }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
-            {awaitingAssistantReply && !isCompacting && !isRecapping && !apiRetry && <PendingTurnIndicator phase="sending" />}
             <SessionProviderState />
             {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
@@ -357,18 +377,6 @@ function ChatTranscript({
             {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
             {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
             {isRecapping && <RecappingIndicator />}
-            {apiRetry && (
-              <ApiRetryIndicator
-                info={apiRetry}
-                onRetry={() => {
-                  const lastUser = [...displayMessages].reverse().find((m) => m.role === 'user')
-                  const text = lastUser?.content.find((block) => block.type === 'text')
-                  if (text && text.type === 'text' && text.text.trim()) {
-                    void useChatStore.getState().sendMessage(text.text)
-                  }
-                }}
-              />
-            )}
             <RemoteTranscriptChrome edge="bottom" />
           </SelectionContextMenuZone>
           </RemoteTranscriptEdges>

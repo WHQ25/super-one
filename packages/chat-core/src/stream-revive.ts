@@ -29,8 +29,8 @@ import type { ChatCoreSession } from './types'
  * `entry.pendingInteractions` through this same reducer right after writing
  * `status: 'idle'` from the main-process snapshot, so treating them as proof of
  * life would invent liveness that main explicitly denied. Neither is
- * `queued_message_consumed`, which needs no special case — every harness emits
- * the queued turn's `message_start` alongside it.
+ * `queued_message_consumed`: consuming input does not prove that a reply has
+ * started, and a steer may join an existing reply without a new `message_start`.
  */
 
 /** Events that only prove life when their target message is still streaming. */

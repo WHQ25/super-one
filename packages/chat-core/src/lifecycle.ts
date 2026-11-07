@@ -44,10 +44,13 @@ export function reduceLifecycle(
       if (idx === -1) return {}
       const consumed = session.queuedMessages[idx]
       const alreadyInTranscript = session.messages.some((m) => m.id === consumed.id)
+      const lastAssistant = session.messages.findLast((m) => m.role === 'assistant' && m.providerId !== 'system')
       return {
         ...(alreadyInTranscript ? {} : { messages: [...session.messages, consumed] }),
         queuedMessages: session.queuedMessages.filter((_, i) => i !== idx),
-        awaitingAssistantReply: true,
+        // A steer can join the current reply without another message_start
+        // (remote Codex and Claude Insert Soon). Only wait if no reply is live.
+        awaitingAssistantReply: lastAssistant?.status !== 'streaming',
         lastEventAt: ports.now(),
       }
     }

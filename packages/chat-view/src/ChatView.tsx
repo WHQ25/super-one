@@ -23,19 +23,17 @@ import {
 import type { AgentStatus, ChatMessage, Locale } from '@superone/shared/agent-types'
 import { Loader2 } from 'lucide-react'
 import {
-  ApiRetryIndicator,
   CompactErrorIndicator,
   CompactIndicator,
   CompactingIndicator,
   findLastAssistantMessageId,
-  PendingTurnIndicator,
   RecappingIndicator,
   TurnMetaIndicator,
 } from './presenters/ChatMessageIndicators'
 import { transcriptRow } from './transcript-rows'
 import { dateSeparators } from './presenters/message-time'
 import { MessageDateSeparator } from './presenters/MessageTime'
-import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
+import { pendingTurnMessage, sessionFooterTarget, ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from './mcp-app-document'
 import { installHostBridge, postHost, requestNativeAsync } from './bridge'
@@ -734,9 +732,17 @@ export function ChatView() {
     return index >= state.range.start && index < shownEnd
   })
   const asyncQuestion = useMemo(() => codexAsyncQuestionQueue({ messages: state.messages, pendingAsyncQuestions: state.session.pendingAsyncQuestions })[0], [state.messages, state.session.pendingAsyncQuestions])
-  // Compact / turn-meta markers persist as assistant rows but render as
-  // indicators, so the live turn is the last assistant message that is neither.
+  // Compact / turn-meta markers do not own the current turn's status.
   const lastAssistantId = findLastAssistantMessageId(state.messages)
+  const retryTarget = useMemo(() => state.session.apiRetry
+    ? sessionFooterTarget(state.messages, lastAssistantId) : null,
+    [state.messages, state.session.apiRetry, lastAssistantId])
+  const pendingMessage = useMemo(() => {
+    if (retryTarget) return retryTarget.placeholder ? retryTarget.message : null
+    if (!state.session.pendingTurn || state.session.isCompacting || state.session.isRecapping) return null
+    const user = state.messages.findLast(message => message.role === 'user')
+    return user ? pendingTurnMessage(user) : null
+  }, [state.messages, state.session.pendingTurn, state.session.isCompacting, state.session.isRecapping, retryTarget])
   const sessionStreaming = state.session.sessionStatus === 'streaming'
     || state.session.sessionStatus === 'background'
   // Each patch carries a fresh array; key it by value so memoized bubbles keep their props.
@@ -820,6 +826,7 @@ export function ChatView() {
               isLastAssistant={row.final && message.id === lastAssistantId}
               sessionStreaming={sessionStreaming}
               streamingTokens={state.session.streamingTokens}
+              apiRetry={row.source.id === retryTarget?.message.id && row.final ? state.session.apiRetry : undefined}
               projectPath={state.session.projectPath} sourceEnvironmentId={state.session.sourceEnvironmentId}
               hideCopyActions={isRealtimeVoiceMessage(message)}
               promptKeywords={promptKeywords}
@@ -839,6 +846,8 @@ export function ChatView() {
           <EdgeLoader edge="bottom" loading={(navigationLoading && navigationEdge === 'bottom') || (historyLoading && historyEdge === 'bottom')} />
         </div>
       )}
+      {!moreAfter && pendingMessage && <PortableMessage message={pendingMessage} scheme={state.scheme}
+        pendingPermission={null} pendingTurn={state.session.pendingTurn ?? 'sending'} apiRetry={state.session.apiRetry} />}
       {/* The queue follows the latest turn, so it waits until the window reaches it. */}
       {!moreAfter && <SessionProviderState items={state.session.sessionInbox} connection={state.session.harnessConnection}
         onReconnect={() => requestNativeAsync('reconnectAgent', {})}
@@ -847,11 +856,9 @@ export function ChatView() {
         <PortableQueuedMessages messages={state.session.queuedMessages} steer={state.session.queuedSteer}
           scheme={state.scheme} mentionArtwork={state.mentionArtwork} projectPath={state.session.projectPath} />
       )}
-      {state.session.pendingTurn && <PendingTurnIndicator phase={state.session.pendingTurn} />}
       {state.session.isCompacting && <CompactingIndicator startedAt={state.session.compactingStartedAt} />}
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
       {state.session.isRecapping && <RecappingIndicator />}
-      {state.session.apiRetry && <ApiRetryIndicator info={state.session.apiRetry} />}
       {!moreAfter && <PortableScheduledResumeCard state={scheduledSend} locale={state.locale} />}
       <BottomDock>
         <MobileModPanes />

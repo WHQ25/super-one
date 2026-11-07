@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { turnFooterModel, ZERO_TURN_TOKENS } from './turn-footer-model'
+import { sessionFooterTarget, turnFooterModel, ZERO_TURN_TOKENS } from './turn-footer-model'
 
 function turn(metadata: ChatMessage['metadata'], overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -139,5 +139,21 @@ describe('turn footer failure', () => {
 describe('an empty turn footer', () => {
   it('reports nothing worth rendering when the turn was quick, free and clean', () => {
     expect(turnFooterModel({ ...settled, message: turn({ durationMs: 800 }) }).isEmpty).toBe(true)
+  })
+})
+
+describe('session footer ownership', () => {
+  it('keeps status on the same live answer when a steer splits its transcript', () => {
+    const assistant = turn(undefined, { status: 'streaming' })
+    const steer = turn({ transcriptBoundary: { messageId: assistant.id, order: 3, content: {}, items: {} } }, { id: 'steer', role: 'user' })
+    expect(sessionFooterTarget([assistant, steer], assistant.id)).toEqual({ message: assistant, placeholder: false })
+  })
+
+  it('reserves a footer when the user starts a new turn after an old answer', () => {
+    const assistant = turn(undefined)
+    const user = turn(undefined, { id: 'u2', role: 'user' })
+    const target = sessionFooterTarget([assistant, user], assistant.id)
+    expect(target.placeholder).toBe(true)
+    expect(target.message.id).toBe('pending-reply:u2')
   })
 })

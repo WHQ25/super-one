@@ -122,3 +122,45 @@ export function turnFooterModel({
     isEmpty: !showDuration && !hasTokens && !showError && !showTerminalReason,
   }
 }
+
+export type PendingTurnPhase = 'creating' | 'sending'
+
+/** UI-only assistant shell: reserves the real message footer before message_start. */
+export function pendingTurnMessage(user: ChatMessage): ChatMessage {
+  return {
+    id: `pending-reply:${user.id}`, role: 'assistant', status: 'streaming',
+    providerId: user.providerId, createdAt: user.createdAt, content: [],
+  }
+}
+
+export type { ProjectedApiRetry as TurnRetryInfo } from '../protocol'
+
+/** Never put a new request's session status on the preceding answer. */
+export function sessionFooterTarget(messages: readonly ChatMessage[], lastAssistantId: string | undefined) {
+  const userIndex = messages.findLastIndex(message => message.role === 'user')
+  const assistantIndex = messages.findLastIndex(message => message.id === lastAssistantId)
+  const steersCurrentTurn = messages[userIndex]?.metadata?.transcriptBoundary?.messageId === lastAssistantId
+  if (assistantIndex >= 0 && (assistantIndex > userIndex || steersCurrentTurn)) {
+    return { message: messages[assistantIndex], placeholder: false }
+  }
+  return {
+    message: pendingTurnMessage(messages[userIndex] ?? {
+      id: 'session-status', role: 'user', status: 'complete', providerId: 'local',
+      createdAt: new Date().toISOString(), content: [],
+    }),
+    placeholder: true,
+  }
+}
+
+export function turnHasOutput(message: ChatMessage): boolean {
+  return message.content.some(block => block.type === 'text'
+    ? block.text.trim().length > 0
+    : block.type === 'thinking' ? block.thinking.trim().length > 0 : true)
+}
+
+export function mcpStartupProgress(message: ChatMessage, isStreaming: boolean) {
+  const servers = message.metadata?.codex?.mcpStartup ?? []
+  return isStreaming && !turnHasOutput(message) && servers.some(server => server.status === 'starting')
+    ? { ready: servers.filter(server => server.status === 'ready').length, total: servers.length }
+    : null
+}

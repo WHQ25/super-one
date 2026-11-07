@@ -10,7 +10,11 @@ import {
   turnFooterModel,
   ZERO_TURN_TOKENS,
   type TurnTokenCounts,
+  type PendingTurnPhase,
+  type TurnRetryInfo,
+  mcpStartupProgress,
 } from './presenters/turn-footer-model'
+import { ApiRetryIndicator } from './presenters/ChatMessageIndicators'
 import { requestNative } from './bridge'
 
 function copyErrorText(text: string): boolean {
@@ -57,6 +61,9 @@ export interface PortableTurnFooterProps {
   message: ChatMessage
   /** This turn is live AND the session is still producing it. */
   isStreaming: boolean
+  pendingTurn?: PendingTurnPhase
+  apiRetry?: TurnRetryInfo | null
+  onRetry?: () => void
   streamingTokens: TurnTokenCounts
   /** Plain-text transcript of the turn; omitted while streaming, which hides copy. */
   /** The text, or a loader for a reply the transcript window holds in part. */
@@ -67,41 +74,43 @@ export interface PortableTurnFooterProps {
  * Remote-Control counterpart of the desktop `DurationFooter`. It renders the
  * slice a phone can support — duration, spend, failure, copy — off the same
  * `turnFooterModel` derivation, so the two never disagree about which number a
- * turn is worth showing. Desktop-only affordances (fork, MCP startup, stall
+ * turn is worth showing. Desktop-only affordances (fork, stall
  * tinting, running slash command) are deliberately absent.
  */
 export function PortableTurnFooter({
   message,
-  isStreaming,
+  isStreaming: turnStreaming,
+  pendingTurn,
+  apiRetry,
+  onRetry,
   streamingTokens,
   copyText,
 }: PortableTurnFooterProps) {
   const { t } = useTranslation()
+  const terminalRetry = !!apiRetry && apiRetry.phase !== undefined && apiRetry.phase !== 'retrying'
+  const isStreaming = turnStreaming && !terminalRetry
+  const showActivity = isStreaming || (!!apiRetry && !terminalRetry)
+  const startup = mcpStartupProgress(message, isStreaming)
   const elapsedMs = useElapsedMs(message, isStreaming)
   const frozenRef = useRef(ZERO_TURN_TOKENS)
-  if (isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
+  if (!pendingTurn && isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
     frozenRef.current = streamingTokens
   }
   const footer = turnFooterModel({
     message,
     isStreaming,
-    streamingTokens,
+    streamingTokens: pendingTurn ? ZERO_TURN_TOKENS : streamingTokens,
     frozenTokens: frozenRef.current,
-    elapsedMs,
+    elapsedMs: pendingTurn ? 0 : elapsedMs,
   })
   const [copied, setCopied] = useState<'copied' | 'copying' | 'failed' | false>(false)
   const showCopy = !isStreaming && Boolean(copyText)
-  // A turn under a second has no clock yet, and on the phone the footer is the
-  // only place a live turn announces itself — so the sending label stands in
-  // until the clock is worth showing.
-  const showSending = isStreaming && !footer.showDuration
-
-  if (footer.isEmpty && !showCopy && !showSending) return null
+  if (footer.isEmpty && !showCopy && !showActivity && !apiRetry) return null
 
   const separator = <span aria-hidden>·</span>
 
   return (
-    <div className={cn('mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
+    <div data-pending-turn={apiRetry ? undefined : pendingTurn} role={!apiRetry && pendingTurn ? 'status' : undefined} aria-live={!apiRetry && pendingTurn ? 'polite' : undefined} className={cn('mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
       {showCopy && (
         <button
           type="button"
@@ -121,32 +130,33 @@ export function PortableTurnFooter({
                 : <Copy className="size-3" />}
         </button>
       )}
-      {footer.showDuration && (
-        <Meta>
-          {isStreaming ? <Loader2 className="size-3 animate-spin" /> : <Clock className="size-3" />}
-          <span>{footer.durationLabel}</span>
-        </Meta>
-      )}
-      {showSending && (
-        <Meta>
-          <Loader2 className="size-3 animate-spin" />
-          <span>{t('chat.sending')}</span>
+      {(showActivity || footer.showDuration || apiRetry) && (
+        <Meta className="min-w-0 max-w-full shrink">
+          {showActivity ? <Loader2 className="size-3 animate-spin" /> : !apiRetry && <Clock className="size-3" />}
+          {apiRetry
+            ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
+            : pendingTurn
+            ? <span>{t(pendingTurn === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
+            : <>
+              {startup && <span>{t('chat.codex.startingMcpServers', startup)}</span>}
+              {footer.showDuration && <span>{footer.durationLabel}</span>}
+            </>}
         </Meta>
       )}
       {footer.hasTokens && (
         <>
-          {(footer.showDuration || showSending) && separator}
+          {(footer.showDuration || showActivity || !!apiRetry) && separator}
           <Token value={footer.tokenInput} direction="up" />
           <Token value={footer.tokenOutput} direction="down" />
         </>
       )}
-      {footer.showError && (
+      {footer.showError && !apiRetry && (
         <>
           {(footer.showDuration || footer.hasTokens) && separator}
           <MessageErrorBadge info={footer.errorInfo!} onCopy={copyErrorText} />
         </>
       )}
-      {footer.showTerminalReason && (
+      {footer.showTerminalReason && !apiRetry && (
         <>
           {(footer.showDuration || footer.hasTokens) && separator}
           <Meta>

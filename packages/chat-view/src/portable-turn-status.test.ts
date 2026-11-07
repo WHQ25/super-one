@@ -33,17 +33,19 @@ function render(message: ChatMessage, props: Partial<Parameters<typeof PortableM
 describe('the live-turn indicator', () => {
   it('spins for the last turn while the session is producing it', () => {
     const html = render(turn(), { isLastAssistant: true, sessionStreaming: true })
-    expect(html).toContain('Sending…')
+    expect(html).toContain('animate-spin')
+    expect(html).not.toContain('Sending…')
   })
 
-  it('announces a live turn before its clock is worth showing', () => {
+  it('keeps the spinner without the sending label once a reply starts', () => {
     // Under a second there is no duration yet, and the footer is the only place
     // the phone shows that a turn is running.
     const html = render(turn({ createdAt: new Date().toISOString() }), {
       isLastAssistant: true,
       sessionStreaming: true,
     })
-    expect(html).toContain('Sending…')
+    expect(html).toContain('animate-spin')
+    expect(html).not.toContain('Sending…')
   })
 
   // The bug: an interrupt or a dropped connection can leave a turn marked
@@ -51,12 +53,12 @@ describe('the live-turn indicator', () => {
   // status made the phone spin on it forever.
   it('does not spin on a stale streaming turn once the session is idle', () => {
     const html = render(turn(), { isLastAssistant: true, sessionStreaming: false })
-    expect(html).not.toContain('Sending…')
+    expect(html).not.toContain('animate-spin')
   })
 
   it('does not spin on an older turn while a newer one streams', () => {
     const html = render(turn(), { isLastAssistant: false, sessionStreaming: true })
-    expect(html).not.toContain('Sending…')
+    expect(html).not.toContain('animate-spin')
   })
 })
 
@@ -137,5 +139,27 @@ describe('collaboration bubbles', () => {
     expect(render({ ...wake, metadata: { source: 'task-notification' } })).toBe('')
     // The same words typed by the user stay visible.
     expect(render(wake)).not.toBe('')
+  })
+})
+
+describe('portable session runtime footer', () => {
+  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('puts %s retries in the message footer with neutral styling', providerId => {
+    const html = render(turn({ providerId }), {
+      isLastAssistant: true, sessionStreaming: true,
+      apiRetry: { attempt: 2, delayMs: 4000, maxRetries: 5 },
+    })
+    expect(html).toContain('data-turn-retry')
+    expect(html).toContain('Retrying API request (2/5)')
+    expect(html).not.toMatch(/bg-warning|text-warning|bg-error|text-error/)
+    expect(html.match(/animate-spin/g)).toHaveLength(1)
+  })
+
+  it('shows MCP startup in the same footer until the turn produces output', () => {
+    const message = turn({ content: [], metadata: { codex: { threadId: 't', usage: null, items: [], mcpStartup: [
+      { name: 'one', status: 'ready' }, { name: 'two', status: 'starting' },
+    ] } } })
+    const props = { isLastAssistant: true, sessionStreaming: true }
+    expect(render(message, props)).toContain('Starting MCP servers 1/2')
+    expect(render({ ...message, content: [{ type: 'text', text: 'Reply started' }] }, props)).not.toContain('Starting MCP servers')
   })
 })

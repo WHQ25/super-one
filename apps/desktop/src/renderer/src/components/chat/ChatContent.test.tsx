@@ -10,7 +10,7 @@ interface FakeSessionState {
   isCompacting: boolean
   isRecapping: boolean
   rateLimitInfo: null
-  apiRetry: null
+  apiRetry: { attempt: number; delayMs: number; phase?: 'retrying' | 'exhausted' | 'failed' } | null
   pendingPermissions: PermissionRequest[]
   pendingQuestion: AskUserQuestionRequest | null
   pendingPlanApproval: PlanApprovalRequest | null
@@ -138,8 +138,10 @@ vi.mock('./ChatMessage', async () => {
   const { useWorkflowNavigation } = await import('./workflow-navigation-context')
   const { useSubagentNavigation } = await import('./subagent-navigation-context')
   return {
-    ChatMessage: ({ message, hideUserActions, hideCopyActions }: {
-      message?: { content?: Array<{ type: string; text?: string }> }
+    ChatMessage: ({ message, hideUserActions, hideCopyActions, pendingTurn, apiRetry }: {
+      message?: { role?: string; content?: Array<{ type: string; text?: string }> }
+      pendingTurn?: string
+      apiRetry?: { attempt: number } | null
       hideUserActions?: boolean
       hideCopyActions?: boolean
     }) => {
@@ -148,9 +150,13 @@ vi.mock('./ChatMessage', async () => {
       return (
         <div
           data-testid="chat-message"
+          data-message-role={message?.role}
+          data-pending-turn={pendingTurn}
+          data-api-retry={apiRetry?.attempt}
           data-hide-user-actions={String(!!hideUserActions)}
           data-hide-copy-actions={String(!!hideCopyActions)}
         >
+          {pendingTurn && <span>Sending…</span>}
           {message?.content
             ?.filter((block) => block.type === 'text')
             .map((block, i) => <span key={i}>{block.text}</span>)}
@@ -277,6 +283,7 @@ afterEach(() => {
   hoisted.sessionState._providerSessionId = null
   hoisted.sessionState.status = 'idle'
   hoisted.sessionState.awaitingAssistantReply = false
+  hoisted.sessionState.apiRetry = null
 })
 
 it('keeps the remote draft composer below its observation notice and disconnect action', async () => {
@@ -1362,7 +1369,8 @@ describe('ChatContent transcript density', () => {
 
 
 describe('ChatContent pending send', () => {
-  it('shows sending below the staged user bubble until the assistant starts or the send fails', () => {
+  it('reserves an assistant footer for a remote send until the assistant starts or the send fails', () => {
+    hoisted.scope.value = { projectPath: 'remote:node:/work/app', sessionId: 'sid-1' }
     hoisted.sessionState._worktreeRemoved = false
     hoisted.sessionState._historyHydrated = true
     hoisted.sessionState.draftId = null
@@ -1375,9 +1383,48 @@ describe('ChatContent pending send', () => {
     const { rerender } = renderContent()
     const bubble = screen.getByText('First remote message')
     const sending = screen.getByText('Sending…')
+    expect(sending.closest('[data-message-role]')).toHaveAttribute('data-message-role', 'assistant')
     expect(bubble.compareDocumentPosition(sending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     hoisted.sessionState.awaitingAssistantReply = false
     rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
     expect(screen.queryByText('Sending…')).toBeNull()
+    hoisted.scope.value = null
+  })
+
+  it('does not reserve a sending footer for a local session', () => {
+    hoisted.scope.value = null
+    hoisted.sessionState.awaitingAssistantReply = true
+    hoisted.sessionState.messages = [{
+      id: 'local-user', role: 'user', status: 'complete', providerId: 'local',
+      createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'Local message' }],
+    }]
+    const { container } = renderContent()
+    expect(screen.queryByText('Sending…')).toBeNull()
+    expect(container.querySelector('[data-pending-turn]')).toBeNull()
+  })
+})
+
+describe('session retry placement', () => {
+  it.each([false, true])('keeps a retry on the current turn footer (assistant started: %s)', started => {
+    hoisted.scope.value = null
+    hoisted.sessionState.draftId = null
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState._historyHydrated = true
+    const messages = [
+      { id: 'old-reply', role: 'assistant', status: 'complete', providerId: 'claude', createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'Old reply' }] },
+      { id: 'new-user', role: 'user', status: 'complete', providerId: 'local', createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'New request' }] },
+    ]
+    if (started) messages.push({ id: 'new-reply', role: 'assistant', status: 'streaming', providerId: 'claude', createdAt: new Date().toISOString(), content: [] })
+    hoisted.sessionState.messages = messages
+    hoisted.sessionState.lastAssistantMessageId = started ? 'new-reply' : 'old-reply'
+    hoisted.sessionState.apiRetry = { attempt: 2, delayMs: 4000 }
+    const { container, rerender } = renderContent()
+    const retries = container.querySelectorAll('[data-api-retry]')
+    expect(retries).toHaveLength(1)
+    expect(retries[0].closest('[data-message-id]')).toHaveAttribute('data-message-id', started ? 'new-reply' : 'pending-reply:new-user')
+    expect(screen.queryByTestId('api-retry')).toBeNull()
+    hoisted.sessionState.apiRetry = null
+    rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+    expect(container.querySelector('[data-api-retry]')).toBeNull()
   })
 })

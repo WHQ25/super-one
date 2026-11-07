@@ -46,6 +46,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { useActiveHarness } from '@/hooks/useHarnessTheme'
 import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-tags'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
+import type { PendingTurnPhase, TurnRetryInfo } from '@superone/chat-view/presenters/turn-footer-model'
 import { DurationFooter } from './ChatMessageFooter'
 import { VirtualTurnSegment } from './VirtualTranscriptBlock'
 import { collaborationLabelKey, isModelOnlyWakeMessage } from '@superone/chat-view/presenters/collaboration-label'
@@ -77,6 +78,9 @@ interface ChatMessageProps {
   segmentId?: string
   firstSlice?: boolean
   showFooter?: boolean
+  pendingTurn?: PendingTurnPhase
+  apiRetry?: TurnRetryInfo | null
+  onRetry?: () => void
   sessionStatus: AgentStatus
   isLastAssistant: boolean
   hideUserActions?: boolean
@@ -143,6 +147,9 @@ export const ChatMessage = memo(function ChatMessage({
   segmentId = message.id,
   firstSlice,
   showFooter = true,
+  pendingTurn,
+  apiRetry,
+  onRetry,
   sessionStatus,
   isLastAssistant,
   hideUserActions,
@@ -156,7 +163,7 @@ export const ChatMessage = memo(function ChatMessage({
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const isUser = message.role === 'user'
   const asyncQuestions = useActiveSession(session => codexAsyncAnswerQuestions(message, session.messages))
-  const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
+  const isStreaming = !!pendingTurn || (message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant)
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollab = collabLabelKey != null
   // Parent-handed launch task: right-aligned markdown bubble (see CollabTaskBubble).
@@ -226,6 +233,9 @@ export const ChatMessage = memo(function ChatMessage({
       message={message}
       copyText={assistantCopyText}
       parentIsStreaming={isStreaming}
+      pendingTurn={pendingTurn}
+      apiRetry={apiRetry}
+      onRetry={onRetry}
       className={message.metadata?.turnSummary ? 'mt-1' : undefined}
     />
   ) : null

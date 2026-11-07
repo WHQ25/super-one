@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, Minimize2, X } from 'lucide-react'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { formatCompactDuration } from './duration-format'
+import type { TurnRetryInfo } from './turn-footer-model'
 import { visibleRetryDetail } from './retry-banner-detail'
 
 import { parseCompactMarker, parseTurnMetaMarker, type TurnMetaMarker } from '@superone/shared/transcript-markers'
@@ -75,28 +76,6 @@ export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
       text={meta.text}
       className="my-0.5 text-xs leading-snug text-muted-foreground"
     />
-  )
-}
-
-/**
- * The phone's stand-in for a live turn that has no assistant row yet: the user
- * bubble is painted optimistically, and this is what shows the turn is on its
- * way — creating the session first when it is the first message. Mirrors the
- * `PortableTurnFooter` "Sending…" meta so the label reads the same before and
- * after the assistant row appears.
- */
-export function PendingTurnIndicator({ phase }: { phase: 'creating' | 'sending' }) {
-  const { t } = useTranslation()
-  return (
-    <div
-      className="mt-0.5 mb-2.5 flex items-center gap-1.5 text-xs leading-snug text-muted-foreground"
-      data-pending-turn={phase}
-      role="status"
-      aria-live="polite"
-    >
-      <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
-      <span>{t(phase === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
-    </div>
   )
 }
 
@@ -220,13 +199,7 @@ export function ApiRetryIndicator({
   info,
   onRetry,
 }: {
-  info: {
-    attempt: number
-    maxRetries?: number
-    delayMs: number
-    message?: string
-    phase?: 'retrying' | 'exhausted' | 'failed'
-  }
+  info: TurnRetryInfo
   onRetry?: () => void
 }) {
   const { t } = useTranslation()
@@ -253,15 +226,9 @@ export function ApiRetryIndicator({
       ? t('chat.apiRetry.retrying', { attempt: info.attempt, max: info.maxRetries })
       : t('chat.apiRetry.retryingNoMax', { attempt: info.attempt })
   return (
-    <div className={terminal
-      ? 'my-0.5 flex items-center gap-1.5 rounded bg-error/10 px-2 py-1.5 text-xs'
-      : 'my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs'}
-    >
-      {terminal
-        ? <AlertTriangle className="size-3 shrink-0 text-error" />
-        : <Loader2 className="size-3 shrink-0 animate-spin text-warning" />}
+    <span className="inline-flex min-w-0 items-center gap-1.5" data-turn-retry={phase} role="status">
       <span
-        className={terminal ? 'min-w-0 truncate font-medium text-error' : 'min-w-0 truncate font-medium text-warning'}
+        className="min-w-0 truncate"
         title={info.message}
       >
         {label}
@@ -272,12 +239,12 @@ export function ApiRetryIndicator({
         <button
           type="button"
           onClick={onRetry}
-          className="ml-auto shrink-0 text-error/80 underline-offset-2 transition-colors hover:text-error hover:underline"
+          className="shrink-0 underline-offset-2 transition-colors hover:text-foreground hover:underline"
         >
           {t('chat.apiRetry.tryAgain')}
         </button>
       )}
-    </div>
+    </span>
   )
 }
 

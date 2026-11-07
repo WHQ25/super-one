@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { PortableMessage } from './PortableMessage'
-import { PendingTurnIndicator } from './presenters/ChatMessageIndicators'
+import { pendingTurnMessage } from './presenters/turn-footer-model'
 
 const sent: ChatMessage = {
   id: 'user_first', role: 'user', status: 'complete', providerId: 'local',
@@ -25,8 +25,10 @@ function PendingTurn({ phase, scheme = 'light', animate = false }: {
   }, [animate])
   return <div className="mx-auto w-full max-w-[430px] p-4">
     <PortableMessage message={sent} scheme={scheme} pendingPermission={null} />
-    {live && <PendingTurnIndicator phase={live} />}
-    {animate && !live && <p className="text-xs text-muted-foreground">(assistant row would take over here)</p>}
+    <PortableMessage message={live ? pendingTurnMessage(sent) : {
+      id: 'assistant', role: 'assistant', status: 'streaming', providerId: 'claude',
+      createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'I’ll check the branch changes.' }],
+    }} scheme={scheme} pendingPermission={null} pendingTurn={live ?? undefined} isLastAssistant sessionStreaming />
   </div>
 }
 

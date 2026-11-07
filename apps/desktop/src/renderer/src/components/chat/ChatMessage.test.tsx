@@ -850,3 +850,58 @@ describe('ChatMessage compact process header', () => {
     expect(afterThinking?.textContent).toContain('Here is the plan.')
   })
 })
+
+describe('remote pending reply footer', () => {
+  it('replaces sending with live metadata inside the assistant footer and keeps one spinner', () => {
+    const pending = createCodexMessage()
+    const { container, rerender } = render(<ChatMessage message={pending} sessionStatus="idle" isLastAssistant pendingTurn="sending" />)
+    const footer = screen.getByText('Sending…').closest('[data-pending-turn]')!
+    expect(footer.closest('.assistant-reply')).not.toBeNull()
+    expect(footer.querySelectorAll('.animate-spin')).toHaveLength(1)
+    // Counters still held from the preceding turn must not appear during send.
+    expect(footer).not.toHaveTextContent('100')
+    expect(footer).not.toHaveTextContent('50')
+    act(() => { vi.advanceTimersByTime(2000) })
+    expect(footer).toHaveTextContent('Sending…')
+
+    rerender(<ChatMessage message={{ ...pending, content: [{ type: 'text', text: 'Reply started' }] }} sessionStatus="streaming" isLastAssistant />)
+    expect(screen.queryByText('Sending…')).toBeNull()
+    expect(screen.getByText('Reply started')).toBeInTheDocument()
+    expect(container.querySelector('.assistant-reply .group\\/footer')).toHaveTextContent('100')
+    expect(container.querySelectorAll('.animate-spin')).toHaveLength(1)
+  })
+
+  it('keeps only one spinner when MCP startup begins before the clock is visible', () => {
+    const message = createCodexMessage({ metadata: { codex: { threadId: 'thread', usage: null, items: [], mcpStartup: [{ name: 'server', status: 'starting' }] } } })
+    const { container } = render(<ChatMessage message={message} sessionStatus="streaming" isLastAssistant />)
+    expect(container.querySelectorAll('.animate-spin')).toHaveLength(1)
+  })
+})
+
+describe('session retry footer', () => {
+  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('shows a neutral inline retry for %s and returns to normal output after recovery', providerId => {
+    const message = createCodexMessage({ providerId })
+    const { container, rerender } = render(<ChatMessage message={message} sessionStatus="streaming" isLastAssistant
+      apiRetry={{ attempt: 2, maxRetries: 5, delayMs: 4000, message: 'rate limited' }} />)
+    const retry = screen.getByText(/Retrying API request \(2\/5\)/)
+    expect(retry.closest('.assistant-reply .group\\/footer')).not.toBeNull()
+    expect(container.querySelectorAll('.animate-spin')).toHaveLength(1)
+    expect(container.querySelector('[data-turn-retry]')).toHaveTextContent('4s')
+    expect(container.querySelector('[data-turn-retry]')?.outerHTML).not.toMatch(/text-warning|text-error|bg-warning|bg-error/)
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(container.querySelector('[data-turn-retry]')).toHaveTextContent('3s')
+    rerender(<ChatMessage message={{ ...message, content: [{ type: 'text', text: 'Recovered reply' }] }} sessionStatus="streaming" isLastAssistant />)
+    expect(container.querySelector('[data-turn-retry]')).toBeNull()
+    expect(screen.getByText('Recovered reply')).toBeInTheDocument()
+  })
+
+  it('keeps exhausted retries actionable in the footer when the session is idle', () => {
+    const retry = vi.fn()
+    const { container } = render(<ChatMessage message={createCodexMessage({ status: 'error' })} sessionStatus="idle" isLastAssistant
+      apiRetry={{ attempt: 5, delayMs: 0, phase: 'exhausted' }} onRetry={retry} />)
+    expect(screen.getByText('API retries exhausted').closest('.group\\/footer')).not.toBeNull()
+    expect(container.querySelectorAll('.animate-spin')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
+})

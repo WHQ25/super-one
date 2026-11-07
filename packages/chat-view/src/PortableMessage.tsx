@@ -1,3 +1,4 @@
+import type { PendingTurnPhase, TurnRetryInfo } from './presenters/turn-footer-model'
 import { memo, useMemo } from 'react'
 import { isCodexAsyncAnswer, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useTranslation } from 'react-i18next'
@@ -95,6 +96,9 @@ export const PortableMessage = memo(function PortableMessage({
   followingMessage,
   firstSlice,
   showFooter = true,
+  pendingTurn,
+  apiRetry,
+  onRetry,
   scheme,
   pendingPermission,
   mentionArtwork = {},
@@ -116,6 +120,9 @@ export const PortableMessage = memo(function PortableMessage({
   followingMessage?: ChatMessage
   firstSlice?: boolean
   showFooter?: boolean
+  pendingTurn?: PendingTurnPhase
+  apiRetry?: TurnRetryInfo | null
+  onRetry?: () => void
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission | null
   mentionArtwork?: Record<string, string>
@@ -139,7 +146,7 @@ export const PortableMessage = memo(function PortableMessage({
   // leaves an older turn marked `streaming` forever, and without the session
   // gate the phone spins on it for the rest of the session. Same three-way test
   // the desktop bubble uses.
-  const isStreaming = message.status === 'streaming' && sessionStreaming && isLastAssistant
+  const isStreaming = !!pendingTurn || (message.status === 'streaming' && sessionStreaming && isLastAssistant)
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollaboration = collabLabelKey != null
   // Parent-handed launch task: right-aligned markdown bubble, same as the desktop.
@@ -256,6 +263,9 @@ export const PortableMessage = memo(function PortableMessage({
               <PortableTurnFooter
                 message={message}
                 isStreaming={isStreaming}
+                pendingTurn={pendingTurn}
+                apiRetry={apiRetry}
+                onRetry={onRetry}
                 streamingTokens={streamingTokens}
                 copyText={copyText}
               />

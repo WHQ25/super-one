@@ -56,6 +56,12 @@ function seedQueuedMessages(provider: SteerProvider, nativeV2 = false, remote = 
     status: 'streaming' as const,
     sessionProvider: provider,
     preferredProvider: provider,
+    messages: [{
+      id: 'active-assistant', role: 'assistant' as const, status: 'streaming' as const,
+      providerId: provider, createdAt: '2026-08-25T07:59:00.000Z',
+      content: [{ type: 'text' as const, text: 'Inspecting queued message interactions.' }],
+    }],
+    lastAssistantMessageId: 'active-assistant',
     queuedMessages,
     ...(remote ? { runtimeCapabilities: { harnessId: provider, supportsQueuedSteer: provider !== 'acp', supportsQueuedSteerSoon: provider === 'claude' } } : {}),
     ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
@@ -189,11 +195,30 @@ export const OpenCodeV1: Story = { args: { provider: 'opencode', nativeV2: false
 export const StreamingGrok: Story = { args: { provider: 'acp' }, globals: { harness: 'acp' } }
 
 
-export const RemoteCodex: Story = { args: { provider: 'codex', remote: true }, globals: { harness: 'codex' } }
+const steerActiveReply = (soon = false): NonNullable<Story['play']> => async ({ canvasElement }) => {
+  const canvas = within(canvasElement)
+  const name = soon ? /Steer Soon|尽快插入/ : /Steer Now|立即引导/
+  await waitFor(() => expect(canvas.getAllByRole('button', { name })).toHaveLength(2))
+  await userEvent.click(canvas.getAllByRole('button', { name })[0])
+  const session = () => useChatStore.getState().projectSessions[projectKey(true)]._sessions[STORY_SESSION]
+  await waitFor(() => expect(session().queuedMessages).toHaveLength(1))
+  expect(session().awaitingAssistantReply).toBe(false)
+  expect(canvasElement.querySelector('[data-pending-turn]')).toBeNull()
+  // Remote steering continues the original reply without a new message_start.
+  useChatStore.getState().handleAgentEvent({ type: 'content_delta', projectPath: projectKey(true),
+    sessionId: STORY_SESSION, messageId: 'active-assistant',
+    delta: { type: 'text', text: ' Continuing with the steered request.' } })
+  await expect(canvas.findByText(/Continuing with the steered request/)).resolves.toBeInTheDocument()
+  expect(canvasElement.querySelector('[data-pending-turn]')).toBeNull()
+}
+
+export const RemoteCodex: Story = { args: { provider: 'codex', remote: true }, globals: { harness: 'codex' }, play: steerActiveReply() }
 export const RemoteClaude: Story = { args: { provider: 'claude', remote: true }, globals: { harness: 'claude' } }
+export const RemoteClaudeSoon: Story = { ...RemoteClaude, play: steerActiveReply(true) }
 export const RemoteQueueWithoutSteer: Story = { args: { provider: 'acp', remote: true }, globals: { harness: 'acp' } }
 export const RemoteCodexDark: Story = { ...RemoteCodex, globals: { harness: 'codex', theme: 'dark' } }
 export const RemoteCodexNarrow: Story = { ...RemoteCodex, args: { provider: 'codex', remote: true, narrow: true } }
+export const RemoteCodexDarkChinese: Story = { ...RemoteCodexNarrow, globals: { harness: 'codex', theme: 'dark', locale: 'zh' } }
 export const RemoteWithdraw: Story = {
   ...RemoteCodex,
   play: async ({ canvasElement }) => {

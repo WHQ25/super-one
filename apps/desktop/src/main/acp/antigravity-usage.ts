@@ -8,10 +8,9 @@ import {
 } from './antigravity-profile'
 export * from './antigravity-db-usage'
 
-const ENDPOINTS = [
-  'https://daily-cloudcode-pa.googleapis.com',
-  'https://cloudcode-pa.googleapis.com',
-]
+export const ANTIGRAVITY_DAILY_ENDPOINT = 'https://daily-cloudcode-pa.googleapis.com'
+export const ANTIGRAVITY_PROD_ENDPOINT = 'https://cloudcode-pa.googleapis.com'
+const ENDPOINTS = [ANTIGRAVITY_DAILY_ENDPOINT, ANTIGRAVITY_PROD_ENDPOINT] as const
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
 const MIN_FETCH_INTERVAL_MS = 60_000
@@ -185,9 +184,12 @@ function formatTierCandidate(tier: unknown): string | null {
 export function parseAntigravityPlanType(raw: unknown): {
   planType: string | null
   projectId: string | null
+  usesGcpTos?: boolean
 } {
   const root = asRecord(raw)
   if (!root) return { planType: null, projectId: null }
+  const paidTier = asRecord(root.paidTier)
+  const currentTier = asRecord(root.currentTier)
   const planType =
     formatTierCandidate(root.paidTier) ??
     formatTierCandidate(root.currentTier) ??
@@ -200,7 +202,23 @@ export function parseAntigravityPlanType(raw: unknown): {
       : typeof asRecord(rawProject)?.id === 'string'
         ? (asRecord(rawProject)!.id as string).trim()
         : null
-  return { planType, projectId }
+  const usesGcpTos =
+    typeof paidTier?.usesGcpTos === 'boolean'
+      ? paidTier.usesGcpTos
+      : typeof currentTier?.usesGcpTos === 'boolean'
+        ? currentTier.usesGcpTos
+        : undefined
+  return {
+    planType,
+    projectId,
+    ...(usesGcpTos !== undefined ? { usesGcpTos } : {}),
+  }
+}
+
+export function resolveAntigravityQuotaEndpoints(usesGcpTos?: boolean): readonly string[] {
+  return usesGcpTos
+    ? [ANTIGRAVITY_PROD_ENDPOINT, ANTIGRAVITY_DAILY_ENDPOINT]
+    : [ANTIGRAVITY_DAILY_ENDPOINT, ANTIGRAVITY_PROD_ENDPOINT]
 }
 
 export function parseAntigravityUserEmail(raw: unknown): string | null {
@@ -336,6 +354,7 @@ export async function readAntigravityRateLimits(force = false): Promise<Provider
   }
 
   let planType: string | null = null
+  let usesGcpTos: boolean | undefined
   let email: string | null = config.email ?? null
   const endpointProjects = new Map<string, string | null>()
   await Promise.all([
@@ -369,21 +388,46 @@ export async function readAntigravityRateLimits(force = false): Promise<Provider
         parsed = {
           planType: parsed.planType ?? fallbackParsed.planType,
           projectId: fallbackParsed.projectId,
+          ...(parsed.usesGcpTos !== undefined
+            ? { usesGcpTos: parsed.usesGcpTos }
+            : fallbackParsed.usesGcpTos !== undefined
+              ? { usesGcpTos: fallbackParsed.usesGcpTos }
+              : {}),
         }
       }
       if (parsed.planType && (!planType || planType === 'Free' || planType === 'Standard')) {
         planType = parsed.planType
+      }
+      if (parsed.usesGcpTos !== undefined && usesGcpTos === undefined) {
+        usesGcpTos = parsed.usesGcpTos
       }
       endpointProjects.set(endpoint, parsed.projectId)
     }),
   ])
 
   const merged = new Map<string, ClaudeRateLimitWindow>()
-  await Promise.all(
-    ENDPOINTS.map(async (endpoint) => {
-      const bodies = candidateProjectBodies(endpointProjects.get(endpoint), token.project_id)
+  for (const endpoint of resolveAntigravityQuotaEndpoints(usesGcpTos)) {
+    const endpointWindows = new Map<string, ClaudeRateLimitWindow>()
+    const bodies = candidateProjectBodies(endpointProjects.get(endpoint), token.project_id)
+    for (const body of bodies) {
+      const json = await fetchJson(`${endpoint}/v1internal:retrieveUserQuotaSummary`, {
+        method: 'POST',
+        headers,
+        body,
+      })
+      if (!planType) {
+        planType = parseAntigravityPlanType(json).planType
+      }
+      const wins = parseAntigravityQuotaSummary(json)
+      mergeWindows(endpointWindows, wins)
+      if (wins.some((w) => w.id === 'gemini-weekly')) {
+        break
+      }
+    }
+
+    if (!hasCompleteGeminiWindows(endpointWindows)) {
       for (const body of bodies) {
-        const json = await fetchJson(`${endpoint}/v1internal:retrieveUserQuotaSummary`, {
+        const json = await fetchJson(`${endpoint}/v1internal:fetchAvailableModels`, {
           method: 'POST',
           headers,
           body,
@@ -391,42 +435,26 @@ export async function readAntigravityRateLimits(force = false): Promise<Provider
         if (!planType) {
           planType = parseAntigravityPlanType(json).planType
         }
-        const wins = parseAntigravityQuotaSummary(json)
-        mergeWindows(merged, wins)
-        if (wins.some((w) => w.id === 'gemini-weekly')) {
+        const modelWins = parseAntigravityModelQuotas(json)
+        if (modelWins.length === 0) continue
+        mergeWindows(
+          endpointWindows,
+          endpointWindows.size > 0
+            ? modelWins.filter((w) => w.id?.startsWith('gemini') || w.label.startsWith('Gemini'))
+            : modelWins,
+        )
+        if (hasCompleteGeminiWindows(endpointWindows)) {
           break
         }
       }
-    }),
-  )
+    }
 
-  if (!hasCompleteGeminiWindows(merged)) {
-    await Promise.all(
-      ENDPOINTS.map(async (endpoint) => {
-        const bodies = candidateProjectBodies(endpointProjects.get(endpoint), token.project_id)
-        for (const body of bodies) {
-          const json = await fetchJson(`${endpoint}/v1internal:fetchAvailableModels`, {
-            method: 'POST',
-            headers,
-            body,
-          })
-          if (!planType) {
-            planType = parseAntigravityPlanType(json).planType
-          }
-          const modelWins = parseAntigravityModelQuotas(json)
-          if (modelWins.length === 0) continue
-          mergeWindows(
-            merged,
-            merged.size > 0
-              ? modelWins.filter((w) => w.id?.startsWith('gemini') || w.label.startsWith('Gemini'))
-              : modelWins,
-          )
-          if (hasCompleteGeminiWindows(merged)) {
-            break
-          }
-        }
-      }),
-    )
+    if (endpointWindows.size > 0) {
+      for (const [k, v] of endpointWindows) {
+        merged.set(k, v)
+      }
+      break
+    }
   }
 
   const windows = [...merged.values()].sort((a, b) => {

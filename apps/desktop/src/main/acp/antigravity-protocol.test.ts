@@ -15,7 +15,17 @@ import { ensureAntigravityAutoBootstrap } from './antigravity-auto-bootstrap'
 import { closeAntigravityThinkingStep, finalizeAntigravityTurnThinking, openAntigravityThinkingStep, stampAntigravityThoughtDeltas, type AntigravityTurnThinkingScope } from './antigravity-runtime-bridge'
 import { ANTIGRAVITY_SYSTEM_PROMPT_APPEND, antigravitySystemPromptAppend } from '../agent/superone-system-prompt'
 import { ANTIGRAVITY_CLIENT_INFO, antigravityPermissionDisposition, antigravityPermissionMode, antigravitySessionMeta, extractAntigravitySecurityWarning, extractAntigravityToolNameFromTitle, extractAntigravityUserInputQuestion, isAntigravityUserInputRequest, makeAntigravityUserInputResponse, normalizeAntigravitySessionUpdate, sanitizeAntigravityToolPayload, selectAntigravityAutoApprovedOptionId } from './antigravity-protocol'
-import { parseAntigravityModelQuotas, parseAntigravityPlannerResponse, parseAntigravityPlanType, parseAntigravityQuotaSummary, parseAntigravityStepMetadata, parseAntigravityUserEmail } from './antigravity-usage'
+import {
+  ANTIGRAVITY_DAILY_ENDPOINT,
+  ANTIGRAVITY_PROD_ENDPOINT,
+  parseAntigravityModelQuotas,
+  parseAntigravityPlannerResponse,
+  parseAntigravityPlanType,
+  parseAntigravityQuotaSummary,
+  parseAntigravityStepMetadata,
+  parseAntigravityUserEmail,
+  resolveAntigravityQuotaEndpoints,
+} from './antigravity-usage'
 
 describe('antigravity-protocol', () => {
   it('maps SuperOne permission modes and client policy to Antigravity', () => {
@@ -138,6 +148,30 @@ describe('antigravity-protocol', () => {
       planType: 'AI Pro',
       projectId: 'proj-123',
     })
+
+    expect(
+      parseAntigravityPlanType({
+        paidTier: { id: 'standard-tier', name: 'Standard', usesGcpTos: true },
+        cloudaicompanionProject: 'proj-ent',
+      }),
+    ).toEqual({
+      planType: 'Standard',
+      projectId: 'proj-ent',
+      usesGcpTos: true,
+    })
+
+    expect(resolveAntigravityQuotaEndpoints(undefined)).toEqual([
+      ANTIGRAVITY_DAILY_ENDPOINT,
+      ANTIGRAVITY_PROD_ENDPOINT,
+    ])
+    expect(resolveAntigravityQuotaEndpoints(false)).toEqual([
+      ANTIGRAVITY_DAILY_ENDPOINT,
+      ANTIGRAVITY_PROD_ENDPOINT,
+    ])
+    expect(resolveAntigravityQuotaEndpoints(true)).toEqual([
+      ANTIGRAVITY_PROD_ENDPOINT,
+      ANTIGRAVITY_DAILY_ENDPOINT,
+    ])
 
     expect(parseAntigravityUserEmail({ email: ' dev@example.com ' })).toBe('dev@example.com')
     expect(parseAntigravityUserEmail({})).toBeNull()

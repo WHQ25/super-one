@@ -72,3 +72,14 @@ Non-obvious upstream behaviors that SuperOne depends on.
 - **SuperOne code**: `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `packages/shared/src/content-delta.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-slash-and-usage.test.ts`, `packages/shared/src/content-delta.test.ts`
 
+## 10. Cloud Code PA quota endpoint resolution (`daily-cloudcode-pa` vs `cloudcode-pa`) (observed in 1.4.5)
+
+- **Behavior**:
+  1. `agy_acp_server.par` (`google3/cloud/developer_experience/antigravity_extensions/acp_server/ccpa_connection/onboard.py`, `_determine_endpoint`) selects a single Cloud Code PA endpoint from the `v1internal:loadCodeAssist` response based on `paidTier.usesGcpTos`:
+     - When `paidTier.usesGcpTos` is falsy (Consumer tiers: Free, Google AI Pro, Google AI Ultra), Antigravity connects to `https://daily-cloudcode-pa.googleapis.com` (`_PROD_DAILY_ENDPOINT`).
+     - When `paidTier.usesGcpTos === true` (Enterprise / Workspace GCP ToS tiers), Antigravity connects to `https://cloudcode-pa.googleapis.com` (`_PROD_ENDPOINT`).
+  2. Both endpoints accept the same OAuth access token and respond `200 OK` to `v1internal:retrieveUserQuotaSummary` and `v1internal:fetchAvailableModels`, but they maintain separate backend quota states (`cloudcode-pa.googleapis.com` can hold an independent or exhausted bucket from other Cloud Code surfaces while `daily-cloudcode-pa.googleapis.com` holds the active Antigravity consumer quota, e.g. `remainingFraction: 0.98` vs `0.02`).
+  3. Querying both endpoints in parallel and merging windows by maximum `usedPercent` overwrites the active endpoint's real remaining quota with stale/exhausted values from the inactive endpoint. Quota probing must resolve the ordered endpoint list from `usesGcpTos` (`resolveAntigravityQuotaEndpoints`) and stop once the primary active endpoint returns quota windows.
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-usage.ts`
+- **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`
+

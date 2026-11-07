@@ -94,7 +94,7 @@ export function ChatMessagePresenter({
     )}>
       <div className={cn(
         isUser
-          ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col'
+          ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col hover:z-30 focus-within:z-30'
           : 'w-full',
         isUser && !isCollaboration && 'items-end',
         isUser && isCollaboration && 'items-start',

@@ -296,9 +296,9 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
         ref={rootRef}
         data-streamdown="table-wrapper"
         data-table-transposed={transposed ? '' : undefined}
-        className="group/mdtable relative w-full min-w-0"
+        className="group/mdtable relative w-full min-w-0 hover:z-30 focus-within:z-30"
       >
-        <div data-table-toolbar className="absolute right-0 top-0 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/mdtable:opacity-100 group-focus-within/mdtable:opacity-100 [@media(hover:none)]:opacity-100">
+        <div data-table-toolbar className="absolute right-0 top-0 z-30 flex items-center gap-1 opacity-0 transition-opacity group-hover/mdtable:opacity-100 group-focus-within/mdtable:opacity-100 [@media(hover:none)]:opacity-100">
           <TransposeButton
             transposed={transposed}
             onToggle={toggleTranspose}

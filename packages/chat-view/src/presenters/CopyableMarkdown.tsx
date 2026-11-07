@@ -251,7 +251,7 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
   }, [content, runtime])
 
   return (
-    <div className="group/insight my-3 border-l-[3px] border-insight-border bg-insight-bg pt-2.5 pb-1 pl-3 pr-2">
+    <div className="group/insight relative my-3 border-l-[3px] border-insight-border bg-insight-bg pt-2.5 pb-1 pl-3 pr-2 hover:z-30 focus-within:z-30">
       <div className="mb-1 flex items-center text-xs font-semibold text-insight-fg">
         <span className="flex items-center gap-1.5">
           <span>★</span>
@@ -259,7 +259,7 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
         </span>
         <button
           onClick={handleCopy}
-          className="ml-auto cursor-pointer rounded p-0.5 text-insight-fg opacity-0 transition-opacity group-hover/insight:opacity-100"
+          className="relative z-30 ml-auto cursor-pointer rounded p-0.5 text-insight-fg opacity-0 transition-opacity group-hover/insight:opacity-100"
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         </button>

@@ -234,8 +234,8 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
               data-index={row.index}
               data-virtual-row
               data-virtual-message={items[row.index].id}
-              className="absolute left-0 top-0 w-full"
-              style={{ transform: `translateY(${row.start - scrollMargin}px)`, paddingBottom: ROW_GAP }}
+              className="absolute left-0 w-full"
+              style={{ top: row.start - scrollMargin, paddingBottom: ROW_GAP }}
             >
               {renderItem(row.index)}
             </div>

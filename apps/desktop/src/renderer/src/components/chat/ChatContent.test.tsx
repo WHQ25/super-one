@@ -1428,3 +1428,56 @@ describe('session retry placement', () => {
     expect(container.querySelector('[data-api-retry]')).toBeNull()
   })
 })
+
+describe('ChatContent scroll indicator height and action stacking context', () => {
+  it('centers the scroll indicator at content height and keeps transcript and queued actions in a shared stacking context', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.draftId = null
+    hoisted.sessionState.status = 'streaming'
+    hoisted.sessionState.messages = [
+      {
+        id: 'u-1', role: 'user', status: 'complete', providerId: 'claude',
+        createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'First turn' }],
+      },
+      {
+        id: 'a-1', role: 'assistant', status: 'complete', providerId: 'claude',
+        createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'First answer' }],
+      },
+      {
+        id: 'u-2', role: 'user', status: 'complete', providerId: 'claude',
+        createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'Second turn' }],
+      },
+      {
+        id: 'a-2', role: 'assistant', status: 'streaming', providerId: 'claude',
+        createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'Second answer' }],
+      },
+    ]
+    hoisted.sessionState.queuedMessages = [
+      { id: 'q-1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'Queued follow-up' }], createdAt: '', providerId: 'claude' },
+    ]
+
+    const { container } = renderContent()
+    const rail = container.querySelector('[data-chat-scroll-indicator]') as HTMLElement
+    expect(rail).not.toBeNull()
+    expect(rail).toHaveClass('top-1/2', '-translate-y-1/2', 'max-h-full', 'z-20')
+    expect(rail).not.toHaveClass('h-full')
+    expect(rail.querySelectorAll('[data-tick]')).toHaveLength(2)
+
+    const layoutRoot = container.querySelector('.chat-transcript-layout') as HTMLElement
+    const scrollArea = screen.getByTestId('scroll-area')
+    expect(layoutRoot).not.toBeNull()
+    expect(layoutRoot).toContainElement(scrollArea)
+    expect(layoutRoot).toContainElement(rail)
+    expect(scrollArea).not.toHaveClass('chat-transcript-layout')
+
+    const queuedGroup = container.querySelector('.group\\/queued') as HTMLElement
+    expect(queuedGroup).not.toBeNull()
+    expect(queuedGroup).toHaveClass('relative', 'hover:z-30', 'focus-within:z-30')
+    expect(queuedGroup).not.toHaveClass('opacity-50')
+    expect(queuedGroup.querySelector('.opacity-50')).not.toBeNull()
+    hoisted.sessionState.queuedMessages = []
+    hoisted.sessionState.status = 'idle'
+  })
+})
+

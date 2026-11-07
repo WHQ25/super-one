@@ -172,11 +172,11 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
   const toolbar = (
     <div data-mermaid-toolbar className={cn(
       isPreview
-        ? 'absolute right-0 top-0 z-10 flex items-center opacity-0 transition-opacity group-hover/mermaid:opacity-100 group-focus-within/mermaid:opacity-100 [@media(hover:none)]:opacity-100'
+        ? 'absolute right-0 top-0 z-30 flex items-center opacity-0 transition-opacity group-hover/mermaid:opacity-100 group-focus-within/mermaid:opacity-100 [@media(hover:none)]:opacity-100'
         : 'flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground',
     )}>
       {!isPreview && <span className="opacity-50">Mermaid</span>}
-      <div className="flex items-center gap-1">
+      <div className="relative z-30 flex items-center gap-1">
         {svg && (
           <IconButton
             ref={modeButtonRef}
@@ -238,7 +238,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
 
   if (!svg) {
     return (
-      <div data-chat-mermaid="loading" data-chat-codeblock data-code-source={code} className={cn('group/mermaid relative my-1.5 overflow-hidden rounded-md', !isPreview && 'bg-muted/30')}>
+      <div data-chat-mermaid="loading" data-chat-codeblock data-code-source={code} className={cn('group/mermaid relative my-1.5 overflow-hidden rounded-md hover:z-30 focus-within:z-30', !isPreview && 'bg-muted/30')}>
         {toolbar}
         <div className="flex items-center justify-center py-8">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -266,7 +266,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
             data-chat-mermaid={showSource ? 'source' : 'preview'}
             data-chat-codeblock
             data-code-source={code}
-            className={cn('group/mermaid relative w-full min-w-0 overflow-hidden rounded-md', showSource && 'bg-muted/30')}
+            className={cn('group/mermaid relative w-full min-w-0 overflow-hidden rounded-md hover:z-30 focus-within:z-30', showSource && 'bg-muted/30')}
             style={{ '--mermaid-preview-width': `${previewWidth}px` } as CSSProperties}
           >
             {toolbar}

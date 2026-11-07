@@ -266,7 +266,7 @@ function ChatTranscript({
 
   return (
     <TurnDetailStateProvider scope={displayedSessionId ?? 'default'}>
-    <div className="relative min-w-0 flex-1 overflow-hidden">
+    <div className="chat-transcript-layout relative min-w-0 flex-1 overflow-hidden">
       {displayMessages.length === 0 && !historyHydrated && !hasRealtimeTimeline ? (
         <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
       ) : displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply && !apiRetry ? (
@@ -287,9 +287,9 @@ function ChatTranscript({
               // landing's entrance animation under the cursor.
               : <ChatSuggestions draft={!!draftId || (queueProvider === 'codex' && hasRealtimeTimeline)} />
       ) : (
-        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area chat-transcript-layout h-full min-w-0" viewportRef={scrollViewportRef}>
+        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
           <RemoteTranscriptEdges>
-          <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 [--chat-inline-pad:--spacing(3)] @lg:gap-1.5 @lg:p-3.5 @lg:[--chat-inline-pad:--spacing(3.5)] @2xl:gap-1.5 @2xl:p-4 @2xl:[--chat-inline-pad:--spacing(4)]">
+          <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
             <RemoteTranscriptChrome edge="top" />
             <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={rows.map((row) => {
               const msg = row.message
@@ -345,10 +345,12 @@ function ChatTranscript({
             }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
             <SessionProviderState />
             {queuedMessages.map((msg, index) => (
-              <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
-                <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
+              <div key={msg.id} className="group/queued chat-message-wrapper relative hover:z-30 focus-within:z-30">
+                <div className="opacity-50">
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
+                </div>
                 <div className="flex justify-end pr-1">
-                  <div className="-mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-100">
+                  <div className="relative z-30 -mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-50 group-focus-within/queued:opacity-50">
                     {index === 0 && canStartCodexQueue && (
                       <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.start')} onClick={() => void startQueuedMessages(queueTarget)}>
                         <Play className="size-3" />

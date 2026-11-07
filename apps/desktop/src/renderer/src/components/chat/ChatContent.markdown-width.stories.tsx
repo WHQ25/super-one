@@ -191,58 +191,69 @@ export const Narrow: Story = { args: { width: 390 }, play: checkWidth }
 
 const toolbarSelector = '[data-table-toolbar], [data-chat-mermaid="preview"] [data-mermaid-toolbar]'
 
-/** The turn rail covers the pane's right edge. Wide-block toolbars have to stay outside it. */
-const checkToolbarClearsRail: NonNullable<Story['play']> = async context => {
+/** Toolbars and user message actions stay pinned to their right edge and stack above the compact turn rail. */
+const checkToolbarStacksAboveRail: NonNullable<Story['play']> = async context => {
   await checkWidth(context)
   const { canvasElement } = context
   const pane = canvasElement.querySelector('.chat-transcript-layout') as HTMLElement
+  const viewport = pane.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement
   const rail = pane.parentElement?.querySelector('[data-chat-scroll-indicator]') as HTMLElement
   const markdown = canvasElement.querySelector('[data-message-id="wide-markdown"] .chat-md') as HTMLElement
   const toolbars = [...markdown.querySelectorAll<HTMLElement>(toolbarSelector)]
+  const userActions = [...canvasElement.querySelectorAll<HTMLElement>('[data-user-actions]')]
   expect(rail).toBeTruthy()
   expect(toolbars.length).toBeGreaterThanOrEqual(1)
+  expect(userActions.length).toBeGreaterThanOrEqual(1)
+  const paneBox = pane.getBoundingClientRect()
+  const railBox = rail.getBoundingClientRect()
+  expect(railBox.height).toBeLessThan(paneBox.height * 0.2)
+  expect((railBox.top + railBox.bottom) / 2).toBeCloseTo((paneBox.top + paneBox.bottom) / 2, 0)
   const doc = canvasElement.ownerDocument
   for (const toolbar of toolbars) {
+    const block = toolbar.closest('[data-streamdown="table-wrapper"], [data-chat-mermaid="preview"]') as HTMLElement
+    // Scroll the toolbar toward the rail's vertical center when scroll range permits.
+    const current = toolbar.getBoundingClientRect()
+    const railCenter = (railBox.top + railBox.bottom) / 2
+    viewport.scrollTop += (current.top + current.height / 2) - railCenter
     toolbar.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     await waitFor(() => {
       const box = toolbar.getBoundingClientRect()
-      const paneBox = pane.getBoundingClientRect()
+      const blockBox = block.getBoundingClientRect()
       expect(box.width).toBeGreaterThan(0)
       expect(box.top).toBeGreaterThanOrEqual(paneBox.top - 1)
       expect(box.bottom).toBeLessThanOrEqual(paneBox.bottom + 1)
-      expect(box.right).toBeLessThanOrEqual(rail.getBoundingClientRect().left + 1)
+      expect(Math.abs(box.right - blockBox.right)).toBeLessThanOrEqual(1)
       const hit = doc.elementFromPoint(box.right - 6, box.top + box.height / 2)
       expect(toolbar.contains(hit)).toBe(true)
     })
   }
-}
-
-const checkToolbarSitsOnRail: NonNullable<Story['play']> = async context => {
-  await checkToolbarClearsRail(context)
-  const pane = context.canvasElement.querySelector('.chat-transcript-layout') as HTMLElement
-  const rail = pane.parentElement?.querySelector('[data-chat-scroll-indicator]') as HTMLElement
-  const markdown = context.canvasElement.querySelector('[data-message-id="wide-markdown"] .chat-md') as HTMLElement
-  const railLeft = rail.getBoundingClientRect().left
-  for (const toolbar of markdown.querySelectorAll<HTMLElement>(toolbarSelector)) {
-    expect(railLeft - toolbar.getBoundingClientRect().right).toBeLessThanOrEqual(2)
+  for (const actions of userActions) {
+    actions.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    await waitFor(() => {
+      const box = actions.getBoundingClientRect()
+      expect(box.width).toBeGreaterThan(0)
+      const hit = doc.elementFromPoint(box.right - 6, box.top + box.height / 2)
+      expect(actions.contains(hit)).toBe(true)
+    })
   }
 }
 
-export const NarrowRail: Story = { args: { width: 390, rail: true }, play: checkToolbarSitsOnRail }
-// 700px is past @2xl padding but still inside the reading column, so the gutter stays zero.
-export const MediumRail: Story = { args: { width: 700, rail: true }, play: checkToolbarSitsOnRail }
-
-export const WideRail: Story = {
-  args: { rail: true },
+export const NarrowRail: Story = {
+  args: { width: 390, rail: true },
   play: async context => {
-    await checkToolbarClearsRail(context)
+    await checkToolbarStacksAboveRail(context)
+    const pane = context.canvasElement.querySelector('.chat-transcript-layout') as HTMLElement
+    const rail = pane.parentElement?.querySelector('[data-chat-scroll-indicator]') as HTMLElement
     const markdown = context.canvasElement.querySelector('[data-message-id="wide-markdown"] .chat-md') as HTMLElement
+    const railLeft = rail.getBoundingClientRect().left
     for (const toolbar of markdown.querySelectorAll<HTMLElement>(toolbarSelector)) {
-      const block = toolbar.closest('[data-streamdown="table-wrapper"], [data-chat-mermaid="preview"]') as HTMLElement
-      expect(Math.abs(toolbar.getBoundingClientRect().right - block.getBoundingClientRect().right)).toBeLessThanOrEqual(1)
+      expect(toolbar.getBoundingClientRect().right).toBeGreaterThan(railLeft)
     }
   },
 }
+// 700px is past @2xl padding but still inside the reading column, so the gutter stays zero.
+export const MediumRail: Story = { args: { width: 700, rail: true }, play: checkToolbarStacksAboveRail }
+export const WideRail: Story = { args: { rail: true }, play: checkToolbarStacksAboveRail }
 
 export const DarkChinese: Story = { globals: { theme: 'dark', locale: 'zh' }, play: checkExpanded }
 export const Streaming: Story = { args: { streaming: true }, play: checkWidth }

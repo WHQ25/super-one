@@ -179,7 +179,7 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
     <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md bg-muted/20">
       <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
         <span className="opacity-50">{language}</span>
-        <div className="flex items-center gap-2">
+        <div className="relative z-30 flex items-center gap-2">
           {canRun && runBash !== undefined && (
             <button
               type="button"

@@ -282,6 +282,23 @@ describe('ChatMessage copy affordance', () => {
 
     expect(container.querySelector('.lucide-copy')).toBeNull()
   })
+
+  it('stacks user message actions above the turn scroll indicator (z-30 > z-20)', () => {
+    const { container } = render(
+      <ChatMessage
+        message={createUserMessage('Hello world')}
+        sessionStatus="idle"
+        isLastAssistant={false}
+      />,
+    )
+
+    const actions = container.querySelector('[data-user-actions]')
+    expect(actions).not.toBeNull()
+    expect(actions).toHaveClass('relative', 'z-30', 'pt-1')
+    const copyGroup = actions!.closest('.group\\/copy')
+    expect(copyGroup).not.toBeNull()
+    expect(copyGroup).toHaveClass('hover:z-30', 'focus-within:z-30')
+  })
 })
 
 describe('ChatMessage token footer', () => {

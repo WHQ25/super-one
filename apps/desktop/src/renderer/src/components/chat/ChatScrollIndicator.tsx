@@ -40,12 +40,17 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
   const clampCenter = useCallback((rawTop: number, el: HTMLElement | null): number => {
     const outer = outerRef.current
     if (!el || !outer) return rawTop
+    const outerRect = outer.getBoundingClientRect()
+    const boundsRect = (outer.parentElement ?? viewportRef.current)?.getBoundingClientRect() ?? outerRect
+    const scale = outer.clientHeight > 0 ? outerRect.height / outer.clientHeight : 1
+    const minTop = (boundsRect.top - outerRect.top) / scale
+    const maxBottom = (boundsRect.bottom - outerRect.top) / scale
     const half = el.offsetHeight / 2
-    const lo = half + 4
-    const hi = outer.clientHeight - half - 4
-    if (hi < lo) return outer.clientHeight / 2
+    const lo = minTop + half + 4
+    const hi = maxBottom - half - 4
+    if (hi < lo) return (minTop + maxBottom) / 2
     return Math.min(Math.max(rawTop, lo), hi)
-  }, [])
+  }, [viewportRef])
 
   const computeActive = useCallback(() => {
     const viewport = viewportRef.current
@@ -113,13 +118,16 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
     measure()
   }, [measure, entries.length])
 
+  const visible = entries.length > 1
+
   useEffect(() => {
     const el = stripRef.current
-    if (!el) return
+    if (!el || !visible) return
     const ro = new ResizeObserver(() => measure())
     ro.observe(el)
+    if (outerRef.current?.parentElement) ro.observe(outerRef.current.parentElement)
     return () => ro.disconnect()
-  }, [measure])
+  }, [measure, visible])
 
   useEffect(() => {
     if (!activeId || performance.now() < followSuppressedUntil.current) return
@@ -131,10 +139,9 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
     setPreviewTop(hovered ? clampCenter(hovered.top, previewRef.current) : null)
   }, [hovered, clampCenter])
 
-  if (entries.length <= 1) return null
+  if (!visible) return null
 
   const preview = hovered ? entries[hovered.index] : null
-  const overflowing = overflow.above || overflow.below
 
   const centerTop = (el: HTMLElement): number => {
     const outer = outerRef.current
@@ -177,14 +184,11 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
   }
 
   return (
-    <div ref={outerRef} data-chat-scroll-indicator className="absolute right-0 top-0 z-20 h-full w-7 pr-1">
+    <div ref={outerRef} data-chat-scroll-indicator className="absolute right-0 top-1/2 z-20 flex max-h-full w-7 -translate-y-1/2 flex-col pr-1">
       <div
         ref={stripRef}
         onScroll={measure}
-        className={cn(
-          'hide-scrollbar flex h-full flex-col items-end gap-px overflow-y-auto overscroll-contain',
-          overflowing ? 'justify-start' : 'justify-center',
-        )}
+        className="hide-scrollbar flex min-h-0 flex-col items-end gap-px overflow-y-auto overscroll-contain"
       >
         {entries.map(renderTick)}
       </div>

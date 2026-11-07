@@ -71,7 +71,7 @@ export function CollabTaskBubblePresenter({
 
   return (
     <div className="mb-0.5 flex w-0 min-w-full justify-end">
-      <div className="group/copy relative flex min-w-0 max-w-[90%] flex-col items-end">
+      <div className="group/copy relative flex min-w-0 max-w-[90%] flex-col items-end hover:z-30 focus-within:z-30">
         <div className="mb-1 flex max-w-full items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
           <Bot className="size-3 shrink-0 opacity-80" />
           {/* A flex row, not inline truncation: the chip shrinks and ellipsizes its own

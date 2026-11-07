@@ -262,7 +262,7 @@ export const ChatMessage = memo(function ChatMessage({
   const userActions = isUser && !hideCopyActions && (
     (!isCollab && !hideUserActions) || (isCollab && userText.length > 0)
   ) ? (
-    <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
+    <div data-user-actions className="relative z-30 flex items-center gap-1 pt-1 opacity-0 group-hover/copy:opacity-100 group-focus-within/copy:opacity-100">
       <MessageTimestamp iso={message.createdAt} className="mr-1 text-xs" />
       {!isCollab && !isCodexAsyncAnswer(message) && message.checkpointId && (
         <RewindButton

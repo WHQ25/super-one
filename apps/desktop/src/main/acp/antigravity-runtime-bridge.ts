@@ -6,11 +6,9 @@ import {
   type RequestPermissionResponse,
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk'
-import { ANTIGRAVITY_RELEASE_VERSION } from '@superone/runtime/harness'
 import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
 import { ANTIGRAVITY_AUTH_REQUIRED } from '@superone/shared/antigravity-auth'
 import { resolveDesktopAntigravityLaunch } from '../harness/antigravity-launch'
-import { enableDesktopHarness } from '../harness/service'
 import type { SpawnAcpProcessOptions } from './acp-process'
 import type {
   AcpAskUserQuestionGate,
@@ -56,27 +54,14 @@ export async function prepareAntigravityProcessLaunch(
   launch: ResolvedAcpLaunch,
   rawLaunch: AcpRuntimeLaunchConfig,
 ): Promise<SpawnAcpProcessOptions> {
-  let resolved = resolveDesktopAntigravityLaunch(rawLaunch)
-  if (
-    resolved &&
-    resolved.source === 'managed' &&
-    resolved.runtimeVersion !== ANTIGRAVITY_RELEASE_VERSION
-  ) {
-    try {
-      await enableDesktopHarness({ harnessId: 'acp-antigravity', forcePin: true })
-      resolved = resolveDesktopAntigravityLaunch(rawLaunch) ?? resolved
-    } catch {
-      void 0
-    }
-  }
+  const resolved = resolveDesktopAntigravityLaunch(rawLaunch)
   if (!resolved) {
     throw new Error('Antigravity runtime not found. Check Settings → Harnesses → Antigravity.')
   }
   const spawnCtx = prepareAntigravitySpawnContext({
-    harnessPath: resolved.harnessPath,
     extraEnv: launch.env,
   })
-  launch.command = resolved.executablePath
+  launch.command = resolved.command
   launch.args = resolved.args
   launch.env = spawnCtx.extraEnv
   return {

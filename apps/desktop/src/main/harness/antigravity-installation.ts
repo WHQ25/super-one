@@ -1,45 +1,49 @@
-import { resolveAntigravityRuntime, type HarnessManager } from '@superone/runtime/harness'
+import {
+  isLegacyAntigravityServerCommand,
+  resolveAntigravityRuntime,
+  type HarnessManager,
+} from '@superone/runtime/harness'
 import { buildHarnessDiagnostic, type HarnessInstallationStatus } from '@superone/shared/environment'
-import { resolveHarnessHomeRoot } from './home'
 
+/** Refresh settings from the launch resolver instead of a historical realpath. */
 export function refreshAntigravityInstallation(manager: HarnessManager): HarnessInstallationStatus {
   const status = manager.get('acp-antigravity')
   if (!status.enabled) return status
-  if (status.state === 'installing') return status
-  const launch = resolveAntigravityRuntime(manager, { homeRoot: resolveHarnessHomeRoot() })
-  if (!launch) {
-    if (status.state !== 'missing') {
-      manager.update('acp-antigravity', {
-        state: 'missing',
-        command: null,
-        diagnosticCode: 'not_found',
-      })
-    }
-    return {
-      ...status,
-      state: 'missing',
-      command: undefined,
-      diagnostic: buildHarnessDiagnostic('not_found'),
-    }
-  }
+  const launch = resolveAntigravityRuntime(manager)
+  const config = manager.getExternalLaunchConfig('acp-antigravity')
+  const fromEnv = !!process.env.SUPERONE_ANTIGRAVITY_BINARY?.trim()
+  const migratedLegacy = isLegacyAntigravityServerCommand(config.command ?? status.command)
+  const repaired = !fromEnv && (!config.commandSource || migratedLegacy) && launch?.source === 'path'
+  const nextCommand = launch?.command ?? (migratedLegacy ? undefined : status.command)
+  const state = launch ? 'ready' : 'missing'
   if (
-    status.state !== 'ready' ||
-    status.command !== launch.executablePath ||
-    status.runtimeVersion !== launch.runtimeVersion
+    !fromEnv &&
+    (status.command !== nextCommand || repaired || status.state !== state || status.runtimeVersion)
   ) {
     manager.update('acp-antigravity', {
-      state: 'ready',
-      command: launch.executablePath,
-      runtimeVersion: launch.runtimeVersion ?? null,
-      diagnosticCode: null,
+      command: nextCommand ?? null,
+      runtimeVersion: null,
+      state,
+      diagnosticCode: launch ? null : 'not_found',
       diagnosticFields: null,
+      ...(repaired
+        ? {
+            configJson: JSON.stringify({
+              ...config,
+              command: launch.command,
+              commandSource: 'path',
+              args: launch.args,
+              usesDefaultArgs: true,
+            }),
+          }
+        : {}),
     })
   }
   return {
     ...status,
-    state: 'ready',
-    command: launch.executablePath,
-    runtimeVersion: launch.runtimeVersion,
-    diagnostic: undefined,
+    state,
+    command: launch?.command,
+    runtimeVersion: undefined,
+    diagnostic: launch ? undefined : buildHarnessDiagnostic('not_found'),
   }
 }

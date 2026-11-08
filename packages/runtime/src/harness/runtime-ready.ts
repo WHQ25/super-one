@@ -235,7 +235,7 @@ function isAuthSatisfied(
     return { ok: true, reason: 'SUPERONE_HARNESS_MARK_READY' }
   }
   const defRequiresAuth =
-    id === 'claude' || id === 'codex' || id === 'cursor' || id === 'dsh' || id === 'acp-antigravity'
+    id === 'claude' || id === 'codex' || id === 'cursor' || id === 'dsh'
   if (!defRequiresAuth) {
     return { ok: true, reason: 'external harness does not require SuperOne provider auth' }
   }

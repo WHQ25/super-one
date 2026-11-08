@@ -43,13 +43,12 @@ export async function openAntigravityAuthConnection(
   const launch = resolveDesktopAntigravityLaunch()
   if (!launch) return null
   const spawnCtx = prepareAntigravitySpawnContext({
-    harnessPath: launch.harnessPath,
     customHome: opts.customHome,
   })
   const proc = spawnAcpProcess(
     {
       agentId: 'antigravity',
-      command: launch.executablePath,
+      command: launch.command,
       args: launch.args,
       cwd: homedir(),
       env: spawnCtx.extraEnv,

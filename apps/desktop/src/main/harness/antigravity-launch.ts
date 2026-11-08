@@ -1,5 +1,4 @@
 import { resolveAntigravityRuntime, type AntigravityResolvedRuntime } from '@superone/runtime/harness'
-import { resolveHarnessHomeRoot } from './home'
 import { getHarnessManager } from './service'
 
 export function resolveDesktopAntigravityLaunch(override?: {
@@ -8,10 +7,7 @@ export function resolveDesktopAntigravityLaunch(override?: {
   env?: Record<string, string>
 }): AntigravityResolvedRuntime | null {
   try {
-    return resolveAntigravityRuntime(getHarnessManager(), {
-      homeRoot: resolveHarnessHomeRoot(),
-      override,
-    })
+    return resolveAntigravityRuntime(getHarnessManager(), { override })
   } catch {
     return null
   }

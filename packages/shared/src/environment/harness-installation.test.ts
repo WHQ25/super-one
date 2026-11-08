@@ -110,7 +110,7 @@ describe('readySessionHarnessIds', () => {
         ...defaultHarnessInstallationStatus('acp-antigravity'),
         enabled: true,
         state: 'ready',
-        command: '/usr/local/bin/agy_acp_server.par',
+        command: '/usr/local/bin/agy',
       },
     ]
     expect(readySessionHarnessIds(statuses)).toEqual(['claude', 'acp'])

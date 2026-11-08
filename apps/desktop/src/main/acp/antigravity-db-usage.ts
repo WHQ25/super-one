@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import {
@@ -235,9 +236,30 @@ function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Array<
   return result
 }
 
+function resolveAntigravityConversationDirs(customHome?: string): string[] {
+  const profileDir = resolveAntigravityProfileDir(customHome)
+  const dirs = [
+    join(profileDir, 'conversations'),
+    join(profileDir, 'antigravity-acp', 'conversations'),
+  ]
+  if (!customHome) {
+    const home = homedir()
+    dirs.push(
+      join(home, '.gemini', 'antigravity-cli', 'conversations'),
+      join(home, '.gemini', 'antigravity', 'conversations'),
+    )
+  }
+  return dirs
+}
+
 export function resolveAntigravityConversationDbPath(sessionId: string, customHome?: string): string {
   const safeSessionId = sessionId.trim()
-  return join(resolveAntigravityProfileDir(customHome), 'antigravity-acp', 'conversations', `${safeSessionId}.db`)
+  const dirs = resolveAntigravityConversationDirs(customHome)
+  for (const dir of dirs) {
+    const candidate = join(dir, `${safeSessionId}.db`)
+    if (existsSync(candidate)) return candidate
+  }
+  return join(dirs[0]!, `${safeSessionId}.db`)
 }
 
 export function extractAntigravityTurnUsageAndThinking(
@@ -320,19 +342,26 @@ export function extractAntigravityTurnUsageAndThinking(
 }
 
 export function extractAllAntigravityUsageRecords(customHome?: string): AntigravityHistoricalUsageRecord[] {
-  const convDir = join(resolveAntigravityProfileDir(customHome), 'antigravity-acp', 'conversations')
-  if (!existsSync(convDir)) return []
-  const records: AntigravityHistoricalUsageRecord[] = []
-  let files: string[] = []
-  try {
-    files = readdirSync(convDir).filter((f) => f.endsWith('.db'))
-  } catch {
-    return []
+  const convDirs = resolveAntigravityConversationDirs(customHome)
+  const dbFiles: Array<{ providerSessionId: string; dbPath: string }> = []
+  const seenSessions = new Set<string>()
+  for (const convDir of convDirs) {
+    if (!existsSync(convDir)) continue
+    try {
+      for (const file of readdirSync(convDir)) {
+        if (!file.endsWith('.db')) continue
+        const providerSessionId = file.slice(0, -3)
+        if (seenSessions.has(providerSessionId)) continue
+        seenSessions.add(providerSessionId)
+        dbFiles.push({ providerSessionId, dbPath: join(convDir, file) })
+      }
+    } catch {
+      continue
+    }
   }
+  const records: AntigravityHistoricalUsageRecord[] = []
 
-  for (const file of files) {
-    const providerSessionId = file.slice(0, -3)
-    const dbPath = join(convDir, file)
+  for (const { providerSessionId, dbPath } of dbFiles) {
     let db: Database.Database | null = null
     try {
       db = new Database(dbPath, { readonly: true, fileMustExist: true })

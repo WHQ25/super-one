@@ -4,6 +4,7 @@ import type { ClaudeRateLimitWindow, ProviderRateLimits } from '@superone/shared
 import {
   antigravityTokenFilePath,
   readAntigravityAuthConfig,
+  resolveLegacyAntigravityTokenPath,
   writeAntigravityAuthEmail,
 } from './antigravity-profile'
 export * from './antigravity-db-usage'
@@ -20,6 +21,8 @@ interface TokenFile {
   client_id: string
   client_secret: string
   refresh_token: string
+  access_token?: string
+  expiry_ms?: number
   project_id?: string
 }
 
@@ -229,26 +232,34 @@ export function parseAntigravityUserEmail(raw: unknown): string | null {
 }
 
 function readTokenFile(): TokenFile | null {
-  const path = antigravityTokenFilePath()
-  if (!existsSync(path)) return null
-  try {
-    const parsed = asRecord(JSON.parse(readFileSync(path, 'utf-8')))
-    if (
-      typeof parsed?.client_id !== 'string' ||
-      typeof parsed?.client_secret !== 'string' ||
-      typeof parsed?.refresh_token !== 'string'
-    ) {
-      return null
+  for (const path of [antigravityTokenFilePath(), resolveLegacyAntigravityTokenPath()]) {
+    if (!existsSync(path)) continue
+    try {
+      const parsed = asRecord(JSON.parse(readFileSync(path, 'utf-8')))
+      const refreshToken = typeof parsed?.refresh_token === 'string' ? parsed.refresh_token.trim() : ''
+      const accessToken = typeof parsed?.access_token === 'string' ? parsed.access_token.trim() : ''
+      if (!refreshToken && !accessToken) continue
+      const clientId = typeof parsed?.client_id === 'string' ? parsed.client_id.trim() : ''
+      const clientSecret = typeof parsed?.client_secret === 'string' ? parsed.client_secret.trim() : ''
+      // agy writes its OAuth client into the token file. SuperOne does not ship one.
+      if (!clientId || !clientSecret) continue
+      const expiryMs =
+        typeof parsed?.expiry === 'string' && parsed.expiry.trim()
+          ? Date.parse(parsed.expiry)
+          : NaN
+      return {
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        ...(accessToken ? { access_token: accessToken } : {}),
+        ...(Number.isFinite(expiryMs) ? { expiry_ms: expiryMs } : {}),
+        ...(typeof parsed?.project_id === 'string' ? { project_id: parsed.project_id } : {}),
+      }
+    } catch {
+      continue
     }
-    return {
-      client_id: parsed.client_id,
-      client_secret: parsed.client_secret,
-      refresh_token: parsed.refresh_token,
-      ...(typeof parsed.project_id === 'string' ? { project_id: parsed.project_id } : {}),
-    }
-  } catch {
-    return null
   }
+  return null
 }
 
 async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
@@ -274,33 +285,38 @@ async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
 }
 
 async function resolveAccessToken(token: TokenFile): Promise<string | null> {
-  const key = `${token.client_id}:${token.refresh_token}`
+  const key = `${token.client_id}:${token.refresh_token || token.access_token || ''}`
   const now = Date.now()
   if (cachedToken && cachedToken.key === key && cachedToken.expiresAt > now + 60_000) {
     return cachedToken.accessToken
   }
-  const body = new URLSearchParams({
-    client_id: token.client_id,
-    client_secret: token.client_secret,
-    refresh_token: token.refresh_token,
-    grant_type: 'refresh_token',
-  })
-  const raw = asRecord(
-    await fetchJson(TOKEN_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    }),
-  )
-  if (typeof raw?.access_token !== 'string' || typeof raw?.expires_in !== 'number') {
-    return null
+  if (token.refresh_token) {
+    const body = new URLSearchParams({
+      client_id: token.client_id,
+      client_secret: token.client_secret,
+      refresh_token: token.refresh_token,
+      grant_type: 'refresh_token',
+    })
+    const raw = asRecord(
+      await fetchJson(TOKEN_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      }),
+    )
+    if (typeof raw?.access_token === 'string' && typeof raw?.expires_in === 'number') {
+      cachedToken = {
+        key,
+        accessToken: raw.access_token,
+        expiresAt: now + raw.expires_in * 1000,
+      }
+      return raw.access_token
+    }
   }
-  cachedToken = {
-    key,
-    accessToken: raw.access_token,
-    expiresAt: now + raw.expires_in * 1000,
+  if (token.access_token && (!token.expiry_ms || token.expiry_ms > now + 60_000)) {
+    return token.access_token
   }
-  return raw.access_token
+  return null
 }
 
 function mergeWindows(target: Map<string, ClaudeRateLimitWindow>, items: ClaudeRateLimitWindow[]): void {

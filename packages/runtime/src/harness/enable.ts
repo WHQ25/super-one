@@ -75,11 +75,10 @@ export async function enableHarness(
   } else if (id === 'dsh') {
     status = enableDeepseek(manager)
   } else if (id === 'acp-antigravity') {
-    status = await enableAcpAntigravity(manager, {
+    status = enableAcpAntigravity(manager, {
       command: input.command,
       args: input.args ?? [],
-      forcePin: input.forcePin === true,
-    }, deps)
+    })
   } else {
     status = enableAcpGrok(manager, {
       command: input.command,

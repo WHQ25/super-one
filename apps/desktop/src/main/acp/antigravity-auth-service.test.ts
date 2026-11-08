@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -57,17 +57,20 @@ describe('antigravity-profile & AntigravityAuthService', () => {
         homeDir,
       )
       const ctx = prepareAntigravitySpawnContext({
-        harnessPath: '/opt/agy/localharness_external',
         customHome: homeDir,
       })
       try {
         expect(ctx.baseEnv.GEMINI_API_KEY).toBeUndefined()
         expect(ctx.baseEnv.GOOGLE_CLOUD_PROJECT).toBeUndefined()
-        expect(ctx.extraEnv.ANTIGRAVITY_HARNESS_PATH).toBe('/opt/agy/localharness_external')
         expect(ctx.extraEnv.AGY_ACP_FORCE_FILE_STORAGE).toBe('1')
         expect(ctx.extraEnv.GOOGLE_CLOUD_PROJECT).toBe('enterprise-proj-123')
         expect(ctx.extraEnv.GOOGLE_CLOUD_LOCATION).toBe('us-central1')
         expect(ctx.extraEnv.GEMINI_HOME).toContain('antigravity')
+        const cliSettings = JSON.parse(
+          readFileSync(join(ctx.extraEnv.GEMINI_HOME!, 'antigravity-cli', 'settings.json'), 'utf8'),
+        )
+        expect(cliSettings.enableTerminalSandbox).toBe(true)
+        expect(cliSettings.auth).toEqual({ type: 'oauth-business' })
       } finally {
         ctx.cleanup()
       }
@@ -86,6 +89,12 @@ describe('antigravity-profile & AntigravityAuthService', () => {
     expect(parsed.redirectUri).toBe('http://127.0.0.1:43123/')
     expect(parsed.state).toBe('xyz123')
 
+    const v153Url =
+      'https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=abc&redirect_uri=http%3A%2F%2Flocalhost%3A43123%2Fauth%2Fcallback&state=state153'
+    const parsed153 = validateAntigravityOAuthUrl(v153Url)
+    expect(parsed153.redirectUri).toBe('http://localhost:43123/auth/callback')
+    expect(parsed153.state).toBe('state153')
+
     expect(() =>
       validateAntigravityOAuthUrl('https://evil.example.com/o/oauth2/v2/auth?response_type=code'),
     ).toThrow(/unexpected/)
@@ -96,9 +105,9 @@ describe('antigravity-profile & AntigravityAuthService', () => {
     expect(fromStdout).toBe(validUrl)
 
     const fromStderr = extractAntigravityAuthUrlsFromStderrChunk(
-      `info\n__SUPERONE_ANTIGRAVITY_AUTH_URL__${validUrl}\n`,
+      `info\n__SUPERONE_ANTIGRAVITY_AUTH_URL__${validUrl}\nPlease visit the following URL to authorize: ${v153Url}\n`,
     )
-    expect(fromStderr).toEqual([validUrl])
+    expect(fromStderr).toEqual([validUrl, v153Url])
   })
 
   it('completes OAuth login with callback forwarding and supports logout', async () => {

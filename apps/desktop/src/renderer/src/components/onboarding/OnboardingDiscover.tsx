@@ -49,7 +49,7 @@ export function OnboardingDiscover(): React.JSX.Element {
   const { t } = useTranslation()
   const completeOnboarding = useAppStore((s) => s.completeOnboarding)
   const [hits, setHits] = useState<ScanHit[] | null>(null)
-  const [visibleIds, setVisibleIds] = useState<CatalogId[]>(['claude', 'codex', 'acp-antigravity'])
+  const [visibleIds, setVisibleIds] = useState<CatalogId[]>(['claude', 'codex'])
   const [integrationLabels, setIntegrationLabels] = useState<
     Partial<Record<CatalogId, { label: string }>>
   >({})
@@ -66,7 +66,7 @@ export function OnboardingDiscover(): React.JSX.Element {
     try {
       const result = await window.app.scanHarnessClis()
       setHits(result.hits)
-      setVisibleIds(result.visibleIds?.length ? result.visibleIds : ['claude', 'codex', 'acp-antigravity'])
+      setVisibleIds(result.visibleIds?.length ? result.visibleIds : ['claude', 'codex'])
       setIntegrationLabels(result.integrationLabels ?? {})
       setSelected(new Set(result.defaultSelected))
     } catch (err) {
@@ -79,7 +79,7 @@ export function OnboardingDiscover(): React.JSX.Element {
         { harnessId: 'acp-grok', command: null, detected: false },
         { harnessId: 'acp-antigravity', command: null, detected: false },
       ])
-      setVisibleIds(['claude', 'codex', 'acp-antigravity'])
+      setVisibleIds(['claude', 'codex'])
       setIntegrationLabels({
         claude: { label: 'Claude Agent SDK' },
         codex: { label: 'Codex App Server' },
@@ -141,7 +141,7 @@ export function OnboardingDiscover(): React.JSX.Element {
         setActiveId(id)
         await window.app.enableHarness({
           harnessId: id,
-          forcePin: id === 'claude' || id === 'codex' || id === 'acp-antigravity',
+          forcePin: id === 'claude' || id === 'codex',
         })
       }
       await completeOnboarding()
@@ -182,7 +182,7 @@ export function OnboardingDiscover(): React.JSX.Element {
             const hit = hitById.get(id)
             const checked = selected.has(id)
             const Icon = resolveSessionIcon(providerOf(id), acpAgentOf(id))
-            const isManaged = id === 'claude' || id === 'codex' || id === 'acp-antigravity'
+            const isManaged = id === 'claude' || id === 'codex'
             const isActive = activeId === id
             const isDownloadFallback = isManaged && !hit?.detected
             const integrationLabel = integrationLabels[id]?.label

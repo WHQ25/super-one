@@ -17,9 +17,9 @@ export const BUILTIN_ACP_AGENTS: AcpAgentDefinition[] = [
   {
     id: 'antigravity',
     name: 'Antigravity',
-    command: process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par',
-    args: process.platform === 'linux' ? ['--uid='] : [],
-    installHint: 'Enable Antigravity in Settings → Harnesses to download the official ACP runtime',
+    command: 'agy',
+    args: ['acp'],
+    installHint: 'Install Antigravity CLI (agy on PATH or ~/.local/bin/agy)',
   },
   {
     id: 'opencode',

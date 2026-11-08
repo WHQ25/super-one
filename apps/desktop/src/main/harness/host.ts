@@ -14,7 +14,6 @@ import {
   resolveAntigravityRuntime,
   resolveExternalCommand,
   resolveGrokRuntime,
-  resolveManagedAntigravityFromHome,
   isCursorSdkAvailable,
   resolveCursorApiKeyPlain,
   setHarnessReleaseVersionProvider,
@@ -120,10 +119,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
       return resolveGrokRuntime(harnesses)?.command ?? null
     }
     if (id === 'acp-antigravity') {
-      return (
-        resolveAntigravityRuntime(harnesses, { homeRoot: resolveHarnessHomeRoot() })
-          ?.executablePath ?? null
-      )
+      return resolveAntigravityRuntime(harnesses)?.command ?? null
     }
     if (id === 'opencode') {
       if (!harnesses.get(id).enabled) return null
@@ -153,12 +149,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
       )
     }
     if (id === 'acp-grok') return Boolean(envBinary('SUPERONE_ACP_BINARY'))
-    if (id === 'acp-antigravity') {
-      return Boolean(
-        envBinary('SUPERONE_ANTIGRAVITY_BINARY') ||
-          resolveManagedAntigravityFromHome(resolveHarnessHomeRoot()),
-      )
-    }
+    if (id === 'acp-antigravity') return Boolean(envBinary('SUPERONE_ANTIGRAVITY_BINARY'))
     if (id === 'opencode') return Boolean(envBinary('SUPERONE_OPENCODE_BINARY'))
     if (id === 'cursor') return isCursorSdkAvailable()
     if (id === 'dsh') return true

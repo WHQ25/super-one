@@ -26,7 +26,7 @@ const SEARCH_NAMES: Record<NodeHarnessId, string[]> = {
   opencode: ['opencode'],
   cursor: ['cursor'],
   'acp-grok': ['grok'],
-  'acp-antigravity': ['agy_acp_server.par', 'agy_acp_server'],
+  'acp-antigravity': ['agy'],
   // In-process npm packages; no CLI binary to detect on PATH.
   dsh: [],
 }
@@ -43,7 +43,6 @@ const ONBOARDING_ORDER: readonly NodeHarnessId[] = [
 const ALWAYS_VISIBLE_ONBOARDING: ReadonlySet<NodeHarnessId> = new Set([
   'claude',
   'codex',
-  'acp-antigravity',
 ])
 
 function withWinSuffixes(names: string[]): string[] {

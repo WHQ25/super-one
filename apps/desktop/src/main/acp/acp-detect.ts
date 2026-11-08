@@ -34,6 +34,7 @@ function knownBinDirs(): string[] {
   const home = homedir()
   const dirs = [
     join(home, '.grok', 'bin'),
+    join(home, '.antigravity_cli', 'bin'),
     join(home, '.opencode', 'bin'),
     join(home, '.local', 'bin'),
     join(home, '.bun', 'bin'),
@@ -123,14 +124,14 @@ export async function detectAgent(def: AcpAgentDefinition): Promise<DetectedAcpA
   }
   if (def.id === 'antigravity') {
     const resolved = resolveDesktopAntigravityLaunch()
-    if (resolved?.executablePath) {
+    if (resolved?.command) {
       return {
         id: def.id,
         name: def.name,
         installed: true,
-        commandPreview: [resolved.executablePath, ...resolved.args].join(' '),
+        commandPreview: [resolved.command, ...resolved.args].join(' '),
         installHint: def.installHint,
-        resolvedPath: resolved.executablePath,
+        resolvedPath: resolved.command,
       }
     }
   }

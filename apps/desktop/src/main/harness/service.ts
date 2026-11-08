@@ -159,7 +159,7 @@ async function enableDesktopHarnessOnce(
   log.info(`[harness] enable ${id}`)
   try {
     // Mark installing for managed downloads so the UI can show progress immediately.
-    if (id === 'claude' || id === 'codex' || id === 'acp-antigravity') {
+    if (id === 'claude' || id === 'codex') {
       const cur = m.get(id)
       if (!cur.command || cur.state === 'disabled' || cur.state === 'missing' || cur.state === 'error') {
         m.update(id, { enabled: true, state: 'installing', diagnosticCode: null })

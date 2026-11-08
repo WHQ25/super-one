@@ -6,9 +6,9 @@ import { dirname, join } from 'node:path'
 import { ANTIGRAVITY_AUTH_METHODS, type AntigravityAuthConfig, type AntigravityAuthMethod } from '@superone/shared/antigravity-auth'
 import { decryptSecret, encryptSecretIfAvailable } from '../crypto/secret-store'
 import { superoneHome } from '../superone-home'
-import { ensureAntigravityAutoBootstrap } from './antigravity-auto-bootstrap'
 
 export const ANTIGRAVITY_AUTH_STDOUT_PREFIX = 'Open the following link to authenticate the ACP server: '
+export const ANTIGRAVITY_AUTH_STDERR_PREFIX = 'Please visit the following URL to authorize: '
 export const ANTIGRAVITY_AUTH_BROWSER_MARKER = '__SUPERONE_ANTIGRAVITY_AUTH_URL__'
 
 const STRIPPED_ENV_KEYS = new Set([
@@ -33,7 +33,7 @@ const USER_SKILL_PATHS = [
 
 const GCP_PROJECT_PATTERN = /^[a-z][a-z0-9.:-]{4,61}[a-z0-9]$/i
 const GCP_LOCATION_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/i
-const LOOPBACK_REDIRECT_URI_PATTERN = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/$/
+const LOOPBACK_REDIRECT_URI_PATTERN = /^http:\/\/(?:127\.0\.0\.1|localhost):([1-9][0-9]{0,4})\/(?:auth\/callback)?$/
 
 let prunedTempDirsThisProcess = false
 
@@ -44,9 +44,20 @@ export interface StoredAntigravityAuthConfig extends AntigravityAuthConfig {
 
 export function resolveAntigravityRoot(customHome?: string): string { return join(customHome ?? superoneHome(), 'antigravity') }
 export function resolveAntigravityProfileDir(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'profile') }
+export function resolveAntigravityBrainRoots(customHome?: string, home = homedir()): string[] {
+  const profileDir = resolveAntigravityProfileDir(customHome)
+  const userGeminiDir = join(home, '.gemini')
+  return [
+    join(profileDir, 'antigravity-acp', 'brain'),
+    join(profileDir, 'brain'),
+    join(userGeminiDir, 'antigravity-cli', 'brain'),
+    join(userGeminiDir, 'antigravity', 'brain'),
+  ]
+}
 export function resolveAntigravityTempParentDir(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'tmp') }
 export function resolveAntigravityAuthConfigPath(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'auth-config.json') }
-export function resolveAntigravityTokenPath(customHome?: string): string { return join(resolveAntigravityProfileDir(customHome), 'antigravity-acp', 'acp_token.json') }
+export function resolveAntigravityTokenPath(customHome?: string): string { return join(resolveAntigravityProfileDir(customHome), 'oauth_creds.json') }
+export function resolveLegacyAntigravityTokenPath(customHome?: string): string { return join(resolveAntigravityProfileDir(customHome), 'antigravity-acp', 'acp_token.json') }
 export { resolveAntigravityTokenPath as antigravityTokenFilePath }
 
 function isValidAuthMethod(value: unknown): value is AntigravityAuthMethod {
@@ -147,8 +158,7 @@ export function writeAntigravityAuthEmail(email: string, customHome?: string): v
   }
 }
 
-export function hasStoredAntigravityOAuthToken(customHome?: string): boolean {
-  const tokenPath = resolveAntigravityTokenPath(customHome)
+function hasValidTokenFile(tokenPath: string): boolean {
   if (!existsSync(tokenPath)) return false
   try {
     const parsed = JSON.parse(readFileSync(tokenPath, 'utf8')) as {
@@ -164,12 +174,23 @@ export function hasStoredAntigravityOAuthToken(customHome?: string): boolean {
   }
 }
 
+export function hasStoredAntigravityOAuthToken(customHome?: string): boolean {
+  return (
+    hasValidTokenFile(resolveAntigravityTokenPath(customHome)) ||
+    hasValidTokenFile(resolveLegacyAntigravityTokenPath(customHome))
+  )
+}
+
 export function clearAntigravityOAuthToken(customHome?: string): void {
-  const tokenPath = resolveAntigravityTokenPath(customHome)
-  try {
-    rmSync(tokenPath, { force: true })
-  } catch {
-    void 0
+  for (const tokenPath of [
+    resolveAntigravityTokenPath(customHome),
+    resolveLegacyAntigravityTokenPath(customHome),
+  ]) {
+    try {
+      rmSync(tokenPath, { force: true })
+    } catch {
+      void 0
+    }
   }
   try {
     const prev = readAntigravityAuthConfig(customHome)
@@ -233,24 +254,59 @@ function ensureBrowserHelperScript(geminiHomeDir: string): string {
   return helperPath
 }
 
+const STALE_TEMP_DIR_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+function readExistingSettingsObject(filePath: string): Record<string, unknown> {
+  if (!existsSync(filePath)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    void 0
+  }
+  return {}
+}
+
+function writeSettingsFile(filePath: string, payload: Record<string, unknown>): void {
+  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 })
+  writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
+  if (process.platform !== 'win32') {
+    chmodSync(filePath, 0o600)
+  }
+}
+
 function ensureProfileSettings(geminiHomeDir: string, cfg: StoredAntigravityAuthConfig): void {
-  const settingsDir = join(geminiHomeDir, 'antigravity-acp')
-  const settingsPath = join(settingsDir, 'settings.json')
-  mkdirSync(settingsDir, { recursive: true, mode: 0o700 })
-  const payload = {
-    auth: { type: cfg.authMethod },
-    ...(cfg.gcpProject || cfg.gcpLocation
+  const gcpBlock =
+    cfg.gcpProject || cfg.gcpLocation
       ? {
           gcp: {
             ...(cfg.gcpProject ? { project: cfg.gcpProject } : {}),
             ...(cfg.gcpLocation ? { location: cfg.gcpLocation } : {}),
           },
         }
-      : {}),
-  }
-  writeFileSync(settingsPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
-  if (process.platform !== 'win32') {
-    chmodSync(settingsPath, 0o600)
+      : {}
+
+  const rootSettingsPath = join(geminiHomeDir, 'settings.json')
+  const existingRoot = readExistingSettingsObject(rootSettingsPath)
+  writeSettingsFile(rootSettingsPath, {
+    ...existingRoot,
+    selectedAuthType: cfg.authMethod,
+    auth: { type: cfg.authMethod },
+    enableTerminalSandbox: true,
+    ...gcpBlock,
+  })
+
+  for (const subdir of ['antigravity-acp', 'antigravity-cli']) {
+    const settingsPath = join(geminiHomeDir, subdir, 'settings.json')
+    const existing = readExistingSettingsObject(settingsPath)
+    writeSettingsFile(settingsPath, {
+      ...existing,
+      auth: { type: cfg.authMethod },
+      enableTerminalSandbox: true,
+      ...gcpBlock,
+    })
   }
 }
 
@@ -259,10 +315,17 @@ function createIsolatedProcessTempDir(customHome?: string): string {
   mkdirSync(parent, { recursive: true, mode: 0o700 })
   if (!prunedTempDirsThisProcess) {
     prunedTempDirsThisProcess = true
+    const now = Date.now()
     try {
       for (const entry of readdirSync(parent)) {
-        if (entry.startsWith('run-')) {
-          rmSync(join(parent, entry), { recursive: true, force: true })
+        if (!entry.startsWith('run-')) continue
+        const entryPath = join(parent, entry)
+        try {
+          if (now - statSync(entryPath).mtimeMs > STALE_TEMP_DIR_MAX_AGE_MS) {
+            rmSync(entryPath, { recursive: true, force: true })
+          }
+        } catch {
+          void 0
         }
       }
     } catch {
@@ -320,18 +383,34 @@ export function validateAntigravityOAuthUrl(rawUrl: string): {
 
 export function extractAntigravityAuthUrlFromStdoutLine(line: string): string | null {
   const trimmed = line.replace(/\r$/, '')
-  if (!trimmed.startsWith(ANTIGRAVITY_AUTH_STDOUT_PREFIX)) return null
-  const raw = trimmed.slice(ANTIGRAVITY_AUTH_STDOUT_PREFIX.length).trim()
-  return raw || null
+  for (const prefix of [ANTIGRAVITY_AUTH_STDOUT_PREFIX, ANTIGRAVITY_AUTH_STDERR_PREFIX]) {
+    if (trimmed.startsWith(prefix)) {
+      const raw = trimmed.slice(prefix.length).trim()
+      return raw || null
+    }
+  }
+  return null
 }
 
 export function extractAntigravityAuthUrlsFromStderrChunk(chunk: string): string[] {
   const urls: string[] = []
+  const pushUnique = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed && !urls.includes(trimmed)) urls.push(trimmed)
+  }
   for (const line of chunk.split(/\r?\n/)) {
-    const idx = line.indexOf(ANTIGRAVITY_AUTH_BROWSER_MARKER)
-    if (idx < 0) continue
-    const raw = line.slice(idx + ANTIGRAVITY_AUTH_BROWSER_MARKER.length).trim()
-    if (raw) urls.push(raw)
+    const markerIdx = line.indexOf(ANTIGRAVITY_AUTH_BROWSER_MARKER)
+    if (markerIdx >= 0) {
+      pushUnique(line.slice(markerIdx + ANTIGRAVITY_AUTH_BROWSER_MARKER.length))
+      continue
+    }
+    for (const prefix of [ANTIGRAVITY_AUTH_STDERR_PREFIX, ANTIGRAVITY_AUTH_STDOUT_PREFIX]) {
+      const prefixIdx = line.indexOf(prefix)
+      if (prefixIdx >= 0) {
+        pushUnique(line.slice(prefixIdx + prefix.length))
+        break
+      }
+    }
   }
   return urls
 }
@@ -344,10 +423,10 @@ export interface AntigravitySpawnContext {
 }
 
 export function prepareAntigravitySpawnContext(opts: {
-  harnessPath: string
+  harnessPath?: string
   customHome?: string
   extraEnv?: Record<string, string>
-}): AntigravitySpawnContext {
+} = {}): AntigravitySpawnContext {
   const authConfig = readAntigravityAuthConfig(opts.customHome)
   const geminiHomeDir = resolveAntigravityProfileDir(opts.customHome)
   mkdirSync(geminiHomeDir, { recursive: true, mode: 0o700 })
@@ -355,10 +434,6 @@ export function prepareAntigravitySpawnContext(opts: {
   ensureProfileSettings(geminiHomeDir, authConfig)
   const helperPath = ensureBrowserHelperScript(geminiHomeDir)
   const runTempDir = createIsolatedProcessTempDir(opts.customHome)
-  const autoBootstrap = ensureAntigravityAutoBootstrap(
-    resolveAntigravityRoot(opts.customHome),
-    opts.harnessPath,
-  )
 
   const preserveAdc = authConfig.authMethod === 'agent-platform' && !authConfig.apiKey
   const baseEnv: Record<string, string> = {}
@@ -382,8 +457,6 @@ export function prepareAntigravitySpawnContext(opts: {
     ...(opts.extraEnv ?? {}),
     GEMINI_HOME: geminiHomeDir,
     AGY_ACP_FORCE_FILE_STORAGE: '1',
-    ANTIGRAVITY_HARNESS_PATH: opts.harnessPath,
-    __PYVENV_LAUNCHER__: autoBootstrap.pyvenvLauncherPath,
     BROWSER: `${quoteArg(process.execPath)} ${quoteArg(helperPath)}`,
     PYTHONUNBUFFERED: '1',
     ELECTRON_RUN_AS_NODE: '1',

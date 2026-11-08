@@ -62,7 +62,7 @@ export const NODE_HARNESS_DEFINITIONS: readonly NodeHarnessDefinition[] = [
   // Managed runtimeSource (SDK) but not on ManagedHarnessId CDN pin chain yet.
   { id: 'cursor', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'cursor' },
   { id: 'acp-grok', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
-  { id: 'acp-antigravity', runtimeSource: 'managed', requiresAuth: false, sessionHarnessId: 'acp' },
+  { id: 'acp-antigravity', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
   // In-process dsh Cordis tree (npm @deepseek-ai/dsh-*); no external binary to install.
   { id: 'dsh', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'dsh' },
 ] as const

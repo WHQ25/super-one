@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { SessionRow } from './SessionRow'
+import { SidebarCollapse } from './SidebarCollapse'
 import { SidebarSectionLabel } from './SidebarSectionLabel'
 import { settledPanelId, useProjectSettledCollapsed } from './sidebar-section-collapse'
 import { chainSessionListWheel, measureSessionListRow, observeSessionListRect, SESSION_LIST_SCROLL_CLASS, SESSION_ROW_ESTIMATE } from './session-list-scroll'
@@ -128,9 +129,9 @@ export const SettledSection = memo(function SettledSection(props: SettledSection
           {t('sidebar.settled')}
         </SidebarSectionLabel>
       </div>
-      <div id={panelId} hidden={collapsed || undefined} inert={collapsed ? true : undefined} aria-hidden={collapsed || undefined}>
-        {!collapsed && <SettledSessionList {...listProps} />}
-      </div>
+      <SidebarCollapse id={panelId} open={!collapsed} unmountClosed>
+        <SettledSessionList {...listProps} />
+      </SidebarCollapse>
     </div>
   )
 })

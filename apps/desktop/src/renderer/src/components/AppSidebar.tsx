@@ -49,6 +49,7 @@ import { presenterFor } from '@/lib/multi-host/session-hover'
 import { MultiHostEnvironmentScroll } from '@/components/sidebar/multi-host/MultiHostEnvironmentScroll'
 import { useLoadMultiHostCatalog } from '@/components/sidebar/multi-host/use-load-multi-host-catalog'
 import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
+import { SidebarCollapse } from '@/components/sidebar/SidebarCollapse'
 import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
 import { sidebarSectionPanelId, useSidebarSectionCollapsed } from '@/components/sidebar/sidebar-section-collapse'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
@@ -709,16 +710,7 @@ export const AppSidebar = memo(function AppSidebar() {
           >
             {t('sidebar.pinned')}
           </SidebarSectionLabel>
-          <div
-            id={sidebarSectionPanelId('pinned')}
-            className={cn(
-              'grid transition-[grid-template-rows] duration-200 ease-out',
-              pinnedIsCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
-            )}
-            inert={pinnedIsCollapsed ? true : undefined}
-            aria-hidden={pinnedIsCollapsed || undefined}
-          >
-            <div className="overflow-hidden">
+          <SidebarCollapse id={sidebarSectionPanelId('pinned')} open={!pinnedIsCollapsed}>
               {pinnedForList.map((s) => {
                 const [pinStatus, pinUnseenFlag] = (pinnedStatuses[s.sessionId] ?? ':0').split(':')
                 const presentation = pinPresentation(s)
@@ -740,8 +732,7 @@ export const AppSidebar = memo(function AppSidebar() {
                   />
                 )
               })}
-            </div>
-          </div>
+          </SidebarCollapse>
         </div>
       )}
       {showDrafts && (

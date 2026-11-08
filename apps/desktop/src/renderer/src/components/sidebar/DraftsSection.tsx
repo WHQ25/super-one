@@ -41,8 +41,8 @@ const NO_CONNECTIONS: readonly string[] = []
  */
 const DRAFT_ROW_HEIGHT = 36
 
-/** Opening/closing the space the rows occupy — only runs when the count changes. */
-const GROUP_HEIGHT_TRANSITION = { duration: 0.18, ease: [0.32, 0.72, 0, 1] } as const
+/** Same 120ms ease-out as the pinned session list. Runs when the row count changes too. */
+const GROUP_HEIGHT_TRANSITION = { duration: 0.12, ease: [0, 0, 0.58, 1] } as const
 /** The row itself flying in from the right, just behind the space opening up. */
 const SLIDE_IN_TRANSITION = { duration: 0.22, delay: 0.06, ease: [0.22, 1, 0.36, 1] } as const
 /** Leaving for the composer — accelerating out, so it reads as departing. */

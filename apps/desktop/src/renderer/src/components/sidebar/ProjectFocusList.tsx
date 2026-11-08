@@ -12,7 +12,9 @@ import { ProjectSidebarRow, type ProjectFocusActions } from './ProjectSidebarRow
 import { SettledSessionList } from './SettledSection'
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList, ProjectHistorySearch } from './ProjectHistoryList'
+import { SidebarCollapse } from './SidebarCollapse'
 import { SidebarSectionLabel } from './SidebarSectionLabel'
+import { cn } from '@superone/ui/lib/utils'
 import type { SidebarFocusViewProps } from './SidebarFocusView'
 
 /** Compact section styling for focus, distinct from the full environment rows. */
@@ -63,9 +65,9 @@ export function FocusEnvironmentGroup({
       >
         {bucket.label}
       </SidebarSectionLabel>
-      <div id={panelId} hidden={!expanded} inert={!expanded ? true : undefined} className="pl-1">
-        {(!unmountCollapsed || expanded) && children}
-      </div>
+      <SidebarCollapse id={panelId} open={expanded} unmountClosed={unmountCollapsed} innerClassName="pl-1">
+        {children}
+      </SidebarCollapse>
     </div>
   )
 }
@@ -276,18 +278,26 @@ export function ProjectFocusList({
           >
             {t('sidebar.settled')}
           </SidebarSectionLabel>
-          <div id={settledPanelId} hidden={!settledExpanded} className={groupSettled ? 'min-h-0 overflow-y-auto pl-1' : 'min-h-0 overflow-y-auto'}>
-            {settledExpanded && settledSections.map(({ bucket, checkouts, sessions, count }) => {
-              const body = (
-                <SettledFocusSessions bucket={bucket} checkouts={checkouts} sessions={sessions} paths={paths} props={props} />
-              )
-              return groupSettled ? (
-                <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} count={count} unmountCollapsed>
-                  {body}
-                </FocusEnvironmentGroup>
-              ) : <div key={bucket.environmentId}>{body}</div>
-            })}
-          </div>
+          <SidebarCollapse
+            id={settledPanelId}
+            open={settledExpanded}
+            unmountClosed
+            className="min-h-0"
+            innerClassName={cn('flex h-full min-h-0 flex-col', groupSettled && 'pl-1')}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {settledSections.map(({ bucket, checkouts, sessions, count }) => {
+                const body = (
+                  <SettledFocusSessions bucket={bucket} checkouts={checkouts} sessions={sessions} paths={paths} props={props} />
+                )
+                return groupSettled ? (
+                  <FocusEnvironmentGroup key={bucket.environmentId} bucket={bucket} count={count} unmountCollapsed>
+                    {body}
+                  </FocusEnvironmentGroup>
+                ) : <div key={bucket.environmentId}>{body}</div>
+              })}
+            </div>
+          </SidebarCollapse>
         </div>
       )}
     </div>

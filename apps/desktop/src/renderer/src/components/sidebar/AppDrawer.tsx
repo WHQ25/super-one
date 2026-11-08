@@ -12,9 +12,9 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
+import { SidebarCollapse } from '@/components/sidebar/SidebarCollapse'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-url'
-import { AnimatePresence, motion } from 'motion/react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -274,15 +274,7 @@ export function AppDrawer() {
           }
         </button>
 
-        <AnimatePresence initial={false}>
-          {expanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
-              className="overflow-hidden"
-            >
+        <SidebarCollapse open={expanded} unmountClosed>
               <div className="relative">
                 {isDragOver && (
                   <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-orange-600/60 dark:border-orange-400/60 bg-orange-50/50 dark:bg-orange-950/20">
@@ -339,9 +331,7 @@ export function AppDrawer() {
                   </button>
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </SidebarCollapse>
       </div>
     </div>
   )

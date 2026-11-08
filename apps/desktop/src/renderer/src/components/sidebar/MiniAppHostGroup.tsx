@@ -5,6 +5,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { cn } from '@superone/ui/lib/utils'
 import type { MiniAppHostInfo } from '@superone/shared/miniapp-types'
 import { MiniAppIcon } from '../miniapp/MiniAppIcon'
+import { SidebarCollapse } from './SidebarCollapse'
 
 interface MiniAppHostGroupProps {
   hosts: MiniAppHostInfo[]
@@ -53,7 +54,7 @@ export const MiniAppHostGroup = memo(function MiniAppHostGroup({
         <span>{t('sidebar.contextMenu.miniApps')}</span>
         <span className="ml-auto text-[10px] text-sidebar-foreground/30">{hosts.length}</span>
       </button>
-      {expanded && (
+      <SidebarCollapse open={expanded} unmountClosed>
         <div className="flex flex-col py-0.5 pl-2">
           {hosts.map((host) => (
             <ContextMenu key={host.appId}>
@@ -94,7 +95,7 @@ export const MiniAppHostGroup = memo(function MiniAppHostGroup({
             </ContextMenu>
           ))}
         </div>
-      )}
+      </SidebarCollapse>
     </div>
   )
 })

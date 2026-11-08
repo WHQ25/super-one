@@ -17,6 +17,7 @@ import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } fro
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { SidebarCollapse, SidebarHeightMorph } from '@/components/sidebar/SidebarCollapse'
 import { foldProjectSettled } from '@/components/sidebar/sidebar-section-collapse'
 import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/sidebar/multi-host/SessionHoverCard'
@@ -211,7 +212,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               />
               {/* Projects sit one step inside their environment, hover fill included. */}
               <div className="pl-1">
-                {expanded && (
+                <SidebarCollapse open={expanded} unmountClosed>
                   <EnvironmentProjectScroll>
                     {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
                       <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
@@ -228,7 +229,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                     )}
                     {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
                   </EnvironmentProjectScroll>
-                )}
+                </SidebarCollapse>
               </div>
             </div>
           )
@@ -301,12 +302,12 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             openingSessionId={props.openingSession?.folderPath === target.pathKey ? props.openingSession.sessionId : null}
             initialSessions={props.folderSessions[target.pathKey]}
           >
-            {open && group.checkouts.map((checkout) => {
+            {group.checkouts.map((checkout) => {
               const bucket = environments.find((item) => item.environmentId === checkout.environmentId)
               if (!bucket) return null
               return checkoutRow(checkout, bucket, undefined, true)
             })}
-            {open && !loadingAny && !anySessions && !anySettled && (
+            {!loadingAny && !anySessions && !anySettled && (
               <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
             )}
           </RepoGroupHeader>
@@ -578,6 +579,7 @@ function RepoGroupHeader({
       </AdaptiveContextMenu>
       </ProjectHoverCard>
       <div className="pl-1">
+        <SidebarHeightMorph morphKey={history}>
         {!locked && history ? (
           <ProjectHistoryList
             folderPath={target.pathKey}
@@ -590,7 +592,12 @@ function RepoGroupHeader({
             onRenameSession={onRenameSession}
             onDeleteSession={onDeleteSession}
           />
-        ) : children}
+        ) : (
+          <SidebarCollapse open={open && !locked} unmountClosed>
+            {children}
+          </SidebarCollapse>
+        )}
+        </SidebarHeightMorph>
       </div>
       <AutomationDialog
         open={automationOpen}

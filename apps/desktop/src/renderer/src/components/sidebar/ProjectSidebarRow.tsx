@@ -1,5 +1,5 @@
 import { listProjectAutomations, deleteProjectAutomation, runProjectAutomation, onProjectAutomationsChanged } from '@/lib/automation-client'
-import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect, type RefObject } from 'react'
+import { memo, useMemo, useState, useEffect, useCallback, type RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
@@ -27,6 +27,7 @@ import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { ActiveSessionList } from './ActiveSessionList'
 import { ProjectHistoryList } from './ProjectHistoryList'
 import { SettledSection } from './SettledSection'
+import { SidebarCollapse, SidebarHeightMorph } from './SidebarCollapse'
 import { foldProjectSettled } from './sidebar-section-collapse'
 import { focusProject } from './sidebar-focus'
 
@@ -53,39 +54,6 @@ function SessionGroupsFrame({
     <ActiveSessionList hasMore={hasMore} onLoadMore={onLoadMore} layout={fill ? 'fill' : 'cap'}>
       {children}
     </ActiveSessionList>
-  )
-}
-
-function MorphHeight({ children, morphKey, fill = false }: { children: React.ReactNode; morphKey: unknown; fill?: boolean }) {
-  const outerRef = useRef<HTMLDivElement>(null)
-  const innerRef = useRef<HTMLDivElement>(null)
-  const prevKeyRef = useRef(morphKey)
-  const pendingFromRef = useRef<number | null>(null)
-  const animationRef = useRef<Animation | null>(null)
-
-  if (prevKeyRef.current !== morphKey) {
-    prevKeyRef.current = morphKey
-    pendingFromRef.current = innerRef.current?.offsetHeight ?? null
-  }
-
-  useLayoutEffect(() => {
-    const from = pendingFromRef.current
-    pendingFromRef.current = null
-    // A pixel height would pin the focus pane instead of letting the list fill it.
-    if (fill || from == null || !outerRef.current || !innerRef.current) return
-    const to = innerRef.current.offsetHeight
-    if (from === to || typeof outerRef.current.animate !== 'function') return
-    animationRef.current?.cancel()
-    animationRef.current = outerRef.current.animate(
-      [{ height: `${from}px` }, { height: `${to}px` }],
-      { duration: 160, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
-    )
-  })
-
-  return (
-    <div ref={outerRef} className={cn(fill && 'flex min-h-0 flex-1 flex-col')} style={{ overflow: 'hidden' }}>
-      <div ref={innerRef} className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>{children}</div>
-    </div>
   )
 }
 
@@ -752,6 +720,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 
       {/* Everything under the project header sits one step in. A merged repository indents its own children. */}
       <div className={cn(!sessionsOnly && 'pl-1', fill && 'flex h-full min-h-0 flex-col')}>
+        <SidebarHeightMorph morphKey={`${open}:${historyMode}`} fill={fill} className={cn(fill && 'h-full')}>
         {!sessionsOnly && open && projectAutomations.length > 0 && (
           <div className="overflow-hidden">
             <button
@@ -766,7 +735,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               <span>{t('sidebar.contextMenu.automations')}</span>
               <span className="ml-auto text-[10px] text-sidebar-foreground/30">{projectAutomations.length}</span>
             </button>
-            {automationsExpanded && (
+            <SidebarCollapse open={automationsExpanded} unmountClosed>
               <div className="flex flex-col py-0.5 pl-2">
                 {projectAutomations.map((automation) => {
                   const automationMenuItems: AdaptiveMenuEntry[] = [
@@ -796,7 +765,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   )
                 })}
               </div>
-            )}
+            </SidebarCollapse>
           </div>
         )}
 
@@ -808,7 +777,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           />
         )}
 
-        <MorphHeight morphKey={historyMode} fill={fill}>
           {historyMode ? (
             <ProjectHistoryList
               folderPath={folder.path}
@@ -881,15 +849,19 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       environmentOffline={offline || parentPresentation?.environmentOffline}
                       focusEnvironmentId={focusEnvironmentId}
                     />
-                    {childrenExpanded ? (
-                      <ActiveSessionList
-                        kind="child"
-                        hasMore={childSessionsHasMore[parent.sessionId] === true}
-                        onLoadMore={() => onLoadMoreChildSessions?.(folder.path, parent.sessionId)}
-                      >
-                        {childRows}
-                      </ActiveSessionList>
-                    ) : childRows}
+                    {hasChildren && (
+                      <SidebarHeightMorph morphKey={childrenExpanded}>
+                        {childrenExpanded ? (
+                          <ActiveSessionList
+                            kind="child"
+                            hasMore={childSessionsHasMore[parent.sessionId] === true}
+                            onLoadMore={() => onLoadMoreChildSessions?.(folder.path, parent.sessionId)}
+                          >
+                            {childRows}
+                          </ActiveSessionList>
+                        ) : childRows}
+                      </SidebarHeightMorph>
+                    )}
                   </div>
                   )
                 })}
@@ -897,7 +869,6 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               )}
             </div>
           ) : null}
-        </MorphHeight>
         {showSettled && open && !historyMode && projectSettled.length > 0 && (
           <div className={cn(fill && 'shrink-0')}>
           <SettledSection
@@ -916,6 +887,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           />
           </div>
         )}
+        </SidebarHeightMorph>
       </div>
 
       <AutomationDialog

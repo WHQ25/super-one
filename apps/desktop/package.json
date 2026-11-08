@@ -197,7 +197,7 @@
     "@lobehub/icons": "^5.0.1",
     "@lobehub/ui": "^5.38.0",
     "@modelcontextprotocol/ext-apps": "1.7.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@musistudio/llms": "1.0.53",
     "@openai/codex": "0.167.0",
     "@opencode-ai/models": "^0.0.62",

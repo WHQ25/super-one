@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendFadeChunk, createStreamFadePlugin, STREAM_FADE_CLASS, type StreamFadeController } from './stream-fade'
+import { createStreamFadePlugin, STREAM_FADE_CLASS, type StreamFadeController } from './stream-fade'
 
 type HastNode = {
   type: string
@@ -34,22 +34,6 @@ function classes(node: HastNode): string[] {
   for (const child of node.children ?? []) found.push(...classes(child))
   return found
 }
-
-describe('appendFadeChunk', () => {
-  it('keeps earlier commits and appends only the new suffix', () => {
-    const first = appendFadeChunk([], '', '先看')
-    const second = appendFadeChunk(first.chunks, first.previous, '先看节奏')
-    expect(second).toEqual({ chunks: ['先看', '节奏'], previous: '先看节奏' })
-  })
-
-  it('starts over when the text is replaced', () => {
-    const first = appendFadeChunk([], '', '先看')
-    expect(appendFadeChunk(first.chunks, first.previous, '另一段')).toEqual({
-      chunks: ['另一段'],
-      previous: '另一段',
-    })
-  })
-})
 
 describe('stream fade plugin', () => {
   it('fades each new prose commit and leaves an earlier commit in place', () => {

@@ -419,8 +419,7 @@
   }
 }
 
-/* One-shot fade for a streaming commit. Duration matches STREAM_FADE_MS.
-   Reasoning renders outside .chat-md, so this stays unscoped. */
+/* One-shot fade for a streamed markdown commit. Duration matches STREAM_FADE_MS. */
 @keyframes stream-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }

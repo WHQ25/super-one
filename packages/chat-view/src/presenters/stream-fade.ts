@@ -188,13 +188,3 @@ export function createStreamFadePlugin(now: () => number = () => performance.now
     },
   }
 }
-
-/** Append-only reasoning commits. A replaced string starts a new chunk. */
-export function appendFadeChunk(chunks: readonly string[], previous: string, next: string): { chunks: string[], previous: string } {
-  if (!next) return { chunks: [], previous: '' }
-  if (next.startsWith(previous)) {
-    if (next.length === previous.length) return { chunks: chunks.slice(), previous }
-    return { chunks: [...chunks, next.slice(previous.length)], previous: next }
-  }
-  return { chunks: [next], previous: next }
-}

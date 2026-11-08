@@ -39,22 +39,19 @@ describe('ReasoningBlock', () => {
     expect(screen.getByText('hello')).toBeInTheDocument()
   })
 
-  it('fades each new reasoning suffix once while streaming', () => {
+  it('shows each reasoning update immediately while streaming', () => {
     const { container, rerender } = render(
       <ReasoningBlock text="first" blockDone={false} showContent autoExpand />,
     )
-    const faded = () => [...container.querySelectorAll('.stream-fade')].map(node => node.textContent)
-    expect(faded()).toEqual(['first'])
+    expect(container.querySelector('.stream-fade')).toBeNull()
+    expect(container.querySelector('.thinking-content')?.textContent).toBe('first')
 
     rerender(<ReasoningBlock text="first more" blockDone={false} showContent autoExpand />)
-    expect(faded()).toEqual(['first', ' more'])
+    expect(container.querySelector('.stream-fade')).toBeNull()
+    expect(container.querySelector('.thinking-content')?.textContent).toBe('first more')
 
     rerender(<ReasoningBlock text="replaced" blockDone={false} showContent autoExpand />)
-    expect(faded()).toEqual(['replaced'])
-
-    rerender(<ReasoningBlock text="replaced" blockDone showContent autoExpand collapseOnDone={false} />)
-    expect(container.querySelector('.stream-fade')).toBeNull()
-    expect(container.querySelector('.thinking-content')?.textContent).toContain('replaced')
+    expect(container.querySelector('.thinking-content')?.textContent).toBe('replaced')
   })
 
   it('opens streaming content when the appearance setting is on', () => {

@@ -78,7 +78,7 @@ export interface EnvironmentSection {
 }
 
 /** Environment mode does not merge across machines. An empty bucket stays visible. */
-export function environmentSections(buckets: EnvironmentBucket[], sort: SidebarSort): EnvironmentSection[] {
+export function environmentSections(buckets: readonly EnvironmentBucket[], sort: SidebarSort): EnvironmentSection[] {
   return buckets.map((bucket) => ({
     bucket,
     checkouts: sortCheckouts(bucket.checkouts, sort),

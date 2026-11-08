@@ -10,7 +10,7 @@ _AUTO_REASON_VAR = contextvars.ContextVar("_superone_auto_reason", default="")
 _PENDING_NEW_MODE_VAR = contextvars.ContextVar("_superone_pending_new_mode", default="")
 _FRONTMATTER_RE = re.compile(r"^---\\r?\\n([\\s\\S]*?)\\r?\\n---(?:\\r?\\n|$)")
 _STEP_TS_HEADER_RE = re.compile(r"^(?:Created At:\\s*[^\\r\\n]+\\r?\\n(?:Completed At:\\s*[^\\r\\n]+\\r?\\n)?|Completed At:\\s*[^\\r\\n]+\\r?\\n)")
-_SPILLED_URI_RE = re.compile(r"^(?:The output was large and was saved to|Result saved to URI):\\s*(file://[^\\r\\n]+|/[^\\r\\n]+)\\s*$")
+_SPILLED_URI_RE = re.compile(r"^(?:(?:The output was large and was saved to|Result saved to URI):\\s*|The tool's output was truncated due to being too long\\.\\s*You can find the full output in a file at\\s+)(file://[^\\r\\n]+?|/[^\\r\\n]+?)\\.?\\s*(?:\\r?\\n|$)")
 
 
 def _clean_mcp_output_py(text):
@@ -19,7 +19,7 @@ def _clean_mcp_output_py(text):
     stripped = _STEP_TS_HEADER_RE.sub("", text)
     m = _SPILLED_URI_RE.match(stripped.strip())
     if m:
-        target = m.group(1).strip()
+        target = m.group(1).strip().rstrip(".")
         try:
             import urllib.parse as _urlparse
             fpath = _urlparse.unquote(_urlparse.urlparse(target).path) if target.startswith("file://") else target
@@ -321,7 +321,13 @@ def _wrap_client_for_auto_reason(client):
             update = kwargs.get("update")
             if getattr(update, "session_update", None) == "agent_message_chunk":
                 content = getattr(update, "content", None)
-                if getattr(content, "text", None) == "Trajectory was cancelled.":
+                text = getattr(content, "text", None)
+                if isinstance(text, str) and text.strip() in (
+                    "Trajectory was cancelled.",
+                    "Trajectory was canceled.",
+                    "The request was cancelled by the client.",
+                    "The request was canceled by the client.",
+                ):
                     return None
             return await orig_session_update(*args, **kwargs)
     else:

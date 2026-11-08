@@ -28,11 +28,18 @@ import {
   antigravityPermissionDisposition,
   antigravityPermissionMode,
   antigravitySessionMeta,
+  extractAntigravityElicitationQuestion,
   extractAntigravityUserInputQuestion,
   isAntigravityUserInputRequest,
+  makeAntigravityElicitationResponse,
   makeAntigravityUserInputResponse,
   selectAntigravityAutoApprovedOptionId,
+  type AntigravityElicitationCreateResult,
 } from './antigravity-protocol'
+import {
+  extractAntigravityApiRetryEvent,
+  isAntigravityCancelledChunk,
+} from '@superone/shared/antigravity-chunks'
 import {
   extractAntigravityPromptResponseUsage,
   extractAntigravityTurnUsageAndThinking,
@@ -45,8 +52,10 @@ import { decideAcpPermission } from './acp-permission-preapprove'
 export {
   ANTIGRAVITY_CLIENT_INFO,
   antigravitySessionMeta,
+  extractAntigravityApiRetryEvent,
   extractAntigravityPromptResponseUsage,
   extractAntigravityWireTurnUsage,
+  isAntigravityCancelledChunk,
   type AntigravityWireTurnUsage,
 }
 
@@ -96,6 +105,18 @@ export async function handleAntigravityPermissionRequest(
     }
   }
   return permissionGate.request(params)
+}
+
+export async function handleAntigravityElicitationCreate(
+  rawParams: unknown,
+  askUserQuestion?: AcpAskUserQuestionGate,
+): Promise<AntigravityElicitationCreateResult> {
+  const question = extractAntigravityElicitationQuestion(rawParams)
+  if (!question || !askUserQuestion) {
+    return makeAntigravityElicitationResponse(rawParams, { outcome: 'cancelled' })
+  }
+  const answer = await askUserQuestion.request(question)
+  return makeAntigravityElicitationResponse(rawParams, answer)
 }
 
 export async function authenticateAntigravityRuntime(
@@ -349,41 +370,33 @@ export function syncAntigravityTurnFromDb(
   const inputTokens = Math.max(summary?.inputTokens ?? 0, effectiveWire?.inputTokens ?? 0)
   const outputTokens = Math.max(summary?.outputTokens ?? 0, effectiveWire?.outputTokens ?? 0)
   const cacheReadTokens = Math.max(summary?.cacheReadTokens ?? 0, effectiveWire?.cacheReadTokens ?? 0)
-  const contextTokens =
-    (summary?.contextTokens ?? 0) > 0
-      ? summary!.contextTokens
-      : (effectiveWire?.contextTokens ?? 0)
-  const rawContextWindow =
-    (summary?.contextWindow ?? 0) > 0
-      ? summary!.contextWindow
-      : (effectiveWire?.contextWindow ?? 0)
+  const rawContextTokens = (summary?.contextTokens ?? 0) > 0 ? summary!.contextTokens : (effectiveWire?.contextTokens ?? 0)
+  const contextTokens = rawContextTokens > 0
+    ? rawContextTokens
+    : (xaiCorrelation.lastUsage?.totalTokens ?? 0) > 0
+      ? xaiCorrelation.lastUsage!.totalTokens
+      : inputTokens + cacheReadTokens + outputTokens
+  const rawContextWindow = (summary?.contextWindow ?? 0) > 0 ? summary!.contextWindow : (effectiveWire?.contextWindow ?? 0)
   const model = summary?.model || effectiveWire?.model || ''
 
-  if (rawContextWindow > 0) {
-    noteContextWindow(xaiCorrelation, rawContextWindow)
-  }
-  const maxTokens =
-    rawContextWindow > 0
-      ? rawContextWindow
-      : (xaiCorrelation.lastUsage?.maxTokens ?? 0)
+  if (rawContextWindow > 0) noteContextWindow(xaiCorrelation, rawContextWindow)
+  const resolvedModel = model || (xaiCorrelation.lastUsage?.model ?? '')
+  const fallbackWindow = resolvedModel.toLowerCase().includes('claude') ? 200_000 : resolvedModel.toLowerCase().includes('gpt') ? 128_000 : 1_048_576
+  const maxTokens = rawContextWindow > 0
+    ? rawContextWindow
+    : (xaiCorrelation.lastUsage?.maxTokens ?? 0) > 0
+      ? xaiCorrelation.lastUsage!.maxTokens
+      : contextTokens > 0 ? fallbackWindow : 0
   if (contextTokens > 0) {
     xaiCorrelation.lastUsage = {
       categories: xaiCorrelation.lastUsage?.categories ?? [],
       totalTokens: contextTokens,
       maxTokens,
-      percentage:
-        maxTokens > 0
-          ? Math.min(100, Math.round((contextTokens / maxTokens) * 100))
-          : (xaiCorrelation.lastUsage?.percentage ?? 0),
-      model: model || (xaiCorrelation.lastUsage?.model ?? ''),
+      percentage: maxTokens > 0 ? Math.min(100, Math.round((contextTokens / maxTokens) * 100)) : (xaiCorrelation.lastUsage?.percentage ?? 0),
+      model: resolvedModel,
     }
   }
-  if (
-    inputTokens > 0 ||
-    outputTokens > 0 ||
-    cacheReadTokens > 0 ||
-    contextTokens > 0
-  ) {
+  if (inputTokens > 0 || outputTokens > 0 || cacheReadTokens > 0 || contextTokens > 0) {
     emitEvent({
       type: 'message_usage',
       messageId: targetMessageId,

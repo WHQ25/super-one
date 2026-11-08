@@ -84,13 +84,15 @@ export function renderJsonlEntry(entry: JsonlEntry, index: number, isStreaming =
     // Prefer full ToolBlock whenever we have structured input (even `{}`) so
     // workflow/subagent full views match the main Grok session tool UI.
     if (entry.input != null) {
+      const isImageTool = entry.toolName === 'ImageGen' || entry.toolName === 'ImageEdit'
+      const effectiveResult = entry.result ?? (isImageTool ? (isStreaming ? 'Generating image…' : 'Completed') : undefined)
       return (
         <ToolBlock
           key={entry.toolUseId ?? `tool-${index}`}
           toolName={entry.toolName}
           input={entry.input}
-          status="complete"
-          result={entry.result}
+          status={isStreaming ? 'streaming' : 'complete'}
+          result={effectiveResult}
           isError={entry.isError}
           autoExpand={false}
         />
@@ -101,7 +103,7 @@ export function renderJsonlEntry(entry: JsonlEntry, index: number, isStreaming =
         key={entry.toolUseId ?? `tool-${index}`}
         toolName={entry.toolName}
         description={entry.description}
-        isActive={false}
+        isActive={isStreaming}
       />
     )
   }
@@ -146,6 +148,9 @@ export function AgentActivity({ entries, fallbackTools, activeTool, isRunning, s
     [entries],
   )
   const useTranscriptTools = tools.length > 0
+  const fallbackList = fallbackTools ?? []
+  const showInitializingRow = isRunning && !useTranscriptTools && fallbackList.length === 0 && !activeTool && !summary && !latestActivity
+  const hasToolRows = useTranscriptTools || fallbackList.length > 0 || !!activeTool || showInitializingRow
   return (
     <div className="border-t border-border/30">
       {summary && (
@@ -160,45 +165,50 @@ export function AgentActivity({ entries, fallbackTools, activeTool, isRunning, s
           <span className="whitespace-pre-wrap">{latestActivity.text.trim()}</span>
         </div>
       )}
-      <SubagentScrollArea borderClass={colors.borderL}>
-        {useTranscriptTools ? (
-          // Prefer full ToolBlock (via renderJsonlEntry) so expand matches full-view /
-          // main-session tool chrome once chat_history or agent JSONL is available.
-          tools.map((entry, i) => renderJsonlEntry(entry, i, false))
-        ) : (
-          (fallbackTools ?? []).map((entry, i) => (
+      {hasToolRows && (
+        <SubagentScrollArea borderClass={colors.borderL}>
+          {useTranscriptTools ? (
+            tools.map((entry, i) => renderJsonlEntry(entry, i, isRunning && i === tools.length - 1 && !entry.result))
+          ) : (
+            fallbackList.map((entry, i) => (
+              <AsyncToolRow
+                key={`${entry.toolName}-${i}-${entry.description}`}
+                toolName={entry.toolName}
+                description={entry.description}
+                isActive={false}
+              />
+            ))
+          )}
+          {showInitializingRow && (
             <AsyncToolRow
-              key={`${entry.toolName}-${i}-${entry.description}`}
-              toolName={entry.toolName}
-              description={entry.description}
-              isActive={false}
-            />
-          ))
-        )}
-        {activeTool && (() => {
-          if (useTranscriptTools) {
-            const last = tools[tools.length - 1]
-            // Avoid duplicating the live row when the transcript already has the current tool.
-            if (last && last.toolName === activeTool.toolName) return null
-            // Last tool may already be normalized (Read); active is raw (read_file).
-            if (last && last.toolName.toLowerCase().replace(/[\s-]+/g, '_') === activeTool.toolName.toLowerCase().replace(/[\s-]+/g, '_')) {
-              return null
-            }
-          } else {
-            const list = fallbackTools ?? []
-            const last = list[list.length - 1]
-            if (last && last.toolName === activeTool.toolName && !activeTool.description) return null
-          }
-          return (
-            <AsyncToolRow
-              key={`active-${activeTool.toolName}`}
-              toolName={activeTool.toolName}
-              description={activeTool.description}
+              key="subagent-init"
+              toolName="Task"
+              description=""
               isActive
             />
-          )
-        })()}
-      </SubagentScrollArea>
+          )}
+          {activeTool && (() => {
+            if (useTranscriptTools) {
+              const last = tools[tools.length - 1]
+              if (last && last.toolName === activeTool.toolName) return null
+              if (last && last.toolName.toLowerCase().replace(/[\s-]+/g, '_') === activeTool.toolName.toLowerCase().replace(/[\s-]+/g, '_')) {
+                return null
+              }
+            } else {
+              const last = fallbackList[fallbackList.length - 1]
+              if (last && last.toolName === activeTool.toolName && !activeTool.description) return null
+            }
+            return (
+              <AsyncToolRow
+                key={`active-${activeTool.toolName}`}
+                toolName={activeTool.toolName}
+                description={activeTool.description}
+                isActive
+              />
+            )
+          })()}
+        </SubagentScrollArea>
+      )}
     </div>
   )
 }

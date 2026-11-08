@@ -136,10 +136,13 @@ import {
   applyAntigravityPermissionMode,
   authenticateAntigravityRuntime,
   closeAntigravityThinkingStep,
+  extractAntigravityApiRetryEvent,
   extractAntigravityPromptResponseUsage,
   extractAntigravityWireTurnUsage,
   finalizeAntigravityTurnThinking,
+  handleAntigravityElicitationCreate,
   handleAntigravityPermissionRequest,
+  isAntigravityCancelledChunk,
   openAntigravityThinkingStep,
   prepareAntigravityProcessLaunch,
   resumeAntigravitySession,
@@ -152,6 +155,15 @@ import {
   isAntigravityUserInputRequest,
   normalizeAntigravitySessionUpdate,
 } from './antigravity-protocol'
+import {
+  cancelAntigravitySubagentWakeupWait,
+  clearUnflushedAntigravityWakeupReplay,
+  disposeAntigravitySubagentTracker,
+  hasPendingAntigravitySubagentWakeup,
+  hasUnflushedAntigravityWakeupReplay,
+  noteAntigravitySubagentEvents,
+  waitForAntigravitySubagentWakeup,
+} from './antigravity-subagent'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
   AgentErrorInfo,
@@ -722,6 +734,30 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(`_${XAI_EXIT_PLAN_MODE}`, exitPlanParams, exitPlanHandler)
       .onRequest(XAI_MCP_ELICIT, mcpElicitParams, mcpElicitHandler)
       .onRequest(`_${XAI_MCP_ELICIT}`, mcpElicitParams, mcpElicitHandler)
+      .onRequest(
+        'elicitation/create',
+        (raw: unknown) => raw,
+        async (ctx) => {
+          antigravityInteractionThinkingCtl.beforeInteraction()
+          try {
+            return await handleAntigravityElicitationCreate(ctx.params, opts.askUserQuestion)
+          } finally {
+            antigravityInteractionThinkingCtl.afterInteraction()
+          }
+        },
+      )
+      .onRequest(
+        '_elicitation/create',
+        (raw: unknown) => raw,
+        async (ctx) => {
+          antigravityInteractionThinkingCtl.beforeInteraction()
+          try {
+            return await handleAntigravityElicitationCreate(ctx.params, opts.askUserQuestion)
+          } finally {
+            antigravityInteractionThinkingCtl.afterInteraction()
+          }
+        },
+      )
 
     const attachTrustedProjectMcp = () => {
       if (launch.agentId !== 'grok-build' || !projectMcpTrusted || !connection || !mcpSessionId) return
@@ -792,6 +828,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       clientCapabilities: {
         fs: { readTextFile: useHostDelegation, writeTextFile: useHostDelegation },
         terminal: useHostTerminal,
+        ...(isAntigravity ? { elicitation: { form: {} } } : {}),
         ...(advertiseFolderTrust
           ? { _meta: { 'x.ai/folderTrust': { interactive: true } } }
           : {}),
@@ -1130,6 +1167,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     readonly agentMsgToLocal: Map<string, string>
     readonly openToolIds: Set<string>
     lastMessageId: string | null
+    sawUserMessageChunk: boolean
   }
   interface AcpPromptTurn extends AcpTurnScope {
     readonly gen: number
@@ -1143,6 +1181,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     agentMsgToLocal: new Map<string, string>(),
     openToolIds: new Set<string>(),
     lastMessageId,
+    sawUserMessageChunk: false,
     sawAgentThoughtChunk: false,
     stepIndex: 0,
     stepStartedAt: Date.now(),
@@ -1328,6 +1367,36 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         const contextChanged = nextContextTokens > 0 && nextContextTokens !== prevContextTokens
         const turn = liveTurn()
         trace('acp.session', update.sessionUpdate, update, turn?.lastMessageId ?? activeSession.sessionId)
+        const turnScope = scope()
+        if (launch.agentId === 'antigravity') {
+          if (update.sessionUpdate === 'user_message_chunk') {
+            turnScope.sawUserMessageChunk = true
+            clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
+          } else if (
+            turn &&
+            !turnScope.sawUserMessageChunk &&
+            hasUnflushedAntigravityWakeupReplay(activeSession.sessionId) &&
+            (update.sessionUpdate === 'agent_thought_chunk' ||
+              update.sessionUpdate === 'agent_message_chunk' ||
+              update.sessionUpdate === 'tool_call' ||
+              update.sessionUpdate === 'tool_call_update' ||
+              update.sessionUpdate === 'usage_update')
+          ) {
+            log.debug(
+              '[acp-runtime] dropping stale pre-user_message_chunk antigravity wakeup replay update=%s',
+              update.sessionUpdate,
+            )
+            continue
+          }
+          if (isAntigravityCancelledChunk(update)) {
+            continue
+          }
+          const retryEvent = extractAntigravityApiRetryEvent(update)
+          if (retryEvent) {
+            deliver(retryEvent)
+            continue
+          }
+        }
         let messageId = turn?.lastMessageId
           ?? agentInitiatedMessageId
           ?? `acp_session_${activeSession.sessionId}`
@@ -1365,7 +1434,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           const modeId = (update as { currentModeId?: string }).currentModeId
           acpSessionMode = modeId === 'plan' ? 'plan' : 'default'
         }
-        const turnScope = scope()
         if (update.sessionUpdate === 'agent_thought_chunk') {
           turnScope.sawAgentThoughtChunk = true
         }
@@ -1390,7 +1458,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             update.sessionUpdate === 'agent_message_chunk' ||
             update.sessionUpdate === 'tool_call'
           ) {
+            const wasThinkingOpen = turnScope.currentStepHasThinking && !turnScope.currentStepThinkingClosed
             closeAntigravityThinkingStep(turnScope, messageId, deliver)
+            if (wasThinkingOpen || update.sessionUpdate === 'tool_call') {
+              syncAntigravityTurnFromDb(activeSession.sessionId, messageId, turnScope, xaiCorrelation, deliver)
+            }
           }
         }
         const hadOpenTools = turnScope.openToolIds.size > 0
@@ -1433,6 +1505,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         for (const event of migrate) {
           deliver(event)
+        }
+        if (launch.agentId === 'antigravity') {
+          noteAntigravitySubagentEvents(activeSession.sessionId, messageId, mapped, deliver)
         }
         if (launch.agentId === 'antigravity' && hadOpenTools && turnScope.openToolIds.size === 0) {
           advanceAntigravityThinkingStepAfterTools(
@@ -1694,6 +1769,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         throw err
       }
       if (cancelPreviousBeforePrompt && previousTurn) {
+        cancelAntigravitySubagentWakeupWait(activeSession.sessionId)
         const prevWaiter = previousTurn.stopWaiter
         try {
           await activeConnection.agent.notify(methods.agent.session.cancel, {
@@ -1749,16 +1825,46 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // this RPC and the stop update both arrive.
       let promptResponseUsage: AntigravityWireTurnUsage | null = null
       const promptFailure = promptPromise.then<string>(
-        (value) => {
+        async (value) => {
+          let effectiveStopReason = String(value.stopReason ?? 'end_turn')
           if (launch.agentId === 'antigravity') {
             promptResponseUsage = extractAntigravityPromptResponseUsage(value)
+            await new Promise((r) => setTimeout(r, 0))
+            if (
+              effectiveStopReason === 'end_turn' &&
+              !turn.superseded &&
+              hasPendingAntigravitySubagentWakeup(activeSession.sessionId)
+            ) {
+              const targetId = turn.lastMessageId ?? turn.primaryMessageId
+              if (turn.currentStepHasThinking && !turn.currentStepThinkingClosed) {
+                closeAntigravityThinkingStep(turn, targetId, onEvent)
+              }
+              turn.stepIndex += 1
+              turn.currentStepHasThinking = false
+              turn.currentStepHasThoughtText = false
+              turn.currentStepThinkingClosed = false
+              turn.stepStartedAt = Date.now()
+              syncAntigravityTurnFromDb(
+                activeSession.sessionId,
+                targetId,
+                turn,
+                xaiCorrelation,
+                onEvent,
+                false,
+                promptResponseUsage,
+              )
+              const wakeupOutcome = await waitForAntigravitySubagentWakeup(activeSession.sessionId)
+              if (wakeupOutcome === 'cancelled' || turn.superseded) {
+                effectiveStopReason = 'cancelled'
+              }
+            }
           }
           if (stopWaiter) {
             const idx = promptStopWaiters.indexOf(stopWaiter)
             if (idx >= 0) promptStopWaiters.splice(idx, 1)
             const resolve = stopWaiter
             stopWaiter = null
-            resolve(String(value.stopReason ?? 'end_turn'))
+            resolve(effectiveStopReason)
           }
           return new Promise<string>(() => {})
         },
@@ -1840,6 +1946,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         for (const ev of cancelOpenToolEvents(turn.lastMessageId, turn.openToolIds)) {
           turn.onEvent(ev)
         }
+      }
+      if (launch.agentId === 'antigravity') {
+        cancelAntigravitySubagentWakeupWait(activeSession.sessionId)
       }
       const waiter = promptStopWaiters[0] ?? null
       try {
@@ -1939,6 +2048,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       pumping = false
       closed = true
       if (opts.superoneSessionId) clearMainThreadSessionGuard(opts.superoneSessionId)
+      disposeAntigravitySubagentTracker(activeSession.sessionId)
       try { terminalManager.dispose() } catch { /* ignore */ }
       try { activeSession.dispose() } catch { /* ignore */ }
       try { activeConnection.close() } catch { /* ignore */ }

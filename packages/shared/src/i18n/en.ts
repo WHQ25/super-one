@@ -1974,6 +1974,7 @@ export type Messages = {
       acceptEdits: { label: string; description: string }
       auto: { label: string; description: string }
       antigravityAuto: { label: string; description: string }
+      antigravityBypass: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
       autoFailClosedToast: string
       contextWindowLabel: string
@@ -6851,6 +6852,10 @@ export const en: Messages = {
       antigravityAuto: {
         label: 'Auto',
         description: 'Auto-approve edits and safe commands; prompt on irreversible actions',
+      },
+      antigravityBypass: {
+        label: 'Bypass',
+        description: 'Bypass all permission checks',
       },
       alwaysApprove: {
         label: 'Always Approve',

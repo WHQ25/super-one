@@ -208,11 +208,14 @@ describe('PermissionPrompt', () => {
   it('shows four codex decision buttons without feedback input', () => {
     renderInChat(<PermissionPrompt />)
 
-    expect(screen.getByText('Allow').closest('button')).toBeTruthy()
+    const allowButton = screen.getByText('Allow').closest('button')
+    expect(allowButton).toBeTruthy()
     expect(screen.getByRole('button', { name: /allow for this session/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /decline/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /cancel/i })).toBeTruthy()
     expect(screen.queryByPlaceholderText('Deny reason (optional, Enter to submit)')).toBeNull()
+    const scrollRegion = screen.getByText('ls').parentElement
+    expect(scrollRegion).toHaveClass('mb-2', 'space-y-2', 'overflow-y-auto')
   })
 
   it('sends decline when pressing Escape in the codex prompt', () => {

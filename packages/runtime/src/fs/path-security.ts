@@ -123,6 +123,9 @@ export function getAgentTranscriptRoots(opts?: { homeDir?: string }): string[] {
   return [
     join(homeDir, '.grok', 'sessions'),
     join(homeDir, '.claude', 'projects'),
+    join(homeDir, '.gemini', 'antigravity-cli', 'brain'),
+    join(homeDir, '.gemini', 'antigravity', 'brain'),
+    join(homeDir, '.superone', 'antigravity', 'profile', 'antigravity-acp', 'brain'),
   ]
 }
 

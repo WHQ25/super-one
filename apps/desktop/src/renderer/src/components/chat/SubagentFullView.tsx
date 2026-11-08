@@ -110,7 +110,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
     ? !progress.completed
     : (isAsync ? !segment?.taskBlock.taskResultText : !segment?.resultBlock)
 
-  const isGrokChatHistory = !!outputFile && outputFile.endsWith('chat_history.jsonl')
+  const isGrokChatHistory = !!outputFile && (outputFile.endsWith('chat_history.jsonl') || outputFile.endsWith('transcript.jsonl'))
   const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
     toolUseId: view.toolUseId,
     taskResultText: segment?.taskBlock.taskResultText,

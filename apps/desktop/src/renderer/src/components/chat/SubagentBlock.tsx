@@ -22,6 +22,7 @@ import {
   groupSubagentChildren,
   looksLikeBackgroundSubagentAck,
   parseSubagentIdFromText,
+  parseSubagentOutputFileFromText,
   parseTaskInput,
   resolveTaskProgressEntry,
   type ToolErrorMaps,
@@ -182,7 +183,7 @@ export function SubagentBlock({
     [childBlocks, taskBlock.toolUseId],
   )
   const asyncOutputPath = useMemo(
-    () => rawResultText?.match(/output_file:\s*(\S+)/)?.[1],
+    () => parseSubagentOutputFileFromText(rawResultText),
     [rawResultText],
   )
   const resultOutputPath = resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined
@@ -195,9 +196,9 @@ export function SubagentBlock({
     toolUseId: taskBlock.toolUseId,
     taskResultText: taskBlock.taskResultText,
     outputFile,
-    enabled: usesProgressActivity && !!outputFile && expanded,
+    enabled: usesProgressActivity && !!outputFile && (expanded || isRunning),
     isRunning,
-    skipAuthoritativeRead: !!outputFile && outputFile.endsWith('chat_history.jsonl'),
+    skipAuthoritativeRead: !!outputFile && (outputFile.endsWith('chat_history.jsonl') || outputFile.endsWith('transcript.jsonl')),
   })
   const resultText = isAsync
     ? jsonlResultText ?? taskBlock.taskResultText
@@ -230,14 +231,21 @@ export function SubagentBlock({
     [childBlocks],
   )
 
+  const hasJsonlTools = useMemo(() => jsonlEntries.some((e) => e.type === 'tool'), [jsonlEntries])
+  const hasJsonlActivity = useMemo(() => jsonlEntries.some((e) => e.type === 'activity'), [jsonlEntries])
+  const progressSummary = !hasJsonlActivity ? (progress?.summary ?? taskBlock.taskSummary) : undefined
+  const activeTool = isRunning && !hasJsonlTools && activityHistory.length === 0 && progress?.lastToolName
+    ? { toolName: progress.lastToolName, description: progress.description ?? '' }
+    : undefined
+
   const activityContent = usesProgressActivity && hasActivity ? (
     <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
       <AgentActivity
         entries={jsonlEntries}
-        fallbackTools={jsonlEntries.length === 0 ? activityHistory : undefined}
-        activeTool={undefined}
+        fallbackTools={!hasJsonlTools ? activityHistory : undefined}
+        activeTool={activeTool}
         isRunning={isRunning}
-        summary={undefined}
+        summary={progressSummary}
         colors={colors}
       />
     </NestedToolContext.Provider>

@@ -1,4 +1,5 @@
 import { acpTodoItems, todosUpdatedEvent, todosUpdatedFromAcpTool } from '@superone/shared/acp-todos'
+import { extractAntigravityApiRetryEvent, isAntigravityCancelledChunk } from '@superone/shared/antigravity-chunks'
 import type { AgentEvent, ContentBlock, PermissionMode, SlashCommandInfo } from '@superone/shared/agent-types'
 import type { SessionConfigOption, SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { readArgumentHintFromMarkdownFile } from '@superone/runtime/fs'
@@ -576,8 +577,10 @@ function normalizeInput(
     case 'ImageGen':
     case 'ImageEdit': {
       const out: Record<string, unknown> = {}
-      const prompt = pickString(raw, ['prompt', 'description', 'text'])
+      const prompt = pickString(raw, ['prompt', 'Prompt', 'description', 'text'])
       if (prompt) out.prompt = prompt
+      const aspectRatio = pickString(raw, ['aspect_ratio', 'aspectRatio', 'AspectRatio'])
+      if (aspectRatio) out.aspect_ratio = aspectRatio
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'Monitor':
@@ -775,33 +778,78 @@ export function formatAcpRawOutput(raw: unknown): string {
  * (`status` + `savedPaths`). Normalize here so the renderer can show the file
  * without special-casing every agent.
  */
-function mediaGenGallerySummary(raw: unknown): string | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  const obj = raw as Record<string, unknown>
-  const type = typeof obj.type === 'string' ? obj.type : ''
-  const isImage = type === 'ImageGen' || type === 'ImageEdit'
-  const isVideo = type === 'ImageToVideo' || type === 'ReferenceToVideo'
-  if (!isImage && !isVideo) {
-    // prompt_text JSON (no type tag): { path, filename, session_folder, message }
-    const path = typeof obj.path === 'string' ? obj.path.trim() : ''
-    const hasMediaKeys = typeof obj.filename === 'string' || typeof obj.session_folder === 'string'
-    if (!path || !hasMediaKeys) return null
-    return JSON.stringify({
-      status: 'generated',
-      savedPaths: [path],
-      provider: 'grok',
-    })
+function stripFileUri(rawPath: string): string {
+  const trimmed = rawPath.trim()
+  if (!trimmed.toLowerCase().startsWith('file://')) return trimmed
+  try {
+    return decodeURIComponent(new URL(trimmed).pathname).replace(/^\/([A-Za-z]:)/, '$1')
+  } catch {
+    return trimmed.replace(/^file:\/\//i, '')
   }
-  const path = typeof obj.path === 'string' ? obj.path.trim() : ''
-  if (!path) {
-    // ZDR upload-only or empty path — keep default text formatting.
+}
+
+function mediaGenGallerySummary(raw: unknown, content?: AcpToolLike['content'], toolName?: string): string | null {
+  if (typeof raw === 'string') {
+    const match = /Generated image is saved at\s+([^\r\n]+?)\.?\s*$/i.exec(raw.trim())
+    const saved = match?.[1] ? stripFileUri(match[1]) : ''
+    if (saved) {
+      return JSON.stringify({
+        status: 'generated',
+        savedPaths: [saved],
+        provider: 'antigravity',
+      })
+    }
     return null
   }
-  return JSON.stringify({
-    status: 'generated',
-    savedPaths: [path],
-    provider: 'grok',
-  })
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>
+    const imagePath = typeof obj.imagePath === 'string' ? stripFileUri(obj.imagePath) : ''
+    if (imagePath) {
+      return JSON.stringify({
+        status: 'generated',
+        savedPaths: [imagePath],
+        provider: 'antigravity',
+      })
+    }
+    const type = typeof obj.type === 'string' ? obj.type : ''
+    const isImage = type === 'ImageGen' || type === 'ImageEdit'
+    const isVideo = type === 'ImageToVideo' || type === 'ReferenceToVideo'
+    if (!isImage && !isVideo) {
+      const path = typeof obj.path === 'string' ? obj.path.trim() : ''
+      const hasMediaKeys = typeof obj.filename === 'string' || typeof obj.session_folder === 'string'
+      if (path && hasMediaKeys) {
+        return JSON.stringify({
+          status: 'generated',
+          savedPaths: [path],
+          provider: 'grok',
+        })
+      }
+    } else {
+      const path = typeof obj.path === 'string' ? obj.path.trim() : ''
+      if (path) {
+        return JSON.stringify({
+          status: 'generated',
+          savedPaths: [path],
+          provider: 'grok',
+        })
+      }
+    }
+  }
+  if ((toolName === 'ImageGen' || toolName === 'ImageEdit') && Array.isArray(content)) {
+    for (const item of content) {
+      if (item && typeof item === 'object' && item.type === 'content' && item.content?.type === 'image') {
+        const uri = typeof (item.content as { uri?: unknown }).uri === 'string' ? stripFileUri((item.content as { uri: string }).uri) : ''
+        if (uri) {
+          return JSON.stringify({
+            status: 'generated',
+            savedPaths: [uri],
+            provider: 'antigravity',
+          })
+        }
+      }
+    }
+  }
+  return null
 }
 
 /**
@@ -821,10 +869,14 @@ function backgroundTaskOutputPath(raw: unknown): string | undefined {
 function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): ContentBlock | null {
   if (update.status !== 'completed' && update.status !== 'failed') return null
 
-  // Prefer structured gallery summary for Grok media tools before text unwrapping.
-  if (update.status === 'completed' && update.rawOutput != null) {
-    const gallery = mediaGenGallerySummary(update.rawOutput)
+  const normalized = normalizeAcpTool(update)
+  const known = update.toolCallId ? knownToolCallsById.get(update.toolCallId) : undefined
+  const toolName = normalized?.toolName ?? known?.toolName
+
+  if (update.status === 'completed') {
+    const gallery = mediaGenGallerySummary(update.rawOutput, update.content, toolName)
     if (gallery) {
+      if (update.toolCallId) knownToolCallsById.delete(update.toolCallId)
       return {
         type: 'tool_result',
         toolUseId: update.toolCallId,
@@ -840,11 +892,13 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
       // Agent may put ListDir JSON envelope in text content — unwrap it.
       // Also upgrade Grok prompt_text media JSON into gallery shape when present.
       const text = item.content.text
-      const gallery = mediaGenGallerySummary(
-        (() => {
-          try { return JSON.parse(typeof text === 'string' ? text : '') } catch { return null }
-        })(),
-      )
+      const gallery =
+        mediaGenGallerySummary(
+          (() => {
+            try { return JSON.parse(typeof text === 'string' ? text : '') } catch { return null }
+          })(),
+        )
+        ?? (typeof text === 'string' ? mediaGenGallerySummary(text) : null)
       parts.push(gallery ?? formatAcpRawOutput(text))
     } else if (item.type === 'diff') {
       const path = typeof item.path === 'string' ? item.path : ''
@@ -860,9 +914,6 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
     }
   }
   if (terminalOutput && parts.length === 0) parts.push(terminalOutput)
-  const normalized = normalizeAcpTool(update)
-  const known = update.toolCallId ? knownToolCallsById.get(update.toolCallId) : undefined
-  const toolName = normalized?.toolName ?? known?.toolName
   const isMcp = Boolean(toolName && parseMcpToolName(toolName)) || known?.isMcp === true
   const toolSummary = normalized?.toolSummary?.trim() ?? known?.toolSummary?.trim()
   const rawInput = asRecord(update.rawInput)
@@ -933,6 +984,7 @@ function looksLikeCollabResult(obj: Record<string, unknown>): boolean {
 
 function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (summary.length <= 4000) return true
+  if (toolName === 'Bash') return true
   if (isCollabToolName(toolName)) return true
   if (isSessionArchiveToolName(toolName)) return true
   if (looksLikeSessionArchiveToon(summary)) return true
@@ -1044,7 +1096,7 @@ export function permissionModeFromAcpCurrentMode(
   yoloBaseline: PermissionMode = 'default',
 ): PermissionMode {
   if (currentModeId === 'plan') return 'plan'
-  if (currentModeId === 'auto_edit') return 'acceptEdits'
+  if (currentModeId === 'auto_edit' || currentModeId === 'accept-edits') return 'acceptEdits'
   if (currentModeId === 'yolo') return 'bypassPermissions'
   return yoloBaseline
 }
@@ -1057,6 +1109,9 @@ export function mapSessionUpdate(
 ): AgentEvent[] {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk': {
+      if (isAntigravityCancelledChunk(update)) return []
+      const retryEvent = extractAntigravityApiRetryEvent(update)
+      if (retryEvent) return [retryEvent]
       const content = update.content
       if (content?.type === 'text') {
         const text = textFromContent(content)

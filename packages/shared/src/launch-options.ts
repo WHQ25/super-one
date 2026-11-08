@@ -1,4 +1,19 @@
 import type { HarnessId, PermissionMode, SandboxMode } from './agent-types'
+import { isAntigravityAcpAgent } from './harness/acp-brand'
+
+export const ANTIGRAVITY_PERMISSION_MODES: readonly PermissionMode[] = [
+  'default',
+  'plan',
+  'acceptEdits',
+  'auto',
+  'bypassPermissions',
+]
+
+export function acpPermissionModesForAgent(agentId: string | null | undefined): readonly PermissionMode[] {
+  return isAntigravityAcpAgent(agentId)
+    ? ANTIGRAVITY_PERMISSION_MODES
+    : HARNESS_LAUNCH_OPTIONS.acp.permissionModes
+}
 
 export interface HarnessLaunchOptions {
   permissionModes: PermissionMode[]

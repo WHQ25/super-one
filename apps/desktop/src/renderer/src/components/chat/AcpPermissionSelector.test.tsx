@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ACP_PERMISSION_MODES,
+  ACP_PERMISSION_MODE_META,
   ANTIGRAVITY_PERMISSION_MODES,
   ANTIGRAVITY_PERMISSION_MODE_META,
   acpPermissionModesForAgent,
@@ -18,11 +19,14 @@ describe('ACP_PERMISSION_MODES', () => {
     expect(ACP_PERMISSION_MODES).not.toContain('dontAsk')
   })
 
-  it('exposes Antigravity modes with agy CLI colors (plan purple, acceptEdits lime, auto orange)', () => {
-    expect(ANTIGRAVITY_PERMISSION_MODES).toEqual(['default', 'plan', 'acceptEdits', 'auto'])
-    expect(acpPermissionModesForAgent('antigravity')).toEqual(['default', 'plan', 'acceptEdits', 'auto'])
+  it('exposes Antigravity modes with agy CLI colors (plan purple, acceptEdits lime, auto orange, bypassPermissions destructive)', () => {
+    expect(ANTIGRAVITY_PERMISSION_MODES).toEqual(['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'])
+    expect(acpPermissionModesForAgent('antigravity')).toEqual(['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'])
     expect(ANTIGRAVITY_PERMISSION_MODE_META.find((m) => m.id === 'plan')?.color).toContain('purple')
     expect(ANTIGRAVITY_PERMISSION_MODE_META.find((m) => m.id === 'acceptEdits')?.color).toContain('lime')
     expect(ANTIGRAVITY_PERMISSION_MODE_META.find((m) => m.id === 'auto')?.color).toContain('orange')
+    expect(ANTIGRAVITY_PERMISSION_MODE_META.find((m) => m.id === 'bypassPermissions')?.color).toContain('destructive')
+    expect(ANTIGRAVITY_PERMISSION_MODE_META.find((m) => m.id === 'bypassPermissions')?.labelKey).toBe('antigravityBypass')
+    expect(ACP_PERMISSION_MODE_META.find((m) => m.id === 'bypassPermissions')?.labelKey).toBe('alwaysApprove')
   })
 })

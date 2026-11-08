@@ -1,5 +1,6 @@
 import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type { PermissionMode } from '@superone/shared/agent-types'
+import { ANTIGRAVITY_PERMISSION_MODES as SHARED_ANTIGRAVITY_MODES } from '@superone/shared/launch-options'
 
 export const ACP_PERMISSION_MODES: PermissionMode[] = [
   'default',
@@ -8,12 +9,7 @@ export const ACP_PERMISSION_MODES: PermissionMode[] = [
   'bypassPermissions',
 ]
 
-export const ANTIGRAVITY_PERMISSION_MODES: PermissionMode[] = [
-  'default',
-  'plan',
-  'acceptEdits',
-  'auto',
-]
+export const ANTIGRAVITY_PERMISSION_MODES: PermissionMode[] = [...SHARED_ANTIGRAVITY_MODES]
 
 export function acpPermissionModesForAgent(agentId?: string | null): PermissionMode[] {
   return isAntigravityAcpAgent(agentId) ? ANTIGRAVITY_PERMISSION_MODES : ACP_PERMISSION_MODES
@@ -27,6 +23,7 @@ export type AcpPermissionLabelKey =
   | 'acceptEdits'
   | 'auto'
   | 'antigravityAuto'
+  | 'antigravityBypass'
   | 'alwaysApprove'
 
 export interface AcpPermissionModeMeta {
@@ -96,5 +93,12 @@ export const ANTIGRAVITY_PERMISSION_MODE_META: AcpPermissionModeMeta[] = [
     color: 'text-orange-500 dark:text-orange-400',
     hoverBg: 'hover:bg-orange-500/10',
     activeBg: 'bg-orange-500/15',
+  },
+  {
+    id: 'bypassPermissions',
+    labelKey: 'antigravityBypass',
+    color: 'text-destructive',
+    hoverBg: 'hover:bg-destructive/10',
+    activeBg: 'bg-destructive/15',
   },
 ]

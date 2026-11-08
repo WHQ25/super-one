@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { join } from 'node:path'
+import { resolveAntigravityBrainRoots } from './acp/antigravity-profile'
 import { builtInCaptureRoots, syncZoneRoot } from './media-output-paths'
 import { mediaFileGrants } from './media-file-grants'
 import { mediaGenOutputRoot } from './media-gen/paths'
@@ -27,6 +28,7 @@ export function getMediaReadableRoots(): string[] {
     // Read-only: generations and captures written before the zone existed.
     mediaGenOutputRoot(),
     ...builtInCaptureRoots(),
+    ...resolveAntigravityBrainRoots(),
     // Read-only: recordings were written here before they moved to the temp
     // root, and saved transcripts still link them by absolute path.
     legacyActionRecordingRoot(),

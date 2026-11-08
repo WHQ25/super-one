@@ -127,6 +127,8 @@ const ELICITATION: PermissionRequest = {
 const LONG_COMMAND: PermissionRequest = {
   ...MIXED_PERMISSION,
   requestId: 'permission-long-command',
+  allowAlwaysAllow: true,
+  decisionReason: 'Untrusted files or tool output could contain a prompt injection that silently re-runs this action. This approval is scoped to the current session.',
   input: {
     command: `bun run test -- --run apps/desktop/src/renderer/src/components/chat/DecisionComposer.test.tsx &&\n  bun run typecheck:web &&\n  git diff --check &&\n  node scripts/verify-composer-layout.mjs --theme both --locale en,zh`,
     cwd: '/workspace',

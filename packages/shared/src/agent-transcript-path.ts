@@ -17,6 +17,9 @@ export function isAgentTranscriptAbsolutePath(filePath: string): boolean {
   return (
     norm.includes('/.grok/sessions/')
     || norm.includes('/.claude/projects/')
+    || norm.includes('/.gemini/antigravity')
+    || norm.includes('/.superone/antigravity/')
+    || norm.includes('/.system_generated/logs/transcript.jsonl')
     || /\/\.grok\/sessions\/?$/.test(norm)
     || /\/\.claude\/projects\/?$/.test(norm)
   )

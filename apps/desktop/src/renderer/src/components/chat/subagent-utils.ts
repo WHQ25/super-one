@@ -6,7 +6,13 @@ import {
   normalizeTranscriptTool,
 } from '@superone/shared/tool-ui'
 import { parseToolInput } from './tool-display'
+import {
+  entriesFromAntigravityTranscript,
+  isAntigravityTranscriptRecord,
+  type AntigravityTranscriptRecord,
+} from './antigravity-subagent-jsonl'
 
+export { entriesFromAntigravityTranscript, isAntigravityTranscriptRecord, type AntigravityTranscriptRecord }
 export { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 export { formatTranscriptToolResult } from '@superone/shared/tool-ui'
 export { isSubagentToolName } from '@superone/shared/tool-ui'
@@ -239,6 +245,10 @@ export function parseJsonlOutput(raw: string): { entries: JsonlEntry[]; resultTe
     const { entries, resultText } = entriesFromGrokChatHistory(records as GrokChatHistoryRecord[])
     return { entries, resultText }
   }
+  if (records.some(isAntigravityTranscriptRecord)) {
+    const { entries, resultText } = entriesFromAntigravityTranscript(records as AntigravityTranscriptRecord[], makeToolEntry)
+    return { entries, resultText }
+  }
   return entriesFromRecords(records as JsonlRecord[])
 }
 
@@ -256,32 +266,48 @@ export interface ParsedTaskInput {
  * Extract Grok/Claude subagent id from a spawn tool_result ack (plain text or JSON-ish).
  * Used to resolve provisional taskProgress keys keyed by subagent_id.
  */
+function parseEmbeddedJsonRecord(text: string): Record<string, unknown> | null {
+  try {
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      const o = JSON.parse(text.slice(start, end + 1)) as unknown
+      return o && typeof o === 'object' && !Array.isArray(o) ? (o as Record<string, unknown>) : null
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+export function parseSubagentOutputFileFromText(text: string | undefined | null): string | undefined {
+  if (!text) return undefined
+  const fromLabel = text.match(/output_file:\s*(\S+)/i)?.[1]
+  if (fromLabel) return fromLabel.replace(/[,;]+$/, '')
+  const o = parseEmbeddedJsonRecord(text)
+  const raw = o ? (o.output_file ?? o.outputFile ?? o.logAbsoluteUri) : undefined
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  const trimmed = raw.trim()
+  if (!trimmed.toLowerCase().startsWith('file://')) return trimmed
+  try {
+    return decodeURIComponent(new URL(trimmed).pathname).replace(/^\/([A-Za-z]:)/, '$1')
+  } catch {
+    return trimmed.replace(/^file:\/\//i, '')
+  }
+}
+
 export function parseSubagentIdFromText(text: string | undefined | null): string | undefined {
   if (!text) return undefined
   const fromLabel = text.match(/subagent_id:\s*(\S+)/i)?.[1]
   if (fromLabel) return fromLabel.replace(/[,;]+$/, '')
   const fromTaskIds = text.match(/task_ids?\s*=\s*\[\s*"([^"]+)"/i)?.[1]
   if (fromTaskIds) return fromTaskIds
-  // JSON spawn result
-  try {
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    if (start >= 0 && end > start) {
-      const o = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
-      const id = o.subagent_id ?? o.subagentId ?? o.task_id ?? o.taskId
-      if (typeof id === 'string' && id) return id
-    }
-  } catch { /* ignore */ }
-  return undefined
+  const o = parseEmbeddedJsonRecord(text)
+  const id = o ? (o.subagent_id ?? o.subagentId ?? o.task_id ?? o.taskId ?? o.conversationId) : undefined
+  return typeof id === 'string' && id ? id : undefined
 }
 
-/**
- * Grok background spawn ack. Prefer the explicit phrase; bare `subagent_id:` alone
- * is too easy to false-positive (docs, TaskOutput echo).
- */
 export function looksLikeBackgroundSubagentAck(text: string | undefined | null): boolean {
   if (!text) return false
-  if (/started in background/i.test(text)) return true
+  if (/started in background/i.test(text) || /Created the following subagent:/i.test(text)) return true
   return /subagent_id:\s*\S+/i.test(text) && /\bbackground\b/i.test(text)
 }
 

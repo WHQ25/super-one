@@ -146,6 +146,9 @@ export function useSubagentJsonl({
         if (parsed.entries.length > 0 || parsed.resultText) {
           setEntries(parsed.entries)
           setResultText(parsed.resultText)
+          if (parsed.resultText && parsed.resultText !== taskResultText) {
+            persistTaskResultText(toolUseId, parsed.resultText)
+          }
           window.app.trace?.('subagent.output', 'grok_history_from_tail', {
             entries: parsed.entries.length,
             hasResultText: !!parsed.resultText,
@@ -163,6 +166,9 @@ export function useSubagentJsonl({
           if (parsed.entries.length === 0 && !parsed.resultText) return
           setEntries(parsed.entries)
           setResultText(parsed.resultText)
+          if (parsed.resultText && parsed.resultText !== taskResultText) {
+            persistTaskResultText(toolUseId, parsed.resultText)
+          }
           window.app.trace?.('subagent.output', 'grok_history_read', {
             entries: parsed.entries.length,
             hasResultText: !!parsed.resultText,

@@ -13,7 +13,7 @@ export function PermissionDetails({ request, summary, remembering = false }: { r
   if (remembering) return <RememberPermissionScope request={request} />
   if (!presentation && (!message || message === summary)) return null
   return (
-    <div className="mb-2 min-w-0 space-y-2">
+    <div className="min-w-0 space-y-2">
       {message && message !== summary ? <p className="whitespace-pre-wrap break-all text-xs text-muted-foreground">{message}</p> : null}
       {presentation ? <PermissionBody presentation={presentation} /> : null}
       {request.permissionDetails ? <PermissionTechnicalDetails request={request} /> : null}
@@ -24,7 +24,7 @@ export function PermissionDetails({ request, summary, remembering = false }: { r
 function RememberPermissionScope({ request }: { request: PermissionRequest }) {
   const { t } = useTranslation()
   const details = request.permissionDetails
-  return <div className="mb-2 space-y-2 text-xs">
+  return <div className="space-y-2 text-xs">
     <p className="text-muted-foreground">{t('chat.permission.scoped.rememberHint')}</p>
     <pre className="max-h-48 select-text overflow-y-auto whitespace-pre-wrap break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-foreground">{details?.save?.join('\n')}</pre>
     {details?.save?.includes('*') ? <p className="text-amber-600 dark:text-amber-400">{t('chat.permission.scoped.allResourcesHint', { action: details.action })}</p> : null}

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
+vi.mock('./acp/antigravity-profile', () => ({
+  resolveAntigravityBrainRoots: () => [
+    '/superoneHome/antigravity/profile/antigravity-acp/brain',
+    '/superoneHome/antigravity/profile/brain',
+  ],
+}))
 vi.mock('./media-gen/paths', () => ({
   mediaGenOutputRoot: () => '/userData/media-gen/outputs',
 }))
@@ -31,6 +37,8 @@ describe('getMediaReadableRoots', () => {
       // Legacy: generations and captures written before the sync zone existed.
       '/userData/media-gen/outputs',
       ...builtInCaptureRoots(),
+      '/superoneHome/antigravity/profile/antigravity-acp/brain',
+      '/superoneHome/antigravity/profile/brain',
       // Still readable: transcripts saved before the move link recordings here.
       '/userData/recordings',
       '/Users/alice/.grok/sessions',

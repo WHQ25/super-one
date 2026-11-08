@@ -1,4 +1,5 @@
 import { acpTodoItems, todosUpdatedEvent, todosUpdatedFromAcpTool } from '@superone/shared/acp-todos'
+import { extractAntigravityApiRetryEvent, isAntigravityCancelledChunk } from '@superone/shared/antigravity-chunks'
 import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import type { AgentErrorInfo, AgentEvent, SlashCommandInfo } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
@@ -91,6 +92,9 @@ export function mapSessionUpdate(
 ): AgentEvent[] {
   switch (update.sessionUpdate) {
     case 'agent_message_chunk': {
+      if (isAntigravityCancelledChunk(update)) return []
+      const retryEvent = extractAntigravityApiRetryEvent(update)
+      if (retryEvent) return [retryEvent]
       const content = update.content
       if (content?.type === 'text') {
         const text = textFromContent(content)

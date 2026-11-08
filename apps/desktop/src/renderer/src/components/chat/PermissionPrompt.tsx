@@ -9,35 +9,25 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
-import { cn } from '@superone/ui/lib/utils'
-import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2, SquareTerminal, FolderOpen } from 'lucide-react'
-import { requestOpenExternalLink } from '@/lib/external-link'
+import { ChevronDown, ChevronUp, ShieldAlert, SquareTerminal, FolderOpen } from 'lucide-react'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
 import { useMcpServerIcon } from './use-mcp-server-icon'
 import { deviceToolVerbKey } from './device-tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
-import { modes as permissionModes } from './PermissionModeSelector'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
-import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
-import { InputRequestPrompt } from './InputRequestPrompt'
 import { useMcpFormResources } from '../schema-form/use-mcp-form-resources'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 import { PermissionDetails } from './permission-prompt/PermissionDetails'
+import { ElicitationPermissionPrompt } from './permission-prompt/ElicitationPermissionPrompt'
+import { PermissionSuggestionRows, TerminalRuleRows } from './permission-prompt/PermissionSuggestionRows'
+import { isHostConfirmRequest, SelfManagedConfirmPrompt } from './permission-prompt/SelfManagedConfirmPrompt'
+import { usePermissionPromptKeyboard } from './permission-prompt/use-permission-prompt-keyboard'
 import { permissionDetailSummary } from '@superone/shared/permission-details'
 import { canRememberPermission, permissionPresentation } from '@superone/shared/permission-presentation'
 import { shortenPath } from '@superone/shared/path-display'
-import { VideoConfirmComposer } from './media-composer/VideoConfirmComposer'
-import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
-import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
-import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
-import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
-import { AgentProfileConfirmPromptContainer } from './AgentProfileConfirmPrompt'
-import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
-import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
-import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
-import { leaveDecisionField, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
+import { useChatRootRef } from './is-focus-in-chat'
 
 interface MiniAppToolInfo {
   appId: string
@@ -56,81 +46,9 @@ function MiniAppToolLabel({ info, textSize = 'text-xs' }: { info: MiniAppToolInf
 }
 
 /** Dev-only: comma-separated tool names to show debug data in permission prompt. */
-/** The two lifetimes a terminal command rule can be remembered for; keys 1 and 2. */
-const TERMINAL_RULE_SCOPES: ReadonlyArray<{ scope: TerminalCommandRuleScope; i18nKey: string; kbd: string }> = [
-  { scope: 'session', i18nKey: 'chat.permission.terminal.allowRuleForSession', kbd: '1' },
-  { scope: 'project', i18nKey: 'chat.permission.terminal.alwaysAllowRule', kbd: '2' },
-]
-
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
   : []
-
-const DEST_LABELS: Record<string, string> = {
-  session: 'session',
-  localSettings: 'folder',
-  projectSettings: 'project',
-  userSettings: 'all projects',
-  cliArg: 'CLI',
-}
-
-function destLabel(destination: string): string {
-  return DEST_LABELS[destination] ?? destination
-}
-
-function SuggestionContent({ s }: { s: Record<string, unknown> }) {
-  const { t } = useTranslation()
-  const type = s.type as string | undefined
-  const destination = (s.destination as string) ?? 'session'
-  const rules = s.rules as Array<{ toolName?: string; ruleContent?: string }> | undefined
-  const directories = s.directories as string[] | undefined
-
-  switch (type) {
-    case 'addRules':
-      return (
-        <>
-          Allow{' '}
-          {rules?.map((r, i) => (
-            <span key={i}>
-              {i > 0 && ', '}
-              <span className="font-medium">{r.toolName}</span>
-              {r.ruleContent && <span className="text-muted-foreground">({r.ruleContent})</span>}
-            </span>
-          ))}
-          {' '}for this {destLabel(destination)}
-        </>
-      )
-    case 'setMode': {
-      const mode = permissionModes.find((m) => m.id === s.mode)
-      if (!mode) return <>Switch to {String(s.mode)}</>
-      return (
-        <>
-          Switch to{' '}
-          <span className={`inline-flex items-center gap-0.5 font-medium ${mode.color}`}>
-            {mode.icon}
-            {t(`chat.permissionModes.${mode.id}.label`)}
-          </span>
-        </>
-      )
-    }
-    case 'addDirectories':
-      return (
-        <>
-          Allow access to{' '}
-          <span className="font-mono font-medium">{directories?.join(', ')}</span>
-          {' '}for this {destLabel(destination)}
-        </>
-      )
-    case 'replaceRules':
-      return <>Replace {rules?.map((r) => [r.toolName, r.ruleContent].filter(Boolean).join(': ')).join(', ')}</>
-    case 'removeRules':
-      return <>Remove {rules?.map((r) => [r.toolName, r.ruleContent].filter(Boolean).join(': ')).join(', ')}</>
-    case 'removeDirectories':
-      return <>Remove directory: {directories?.join(', ')}</>
-    default:
-      return <>{JSON.stringify(s)}</>
-  }
-}
 
 export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const { t } = useTranslation()
@@ -144,7 +62,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const availableModels = useChatStore(selectClaudeModels)
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const [feedback, setFeedback] = useState('')
-  const [focusedIdx, setFocusedIdx] = useState(0)
+  const [, setFocusedIdx] = useState(0)
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -163,16 +81,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   // not approve. Only the two-button Claude row honours it; Codex never sets it.
   const defaultToNo = pendingPermission?.defaultToNo === true
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
-  const isInputRequest = pendingPermission?.requestKind === 'input_request'
   const formResources = useMcpFormResources(requestId, isElicitation && sessionProvider === 'codex')
-  const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
-  const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
-  const isSessionAgentsConfirm = pendingPermission?.requestKind === 'session_agents_confirm'
-  const isComputerUseGrant = pendingPermission?.requestKind === 'computer_use_grant'
-  const isWebMcpTrustConfirm = pendingPermission?.requestKind === 'webmcp_trust_confirm'
-  const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
-  const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
-  const isAgentProfileConfirm = pendingPermission?.requestKind === 'agent_profile_confirm'
   // Deliberately NOT in `isSelfManagedConfirm`: this one keeps the standard prompt,
   // because a refusal's typed reason is what the device tool reads back to the agent.
   // It only adds a third button.
@@ -192,20 +101,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const elicitationUrl = pendingPermission?.elicitationUrl
   // The form composer owns its keys: Space and Enter belong to its fields.
   const isSchemaFormElicitation = isElicitation && Boolean(schemaForm) && !elicitationUrl
-  const isSelfManagedConfirm =
-    isVideoGenConfirm
-    || isConfigConfirm
-    || isSessionAgentsConfirm
-    || isComputerUseGrant
-    || isWebMcpTrustConfirm
-    || isSessionCleanupConfirm
-    || isAutomationConfirm
-    || isAgentProfileConfirm
-    || isSchemaFormElicitation
-    || isInputRequest
-  const [urlOpened, setUrlOpened] = useState(false)
-  useEffect(() => { setUrlOpened(false) }, [requestId])
-  const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
+  const isHostConfirm = isHostConfirmRequest(pendingPermission)
+  const isSelfManagedConfirm = isHostConfirm || isSchemaFormElicitation
   const promptConfig = getPermissionPromptConfig(
     sessionProvider,
     allowAlwaysAllow,
@@ -254,23 +151,6 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     setIsFeedbackFocused(false)
     setIsCollapsed(false)
   }, [requestId, suggestionsCount])
-
-  useEffect(() => {
-    // Self-managed confirms own their focus — this autofocus effect must not fight them.
-    // Also skip when another mosaic chat pane owns keyboard focus so a background
-    // session's permission prompt cannot steal the composer caret.
-    if (requestId && !isCollapsed && !isSelfManagedConfirm) {
-      requestAnimationFrame(() => {
-        if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
-        // Deny sits at index 1 on the standard row (index 2 when device-control adds
-        // its always-allow button between approve and reject).
-        const denyIdx = hasAlwaysButton ? 2 : 1
-        const initialIdx = defaultToNo && !isCodexDecisionPrompt ? denyIdx : 0
-        btnRefs.current[initialIdx]?.focus()
-        setFocusedIdx(initialIdx)
-      })
-    }
-  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef, defaultToNo, isCodexDecisionPrompt, hasAlwaysButton])
 
   const btnCount = rememberPreview ? 2 : hasScopedAlways ? 3 : promptConfig.buttonCount
 
@@ -346,317 +226,51 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     }
   }, [requestId, respondToPermission, selectedSuggestions, isElicitation, autoEligible, pendingPermission, setPermissionMode, terminalRule, rememberRule, rememberPreview, hasScopedAlways])
 
-  const handleElicitationAlwaysAllow = useCallback(() => {
-    if (!requestId) return
-    respondToPermission(requestId, true, true)
-  }, [requestId, respondToPermission])
-
-  const handleFormSubmit = useCallback((content: Record<string, unknown>) => {
-    if (!requestId) return
-    respondToPermission(requestId, true, false, undefined, undefined, undefined, content)
-  }, [requestId, respondToPermission])
-
-  const handleElicitationDecline = useCallback(() => {
-    if (!requestId) return
-    respondToPermission(requestId, false)
-  }, [requestId, respondToPermission])
-
-  const elicitationAcceptOnOpen = pendingPermission?.elicitationAcceptOnOpen === true
-  const openElicitationUrl = useCallback(() => {
-    if (!elicitationUrl) return
-    requestOpenExternalLink(elicitationUrl)
-    // Opening is the consent the harness waits for; otherwise the card waits for completion.
-    if (elicitationAcceptOnOpen && requestId) respondToPermission(requestId, true)
-    else setUrlOpened(true)
-  }, [elicitationUrl, elicitationAcceptOnOpen, requestId, respondToPermission])
-
-  const copyElicitationUrl = useCallback(() => {
-    if (!elicitationUrl) return
-    void navigator.clipboard?.writeText(elicitationUrl)
-  }, [elicitationUrl])
-
-  useEffect(() => {
-    // Self-managed confirms own their keys (the video composer's prompt submits on
-    // Enter). Without this gate Enter/Escape would additionally trigger
-    // handleAllow/handleDeny here with the wrong payload.
-    if (!requestId || isSelfManagedConfirm) return
-
-    function onKeyDown(e: KeyboardEvent) {
-      // Enter/Esc/Space/digits must not fire while the user types in another panel
-      // or in a sibling mosaic chat pane.
-      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
-      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
-      if (isScopedPermission && e.key === 'Enter' && e.repeat) { e.preventDefault(); return }
-      const submitScopedChoice = () => {
-        if (document.activeElement === btnRefs.current[hasAlwaysButton ? 2 : 1]) handleDeny()
-        else if (hasScopedAlways && !rememberPreview && document.activeElement === btnRefs.current[1]) handleAlwaysAllow()
-        else handleAllow()
-      }
-
-      if (isCollapsed) {
-        if (e.key === ' ') {
-          e.preventDefault()
-          setIsCollapsed(false)
-        }
-        return
-      }
-
-      if (e.key === 'Tab' && e.shiftKey && isEditTool && !isCodexDecisionPrompt) {
-        e.preventDefault()
-        e.stopImmediatePropagation()
-        handleAcceptEdit()
-        return
-      }
-
-      if (!isCodexDecisionPrompt && document.activeElement === feedbackRef.current) {
-        if (e.key === 'Enter' && !e.isComposing) {
-          e.preventDefault()
-          handleDeny()
-        } else if (e.key === 'Escape') {
-          e.preventDefault()
-          leaveDecisionField(feedbackRef.current)
-        }
-        return
-      }
-
-      if (e.key === ' ') {
-        e.preventDefault()
-        setIsCollapsed(true)
-        return
-      }
-
-      if ((isCodexDecisionPrompt || hasAlwaysButton) && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
-        e.preventDefault()
-        handleAlwaysAllow()
-        return
-      }
-      if (isScopedPermission && e.key === 'Enter' && e.shiftKey) { e.preventDefault(); return }
-
-      if (e.key === 'Enter' && !e.isComposing) {
-        e.preventDefault()
-        if (defaultToNo && !isCodexDecisionPrompt) handleDeny()
-        else if (isScopedPermission) submitScopedChoice()
-        else handleAllow()
-        return
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        if (isCodexDecisionPrompt) {
-          handleDeny()
-        } else {
-          handleDeny()
-        }
-        return
-      }
-
-      if (terminalRule && (e.key === '1' || e.key === '2')) {
-        e.preventDefault()
-        toggleRememberRule(e.key === '1' ? 'session' : 'project')
-        return
-      }
-
-      if (e.key >= '1' && e.key <= '9') {
-        const idx = parseInt(e.key) - 1
-        if (idx < suggestionsCount) {
-          e.preventDefault()
-          toggleSuggestion(idx)
-        }
-        return
-      }
-
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        e.preventDefault()
-        const delta = e.key === 'ArrowLeft' ? -1 : 1
-        setFocusedIdx((prev) => {
-          const next = Math.max(0, Math.min(btnCount - 1, prev + delta))
-          btnRefs.current[next]?.focus()
-          return next
-        })
-        return
-      }
-
-      if (!isCodexDecisionPrompt && e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault()
-        feedbackRef.current?.focus()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasAlwaysButton, hasScopedAlways, rememberPreview, isScopedPermission, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule])
+  usePermissionPromptKeyboard({
+    requestId,
+    isCollapsed,
+    setIsCollapsed,
+    isSelfManagedConfirm,
+    chatRootRef,
+    defaultToNo,
+    isCodexDecisionPrompt,
+    hasAlwaysButton,
+    hasScopedAlways,
+    rememberPreview,
+    isScopedPermission,
+    isEditTool,
+    btnCount,
+    btnRefs,
+    feedbackRef,
+    setFocusedIdx,
+    terminalRule,
+    toggleRememberRule,
+    suggestionsCount,
+    toggleSuggestion,
+    handleAllow,
+    handleAlwaysAllow,
+    handleDeny,
+    handleAcceptEdit,
+  })
 
   if (!pendingPermission) return null
 
-  if (isInputRequest) return <InputRequestPrompt request={pendingPermission} />
-
-  if (isVideoGenConfirm) {
-    const videoGenConfirm = pendingPermission.videoGenConfirm
-    return videoGenConfirm ? <VideoConfirmComposer key={pendingPermission.requestId} request={{ ...pendingPermission, videoGenConfirm }} /> : null
-  }
-
-  if (isConfigConfirm) {
-    return <ConfigConfirmPromptContainer request={pendingPermission} />
-  }
-
-  if (isSessionAgentsConfirm) {
-    return <SessionAgentsConfirmPromptContainer request={pendingPermission} />
-  }
-
-  if (isSessionCleanupConfirm) {
-    return <SessionCleanupConfirmPromptContainer request={pendingPermission} />
-  }
-
-  if (isAutomationConfirm) {
-    return <AutomationConfirmPromptContainer request={pendingPermission} />
-  }
-  if (isAgentProfileConfirm) {
-    return <AgentProfileConfirmPromptContainer request={pendingPermission} />
-  }
-
-  if (isWebMcpTrustConfirm && pendingPermission) {
-    return (
-      <WebMcpTrustPrompt
-        request={pendingPermission}
-        onTrust={(scope) => {
-          if (!requestId) return
-          respondToPermission(requestId, true, scope === 'always', undefined, undefined, undefined, { scope })
-        }}
-        onDeny={() => {
-          if (!requestId) return
-          respondToPermission(requestId, false)
-        }}
-      />
-    )
-  }
-
-  if (isComputerUseGrant && pendingPermission) {
-    return (
-      <ComputerUseGrantPrompt
-        request={pendingPermission}
-        onSessionAllow={() => {
-          if (!requestId) return
-          respondToPermission(requestId, true, false)
-        }}
-        onAlwaysAllow={() => {
-          if (!requestId) return
-          respondToPermission(requestId, true, true)
-        }}
-        onDeny={() => {
-          if (!requestId) return
-          respondToPermission(requestId, false)
-        }}
-      />
-    )
+  if (isHostConfirm) {
+    return <SelfManagedConfirmPrompt request={pendingPermission} onRespond={respondToPermission} />
   }
 
   if (isElicitation) {
-    const requester = pendingPermission.serverLabel ?? pendingPermission.serverName
-    const message = pendingPermission.message ?? `Allow ${requester ?? 'tool'}?`
-    const subtitle = pendingPermission.subtitle
-    const riskLevel = pendingPermission.riskLevel
-    const riskColor = riskLevel === 'high'
-      ? 'text-red-500'
-      : riskLevel === 'medium'
-        ? 'text-amber-500'
-        : 'text-muted-foreground'
-    const isUrlElicit = Boolean(elicitationUrl)
-    // Who is asking: the server's icon, else the MCP mark; a flagged risk keeps the warning colour.
-    const icon = (className: string) => isUrlElicit && urlOpened
-      ? <Loader2 className={`${className} animate-spin ${riskColor}`} />
-      : riskLevel === 'medium' || riskLevel === 'high'
-        ? <AlertTriangle className={`${className} ${riskColor}`} />
-        : <McpAppIcon src={mcpIconSrc} className={`${className} text-muted-foreground`} fallback={<ToolIcon icon="mcp" className={`${className} text-muted-foreground`} />} />
-
     return (
-      <div className="mx-3 mb-1 flex min-h-0 flex-col">
-        {isCollapsed && (
-          <button
-            type="button"
-            onClick={() => setIsCollapsed(false)}
-            className="flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
-          >
-            {icon('size-3.5 shrink-0')}
-            <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-              {isUrlElicit && urlOpened ? t('chat.permission.waitingElicitation') : message}
-            </span>
-            <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        )}
-        {/* Stays mounted while collapsed so a half-filled form keeps its answers. */}
-        <div className={cn('min-h-0 flex-col rounded-lg border border-border bg-card p-3', isCollapsed ? 'hidden' : 'flex')}>
-            <button
-              type="button"
-              onClick={() => setIsCollapsed(true)}
-              className="group mb-2 flex w-full shrink-0 cursor-pointer items-start justify-between gap-2 text-left"
-            >
-              <div className="flex items-start gap-1.5">
-                {icon('mt-0.5 size-3.5 shrink-0')}
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-foreground">
-                    {isUrlElicit && urlOpened ? t('chat.permission.waitingElicitation') : message}
-                  </div>
-                  {isUrlElicit && urlOpened ? (
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      {t('chat.permission.waitingElicitationHint')}
-                    </p>
-                  ) : subtitle ? (
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
-                  ) : null}
-                </div>
-              </div>
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
-            </button>
-            {isUrlElicit ? (
-              <div className="grid shrink-0 grid-cols-2 gap-2 @xl:grid-cols-3">
-                <PermissionActionButton tone="approve" onClick={openElicitationUrl}>
-                  <span className="inline-flex items-center gap-1">
-                    <ExternalLink className="size-3" />
-                    {urlOpened ? t('chat.permission.reopenUrl') : t('chat.permission.openUrl')}
-                  </span>
-                </PermissionActionButton>
-                <PermissionActionButton tone="neutral" onClick={copyElicitationUrl}>
-                  <span className="inline-flex items-center gap-1">
-                    <Copy className="size-3" />
-                    {t('chat.permission.copyUrl')}
-                  </span>
-                </PermissionActionButton>
-                <PermissionActionButton tone="reject" onClick={handleCancel}>
-                  {t('common.cancel')}
-                </PermissionActionButton>
-              </div>
-            ) : schemaForm ? (
-              <SchemaFormComposer
-                key={requestId}
-                form={schemaForm}
-                resources={formResources}
-                requester={requester ?? 'MCP'}
-                onSubmit={handleFormSubmit}
-                onDecline={handleElicitationDecline}
-                onCancel={handleCancel}
-                active={!isCollapsed}
-              />
-            ) : (
-              <>
-                <div className="grid shrink-0 grid-cols-2 gap-2 @xl:grid-cols-4">
-                  <PermissionActionButton tone="approve" onClick={handleAllow}>
-                    {t('chat.permission.allow')}
-                  </PermissionActionButton>
-                  {supportsAlwaysPersist && (
-                    <PermissionActionButton tone="primary" onClick={handleElicitationAlwaysAllow}>
-                      {t('chat.permission.alwaysAllow')}
-                    </PermissionActionButton>
-                  )}
-                  <PermissionActionButton tone="reject" onClick={handleElicitationDecline}>
-                    {t('chat.permission.decline')}
-                  </PermissionActionButton>
-                  <PermissionActionButton tone="neutral" onClick={handleCancel}>
-                    {t('common.cancel')}
-                  </PermissionActionButton>
-                </div>
-              </>
-            )}
-        </div>
-      </div>
+      <ElicitationPermissionPrompt
+        request={pendingPermission}
+        mcpIconSrc={mcpIconSrc}
+        formResources={formResources}
+        isCollapsed={isCollapsed}
+        onCollapsedChange={setIsCollapsed}
+        onRespond={respondToPermission}
+        onAllow={handleAllow}
+        onCancel={handleCancel}
+      />
     )
   }
 
@@ -780,12 +394,12 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              <div className="-mx-3 min-h-0 overflow-y-auto px-3">
+              <div className="-mx-3 mb-2 min-h-0 space-y-2 overflow-y-auto px-3 empty:mb-0">
               {isSandboxNetwork && typeof input.host === 'string' && input.host && (
-                <p className="mb-2 font-mono text-xs text-muted-foreground">{input.host}</p>
+                <p className="font-mono text-xs text-muted-foreground">{input.host}</p>
               )}
               {isBash && !!input.dangerouslyDisableSandbox && (
-                <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
+                <div className="flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
                   <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
                   <span className="text-xs font-medium text-amber-500">{t('chat.permission.sandboxOverride')}</span>
                 </div>
@@ -793,13 +407,13 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
               <PermissionDetails request={pendingPermission} summary={scopedPresentation ? undefined : display.summary} remembering={rememberPreview} />
               {!pendingPermission.permissionDetails && !isSandboxNetwork && display.summary && (
                 <p
-                  className={`mb-2 text-xs text-muted-foreground ${isBash ? 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
+                  className={`text-xs text-muted-foreground ${isBash ? 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
                 >
                   {display.summary}
                 </p>
               )}
               {terminalAction && (
-                <div className="mb-2 space-y-1 text-xs">
+                <div className="space-y-1 text-xs">
                   {typeof input.description === 'string' && input.description && (
                     <p className="text-muted-foreground">{input.description}</p>
                   )}
@@ -813,7 +427,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
               )}
               {(toolName === 'Edit' || toolName === 'Write') && (
                 <div
-                  className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs"
+                  className="max-h-64 overflow-y-auto rounded bg-muted/50 text-xs"
                   style={{ '--diff-gutter-bg': 'color-mix(in oklch, var(--card), var(--muted) 50%)' } as React.CSSProperties}
                 >
                   {toolName === 'Edit' && <EditDiff params={input} />}
@@ -821,13 +435,13 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                 </div>
               )}
               {blockedPath && (
-                <p className="mb-2 break-all text-xs text-amber-600 dark:text-amber-400">{t('chat.permission.blockedPath', { path: blockedPath })}</p>
+                <p className="break-all text-xs text-amber-600 dark:text-amber-400">{t('chat.permission.blockedPath', { path: blockedPath })}</p>
               )}
               {decisionReason && (
-                <p className="mb-2 text-xs text-muted-foreground">{decisionReason}</p>
+                <p className="text-xs text-muted-foreground">{decisionReason}</p>
               )}
               {isDebug && (
-                <div className="mb-2 space-y-1">
+                <div className="space-y-1">
                   <div>
                     <div className="mb-0.5 text-xs font-medium uppercase text-muted-foreground">{t('chat.permission.inputHeading')}</div>
                     <div className="max-h-32 overflow-auto rounded bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-all">
@@ -916,67 +530,18 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                   />
                 )}
                 {terminalRule && (
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {TERMINAL_RULE_SCOPES.map(({ scope, i18nKey, kbd }) => {
-                      const isSelected = rememberRule === scope
-                      return (
-                        <button
-                          key={scope}
-                          type="button"
-                          aria-pressed={isSelected}
-                          className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
-                            isSelected
-                              ? 'border-success/50 bg-success/10 text-success hover:bg-success/20'
-                              : 'border-border text-muted-foreground hover:bg-success/10 hover:text-success'
-                          }`}
-                          onClick={() => toggleRememberRule(scope)}
-                        >
-                          {isSelected
-                            ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
-                            : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />}
-                          <span className="min-w-0 truncate">
-                            <Trans
-                              i18nKey={i18nKey}
-                              values={{ rule: terminalRule }}
-                              components={{ rule: <span className="font-mono font-medium" /> }}
-                            />
-                          </span>
-                          <Kbd variant="square" className="ml-auto">{kbd}</Kbd>
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <TerminalRuleRows
+                    terminalRule={terminalRule}
+                    rememberRule={rememberRule}
+                    onToggle={toggleRememberRule}
+                  />
                 )}
-                {hasSuggestionRow && (
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {displaySuggestions?.map((s, i) => {
-                      const isSelected = selectedSuggestions.has(i)
-                      const mode = s.type === 'setMode' ? permissionModes.find((m) => m.id === s.mode) : undefined
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
-                            isSelected
-                              ? (mode
-                                  ? `border-transparent ${mode.activeBg} ${mode.color}`
-                                  : 'border-success/50 bg-success/10 text-success hover:bg-success/20')
-                              : (mode
-                                  ? `border-border text-muted-foreground ${mode.hoverBg}`
-                                  : 'border-border text-muted-foreground hover:bg-success/10 hover:text-success')
-                          }`}
-                          onClick={() => toggleSuggestion(i)}
-                        >
-                          {isSelected
-                            ? <CheckCircle2 className={`size-3.5 shrink-0 ${mode ? '' : 'text-success'}`} />
-                            : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
-                          }
-                          <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
-                          <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>
-                        </button>
-                      )
-                    })}
-                  </div>
+                {hasSuggestionRow && displaySuggestions && (
+                  <PermissionSuggestionRows
+                    suggestions={displaySuggestions}
+                    selectedSuggestions={selectedSuggestions}
+                    onToggle={toggleSuggestion}
+                  />
                 )}
               </div>
             </div>

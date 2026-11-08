@@ -2069,6 +2069,10 @@ export const zh: Messages = {
         label: '自动',
         description: '自动批准编辑与安全命令，不可逆操作仍会询问',
       },
+      antigravityBypass: {
+        label: '绕过',
+        description: '绕过所有权限检查',
+      },
       alwaysApprove: {
         label: '始终允许',
         description: '跳过常规提示，拒绝规则仍生效',

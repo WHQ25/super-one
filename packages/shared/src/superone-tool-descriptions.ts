@@ -159,6 +159,25 @@ export const GENERATE_VIDEO_DESCRIPTION =
 export const VIDEO_STATUS_DESCRIPTION =
   "Advance a submitted video job and read its status: running, generated with savedPaths, or error with message. Poll about every 30 seconds while running: these calls download and save the completed video. Report it ready only after generated; stop on error."
 
+export const LIST_SPEECH_PROVIDERS_DESCRIPTION =
+  'List configured speech providers that have a usable key and at least one enabled model. ' +
+  'Filter by tts or asr. Use a returned id with speech_generate or speech_transcribe. ' +
+  'defaultVoice is the driver default. speech_generate uses the voice saved in Settings for that provider when voice is omitted. ElevenLabs then prefers a Voice Design or cloned voice on that account over defaultVoice.'
+
+export const SPEECH_VOICE_FIELD_DESCRIPTION =
+  'Voice override. An ElevenLabs voice id, an OpenAI voice name, or a Gemini prebuilt voice such as Kore. Omit it to use the voice saved in Settings for that provider. When none is saved, ElevenLabs prefers a Voice Design or cloned voice on that account; other providers use their driver default.'
+
+export const GENERATE_SPEECH_DESCRIPTION =
+  'Synthesize speech from text and save an mp3. Defaults to the speech provider binding, then the first usable key. ' +
+  'voice overrides the voice saved in Settings for that provider: an ElevenLabs voice id, an OpenAI voice name, or a Gemini prebuilt voice such as Kore. ' +
+  'Omit voice to use the saved choice. ElevenLabs then uses a Voice Design or cloned voice from that account before defaultVoice. ' +
+  'Returns savedPath. The chat already has a Read aloud button; use this when the user wants a file or a specific voice.'
+
+export const TRANSCRIBE_SPEECH_DESCRIPTION =
+  'Transcribe an audio file to text. path is an absolute path to the file. ' +
+  'Defaults to the transcription provider binding, then the first usable key. ' +
+  'language is an optional ISO 639-1 hint such as en or zh.'
+
 export const SESSION_LIST_AGENTS_DESCRIPTION =
   'List the agents available for user-approved child sessions (launchable ones only): id, name, harness, description. ' +
   'Agents on other connected machines are listed under environments[] with the environmentId to launch them with. ' +

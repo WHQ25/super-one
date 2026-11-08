@@ -55,6 +55,14 @@ describe('classifyModelById', () => {
     expect(classifyModelById('midjourney-v6')).toEqual({ openai: ['image'] })
     expect(classifyModelById('tts-1-hd')).toEqual({ openai: ['tts'] })
     expect(classifyModelById('whisper-1')).toEqual({ openai: ['asr'] })
+    expect(classifyModelById('eleven_multilingual_v2')).toEqual({ elevenlabs: ['tts'] })
+    expect(classifyModelById('eleven_v4')).toEqual({ elevenlabs: ['tts'] })
+    expect(classifyModelById('eleven_v4_turbo')).toEqual({ elevenlabs: ['tts'] })
+    expect(classifyModelById('scribe_v2')).toEqual({ elevenlabs: ['asr'] })
+    expect(classifyModelById('gemini-2.5-flash-preview-tts')).toEqual({ google: ['tts'] })
+    expect(classifyModelById('gemini-3.8-flash-lite-tts')).toEqual({ google: ['tts'] })
+    expect(classifyModelById('gemini-3.8-flash-tts')).toEqual({ google: ['tts'] })
+    expect(classifyModelById('gemini-3.5-transcribe')).toEqual({ google: ['asr'] })
   })
 
   it('returns empty for a generic chat id (caller falls back)', () => {

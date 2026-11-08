@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Globe } from 'lucide-react'
-import { Anthropic, Antigravity, Claude, Cursor, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI, Grok } from '@lobehub/icons'
+import { Anthropic, Antigravity, Claude, Cursor, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI, Grok, ElevenLabs } from '@lobehub/icons'
 import type { IconType } from '@lobehub/icons'
 import { TightCombine } from './TightCombine'
 
@@ -40,6 +40,8 @@ const BRANDS: Record<string, BrandEntry> = {
   cursor: { Mono: Cursor, Text: Cursor.Text },
   grok: { Mono: Grok, Text: Grok.Text },
   antigravity: { Mono: Antigravity, Color: Antigravity.Color, Text: Antigravity.Text },
+  // No Color mark. Mono is the two bars and follows the theme.
+  elevenlabs: { Mono: ElevenLabs, Text: ElevenLabs.Text },
 }
 
 /** Every brand this component can draw. Consumed by the native brand generator. */

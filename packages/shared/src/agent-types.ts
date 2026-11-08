@@ -3980,6 +3980,7 @@ export type DiscoveredProtocolFamily =
   | 'anthropic'
   | 'openai'
   | 'google'
+  | 'elevenlabs'
   | 'openai-video'
   | 'ark-video'
   | 'newapi-video'
@@ -4285,6 +4286,54 @@ export interface UpsertMediaProviderRequest {
   models: string[]
   kind?: 'openai-compatible' | 'google'
 }
+
+/** Read-aloud request. The main process picks the bound TTS provider and voice. */
+export interface SpeechSpeakRequest {
+  text: string
+  /** Chat message id. When set, the finished audio is kept for replay. */
+  messageId?: string
+}
+
+/** One playable piece pushed while read-aloud is still generating. */
+export interface SpeechSpeakClip {
+  mediaType: string
+  audioBase64: string
+  /** Set when `audioBase64` is raw signed-16-bit little-endian mono PCM. */
+  sampleRate?: number
+}
+
+export type SpeechSavedResult =
+  | { ok: true; clips: Array<{ mediaType: string; audioBase64: string }> }
+  | { ok: false; error: string }
+
+export interface SpeechVoiceOption {
+  id: string
+  label: string
+}
+
+/** Voices the bound speech provider can use, plus the choice Settings will apply. */
+export interface SpeechVoiceCatalog {
+  credentialId: string
+  voices: SpeechVoiceOption[]
+  defaultVoice: string
+  selectedVoice: string
+  /** Account voices could not be loaded, so `voices` is the built-in fallback. */
+  fallback?: boolean
+  /** The provider accepts a voice id that is not in `voices`. */
+  customVoice?: boolean
+}
+
+export type SpeechVoiceCatalogResult =
+  | SpeechVoiceCatalog
+  | { error: 'unconfigured' | 'failed' }
+
+export type SpeechVoicePreviewResult =
+  | { ok: true; mediaType: string; audioBase64: string }
+  | { ok: false; error: 'unconfigured' | 'unavailable' | 'invalid' | 'not-found' | 'no-preview' | 'failed' }
+
+export type SpeechSpeakResult =
+  | { ok: true; mediaType: string; audioBase64?: string; truncated?: boolean }
+  | { ok: false; error: string; cancelled?: boolean }
 
 export interface ProcessMetricLite {
   pid: number
@@ -4824,6 +4873,22 @@ export const AgentIpcChannels = {
 
   // Media generation providers (read-only status derived from image-serving credentials)
   MEDIA_GEN_PROVIDERS: 'mediaGen:providers',
+  /** Synthesize speech for a chat reply. Audio arrives on SPEECH_SPEAK_CLIP, then this returns. */
+  SPEECH_SPEAK: 'speech:speak',
+  /** One audio piece for the in-flight read-aloud. */
+  SPEECH_SPEAK_CLIP: 'speech:speak-clip',
+  /** Abort the in-flight read-aloud for this window. */
+  SPEECH_SPEAK_CANCEL: 'speech:speak-cancel',
+  /** Whether this message already has saved read-aloud audio. */
+  SPEECH_SPEAK_HAS_SAVED: 'speech:speak-has-saved',
+  /** Saved read-aloud audio for one message. */
+  SPEECH_SPEAK_SAVED: 'speech:speak-saved',
+  /** Saved read-aloud audio for these messages was deleted. */
+  SPEECH_CACHE_CLEARED: 'speech:cache-cleared',
+  /** Voices for the speech provider Settings will use. */
+  SPEECH_LIST_VOICES: 'speech:list-voices',
+  /** Play an ElevenLabs voice's preview clip. */
+  SPEECH_PREVIEW_VOICE: 'speech:preview-voice',
 
   // Model catalog (models.dev, local-cached)
   MODEL_CATALOG_GET: 'modelCatalog:get',
@@ -5838,6 +5903,13 @@ export interface AppSettings {
    */
   defaultClonePaths: Record<string, string>
   /**
+   * Voice id chosen for each speech credential. A missing entry uses an owned
+   * ElevenLabs voice when the account has one, otherwise the driver default
+   * (Rachel, alloy, or Kore). Keyed by credential id so two accounts can keep
+   * different voices.
+   */
+  speechVoices: Record<string, string>
+  /**
    * Explicit ChatSuggestions / picker harness order (suggestion keys:
    * `claude` | `codex` | `opencode` | `acp:<agentId>`).
    * Index 0 = default (fixed tab), 1 = secondary (menu default), then the rest.
@@ -6052,6 +6124,10 @@ export interface AppSettingsPatch {
    * connection's entry.
    */
   defaultClonePaths?: Record<string, string>
+  /**
+   * Merge into `speechVoices`. Empty-string values remove that credential's choice.
+   */
+  speechVoices?: Record<string, string>
   /**
    * Full manual harness order. When non-empty, also derives
    * `suggestionHarness` / `secondaryHarness` from indices 0 and 1.

@@ -36,6 +36,7 @@ const samples: Record<string, unknown> = {
   computerUseAlwaysAllowApps: [{ bundleId: 'test.contract', app: 'Contract' }],
   deviceControlGrants: [{ deviceId: 'contract-device', deviceName: 'Contract Device' }],
   miniAppOrder: { contract: ['app-one'] }, defaultClonePaths: { local: '/tmp/projects' },
+  speechVoices: { 'cred-contract': 'alloy' },
   browserBookmarks: [{ id: 'bookmark', title: 'Contract', url: 'https://contract.test', favicon: null, groupId: null, createdAt: 123 }],
   browserBookmarkGroups: [{ id: 'group', name: 'Contract', createdAt: 123 }],
   harnessOrder: ['claude', 'codex'], suggestionHarness: { provider: 'codex', acpAgentId: null },

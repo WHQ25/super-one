@@ -150,6 +150,7 @@ const defaults: AppSettings = {
   browserBookmarks: [],
   browserBookmarkGroups: [],
   defaultClonePaths: {},
+  speechVoices: {},
   harnessOrder: [],
   suggestionHarness: null,
   secondaryHarness: null,
@@ -362,6 +363,37 @@ function mergeDefaultClonePaths(
     const trimmed = typeof path === 'string' ? path.trim() : ''
     if (!trimmed) delete next[key]
     else next[key] = trimmed
+  }
+  return next
+}
+
+/** Voice ids are short (OpenAI names, Gemini names, ElevenLabs voice ids). */
+const SPEECH_VOICE_MAX = 128
+
+function readSpeechVoices(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, string> = {}
+  for (const [key, voice] of Object.entries(value as Record<string, unknown>)) {
+    if (!key || key.length > SPEECH_VOICE_MAX || typeof voice !== 'string') continue
+    const trimmed = voice.trim()
+    if (!trimmed || trimmed.length > SPEECH_VOICE_MAX) continue
+    out[key] = trimmed
+  }
+  return out
+}
+
+/** Merge patch into current; empty-string values remove that credential's choice. */
+function mergeSpeechVoices(
+  current: Record<string, string>,
+  patch: Record<string, string> | undefined,
+): Record<string, string> {
+  if (!patch) return current
+  const next = { ...current }
+  for (const [key, voice] of Object.entries(patch)) {
+    if (!key || key.length > SPEECH_VOICE_MAX) continue
+    const trimmed = typeof voice === 'string' ? voice.trim() : ''
+    if (!trimmed) delete next[key]
+    else if (trimmed.length <= SPEECH_VOICE_MAX) next[key] = trimmed
   }
   return next
 }
@@ -716,6 +748,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: readBookmarks(data.browserBookmarks),
       browserBookmarkGroups: readBookmarkGroups(data.browserBookmarkGroups),
       defaultClonePaths: readDefaultClonePaths(data.defaultClonePaths),
+      speechVoices: readSpeechVoices(data.speechVoices),
       ...(() => {
         const harnessOrder = readHarnessOrder(data.harnessOrder)
         // `defaultHarness` is accepted as a legacy/alias key for config-tool clarity.
@@ -800,6 +833,7 @@ export function readAppSettings(): AppSettings {
       browserBookmarks: [],
       browserBookmarkGroups: [],
       defaultClonePaths: {},
+      speechVoices: {},
       harnessOrder: [],
       suggestionHarness: null,
       secondaryHarness: null,
@@ -954,6 +988,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     browserBookmarks: patch.browserBookmarks === undefined ? current.browserBookmarks : readBookmarks(patch.browserBookmarks),
     browserBookmarkGroups: patch.browserBookmarkGroups === undefined ? current.browserBookmarkGroups : readBookmarkGroups(patch.browserBookmarkGroups),
     defaultClonePaths: mergeDefaultClonePaths(current.defaultClonePaths, patch.defaultClonePaths),
+    speechVoices: mergeSpeechVoices(current.speechVoices, patch.speechVoices),
     harnessOrder,
     suggestionHarness,
     secondaryHarness,

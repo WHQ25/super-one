@@ -122,6 +122,8 @@ describe('SuperOne compact tool rows on the phone', () => {
       session_tag: { add: ['a'] },
       miniapp_dev_register: { name: 'budget' },
       miniapp_dev_update_types: { appDir: '/apps/budget' },
+      speech_generate: { text: 'Read this aloud' },
+      speech_transcribe: { path: '/tmp/clips/note.mp3' },
     }
     for (const [tool, input] of Object.entries(samples)) {
       const projected = sanitizeRemoteToolInput(`mcp__superone__${tool}`, JSON.stringify(input))

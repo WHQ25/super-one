@@ -15,6 +15,7 @@ export const FAMILY_LABEL_KEY: Record<ProtocolFamily, string> = {
   volcengine: 'resources.providers.familyVolcengine',
   newapi: 'resources.providers.familyNewapi',
   google: 'resources.providers.familyGoogle',
+  elevenlabs: 'resources.providers.familyElevenlabs',
 }
 
 export const PROTOCOL_LABEL_KEY: Record<WireProtocol, string> = {
@@ -29,4 +30,5 @@ export const PROTOCOL_LABEL_KEY: Record<WireProtocol, string> = {
   'newapi-video': 'resources.providers.protocolNewapiVideo',
   'google-generative': 'resources.providers.protocolGoogleGenerative',
   'google-video': 'resources.providers.protocolGoogleVideo',
+  'elevenlabs-audio': 'resources.providers.protocolElevenlabsAudio',
 }

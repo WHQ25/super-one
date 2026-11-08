@@ -73,6 +73,9 @@ export function DefaultProviderRow({
   }, [candidates])
   const currentId = bindings.find((b) => b.consumer === consumer)?.credentialId ?? ''
   const current = candidates.find((c) => c.id === currentId)
+  const currentKeyName = current && groups.some((group) => group.length > 1 && group.some((item) => item.id === current.id))
+    ? current.name
+    : undefined
   /** Platform-derived label props; `icon` is what custom platforms (no brand icon) render. */
   const optionProps = (c: Credential) => {
     const { brand, name, icon } = providerDisplayForCredential(platforms, c)
@@ -85,7 +88,7 @@ export function DefaultProviderRow({
         <DropdownMenuTrigger asChild>
           <button className={cn(settingsSelectTriggerClassName, 'max-w-64 shrink-0 gap-2 overflow-hidden')}>
             <span className="min-w-0 flex-1 overflow-hidden">
-              {current ? <ProviderOptionLabel {...optionProps(current)} keyName={current.name} /> : fallback}
+              {current ? <ProviderOptionLabel {...optionProps(current)} keyName={currentKeyName} /> : fallback}
             </span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </button>

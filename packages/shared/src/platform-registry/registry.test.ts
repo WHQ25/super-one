@@ -287,6 +287,23 @@ describe('selectEndpoint', () => {
     expect(selectEndpoint(gemini, 'media:image')?.endpoint.id).toBe('generative')
   })
 
+  it('routes speech to a dedicated endpoint and keeps the ElevenLabs SDK base', () => {
+    const eleven = findPlatform(BUILTIN_PLATFORMS, 'elevenlabs')!.plans[0]!
+    const selected = selectEndpoint(eleven, 'tts')
+    expect(selected?.protocol).toBe('elevenlabs-audio')
+    expect(endpointBaseUrl(eleven.baseUrl, selected!.endpoint, 'elevenlabs-audio')).toBe('https://api.elevenlabs.io/v1')
+
+    const openai = findPlatform(BUILTIN_PLATFORMS, 'openai')!.plans[0]!
+    expect(selectEndpoint(openai, 'tts')?.endpoint.id).toBe('audio')
+    expect(selectEndpoint(openai, 'asr')?.endpoint.id).toBe('audio')
+
+    const gemini = findPlatform(BUILTIN_PLATFORMS, 'gemini')!.plans[0]!
+    expect(selectEndpoint(gemini, 'tts')?.endpoint.id).toBe('generative')
+    expect(selectEndpoint(gemini, 'tts', undefined, {
+      overrides: { speech: { models: [{ id: 'gemini-2.5-flash-preview-tts', name: 'TTS', tasks: ['tts'] }] } },
+    })?.endpoint.id).toBe('speech')
+  })
+
   it('gates video on an enabled video-tagged model like the other media consumers', () => {
     const plan = findPlatform(BUILTIN_PLATFORMS, 'volcengine')!.plans.find((p) => p.id === 'api')!
     expect(selectEndpoint(plan, 'media:video', undefined, { overrides: {} })).toBeUndefined()

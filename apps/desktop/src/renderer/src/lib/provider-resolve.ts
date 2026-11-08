@@ -4,6 +4,8 @@ import type { HarnessId, ProviderModelEnv } from '@superone/shared/agent-types'
 import {
   CONSUMER_IDS,
   effectiveEndpoints,
+  enabledEndpointModels,
+  endpointServes,
   findPlan,
   findPlatform,
   mergeEndpoint,
@@ -135,6 +137,48 @@ export function providerDisplayForCredential(
 ): { brand: string | null; name: string; icon?: string } {
   const platform = findPlatform(platforms, credential.platformId)
   return { brand: platform?.brand ?? null, name: platform?.name ?? credential.name, icon: platform?.icon }
+}
+
+export interface SpeechModelGroup {
+  credential: Credential
+  models: Array<{ id: string; name: string }>
+}
+
+/** Enabled TTS models for each credential, in registry order. Accounts with none are omitted. */
+export function speechModelGroups(platforms: Platform[], credentials: Credential[]): SpeechModelGroup[] {
+  const groups: SpeechModelGroup[] = []
+  for (const credential of credentials) {
+    const platform = findPlatform(platforms, credential.platformId)
+    const plan = findPlan(platform, credential.planId)
+    if (!platform || !plan) continue
+    const seen = new Set<string>()
+    const models: SpeechModelGroup['models'] = []
+    for (const endpoint of effectiveEndpoints(platform, plan, credential)) {
+      if (endpoint.disabled || !endpointServes(endpoint, 'tts')) continue
+      for (const model of enabledEndpointModels(endpoint, 'tts', credential)) {
+        if (seen.has(model.id)) continue
+        seen.add(model.id)
+        models.push({ id: model.id, name: model.name?.trim() || model.id })
+      }
+    }
+    if (models.length > 0) groups.push({ credential, models })
+  }
+  return groups
+}
+
+/**
+ * Model the speech binding will use. A missing or disabled id falls back to that
+ * account's first enabled speech model. No binding means auto.
+ */
+export function selectedSpeechModel(
+  groups: SpeechModelGroup[],
+  binding: ConsumerBinding | undefined,
+): { credential: Credential; modelId: string; modelName: string } | null {
+  if (!binding) return null
+  const group = groups.find((item) => item.credential.id === binding.credentialId)
+  const model = group?.models.find((item) => item.id === binding.config?.modelId) ?? group?.models[0]
+  if (!group || !model) return null
+  return { credential: group.credential, modelId: model.id, modelName: model.name }
 }
 
 /** Consumers this platform can serve (has at least one matching endpoint across its plans). */

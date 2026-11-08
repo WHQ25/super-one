@@ -11,10 +11,11 @@ import { getPlatforms } from '../../providers/registry'
 import type { ConfigResourceServices } from '../config-resource-services'
 import { type ResourceDef } from './types'
 
-const CONSUMERS: ConsumerId[] = ['chat:claude', 'chat:codex', 'media:image', 'media:video']
+const CONSUMERS: ConsumerId[] = ['chat:claude', 'chat:codex', 'media:image', 'media:video', 'tts', 'asr']
 const CONSUMER_LABELS: Partial<Record<ConsumerId, string>> = {
   'chat:claude': 'Claude Default Provider', 'chat:codex': 'Codex Default Provider',
   'media:image': 'Default Image Provider', 'media:video': 'Default Video Provider',
+  tts: 'Default Speech Provider', asr: 'Default Transcription Provider',
 }
 const unsupported = (): never => { throw new Error('This operation is unsupported; use update with the recordId from config_read') }
 
@@ -39,7 +40,7 @@ export function settingsResources(services?: ConfigResourceServices): ResourceDe
   const bindingRecord = (consumer: ConsumerId) => ({ id: consumer, credentialId: getBinding(consumer)?.credentialId ?? null })
   const binding: ResourceDef<ReturnType<typeof bindingRecord>> = {
     resource: 'default-provider', label: 'Default Provider', projectScoped: false,
-    description: 'Default chat/image/video provider bindings. Read one consumer record for compatible credential choices. Update credentialId to select a key; null or empty restores automatic selection.',
+    description: 'Default chat, image, video, speech, and transcription provider bindings. Read one consumer record for compatible credential choices. Update credentialId to select a key; null or empty restores automatic selection.',
     operations: ['update', 'delete'],
     fields: [{ key: 'credentialId', label: 'Credential ID', type: 'string', note: 'A compatible credential id from this record’s availableCredentials. Empty or null clears the binding.' }],
     list: () => CONSUMERS.map(bindingRecord),

@@ -6,7 +6,7 @@ import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type SpeechSpeakRequest, type SpeechSpeakClip, type SpeechSpeakResult, type SpeechSavedResult, type SpeechVoiceCatalogResult, type SpeechVoicePreviewResult, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
@@ -1638,6 +1638,29 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.RETRY_ATTACHMENT_ORIGINAL, path) as Promise<void>,
   getMediaProviders: () =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_PROVIDERS),
+  speakText: (request: SpeechSpeakRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.SPEECH_SPEAK, request) as Promise<SpeechSpeakResult>,
+  onSpeechClip: (listener: (clip: SpeechSpeakClip) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, clip: SpeechSpeakClip) => listener(clip)
+    ipcRenderer.on(AgentIpcChannels.SPEECH_SPEAK_CLIP, handler)
+    return () => { ipcRenderer.removeListener(AgentIpcChannels.SPEECH_SPEAK_CLIP, handler) }
+  },
+  cancelSpeech: () => ipcRenderer.invoke(AgentIpcChannels.SPEECH_SPEAK_CANCEL) as Promise<void>,
+  hasSavedSpeech: (messageId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SPEECH_SPEAK_HAS_SAVED, messageId) as Promise<boolean>,
+  readSavedSpeech: (messageId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SPEECH_SPEAK_SAVED, messageId) as Promise<SpeechSavedResult>,
+  onSpeechCacheCleared: (listener: (messageIds: string[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, messageIds: unknown) => {
+      listener(Array.isArray(messageIds) ? messageIds.filter((id): id is string => typeof id === 'string') : [])
+    }
+    ipcRenderer.on(AgentIpcChannels.SPEECH_CACHE_CLEARED, handler)
+    return () => { ipcRenderer.removeListener(AgentIpcChannels.SPEECH_CACHE_CLEARED, handler) }
+  },
+  listSpeechVoices: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SPEECH_LIST_VOICES) as Promise<SpeechVoiceCatalogResult>,
+  previewSpeechVoice: (voiceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SPEECH_PREVIEW_VOICE, voiceId) as Promise<SpeechVoicePreviewResult>,
   getModelCatalog: () =>
     ipcRenderer.invoke(AgentIpcChannels.MODEL_CATALOG_GET),
   refreshModelCatalog: () =>

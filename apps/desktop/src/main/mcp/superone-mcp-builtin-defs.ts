@@ -117,6 +117,7 @@ import {
   AGENT_PROFILE_APPLY_DESCRIPTION,
   AGENT_PROFILE_DELETE_DESCRIPTION,
 } from '@superone/shared/superone-tool-descriptions'
+import { HOST_ACTION_SPEECH_DESCRIPTORS } from '@superone/shared/environment/host-action-speech-descriptors'
 import { HOST_ACTION_TERMINAL_DESCRIPTORS } from '@superone/shared/environment/host-action-terminal-descriptors'
 import { HOST_ACTION_LAYOUT_DESCRIPTORS } from '@superone/shared/environment/host-action-layout-descriptors'
 export * from '@superone/shared/superone-tool-descriptions'
@@ -868,6 +869,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  ...HOST_ACTION_SPEECH_DESCRIPTORS,
   ...HOST_ACTION_TERMINAL_DESCRIPTORS,
   ...HOST_ACTION_LAYOUT_DESCRIPTORS,
 ]

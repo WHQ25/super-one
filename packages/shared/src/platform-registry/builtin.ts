@@ -140,6 +140,36 @@ const VEO_MODELS: EndpointModel[] = [
   { id: 'veo-2.0-generate-001', name: 'Veo 2.0', tasks: ['video'] },
 ]
 
+/** Own endpoint: a curated list replaces the catalog, so these cannot live on the chat endpoint. */
+const OPENAI_AUDIO_MODELS: EndpointModel[] = [
+  { id: 'gpt-4o-mini-tts', name: 'GPT-4o mini TTS', tasks: ['tts'] },
+  { id: 'tts-1', name: 'TTS-1', tasks: ['tts'] },
+  { id: 'tts-1-hd', name: 'TTS-1 HD', tasks: ['tts'] },
+  { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o mini Transcribe', tasks: ['asr'] },
+  { id: 'gpt-4o-transcribe', name: 'GPT-4o Transcribe', tasks: ['asr'] },
+  { id: 'whisper-1', name: 'Whisper', tasks: ['asr'] },
+]
+
+const GEMINI_SPEECH_MODELS: EndpointModel[] = [
+  { id: 'gemini-3.8-flash-lite-tts', name: 'Gemini 3.8 Flash-Lite TTS', tasks: ['tts'] },
+  { id: 'gemini-3.8-flash-tts', name: 'Gemini 3.8 Flash TTS', tasks: ['tts'] },
+  { id: 'gemini-3.1-flash-tts-preview', name: 'Gemini 3.1 Flash TTS', tasks: ['tts'] },
+  { id: 'gemini-2.5-flash-preview-tts', name: 'Gemini 2.5 Flash TTS', tasks: ['tts'] },
+  { id: 'gemini-2.5-pro-preview-tts', name: 'Gemini 2.5 Pro TTS', tasks: ['tts'] },
+  { id: 'gemini-3.5-transcribe', name: 'Gemini 3.5 Transcribe', tasks: ['asr'] },
+]
+
+const ELEVENLABS_MODELS: EndpointModel[] = [
+  { id: 'eleven_v4', name: 'Eleven v4', tasks: ['tts'] },
+  { id: 'eleven_v4_turbo', name: 'Eleven v4 Turbo', tasks: ['tts'] },
+  { id: 'eleven_v3', name: 'Eleven v3', tasks: ['tts'] },
+  { id: 'eleven_multilingual_v2', name: 'Multilingual v2', tasks: ['tts'] },
+  { id: 'eleven_flash_v2_5', name: 'Flash v2.5', tasks: ['tts'] },
+  { id: 'eleven_turbo_v2_5', name: 'Turbo v2.5', tasks: ['tts'] },
+  { id: 'scribe_v2', name: 'Scribe v2', tasks: ['asr'] },
+  { id: 'scribe_v1', name: 'Scribe v1', tasks: ['asr'] },
+]
+
 const ARK_CODE_MODELS: ProviderModelEnv = {
   default: { id: 'ark-code-latest', name: 'Ark Code Latest' },
   opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
@@ -1110,7 +1140,12 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         endpoints: [
           {
             id: 'openai',
-            protocols: ['openai-responses', 'openai-images', 'openai-audio'],
+            protocols: ['openai-responses', 'openai-images'],
+          },
+          {
+            id: 'audio',
+            protocols: ['openai-audio'],
+            models: OPENAI_AUDIO_MODELS,
           },
           {
             id: 'sora',
@@ -1125,7 +1160,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     id: 'gemini',
     brand: 'gemini',
     name: 'Google Gemini',
-    description: 'Google Gemini image generation (Nano Banana) + Veo video generation',
+    description: 'Google Gemini image generation (Nano Banana), Veo video, and speech',
     catalogProviderId: 'google',
     plans: [
       {
@@ -1143,6 +1178,33 @@ export const BUILTIN_PLATFORMS: Platform[] = [
             id: 'veo',
             protocols: ['google-video'],
             models: VEO_MODELS,
+          },
+          {
+            id: 'speech',
+            protocols: ['google-generative'],
+            models: GEMINI_SPEECH_MODELS,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'elevenlabs',
+    brand: 'elevenlabs',
+    name: 'ElevenLabs',
+    description: 'ElevenLabs speech synthesis and transcription',
+    plans: [
+      {
+        id: 'api',
+        name: 'API',
+        auth: 'api-key',
+        baseUrl: 'https://api.elevenlabs.io',
+        apiKeyUrl: 'https://elevenlabs.io/app/settings/api-keys',
+        endpoints: [
+          {
+            id: 'elevenlabs',
+            protocols: ['elevenlabs-audio'],
+            models: ELEVENLABS_MODELS,
           },
         ],
       },

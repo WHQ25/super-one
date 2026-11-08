@@ -1,4 +1,4 @@
-import { Terminal, Clock, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone, LayoutDashboard, SquareCode, GitBranch, Send, Reply, PanelsTopLeft } from 'lucide-react'
+import { Terminal, Clock, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone, LayoutDashboard, SquareCode, GitBranch, Send, Reply, PanelsTopLeft, AudioLines } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { McpIcon } from '@superone/ui/components/ui/McpIcon'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
@@ -39,6 +39,7 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'reply': Reply,
   // Desktop layout control (layout_snapshot / layout_act).
   'layout': PanelsTopLeft,
+  'audio': AudioLines,
 }
 
 interface ToolIconProps {

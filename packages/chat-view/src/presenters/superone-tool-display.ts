@@ -147,6 +147,30 @@ export const SUPERONE_TOOL_DESCRIPTORS: Record<string, SuperoneToolDescriptor> =
     actionKey: 'chat.toolBlock.checkVideoStatus',
     doneKey: 'chat.toolBlock.checkVideoStatus',
   },
+  speech_list_providers: {
+    icon: 'audio',
+    streamingKey: 'chat.toolBlock.listingSpeechProviders',
+    actionKey: 'chat.toolBlock.listSpeechProviders',
+    doneKey: 'chat.toolBlock.listedSpeechProviders',
+    summary: (params) => str(params.category),
+  },
+  speech_generate: {
+    icon: 'audio',
+    streamingKey: 'chat.toolBlock.generatingSpeech',
+    actionKey: 'chat.toolBlock.generateSpeech',
+    doneKey: 'chat.toolBlock.generatedSpeech',
+    summary: (params) => {
+      const text = str(params.text).replace(/\s+/g, ' ').trim()
+      return text.length > 80 ? `${text.slice(0, 80)}…` : text
+    },
+  },
+  speech_transcribe: {
+    icon: 'audio',
+    streamingKey: 'chat.toolBlock.transcribingSpeech',
+    actionKey: 'chat.toolBlock.transcribeSpeech',
+    doneKey: 'chat.toolBlock.transcribedSpeech',
+    summary: (params) => basename(str(params.path)),
+  },
 }
 
 export function superoneToolDescriptor(mcpToolName: string): SuperoneToolDescriptor | null {

@@ -1,9 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
+const { getDbMock, getProjectIdMock, clearSpeechCacheMock } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
   getProjectIdMock: vi.fn(),
+  clearSpeechCacheMock: vi.fn(async () => {}),
 }))
 
 vi.mock('./database', () => ({
@@ -23,8 +24,12 @@ vi.mock('./logger', () => ({
   },
 }))
 
+vi.mock('./speech/session-cache', () => ({
+  clearSpeechCache: clearSpeechCacheMock,
+}))
+
 import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
-import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, listSessionsForProjectId, listSettledSessions, saveSessionState, searchSessionsByTitle, settleSpawnChildren } from './db-sessions'
+import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, listSessionsForProjectId, listSettledSessions, saveSessionState, searchSessionsByTitle, settleSession, settleSpawnChildren } from './db-sessions'
 import { watchSessionDeletes } from './session-list-watch'
 
 describe('db-sessions session query + mapping', () => {
@@ -526,6 +531,33 @@ describe('countMessagesForSessions', () => {
   })
 })
 
+describe('settleSession speech cache', () => {
+  beforeEach(() => { clearSpeechCacheMock.mockClear() })
+
+  function dbWithMessages(ids: string[]) {
+    getDbMock.mockReturnValue({
+      prepare: (sql: string) => ({
+        all: () => (sql.includes('chat_messages') ? ids.map((id) => ({ id })) : []),
+        get: () => (sql.includes('JOIN projects') ? { path: '/tmp/project' } : undefined),
+        run: () => {},
+      }),
+    })
+  }
+
+  it('clears saved read-aloud audio when a session is settled', async () => {
+    dbWithMessages(['m1', 'm2'])
+    settleSession('session-1', true)
+    await vi.waitFor(() => expect(clearSpeechCacheMock).toHaveBeenCalledWith(['m1', 'm2']))
+  })
+
+  it('leaves saved read-aloud audio when a session is unsettled', async () => {
+    dbWithMessages(['m1'])
+    settleSession('session-1', false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(clearSpeechCacheMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('settleSpawnChildren', () => {
   it('settles spawn children and marks them read', () => {
     const runs: Array<{ sql: string; params: unknown[] }> = []
@@ -541,7 +573,9 @@ describe('settleSpawnChildren', () => {
       }),
     })
 
+    clearSpeechCacheMock.mockClear()
     expect(settleSpawnChildren('parent-1')).toEqual(['spawn-1'])
+    expect(clearSpeechCacheMock).not.toHaveBeenCalled()
     expect(runs).toEqual([
       { sql: 'UPDATE sessions SET is_settled = ? WHERE id = ?', params: [1, 'spawn-1'] },
       { sql: 'UPDATE sessions SET seen_completed_message_id = ? WHERE id = ?', params: [null, 'spawn-1'] },

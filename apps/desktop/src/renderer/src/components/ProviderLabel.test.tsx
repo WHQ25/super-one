@@ -11,6 +11,12 @@ describe('ProviderLabel', () => {
     expect(container.querySelector('svg')).toBeTruthy()
   })
 
+  it('uses the ElevenLabs mark and wordmark instead of the globe fallback', () => {
+    const { container } = render(<ProviderLabel brandKey="elevenlabs" size={24} />)
+    expect(container.querySelector('.lucide-globe')).toBeNull()
+    expect(container.querySelectorAll('svg').length).toBeGreaterThan(1)
+  })
+
   it('matches built-in provider sizing for compact custom-provider labels', () => {
     const { container } = render(
       <ProviderLabel brandKey="custom" fallback="AIYun Router Codex" size={12} compactFallback />,
@@ -26,6 +32,7 @@ describe('brandKeyForCatalogProvider', () => {
     expect(brandKeyForCatalogProvider('openai')).toBe('openai')
     expect(brandKeyForCatalogProvider('anthropic')).toBe('anthropic')
     expect(brandKeyForCatalogProvider('deepseek')).toBe('deepseek')
+    expect(brandKeyForCatalogProvider('elevenlabs')).toBe('elevenlabs')
   })
 
   it('maps models.dev ids onto the closest brand icon', () => {

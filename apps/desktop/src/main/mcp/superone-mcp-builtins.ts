@@ -32,6 +32,15 @@ import {
   type ListMediaProvidersArgs,
   type VideoStatusArgs,
 } from './media-tools'
+import {
+  registerSpeechTools,
+  generateSpeechToolHandler,
+  listSpeechProvidersHandler,
+  transcribeSpeechToolHandler,
+  type GenerateSpeechArgs,
+  type ListSpeechProvidersArgs,
+  type TranscribeSpeechArgs,
+} from './speech-tools'
 import { manualReadHandler, registerManualTools } from './manual-tools'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
@@ -410,6 +419,12 @@ export async function executeBuiltInSuperoneTool(
       return generateVideoToolHandler(args as unknown as GenerateVideoArgs, deps)
     case 'media_video_status':
       return videoStatusToolHandler(args as unknown as VideoStatusArgs)
+    case 'speech_list_providers':
+      return listSpeechProvidersHandler(args as ListSpeechProvidersArgs)
+    case 'speech_generate':
+      return generateSpeechToolHandler(args as unknown as GenerateSpeechArgs, deps)
+    case 'speech_transcribe':
+      return transcribeSpeechToolHandler(args as unknown as TranscribeSpeechArgs, deps)
     case 'terminal_tabs':
       return terminalTabsHandler(args as unknown as TerminalTabsArgs, deps)
     case 'terminal_snapshot':
@@ -921,4 +936,5 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   registerAgentProfileTools(server, deps)
 
   registerMediaTools(server, deps)
+  registerSpeechTools(server, deps)
 }

@@ -127,6 +127,8 @@ export interface Credential {
 export interface BindingConfig {
   forcedEffort?: EffortLevel | 'auto'
   modelMapping?: ProviderModelEnv
+  /** Speech binding: the enabled model read-aloud and speech generation use. */
+  modelId?: string
 }
 
 export interface ConsumerBinding {

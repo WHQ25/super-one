@@ -23,6 +23,8 @@ import { shutdownAnalytics, startAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
+import { SpeechModelRow } from '@/components/settings/SpeechModelRow'
+import { SpeechVoiceRow } from '@/components/settings/SpeechVoiceRow'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import { SessionStorageSection } from '@/components/settings/SessionStorageSection'
 import { JevFastLoopSetting } from '@/components/settings/JevFastLoopSetting'
@@ -208,6 +210,14 @@ export function AppSettingsPage() {
           title={t('settings.general.videoProvider.label')}
           description={t('settings.general.videoProvider.description')}
           fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.videoProvider.auto')}</span>}
+        />
+        <SpeechModelRow />
+        <SpeechVoiceRow />
+        <DefaultProviderRow
+          consumer="asr"
+          title={t('settings.general.transcriptionProvider.label')}
+          description={t('settings.general.transcriptionProvider.description')}
+          fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.transcriptionProvider.auto')}</span>}
         />
       </SettingsSection>
 

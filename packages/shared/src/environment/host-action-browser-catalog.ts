@@ -98,6 +98,7 @@ const SUPERONE_READ_NAMES = new Set<string>([
   'config_read',
   'media_list_providers',
   'media_video_status',
+  'speech_list_providers',
   'widget_list_templates',
   'miniapp_list',
   'automation_list',

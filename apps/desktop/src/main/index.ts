@@ -4089,6 +4089,70 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.MEDIA_GEN_PROVIDERS, () => getMediaProviderStatuses())
 
+  const speechSpeakAbort = new Map<number, AbortController>()
+
+  ipcMain.handle(AgentIpcChannels.SPEECH_SPEAK, async (event, request: { text?: unknown; messageId?: unknown }) => {
+    const senderId = event.sender.id
+    speechSpeakAbort.get(senderId)?.abort()
+    const controller = new AbortController()
+    speechSpeakAbort.set(senderId, controller)
+    try {
+      const { speakText } = await import('./speech/service')
+      return await speakText({
+        text: typeof request?.text === 'string' ? request.text : '',
+        ...(typeof request?.messageId === 'string' ? { messageId: request.messageId.slice(0, 200) } : {}),
+      }, {
+        signal: controller.signal,
+        onClip: (clip) => {
+          if (event.sender.isDestroyed()) return
+          event.sender.send(AgentIpcChannels.SPEECH_SPEAK_CLIP, {
+            mediaType: clip.mediaType,
+            audioBase64: Buffer.from(clip.bytes).toString('base64'),
+            ...(clip.sampleRate != null ? { sampleRate: clip.sampleRate } : {}),
+          })
+        },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      trace('speech.speak', 'error', { name: error instanceof Error ? error.name : 'Error', message, stage: 'handler' })
+      return { ok: false as const, error: message }
+    } finally {
+      if (speechSpeakAbort.get(senderId) === controller) speechSpeakAbort.delete(senderId)
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SPEECH_SPEAK_CANCEL, (event) => {
+    speechSpeakAbort.get(event.sender.id)?.abort()
+  })
+
+  ipcMain.handle(AgentIpcChannels.SPEECH_SPEAK_HAS_SAVED, async (_event, messageId: unknown) => {
+    if (typeof messageId !== 'string' || !messageId) return false
+    const { hasSpeechCache } = await import('./speech/cache')
+    return hasSpeechCache(messageId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.SPEECH_SPEAK_SAVED, async (_event, messageId: unknown) => {
+    if (typeof messageId !== 'string' || !messageId) return { ok: false as const, error: 'Missing message' }
+    const { readSpeechCache } = await import('./speech/cache')
+    const clips = await readSpeechCache(messageId)
+    if (!clips) return { ok: false as const, error: 'No saved audio' }
+    return {
+      ok: true as const,
+      clips: clips.map((clip) => ({ mediaType: clip.mediaType, audioBase64: Buffer.from(clip.bytes).toString('base64') })),
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SPEECH_LIST_VOICES, async () => {
+    const { listSpeechVoiceCatalog } = await import('./speech/voices')
+    return listSpeechVoiceCatalog()
+  })
+
+  ipcMain.handle(AgentIpcChannels.SPEECH_PREVIEW_VOICE, async (_event, voiceId: unknown) => {
+    if (typeof voiceId !== 'string') return { ok: false as const, error: 'invalid' as const }
+    const { previewSpeechVoice } = await import('./speech/preview')
+    return previewSpeechVoice(voiceId)
+  })
+
   ipcMain.handle(AgentIpcChannels.MODEL_CATALOG_GET, async () => {
     const { getModelCatalog } = await import('./model-catalog')
     return getModelCatalog()

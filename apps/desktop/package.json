@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
+    "@ai-sdk/elevenlabs": "^3.0.80",
     "@ai-sdk/google": "^4.0.62",
     "@ai-sdk/openai": "^4.0.56",
     "@ai-sdk/openai-compatible": "^3.0.43",
@@ -228,7 +229,7 @@
     "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^6.0.0",
     "acorn": "^8.16.0",
-    "ai": "^7.0.90",
+    "ai": "^7.0.164",
     "archiver": "^8.0.0",
     "better-sqlite3": "^13.0.1",
     "bufferutil": "^4.1.0",

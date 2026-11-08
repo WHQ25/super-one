@@ -1445,6 +1445,36 @@ export type Messages = {
         description: string
         auto: string
       }
+      speechProvider: {
+        label: string
+        description: string
+        auto: string
+      }
+      speechVoice: {
+        label: string
+        description: string
+        loading: string
+        unavailable: string
+        loadFailed: string
+        fallback: string
+        saveFailed: string
+        retry: string
+        voiceId: string
+        voiceIdPlaceholder: string
+        useVoiceId: string
+        preview: string
+        previewStop: string
+        previewFailed: string
+        previewUnavailable: string
+        previewInvalid: string
+        previewNotFound: string
+        previewMissing: string
+      }
+      transcriptionProvider: {
+        label: string
+        description: string
+        auto: string
+      }
       harness: string
       defaultHarness: {
         label: string
@@ -2151,6 +2181,13 @@ export type Messages = {
       copy: string
       copied: string
       copyFailed: string
+      speak: string
+      stopSpeaking: string
+      pauseSpeaking: string
+      resumeSpeaking: string
+      playSaved: string
+      speakFailed: string
+      speakTruncated: string
     }
     transcriptWindow: {
       earlierPart: string
@@ -2857,6 +2894,15 @@ export type Messages = {
       listedMediaProviders: string
       listMediaProviders: string
       mediaProvidersMatched: string
+      listingSpeechProviders: string
+      listedSpeechProviders: string
+      listSpeechProviders: string
+      generatingSpeech: string
+      generatedSpeech: string
+      generateSpeech: string
+      transcribingSpeech: string
+      transcribedSpeech: string
+      transcribeSpeech: string
       registeringMiniApp: string
       registeredMiniApp: string
       registerMiniApp: string
@@ -3968,6 +4014,7 @@ export type Messages = {
       familyGoogle: string
       familyVolcengine: string
       familyNewapi: string
+      familyElevenlabs: string
       enableEndpoint: string
       endpointDisabledHint: string
       endpointSharedWith: string
@@ -3983,6 +4030,7 @@ export type Messages = {
       protocolNewapiVideo: string
       protocolGoogleGenerative: string
       protocolGoogleVideo: string
+      protocolElevenlabsAudio: string
       taskChat: string
       taskImage: string
       taskVideo: string
@@ -6304,6 +6352,36 @@ export const en: Messages = {
         description: 'Which provider generates videos. Add keys and enable video models in Providers.',
         auto: 'Auto (First Usable)',
       },
+      speechProvider: {
+        label: 'Speech Model',
+        description: 'Which model reads replies aloud. Add a key and enable speech models in Providers.',
+        auto: 'Auto (First Usable)',
+      },
+      speechVoice: {
+        label: 'Speech Voice',
+        description: 'Used when reading replies aloud, and when speech generation does not name a voice. Each provider keeps its own choice.',
+        loading: 'Loading…',
+        unavailable: 'Add a speech provider first',
+        loadFailed: 'Could not load voices',
+        fallback: 'Account voices could not be loaded. Showing the built-in voice.',
+        saveFailed: 'Could not save the voice',
+        retry: 'Retry',
+        voiceId: 'Voice ID',
+        voiceIdPlaceholder: 'Paste an ElevenLabs voice id',
+        useVoiceId: 'Use',
+        preview: 'Preview',
+        previewStop: 'Stop',
+        previewFailed: 'Could not preview this voice',
+        previewUnavailable: 'This provider has no voice preview',
+        previewInvalid: 'Enter a voice id',
+        previewNotFound: 'This account does not have that voice',
+        previewMissing: 'This voice has no preview',
+      },
+      transcriptionProvider: {
+        label: 'Transcription Provider',
+        description: 'Which provider transcribes audio. Add a key and enable a transcription model in Providers.',
+        auto: 'Auto (First Usable)',
+      },
       harness: 'Agents',
       defaultHarness: {
         label: 'Default Harness',
@@ -7044,6 +7122,13 @@ export const en: Messages = {
       copy: 'Copy',
       copied: 'Copied',
       copyFailed: 'Copy failed',
+      speak: 'Read aloud',
+      stopSpeaking: 'Stop reading',
+      pauseSpeaking: 'Pause',
+      resumeSpeaking: 'Resume',
+      playSaved: 'Play Saved',
+      speakFailed: 'Could not read this reply',
+      speakTruncated: 'Reading the first part of this reply',
     },
     transcriptWindow: {
       earlierPart: 'Earlier part of this message',
@@ -7725,6 +7810,15 @@ export const en: Messages = {
       listedMediaProviders: 'Providers Listed',
       listMediaProviders: 'List Providers',
       mediaProvidersMatched: '{{count}} matched',
+      listingSpeechProviders: 'Listing speech providers',
+      listedSpeechProviders: 'Speech Providers Listed',
+      listSpeechProviders: 'List Speech Providers',
+      generatingSpeech: 'Generating speech',
+      generatedSpeech: 'Speech Generated',
+      generateSpeech: 'Generate Speech',
+      transcribingSpeech: 'Transcribing audio',
+      transcribedSpeech: 'Audio Transcribed',
+      transcribeSpeech: 'Transcribe Audio',
       registeringMiniApp: 'Registering mini-app',
       registeredMiniApp: 'Mini-app Registered',
       registerMiniApp: 'Register Mini-app',
@@ -8828,6 +8922,7 @@ export const en: Messages = {
       familyGoogle: 'Google (Gemini)',
       familyVolcengine: 'Volcengine Ark',
       familyNewapi: 'New API Relay',
+      familyElevenlabs: 'ElevenLabs',
       enableEndpoint: 'Enable this endpoint',
       endpointDisabledHint: 'This endpoint is off. Its settings are kept and will apply again when you turn it back on.',
       endpointSharedWith: 'Shares this endpoint with {{protocols}} — these settings apply to all of them.',
@@ -8843,6 +8938,7 @@ export const en: Messages = {
       protocolNewapiVideo: 'NewAPI Video',
       protocolGoogleGenerative: 'generateContent',
       protocolGoogleVideo: 'Veo Video',
+      protocolElevenlabsAudio: 'Speech',
       taskChat: 'Chat',
       taskImage: 'Image Generation',
       taskVideo: 'Video Generation',

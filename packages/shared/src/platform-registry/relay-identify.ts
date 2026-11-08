@@ -11,6 +11,10 @@ const OPENAI_IMAGE_RE =
   /^(dall-e|dalle|gpt[-._]?image)[-._]|^(flux|midjourney|ideogram|recraft|seedream|kolors)[-._]|stable[-._]?diff|[-._]sdxl|sd3[-._]|playground[-._]/
 const TTS_RE = /(^tts[-._]|\btts\b|speech[-._]|tts-1)/
 const ASR_RE = /(whisper|transcri)/
+const ELEVEN_TTS_RE = /^eleven_/
+const ELEVEN_ASR_RE = /^scribe_v/
+const GOOGLE_TTS_RE = /gemini[-._].*tts/
+const GOOGLE_ASR_RE = /gemini[-._].*transcri/
 
 const NEWAPI_STATUS_KEYS = [
   'quota_display_type',
@@ -56,13 +60,17 @@ export function classifyModelById(id: string): Partial<Record<EndpointSlot, Capa
   const byFamily: Partial<Record<EndpointSlot, CapabilityTask[]>> = {}
   if (CLAUDE_RE.test(bare)) addTask(byFamily, 'anthropic', 'chat')
   if (VEO_RE.test(bare)) addTask(byFamily, 'google-video', 'video')
-  if (GOOGLE_IMAGE_RE.test(bare)) addTask(byFamily, 'google', 'image')
+  if (GOOGLE_TTS_RE.test(bare)) addTask(byFamily, 'google', 'tts')
+  else if (GOOGLE_ASR_RE.test(bare)) addTask(byFamily, 'google', 'asr')
+  else if (GOOGLE_IMAGE_RE.test(bare)) addTask(byFamily, 'google', 'image')
   else if (GEMINI_CHAT_RE.test(bare)) addTask(byFamily, 'google', 'chat')
   if (SORA_RE.test(bare)) addTask(byFamily, 'openai-video', 'video')
   if (isNewApiVideoId(bare)) addTask(byFamily, 'newapi-video', 'video')
   if (OPENAI_IMAGE_RE.test(bare) && !byFamily.google) addTask(byFamily, 'openai', 'image')
-  if (TTS_RE.test(bare)) addTask(byFamily, 'openai', 'tts')
-  if (ASR_RE.test(bare)) addTask(byFamily, 'openai', 'asr')
+  if (ELEVEN_TTS_RE.test(bare)) addTask(byFamily, 'elevenlabs', 'tts')
+  else if (TTS_RE.test(bare) && !byFamily.google) addTask(byFamily, 'openai', 'tts')
+  if (ELEVEN_ASR_RE.test(bare)) addTask(byFamily, 'elevenlabs', 'asr')
+  else if (ASR_RE.test(bare) && !byFamily.google?.includes('asr')) addTask(byFamily, 'openai', 'asr')
   return byFamily
 }
 

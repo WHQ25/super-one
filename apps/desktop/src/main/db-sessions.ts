@@ -5,6 +5,7 @@ import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './u
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SettledSessionPage, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
+import log from './logger'
 import { notifySessionList, notifySessionsDeleted } from './session-list-watch'
 import { remoteControllerInfo } from './db-remote-controlled-sessions'
 
@@ -623,11 +624,34 @@ export function hideSession(sessionId: string, hidden: boolean): void {
   notifySessionList(projectPathOfSession(sessionId))
 }
 
-/** Finished sessions leave the active list and the pin strip. The row stays. */
+function messageIdsForSession(sessionId: string): string[] {
+  const rows = getDb().prepare('SELECT id FROM chat_messages WHERE session_id = ?').all(sessionId) as { id: string }[]
+  return rows.map((row) => row.id).filter((id) => id.length > 0)
+}
+
+/**
+ * Finished sessions leave the active list and the pin strip. The row stays.
+ * Settling drops saved read-aloud audio for the session's messages. Unsettle
+ * does not bring that audio back.
+ */
 export function settleSession(sessionId: string, settled: boolean): void {
   const db = getDb()
   db.prepare('UPDATE sessions SET is_settled = ? WHERE id = ?').run(settled ? 1 : 0, sessionId)
   notifySessionList(projectPathOfSession(sessionId))
+  if (!settled) return
+  let messageIds: string[] = []
+  try {
+    messageIds = messageIdsForSession(sessionId)
+  } catch (error) {
+    log.warn(`[speech-cache] failed to list messages for settled session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`)
+    return
+  }
+  if (messageIds.length === 0) return
+  void import('./speech/session-cache')
+    .then((mod) => mod.clearSpeechCache(messageIds))
+    .catch((error: unknown) => {
+      log.warn(`[speech-cache] failed to clear settled session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`)
+    })
 }
 
 /**

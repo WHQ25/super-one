@@ -5,6 +5,7 @@ import { HOST_ACTION_COLLABORATION_DESCRIPTORS } from './host-action-collaborati
 import { HOST_ACTION_SETUP_DESCRIPTORS } from './host-action-setup-descriptors'
 import { HOST_ACTION_ARCHIVE_DESCRIPTORS } from './host-action-archive-descriptors'
 import { HOST_ACTION_MEDIA_DESCRIPTORS } from './host-action-media-descriptors'
+import { HOST_ACTION_SPEECH_DESCRIPTORS } from './host-action-speech-descriptors'
 import { HOST_ACTION_BROWSER_DESCRIPTORS } from './host-action-browser-descriptors'
 import { HOST_ACTION_MINIAPP_DESCRIPTORS } from './host-action-miniapp-descriptors'
 import { HOST_ACTION_COMPUTER_DESCRIPTORS } from './host-action-computer-descriptors'
@@ -30,6 +31,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   ...HOST_ACTION_SETUP_DESCRIPTORS,
   ...HOST_ACTION_ARCHIVE_DESCRIPTORS,
   ...HOST_ACTION_MEDIA_DESCRIPTORS,
+  ...HOST_ACTION_SPEECH_DESCRIPTORS,
   ...HOST_ACTION_BROWSER_DESCRIPTORS,
   ...HOST_ACTION_MINIAPP_DESCRIPTORS,
   ...HOST_ACTION_COMPUTER_DESCRIPTORS,

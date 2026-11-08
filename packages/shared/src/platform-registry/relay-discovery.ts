@@ -241,6 +241,7 @@ const SLOT_PREFERENCE: EndpointSlot[] = [
   'openai',
   'anthropic',
   'google',
+  'elevenlabs',
   'volcengine',
   'newapi',
   'openai-video',

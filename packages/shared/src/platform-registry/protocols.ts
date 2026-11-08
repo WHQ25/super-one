@@ -18,7 +18,8 @@ export type WireProtocol =
   // base URL on this protocol 404s. The relay's channel name is not this protocol.
   | 'ark-video'
   | 'newapi-video' // video (/video/generations submit + poll + /videos/{id}/content — New API's own generic multi-vendor task relay, distinct from the Sora-shaped /videos wire; fans out to Doubao/Kling/etc. by model id)
-  | 'google-generative' // chat, image, tts (generateContent)
+  | 'elevenlabs-audio' // tts, asr (ElevenLabs text-to-speech + speech-to-text; SDK base is /v1)
+  | 'google-generative' // chat, image, tts, asr (generateContent / speech / transcription)
   | 'google-video' // video (Veo via predictLongRunning + operations poll; same key/base as generateContent)
 
 /** Capabilities each protocol can serve. An endpoint may narrow this set, never widen it. */
@@ -32,7 +33,8 @@ export const PROTOCOL_TASKS: Record<WireProtocol, CapabilityTask[]> = {
   'ark-images': ['image'],
   'ark-video': ['video'],
   'newapi-video': ['video'],
-  'google-generative': ['chat', 'image', 'tts'],
+  'elevenlabs-audio': ['tts', 'asr'],
+  'google-generative': ['chat', 'image', 'tts', 'asr'],
   'google-video': ['video'],
 }
 
@@ -49,9 +51,9 @@ export function protocolServes(protocol: WireProtocol, task: CapabilityTask): bo
  * are Volcengine's own shape, so they are a family of their own rather than filed under `openai`
  * because a relay happens to expose them next to OpenAI's. Same for New API's private video wire.
  */
-export type ProtocolFamily = 'anthropic' | 'openai' | 'volcengine' | 'newapi' | 'google'
+export type ProtocolFamily = 'anthropic' | 'openai' | 'volcengine' | 'newapi' | 'google' | 'elevenlabs'
 
-export const PROTOCOL_FAMILIES: ProtocolFamily[] = ['anthropic', 'openai', 'volcengine', 'newapi', 'google']
+export const PROTOCOL_FAMILIES: ProtocolFamily[] = ['anthropic', 'openai', 'volcengine', 'newapi', 'google', 'elevenlabs']
 
 /**
  * Protocols each family offers, in selection priority order.
@@ -65,6 +67,7 @@ export const FAMILY_PROTOCOLS: Record<ProtocolFamily, WireProtocol[]> = {
   volcengine: ['ark-images', 'ark-video'],
   newapi: ['newapi-video'],
   google: ['google-generative', 'google-video'],
+  elevenlabs: ['elevenlabs-audio'],
 }
 
 export const PROTOCOL_FAMILY: Record<WireProtocol, ProtocolFamily> = Object.fromEntries(
@@ -157,6 +160,7 @@ export const FAMILY_PATH: Record<ProtocolFamily, string> = {
   volcengine: '/api/v3',
   newapi: '/v1',
   google: '/v1beta',
+  elevenlabs: '/v1',
 }
 
 /** A root that already carries its version segment (`/v1`, `/api/v3`, `/v1beta`, …). */
@@ -212,6 +216,7 @@ export const PROTOCOL_ROUTE: Record<WireProtocol, string> = {
   'ark-images': '/images/generations',
   'ark-video': '/contents/generations/tasks',
   'newapi-video': '/video/generations',
+  'elevenlabs-audio': '/text-to-speech',
   'google-generative': '/models/{model}:generateContent',
   'google-video': '/models/{model}:predictLongRunning',
 }

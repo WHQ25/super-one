@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ModSite, spinnerProps, stringProp, type SpinnerMode } from '@superone/chat-view/mod-ui'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowDown, ArrowUp, Check, Clock, Copy, Loader2 } from 'lucide-react'
+import { SpeakReplyButton } from './SpeakReplyButton'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 import { toast } from 'sonner'
@@ -218,6 +219,7 @@ export function DurationFooter({
             }
           </button>
         )}
+        {showCopy && copyText && <SpeakReplyButton messageId={message.id} text={copyText} />}
         {(showActivity || showDuration || apiRetry) && (showActivity ? (
           <ModSpinner message={message}>
             {(label) => (

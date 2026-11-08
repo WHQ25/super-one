@@ -15,6 +15,7 @@ const DEFAULT_BASE_URL: Record<ProtocolFamily, string> = {
   volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
   newapi: '',
   google: 'https://generativelanguage.googleapis.com',
+  elevenlabs: 'https://api.elevenlabs.io/v1',
 }
 
 const TEST_TIMEOUT_MS = 10000
@@ -60,6 +61,7 @@ export function messagesUrl(baseUrl: string): string {
 export function authHeaders(family: ProtocolFamily, apiKey: string): Record<string, string> {
   if (family === 'anthropic') return { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
   if (family === 'google') return { 'x-goog-api-key': apiKey }
+  if (family === 'elevenlabs') return { 'xi-api-key': apiKey }
   return { Authorization: `Bearer ${apiKey}` }
 }
 

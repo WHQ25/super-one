@@ -36,6 +36,7 @@ const BRAND_POPULARITY = [
   'anthropic',
   'openai',
   'gemini',
+  'elevenlabs',
   'deepseek',
   'zhipu',
   'zai',

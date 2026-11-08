@@ -105,6 +105,7 @@ describe('app-settings-service', () => {
     browserBookmarks: [],
     browserBookmarkGroups: [],
     defaultClonePaths: {},
+    speechVoices: {},
     harnessOrder: [],
     suggestionHarness: null,
     secondaryHarness: null,
@@ -260,6 +261,7 @@ describe('app-settings-service', () => {
         browserBookmarks: [],
         browserBookmarkGroups: [],
         defaultClonePaths: {},
+        speechVoices: {},
         harnessOrder: [],
         suggestionHarness: null,
         secondaryHarness: null,
@@ -428,6 +430,7 @@ describe('app-settings-service', () => {
         browserBookmarks: [],
         browserBookmarkGroups: [],
         defaultClonePaths: {},
+        speechVoices: {},
         harnessOrder: [],
         suggestionHarness: null,
         secondaryHarness: null,
@@ -803,6 +806,14 @@ describe('app-settings-service', () => {
       )
       const result = saveAppSettings({ defaultClonePaths: { local: '~/Github/', remote1: '' } })
       expect(result.defaultClonePaths).toEqual({ local: '~/Github/' })
+    })
+
+    it('merges speechVoices per credential and clears with empty string', () => {
+      mocks.readFileSync.mockReturnValue(
+        JSON.stringify({ speechVoices: { 'cred-a': 'alloy', 'cred-b': 'Kore' } }),
+      )
+      const result = saveAppSettings({ speechVoices: { 'cred-a': 'marin', 'cred-b': '' } })
+      expect(result.speechVoices).toEqual({ 'cred-a': 'marin' })
     })
 
     it('merges miniAppOrder per project bucket, leaving other projects intact', () => {

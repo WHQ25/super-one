@@ -22,6 +22,7 @@ const FAMILY_LABEL: Record<ProtocolFamily, string> = {
   volcengine: 'Volcengine',
   newapi: 'New API',
   google: 'Google',
+  elevenlabs: 'ElevenLabs',
 }
 
 function asMap(value: unknown): Record<string, unknown> {

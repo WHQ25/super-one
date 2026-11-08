@@ -8,9 +8,11 @@ import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import type { NodeViewProps } from '@tiptap/react'
 import { useAppStore } from '@/stores/app'
-import { openFileTab } from '@/components/activity/activity-panel-api'
+import { openFileTab, openNewFileTab } from '@/components/activity/activity-panel-api'
 vi.mock('@/components/activity/activity-panel-api', async (original) => ({
-  ...(await original<Record<string, unknown>>()), openFileTab: vi.fn(),
+  ...(await original<Record<string, unknown>>()),
+  openFileTab: vi.fn(),
+  openNewFileTab: vi.fn(),
 }))
 for (const kind of ['file chip', 'composer mention', 'sent mention'] as const) {
   describe(`${kind} image preview`, () => {
@@ -28,8 +30,10 @@ for (const kind of ['file chip', 'composer mention', 'sent mention'] as const) {
       expect(thumbnail).toHaveAttribute('draggable', 'false')
       expect(thumbnail.closest('[draggable="true"]')).not.toBeNull()
       fireEvent.click(screen.getByRole('button'))
-      expect(openFileTab).toHaveBeenCalledWith('photo.png')
+      if (kind === 'file chip') expect(openFileTab).toHaveBeenCalledWith('photo.png')
+      else expect(openNewFileTab).toHaveBeenCalledWith('/project/photo.png', { fileRoot: '/project' })
       vi.mocked(openFileTab).mockClear()
+      vi.mocked(openNewFileTab).mockClear()
       fireEvent.pointerEnter(thumbnail.parentElement!, { pointerType: 'mouse' })
       await waitFor(() => expect(screen.getByAltText('photo.png')).toBeInTheDocument())
       fireEvent.mouseDown(thumbnail)
@@ -48,8 +52,10 @@ for (const kind of ['file chip', 'composer mention', 'sent mention'] as const) {
       fireEvent.click(preview)
       expect(await screen.findByRole('dialog')).toBeInTheDocument()
       expect(openFileTab).not.toHaveBeenCalled()
+      expect(openNewFileTab).not.toHaveBeenCalled()
       fireEvent.click(screen.getByRole('button', { name: 'Close' }))
       expect(openFileTab).not.toHaveBeenCalled()
+      expect(openNewFileTab).not.toHaveBeenCalled()
     })
   })
 }

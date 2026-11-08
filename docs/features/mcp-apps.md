@@ -8,7 +8,7 @@ the phone and for sessions running on a remote node.
 
 We implement the [stable spec 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
 with `@modelcontextprotocol/ext-apps` **1.7.5** and `@modelcontextprotocol/sdk`
-**1.30.0** (the last SDK-1.x-compatible release). Where spec prose and the
+**1.32.2** on the SDK 1.x line. Where spec prose and the
 pinned SDK schema disagree, the schema wins (`ui/message.content` is an array).
 Draft features (sampling, app-provided tools) are not advertised, except
 `ui/download-file` (below). The deprecated flat `_meta["ui/resourceUri"]` is read as a

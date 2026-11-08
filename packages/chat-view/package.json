@@ -155,7 +155,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@shikijs/core": "^4.4.3",
     "@shikijs/engine-javascript": "^4.4.3",
     "@shikijs/langs": "^4.4.3",
@@ -171,7 +171,7 @@
     "@xterm/xterm": "^5.5.0",
     "diff": "^8.0.3",
     "i18next": "^26.0.6",
-    "katex": "^0.16.38",
+    "katex": "^0.18.5",
     "lucide-react": "^1.41.0",
     "mermaid": "^11.12.3",
     "motion": "^13.1.1",

@@ -88,6 +88,9 @@ describe('getReadableAssetRoots', () => {
       '/Users/alice/.cache/codex-runtimes',
       '/Users/alice/.grok/sessions',
       '/Users/alice/.claude/projects',
+      '/Users/alice/.gemini/antigravity-cli/brain',
+      '/Users/alice/.gemini/antigravity/brain',
+      '/Users/alice/.superone/antigravity/profile/antigravity-acp/brain',
     ])
   })
 
@@ -101,6 +104,9 @@ describe('getReadableAssetRoots', () => {
       '/Users/alice/.cache/codex-runtimes',
       '/Users/alice/.grok/sessions',
       '/Users/alice/.claude/projects',
+      '/Users/alice/.gemini/antigravity-cli/brain',
+      '/Users/alice/.gemini/antigravity/brain',
+      '/Users/alice/.superone/antigravity/profile/antigravity-acp/brain',
     ])
   })
 

@@ -256,6 +256,8 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
+    const offline = await screen.findByRole('button', { name: /Offline/ })
+    if (offline.getAttribute('aria-expanded') !== 'true') fireEvent.click(offline)
     expect(await screen.findByText('remote lab')).toBeInTheDocument()
     expect(screen.queryByText('Host offline')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument()

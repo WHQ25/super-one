@@ -27,7 +27,7 @@ import { DEFAULT_SESSION_CONTINUATION_HINT, readSessionContinuationHint } from '
 import { readHarnessBrandPreference } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { explicitClaudeModelId } from '@superone/claude'
-import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { ANTIGRAVITY_PERMISSION_MODES, HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 
 export type { AppSettings, AppSettingsPatch }
 
@@ -186,7 +186,12 @@ const defaults: AppSettings = {
       darkBrandHue: null,
       tokenOverrides: {}, darkTokenOverrides: {},
       selectedAgentId: null,
+      defaultModel: '',
+      defaultEffort: '',
       defaultPermissionMode: '',
+      antigravityDefaultModel: '',
+      antigravityDefaultEffort: '',
+      antigravityDefaultPermissionMode: '',
     },
     cursor: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '', defaultSandboxMode: '' },
     dsh: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' },
@@ -582,7 +587,24 @@ function readAcpPreference(data: Record<string, unknown>): AcpPref {
     selectedAgentId: typeof acpPreference?.selectedAgentId === 'string'
       ? acpPreference.selectedAgentId
       : defaults.agentPreference.acp.selectedAgentId,
+    defaultModel: typeof acpPreference?.defaultModel === 'string'
+      ? acpPreference.defaultModel
+      : defaults.agentPreference.acp.defaultModel,
+    defaultEffort: typeof acpPreference?.defaultEffort === 'string'
+      ? acpPreference.defaultEffort
+      : defaults.agentPreference.acp.defaultEffort,
     defaultPermissionMode: readHarnessPermissionMode(acpPreference, 'acp'),
+    antigravityDefaultModel: typeof acpPreference?.antigravityDefaultModel === 'string'
+      ? acpPreference.antigravityDefaultModel
+      : defaults.agentPreference.acp.antigravityDefaultModel,
+    antigravityDefaultEffort: typeof acpPreference?.antigravityDefaultEffort === 'string'
+      ? acpPreference.antigravityDefaultEffort
+      : defaults.agentPreference.acp.antigravityDefaultEffort,
+    antigravityDefaultPermissionMode:
+      typeof acpPreference?.antigravityDefaultPermissionMode === 'string'
+      && (ANTIGRAVITY_PERMISSION_MODES as readonly string[]).includes(acpPreference.antigravityDefaultPermissionMode)
+        ? acpPreference.antigravityDefaultPermissionMode as PermissionMode
+        : '',
   }
 }
 

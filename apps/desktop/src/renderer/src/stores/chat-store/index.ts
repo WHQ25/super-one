@@ -110,9 +110,11 @@ export { markMessageEventApplied, persistStreamingToolInput } from './event-redu
 // createSessionId / createDefaultPerSessionState / getDefaultEffortForModel moved to ./defaults
 
 export {
+  _computeAcpDefaultPatch,
   _computeClaudeDefaultPatch,
   _computeCodexDefaultPatch,
   _reapplyAgentDefaultsToSessions,
+  _reapplyPermissionDefaultsToUnsentSessions,
   applyDefaultModel,
   applySessionAgentDefaults,
   resolveDefaultClaudeEffort,
@@ -121,6 +123,7 @@ export {
 
 import {
   _reapplyAgentDefaultsToSessions,
+  _reapplyPermissionDefaultsToUnsentSessions,
   applyDefaultModel,
   applySessionAgentDefaults,
 } from './helpers/agent-defaults'
@@ -233,7 +236,7 @@ import {
 
 export function invalidateDefaultPermissionModeCache(): Promise<void> {
   _clearDefaultPrefsCache()
-  return _loadDefaultSessionPrefs()
+  return _loadDefaultSessionPrefs().then(() => _reapplyPermissionDefaultsToUnsentSessions())
 }
 
 export function invalidateDefaultClaudePreferencesCache(): Promise<void> {
@@ -244,6 +247,11 @@ export function invalidateDefaultClaudePreferencesCache(): Promise<void> {
 export function invalidateDefaultCodexPreferencesCache(): Promise<void> {
   _clearDefaultPrefsCache()
   return _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('codex'))
+}
+
+export function invalidateDefaultAcpPreferencesCache(): Promise<void> {
+  _clearDefaultPrefsCache()
+  return _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('acp'))
 }
 
 export {

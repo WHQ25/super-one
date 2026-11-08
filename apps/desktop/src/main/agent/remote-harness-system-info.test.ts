@@ -148,15 +148,16 @@ describe('remote harness system info', () => {
           },
         },
       },
-    }, { acp: 'bypassPermissions' })
+    }, { acp: 'plan' })
     deps.acpAgentId = 'antigravity'
+    deps.settings.agentPreference.acp.antigravityDefaultPermissionMode = 'auto'
 
     const info = await buildRemoteHarnessSystemInfo('/project', 'acp', deps)
 
     expect(info.acpAgentId).toBe('antigravity')
     expect(info.models?.map((entry) => entry.id)).toEqual(['gemini-3.1-pro-high'])
-    expect(info.permissionModes).toEqual(['default', 'plan', 'acceptEdits', 'auto'])
-    expect(info.defaults).toMatchObject({ model: 'gemini-3.1-pro-high', permissionMode: 'default' })
+    expect(info.permissionModes).toEqual(['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'])
+    expect(info.defaults).toMatchObject({ model: 'gemini-3.1-pro-high', permissionMode: 'auto' })
     expect(info.modes).toBeUndefined()
     expect(info.slashCommands?.map((entry) => entry.name)).toEqual(['automation'])
   })

@@ -59,7 +59,12 @@ describe('app-settings-service', () => {
     darkBrandHue: null,
     tokenOverrides: {}, darkTokenOverrides: {},
     selectedAgentId: null,
+    defaultModel: '',
+    defaultEffort: '',
     defaultPermissionMode: '',
+    antigravityDefaultModel: '',
+    antigravityDefaultEffort: '',
+    antigravityDefaultPermissionMode: '',
   }
   /** Harnesses whose only preferences are brand theming and session defaults. */
   const defaultBrandOnly = { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' }

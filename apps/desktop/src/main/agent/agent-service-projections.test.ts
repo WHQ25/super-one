@@ -760,7 +760,7 @@ describe('AgentService phone projections', () => {
     expect(respond).toHaveBeenCalledWith('sys-acp', expect.objectContaining({
       acpAgentId: 'antigravity',
       models: [expect.objectContaining({ id: 'gemini-3.1-pro-high' })],
-      permissionModes: ['default', 'plan', 'acceptEdits', 'auto'],
+      permissionModes: ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'],
     }))
   })
 })

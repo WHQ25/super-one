@@ -2,8 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type { HarnessId, PermissionMode, SandboxMode } from '@superone/shared/agent-types'
-import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { acpAgentDefaultsFor, acpAgentPreferencePatch } from '@superone/shared/harness/session-defaults'
+import { acpPermissionModesForAgent, HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppStore } from '@/stores/app'
@@ -35,13 +37,9 @@ import { settingsSelectTriggerClassName } from '@/components/settings/select-tri
  * data (`HARNESS_LAUNCH_OPTIONS`), not markup. Codex is the one harness that
  * does not use this — it stores a preset, which its own page renders.
  */
-export function SessionDefaultsSection({ harnessId, autoEligibility }: {
+export function SessionDefaultsSection({ harnessId, acpAgentId, autoEligibility }: {
   harnessId: HarnessId
-  /**
-   * Claude gates `auto` on the account's plan. Passed in rather than resolved
-   * here: it is one harness's knowledge, and a generic section that reached for
-   * a Claude account would be the same leak this refactor removed.
-   */
+  acpAgentId?: string | null
   autoEligibility?: Parameters<typeof PermissionModeList>[0]['autoEligibility']
 }) {
   const { t } = useTranslation()
@@ -56,7 +54,10 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
   const [permOpen, setPermOpen] = useState(false)
   const [sandboxOpen, setSandboxOpen] = useState(false)
 
-  const offeredModes = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  const isAcp = harnessId === 'acp'
+  const offeredModes = isAcp
+    ? [...acpPermissionModesForAgent(acpAgentId)]
+    : HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
   const offeredSandboxModes = HARNESS_LAUNCH_OPTIONS[harnessId].sandboxModes
 
   useEffect(() => {
@@ -64,6 +65,12 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
     setLoading(true)
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
+      if (isAcp) {
+        const acpDefaults = acpAgentDefaultsFor(settings.agentPreference.acp, acpAgentId)
+        setPermissionMode(acpDefaults.defaultPermissionMode)
+        setSandboxMode('')
+        return
+      }
       const preference = settings.agentPreference[harnessId] as {
         defaultPermissionMode?: PermissionMode | ''
         defaultSandboxMode?: SandboxMode | ''
@@ -72,7 +79,7 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
       setSandboxMode(preference?.defaultSandboxMode ?? '')
     }).finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
-  }, [harnessId])
+  }, [harnessId, isAcp, acpAgentId])
 
   async function save(
     patch: { defaultPermissionMode?: PermissionMode | ''; defaultSandboxMode?: SandboxMode | '' },
@@ -81,10 +88,12 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
     if (saving) return
     setSaving(true)
     try {
-      await window.app.saveAppSettings({ agentPreference: { [harnessId]: patch } })
+      const preferencePatch = isAcp
+        ? acpAgentPreferencePatch(acpAgentId, { defaultPermissionMode: patch.defaultPermissionMode })
+        : patch
+      await window.app.saveAppSettings({ agentPreference: { [harnessId]: preferencePatch } })
       if (patch.defaultPermissionMode !== undefined) setPermissionMode(patch.defaultPermissionMode)
       if (patch.defaultSandboxMode !== undefined) setSandboxMode(patch.defaultSandboxMode)
-      // Every harness reads its mode through the same renderer cache.
       invalidateDefaultPermissionModeCache()
       toast.success(successMessage)
     } finally {
@@ -95,20 +104,12 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
   const disabled = loading || saving
   const sandboxSupportLevel = sandboxCapability?.supportLevel ?? 'always'
   const fallbackSandboxMode: SandboxMode = sandboxCapability?.defaultMode ?? 'on'
-  // An unset preference shows what the harness would actually start in, so the
-  // row never claims a mode the session would not use.
   const activePermMode = permissionMode || HARNESS_LAUNCH_OPTIONS[harnessId].defaultPermissionMode
   const activeSandboxMode = sandboxMode || fallbackSandboxMode
-  /**
-   * Cursor's ladder is a different vocabulary, not a subset of the shared one:
-   * `agent` has no entry in the shared descriptor table and its labels live in
-   * their own i18n namespace. So this row dispatches on it exactly the way the
-   * chat status bar does, rather than rendering a mode it cannot name.
-   */
   const cursorOption = harnessId === 'cursor'
     ? cursorPermissionModeOption(resolveCursorPermissionMode(activePermMode))
     : null
-  const acpOption = harnessId === 'acp' ? acpPermissionModeOption(activePermMode) : null
+  const acpOption = isAcp ? acpPermissionModeOption(activePermMode, acpAgentId) : null
   const currentPerm = acpOption
     ?? cursorOption
     ?? permissionModes.find((m) => m.id === activePermMode)
@@ -145,9 +146,10 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
             {acpOption ? (
               <AcpPermissionModeList
                 activeMode={acpOption.id}
+                agentId={acpAgentId}
                 onSelect={(mode) => {
                   setPermOpen(false)
-                  if (mode === 'auto') {
+                  if (mode === 'auto' && !isAntigravityAcpAgent(acpAgentId)) {
                     noteAcpAutoFailClosed(toast.info, t('chat.acpPermissionModes.autoFailClosedToast'))
                   }
                   void save({ defaultPermissionMode: mode }, t('settings.preferences.permissionMode.updated'))
@@ -249,15 +251,15 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
  * Claude and Codex have richer pages of their own and compose the section above
  * directly instead.
  */
-export function HarnessPreferencesPage({ harnessId, children }: {
+export function HarnessPreferencesPage({ harnessId, acpAgentId, children }: {
   harnessId: HarnessId
-  /** Harness-specific rows, below the session defaults on the same card. */
+  acpAgentId?: string | null
   children?: ReactNode
 }) {
   const { t } = useTranslation()
   return (
     <SettingsSection title={t('settings.preferences.sections.user')}>
-      <SessionDefaultsSection harnessId={harnessId} />
+      <SessionDefaultsSection harnessId={harnessId} acpAgentId={acpAgentId} />
       {children}
     </SettingsSection>
   )

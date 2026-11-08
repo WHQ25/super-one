@@ -5905,6 +5905,11 @@ export interface AppSettings {
     acp: BrandOnlyAgentPreference & {
       enabled: boolean
       selectedAgentId: string | null
+      defaultModel: string
+      defaultEffort: string
+      antigravityDefaultModel: string
+      antigravityDefaultEffort: string
+      antigravityDefaultPermissionMode: PermissionMode | ''
     }
     /** Cursor owns a real sandbox toggle, so it stores one of its own. */
     cursor: BrandOnlyAgentPreference & { defaultSandboxMode: SandboxMode | '' }

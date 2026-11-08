@@ -69,7 +69,10 @@ export function setPreferredProviderImpl(
   const draftSid = getProject(get(), activeProject)._activeSessionId
   clearContextUsageHold(draftSid)
 
-  const switchedPermissionMode = sessionDefaultsFor(provider).permissionMode
+  const switchedPermissionMode = sessionDefaultsFor(
+    provider,
+    session.acpAgentId ?? get().harnessResources.acp?.selectedAgentId,
+  ).permissionMode
   set((s) => updateActivePerSession(s, () => ({
     ...modelReset,
     ...emptyDraftHarnessReset,
@@ -157,6 +160,8 @@ export function hydrateAcpCatalogForSession(
     set((s) => updatePerSession(s, projectPath, sessionId, () =>
       sessionPatchFromAcpCatalog(catalog, {
         preferSelected: current.selectedModel || preferSelected,
+        preferModeId: current.selectedAcpModeId || null,
+        agentId,
       }),
     ))
   }
@@ -202,6 +207,9 @@ export function setAcpAgentIdImpl(
   const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
   const draftSid = activeProject ? getProject(get(), activeProject)._activeSessionId : null
   if (switchingEmptyAcpAgent && draftSid && agentId) holdContextUsageUntilAgent(draftSid, agentId)
+  const switchedPermissionMode = session.messages.length === 0
+    ? sessionDefaultsFor('acp', agentId).permissionMode
+    : null
   set((s) => updateActivePerSession(s, () => ({
     acpAgentId: agentId,
     acpModes: [],
@@ -211,8 +219,9 @@ export function setAcpAgentIdImpl(
     acpSlashCommands: [],
     acpSlashCommandsStatus: 'idle' as const,
     sessionGoal: null,
+    ...(switchedPermissionMode ? { permissionMode: switchedPermissionMode } : {}),
     ...(catalog
-      ? sessionPatchFromAcpCatalog(catalog)
+      ? sessionPatchFromAcpCatalog(catalog, { agentId })
       : {
           acpModels: [],
           acpModelConfigId: null,
@@ -253,7 +262,7 @@ export function setAcpAgentIdImpl(
           get().setHarnessResources('acp', fresh)
           const nextCatalog = getCachedAcpCatalog(fresh, agentId)
           if (nextCatalog) {
-            set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(nextCatalog)))
+            set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(nextCatalog, { agentId })))
           }
         }
       } catch (err) {

@@ -61,10 +61,14 @@ function sample(path: string, initial: unknown): unknown {
     const [, harness, key] = path.split('.')
     if (key === 'brandHue' || key === 'darkBrandHue') return 130
     if (key === 'tokenOverrides' || key === 'darkTokenOverrides') return { '--primary': { l: 0.55, c: 0.12, h: 130 } }
-    if (key === 'defaultModel') return harness === 'claude' ? 'claude-sonnet-4-6' : 'gpt-6.1-sol'
-    if (key === 'defaultEffort' || key === 'defaultReasoningEffort') return 'high'
+    if (key === 'defaultModel' || key === 'antigravityDefaultModel') {
+      return harness === 'claude' ? 'claude-sonnet-4-6' : 'gpt-6.1-sol'
+    }
+    if (key === 'defaultEffort' || key === 'defaultReasoningEffort' || key === 'antigravityDefaultEffort') return 'high'
     if (key === 'defaultPermissionPreset') return 'full-access'
-    if (key === 'defaultPermissionMode') return HARNESS_LAUNCH_OPTIONS[harness as keyof typeof HARNESS_LAUNCH_OPTIONS].permissionModes.at(-1) ?? ''
+    if (key === 'defaultPermissionMode' || key === 'antigravityDefaultPermissionMode') {
+      return HARNESS_LAUNCH_OPTIONS[harness as keyof typeof HARNESS_LAUNCH_OPTIONS].permissionModes.at(-1) ?? ''
+    }
     if (key === 'defaultSandboxMode') return 'off'
     if (key === 'selectedAgentId') return 'contract-agent'
     if (key === 'disabledSkills') return ['contract-skill']

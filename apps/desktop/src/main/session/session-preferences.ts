@@ -4,7 +4,10 @@ import { readAppSettings } from '../app-settings-service'
 import { coerceSandboxModeForCapability } from '../sandbox-platform'
 
 /** Defaults for a newly created runtime, including this machine's sandbox support. */
-export function readDefaultSessionPrefs(harnessId: HarnessId = 'claude'): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
-  const defaults = sessionDefaultsForHarness(readAppSettings().agentPreference, harnessId)
+export function readDefaultSessionPrefs(
+  harnessId: HarnessId = 'claude',
+  acpAgentId?: string | null,
+): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
+  const defaults = sessionDefaultsForHarness(readAppSettings().agentPreference, harnessId, acpAgentId)
   return { permissionMode: defaults.permissionMode, sandboxMode: coerceSandboxModeForCapability(defaults.sandboxMode ?? undefined) }
 }

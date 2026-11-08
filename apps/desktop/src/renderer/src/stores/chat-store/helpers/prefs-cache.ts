@@ -39,13 +39,16 @@ export const defaultPrefsCache: DefaultPrefsCache = {
  * platform can provide. `null` fields mean the cache has not loaded yet — the
  * callers leave the session on its own default rather than guessing.
  */
-export function sessionDefaultsFor(harnessId: HarnessId): {
+export function sessionDefaultsFor(
+  harnessId: HarnessId,
+  acpAgentId?: string | null,
+): {
   permissionMode: PermissionMode | null
   sandboxMode: SandboxMode | null
 } {
   const preferences = defaultPrefsCache.agentPreference
   if (!preferences) return { permissionMode: null, sandboxMode: null }
-  const defaults = sessionDefaultsForHarness(preferences, harnessId)
+  const defaults = sessionDefaultsForHarness(preferences, harnessId, acpAgentId)
   return {
     permissionMode: defaults.permissionMode,
     sandboxMode: resolveDefaultSandboxMode(defaults.sandboxMode),
@@ -149,9 +152,12 @@ export function applyCachedCodexPermissionPreset(session: PerSessionState): PerS
   return session
 }
 
-export async function _getDefaultPermissionMode(harnessId: HarnessId = 'claude'): Promise<PermissionMode> {
+export async function _getDefaultPermissionMode(
+  harnessId: HarnessId = 'claude',
+  acpAgentId?: string | null,
+): Promise<PermissionMode> {
   if (defaultPrefsCache.agentPreference === null) await _loadDefaultSessionPrefs()
-  return sessionDefaultsFor(harnessId).permissionMode ?? 'default'
+  return sessionDefaultsFor(harnessId, acpAgentId).permissionMode ?? 'default'
 }
 
 export function sandboxModeToInfo(mode: SandboxMode): SandboxInfo {

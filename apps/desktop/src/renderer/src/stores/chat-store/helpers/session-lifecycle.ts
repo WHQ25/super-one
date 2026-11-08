@@ -554,7 +554,7 @@ export function resetSessionForWorktreeSwitchImpl(
     })
     // Every harness resolves its own mode now, Cursor's `agent` ladder included
     // — the carve-out this line used to need is gone.
-    const switchedDefaults = sessionDefaultsFor(nextProvider)
+    const switchedDefaults = sessionDefaultsFor(nextProvider, newSession.acpAgentId)
     if (switchedDefaults.permissionMode) newSession.permissionMode = switchedDefaults.permissionMode
     return {
       projectSessions: {
@@ -683,7 +683,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     seedNewSession(newSession, nextProvider, {
       state: s, project: proj, claudeModels: projectClaudeModels(s, activeProject), previousSession: activeSession,
     })
-    const harnessDefaults = sessionDefaultsFor(nextProvider)
+    const harnessDefaults = sessionDefaultsFor(nextProvider, newSession.acpAgentId)
     if (harnessDefaults.permissionMode) newSession.permissionMode = harnessDefaults.permissionMode
     return {
       projectSessions: {

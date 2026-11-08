@@ -331,8 +331,12 @@ function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): ApiProviderR
  * out: the user's model, effort, permission and sandbox defaults, and the
  * provider or account their chats are bound to.
  */
-function launchDefaultConfig(harnessId: HarnessId, resources: SessionAgentLaunchConfig): SessionAgentLaunchConfig {
-  const { permissionMode, sandboxMode } = readDefaultSessionPrefs(harnessId)
+function launchDefaultConfig(
+  harnessId: HarnessId,
+  resources: SessionAgentLaunchConfig,
+  acpAgentId?: string | null,
+): SessionAgentLaunchConfig {
+  const { permissionMode, sandboxMode } = readDefaultSessionPrefs(harnessId, acpAgentId)
   const apiProviderId = harnessId === 'claude' || harnessId === 'codex'
     ? defaultChatProviderId(harnessId, { experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled })
     : null
@@ -350,9 +354,10 @@ function launchDefaultConfig(harnessId: HarnessId, resources: SessionAgentLaunch
 
 /** Virtual proposals and stored Profiles use the same default resolution. */
 export function agentProfileLaunchConfig(provider: ReturnType<typeof listSessionProviders>[number]): SessionAgentLaunchConfig {
+  const acpAgentId = provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null
   return launchDefaultConfig(provider.harnessId, profileResources(provider, {
-    acpAgentId: provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null,
-  }).defaultConfig)
+    acpAgentId,
+  }).defaultConfig, acpAgentId)
 }
 
 /**
@@ -403,7 +408,7 @@ export function sessionAgentLaunchDefaults(
     const harness = { id: provider.harnessId, name: HARNESS_CAPABILITIES[provider.harnessId]?.displayName ?? provider.harnessId }
     const errors = agentLaunchErrors(harness, resources.catalog, resources.defaultConfig.model, explicit)
     if (errors.length) throw new Error(errors.join(' '))
-    config = launchDefaultConfig(provider.harnessId, resources.defaultConfig)
+    config = launchDefaultConfig(provider.harnessId, resources.defaultConfig, profile.acpAgentId ?? null)
   }
   if (launch?.permissionMode !== undefined) {
     return profile.harnessId === 'codex' ? { ...config, codexPermissionPreset: codexPresetForPermissionMode(launch.permissionMode) } : config
@@ -452,7 +457,7 @@ export function sessionAgentProfile(
       ?? (provider.harnessId === 'acp'
         ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
         : `${provider.harnessId} harness with the built-in configuration`),
-    defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig),
+    defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig, acpAgentId),
     models,
     efforts: resources.efforts,
     apiProviders: provider.harnessId === 'claude' || provider.harnessId === 'codex'

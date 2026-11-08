@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { DefaultProviderRow, ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
 import { CodexPreferencesPage } from '@/components/CodexPreferencesPage'
+import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 import { useAppStore } from '@/stores/app'
 import {
   ResourceScopeToolbar,
@@ -372,7 +373,13 @@ function OpenCodeNativePermissionsNote() {
   return <p className="text-sm text-muted-foreground">{t('chat.opencode.nativePermissions')}</p>
 }
 
-export function PreferencesPage({ provider }: { provider?: SettingsProvider } = {}) {
+export function PreferencesPage({
+  provider,
+  acpAgentId,
+}: {
+  provider?: SettingsProvider
+  acpAgentId?: string | null
+} = {}) {
   const storeProvider = useAppStore((s) => s.settingsProvider)
   const settingsProvider = provider ?? storeProvider
 
@@ -392,7 +399,10 @@ export function PreferencesPage({ provider }: { provider?: SettingsProvider } = 
       </HarnessPreferencesPage>
     )
   }
-  // Everything else has exactly one app-level setting group — its session
-  // defaults — so it renders the shared page rather than a bespoke one.
-  return <HarnessPreferencesPage harnessId={settingsProvider} />
+  const Extra = HARNESS_CONTROLS[settingsProvider].PreferencesExtra
+  return (
+    <HarnessPreferencesPage harnessId={settingsProvider} acpAgentId={acpAgentId}>
+      {Extra ? <Extra acpAgentId={acpAgentId} /> : null}
+    </HarnessPreferencesPage>
+  )
 }

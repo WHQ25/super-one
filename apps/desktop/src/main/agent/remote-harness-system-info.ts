@@ -71,7 +71,7 @@ export interface RemoteHarnessSystemInfoDependencies {
 }
 
 const CODEX_PERMISSION_PRESETS = ['read-only', 'default', 'auto-review', 'full-access'] as const
-const ANTIGRAVITY_PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto'] as const
+const ANTIGRAVITY_PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'] as const
 
 function present(value: string | null | undefined): string | null {
   return value?.trim() || null
@@ -233,7 +233,7 @@ async function harnessSystemInfo(
       const permissionModes = isAntigravity
         ? [...ANTIGRAVITY_PERMISSION_MODES]
         : [...HARNESS_LAUNCH_OPTIONS.acp.permissionModes]
-      const configuredPermissionMode = sessionDefaultsForHarness(preferences, 'acp').permissionMode
+      const configuredPermissionMode = sessionDefaultsForHarness(preferences, 'acp', acpAgentId).permissionMode
       const defaultPermissionMode = permissionModes.includes(configuredPermissionMode)
         ? configuredPermissionMode
         : permissionModes[0] ?? 'default'

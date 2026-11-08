@@ -5,52 +5,31 @@ import { CONFIG_TAB_META, configTabsFor } from './harness-config-tabs'
  * the existing settings page components under the active tab.
  */
 
-import { formatBytes } from '@superone/shared/format-bytes'
 import {
   useCallback,
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { GripVertical, Loader2, RefreshCw } from 'lucide-react'
 import { Antigravity, Codex, Cursor, DeepSeek, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import {
-  DndContext,
   PointerSensor,
-  closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { Button } from '@superone/ui/components/ui/button'
-import { Badge } from '@superone/ui/components/ui/badge'
-import { Switch } from '@superone/ui/components/ui/switch'
+import { arrayMove } from '@dnd-kit/sortable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { cn } from '@superone/ui/lib/utils'
-import { acpAgentDisplayName, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
-import {
-  NODE_HARNESS_IDS,
-  type NodeHarnessId,
-} from '@superone/shared/environment/harness-installation'
-import type { HarnessId } from '@superone/shared/session-types'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { refreshAcpResourcesAfterToggle } from '@/harness-ui/acp/refresh-after-toggle'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type HarnessConfigSection } from '@/stores/app'
 import { ClaudeCodeTextInline } from '@/components/harness/ClaudeCodeTextInline'
-import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { AgentsPage } from './AgentsPage'
 import { SkillsPage } from './SkillsPage'
 import { McpPage } from './McpPage'
@@ -62,116 +41,17 @@ import { AntigravityAuthSettings } from './AntigravityAuthSettings'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 import { GrokAuthSettings } from './GrokAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
-import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
-import { SettingsCard, SettingsRow, settingsRowClassName } from './settings/SettingsSection'
-
-interface CatalogRow {
-  id: string
-  enabled: boolean
-  state: string
-  runtimeSource: string
-  requiresAuth: boolean
-  runtimeVersion?: string
-  command?: string
-  diagnostic?: { code: string; message: string }
-}
-
-type ListItem =
-  | {
-      key: string
-      kind: 'catalog'
-      catalogId: NodeHarnessId
-      label: string
-      provider: HarnessId
-      acpAgentId: string | null
-      experimental: boolean
-      description: string
-      /** Opens nested harness settings when set. */
-      configProvider?: SettingsProvider
-    }
-  | {
-      key: string
-      kind: 'experimental-acp'
-      acpAgentId: string
-      label: string
-      provider: 'acp'
-      experimental: true
-      description: string
-      configProvider?: undefined
-    }
-
-interface ProgressState {
-  received: number
-  total: number
-  phase: 'download' | 'done' | 'error'
-  message?: string
-}
+import {
+  buildHarnessListItems,
+  catalogIsOn,
+  HarnessDetailHeaderAndStatus,
+  HarnessesSidebar,
+  type CatalogRow,
+  type ListItem,
+  type ProgressState,
+} from './harnesses-settings/HarnessesSettingsParts'
 
 const EMPTY_ACP: AcpAgentDescriptor[] = []
-
-interface CatalogHarnessMeta {
-  provider: HarnessId
-  labelKey: string
-  descriptionKey: string
-  experimental: boolean
-  configProvider?: SettingsProvider
-}
-
-/**
- * UI metadata for every first-party catalog harness. The exhaustive Record is
- * intentional: adding a NodeHarnessId must also add its settings entry.
- */
-const CATALOG_HARNESS_META = {
-  claude: {
-    provider: 'claude',
-    labelKey: 'settings.harnesses.ids.claude',
-    descriptionKey: 'settings.harnesses.desc.claude',
-    experimental: false,
-    configProvider: 'claude',
-  },
-  codex: {
-    provider: 'codex',
-    labelKey: 'settings.harnesses.ids.codex',
-    descriptionKey: 'settings.harnesses.desc.codex',
-    experimental: false,
-    configProvider: 'codex',
-  },
-  opencode: {
-    provider: 'opencode',
-    labelKey: 'settings.harnesses.ids.opencode',
-    descriptionKey: 'settings.harnesses.desc.opencode',
-    experimental: true,
-    configProvider: 'opencode',
-  },
-  cursor: {
-    provider: 'cursor',
-    labelKey: 'settings.harnesses.ids.cursor',
-    descriptionKey: 'settings.harnesses.desc.cursor',
-    experimental: true,
-    configProvider: 'cursor',
-  },
-  'acp-grok': {
-    provider: 'acp',
-    labelKey: 'settings.harnesses.ids.acp-grok',
-    descriptionKey: 'settings.harnesses.desc.acpGrok',
-    experimental: false,
-    configProvider: 'acp',
-  },
-  'acp-antigravity': {
-    provider: 'acp',
-    labelKey: 'settings.harnesses.ids.acp-antigravity',
-    descriptionKey: 'settings.harnesses.desc.acpAntigravity',
-    experimental: true,
-    configProvider: 'acp',
-  },
-  dsh: {
-    provider: 'dsh',
-    labelKey: 'settings.harnesses.ids.deepseek',
-    descriptionKey: 'settings.harnesses.desc.deepseek',
-    experimental: true,
-    configProvider: 'dsh',
-  },
-} satisfies Record<NodeHarnessId, CatalogHarnessMeta>
 
 /**
  * Catalog list key for a nested-config `settingsProvider`.
@@ -191,11 +71,6 @@ function isCursorSettingsSection(section: HarnessConfigSection): section is Curs
     || section === 'models'
     || section === 'cloud'
   )
-}
-
-function catalogIsOn(row: CatalogRow | undefined): boolean {
-  if (!row) return false
-  return row.enabled && row.state !== 'disabled'
 }
 
 /** Suggestion-key used for harnessOrder / ChatSuggestions ranking. */
@@ -395,46 +270,7 @@ export function HarnessesSettingsPage() {
 
   const items = useMemo((): ListItem[] => {
     const agents = acpAgents.filter((a) => a.id !== 'opencode')
-    const grok = agents.find((a) => isGrokAcpAgent(a.id))
-    const antigravity = agents.find((a) => isAntigravityAcpAgent(a.id))
-    const rest = agents.filter((a) => !isGrokAcpAgent(a.id) && !isAntigravityAcpAgent(a.id))
-    const list: ListItem[] = NODE_HARNESS_IDS.map((catalogId) => {
-      const meta: CatalogHarnessMeta = CATALOG_HARNESS_META[catalogId]
-      return {
-        key: catalogId,
-        kind: 'catalog',
-        catalogId,
-        label:
-          catalogId === 'acp-grok'
-            ? (grok?.name || t(meta.labelKey))
-            : catalogId === 'acp-antigravity'
-              ? (antigravity?.name || t(meta.labelKey))
-              : t(meta.labelKey),
-        provider: meta.provider,
-        acpAgentId:
-          catalogId === 'acp-grok'
-            ? (grok?.id ?? 'grok-build')
-            : catalogId === 'acp-antigravity'
-              ? (antigravity?.id ?? 'antigravity')
-              : null,
-        experimental: meta.experimental,
-        description: t(meta.descriptionKey),
-        configProvider: meta.configProvider,
-      }
-    })
-
-    for (const agent of rest) {
-      list.push({
-        key: `acp:${agent.id}`,
-        kind: 'experimental-acp',
-        acpAgentId: agent.id,
-        label: agent.name || acpAgentDisplayName(agent.id),
-        provider: 'acp',
-        experimental: true,
-        description: t('settings.harnesses.desc.experimentalAcp'),
-      })
-    }
-    return list
+    return buildHarnessListItems(acpAgents, agents, t)
   }, [acpAgents, t])
 
   const isItemEnabled = useCallback(
@@ -587,64 +423,20 @@ export function HarnessesSettingsPage() {
 
   return (
     <div className="flex h-full min-h-0">
-      <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border px-2.5 py-3">
-        <div className="flex min-h-7 items-center justify-between gap-2 pl-2">
-          <h2 className="text-lg font-semibold">{t('settings.harnesses.title')}</h2>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="size-7 p-0 text-muted-foreground"
-            aria-label={t('common.refresh')}
-            onClick={() => void refreshCatalog()}
-            disabled={loading || busyKey !== null}
-          >
-            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-          </Button>
-        </div>
-
-        {loading && !catalog ? (
-          <div className="flex items-center gap-2 px-2 pt-3 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            {t('settings.harnesses.loading')}
-          </div>
-        ) : null}
-
-        {enabledItems.length > 0 && (
-          <SettingsNavGroup label={t('settings.harnesses.groupEnabled')}>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleEnabledDragEnd}
-            >
-              <SortableContext items={enabledOrderIds} strategy={verticalListSortingStrategy}>
-                {enabledItems.map((item) => (
-                  <SortableHarnessRow
-                    key={item.key}
-                    item={item}
-                    selected={selectedKey === item.key}
-                    disabled={savingOrder || busyKey !== null}
-                    onSelect={() => selectItem(item)}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          </SettingsNavGroup>
-        )}
-
-        {disabledItems.length > 0 && (
-          <SettingsNavGroup label={t('settings.harnesses.groupDisabled')}>
-            {disabledItems.map((item) => (
-              <HarnessListRow
-                key={item.key}
-                item={item}
-                selected={selectedKey === item.key}
-                onSelect={() => selectItem(item)}
-              />
-            ))}
-          </SettingsNavGroup>
-        )}
-      </div>
+      <HarnessesSidebar
+        loading={loading}
+        hasCatalog={catalog !== null}
+        busyKey={busyKey}
+        savingOrder={savingOrder}
+        selectedKey={selectedKey}
+        enabledItems={enabledItems}
+        disabledItems={disabledItems}
+        enabledOrderIds={enabledOrderIds}
+        sensors={sensors}
+        onRefresh={() => void refreshCatalog()}
+        onSelectItem={selectItem}
+        onDragEnd={handleEnabledDragEnd}
+      />
 
       {selected ? (
         // Stable gutter: User↔Project height changes must not toggle the scrollbar and jank width.
@@ -683,101 +475,6 @@ export function HarnessesSettingsPage() {
   )
 }
 
-function HarnessListRow({
-  item,
-  selected,
-  onSelect,
-  dragHandle,
-  isDragging,
-  style,
-  setNodeRef,
-  attributes,
-  listeners,
-}: {
-  item: ListItem
-  selected: boolean
-  onSelect: () => void
-  dragHandle?: boolean
-  isDragging?: boolean
-  style?: CSSProperties
-  setNodeRef?: (node: HTMLElement | null) => void
-  attributes?: ReturnType<typeof useSortable>['attributes']
-  listeners?: ReturnType<typeof useSortable>['listeners']
-}) {
-  const { t } = useTranslation()
-  const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
-  const Icon = resolveSessionIcon(item.provider, acpAgentId)
-  return (
-    // The drag handle is a sibling of the nav item (buttons cannot nest), laid
-    // over its trailing edge; the item reserves that space with right padding.
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn('group relative rounded-md', isDragging && 'z-10 bg-background opacity-80 shadow-sm')}
-    >
-      <SettingsNavItem
-        size="lg"
-        selected={selected}
-        onClick={onSelect}
-        className={cn(dragHandle && 'pr-7')}
-        icon={Icon ? (
-          <Icon status="default" size={30} renderLevel="compact" />
-        ) : (
-          <span className="size-[30px] shrink-0 rounded bg-muted" />
-        )}
-        trailing={item.experimental ? t('settings.harnesses.experimentalBadge') : undefined}
-      >
-        {item.label}
-      </SettingsNavItem>
-      {dragHandle ? (
-        <button
-          type="button"
-          className="absolute inset-y-0 right-0 flex w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
-          aria-label={t('settings.harnesses.dragHandle')}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-3.5" />
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-function SortableHarnessRow({
-  item,
-  selected,
-  disabled,
-  onSelect,
-}: {
-  item: ListItem
-  selected: boolean
-  disabled: boolean
-  onSelect: () => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.key,
-    disabled,
-  })
-  const style = {
-    transform: CSS.Transform.toString(transform ? { ...transform, x: 0 } : null),
-    transition,
-  }
-  return (
-    <HarnessListRow
-      item={item}
-      selected={selected}
-      onSelect={onSelect}
-      dragHandle
-      isDragging={isDragging}
-      style={style}
-      setNodeRef={setNodeRef}
-      attributes={attributes}
-      listeners={listeners}
-    />
-  )
-}
-
 function HarnessDetail({
   item,
   catalog,
@@ -801,13 +498,6 @@ function HarnessDetail({
 }) {
   const { t } = useTranslation()
   const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
-  const installing =
-    catalog?.state === 'installing' || progress?.phase === 'download'
-  const pct =
-    progress && progress.total > 0
-      ? Math.min(100, Math.round((progress.received / progress.total) * 100))
-      : null
-
   const configTabs = configTabsFor(item.configProvider)
   const activeTab =
     configTabs && configSection && configTabs.includes(configSection)
@@ -818,111 +508,25 @@ function HarnessDetail({
   // (Grok, experimental agents): show launch command for verify/debug.
   const showCommand = !!catalog?.command && item.provider === 'acp'
 
-  // Single error surface — progress event and catalog diagnostic often carry the same text.
-  const errorMessage =
-    (progress?.phase === 'error' && progress.message) ||
-    catalog?.diagnostic?.message ||
-    null
-
-  const needsAuth = !!catalog?.requiresAuth && catalog.state === 'needs_auth'
-  const showProgress = installing || progress?.phase === 'download'
-  const Icon = resolveSessionIcon(item.provider, acpAgentId)
-
-  const statusRows: ReactNode[] = []
-  if (item.kind === 'catalog' && catalog?.runtimeVersion) {
-    statusRows.push(
-      <SettingsRow key="version" label={t('settings.harnesses.fields.version')}>
-        <span className="text-sm text-muted-foreground tabular-nums">{catalog.runtimeVersion}</span>
-      </SettingsRow>,
-    )
-  }
-  if (item.kind === 'catalog' && showCommand && catalog?.command) {
-    statusRows.push(
-      <SettingsRow
-        key="command"
-        label={t('settings.harnesses.fields.command')}
-        footer={(
-          <code className="block font-mono text-xs break-all text-muted-foreground" title={catalog.command}>
-            {catalog.command}
-          </code>
-        )}
-      />,
-    )
-  }
-  if (item.kind === 'catalog' && needsAuth) {
-    statusRows.push(
-      <div key="auth" className={cn(settingsRowClassName, 'text-xs text-warning')}>
-        {t('settings.harnesses.needsAuth')}
-      </div>,
-    )
-  }
-  if (showProgress) {
-    statusRows.push(
-      <div key="progress" className={cn(settingsRowClassName, 'space-y-1.5')}>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-[width] duration-200"
-            style={{ width: pct != null ? `${pct}%` : '30%' }}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {progress && progress.total > 0
-            ? t('settings.harnesses.progress', {
-                received: formatBytes(progress.received),
-                total: formatBytes(progress.total),
-                pct: pct ?? 0,
-              })
-            : t('settings.harnesses.installing')}
-        </p>
-      </div>,
-    )
-  }
-  if (errorMessage) {
-    statusRows.push(
-      <p key="error" className={cn(settingsRowClassName, 'text-xs break-words text-error')}>
-        {errorMessage}
-      </p>,
-    )
-  }
-  if (item.kind === 'experimental-acp') {
-    statusRows.push(
-      <p key="experimental" className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
-        {t('settings.harnesses.experimentalAcpHint')}
-      </p>,
-    )
-  }
-
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex min-h-8 flex-wrap items-center gap-2">
-            {Icon ? <Icon status="default" size={24} renderLevel="compact" /> : null}
-            <HarnessBrandTitle
-              provider={item.provider}
-              acpAgentId={acpAgentId}
-              label={item.label}
-              size={22}
-            />
-            {item.experimental ? (
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">
-                {t('settings.harnesses.experimentalBadge')}
-              </Badge>
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>
-        </div>
-        <div className="flex min-h-8 shrink-0 items-center gap-2">
-          {(busy || installing) && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-          <Switch
-            checked={enabled}
-            onCheckedChange={onEnabledChange}
-            disabled={busy || installing}
+      <HarnessDetailHeaderAndStatus
+        item={item}
+        catalog={catalog}
+        enabled={enabled}
+        busy={busy}
+        progress={progress}
+        showCommand={showCommand}
+        brandTitle={(
+          <HarnessBrandTitle
+            provider={item.provider}
+            acpAgentId={acpAgentId}
+            label={item.label}
+            size={22}
           />
-        </div>
-      </div>
-
-      {statusRows.length > 0 ? <SettingsCard>{statusRows}</SettingsCard> : null}
+        )}
+        onEnabledChange={onEnabledChange}
+      />
 
       {configTabs ? (
         <Tabs
@@ -960,7 +564,7 @@ function HarnessDetail({
             configTabs.map((section) => (
               <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
                 {section === 'preferences' && (
-                  <PreferencesPage provider={item.configProvider} />
+                  <PreferencesPage provider={item.configProvider} acpAgentId={acpAgentId} />
                 )}
                 {section === 'account' && item.configProvider === 'acp' && (
                   isAntigravityAcpAgent(acpAgentId)

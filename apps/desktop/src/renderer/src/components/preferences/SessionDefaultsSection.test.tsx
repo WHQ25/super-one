@@ -166,4 +166,33 @@ describe('SessionDefaultsSection', () => {
     await waitFor(() => expect(getAppSettings).toHaveBeenCalledTimes(2))
     expect(screen.queryByText('settings.preferences.sandbox.label')).not.toBeInTheDocument()
   })
+
+  it('uses Antigravity permission modes and saves to antigravityDefaultPermissionMode when acpAgentId is antigravity', async () => {
+    getAppSettings.mockResolvedValue(settingsWith({
+      acp: {
+        defaultPermissionMode: 'plan',
+        antigravityDefaultPermissionMode: 'acceptEdits',
+      },
+    }))
+
+    render(<SessionDefaultsSection harnessId="acp" acpAgentId="antigravity" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('chat.acpPermissionModes.acceptEdits.label')).toBeInTheDocument()
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: /acpPermissionModes/ }))
+    expect(await screen.findByText('chat.acpPermissionModes.antigravityBypass.label')).toBeInTheDocument()
+    expect(screen.queryByText('chat.acpPermissionModes.alwaysApprove.label')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('chat.acpPermissionModes.antigravityBypass.label'))
+
+    await waitFor(() => {
+      expect(saveAppSettings).toHaveBeenCalledWith({
+        agentPreference: {
+          acp: { antigravityDefaultPermissionMode: 'bypassPermissions' },
+        },
+      })
+    })
+  })
 })

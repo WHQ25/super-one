@@ -1642,11 +1642,14 @@ export type Messages = {
       }
       defaultModel: {
         label: string
+        description: string
         claudeDescription: string
         codexDescription: string
         loading: string
         empty: string
         emptyNoProject: string
+        updated: string
+        systemDefault: string
         claudeUpdated: string
         claudeSystemDefault: string
         codexUpdated: string
@@ -6507,11 +6510,14 @@ export const en: Messages = {
       },
       defaultModel: {
         label: 'Default Model',
+        description: 'Applied to sessions that have not picked a model.',
         claudeDescription: 'Applied to sessions that have not picked a model.',
         codexDescription: 'Applied to new Codex sessions inside SuperOne. This does not modify local Codex settings.',
         loading: 'Loading models...',
         empty: 'No models available',
         emptyNoProject: 'Open a project to load models',
+        updated: 'Default model updated',
+        systemDefault: 'Using system default model',
         claudeUpdated: 'Default Claude model updated',
         claudeSystemDefault: 'Using system default Claude model',
         codexUpdated: 'Default Codex model updated',

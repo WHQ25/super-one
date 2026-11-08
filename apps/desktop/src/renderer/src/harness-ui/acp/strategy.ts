@@ -1,7 +1,9 @@
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDefaultsFor } from '@superone/shared/harness/session-defaults'
 import { callSession } from '@/lib/session-client'
 import { ACP_PERMISSION_MODES, acpPermissionModesForAgent } from '@/components/chat/acpPermissionModes'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
+import { defaultPrefsCache, sessionDefaultsFor } from '@/stores/chat-store/helpers/prefs-cache'
 import { neutralSelection } from '../neutral-selection'
 import type { HarnessStrategy } from '../strategy'
 
@@ -27,10 +29,18 @@ export const acpStrategy: HarnessStrategy = {
     session.acpAgentId = agentId
     const catalog = getCachedAcpCatalog(state.harnessResources.acp, agentId)
     if (catalog) {
-      Object.assign(session, sessionPatchFromAcpCatalog(catalog, { preferSelected: previousSession?.selectedModel ?? null }))
-      // Prefer previous effort when still in the catalog (Grok modeConfigId is null).
-      const prevMode = previousSession?.selectedAcpModeId
-      if (prevMode && catalog.modes.some((m) => m.id === prevMode)) session.selectedAcpModeId = prevMode
+      const defaults = acpAgentDefaultsFor(defaultPrefsCache.agentPreference?.acp, agentId)
+      const preferSelected = defaults.defaultModel && !previousSession?.modelUserChosen
+        ? null
+        : (previousSession?.selectedModel ?? null)
+      const preferModeId = defaults.defaultEffort && !previousSession?.effortUserChosen
+        ? null
+        : (previousSession?.selectedAcpModeId ?? null)
+      Object.assign(session, sessionPatchFromAcpCatalog(catalog, {
+        preferSelected,
+        preferModeId,
+        agentId,
+      }))
     } else {
       session.acpModels = []
       session.acpModelConfigId = null
@@ -43,7 +53,13 @@ export const acpStrategy: HarnessStrategy = {
   missingDefaults: () => ({}),
   restore: (session, { state }) => {
     const catalog = session.acpAgentId ? getCachedAcpCatalog(state.harnessResources.acp, session.acpAgentId) : null
-    return catalog ? sessionPatchFromAcpCatalog(catalog, { preferSelected: session.selectedModel || null }) : {}
+    return catalog
+      ? sessionPatchFromAcpCatalog(catalog, {
+          preferSelected: session.selectedModel || null,
+          preferModeId: session.selectedAcpModeId || null,
+          agentId: session.acpAgentId,
+        })
+      : {}
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined, acpAgentId: session.acpAgentId ?? undefined }),
   draftSettings: (session) => ({
@@ -62,8 +78,9 @@ export const acpStrategy: HarnessStrategy = {
   onSelect: ({ get, session, patch, prewarmAfterDispose }) => {
     void get().initializeHarness('acp')
     const applyCachedCatalog = () => {
-      const catalog = getCachedAcpCatalog(get().harnessResources.acp, session().acpAgentId)
-      if (catalog) patch(sessionPatchFromAcpCatalog(catalog))
+      const currentAgentId = session().acpAgentId
+      const catalog = getCachedAcpCatalog(get().harnessResources.acp, currentAgentId)
+      if (catalog) patch(sessionPatchFromAcpCatalog(catalog, { agentId: currentAgentId }))
     }
     // The UI may have picked the agent before the harness.
     if (session().acpAgentId) {
@@ -75,7 +92,14 @@ export const acpStrategy: HarnessStrategy = {
       const agentId = await window.app.getAppSettings()
         .then((settings) => settings.agentPreference.acp?.selectedAgentId ?? get().harnessResources.acp?.selectedAgentId)
         .catch(() => null)
-      if (!session().acpAgentId) patch({ acpAgentId: agentId ?? 'grok-build' })
+      if (!session().acpAgentId) {
+        const resolvedAgentId = agentId ?? 'grok-build'
+        const permissionMode = sessionDefaultsFor('acp', resolvedAgentId).permissionMode
+        patch({
+          acpAgentId: resolvedAgentId,
+          ...(session().messages.length === 0 && permissionMode ? { permissionMode } : {}),
+        })
+      }
       applyCachedCatalog()
       await prewarmAfterDispose()
     })()

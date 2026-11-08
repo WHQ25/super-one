@@ -1,3 +1,4 @@
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type {
   AcpAgentConfigCatalog,
   AcpAgentModelCatalog,
@@ -7,7 +8,10 @@ import type {
   ModelOption,
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { acpAgentDefaultsFor } from '@superone/shared/harness/session-defaults'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
+import { projectAntigravityModels } from '@/harness-ui/acp/model-options'
+import { defaultPrefsCache } from '../helpers/prefs-cache'
 import { resolveProvider, type ProviderResolvableSession } from '../helpers/provider-routing'
 import type { ChatStore, PerSessionState } from '../types'
 
@@ -37,7 +41,11 @@ export function applyAcpResources(
       nextSessions[sessionId] = {
         ...session,
         ...(needsModels
-          ? sessionPatchFromAcpCatalog(catalog, { preferSelected: session.selectedModel || null })
+          ? sessionPatchFromAcpCatalog(catalog, {
+              preferSelected: session.selectedModel || null,
+              preferModeId: session.selectedAcpModeId || null,
+              agentId: session.acpAgentId,
+            })
           : {
               ...(needsModes
                 ? {
@@ -285,34 +293,90 @@ export function getCachedAcpCatalog(
   return sessionCatalogFromLegacyModels(legacy)
 }
 
+function resolveDefaultAcpModelAndMode(
+  session: AcpSessionCatalog,
+  opts?: {
+    preferSelected?: string | null
+    preferModeId?: string | null
+    agentId?: string | null
+  },
+): { selectedModel: string; selectedModeId: string | null } {
+  const agentId = opts?.agentId
+  const defaults = acpAgentDefaultsFor(defaultPrefsCache.agentPreference?.acp, agentId)
+  const preferred = opts?.preferSelected
+  const preferredModel = preferred && session.models.some((m) => m.id === preferred) ? preferred : null
+
+  const preferMode = opts?.preferModeId
+  const preferredMode = preferMode && session.modes.some((m) => m.id === preferMode) ? preferMode : null
+  const configuredMode = defaults.defaultEffort && session.modes.some((m) => m.id === defaults.defaultEffort)
+    ? defaults.defaultEffort
+    : null
+  const selectedModeId = preferredMode ?? configuredMode ?? session.selectedModeId
+
+  if (isAntigravityAcpAgent(agentId)) {
+    if (preferredModel) {
+      return { selectedModel: preferredModel, selectedModeId }
+    }
+    if ((defaults.defaultModel || defaults.defaultEffort) && session.models.length > 0) {
+      const projected = projectAntigravityModels(
+        session.models as ModelOption[],
+        defaults.defaultModel || session.selectedModelId || session.models[0]?.id || null,
+        defaults.defaultEffort || null,
+      )
+      const resolvedId = projected.selectedBaseModelId
+        ? projected.resolveModelId(projected.selectedBaseModelId, defaults.defaultEffort || null)
+        : null
+      if (resolvedId && session.models.some((m) => m.id === resolvedId)) {
+        return { selectedModel: resolvedId, selectedModeId }
+      }
+      if (defaults.defaultModel && session.models.some((m) => m.id === defaults.defaultModel)) {
+        return { selectedModel: defaults.defaultModel, selectedModeId }
+      }
+    }
+    return {
+      selectedModel: session.selectedModelId ?? session.models[0]?.id ?? '',
+      selectedModeId,
+    }
+  }
+
+  const configuredModel = defaults.defaultModel && session.models.some((m) => m.id === defaults.defaultModel)
+    ? defaults.defaultModel
+    : null
+  const selectedModel = preferredModel
+    ?? configuredModel
+    ?? session.selectedModelId
+    ?? session.models[0]?.id
+    ?? ''
+
+  return { selectedModel, selectedModeId }
+}
+
 export function sessionPatchFromAcpCatalog(
   catalog: AcpSessionCatalog | AcpAgentModelCatalog,
-  opts?: { preferSelected?: string | null },
+  opts?: {
+    preferSelected?: string | null
+    preferModeId?: string | null
+    agentId?: string | null
+  },
 ): Partial<PerSessionState> {
   const session: AcpSessionCatalog = 'modes' in catalog && 'modelConfigId' in catalog
     ? catalog as AcpSessionCatalog
     : sessionCatalogFromLegacyModels(catalog as AcpAgentModelCatalog)
 
-  const preferred = opts?.preferSelected
-  const selected =
-    (preferred && session.models.some((m) => m.id === preferred) ? preferred : null)
-    ?? session.selectedModelId
-    ?? session.models[0]?.id
-    ?? ''
+  const { selectedModel, selectedModeId } = resolveDefaultAcpModelAndMode(session, opts)
 
   const patch: Partial<PerSessionState> = {
     acpModels: session.models as ModelOption[],
     acpModelConfigId: session.modelConfigId,
     acpModelsStatus: session.models.length > 0 ? 'ready' : 'idle',
     acpModelsError: null,
-    selectedModel: selected,
+    selectedModel,
     modelUserChosen: false,
     acpModes: session.modes as ModelOption[],
     acpModeConfigId: session.modeConfigId,
-    selectedAcpModeId: session.selectedModeId,
+    selectedAcpModeId: selectedModeId,
     acpModesStatus: session.modes.length > 0 ? 'ready' : 'idle',
     acpSlashCommands: session.slashCommands,
-    // Cached commands count as ready for instant popup; opening / still triggers a live refresh.
     acpSlashCommandsStatus: session.slashCommands.length > 0 ? 'ready' : 'idle',
   }
   return patch

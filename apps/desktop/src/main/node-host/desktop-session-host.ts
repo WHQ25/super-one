@@ -402,12 +402,12 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
       case 'session.reset': {
         const nextId = input.newSessionId as string | undefined
         if (nextId && this.deps.sessions.getSession(nextId)) throw Object.assign(new Error('Session id already active'), { code: 'conflict' })
-        const { projectPath, providerId, harnessId } = session.snapshot
+        const { projectPath, providerId, harnessId, acpAgentId } = session.snapshot
         const { readDefaultSessionPrefs } = await import('../session/session-preferences')
         session.lease.assertMutation()
         await this.deps.sessions.disposeSession(sessionId)
         if (!nextId) return null
-        const fresh = this.deps.sessions.createSession({ projectPath, providerId, id: nextId, ...readDefaultSessionPrefs(harnessId) })
+        const fresh = this.deps.sessions.createSession({ projectPath, providerId, id: nextId, acpAgentId, ...readDefaultSessionPrefs(harnessId, acpAgentId) })
         fresh.lease.grantCreatedSession()
         return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
       }

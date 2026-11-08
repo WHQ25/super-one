@@ -945,7 +945,7 @@ export class AgentService {
     // Claude — a harness with nothing configured still resolves to its own
     // first declared mode rather than to Claude's.
     const prefsFor = (provider: HarnessId | undefined) =>
-      this.readDefaultSessionPrefs(provider ?? 'claude')
+      this.readDefaultSessionPrefs(provider ?? 'claude', acpAgentHint)
 
     if (requestedSid) {
       const existing = mgr.getSession(requestedSid)
@@ -1046,10 +1046,10 @@ export class AgentService {
     hint?: AgentPrewarmHint,
   ): Promise<import('../session/types').Session | null> {
     const mgr = this.requireSessionManager()
-    const providerId = this.baseProviderIdForHarness(hint?.provider)
+    const providerId = this.baseProviderIdForHarness(hint?.provider, hint?.acpAgentId)
     const harnessId = hint?.provider ?? 'claude'
     const cwd = sessionCreationCwd(projectPath, hint, mgr.getActiveSession(projectPath))
-    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs(harnessId)
+    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs(harnessId, hint?.acpAgentId)
     const createOpts = {
       projectPath,
       cwd,
@@ -1132,8 +1132,9 @@ export class AgentService {
    */
   readDefaultSessionPrefs(
     harnessId: HarnessId = 'claude',
+    acpAgentId?: string | null,
   ): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
-    return readDefaultSessionPrefs(harnessId)
+    return readDefaultSessionPrefs(harnessId, acpAgentId)
   }
 
   setup(): void {

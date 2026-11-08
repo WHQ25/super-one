@@ -135,6 +135,27 @@ describe('sessionDefaultsForHarness', () => {
     expect(unset.sandboxMode).toBeNull()
     expect(off.sandboxMode).toBe('off')
   })
+
+  it('isolates Antigravity and Grok ACP permission defaults and accepts acceptEdits only on Antigravity', () => {
+    const prefs = preferences({
+      acp: {
+        ...preferences().acp,
+        defaultPermissionMode: 'plan',
+        antigravityDefaultPermissionMode: 'acceptEdits',
+      },
+    })
+
+    expect(sessionDefaultsForHarness(prefs, 'acp', 'grok-build').permissionMode).toBe('plan')
+    expect(sessionDefaultsForHarness(prefs, 'acp', 'antigravity').permissionMode).toBe('acceptEdits')
+
+    const invalidForGrok = preferences({
+      acp: {
+        ...preferences().acp,
+        defaultPermissionMode: 'acceptEdits',
+      },
+    })
+    expect(sessionDefaultsForHarness(invalidForGrok, 'acp', 'grok-build').permissionMode).toBe('default')
+  })
 })
 
 describe('codexPermissionModeForPreset', () => {

@@ -1,5 +1,49 @@
 import type { AppSettings, CodexPermissionPreset, HarnessId, PermissionMode, SandboxMode } from '../agent-types'
-import { HARNESS_LAUNCH_OPTIONS } from '../launch-options'
+import { acpPermissionModesForAgent, HARNESS_LAUNCH_OPTIONS } from '../launch-options'
+import { isAntigravityAcpAgent } from './acp-brand'
+
+export interface AcpAgentDefaults {
+  defaultModel: string
+  defaultEffort: string
+  defaultPermissionMode: PermissionMode | ''
+}
+
+export function acpAgentDefaultsFor(
+  acp: Partial<AppSettings['agentPreference']['acp']> | null | undefined,
+  acpAgentId?: string | null,
+): AcpAgentDefaults {
+  const resolvedAgentId = acpAgentId !== undefined ? acpAgentId : acp?.selectedAgentId
+  if (isAntigravityAcpAgent(resolvedAgentId)) {
+    return {
+      defaultModel: acp?.antigravityDefaultModel ?? '',
+      defaultEffort: acp?.antigravityDefaultEffort ?? '',
+      defaultPermissionMode: acp?.antigravityDefaultPermissionMode ?? '',
+    }
+  }
+  return {
+    defaultModel: acp?.defaultModel ?? '',
+    defaultEffort: acp?.defaultEffort ?? '',
+    defaultPermissionMode: acp?.defaultPermissionMode ?? '',
+  }
+}
+
+export function acpAgentPreferencePatch(
+  acpAgentId: string | null | undefined,
+  patch: Partial<AcpAgentDefaults>,
+): Partial<AppSettings['agentPreference']['acp']> {
+  if (isAntigravityAcpAgent(acpAgentId)) {
+    const out: Partial<AppSettings['agentPreference']['acp']> = {}
+    if (patch.defaultModel !== undefined) out.antigravityDefaultModel = patch.defaultModel
+    if (patch.defaultEffort !== undefined) out.antigravityDefaultEffort = patch.defaultEffort
+    if (patch.defaultPermissionMode !== undefined) out.antigravityDefaultPermissionMode = patch.defaultPermissionMode
+    return out
+  }
+  const out: Partial<AppSettings['agentPreference']['acp']> = {}
+  if (patch.defaultModel !== undefined) out.defaultModel = patch.defaultModel
+  if (patch.defaultEffort !== undefined) out.defaultEffort = patch.defaultEffort
+  if (patch.defaultPermissionMode !== undefined) out.defaultPermissionMode = patch.defaultPermissionMode
+  return out
+}
 
 /**
  * Shared permission mode a Codex preset stands for.
@@ -51,11 +95,18 @@ export interface HarnessSessionDefaults {
 export function sessionDefaultsForHarness(
   preferences: AppSettings['agentPreference'],
   harnessId: HarnessId,
+  acpAgentId?: string | null,
 ): HarnessSessionDefaults {
-  const { permissionModes: offered, defaultPermissionMode } = HARNESS_LAUNCH_OPTIONS[harnessId]
+  const resolvedAcpAgentId = acpAgentId !== undefined ? acpAgentId : preferences.acp?.selectedAgentId
+  const offered = harnessId === 'acp'
+    ? acpPermissionModesForAgent(resolvedAcpAgentId)
+    : HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  const { defaultPermissionMode } = HARNESS_LAUNCH_OPTIONS[harnessId]
   // A harness without modes runs its own permission configuration, whatever an
   // older client left in its storage slot.
-  const configuredPermissionMode = offered.length > 0 ? configuredPermissionModeFor(preferences, harnessId) : ''
+  const configuredPermissionMode = offered.length > 0
+    ? configuredPermissionModeFor(preferences, harnessId, resolvedAcpAgentId)
+    : ''
   return {
     // A stored mode this harness no longer offers is not asserted at it.
     permissionMode: configuredPermissionMode && offered.includes(configuredPermissionMode)
@@ -69,11 +120,15 @@ export function sessionDefaultsForHarness(
 function configuredPermissionModeFor(
   preferences: AppSettings['agentPreference'],
   harnessId: HarnessId,
+  acpAgentId?: string | null,
 ): PermissionMode | '' {
   // Codex stores a preset because that is what its backend executes; the shared
   // mode is a projection of it, not a second stored value.
   if (harnessId === 'codex') {
     return codexPermissionModeForPreset(preferences.codex?.defaultPermissionPreset)
+  }
+  if (harnessId === 'acp') {
+    return acpAgentDefaultsFor(preferences.acp, acpAgentId).defaultPermissionMode
   }
   // A slot can be absent when the caller holds a partially built preference
   // object — a settings file written by an older build, or a test fixture that

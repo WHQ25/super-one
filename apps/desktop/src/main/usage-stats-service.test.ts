@@ -269,6 +269,12 @@ function fakeDb(): {
 
 const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }))
 vi.mock('./database', () => ({ getDb: getDbMock }))
+// Backfill also scans the Antigravity conversation directory on disk. Keep
+// that read out of the fixture so a developer's home history cannot land in
+// the in-memory totals.
+vi.mock('./acp/antigravity-db-usage', () => ({
+  extractAllAntigravityUsageRecords: () => [],
+}))
 
 beforeEach(() => {
   state.daily.clear()

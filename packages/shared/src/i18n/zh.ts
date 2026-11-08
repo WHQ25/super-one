@@ -422,6 +422,7 @@ export const zh: Messages = {
     },
     pinned: '置顶',
     settled: '已结束',
+    offlineEnvironments: '离线',
     drafts: {
       title: '草稿',
       untitled: '未命名草稿',

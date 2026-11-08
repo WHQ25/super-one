@@ -38,6 +38,7 @@ function SessionGroupsFrame({
   hasMore,
   onLoadMore,
   fill = false,
+  maxHeight,
   children,
 }: {
   open: boolean
@@ -45,13 +46,15 @@ function SessionGroupsFrame({
   onLoadMore?: () => void | Promise<void>
   /** Focus mode: this project's list is the pane, so the height cap comes off. */
   fill?: boolean
+  /** Project focus: a pixel cap taller or shorter than `max-h-64`. */
+  maxHeight?: number
   children: React.ReactNode
 }) {
   // A collapsed project only keeps attention rows. Those stay in the sidebar flow.
   // The open list is its own scroller, same as search and Settled.
   if (!open) return children
   return (
-    <ActiveSessionList hasMore={hasMore} onLoadMore={onLoadMore} layout={fill ? 'fill' : 'cap'}>
+    <ActiveSessionList hasMore={hasMore} onLoadMore={onLoadMore} layout={fill ? 'fill' : 'cap'} maxHeight={maxHeight}>
       {children}
     </ActiveSessionList>
   )
@@ -232,6 +235,8 @@ interface ProjectSidebarRowProps extends SessionRowCallbacks {
   onLoadMoreChildSessions?: (folderPath: string, parentSessionId: string) => void | Promise<void>
   /** `fill` is project focus: the active list takes the pane and Settled stays at the bottom. */
   sessionListLayout?: 'cap' | 'fill'
+  /** Pixel cap from a measured pane. Omitted keeps `max-h-64`. Ignored while `sessionListLayout` is `fill`. */
+  sessionListMaxHeight?: number
   /** The environment this checkout belongs to. Omitted on the single-host list. */
   focusEnvironmentId?: string | null
   /** Focus bar calls search and new-automation while this row's own header is hidden. */
@@ -289,6 +294,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onLoadChildSessions,
   onLoadMoreChildSessions,
   sessionListLayout = 'cap',
+  sessionListMaxHeight,
   focusEnvironmentId,
   focusActionsRef,
 }: ProjectSidebarRowProps) {
@@ -799,6 +805,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 <SessionGroupsFrame
                   open={open}
                   fill={fill}
+                  maxHeight={sessionListMaxHeight}
                   hasMore={sessionsHasMore}
                   onLoadMore={onLoadMoreSessions ? () => onLoadMoreSessions(folder.path) : undefined}
                 >

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const SIDEBAR_SECTION_COLLAPSE_KEY = 'superone.sidebar.collapsedSections'
 
-export type SidebarSectionId = 'pinned' | 'drafts' | 'settled'
+export type SidebarSectionId = 'pinned' | 'drafts' | 'settled' | 'offline'
 
-/** Settled work stays folded until the person opens it. The other groups start open. */
+/** Settled sessions and offline hosts stay folded until the person opens them. */
 function defaultCollapsed(section: SidebarSectionId): boolean {
-  return section === 'settled'
+  return section === 'settled' || section === 'offline'
 }
 
 interface KeyValueStorage {

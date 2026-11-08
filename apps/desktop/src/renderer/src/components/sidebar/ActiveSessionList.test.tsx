@@ -27,6 +27,17 @@ describe('ActiveSessionList', () => {
     expect(screen.queryByRole('button', { name: 'Show More' })).toBeNull()
   })
 
+  it('uses a project-focus cap in place of the shared one', () => {
+    render(
+      <ActiveSessionList maxHeight={480}>
+        <div>Focused session</div>
+      </ActiveSessionList>,
+    )
+    const list = document.querySelector('[data-active-session-list]') as HTMLElement
+    expect(list.style.maxHeight).toBe('480px')
+    expect(list).toHaveClass('max-h-64')
+  })
+
   it('fills the focus pane instead of keeping the height cap', () => {
     render(
       <ActiveSessionList layout="fill">

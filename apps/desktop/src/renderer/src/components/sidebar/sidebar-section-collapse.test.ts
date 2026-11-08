@@ -28,6 +28,7 @@ describe('sidebar section collapse', () => {
 
   it('keeps settled folded until that section is opened', () => {
     expect(readCollapsedSection(localStorage, 'settled')).toBe(true)
+    expect(readCollapsedSection(localStorage, 'offline')).toBe(true)
     localStorage.setItem(SIDEBAR_SECTION_COLLAPSE_KEY, JSON.stringify({ pinned: true }))
     expect(readCollapsedSection(localStorage, 'settled')).toBe(true)
     expect(readCollapsedSection(localStorage, 'pinned')).toBe(true)

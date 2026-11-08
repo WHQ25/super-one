@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import { SIDEBAR_SECTION_COLLAPSE_KEY } from '../sidebar-section-collapse'
 import { MultiHostEnvironmentScroll } from './MultiHostEnvironmentScroll'
 import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentBucket, HostCheckout } from '@/lib/multi-host/types'
@@ -197,6 +198,7 @@ export const LongList: Story = {
     const projects = canvasElement.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list] [data-slot="scroll-area-viewport"]')
     await expect(projects).not.toBeNull()
     await expect(projects!.clientHeight).toBe(256)
+    await expect(projects!.closest<HTMLElement>('[data-environment-project-list]')?.style.maxHeight ?? '').toBe('')
     await expect(projects!.scrollHeight).toBeGreaterThan(projects!.clientHeight)
     await expect(projects).toHaveClass('scroll-edge-fade-y')
     const nextHeader = canvasElement.querySelector<HTMLElement>('[data-environment-id="node-1"] > [data-slot="environment-section-header"]')!
@@ -282,20 +284,246 @@ export const LongListWithSessions: Story = {
   },
 }
 
-export const Offline: Story = {
+const tallFrame = 'h-[540px] w-72 bg-sidebar text-sidebar-foreground'
+
+/** One device with more projects than the old cap. The list uses the pane under the header. */
+export const OneDeviceFull: Story = {
   args: {
     groupBy: 'environment',
     environments: [
-      bucket({
-        environmentId: 'node-1',
-        connectionId: 'cli-1',
-        label: 'build',
-        connection: 'offline',
-        projectsStatus: 'idle',
-      }),
+      bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: manyLocal }),
     ],
   },
-  render: (args) => <Frame><MultiHostProjectList {...args} /></Frame>,
+  render: (args) => (
+    <div className={tallFrame}>
+      <MultiHostEnvironmentScroll {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const list = canvasElement.querySelector<HTMLElement>('[data-environment-project-list]')!
+    const viewport = list.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    const pane = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    await expect(list).toHaveClass('max-h-64')
+    await expect(Number.parseFloat(list.style.maxHeight)).toBeGreaterThan(256)
+    await expect(viewport.clientHeight).toBeGreaterThan(pane.clientHeight * 0.7)
+    await expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight)
+    await expect(pane.scrollHeight - pane.clientHeight).toBeLessThanOrEqual(1)
+  },
+}
+
+/** The short device stays at its rows. The long one takes the rest of the pane. */
+export const UnevenDevices: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [
+      bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: manyLocal }),
+      bucket({ environmentId: 'node-1', connectionId: 'cli-1', label: 'build', checkouts: [remote] }),
+    ],
+  },
+  render: (args) => (
+    <div className={tallFrame}>
+      <MultiHostEnvironmentScroll {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const local = canvasElement.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list]')!
+    const localViewport = local.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    const remoteViewport = canvasElement.querySelector<HTMLElement>('[data-environment-id="node-1"] [data-environment-project-list] [data-slot="scroll-area-viewport"]')!
+    await expect(Number.parseFloat(local.style.maxHeight)).toBeGreaterThan(256)
+    await expect(localViewport.clientHeight).toBeGreaterThan(300)
+    await expect(remoteViewport.clientHeight).toBe(36)
+    const pane = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    await expect(pane.scrollHeight - pane.clientHeight).toBeLessThanOrEqual(1)
+  },
+}
+
+/** One expanded project with more sessions than the old cap fills the device, not an empty gap. */
+export const OneDeviceSessions: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [
+      bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: [local] }),
+      bucket({ environmentId: 'node-1', connectionId: 'cli-1', label: 'build', checkouts: [remote] }),
+    ],
+    expandedProjectKeys: new Set([local.pathKey]),
+    folderSessions: {
+      [local.pathKey]: Array.from({ length: 20 }, (_, index) => ({
+        ...session,
+        sessionId: `session-${index}`,
+        title: `Session ${index + 1}`,
+      })),
+    },
+  },
+  render: (args) => (
+    <div className={tallFrame}>
+      <MultiHostEnvironmentScroll {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const sessions = canvasElement.querySelector<HTMLElement>('[data-active-session-list]')!
+    const sessionViewport = sessions.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    const remoteViewport = canvasElement.querySelector<HTMLElement>('[data-environment-id="node-1"] [data-environment-project-list] [data-slot="scroll-area-viewport"]')!
+    await expect(sessions).toHaveClass('max-h-64')
+    await expect(Number.parseFloat(sessions.style.maxHeight)).toBeGreaterThan(256)
+    await expect(sessionViewport.clientHeight).toBeGreaterThan(300)
+    await expect(sessionViewport.scrollHeight).toBeGreaterThan(sessionViewport.clientHeight)
+    await expect(remoteViewport.clientHeight).toBe(36)
+    const pane = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    await expect(pane.scrollHeight - pane.clientHeight).toBeLessThanOrEqual(1)
+  },
+}
+
+function foldOfflineGroup() {
+  let current: Record<string, unknown> = {}
+  try {
+    const raw = localStorage.getItem(SIDEBAR_SECTION_COLLAPSE_KEY)
+    const parsed = raw ? JSON.parse(raw) as unknown : {}
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = { ...(parsed as Record<string, unknown>) }
+  } catch {
+    current = {}
+  }
+  current.offline = true
+  localStorage.setItem(SIDEBAR_SECTION_COLLAPSE_KEY, JSON.stringify(current))
+}
+
+function offlineHost(label: string): EnvironmentBucket {
+  return bucket({
+    environmentId: label,
+    connectionId: label,
+    label,
+    connection: 'offline',
+    projectsStatus: 'idle',
+  })
+}
+
+const offlineHosts = ['build', 'gpu', 'studio', 'ci'].map(offlineHost)
+
+/** Offline hosts share one Settled-style row at the bottom, so the open device keeps the pane. */
+export const OfflineGroup: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [
+      bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: manyLocal }),
+      ...offlineHosts,
+    ],
+  },
+  render: (args) => {
+    foldOfflineGroup()
+    return (
+      <div className={tallFrame}>
+        <MultiHostEnvironmentScroll {...args} />
+      </div>
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const group = canvas.getByRole('button', { name: /Offline/ })
+    await expect(group).toHaveAttribute('aria-expanded', 'false')
+    await expect(group.querySelector('[data-slot="section-count"]')).toHaveTextContent('4')
+    await expect(canvas.queryByText('build')).toBeNull()
+    const list = canvasElement.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list]')!
+    await expect(Number.parseFloat(list.style.maxHeight)).toBeGreaterThan(256)
+    const pane = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    const block = canvasElement.querySelector<HTMLElement>('[data-offline-environment-group]')!
+    await expect(pane.contains(block)).toBe(false)
+    await expect(pane.scrollHeight - pane.clientHeight).toBeLessThanOrEqual(1)
+    const frame = canvasElement.querySelector('.device-name-clip')!.getBoundingClientRect()
+    await expect(Math.abs(frame.bottom - block.getBoundingClientRect().bottom)).toBeLessThan(8)
+  },
+}
+
+export const OfflineGroupExpanded: Story = {
+  ...OfflineGroup,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const block = canvasElement.querySelector<HTMLElement>('[data-offline-environment-group]')!
+    const pane = canvasElement.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    const before = block.getBoundingClientRect()
+    await userEvent.click(canvas.getByRole('button', { name: /Offline/ }))
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const after = block.getBoundingClientRect()
+    await expect(canvas.getByRole('button', { name: /Offline/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(after.top).toBeLessThan(before.top - 20)
+    await expect(Math.abs(after.bottom - before.bottom)).toBeLessThan(2)
+    await expect(pane.contains(block)).toBe(false)
+    const hosts = block.querySelector<HTMLElement>('[data-offline-environment-list] [data-slot="scroll-area-viewport"]')!
+    await expect(hosts.clientHeight).toBeLessThanOrEqual(256)
+    await expect(hosts.scrollHeight - hosts.clientHeight).toBeLessThanOrEqual(1)
+    await expect(canvas.getByText('build')).toBeTruthy()
+    await expect(canvas.getByText('ci')).toBeTruthy()
+  },
+}
+
+export const OfflineGroupDark: Story = {
+  ...OfflineGroup,
+  globals: { theme: 'dark' },
+}
+
+export const OfflineGroupNarrow: Story = {
+  ...OfflineGroup,
+  render: (args) => {
+    foldOfflineGroup()
+    return (
+      <div className="h-80 w-56 bg-sidebar text-sidebar-foreground">
+        <MultiHostEnvironmentScroll {...args} />
+      </div>
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const group = canvas.getByRole('button', { name: /Offline/ })
+    await expect(group).toHaveAttribute('aria-expanded', 'false')
+    await expect(group.querySelector('[data-slot="section-count"]')).toHaveTextContent('4')
+    await expect(canvas.queryByText('build')).toBeNull()
+  },
+}
+
+/** Enough offline hosts that the open list stops at the same max-h-64 as one project's Settled list. */
+export const OfflineGroupLong: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [
+      bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: [local] }),
+      ...Array.from({ length: 12 }, (_, index) => offlineHost(`node-${index + 1}`)),
+    ],
+  },
+  render: OfflineGroup.render,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const group = canvas.getByRole('button', { name: /Offline/ })
+    await expect(group.querySelector('[data-slot="section-count"]')).toHaveTextContent('12')
+    await expect(canvas.queryByText('node-12')).toBeNull()
+    const before = canvasElement.querySelector<HTMLElement>('[data-offline-environment-group]')!.getBoundingClientRect()
+    await userEvent.click(group)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const frame = canvasElement.querySelector('.device-name-clip')!.getBoundingClientRect()
+    const block = canvasElement.querySelector<HTMLElement>('[data-offline-environment-group]')!
+    const box = block.getBoundingClientRect()
+    await expect(box.top).toBeLessThan(before.top)
+    await expect(Math.abs(box.bottom - frame.bottom)).toBeLessThan(8)
+    const hosts = block.querySelector<HTMLElement>('[data-offline-environment-list]')!
+    await expect(hosts.className).toContain('max-h-64')
+    const viewport = hosts.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    await expect(viewport.clientHeight).toBeGreaterThan(200)
+    await expect(viewport.clientHeight).toBeLessThanOrEqual(256)
+    await expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight)
+    await expect(canvas.getByText('node-1')).toBeTruthy()
+  },
+}
+
+export const Offline: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [offlineHost('build')],
+  },
+  render: (args) => {
+    foldOfflineGroup()
+    return (
+      <div className="h-80 w-72 bg-sidebar text-sidebar-foreground">
+        <MultiHostEnvironmentScroll {...args} />
+      </div>
+    )
+  },
 }
 
 export const Loading: Story = {

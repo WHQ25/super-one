@@ -321,6 +321,52 @@ describe('project focus checkout boundaries', () => {
     expect(props.onSwitchSession).toHaveBeenCalledWith(copy.pathKey, 'copy-settled', { revealProject: false })
   })
 
+  it('fills the pane when the focused project has one environment', () => {
+    renderProject({ environments: [focusEnvironments[0]!] })
+    const list = document.querySelector('[data-active-session-list]')
+    expect(list).toHaveClass('h-full')
+    expect(list).not.toHaveClass('max-h-64')
+  })
+
+  it('keeps the session cap when every environment has many sessions', () => {
+    const many = (prefix: string) => Array.from({ length: 12 }, (_, index) => focusSessionEntry(`${prefix}-${index}`, `Session ${index}`))
+    renderProject({
+      folderSessions: {
+        [focusLocal.pathKey]: many('local'),
+        [focusRemote.pathKey]: many('remote'),
+      },
+    })
+    const lists = document.querySelectorAll('[data-active-session-list]')
+    expect(lists).toHaveLength(2)
+    for (const list of lists) {
+      expect(list).toHaveClass('max-h-64')
+      expect((list as HTMLElement).style.maxHeight).toBe('')
+    }
+  })
+
+  it('grows the busy environment into space the quiet one leaves', async () => {
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute('data-project-focus-active') ? 640 : 0
+    })
+    try {
+      renderProject({
+        folderSessions: {
+          ...focusSessions,
+          [focusLocal.pathKey]: Array.from({ length: 20 }, (_, index) => focusSessionEntry(`local-${index}`, `Local ${index}`)),
+        },
+      })
+      await waitFor(() => {
+        const local = document.querySelectorAll('[data-active-session-list]')[0] as HTMLElement
+        expect(Number.parseFloat(local.style.maxHeight)).toBeGreaterThan(256)
+      })
+      const remote = document.querySelectorAll('[data-active-session-list]')[1] as HTMLElement
+      expect(remote.style.maxHeight).toBe('')
+      expect(remote).toHaveClass('max-h-64')
+    } finally {
+      clientHeight.mockRestore()
+    }
+  })
+
   it('keeps active environment groups when only one of them has settled sessions', () => {
     renderProject({
       settledSessions: focusSettled.filter((session) => session.folderPath === focusLocal.pathKey),

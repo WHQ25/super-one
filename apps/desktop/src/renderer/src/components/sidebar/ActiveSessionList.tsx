@@ -18,6 +18,11 @@ export interface ActiveSessionListProps {
    * `fill` is focus mode: this list is the pane, so the cap comes off.
    */
   layout?: 'cap' | 'fill'
+  /**
+   * A measured pane replaces the shared cap when this list should grow into
+   * space the others do not use. Inline style wins over `max-h-64`.
+   */
+  maxHeight?: number
   children: ReactNode
 }
 
@@ -29,7 +34,7 @@ export interface ActiveSessionListProps {
  * a shorter cap so it fits inside this list.
  * Scrolling near the bottom asks for the next page.
  */
-export function ActiveSessionList({ hasMore = false, onLoadMore, kind = 'active', layout = 'cap', children }: ActiveSessionListProps) {
+export function ActiveSessionList({ hasMore = false, onLoadMore, kind = 'active', layout = 'cap', maxHeight, children }: ActiveSessionListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
   const items = Children.toArray(children)
@@ -69,6 +74,7 @@ export function ActiveSessionList({ hasMore = false, onLoadMore, kind = 'active'
       onWheel={handleWheel}
       {...(kind === 'child' ? { 'data-child-session-list': '' } : { 'data-active-session-list': '' })}
       className={layout === 'fill' ? SESSION_LIST_FILL_CLASS : kind === 'child' ? SESSION_CHILD_LIST_SCROLL_CLASS : SESSION_LIST_SCROLL_CLASS}
+      style={layout !== 'fill' && kind !== 'child' && maxHeight != null ? { maxHeight } : undefined}
     >
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }} className="w-full">
         {virtualizer.getVirtualItems().map((item) => (

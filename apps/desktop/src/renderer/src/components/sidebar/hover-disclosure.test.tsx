@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { projectRef } from '@superone/shared/environment'
 import type { EnvironmentBucket, HostCheckout } from '@/lib/multi-host/types'
 import { EnvironmentSectionHeader } from './multi-host/EnvironmentSectionHeader'
+import { MultiHostEnvironmentScroll } from './multi-host/MultiHostEnvironmentScroll'
 import { MultiHostProjectList } from './multi-host/MultiHostProjectList'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
 import type { RecentFolder } from '@superone/shared/agent-types'
@@ -196,9 +197,11 @@ describe('sidebar hover disclosure', () => {
         }),
       ],
     }
-    const { rerender } = render(<MultiHostProjectList {...listProps} groupBy="environment" />)
+    localStorage.clear()
+    const { rerender } = render(<MultiHostEnvironmentScroll {...listProps} groupBy="environment" />)
     expect(screen.queryByText('remote-app')).toBeNull()
     expect(screen.queryByText('Remote session')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Offline/ }))
     fireEvent.click(screen.getByText('build'))
     expect(onToggleEnvironment).not.toHaveBeenCalled()
 

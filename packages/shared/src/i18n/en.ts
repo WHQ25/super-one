@@ -390,6 +390,7 @@ export type Messages = {
     }
     pinned: string
     settled: string
+    offlineEnvironments: string
     drafts: {
       title: string
       untitled: string
@@ -5186,6 +5187,7 @@ export const en: Messages = {
     },
     pinned: 'Pinned',
     settled: 'Settled',
+    offlineEnvironments: 'Offline',
     drafts: {
       title: 'Drafts',
       untitled: 'Untitled Draft',

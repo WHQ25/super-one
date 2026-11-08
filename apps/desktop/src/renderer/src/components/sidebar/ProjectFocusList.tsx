@@ -1,4 +1,4 @@
-import { useEffect, useId, useImperativeHandle, useMemo, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, Search, SquarePen } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -14,12 +14,13 @@ import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList, ProjectHistorySearch } from './ProjectHistoryList'
 import { SidebarCollapse } from './SidebarCollapse'
 import { SidebarSectionLabel } from './SidebarSectionLabel'
-import { cn } from '@superone/ui/lib/utils'
+import { projectFocusSessionListMaxHeights, type ProjectFocusListMax } from './session-list-scroll'
 import type { SidebarFocusViewProps } from './SidebarFocusView'
+import { cn } from '@superone/ui/lib/utils'
 
 /** Compact section styling for focus, distinct from the full environment rows. */
 export function FocusEnvironmentGroup({
-  bucket, count = 0, initiallyExpanded = false, upgradingLabel, unmountCollapsed = false, revealKey = 0, onSearch, onNewAutomation, onNewSession, children,
+  bucket, count = 0, initiallyExpanded = false, upgradingLabel, unmountCollapsed = false, revealKey = 0, fill = false, onSearch, onNewAutomation, onNewSession, children,
 }: {
   bucket: EnvironmentBucket
   count?: number
@@ -27,6 +28,8 @@ export function FocusEnvironmentGroup({
   upgradingLabel?: string
   unmountCollapsed?: boolean
   revealKey?: number
+  /** The only online list: this group takes the pane so its sessions can fill it. */
+  fill?: boolean
   onSearch?: () => void
   onNewAutomation?: () => void
   onNewSession?: () => void
@@ -39,7 +42,7 @@ export function FocusEnvironmentGroup({
     if (revealKey > 0) setExpanded(true)
   }, [revealKey])
   return (
-    <div data-focus-environment={bucket.environmentId}>
+    <div data-focus-environment={bucket.environmentId} className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
       <SidebarSectionLabel
         section="environment"
         count={count}
@@ -65,7 +68,13 @@ export function FocusEnvironmentGroup({
       >
         {bucket.label}
       </SidebarSectionLabel>
-      <SidebarCollapse id={panelId} open={expanded} unmountClosed={unmountCollapsed} innerClassName="pl-1">
+      <SidebarCollapse
+        id={panelId}
+        open={expanded}
+        fill={fill}
+        unmountClosed={unmountCollapsed}
+        innerClassName="pl-1"
+      >
         {children}
       </SidebarCollapse>
     </div>
@@ -74,11 +83,12 @@ export function FocusEnvironmentGroup({
 
 /** One environment's checkouts in project focus. The environment heading is optional. */
 function ActiveFocusSessions({
-  bucket, checkouts, props,
+  bucket, checkouts, props, listMax,
 }: {
   bucket: EnvironmentBucket
   checkouts: EnvironmentBucket['checkouts']
   props: SidebarFocusViewProps
+  listMax: (pathKey: string) => ProjectFocusListMax
 }) {
   const { t } = useTranslation()
   if (bucket.connection === 'offline') {
@@ -101,7 +111,9 @@ function ActiveFocusSessions({
       {checkouts.every((checkout) => props.folderSessions[checkout.pathKey]?.length === 0 && !props.loadingFolders[checkout.pathKey]) && (
         <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>
       )}
-      {checkouts.map((checkout) => (
+      {checkouts.map((checkout) => {
+        const max = listMax(checkout.pathKey)
+        return (
         <ProjectSidebarRow
           key={checkout.pathKey}
           folder={checkoutToRecentFolder(checkout)}
@@ -109,6 +121,8 @@ function ActiveFocusSessions({
           sessionsOnly
           isExpanded
           showSettled={false}
+          sessionListLayout={max.kind === 'fill' ? 'fill' : 'cap'}
+          sessionListMaxHeight={max.kind === 'px' ? max.maxHeight : undefined}
           focusEnvironmentId={bucket.environmentId}
           sessions={props.folderSessions[checkout.pathKey] ?? []}
           sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey]}
@@ -131,7 +145,8 @@ function ActiveFocusSessions({
           onNewSession={props.onNewSession}
           sessionPresentation={presenterFor(bucket, checkout.name, checkout.pathKey)}
         />
-      ))}
+        )
+      })}
     </>
   )
 }
@@ -177,6 +192,21 @@ export function ProjectFocusList({
   const settledPanelId = useId()
   const [search, setSearch] = useState<{ environmentId: string | null; revealKey: number; query: string } | null>(null)
   const [automationTarget, setAutomationTarget] = useState<{ path: string; environmentId?: string } | null>(null)
+  const paneRef = useRef<HTMLDivElement>(null)
+  const [paneHeight, setPaneHeight] = useState(0)
+  useLayoutEffect(() => {
+    const node = paneRef.current
+    if (!node) return
+    const read = () => {
+      const next = node.clientHeight
+      setPaneHeight((current) => (current === next ? current : next))
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(read)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
   useImperativeHandle(actionsRef, () => ({
     openHistory: () => setSearch((prev) => ({ environmentId: null, revealKey: (prev?.revealKey ?? 0) + 1, query: prev?.query ?? '' })),
     openAutomation: () => setAutomationTarget({ path: focusedPath }),
@@ -196,6 +226,24 @@ export function ProjectFocusList({
   const settledCount = settledSections.reduce((total, section) => total + section.count, 0)
   const groupActive = sections.length > 1
   const groupSettled = settledSections.length > 1
+
+  const listSizes = sections.flatMap(({ bucket, checkouts }) => (
+    bucket.connection === 'offline'
+      ? []
+      : checkouts.map((checkout) => ({
+          key: checkout.pathKey,
+          environmentId: bucket.environmentId,
+          sessionCount: props.folderSessions[checkout.pathKey]?.length ?? 0,
+          hasMore: props.sessionsHasMore?.[checkout.pathKey] === true,
+        }))
+  ))
+  const listMaxes = projectFocusSessionListMaxHeights(listSizes, paneHeight)
+  const maxByPath = new Map(listSizes.map((list, index) => [list.key, listMaxes[index]!]))
+  const listMax = (pathKey: string): ProjectFocusListMax => maxByPath.get(pathKey) ?? { kind: 'cap' }
+  // One online list is the pane. Several lists share it, and the outer scroller
+  // only appears once a cap is back in play. Search keeps that scroller so history
+  // does not stretch to the pane.
+  const fillsPane = !search && listMaxes.every((max) => max.kind === 'fill')
 
   const historyProjectIds = useMemo(() => Object.fromEntries(props.environments.flatMap((bucket) => bucket.checkouts.map((checkout) => [checkout.pathKey, checkout.projectId]))), [props.environments])
   const history = (folderPaths: string[]) => (
@@ -220,6 +268,36 @@ export function ProjectFocusList({
     />
   )
 
+  const activeSections = sections.map(({ bucket, checkouts }) => {
+    const target = checkouts.find((checkout) => checkout.pathKey === focusedPath && !checkout.missing)
+      ?? checkouts.find((checkout) => !checkout.missing)
+    const searching = search && (search.environmentId === null || search.environmentId === bucket.environmentId)
+    const body = searching ? history(checkouts.map((checkout) => checkout.pathKey)) : (
+      <ActiveFocusSessions
+        bucket={bucket}
+        checkouts={checkouts}
+        props={props}
+        listMax={listMax}
+      />
+    )
+    const fillSection = fillsPane && bucket.connection !== 'offline'
+    return groupActive ? (
+      <FocusEnvironmentGroup
+        key={bucket.environmentId}
+        bucket={bucket}
+        initiallyExpanded
+        fill={fillSection}
+        revealKey={search && (search.environmentId === null || search.environmentId === bucket.environmentId) ? search.revealKey : 0}
+        upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
+        onSearch={() => setSearch((prev) => ({ environmentId: bucket.environmentId, revealKey: (prev?.revealKey ?? 0) + 1, query: prev?.query ?? '' }))}
+        onNewAutomation={target ? () => setAutomationTarget({ path: target.pathKey, environmentId: bucket.environmentId }) : undefined}
+        onNewSession={target ? () => props.onNewSession(target.pathKey) : undefined}
+      >
+        {body}
+      </FocusEnvironmentGroup>
+    ) : <div key={bucket.environmentId} className={cn(fillSection && 'flex min-h-0 w-full min-w-0 flex-1 flex-col')}>{body}</div>
+  })
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col px-2 pb-0.5">
       {search?.environmentId === null && (
@@ -232,35 +310,19 @@ export function ProjectFocusList({
           />
         </div>
       )}
-      <ScrollArea type="scroll" edgeFade data-project-focus-active className="sidebar-scroll min-h-0 flex-1">
-        <div className="flex w-0 min-w-full flex-col">
-        {sections.map(({ bucket, checkouts }) => {
-          const target = checkouts.find((checkout) => checkout.pathKey === focusedPath && !checkout.missing)
-            ?? checkouts.find((checkout) => !checkout.missing)
-          const body = search && (search.environmentId === null || search.environmentId === bucket.environmentId) ? history(checkouts.map((checkout) => checkout.pathKey)) : (
-            <ActiveFocusSessions
-              bucket={bucket}
-              checkouts={checkouts}
-              props={props}
-            />
-          )
-          return groupActive ? (
-            <FocusEnvironmentGroup
-              key={bucket.environmentId}
-              bucket={bucket}
-              initiallyExpanded
-              revealKey={search && (search.environmentId === null || search.environmentId === bucket.environmentId) ? search.revealKey : 0}
-              upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
-              onSearch={() => setSearch((prev) => ({ environmentId: bucket.environmentId, revealKey: (prev?.revealKey ?? 0) + 1, query: prev?.query ?? '' }))}
-              onNewAutomation={target ? () => setAutomationTarget({ path: target.pathKey, environmentId: bucket.environmentId }) : undefined}
-              onNewSession={target ? () => props.onNewSession(target.pathKey) : undefined}
-            >
-              {body}
-            </FocusEnvironmentGroup>
-          ) : <div key={bucket.environmentId}>{body}</div>
-        })}
-        </div>
-      </ScrollArea>
+      <div ref={paneRef} data-project-focus-active className="flex min-h-0 flex-1 flex-col">
+        {fillsPane ? (
+          <div className="flex min-h-0 w-0 min-w-full flex-1 flex-col">
+            {activeSections}
+          </div>
+        ) : (
+          <ScrollArea type="scroll" edgeFade className="sidebar-scroll h-full min-h-0 flex-1">
+            <div className="flex w-0 min-w-full flex-col">
+              {activeSections}
+            </div>
+          </ScrollArea>
+        )}
+      </div>
       {automationTarget && <AutomationDialog
         open onOpenChange={(open) => { if (!open) setAutomationTarget(null) }} editAutomation={null}
         projectPath={automationTarget.path} initialEnvironmentId={automationTarget.environmentId} environments={props.environments}

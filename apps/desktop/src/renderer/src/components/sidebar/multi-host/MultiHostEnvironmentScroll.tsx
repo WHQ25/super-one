@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
+import { environmentSections } from '@/lib/multi-host/group-projects'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
-import { EnvironmentHeader, MultiHostProjectList } from './MultiHostProjectList'
+import { EnvironmentHeader, MultiHostProjectList, OfflineEnvironmentGroup } from './MultiHostProjectList'
 
 type ListProps = ComponentProps<typeof MultiHostProjectList>
 
@@ -18,6 +19,28 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
   const obscuredKeyRef = useRef('')
   const [pinnedId, setPinnedId] = useState<string | null>(null)
   const [obscuredIds, setObscuredIds] = useState<string[]>([])
+  const [paneHeight, setPaneHeight] = useState(0)
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const read = () => {
+      // The list's own padding stays inside the pane. Counting it as height
+      // leaves a few pixels of scroll at the ends once the devices fit.
+      const content = viewport.firstElementChild?.firstElementChild as HTMLElement | null
+      const style = content ? getComputedStyle(content) : null
+      const padding = style
+        ? Math.ceil((parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0))
+        : 0
+      const next = Math.max(0, viewport.clientHeight - padding)
+      setPaneHeight((current) => (current === next ? current : next))
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(read)
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [])
 
   const layoutKey = [
     props.groupBy,
@@ -98,13 +121,32 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
   }, [layoutKey])
 
   const pinned = props.environments.find((bucket) => bucket.environmentId === pinnedId) ?? null
+  const offlineSections = props.groupBy === 'environment' && !props.flat
+    ? environmentSections(props.environments, props.sort).filter((section) => section.bucket.connection === 'offline')
+    : []
 
   return (
     // pt-1 and top-1 stay equal. With AppDrawer's mb-1 the gap is 8px.
-    <div ref={frameRef} className="device-name-clip relative h-full pt-1">
-      <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll h-full">
-        <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} />
+    // The offline group is a sibling under the scroll. Opening it shortens the host list.
+    <div ref={frameRef} className="device-name-clip relative flex h-full min-h-0 flex-col pt-1">
+      {/* The viewport's child is `display: table`, whose border-spacing leaves a sliver of scroll at both ends. */}
+      <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
+        <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} paneHeight={paneHeight} />
       </ScrollArea>
+      {offlineSections.length > 0 && (
+        <OfflineEnvironmentGroup
+          sections={offlineSections}
+          sort={props.sort}
+          obscuredEnvironmentIds={obscuredIds}
+          refreshingConnectionId={props.refreshingConnectionId}
+          connectionBusyId={props.connectionBusyId}
+          upgradingLabels={props.upgradingLabels}
+          onRefreshEnvironment={props.onRefreshEnvironment}
+          onToggleConnection={props.onToggleConnection}
+          onAddProject={props.onAddProject}
+          onSort={props.onSort}
+        />
+      )}
       {pinned && (
         <div ref={pinRef} data-slot="pinned-device-name" className="pointer-events-none absolute inset-x-0 top-1 z-10 px-2">
           <div className="pointer-events-auto">

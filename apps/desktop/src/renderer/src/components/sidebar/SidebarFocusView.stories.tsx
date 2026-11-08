@@ -219,7 +219,7 @@ export const Drill: Story = {
 }
 
 const environmentSessionCreated = fn()
-function CrossEnvironmentFocus({ state = 'ready', narrow = false, crowded = false, single = false }: { state?: 'ready' | 'loading' | 'offline' | 'empty'; narrow?: boolean; crowded?: boolean; single?: boolean }) {
+function CrossEnvironmentFocus({ state = 'ready', narrow = false, crowded = false, single = false, uneven = false }: { state?: 'ready' | 'loading' | 'offline' | 'empty'; narrow?: boolean; crowded?: boolean; single?: boolean; uneven?: boolean }) {
   useLayoutEffect(() => {
     environmentSessionCreated.mockClear()
     const previousEnvironments = useMultiHostSidebarStore.getState().environments
@@ -257,6 +257,12 @@ function CrossEnvironmentFocus({ state = 'ready', narrow = false, crowded = fals
       folderPath: checkout.pathKey, folderName: checkout.name, isSettled: true,
     })))
     props.settledCounts = { [focusLocal.pathKey]: 40, [focusRemote.pathKey]: 40 }
+  }
+  if (uneven) {
+    props.folderSessions = {
+      [focusLocal.pathKey]: Array.from({ length: 24 }, (_, index) => focusSessionEntry(`local-${index}`, `Local session ${index}`)),
+      [focusRemote.pathKey]: [focusSessionEntry('remote-active', 'Remote active session')],
+    }
   }
   return (
     <div data-sidebar-inner className="flex h-[540px] flex-col bg-sidebar text-sidebar-foreground" style={{ width: narrow ? 220 : 288 }}>
@@ -424,6 +430,10 @@ export const OneEnvironment: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Local active session')).toBeVisible()
     await expect(canvas.queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
+    const list = canvasElement.querySelector('[data-active-session-list]')
+    await expect(list).toHaveClass('h-full')
+    await expect(list?.className ?? '').not.toContain('max-h-64')
+    await expect(list!.getBoundingClientRect().height).toBeGreaterThan(300)
     await userEvent.click(canvas.getByRole('button', { name: /Settled/ }))
     const settled = canvasElement.querySelector('[data-project-focus-settled]') as HTMLElement
     await expect(within(settled).queryByRole('button', { name: /This computer/ })).not.toBeInTheDocument()
@@ -434,6 +444,20 @@ export const OneEnvironment: Story = {
 export const OneEnvironmentDark: Story = {
   ...OneEnvironment,
   globals: { theme: 'dark' },
+}
+
+/** One host with more sessions than the old cap. The list is the pane and scrolls inside it. */
+export const OneEnvironmentFull: Story = {
+  render: () => <CrossEnvironmentFocus single crowded />,
+  play: async ({ canvasElement }) => {
+    const list = canvasElement.querySelector('[data-active-session-list]') as HTMLElement
+    const pane = canvasElement.querySelector('[data-project-focus-active]') as HTMLElement
+    await expect(list).toHaveClass('h-full')
+    await expect(list.className).not.toContain('max-h-64')
+    await expect(list.getBoundingClientRect().height).toBeGreaterThan(pane.getBoundingClientRect().height * 0.8)
+    const viewport = list.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement
+    await expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight + 1)
+  },
 }
 
 export const CrossEnvironmentOverflow: Story = {
@@ -448,6 +472,23 @@ export const CrossEnvironmentOverflow: Story = {
     const pane = canvasElement.querySelector('[data-sidebar-inner]')!
     await expect(settled.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.getBoundingClientRect().bottom)
     await expect(settled.getBoundingClientRect().height).toBeLessThanOrEqual(pane.getBoundingClientRect().height / 2)
+    for (const list of canvasElement.querySelectorAll('[data-active-session-list]')) {
+      await expect(list).toHaveClass('max-h-64')
+      await expect((list as HTMLElement).style.maxHeight).toBe('')
+      await expect(list.getBoundingClientRect().height).toBeLessThanOrEqual(272)
+    }
+  },
+}
+
+/** One host is full and the other has a handful of sessions, so the full list grows past the shared cap. */
+export const UnevenEnvironments: Story = {
+  render: () => <CrossEnvironmentFocus uneven />,
+  play: async ({ canvasElement }) => {
+    const lists = [...canvasElement.querySelectorAll('[data-active-session-list]')] as HTMLElement[]
+    await expect(lists).toHaveLength(2)
+    const [local, remote] = lists
+    await expect(local!.getBoundingClientRect().height).toBeGreaterThan(300)
+    await expect(remote!.getBoundingClientRect().height).toBeLessThan(80)
   },
 }
 

@@ -1,7 +1,7 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { CalendarClock, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
+import { CalendarClock, Cloud, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
@@ -10,7 +10,7 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { notifyEnvironmentListChanged } from '@/lib/environment-list'
 import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
-import { environmentSections, groupCheckoutsByRepo, sortProjectGroups } from '@/lib/multi-host/group-projects'
+import { environmentSections, groupCheckoutsByRepo, sortProjectGroups, type EnvironmentSection } from '@/lib/multi-host/group-projects'
 import { projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
@@ -18,13 +18,14 @@ import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { SidebarCollapse, SidebarHeightMorph } from '@/components/sidebar/SidebarCollapse'
-import { foldProjectSettled } from '@/components/sidebar/sidebar-section-collapse'
+import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
+import { foldProjectSettled, useSidebarSectionCollapsed } from '@/components/sidebar/sidebar-section-collapse'
 import { ProjectHoverCard } from '@/components/sidebar/multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/sidebar/multi-host/SessionHoverCard'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 import { focusEnvironment } from '@/components/sidebar/sidebar-focus'
-import { chainSessionListWheel, SESSION_LIST_SCROLL_CLASS } from '@/components/sidebar/session-list-scroll'
+import { chainSessionListWheel, multiHostProjectListMaxHeights, SESSION_LIST_SCROLL_CLASS, type MultiHostSectionSize } from '@/components/sidebar/session-list-scroll'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
@@ -75,6 +76,11 @@ export interface MultiHostProjectListProps {
   upgradingLabels?: Readonly<Record<string, string>>
   /** In-flow names hidden while the unpainted pin shows them. */
   obscuredEnvironmentIds?: readonly string[]
+  /**
+   * Measured height of the multi-host scrollport. Unmeasured stays on `max-h-64`.
+   * The scroll frame passes this; other callers leave it unset.
+   */
+  paneHeight?: number
   /** Focus mode: one environment's projects, with no environment header of their own. */
   flat?: boolean
 }
@@ -83,6 +89,30 @@ function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
   const local = checkouts.find((checkout) => checkout.connectionId === 'local')
   if (local) return local
   return checkouts.reduce((best, checkout) => (checkout.lastOpened > best.lastOpened ? checkout : best))
+}
+
+function heightSections(
+  environments: readonly EnvironmentBucket[],
+  sort: SidebarSort,
+  collapsedIds: ReadonlySet<string>,
+  expandedProjectKeys: ReadonlySet<string>,
+  folderSessions: Record<string, SessionHistoryEntry[]>,
+  sessionsHasMore: Record<string, boolean> | undefined,
+): MultiHostSectionSize[] {
+  const sizes: MultiHostSectionSize[] = []
+  for (const { bucket, checkouts } of environmentSections(environments, sort)) {
+    if (bucket.connection === 'offline') continue
+    const open = !collapsedIds.has(bucket.environmentId)
+    const sessions = open ? checkouts.flatMap((checkout) => {
+      if (!expandedProjectKeys.has(checkout.pathKey)) return []
+      const sessionCount = folderSessions[checkout.pathKey]?.length ?? 0
+      const hasMore = sessionsHasMore?.[checkout.pathKey] === true
+      if (sessionCount === 0 && !hasMore) return []
+      return [{ key: checkout.pathKey, sessionCount, hasMore }]
+    }) : []
+    sizes.push({ environmentId: bucket.environmentId, open, projectCount: checkouts.length, sessions })
+  }
+  return sizes
 }
 
 function ProjectLoadError({
@@ -115,6 +145,14 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   const {
     environments, groupBy, sort, expandedProjectKeys, collapsedEnvironmentIds,
   } = props
+  const collapsedIds = new Set(collapsedEnvironmentIds)
+
+  const environmentHeights = groupBy === 'environment' && !props.flat
+    ? multiHostProjectListMaxHeights(
+        heightSections(environments, sort, collapsedIds, expandedProjectKeys, props.folderSessions, props.sessionsHasMore),
+        props.paneHeight ?? 0,
+      )
+    : null
 
   const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false) => {
     const folder = checkoutToRecentFolder(checkout, name)
@@ -124,6 +162,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         folder={folder}
         sessionsOnly={sessionsOnly}
         isExpanded={expandedProjectKeys.has(checkout.pathKey)}
+        sessionListMaxHeight={environmentHeights?.sessions.get(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
         sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey] ?? false}
         onLoadMoreSessions={props.onLoadMoreSessions}
@@ -184,25 +223,21 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   }
 
   if (groupBy === 'environment') {
-    const sections = environmentSections(environments, sort)
+    const sections = environmentSections(environments, sort).filter((section) => section.bucket.connection !== 'offline')
     return (
       <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
         {sections.map(({ bucket, checkouts }) => {
-          const offline = bucket.connection === 'offline'
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
-          const expanded = !offline && !collapsed
+          const projectMax = environmentHeights?.projects.get(bucket.environmentId)
           return (
             <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
               <EnvironmentHeader
                 bucket={bucket}
-                expanded={expanded}
+                expanded={!collapsed}
                 refreshing={props.refreshingConnectionId === bucket.connectionId}
                 connectionBusy={props.connectionBusyId === bucket.connectionId}
                 sort={sort}
-                onToggle={() => {
-                  if (offline) return
-                  props.onToggleEnvironment(bucket.environmentId)
-                }}
+                onToggle={() => props.onToggleEnvironment(bucket.environmentId)}
                 onRefresh={() => props.onRefreshEnvironment(bucket.connectionId)}
                 onToggleConnection={() => props.onToggleConnection(bucket.connectionId, bucket.connection)}
                 onAddProject={() => props.onAddProject(bucket.connectionId)}
@@ -212,8 +247,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               />
               {/* Projects sit one step inside their environment, hover fill included. */}
               <div className="pl-1">
-                <SidebarCollapse open={expanded} unmountClosed>
-                  <EnvironmentProjectScroll>
+                <SidebarCollapse open={!collapsed} unmountClosed>
+                  <EnvironmentProjectScroll maxHeight={projectMax?.kind === 'px' ? projectMax.maxHeight : undefined}>
                     {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
                       <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
                     )}
@@ -224,7 +259,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                         onRetry={props.onRefreshEnvironment}
                       />
                     )}
-                    {bucket.projectsStatus === 'ready' && checkouts.length === 0 && bucket.connection !== 'offline' && (
+                    {bucket.projectsStatus === 'ready' && checkouts.length === 0 && (
                       <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
                     )}
                     {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
@@ -322,8 +357,88 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   )
 }
 
-/** Share session-list sizing and wheel chaining, leaving the device name outside. */
-function EnvironmentProjectScroll({ children }: { children: ReactNode }) {
+/**
+ * Offline hosts, anchored under the host scroll. Opening the heading grows
+ * the block upward. The host list uses the same `max-h-64` as one project's
+ * Settled list outside focus.
+ */
+export function OfflineEnvironmentGroup({
+  sections,
+  sort,
+  obscuredEnvironmentIds,
+  refreshingConnectionId,
+  connectionBusyId,
+  upgradingLabels,
+  onRefreshEnvironment,
+  onToggleConnection,
+  onAddProject,
+  onSort,
+}: {
+  sections: readonly EnvironmentSection[]
+  sort: SidebarSort
+  obscuredEnvironmentIds?: readonly string[]
+  refreshingConnectionId: string | null
+  connectionBusyId: string | null
+  upgradingLabels?: Readonly<Record<string, string>>
+  onRefreshEnvironment: (connectionId: string) => void
+  onToggleConnection: (connectionId: string, connection: EnvironmentBucket['connection']) => void
+  onAddProject: (connectionId: string) => void
+  onSort?: (sort: SidebarSort) => void
+}) {
+  const { t } = useTranslation()
+  const [collapsed, toggle] = useSidebarSectionCollapsed('offline')
+  const panelId = useId()
+  const viewportRef = useRef<HTMLDivElement>(null)
+  return (
+    <div data-offline-environment-group="" className="flex shrink-0 flex-col px-2 pb-0.5">
+      <SidebarSectionLabel
+        section="offline"
+        count={sections.length}
+        countTone="plain"
+        collapsed={collapsed}
+        onToggle={toggle}
+        controlsId={panelId}
+        chevronWhenExpanded
+        icon={<Cloud className="text-sidebar-foreground/45" />}
+      >
+        {t('sidebar.offlineEnvironments')}
+      </SidebarSectionLabel>
+      <SidebarCollapse id={panelId} open={!collapsed} unmountClosed>
+        <ScrollArea
+          type="scroll"
+          edgeFade
+          data-offline-environment-list=""
+          viewportRef={viewportRef}
+          className={SESSION_LIST_SCROLL_CLASS}
+          onWheel={(event) => {
+            if (viewportRef.current) chainSessionListWheel(viewportRef.current, event)
+          }}
+        >
+          {sections.map(({ bucket }) => (
+            <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
+              <EnvironmentHeader
+                bucket={bucket}
+                expanded={false}
+                refreshing={refreshingConnectionId === bucket.connectionId}
+                connectionBusy={connectionBusyId === bucket.connectionId}
+                sort={sort}
+                onToggle={() => {}}
+                onRefresh={() => onRefreshEnvironment(bucket.connectionId)}
+                onToggleConnection={() => onToggleConnection(bucket.connectionId, bucket.connection)}
+                onAddProject={() => onAddProject(bucket.connectionId)}
+                onSort={onSort}
+                obscured={obscuredEnvironmentIds?.includes(bucket.environmentId) ?? false}
+                upgradingLabel={upgradingLabels?.[bucket.connectionId]}
+              />
+            </div>
+          ))}
+        </ScrollArea>
+      </SidebarCollapse>
+    </div>
+  )
+}
+
+function EnvironmentProjectScroll({ children, maxHeight }: { children: ReactNode; maxHeight?: number }) {
   const viewportRef = useRef<HTMLDivElement>(null)
   return (
     <ScrollArea
@@ -331,6 +446,7 @@ function EnvironmentProjectScroll({ children }: { children: ReactNode }) {
       edgeFade
       data-environment-project-list=""
       className={SESSION_LIST_SCROLL_CLASS}
+      style={maxHeight != null ? { maxHeight } : undefined}
       viewportRef={viewportRef}
       onWheel={(event) => {
         if (viewportRef.current) chainSessionListWheel(viewportRef.current, event)

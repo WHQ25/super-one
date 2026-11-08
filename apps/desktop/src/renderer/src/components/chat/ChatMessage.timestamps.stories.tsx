@@ -52,6 +52,24 @@ export const Chinese: Story = { args: { messages: multiDay }, globals: { locale:
 /** A session started minutes ago has no start separator yet. */
 export const FreshSession: Story = { args: { messages: freshTranscript() } }
 
+/** No token usage and a short turn: the footer is only the copy icon until hover. */
+export const IconOnlyFooter: Story = {
+  args: {
+    messages: [
+      timedUser('u-icon', 'Ping.', localTime(0, 10, 2)),
+      {
+        id: 'a-icon',
+        role: 'assistant',
+        status: 'complete',
+        providerId: 'claude',
+        createdAt: localTime(0, 10, 2),
+        content: [{ type: 'text', text: 'Pong.' }],
+        metadata: { durationMs: 1_200, completedAt: localTime(0, 10, 3) },
+      },
+    ],
+  },
+}
+
 /** A turn saved before completion times were recorded shows no footer time. */
 export const TurnWithoutCompletionTime: Story = {
   args: {

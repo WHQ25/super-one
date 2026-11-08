@@ -202,102 +202,109 @@ export function DurationFooter({
   const stallColor = isStreaming && !apiRetry ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
-    <div data-pending-turn={apiRetry ? undefined : pendingTurn} role={!apiRetry && pendingTurn ? 'status' : undefined} aria-live={!apiRetry && pendingTurn ? 'polite' : undefined} className={cn('group/footer mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs transition-colors duration-500', stallColor, className)}>
-      {showCopy && (
-        <button
-          onClick={handleCopy}
-          className="cursor-pointer transition-colors hover:text-foreground"
-        >
-          {copied
-            ? <Check className="size-3 text-success" />
-            : <Copy className="size-3" />
-          }
-        </button>
-      )}
-      {(showActivity || showDuration || apiRetry) && (showActivity ? (
-        <ModSpinner message={message}>
-          {(label) => (
-            <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
-              <Loader2 className="size-3 animate-spin" />
-              {apiRetry
-                ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
-                : pendingTurn
-                ? <span>{t(pendingTurn === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
-                : <>
-                  {startup
-                    ? <span>{t('chat.codex.startingMcpServers', startup)}</span>
-                    : label && <span>{label}</span>}
-                  {showDuration && <span>{footer.durationLabel}</span>}
-                </>}
-            </span>
-          )}
-        </ModSpinner>
-      ) : (
-        <>
-          {apiRetry ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} /> : <>
-            <Clock className="size-3" />
-            <span>{footer.durationLabel}</span>
-          </>}
-        </>
-      ))}
-      {showSlashCommand && (
-        <>
-          <span>·</span>
-          <span>{t('chat.runningCommand', { command: runningSlashCommand!.command })}</span>
-        </>
-      )}
-      {hasTokens && (
-        <>
-          {(showActivity || showDuration || !!apiRetry) && <span>·</span>}
-          <AnimatedToken value={tokenInput} direction="up" active={isStreaming} />
-          <AnimatedToken value={tokenOutput} direction="down" active={isStreaming} />
-        </>
-      )}
-      {showError && (
-        <>
-          {(showDuration || hasTokens) && <span>·</span>}
-          <MessageErrorBadge info={errorInfo!} />
-        </>
-      )}
-      {showTerminalReason && (
-        <>
-          {(showDuration || hasTokens) && <span>·</span>}
-          <AlertTriangle className="size-3" />
-          <span>{formatTerminalReason(terminalReason!)}</span>
-        </>
-      )}
-      {showMcpFailure && (() => {
-        const reauthServers = failedMcp.filter((s) => s.failureReason === 'reauthenticationRequired')
-        return (
-          <>
-            {(showDuration || hasTokens || showTerminalReason || showError) && <span>·</span>}
-            <AlertTriangle className="size-3 text-warning" />
-            {reauthServers.length > 0 ? (
-              <button
-                type="button"
-                disabled={reauthBusy}
-                onClick={() => handleReauth(reauthServers.map((s) => s.name))}
-                className="text-warning underline-offset-2 hover:underline disabled:opacity-60"
-              >
-                {reauthBusy
-                  ? t('chat.codex.mcpReauthenticating')
-                  : t('chat.codex.mcpNeedsReauth', { name: reauthServers.map((s) => s.name).join(', ') })}
-              </button>
-            ) : (
-              <span className="text-warning">{t('chat.codex.mcpStartupFailed', { name: failedMcp.map((s) => s.name).join(', ') })}</span>
+    // The row stays one text line tall (16px). An icon alone is 12px, and the
+    // hover time would otherwise wrap onto a second line in a narrow pane.
+    // Those two sit outside the flow, anchored to the end of the content.
+    <div data-pending-turn={apiRetry ? undefined : pendingTurn} role={!apiRetry && pendingTurn ? 'status' : undefined} aria-live={!apiRetry && pendingTurn ? 'polite' : undefined} className={cn('group/footer mt-2 min-h-4 w-full min-w-0 text-xs transition-colors duration-500', stallColor, className)}>
+      <div className="relative flex w-fit max-w-full min-h-4 min-w-0 flex-wrap items-center gap-1.5">
+        {showCopy && (
+          <button
+            onClick={handleCopy}
+            className="cursor-pointer transition-colors hover:text-foreground"
+          >
+            {copied
+              ? <Check className="size-3 text-success" />
+              : <Copy className="size-3" />
+            }
+          </button>
+        )}
+        {(showActivity || showDuration || apiRetry) && (showActivity ? (
+          <ModSpinner message={message}>
+            {(label) => (
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <Loader2 className="size-3 animate-spin" />
+                {apiRetry
+                  ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
+                  : pendingTurn
+                  ? <span>{t(pendingTurn === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
+                  : <>
+                    {startup
+                      ? <span>{t('chat.codex.startingMcpServers', startup)}</span>
+                      : label && <span>{label}</span>}
+                    {showDuration && <span>{footer.durationLabel}</span>}
+                  </>}
+              </span>
             )}
+          </ModSpinner>
+        ) : (
+          <>
+            {apiRetry ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} /> : <>
+              <Clock className="size-3" />
+              <span>{footer.durationLabel}</span>
+            </>}
           </>
-        )
-      })()}
-      {!isStreaming && (
-        <MessageTimestamp iso={message.metadata?.completedAt} className="hidden group-hover/footer:inline" />
-      )}
-      {showFork && (
-        <ForkButton
-          message={message}
-          className="hidden group-hover/footer:block data-[state=open]:block"
-        />
-      )}
+        ))}
+        {showSlashCommand && (
+          <>
+            <span>·</span>
+            <span>{t('chat.runningCommand', { command: runningSlashCommand!.command })}</span>
+          </>
+        )}
+        {hasTokens && (
+          <>
+            {(showActivity || showDuration || !!apiRetry) && <span>·</span>}
+            <AnimatedToken value={tokenInput} direction="up" active={isStreaming} />
+            <AnimatedToken value={tokenOutput} direction="down" active={isStreaming} />
+          </>
+        )}
+        {showError && (
+          <>
+            {(showDuration || hasTokens) && <span>·</span>}
+            <MessageErrorBadge info={errorInfo!} />
+          </>
+        )}
+        {showTerminalReason && (
+          <>
+            {(showDuration || hasTokens) && <span>·</span>}
+            <AlertTriangle className="size-3" />
+            <span>{formatTerminalReason(terminalReason!)}</span>
+          </>
+        )}
+        {showMcpFailure && (() => {
+          const reauthServers = failedMcp.filter((s) => s.failureReason === 'reauthenticationRequired')
+          return (
+            <>
+              {(showDuration || hasTokens || showTerminalReason || showError) && <span>·</span>}
+              <AlertTriangle className="size-3 text-warning" />
+              {reauthServers.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={reauthBusy}
+                  onClick={() => handleReauth(reauthServers.map((s) => s.name))}
+                  className="text-warning underline-offset-2 hover:underline disabled:opacity-60"
+                >
+                  {reauthBusy
+                    ? t('chat.codex.mcpReauthenticating')
+                    : t('chat.codex.mcpNeedsReauth', { name: reauthServers.map((s) => s.name).join(', ') })}
+                </button>
+              ) : (
+                <span className="text-warning">{t('chat.codex.mcpStartupFailed', { name: failedMcp.map((s) => s.name).join(', ') })}</span>
+              )}
+            </>
+          )
+        })()}
+        {!isStreaming && (showFork || message.metadata?.completedAt) && (
+          <span className="pointer-events-none absolute top-0 left-full hidden h-4 items-center gap-1.5 pl-1.5 whitespace-nowrap group-hover/footer:pointer-events-auto group-hover/footer:flex has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:flex">
+            <MessageTimestamp iso={message.metadata?.completedAt} className="inline-flex h-4 items-center" />
+            {showFork && (
+              <ForkButton
+                message={message}
+                className="inline-flex h-4 items-center"
+              />
+            )}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

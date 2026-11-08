@@ -10,7 +10,7 @@ import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 
 vi.mock('./ForkButton', () => ({
-  ForkButton: () => <button type="button" aria-label="fork" />,
+  ForkButton: ({ className }: { className?: string }) => <button type="button" aria-label="fork" className={className} />,
 }))
 
 function createCodexMessage(overrides: Partial<ChatMessageType> = {}): ChatMessageType {
@@ -298,6 +298,29 @@ describe('ChatMessage copy affordance', () => {
     const copyGroup = actions!.closest('.group\\/copy')
     expect(copyGroup).not.toBeNull()
     expect(copyGroup).toHaveClass('hover:z-30', 'focus-within:z-30')
+  })
+})
+
+describe('ChatMessage icon-only footer', () => {
+  it('reserves one text line so hover time and fork do not change the row height', () => {
+    const { container } = render(
+      <ChatMessage
+        message={{
+          ...createClaudeMessage([{ type: 'text', text: 'ok' }]),
+          metadata: { durationMs: 1_500, completedAt: '2026-10-08T05:00:00.000Z' },
+        }}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+
+    const footer = container.querySelector('.group\\/footer')
+    expect(footer).not.toBeNull()
+    expect(footer).toHaveClass('min-h-4', 'w-full')
+    const reveal = footer!.querySelector('time')?.parentElement
+    expect(reveal).toHaveClass('absolute', 'left-full', 'hidden', 'h-4', 'group-hover/footer:flex')
+    expect(reveal?.parentElement).toHaveClass('relative', 'w-fit', 'min-h-4')
+    expect(reveal).toContainElement(footer!.querySelector('[aria-label="fork"]'))
   })
 })
 

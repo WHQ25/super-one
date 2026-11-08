@@ -52,8 +52,15 @@ describe('native widget payload', () => {
     it('passes through a path the agent already has on disk without copying it', () => {
       const existing = join(dir, 'already.png')
       writeFileSync(existing, 'x')
-      const built = buildNativeWidgetPayload('image-gallery', 't', { images: [{ path: existing }] }, deps())
+      const granted: string[] = []
+      const built = buildNativeWidgetPayload(
+        'image-gallery',
+        't',
+        { images: [{ path: existing }] },
+        { ...deps(), grantFile: (p) => granted.push(p) },
+      )
       expect(built.payload!.images![0].savedPath).toBe(existing)
+      expect(granted).toContain(existing)
     })
 
     it('accepts a mix of paths and bytes in one call, preserving order', () => {

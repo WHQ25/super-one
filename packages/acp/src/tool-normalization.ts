@@ -526,8 +526,10 @@ function normalizeInput(
     case 'ImageGen':
     case 'ImageEdit': {
       const out: Record<string, unknown> = {}
-      const prompt = pickString(raw, ['prompt', 'description', 'text'])
+      const prompt = pickString(raw, ['prompt', 'Prompt', 'description', 'text'])
       if (prompt) out.prompt = prompt
+      const aspectRatio = pickString(raw, ['aspect_ratio', 'aspectRatio', 'AspectRatio'])
+      if (aspectRatio) out.aspect_ratio = aspectRatio
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'Monitor':

@@ -1,9 +1,6 @@
 import type { ChatMessage, ImageGenerationItem, VideoGenerationItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from '@superone/chat-core'
-import { parseGenerationResult, toSavedPaths, type GenerationResult } from '@superone/chat-core/turn-process/media-tools'
-
-export { isMediaGenerateVideoTool, isMediaVideoStatusTool }
-export {
+import {
   isFailedGenerationResult,
   isGrokVideoGenTool,
   isMediaGenerateImageTool,
@@ -12,7 +9,23 @@ export {
   isWidgetShowTool,
   nativeWidgetImages,
   nativeWidgetVideos,
+  parseGenerationResult,
+  toSavedPaths,
+  type GenerationResult,
 } from '@superone/chat-core/turn-process/media-tools'
+
+export {
+  isFailedGenerationResult,
+  isGrokVideoGenTool,
+  isMediaGenerateImageTool,
+  isMediaGenerateVideoTool,
+  isMediaVideoStatusTool,
+  isSuccessfulGenerationResult,
+  isVideoStatusStillRunning,
+  isWidgetShowTool,
+  nativeWidgetImages,
+  nativeWidgetVideos,
+}
 
 /** Pull the human error string from a media_generate_* / status JSON (or `[Error]` text). */
 export function mediaToolErrorMessage(result?: string | null): string {
@@ -129,6 +142,50 @@ export function toImageGenerationItems(
       ...(warnings && warnings.length > 0 ? { warnings } : {}),
     }
   })
+}
+
+const SAVED_IMAGE_PATH_RE = /(?:file:\/\/)?(\/[^\s`"')<>]+\.(?:png|jpe?g|webp|gif))/gi
+
+export function subagentGeneratedImages(
+  id: string,
+  input: Record<string, unknown>,
+  resultText: string | undefined,
+  taskResultText: string | undefined,
+  taskStatus?: string,
+  isError?: boolean,
+): ImageGenerationItem[] {
+  if (isSuccessfulGenerationResult(resultText)) {
+    return toImageGenerationItems(id, input, resultText)
+  }
+  const subagentType = typeof input.subagent_type === 'string' ? input.subagent_type.trim().toLowerCase() : ''
+  if (subagentType !== 'image-generator') return []
+  const source = [taskResultText, resultText].filter((s): s is string => typeof s === 'string' && s.length > 0).join('\n')
+  if (source) {
+    const savedPaths: string[] = []
+    const seen = new Set<string>()
+    for (const match of source.matchAll(SAVED_IMAGE_PATH_RE)) {
+      const raw = match[1]?.replace(/[.,;:]+$/, '') ?? ''
+      if (raw && !seen.has(raw)) {
+        seen.add(raw)
+        savedPaths.push(raw)
+      }
+    }
+    if (savedPaths.length > 0) {
+      return toImageGenerationItems(
+        id,
+        input,
+        JSON.stringify({ status: 'generated', savedPaths, provider: 'antigravity' }),
+      )
+    }
+  }
+  const isFinishedWithoutImage =
+    isError === true ||
+    taskStatus === 'failed' ||
+    taskStatus === 'stopped' ||
+    taskStatus === 'completed' ||
+    Boolean(taskResultText)
+  if (isFinishedWithoutImage) return []
+  return toImageGenerationItems(id, input, undefined)
 }
 
 /**

@@ -35,6 +35,46 @@ describe('native widget_show results — hide/collect contract', () => {
     const items = collectGeneratedImages([call('g'), call('p')], results)
     expect(items.map((i) => i.savedPath)).toEqual(['/tmp/a.png'])
   })
+
+  it('collects generated images from an Agent subagent block without hiding the SubagentBlock', () => {
+    const subagentBlock: ContentBlock = {
+      type: 'tool_use',
+      toolUseId: 'sub-img-1',
+      toolName: 'Agent',
+      input: JSON.stringify({
+        subagent_type: 'image-generator',
+        description: 'Test Image Generator',
+        prompt: 'Minimalist neon cat icon',
+      }),
+    }
+    const subagentResult = JSON.stringify({
+      subagent_id: '4852c4a5',
+      output_file: '/tmp/transcript.jsonl',
+      status: 'generated',
+      savedPaths: ['/tmp/neon_cat.jpg'],
+      provider: 'antigravity',
+    })
+    expect(collectGeneratedImages([subagentBlock], new Map([['sub-img-1', 'done']]))).toEqual([
+      {
+        id: 'sub-img-1',
+        type: 'image_generation',
+        status: 'in_progress',
+        revisedPrompt: 'Minimalist neon cat icon',
+      },
+    ])
+    expect(isHiddenToolBlock('Agent', subagentResult)).toBe(false)
+    const items = collectGeneratedImages([subagentBlock], new Map([['sub-img-1', subagentResult]]))
+    expect(items).toEqual([
+      {
+        id: 'sub-img-1-0',
+        type: 'image_generation',
+        status: 'completed',
+        savedPath: '/tmp/neon_cat.jpg',
+        revisedPrompt: 'Minimalist neon cat icon',
+        params: [{ key: 'provider', value: 'antigravity' }],
+      },
+    ])
+  })
 })
 
 describe('coordination tool rows', () => {

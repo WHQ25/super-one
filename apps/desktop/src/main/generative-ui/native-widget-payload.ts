@@ -64,6 +64,7 @@ export interface NativeWidgetBuildDeps {
   generationId: string
   previewDeps?: ImagePreviewDeps
   fileExists?: (path: string) => boolean
+  grantFile?: (path: string) => void
 }
 
 export interface BuiltNativeWidgetPayload {
@@ -191,6 +192,8 @@ export function buildNativeWidgetPayload(
     } catch { /* fall back to the originals */ }
     const images: ImageGenerationItem[] = paths.map((savedPath, index) => {
       const previewPath = previews[index]?.previewPath
+      deps.grantFile?.(savedPath)
+      if (previewPath && previewPath !== savedPath) deps.grantFile?.(previewPath)
       return {
         id: `${deps.generationId}-${index}`,
         type: 'image_generation',
@@ -205,12 +208,15 @@ export function buildNativeWidgetPayload(
 
   // Videos deliberately skip previews: the renderer plays the file from disk and a second copy of a
   // multi-megabyte clip buys nothing.
-  const videos: VideoGenerationItem[] = materialize(resolved, persistVideos, deps).map((savedPath, index) => ({
-    id: `${deps.generationId}-${index}`,
-    type: 'video_generation',
-    ...shared,
-    savedPath,
-    ...(prompt ? { prompt } : {}),
-  }))
+  const videos: VideoGenerationItem[] = materialize(resolved, persistVideos, deps).map((savedPath, index) => {
+    deps.grantFile?.(savedPath)
+    return {
+      id: `${deps.generationId}-${index}`,
+      type: 'video_generation',
+      ...shared,
+      savedPath,
+      ...(prompt ? { prompt } : {}),
+    }
+  })
   return { payload: { kind: 'native', nativeType, title, videos } }
 }

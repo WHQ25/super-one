@@ -1,7 +1,7 @@
 import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { shortenPath } from '@superone/shared/path-display'
 import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
-import { isAlwaysHiddenToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
+import { isAlwaysHiddenToolName, isSubagentToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
 import { CODEX_IMAGE_GENERATION_TOOL } from '@superone/shared/codex-content'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
@@ -12,6 +12,7 @@ import {
   isWidgetShowTool,
   nativeWidgetImages,
   nativeWidgetVideos,
+  subagentGeneratedImages,
   toImageGenerationItems,
   toVideoStatusItems,
 } from './media-generation'
@@ -422,6 +423,16 @@ export function collectGeneratedImages(
     // agent-written provider adapter lands in the same surface as a built-in generation.
     if (isWidgetShowTool(block.toolName)) {
       items.push(...nativeWidgetImages(toolResultMap.get(block.toolUseId)))
+      continue
+    }
+    if (isSubagentToolName(block.toolName)) {
+      items.push(...subagentGeneratedImages(
+        block.toolUseId,
+        parseToolInput(block.input, block.toolName),
+        toolResultMap.get(block.toolUseId),
+        block.taskResultText,
+        block.taskStatus,
+      ))
       continue
     }
     if (!isMediaGenerateImageTool(block.toolName)) continue

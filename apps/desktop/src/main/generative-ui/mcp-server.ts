@@ -92,10 +92,12 @@ async function executeNativeWidget(
   }
 
   const { mediaGenOutputDir } = await import('../media-gen/paths')
+  const { mediaFileGrants } = await import('../media-file-grants')
   const { buildNativeWidgetPayload } = await import('./native-widget-payload')
   const built = buildNativeWidgetPayload(nativeType, title, data, {
     outputDir: mediaGenOutputDir(opts?.sessionId),
     generationId: randomUUID(),
+    grantFile: (path) => mediaFileGrants().add(path),
   })
   if (!built.payload) {
     return { content: [{ type: 'text' as const, text: built.error ?? '[Error] widget_show failed.' }], isError: true as const }

@@ -73,7 +73,7 @@ export function ToolName({
 }) {
   return (
     <span className={cn(
-      'shrink-0 whitespace-nowrap font-medium',
+      'max-w-[75%] shrink-0 truncate font-medium',
       toolNameToneClass(tone),
       streaming && tone !== 'denied' && 'animate-shimmer',
       className,

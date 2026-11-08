@@ -8,7 +8,7 @@ const MEDIA_GENERATE_IMAGE_TOOL = 'mcp__superone__media_generate_image'
 const WIDGET_SHOW_TOOL = 'mcp__superone__widget_show'
 
 /** Grok Build native Imagine tools (ACP title / resolved toolName). */
-const GROK_IMAGE_GEN_TOOLS = new Set(['ImageGen', 'ImageEdit', 'image_gen', 'image_edit'])
+const GROK_IMAGE_GEN_TOOLS = new Set(['ImageGen', 'ImageEdit', 'image_gen', 'image_edit', 'generate_image'])
 const GROK_VIDEO_GEN_TOOLS = new Set([
   'ImageToVideo',
   'ReferenceToVideo',
@@ -28,6 +28,7 @@ export interface GenerationResult {
   generationId?: unknown
   /** Grok MediaGenOutput / prompt_text shape */
   path?: unknown
+  imagePath?: unknown
   type?: unknown
 }
 
@@ -87,6 +88,17 @@ function coerceGenerationResult(parsed: GenerationResult): GenerationResult | nu
       status: 'generated',
       savedPaths: [path],
       provider: parsed.provider ?? 'grok',
+      model: parsed.model,
+      warnings: parsed.warnings,
+      generationId: parsed.generationId,
+    }
+  }
+  const imagePath = typeof parsed.imagePath === 'string' ? parsed.imagePath.trim().replace(/^file:\/\//i, '') : ''
+  if (imagePath) {
+    return {
+      status: 'generated',
+      savedPaths: [imagePath],
+      provider: parsed.provider ?? 'antigravity',
       model: parsed.model,
       warnings: parsed.warnings,
       generationId: parsed.generationId,

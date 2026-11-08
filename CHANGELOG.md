@@ -15,37 +15,49 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Each environment's project list uses the session-list height cap. A wheel already at the edge continues into the parent list, so one host's projects do not push the others off screen. (#154)
-- Project focus actions name the environment they apply to. Search results stay under that host, and an automation runs on the host that owns the project. (#150)
+- Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent.
+- Each ACP agent keeps its own default model, effort, and permission mode. A session that has not chosen yet uses that agent's default.
+- Antigravity keeps a turn open while a subagent is still running after the prompt ends, and answers elicitation through the question card.
+- Offline hosts share one folded group. Project focus and the unfocused multi-host list give leftover pane height to long session lists. The 256px cap stays when every open environment already overflows it.
+- Sidebar groups ease open and closed over 120ms. Heavy lists unmount after the close. Drafts keep their height animation.
 
 ### Changed
 
-- DeepSeek harness is 0.2.2-rc.1. Presets, native and PTC tool execution, and background subagents follow that runtime. A resumed session keeps its model choice, and a session saved by 0.1.7-rc.1 still opens. Embedded plugins must target the 0.2.2 family. The embedded runtime and the external Windows PTC Node require Node 24.9 or newer; the Electron runtime bundled with the desktop app already does. (#144)
+- Antigravity uses the agy CLI installed on the machine. Enable, readiness, and login resolve it on PATH or the known bin directories, and a saved agy_acp_server command moves onto that CLI.
 
 ### Fixed
 
-- Pinned and draft headings use the same gap under the app drawer as an environment heading. That gap is absent when the draft section is empty. (#166)
-- Images stay with their message when a long transcript is split across windows. Preview and download of an image on a remote node use the same readable file, including a file outside the sync zone. (#162)
-- A collaboration task started on a node keeps a link back to the session it came from. (#160)
-- Stopping a remote turn waits until that cancellation finishes. Repeating the stop does not cancel a later turn, and an error from the stop stays on screen. (#157)
-- Starting a remote session no longer lists a second empty chat next to the draft. (#155)
-- An image annotation can extend past the picture. The exported padding uses the preview background. Add to Chat stays compact, and the toolbar stays on one row. (#152)
-- A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
-- Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
-- Switching composers overlays the handoff instead of resizing the transcript. A deliberate jump to the tail still happens when the overlay shrinks, and the scroll controls stay above the active composer. (#168)
-- A New Session click in the sidebar opens that environment and project. A local checkout stays on this machine. An open new-session page switches to the clicked checkout; a conversation that has already started gets a new session there.
-- Restoring focus no longer scrolls the chat history. The gap above the composer stays clear, and question and permission cards cover that gap so the transcript does not show through the composer.
-- Multi-question prompts number their tabs on desktop and on the phone, so a long question title cannot push later questions out of view. The full title stays as the tab tooltip and accessible name, and an answered question still shows a check. (#170)
+- Streaming reasoning no longer fades in. Markdown still fades each new commit.
+- Antigravity usage reads the active Cloud Code quota endpoint, and one endpoint's numbers no longer replace the other's.
+- Message actions sit above the compact turn rail, so table and diagram toolbars and copy on a user message stay on the markdown edge.
+- Pending sends, MCP startup, and harness retries share one footer. A local send does not show the remote sending label.
+- A queued message that joins a live reply clears the sending state. Steering that continues the current reply does not show a second pending reply. (#174)
+- Mentions resolve files, apps, and catalogs on the session's own host. A remote pane does not grant an app on the machine in front. (#172)
 
-## [0.78.1-alpha.1] - 2026-11-07
+## [0.79.0-alpha] - 2026-11-08
+
+### Added
+
+- Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent.
+- Each ACP agent keeps its own default model, effort, and permission mode. A session that has not chosen yet uses that agent's default.
+- Antigravity keeps a turn open while a subagent is still running after the prompt ends, and answers elicitation through the question card.
+- Offline hosts share one folded group. Project focus and the unfocused multi-host list give leftover pane height to long session lists. The 256px cap stays when every open environment already overflows it.
+- Sidebar groups ease open and closed over 120ms. Heavy lists unmount after the close. Drafts keep their height animation.
+
+### Changed
+
+- Antigravity uses the agy CLI installed on the machine. Enable, readiness, and login resolve it on PATH or the known bin directories, and a saved agy_acp_server command moves onto that CLI.
 
 ### Fixed
 
-- A New Session click in the sidebar opens that environment and project. A local checkout stays on this machine. An open new-session page switches to the clicked checkout; a conversation that has already started gets a new session there.
-- Restoring focus no longer scrolls the chat history. The gap above the composer stays clear, and question and permission cards cover that gap so the transcript does not show through the composer.
-- Multi-question prompts number their tabs on desktop and on the phone, so a long question title cannot push later questions out of view. The full title stays as the tab tooltip and accessible name, and an answered question still shows a check. (#170)
+- Streaming reasoning no longer fades in. Markdown still fades each new commit.
+- Antigravity usage reads the active Cloud Code quota endpoint, and one endpoint's numbers no longer replace the other's.
+- Message actions sit above the compact turn rail, so table and diagram toolbars and copy on a user message stay on the markdown edge.
+- Pending sends, MCP startup, and harness retries share one footer. A local send does not show the remote sending label.
+- A queued message that joins a live reply clears the sending state. Steering that continues the current reply does not show a second pending reply. (#174)
+- Mentions resolve files, apps, and catalogs on the session's own host. A remote pane does not grant an app on the machine in front. (#172)
 
-## [0.78.1-alpha] - 2026-11-07
+## [0.78.1] - 2026-11-07
 
 ### Added
 
@@ -67,11 +79,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A follow-up sent while a remote turn is still running stays in the queue, including after the desktop reconnects and when the turn has just finished. (#148)
 - Suggested harnesses follow the host selected before a project is open. A legacy acp advertisement is treated as Grok, so a remote node offers Antigravity only when that harness is installed.
 - Switching composers overlays the handoff instead of resizing the transcript. A deliberate jump to the tail still happens when the overlay shrinks, and the scroll controls stay above the active composer. (#168)
-
-### Tests
-
-- Session event projection ignores the host capabilities announcement and checks runner events in order. (#164)
-- A queued Grok turn does not show Steer Soon.
+- A New Session click in the sidebar opens that environment and project. A local checkout stays on this machine. An open new-session page switches to the clicked checkout; a conversation that has already started gets a new session there.
+- Restoring focus no longer scrolls the chat history. The gap above the composer stays clear, and question and permission cards cover that gap so the transcript does not show through the composer.
+- Multi-question prompts number their tabs on desktop and on the phone, so a long question title cannot push later questions out of view. The full title stays as the tab tooltip and accessible name, and an answered question still shows a check. (#170)
 
 ## [0.78.0] - 2026-11-06
 

@@ -158,7 +158,7 @@ export function ElicitationPermissionPrompt({
             active={!isCollapsed}
           />
         ) : (
-          <div className="grid shrink-0 grid-cols-2 gap-2 @xl:grid-cols-4">
+          <div className="grid shrink-0 grid-cols-2 gap-2 @4xl:grid-cols-4">
             <PermissionActionButton tone="approve" onClick={onAllow}>
               {t('chat.permission.allow')}
             </PermissionActionButton>

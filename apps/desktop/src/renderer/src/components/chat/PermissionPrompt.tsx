@@ -461,7 +461,9 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
               </div>
               <div className="flex shrink-0 flex-col gap-2">
                 {isCodexDecisionPrompt ? (
-                  <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+                  // Session-grant label plus its shortcut needs ~11rem. Four columns
+                  // only once the session pane is 56rem; below that the row overflows.
+                  <div className="grid grid-cols-2 gap-2 @4xl:grid-cols-4">
                     <PermissionActionButton
                       ref={(el) => { btnRefs.current[0] = el }}
                       tone="approve"

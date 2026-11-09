@@ -165,7 +165,7 @@ export function PermissionPromptMock({
               ))}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 @4xl:grid-cols-4">
             <PermissionActionButtonMock tone="approve" focused={focusedAction === "allow"}>{t("chat.permission.allow")}</PermissionActionButtonMock>
             <PermissionActionButtonMock tone="primary" focused={focusedAction === "always_allow"}>{t("chat.permission.alwaysAllow")}</PermissionActionButtonMock>
             <PermissionActionButtonMock tone="reject" focused={focusedAction === "decline"}>{t("chat.permission.decline")}</PermissionActionButtonMock>
@@ -237,7 +237,7 @@ export function PermissionPromptMock({
 
         <div className="flex flex-col gap-2">
           {mode === "codex_decision" ? (
-            <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 @4xl:grid-cols-4">
               <PermissionActionButtonMock tone="approve" kbd="⏎" focused={focusedAction === "allow"}>{t("chat.permission.allow")}</PermissionActionButtonMock>
               <PermissionActionButtonMock tone="primary" kbd="⇧↵" focused={focusedAction === "always_allow"}>{t("chat.permission.allowForSession")}</PermissionActionButtonMock>
               <PermissionActionButtonMock tone="reject" kbd="esc" focused={focusedAction === "decline"}>{t("chat.permission.decline")}</PermissionActionButtonMock>

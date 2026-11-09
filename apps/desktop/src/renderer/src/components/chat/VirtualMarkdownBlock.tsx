@@ -30,8 +30,10 @@ export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: Bl
     const node = element.current
     if (!node || !visible || !transcript) return
     const observer = new ResizeObserver(([entry]) => {
-      height.current = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
+      const nextHeight = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
       const width = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width
+      if (nextHeight <= 0 || width <= 0) return
+      height.current = nextHeight
       setMeasured(previous => Math.abs(previous.height - height.current) < 0.5 && Math.abs(previous.width - width) < 0.5 ? previous : { height: height.current, width })
       setPlaceholder(previous => Math.abs(previous - height.current) < 0.5 ? previous : height.current)
     })

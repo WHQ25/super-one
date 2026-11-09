@@ -2,7 +2,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TranscriptStateProvider, useTranscriptState } from '@superone/ui/lib/transcript-state'
+import { VirtualMarkdownBlock } from './VirtualMarkdownBlock'
 import { VirtualTranscriptBlock } from './VirtualTranscriptBlock'
+import { blockStaysVisible } from './virtual-block-anchor'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -48,5 +50,61 @@ describe('virtual turn blocks', () => {
     expect(container.querySelector('[data-virtual-block]')).toHaveStyle({ height: '140px' })
     act(() => visible(true))
     expect(screen.getByText('Tool output')).toBeVisible()
+  })
+
+  it('retains measured placeholder height across display:none so blocks remount after fullscreen exit', () => {
+    const callbacks = new Map<HTMLElement, (value: boolean) => void>()
+    const resizes: ResizeObserverCallback[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) { this.callback = callback }
+      observe() { resizes.push(this.callback) }
+      disconnect() {}
+    })
+    const { container } = render(
+      <TranscriptStateProvider values={new Map()} scope="turn">
+        <VirtualTranscriptContext.Provider value={{
+          viewportRef: { current: null },
+          preserveBlockAnchor: vi.fn(),
+          observeBlock: (node, callback) => { callbacks.set(node, callback); return () => callbacks.delete(node) },
+        }}>
+          <VirtualTranscriptBlock cacheKey="segment" estimate={48}><p>Final agent reply</p></VirtualTranscriptBlock>
+          <VirtualMarkdownBlock
+            content="Long markdown paragraph"
+            index={0}
+            isIncomplete={false}
+            shouldNormalizeHtmlIndentation={false}
+            shouldParseIncompleteMarkdown={false}
+          />
+        </VirtualTranscriptContext.Provider>
+      </TranscriptStateProvider>,
+    )
+    act(() => {
+      for (const callback of callbacks.values()) callback(true)
+    })
+    expect(screen.getByText('Final agent reply')).toBeVisible()
+    act(() => {
+      for (const resize of resizes) {
+        resize([{ borderBoxSize: [{ blockSize: 92, inlineSize: 480 }], contentRect: { height: 92, width: 480 } } as unknown as ResizeObserverEntry], {} as ResizeObserver)
+      }
+      for (const resize of resizes) {
+        resize([{ borderBoxSize: [{ blockSize: 0, inlineSize: 0 }], contentRect: { height: 0, width: 0 } } as unknown as ResizeObserverEntry], {} as ResizeObserver)
+      }
+      for (const callback of callbacks.values()) callback(false)
+    })
+    const segmentNode = container.querySelector<HTMLElement>('[data-virtual-block="segment"]')!
+    const markdownNode = container.querySelector<HTMLElement>('[data-virtual-markdown-block="0"]')!
+    expect(segmentNode).toHaveStyle({ height: '92px' })
+    expect(markdownNode).toHaveStyle({ height: '92px' })
+    const rootBounds = new DOMRect(0, 0, 640, 800)
+    expect(blockStaysVisible({
+      isIntersecting: true,
+      boundingClientRect: new DOMRect(0, 120, 640, parseFloat(segmentNode.style.height)),
+      rootBounds,
+    }, false)).toBe(true)
+    act(() => {
+      for (const callback of callbacks.values()) callback(true)
+    })
+    expect(screen.getByText('Final agent reply')).toBeVisible()
   })
 })

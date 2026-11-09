@@ -34,7 +34,7 @@ export function VirtualTranscriptBlock({ children, cacheKey, estimate = 48, id }
       const next = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
       // Width animations can resize every visible block on every frame. Geometry
       // belongs in a ref until eviction; it must not cause another React commit.
-      measured.current = next
+      if (next > 0) measured.current = next
     })
     observer.observe(node)
     return () => observer.disconnect()

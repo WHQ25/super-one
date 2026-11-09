@@ -1,4 +1,4 @@
-import { defaultRangeExtractor, elementScroll, useVirtualizer } from '@tanstack/react-virtual'
+import { defaultRangeExtractor, elementScroll, measureElement, useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react'
 import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
 import { isFollowingTail } from '@/hooks/useChatScroll'
@@ -64,6 +64,12 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
     getScrollElement: () => viewportRef.current,
     getItemKey: index => items[index].id,
     estimateSize: index => (items[index].estimate ?? 200) + ROW_GAP,
+    measureElement: (element, entry, instance) => {
+      const size = measureElement(element, entry, instance)
+      if (size > 0) return size
+      const index = instance.indexFromElement(element)
+      return instance.itemSizeCache.get(instance.options.getItemKey(index)) ?? instance.options.estimateSize(index)
+    },
     overscan: 2,
     scrollMargin,
     rangeExtractor: range => [...new Set([...defaultRangeExtractor(range), ...pinnedIds.flatMap(id => {
@@ -164,7 +170,11 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
     const list = listRef.current
     const viewport = viewportRef.current
     if (!list || !viewport) return
-    const measure = () => setScrollMargin(list.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop)
+    const measure = () => {
+      if (viewport.clientHeight > 0 || viewport.clientWidth > 0) {
+        setScrollMargin(list.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop)
+      }
+    }
     measure()
     const resize = new ResizeObserver(measure)
     resize.observe(viewport)

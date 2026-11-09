@@ -2294,4 +2294,57 @@ describe('AcpBackend', () => {
     expect(captured).toBeDefined()
     await backend.close()
   })
+
+  it('clears orphaned pending interactions when a prompt turn finishes without an answer', async () => {
+    let permissionOutcome: unknown
+    let questionOutcome: unknown
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        void opts.permission.request({
+          sessionId: 's',
+          toolCall: { toolCallId: 'orphan-perm-1', title: 'Run', kind: 'execute' },
+          options: [{ optionId: 'a', name: 'Allow', kind: 'allow_once' }],
+        }).then((res) => { permissionOutcome = res })
+        void opts.askUserQuestion!.request({
+          toolCallId: 'orphan-ask-1',
+          questions: [{
+            id: 'q1',
+            header: 'Env',
+            question: 'Which env?',
+            multiSelect: false,
+            options: [{ label: 'Dev', description: 'Dev' }],
+          }],
+        }).then((res) => { questionOutcome = res })
+        await new Promise((r) => setTimeout(r, 0))
+        // Simulate agent cancelling/finishing the turn while reverse-requests were still parked.
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'antigravity', command: 'mock' }))
+    let pendingAtIdle: AgentEvent[] | undefined
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => {
+      events.push(event)
+      if (event.type === 'status_change' && event.status === 'idle') {
+        pendingAtIdle = backend.getPendingInteractions()
+      }
+    })
+
+    await backend.send({ content: 'run tool', assistantMessageId: 'm-orphan' })
+    expect(pendingAtIdle).toEqual([])
+    expect(backend.getPendingInteractions()).toEqual([])
+    expect(permissionOutcome).toEqual({ outcome: { outcome: 'cancelled' } })
+    expect(questionOutcome).toEqual({ outcome: 'cancelled' })
+    expect(events.filter((e) => e.type === 'interaction_resolved')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ interactionType: 'permission', requestId: 'orphan-perm-1', approved: false }),
+        expect.objectContaining({ interactionType: 'question', requestId: 'orphan-ask-1' }),
+      ]),
+    )
+    await backend.close()
+  })
 })
+

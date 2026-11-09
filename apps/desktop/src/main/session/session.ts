@@ -2350,6 +2350,7 @@ export class Session implements SessionContract {
       if (event.type === 'realtime_sdp' || event.type === 'realtime_call_signal') return event
     }
     if (event.type === 'interaction_resolved') {
+      trackHostInteraction(this, event)
       if (this.resolvedInteractions.has(event.requestId)) return event
       this.resolvedInteractions.add(event.requestId)
     } else if (event.type === 'permission_request' || event.type === 'ask_user_question' || event.type === 'plan_approval') {
@@ -2381,6 +2382,13 @@ export class Session implements SessionContract {
     }
     // Liveness follows the backend, not the send call — see `SessionLiveness`.
     this.liveness.apply(event)
+    if (event.type === 'status_change') {
+      if (event.status !== 'streaming' && this._status === 'streaming') {
+        this._status = 'ended'
+      } else if (event.status === 'streaming' && this._delivery && this._status === 'ended') {
+        this._status = 'streaming'
+      }
+    }
     if (event.type === 'permission_request') {
       log.info('[Session.forwardEvent] permission_request sessionId=%s listeners=%d requestId=%s', this.id, this.eventListeners.size, event.request.requestId)
     }

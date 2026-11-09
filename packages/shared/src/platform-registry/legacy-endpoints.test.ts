@@ -187,6 +187,8 @@ describe('canonicalizeEndpointSlots', () => {
 describe('canonicalizeEndpointSlots keeps models no half claims', () => {
   // `EndpointModel.tasks` has no non-empty constraint and MCP's coerceModels accepts `[]`, so these
   // are storable. They were never selectable, but a migration must not delete stored config.
+  // `asr` is served by google-generative, so that model is claimed by the old id. An empty task
+  // list still matches no half and stays on that id as an orphan, after the claimed models.
   const withOrphans: ServiceEndpoint = {
     id: 'google',
     protocols: ['google-generative', 'google-video'],
@@ -194,7 +196,7 @@ describe('canonicalizeEndpointSlots keeps models no half claims', () => {
       { id: 'both', tasks: ['chat', 'video'] },
       { id: 'implicit' },
       { id: 'empty', tasks: [] },
-      { id: 'unserved', tasks: ['asr'] },
+      { id: 'asr', tasks: ['asr'] },
     ],
   }
 
@@ -202,7 +204,7 @@ describe('canonicalizeEndpointSlots keeps models no half claims', () => {
     const out = canonicalizeEndpointSlots([withOrphans])!
     const google = out.endpoints.find((e) => e.id === 'google')!
     const video = out.endpoints.find((e) => e.id === 'google-video')!
-    expect(google.models!.map((m) => m.id)).toEqual(['both', 'implicit', 'empty', 'unserved'])
+    expect(google.models!.map((m) => m.id)).toEqual(['both', 'implicit', 'asr', 'empty'])
     expect(video.models!.map((m) => m.id)).toEqual(['both', 'implicit'])
   })
 
@@ -218,8 +220,8 @@ describe('canonicalizeEndpointSlots keeps models no half claims', () => {
     expect(out.endpoints.find((e) => e.id === 'google')!.models!.map((m) => m.id)).toEqual([
       'both',
       'implicit',
+      'asr',
       'empty',
-      'unserved',
     ])
   })
 })

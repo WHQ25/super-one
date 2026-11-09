@@ -1179,25 +1179,62 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
-  private rejectPendingElicitations(): void {
-    for (const [, pending] of this.pendingElicitations) {
-      pending.resolve({ kind: 'cancel' })
+  private rejectPendingPermissions(): void {
+    for (const [id, pending] of this.pendingPermissions) {
+      this.pendingPermissions.delete(id)
+      pending.resolve({ outcome: { outcome: 'cancelled' } })
+      this.emit({
+        type: 'interaction_resolved',
+        interactionType: 'permission',
+        requestId: id,
+        approved: false,
+      })
     }
-    this.pendingElicitations.clear()
+  }
+
+  private rejectPendingElicitations(): void {
+    for (const [id, pending] of this.pendingElicitations) {
+      this.pendingElicitations.delete(id)
+      pending.resolve({ kind: 'cancel' })
+      this.emit({
+        type: 'interaction_resolved',
+        interactionType: 'permission',
+        requestId: id,
+        approved: false,
+      })
+    }
   }
 
   private rejectPendingQuestions(): void {
-    for (const [, pending] of this.pendingQuestions) {
+    for (const [id, pending] of this.pendingQuestions) {
+      this.pendingQuestions.delete(id)
       pending.resolve({ kind: 'cancelled' })
+      this.emit({
+        type: 'interaction_resolved',
+        interactionType: 'question',
+        requestId: id,
+      })
     }
-    this.pendingQuestions.clear()
   }
 
   private rejectPendingPlanApprovals(reason: 'cancelled' | 'abandoned' = 'abandoned'): void {
-    for (const [, pending] of this.pendingPlanApprovals) {
+    for (const [id, pending] of this.pendingPlanApprovals) {
+      this.pendingPlanApprovals.delete(id)
       pending.resolve(reason === 'cancelled' ? { kind: 'cancelled' } : { kind: 'abandoned' })
+      this.emit({
+        type: 'interaction_resolved',
+        interactionType: 'plan_approval',
+        requestId: id,
+        approved: false,
+      })
     }
-    this.pendingPlanApprovals.clear()
+  }
+
+  private cancelPendingInteractions(planReason: 'cancelled' | 'abandoned' = 'abandoned'): void {
+    this.rejectPendingPermissions()
+    this.rejectPendingQuestions()
+    this.rejectPendingPlanApprovals(planReason)
+    this.rejectPendingElicitations()
   }
 
   bindTaskNotificationSend(send: (content: string, opts?: TaskNotificationOptions) => Promise<void>): void {
@@ -1235,6 +1272,7 @@ export class AcpBackend implements SessionBackend {
    */
   private async cancelLivePrompt(): Promise<void> {
     this.terminalPermissionAbort.abort()
+    this.cancelPendingInteractions('abandoned')
     const inFlight = this.activePrompt
     this.interrupted = true
     try {
@@ -1501,6 +1539,9 @@ export class AcpBackend implements SessionBackend {
         || routed.type === 'message_error'
       ) {
         emittedTerminal = true
+        this.cancelPendingInteractions('abandoned')
+      } else if (routed.type === 'status_change' && routed.status !== 'streaming') {
+        this.cancelPendingInteractions('abandoned')
       }
       if (routed.type === 'session_goal') goalReported = true
       this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
@@ -1528,6 +1569,7 @@ export class AcpBackend implements SessionBackend {
       }
     } catch (err) {
       const failId = this.liveAssistantId ?? messageId
+      this.cancelPendingInteractions('abandoned')
       if (this.interrupted) {
         if (!emittedTerminal) {
           this.emit({ type: 'message_interrupted', messageId: failId })
@@ -1563,6 +1605,7 @@ export class AcpBackend implements SessionBackend {
     this.settleGrokWorkflowUsage()
     this.activePrompt = null
     this.terminalPermissionAbort.abort()
+    this.cancelPendingInteractions('abandoned')
     this.currentMessageId = null
     this.liveAssistantId = null
     this.promptMessageIds.clear()
@@ -1575,13 +1618,7 @@ export class AcpBackend implements SessionBackend {
     this.terminalPermissionAbort.abort()
     this.interrupted = true
     this.pendingQueued.clear()
-    for (const [id, pending] of this.pendingPermissions) {
-      pending.resolve({ outcome: { outcome: 'cancelled' } })
-      this.pendingPermissions.delete(id)
-    }
-    this.rejectPendingQuestions()
-    this.rejectPendingPlanApprovals('abandoned')
-    this.rejectPendingElicitations()
+    this.cancelPendingInteractions('abandoned')
     this.cronTaskIds.clear()
     if (!this.runtime && this.ensureRuntimePromise) {
       // send() is parked on ensureRuntime(); a stalled spawn (Grok retrying its
@@ -1600,13 +1637,7 @@ export class AcpBackend implements SessionBackend {
 
   private async teardownRuntime(): Promise<void> {
     this.terminalPermissionAbort.abort()
-    for (const [id, pending] of this.pendingPermissions) {
-      pending.resolve({ outcome: { outcome: 'cancelled' } })
-      this.pendingPermissions.delete(id)
-    }
-    this.rejectPendingQuestions()
-    this.rejectPendingPlanApprovals('abandoned')
-    this.rejectPendingElicitations()
+    this.cancelPendingInteractions('abandoned')
     this.cronTaskIds.clear()
     this.liveBackgroundTaskIds.clear()
     this.monitorHold.reset()
@@ -2007,6 +2038,9 @@ export class AcpBackend implements SessionBackend {
     const adopt = () => {
       if (adopted) return
       adopted = true
+      this.terminalPermissionAbort.abort()
+      this.terminalPermissionAbort = new AbortController()
+      this.cancelPendingInteractions('abandoned')
       this.promptMessageIds.clear()
       this.promptMessageIds.add(messageId)
       this.currentMessageId = messageId
@@ -2038,6 +2072,14 @@ export class AcpBackend implements SessionBackend {
         adopt()
         const routed = this.retargetPromptEvent(event)
         if (!routed) return
+        if (
+          routed.type === 'message_complete'
+          || routed.type === 'message_interrupted'
+          || routed.type === 'message_error'
+          || (routed.type === 'status_change' && routed.status !== 'streaming')
+        ) {
+          this.cancelPendingInteractions('abandoned')
+        }
         this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
       },
       request.images,

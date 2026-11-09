@@ -35,7 +35,7 @@ export function collaborationWakeQueue(host: SessionManager): CollaborationWakeQ
   const unsubscribe = host.onAny?.((sessionId, event, replay) => {
     if (replay) return
     queue.observe(sessionId, event)
-    if (event.type === 'status_change') queue.start()
+    if (event.type === 'status_change' || event.type === 'interaction_resolved') queue.start()
   })
   if (unsubscribe) subscriptions.set(db, unsubscribe)
   return queue

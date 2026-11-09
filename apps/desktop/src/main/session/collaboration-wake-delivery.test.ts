@@ -3,8 +3,18 @@ import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { CollaborationWakeQueue } from '@superone/runtime/collaboration'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { FakeBackend } from './session-test-backend'
-import type { SendDelivery } from './types'
+import type { SendDelivery, SessionManager } from './types'
 
+let currentDb: NodeDatabase
+vi.mock('../database', () => ({ getDb: () => currentDb }))
+vi.mock('./collaboration-target', () => ({
+  resolveLiveSession: (host: SessionManager, sessionId: string) => host.getSession(sessionId),
+  isCollaborationTargetReadOnly: () => false,
+}))
+vi.mock('./collaboration-remote', () => ({
+  remoteChildTarget: () => null,
+  sendToRemoteChild: vi.fn(),
+}))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 vi.mock('../agent/event-trace', () => ({ trace: vi.fn() }))
 vi.mock('../mcp/config-tools', () => ({ resolveConfigConfirm: () => false, rejectConfigConfirm: () => false }))
@@ -14,15 +24,16 @@ vi.mock('../mcp/browser-webmcp-confirm', () => ({ resolveWebmcpTrustConfirm: () 
 vi.mock('../computer-use/grant-request', () => ({ resolveComputerUseGrant: () => false, rejectComputerUseGrant: () => false }))
 vi.mock('../acp/acp-recap-focus', () => ({ notifySessionRecapForeground: vi.fn(), notifySessionRecapSessionRemoved: vi.fn() }))
 
+import { collaborationWakeQueue, stopCollaborationWakes } from './collaboration-wakes'
 import { Session } from './session'
 
 describe('collaboration inbox to Session admission', () => {
   let db: NodeDatabase
   let queue: CollaborationWakeQueue
-  afterEach(() => { queue?.dispose(); db?.close() })
+  afterEach(() => { stopCollaborationWakes(); queue?.dispose(); db?.close() })
 
   it('keeps the wake unconfirmed until the backend accepts its input', async () => {
-    db = openNodeDatabase(':memory:')
+    db = currentDb = openNodeDatabase(':memory:')
     const backend = new FakeBackend()
     let accept!: () => void
     backend.send = vi.fn(async (_request, delivery?: SendDelivery) => {
@@ -45,7 +56,7 @@ describe('collaboration inbox to Session admission', () => {
   })
 
   it('retains an undelivered wake when backend rebuild fails after send-chain admission', async () => {
-    db = openNodeDatabase(':memory:')
+    db = currentDb = openNodeDatabase(':memory:')
     const backend = new FakeBackend()
     backend.rebuild = vi.fn(async () => { throw new Error('rebuild failed') })
     const session = new Session({ id: 'parent', projectPath: process.cwd(), cwd: process.cwd(),
@@ -61,7 +72,7 @@ describe('collaboration inbox to Session admission', () => {
   })
 
   it.each(['backend continuation', 'human stop'])('defers a prepared wake after %s before the input handoff', async (reason) => {
-    db = openNodeDatabase(':memory:')
+    db = currentDb = openNodeDatabase(':memory:')
     const backend = new FakeBackend()
     let finishRebuild!: () => void
     backend.rebuild = vi.fn(() => new Promise<void>((resolve) => { finishRebuild = resolve }))
@@ -103,7 +114,7 @@ describe('collaboration inbox to Session admission', () => {
 
   it.each(['claude', 'codex', 'acp'] as const)(
     'admits a %s wake through Session once, without retrying the ensuing provider error', async (harnessId) => {
-      db = openNodeDatabase(':memory:')
+      db = currentDb = openNodeDatabase(':memory:')
       const backend = new FakeBackend()
       const send = backend.send.bind(backend)
       backend.send = async (request, delivery?: SendDelivery) => { delivery?.onInputAccepted(); await send(request) }
@@ -139,4 +150,85 @@ describe('collaboration inbox to Session admission', () => {
       expect(events.some((event) => event.type === 'user_message_appended')).toBe(false)
     },
   )
+
+  it('drains a wake queued during an active turn when status_change: idle fires before backend.send settles', async () => {
+    db = currentDb = openNodeDatabase(':memory:')
+    const backend = new FakeBackend()
+    let finishTurn!: () => void
+    backend.send = vi.fn(async (request, delivery?: SendDelivery) => {
+      backend.sendCalls.push(request)
+      delivery?.onInputAccepted()
+      backend.emit({ type: 'message_start', message: { id: `m-${backend.sendCalls.length}`, role: 'assistant', status: 'streaming', content: [], createdAt: '' } })
+      backend.emit({ type: 'status_change', status: 'streaming' })
+      await new Promise<void>((resolve) => { finishTurn = resolve })
+      backend.emit({ type: 'message_complete', messageId: `m-${backend.sendCalls.length}` })
+      backend.emit({ type: 'status_change', status: 'idle' })
+      // Mirror AcpBackend/CodexBackend awaiting inner turn cleanup after emitting status_change: idle.
+      await Promise.resolve()
+    })
+    const session = new Session({
+      id: 'parent', projectPath: process.cwd(), cwd: process.cwd(),
+      providerId: 'acp-base', harnessId: 'acp', providerConfig: {}, backend,
+    })
+    const host = {
+      getSession: (id: string) => (id === 'parent' ? session : null),
+      onAny: (cb: (sessionId: string, event: AgentEvent, replay: boolean) => void) =>
+        session.on((event, replay) => cb('parent', event, replay)),
+    } as unknown as SessionManager
+    queue = collaborationWakeQueue(host)
+
+    const firstTurn = session.send({ content: 'run child task' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    expect(session.isStreaming()).toBe(true)
+
+    queue.enqueue('parent', 'message:35', 'New collaboration message from child. Call session_collab_retrieve.')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(db.prepare("SELECT state, attempts FROM collaboration_wakes WHERE notification_id = 'message:35'").get())
+      .toMatchObject({ state: 'queued', attempts: 0 })
+
+    finishTurn()
+    await firstTurn
+    await vi.waitFor(() => expect(db.prepare("SELECT state, attempts FROM collaboration_wakes WHERE notification_id = 'message:35'").get())
+      .toMatchObject({ state: 'admitted', attempts: 1 }))
+    expect(backend.sendCalls).toHaveLength(2)
+    expect(backend.sendCalls[1]).toMatchObject({ clientMessageId: 'message:35', source: 'task-notification' })
+    finishTurn()
+  })
+
+  it('drains a wake held behind a pending interaction as soon as that interaction resolves', async () => {
+    db = currentDb = openNodeDatabase(':memory:')
+    const backend = new FakeBackend()
+    const send = backend.send.bind(backend)
+    backend.send = async (request, delivery?: SendDelivery) => { delivery?.onInputAccepted(); await send(request) }
+    const session = new Session({
+      id: 'parent', projectPath: process.cwd(), cwd: process.cwd(),
+      providerId: 'acp-base', harnessId: 'acp', providerConfig: {}, backend,
+    })
+    const host = {
+      getSession: (id: string) => (id === 'parent' ? session : null),
+      onAny: (cb: (sessionId: string, event: AgentEvent, replay: boolean) => void) =>
+        session.on((event, replay) => cb('parent', event, replay)),
+    } as unknown as SessionManager
+    queue = collaborationWakeQueue(host)
+
+    session.emitHostEvent({
+      type: 'ask_user_question',
+      request: { requestId: 'q-pending', questions: [] },
+    } as unknown as AgentEvent)
+    expect(session.getPendingInteractions()).toHaveLength(1)
+
+    queue.enqueue('parent', 'message:36', 'Child sent a message while question was open.')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(db.prepare("SELECT state, attempts FROM collaboration_wakes WHERE notification_id = 'message:36'").get())
+      .toMatchObject({ state: 'queued', attempts: 0 })
+    expect(backend.sendCalls).toHaveLength(0)
+
+    session.dismissQuestion('q-pending')
+    expect(session.getPendingInteractions()).toEqual([])
+    await vi.waitFor(() => expect(db.prepare("SELECT state, attempts FROM collaboration_wakes WHERE notification_id = 'message:36'").get())
+      .toMatchObject({ state: 'admitted', attempts: 1 }))
+    expect(backend.sendCalls).toHaveLength(1)
+    backend.resolveSend?.()
+  })
 })
+

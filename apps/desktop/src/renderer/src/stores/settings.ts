@@ -797,7 +797,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ])
       // A host switch that started while this read was in flight owns the store now.
       if (get().providerScope !== scope) return
-      set({ platforms, credentials, bindings })
+      // Same guard as the remote branch. A missing IPC result must not replace
+      // the arrays speech and provider rows iterate.
+      set({
+        platforms: Array.isArray(platforms) ? platforms : [],
+        credentials: Array.isArray(credentials) ? credentials : [],
+        bindings: Array.isArray(bindings) ? bindings : [],
+      })
       return
     }
     // Remote host may be disconnected / revoked while UI still holds the scope.

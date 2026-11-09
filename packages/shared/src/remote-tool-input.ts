@@ -72,6 +72,8 @@ const BUILTIN_TOOL_INPUT_FIELDS: Record<string, readonly string[]> = {
   Workflow: ['name', 'script_path', 'scriptPath', 'source', 'validate_only', 'validateOnly'],
   TaskOutput: ['task_id', 'task_ids'],
   KillTask: ['task_id', 'taskId'],
+  ManageTask: ['action', 'taskId', 'input'],
+  manage_task: ['action', 'taskId', 'input'],
   TaskCreate: ['subject'],
   TaskUpdate: ['status', 'subject', 'taskId'],
   TaskGet: ['taskId'],

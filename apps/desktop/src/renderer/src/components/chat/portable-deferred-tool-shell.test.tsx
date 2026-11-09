@@ -95,6 +95,21 @@ describe('deferred tool rows on the phone', () => {
     expect(container.querySelector('.tool-node .tool-node')).toBeNull()
   })
 
+  it('mounts ManageTaskToolBlockPresenter for ManageTask instead of falling back to GenericToolRow', async () => {
+    restore = installFakeHost({
+      [detailRef('ManageTask')]: JSON.stringify({
+        input: JSON.stringify({ action: 'status', taskId: 'conv-1/task-80' }),
+        result: 'Task: conv-1/task-80\nStatus: RUNNING\n\nLast progress: 5s ago',
+      }),
+    })
+    const { container } = render(
+      <PortableMessage message={deferredTurn('ManageTask')} scheme="dark" pendingPermission={null} />,
+    )
+    await waitFor(() => expect(container.textContent).toContain('task-80'))
+    expect(container.textContent).not.toContain('ManageTask')
+    expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
+  })
+
   it('renders session_list as the archive row, not a superone · session list shell', async () => {
     restore = installFakeHost({
       [detailRef('mcp__superone__session_list')]: JSON.stringify({

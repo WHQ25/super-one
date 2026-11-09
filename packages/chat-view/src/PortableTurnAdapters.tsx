@@ -50,6 +50,7 @@ import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/Pla
 import { ImageGenToolBlockPresenter } from './presenters/ImageGenToolBlock'
 import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
 import { ListAgentsToolBlockPresenter } from './presenters/ListAgentsToolBlock'
+import { ManageTaskToolBlockPresenter } from './presenters/ManageTaskToolBlock'
 import { ReportFindingsToolBlockPresenter } from './presenters/ReportFindingsToolBlock'
 import {
   AutomationToolBlockPresenter,
@@ -253,6 +254,18 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
     return (
       <ListAgentsToolBlockPresenter
         result={isDenied ? undefined : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+      />
+    )
+  }
+  if (props.toolName === 'ManageTask' || props.toolName === 'manage_task') {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <ManageTaskToolBlockPresenter
+        params={parseRecord(props.input)}
+        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
         isStreaming={props.status === 'streaming'}
         isError={props.isError}
         isDenied={isDenied}

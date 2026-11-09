@@ -3606,6 +3606,37 @@ export type Messages = {
           unknown: string
         }
       }
+      manageTask: {
+        managing: string
+        manageTask: string
+        taskManaged: string
+        listing: string
+        listTasks: string
+        tasksListed: string
+        checkingStatus: string
+        checkStatus: string
+        statusChecked: string
+        stopping: string
+        stopTask: string
+        taskStopped: string
+        sendingInput: string
+        sendInput: string
+        inputSent: string
+        none: string
+        runningCount_one: string
+        runningCount_other: string
+        truncatedLines_one: string
+        truncatedLines_other: string
+        noLogOutput: string
+        inputLabel: string
+        status: {
+          running: string
+          done: string
+          error: string
+          cancelled: string
+          unknown: string
+        }
+      }
     }
     workflow: {
       running: string
@@ -8511,6 +8542,37 @@ export const en: Messages = {
           waiting: 'Waiting on a human',
           idle: 'Idle',
           offline: 'Offline',
+          unknown: 'Unknown',
+        },
+      },
+      manageTask: {
+        managing: 'Managing task',
+        manageTask: 'Manage Task',
+        taskManaged: 'Task Managed',
+        listing: 'Listing background tasks',
+        listTasks: 'List Background Tasks',
+        tasksListed: 'Background Tasks Listed',
+        checkingStatus: 'Checking task status',
+        checkStatus: 'Check Task Status',
+        statusChecked: 'Task Status Checked',
+        stopping: 'Stopping task',
+        stopTask: 'Stop Task',
+        taskStopped: 'Task Stopped',
+        sendingInput: 'Sending task input',
+        sendInput: 'Send Task Input',
+        inputSent: 'Task Input Sent',
+        none: 'No running tasks',
+        runningCount_one: '{{count}} running task',
+        runningCount_other: '{{count}} running tasks',
+        truncatedLines_one: '{{count}} earlier line truncated',
+        truncatedLines_other: '{{count}} earlier lines truncated',
+        noLogOutput: 'No log output yet',
+        inputLabel: 'Sent input',
+        status: {
+          running: 'Running',
+          done: 'Completed',
+          error: 'Failed',
+          cancelled: 'Cancelled',
           unknown: 'Unknown',
         },
       },

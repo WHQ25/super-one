@@ -1359,7 +1359,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         const update =
           launch.agentId === 'antigravity'
-            ? normalizeAntigravitySessionUpdate(message.update)
+            ? normalizeAntigravitySessionUpdate(message.update, activeSession.sessionId)
             : message.update
         // Grok stamps live context occupancy on every session/update `_meta.totalTokens`.
         const notifMeta = (message as { notification?: { _meta?: Record<string, unknown> | null } }).notification?._meta

@@ -6,6 +6,7 @@ import { looksLikeComputerUseOutline } from '@superone/shared/computer-use-resul
 import { looksLikeSessionArchiveToon } from '@superone/shared/session-archive-result-shape'
 import { BUILT_IN_SUPERONE_TOOL_NAMES, COMPUTER_USE_TOOL_NAMES, MINIAPP_CALL_BARE_NAME, MINIAPP_LIST_BARE_NAME } from '@superone/shared/superone-host-owned-tools'
 import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, uiToolNameFromId } from '@superone/shared/tool-ui'
+import { applyAntigravityManageTaskInput, compactDiffPair, resolveAntigravityManageTaskOutput } from './antigravity-manage-task'
 import {
   antigravityPermissionDisposition, antigravityPermissionMode, consumeAntigravityAnsweredQuestionSummary,
   extractAntigravityElicitationQuestion, extractAntigravitySecurityWarning, extractAntigravityToolNameFromTitle,
@@ -13,7 +14,6 @@ import {
   makeAntigravityElicitationResponse, makeAntigravityUserInputResponse, selectAntigravityAutoApprovedOptionId,
   type AntigravityElicitationCreateResult,
 } from './antigravity-permission'
-
 export {
   antigravityPermissionDisposition, antigravityPermissionMode, extractAntigravityElicitationQuestion,
   extractAntigravitySecurityWarning, extractAntigravityToolNameFromTitle, extractAntigravityUserInputQuestion,
@@ -222,23 +222,6 @@ function setStringIfMissing(target: Record<string, unknown>, key: string, val: s
   if (val !== undefined && typeof target[key] !== 'string') target[key] = val
 }
 
-function compactDiffPair(oldText: string, newText: string): { oldText: string; newText: string } {
-  if (!oldText || !newText || oldText === newText) return { oldText, newText }
-  const oldLines = oldText.split('\n')
-  const newLines = newText.split('\n')
-  const minLen = Math.min(oldLines.length, newLines.length)
-  let prefix = 0
-  while (prefix < minLen && oldLines[prefix] === newLines[prefix]) prefix++
-  let suffix = 0
-  while (suffix < minLen - prefix && oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]) suffix++
-  if (prefix + suffix <= 6) return { oldText, newText }
-  const start = Math.max(0, prefix - 3)
-  return {
-    oldText: oldLines.slice(start, Math.min(oldLines.length, oldLines.length - suffix + 3)).join('\n'),
-    newText: newLines.slice(start, Math.min(newLines.length, newLines.length - suffix + 3)).join('\n'),
-  }
-}
-
 export function normalizeAntigravityRawInput(
   rawInput: unknown, rawOutput?: unknown, title?: string, meta?: unknown, kind?: string | null, toolNameHint?: string,
 ): {
@@ -316,6 +299,9 @@ export function normalizeAntigravityRawInput(
     setStringIfMissing(inObj, 'prompt', pickNonEmptyString(inObj, ['prompt', 'Prompt', 'description', 'text']))
     setStringIfMissing(inObj, 'aspect_ratio', pickNonEmptyString(inObj, ['aspect_ratio', 'aspectRatio', 'AspectRatio']))
   }
+  if (mappedUiName === 'ManageTask') {
+    applyAntigravityManageTaskInput(inObj)
+  }
   const isFileTool = mappedUiName === 'Read' || mappedUiName === 'Write' || mappedUiName === 'Edit' || mappedUiName === 'Delete'
   const fileKeys = ['file_path', 'AbsolutePath', 'TargetFile', 'FilePath', 'filePath', 'target_file']
   setStringIfMissing(inObj, 'file_path', pickNonEmptyString(inObj, isFileTool ? [...fileKeys, 'Path', 'path'] : fileKeys))
@@ -371,7 +357,11 @@ function recordAntigravitySubagentInput(id: string, input: Record<string, unknow
   knownAntigravitySubagentInputs.set(id, input)
 }
 
-export function normalizeAntigravitySessionUpdate(update: SessionUpdate): SessionUpdate {
+export function normalizeAntigravitySessionUpdate(
+  update: SessionUpdate,
+  sessionId?: string,
+  brainRoots?: string[],
+): SessionUpdate {
   if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return update
   const titleStr = typeof update.title === 'string' ? update.title : undefined
   const rawNameStr = typeof (update as { name?: unknown }).name === 'string' ? (update as { name: string }).name : undefined
@@ -432,11 +422,26 @@ export function normalizeAntigravitySessionUpdate(update: SessionUpdate): Sessio
     }
   }
   const normalizedIn = normalizeAntigravityRawInput(effectiveRawInput, sanitizedOutput, titleStr, metaVal, update.kind, rawNameStr)
+  const isManageTask = normalizedIn.rawInput.variant === 'ManageTask'
   if (
-    (normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion' || normalizedIn.rawInput.variant === 'Edit') &&
+    (normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion' || normalizedIn.rawInput.variant === 'Edit' || isManageTask) &&
     update.toolCallId && update.status !== 'completed' && update.status !== 'failed' && update.rawInput !== undefined
   ) {
     recordAntigravitySubagentInput(update.toolCallId, normalizedIn.rawInput)
+  }
+  if (
+    isManageTask &&
+    (update.status === 'completed' || update.status === 'failed') &&
+    sanitizedOutput === undefined &&
+    (!Array.isArray(update.content) || update.content.length === 0)
+  ) {
+    const transcriptOut = resolveAntigravityManageTaskOutput(
+      sessionId,
+      normalizedIn.rawInput,
+      unwrapAntigravityToolOutputText,
+      brainRoots,
+    )
+    if (transcriptOut) sanitizedOutput = transcriptOut
   }
   if (update.status === 'completed' && update.toolCallId) {
     const answeredQa = consumeAntigravityAnsweredQuestionSummary(update.toolCallId)
@@ -464,7 +469,7 @@ export function normalizeAntigravitySessionUpdate(update: SessionUpdate): Sessio
     }) as typeof update.content
   }
 
-  if (replaceContentWithOutput && (update.status === 'completed' || update.status === 'failed') && sanitizedOutput !== undefined) {
+  if ((replaceContentWithOutput || isManageTask) && (update.status === 'completed' || update.status === 'failed') && sanitizedOutput !== undefined) {
     const outText = typeof sanitizedOutput === 'string'
       ? unwrapAntigravityToolOutputText(sanitizedOutput)
       : formatAgentToolOutput(sanitizedOutput)

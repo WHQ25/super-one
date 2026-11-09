@@ -1022,5 +1022,109 @@ describe('antigravity-protocol', () => {
       })
     }
   })
+
+  it('normalizes Antigravity manage_task calls to ManageTask and enriches completion output from transcript', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'superone-agy-manage-task-'))
+    try {
+      const sessionId = '8ade19b2-c248-4d06-ae1d-47d68ca614d3'
+      const logsDir = join(tmpRoot, sessionId, '.system_generated', 'logs')
+      mkdirSync(logsDir, { recursive: true })
+      const statusText = [
+        'Task: 8ade19b2-c248-4d06-ae1d-47d68ca614d3/task-80',
+        'Status: RUNNING',
+        'Log: file:///Users/dev/.gemini/antigravity-cli/brain/8ade19b2-c248-4d06-ae1d-47d68ca614d3/.system_generated/tasks/task-80.log',
+        'Log output:',
+        '<truncated 60 lines>',
+        'Server listening on :5173',
+        '',
+        'Last progress: 5s ago',
+      ].join('\n')
+      writeFileSync(
+        join(logsDir, 'transcript_full.jsonl'),
+        [
+          JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', content: 'check task' }),
+          JSON.stringify({
+            step_index: 2,
+            type: 'PLANNER_RESPONSE',
+            status: 'DONE',
+            tool_calls: [
+              {
+                name: 'manage_task',
+                args: { Action: 'status', TaskId: `${sessionId}/task-80` },
+              },
+            ],
+          }),
+          JSON.stringify({
+            step_index: 3,
+            type: 'GENERIC',
+            status: 'DONE',
+            content: `Created At: 2026-11-09T14:03:00+08:00\nCompleted At: 2026-11-09T14:03:01+08:00\n${statusText}`,
+          }),
+        ].join('\n'),
+        'utf8',
+      )
+
+      const startUpdate = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'call_mt_1',
+          title: 'Running manage_task',
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: {
+            Action: 'status',
+            TaskId: `${sessionId}/task-80`,
+          },
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+
+      const mappedStart = mapSessionUpdate(startUpdate, { messageId: 'msg_mt_1' })
+      expect(mappedStart).toEqual([
+        {
+          type: 'content_delta',
+          messageId: 'msg_mt_1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_mt_1',
+            toolName: 'ManageTask',
+            toolFilePath: undefined,
+            toolSummary: undefined,
+            input: JSON.stringify({
+              action: 'status',
+              taskId: `${sessionId}/task-80`,
+            }),
+            status: 'streaming',
+          },
+        },
+      ])
+
+      const completedUpdate = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call_mt_1',
+          status: 'completed',
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+
+      const mappedDone = mapSessionUpdate(completedUpdate, { messageId: 'msg_mt_1' })
+      const toolResult = mappedDone.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+      expect(toolResult).toEqual({
+        type: 'content_delta',
+        messageId: 'msg_mt_1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'call_mt_1',
+          summary: statusText,
+          isError: false,
+        },
+      })
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
 })
 

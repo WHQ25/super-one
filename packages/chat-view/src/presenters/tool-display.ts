@@ -17,6 +17,7 @@ import {
   toVideoStatusItems,
 } from './media-generation'
 import { topFindingSummary } from './report-findings-display'
+import { manageTaskSummaryText } from './manage-task-display'
 import { artifactToolSummary } from './artifact-link'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
 import { scheduleToolSummary } from './schedule-tool-display'
@@ -50,6 +51,8 @@ const TOOL_VERBS: Record<string, string> = {
   ExitPlanMode: 'Reviewing',
   ReportFindings: 'Reporting findings',
   ListAgents: 'Listing agents',
+  ManageTask: 'Managing task',
+  manage_task: 'Managing task',
   SendMessage: 'Sending message',
   SubagentHandback: 'Handing back',
   EnterWorktree: 'Entering worktree',
@@ -148,6 +151,8 @@ const TOOL_LABELS: Record<string, string> = {
   ExitPlanMode: 'Exit Plan Mode',
   ReportFindings: 'Code Review',
   KillTask: 'Kill Task',
+  ManageTask: 'Manage Task',
+  manage_task: 'Manage Task',
   ImageGen: 'Image Gen',
   ImageEdit: 'Image Edit',
   ImageToVideo: 'Image To Video',
@@ -250,6 +255,9 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     // stays empty here and `ListAgentsToolBlock` derives its summary from the output.
     case 'ListAgents':
       return { icon: 'bot', summary: '' }
+    case 'ManageTask':
+    case 'manage_task':
+      return { icon: 'clipboard-list', summary: manageTaskSummaryText(input) }
     case 'SendMessage':
       return { icon: 'send', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
     case 'SubagentHandback':

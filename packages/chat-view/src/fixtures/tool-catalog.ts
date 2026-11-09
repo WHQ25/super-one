@@ -236,6 +236,18 @@ export const toolCatalogExamples: ToolCatalogExample[] = [
     {},
     'Subagents (2):\n  Explore · read-only search · idle · 2m\n  Plan · architecture · idle · 5m',
   )),
+  example('agent/manage-task', 'Agent', 'ManageTask', call(
+    'ManageTask',
+    { action: 'status', taskId: '8ade19b2-c248-4d06-ae1d-47d68ca614d3/task-80' },
+    [
+      'Task: 8ade19b2-c248-4d06-ae1d-47d68ca614d3/task-80',
+      'Status: RUNNING',
+      'Log output:',
+      'VITE v6.1.0 ready in 342 ms',
+      '',
+      'Last progress: 5s ago',
+    ].join('\n'),
+  )),
   example('agent/send-message', 'Agent', 'SendMessage', call(
     'SendMessage',
     { to: 'step4-remote-collab', summary: 'Fix four open items before review', message: 'Good work; the A-side monitor deviation is accepted. Please fix these open items.' },

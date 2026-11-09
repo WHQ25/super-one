@@ -94,3 +94,12 @@ Non-obvious upstream behaviors that SuperOne depends on.
 - **SuperOne code**: `apps/desktop/src/main/acp/antigravity-subagent.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-subagent.test.ts`
 
+## 12. `manage_task` PascalCase arguments and omitted completion `rawOutput` on ACP wire (observed in 1.23.2)
+
+- **Behavior**:
+  1. Antigravity's built-in background task tool `manage_task` (`ManageTaskCallStep`) emits `tool_call` with `title: "Running manage_task"` and PascalCase `rawInput: { Action: 'list' | 'status' | 'kill' | 'send_input', TaskId?: string, Input?: string }`. Without explicit variant normalization before `nameFromVariant`'s `taskId != null -> 'TaskOutput'` fallback, calls carrying `TaskId` are misclassified as `TaskOutput` while `Action: 'list'` falls back to generic `manage_task`.
+  2. On `tool_call_update(status: "completed" | "failed")`, `(*ACPServer).getToolOutput` omits `rawOutput` and `content` for `manage_task`, while writing the full `GENERIC` step output (Markdown task table, `Task: ...\nStatus: ...\nLog output:\n...`, cancellation/input confirmation, or step execution error) to `<brainRoot>/<sessionId>/.system_generated/logs/transcript_full.jsonl` (and `transcript.jsonl`). `normalizeAntigravitySessionUpdate` caches the open `ManageTask` input by `toolCallId` and resolves the completed `GENERIC` step output from the session transcript when `rawOutput` and `content` are empty.
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-manage-task.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts`, `apps/desktop/src/main/acp/acp-event-map.ts`, `packages/acp/src/tool-normalization.ts`, `packages/shared/src/tool-ui.ts`
+- **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`
+
+

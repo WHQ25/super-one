@@ -148,6 +148,7 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     if (variant === 'MemorySearch') return 'MemorySearch'
     if (variant === 'AskUserQuestion') return 'AskUserQuestion'
     if (variant === 'TaskOutput') return 'TaskOutput'
+    if (variant === 'ManageTask') return 'ManageTask'
     if (variant === 'EnterPlanMode') return 'EnterPlanMode'
     if (variant === 'ExitPlanMode') return 'ExitPlanMode'
     if (variant === 'KillTask') return 'KillTask'
@@ -563,6 +564,18 @@ function normalizeInput(
       const out: Record<string, unknown> = {}
       const id = pickString(raw, ['task_id', 'taskId', 'id'])
       if (id) out.task_id = id
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'ManageTask': {
+      const out: Record<string, unknown> = {}
+      const action = pickString(raw, ['action', 'Action'])
+      if (action) out.action = action.toLowerCase()
+      const taskId = pickString(raw, ['taskId', 'TaskId', 'task_id'])
+      if (taskId) out.taskId = taskId
+      const input =
+        pickString(raw, ['input', 'Input'])
+        ?? (typeof raw.input === 'string' ? raw.input : typeof raw.Input === 'string' ? raw.Input : undefined)
+      if (input !== undefined) out.input = input
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'EnterPlanMode':
@@ -984,7 +997,7 @@ function looksLikeCollabResult(obj: Record<string, unknown>): boolean {
 
 function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (summary.length <= 4000) return true
-  if (toolName === 'Bash') return true
+  if (toolName === 'Bash' || toolName === 'ManageTask') return true
   if (isCollabToolName(toolName)) return true
   if (isSessionArchiveToolName(toolName)) return true
   if (looksLikeSessionArchiveToon(summary)) return true

@@ -140,6 +140,8 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   lsp: 'Lsp',
   report_findings: 'ReportFindings',
   reportfindings: 'ReportFindings',
+  manage_task: 'ManageTask',
+  managetask: 'ManageTask',
 }
 
 export function normalizeToolIdKey(id: string): string {
@@ -426,6 +428,12 @@ export function normalizeTranscriptTool(
   } else if (toolName === 'SendMessage') {
     if (input.to == null && input.Recipient != null) input.to = input.Recipient
     if (input.message == null && input.Message != null) input.message = input.Message
+  } else if (toolName === 'ManageTask') {
+    if (input.action == null && typeof input.Action === 'string') input.action = input.Action.toLowerCase()
+    else if (typeof input.action === 'string') input.action = input.action.toLowerCase()
+    if (input.taskId == null && input.TaskId != null) input.taskId = input.TaskId
+    if (input.taskId == null && input.task_id != null) input.taskId = input.task_id
+    if (input.input == null && input.Input != null) input.input = input.Input
   }
 
   return { toolName, input }

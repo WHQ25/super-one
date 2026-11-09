@@ -18,6 +18,7 @@ import { getDeviceOp } from './device-tool-display'
 import { getTerminalOp } from './terminal-tool-display'
 import { ImageGenToolBlock } from './ImageGenToolBlock'
 import { ListAgentsToolBlock } from './ListAgentsToolBlock'
+import { ManageTaskToolBlock } from './ManageTaskToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { isMediaToolErrorResult } from './media-generation'
 import { ReportFindingsToolBlock } from './ReportFindingsToolBlock'
@@ -154,7 +155,14 @@ export interface DeferredRowControls {
  * and generic rows load when opened.
  */
 export function hasDedicatedToolRow(toolName: string): boolean {
-  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode' || toolName === 'ReportFindings' || toolName === 'ListAgents') return true
+  if (
+    toolName === 'EnterPlanMode' ||
+    toolName === 'ExitPlanMode' ||
+    toolName === 'ReportFindings' ||
+    toolName === 'ListAgents' ||
+    toolName === 'ManageTask' ||
+    toolName === 'manage_task'
+  ) return true
   return parseMcpToolName(toolName)?.serverName === SUPERONE_SERVER
 }
 
@@ -331,6 +339,18 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       <ListAgentsToolBlock
         // A denial carries no roster, only the refusal sentence the badge already says.
         result={isDenied ? undefined : cleanResult}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+  if (toolName === 'ManageTask' || toolName === 'manage_task') {
+    return (
+      <ManageTaskToolBlock
+        params={params}
+        result={cleanResult}
         isStreaming={isStreaming}
         isError={isError}
         isDenied={isDenied}

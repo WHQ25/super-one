@@ -1096,7 +1096,10 @@ export function permissionModeFromAcpCurrentMode(
   yoloBaseline: PermissionMode = 'default',
 ): PermissionMode {
   if (currentModeId === 'plan') return 'plan'
-  if (currentModeId === 'auto_edit' || currentModeId === 'accept-edits') return 'acceptEdits'
+  if (currentModeId === 'auto') return 'auto'
+  if (currentModeId === 'auto_edit' || currentModeId === 'accept-edits') {
+    return yoloBaseline === 'auto' ? 'auto' : 'acceptEdits'
+  }
   if (currentModeId === 'yolo') return 'bypassPermissions'
   return yoloBaseline
 }

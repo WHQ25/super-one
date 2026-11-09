@@ -39,6 +39,7 @@ import {
   grokPromptMetaMode,
   mapSessionUpdate,
   mapStopReason,
+  permissionModeFromAcpCurrentMode,
   trackOpenTools,
 } from './acp-event-map'
 import { getUnsavedBuffer } from './acp-unsaved-buffer'
@@ -1089,6 +1090,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     if (launch.agentId === 'antigravity' && opts.permissionMode) {
       try {
         await applyAntigravityPermissionMode(connection, session.sessionId, opts.permissionMode)
+        if (opts.permissionMode === 'plan') hostPlanApplied = true
       } catch (err) {
         log.warn('[acp-runtime] antigravity set_mode on create failed:', err)
       }
@@ -1433,6 +1435,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         if (update.sessionUpdate === 'current_mode_update') {
           const modeId = (update as { currentModeId?: string }).currentModeId
           acpSessionMode = modeId === 'plan' ? 'plan' : 'default'
+          currentPermissionMode = permissionModeFromAcpCurrentMode(modeId, yoloBaseline)
         }
         if (update.sessionUpdate === 'agent_thought_chunk') {
           turnScope.sawAgentThoughtChunk = true
@@ -1646,11 +1649,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       return xaiCorrelation.lastUsage
     },
     async setPermissionMode(mode) {
+      const prevPermissionMode = currentPermissionMode
       currentPermissionMode = mode
       if (launch.agentId === 'antigravity') {
-        await applyAntigravityPermissionMode(activeConnection, activeSession.sessionId, mode)
-        yoloBaseline = mode === 'plan' ? 'default' : mode
+        const prevYoloBaseline = yoloBaseline
+        const prevAcpSessionMode = acpSessionMode
+        if (mode !== 'plan') yoloBaseline = mode
         acpSessionMode = mode === 'plan' ? 'plan' : 'default'
+        try {
+          await applyAntigravityPermissionMode(activeConnection, activeSession.sessionId, mode)
+        } catch (err) {
+          currentPermissionMode = prevPermissionMode
+          yoloBaseline = prevYoloBaseline
+          acpSessionMode = prevAcpSessionMode
+          throw err
+        }
         return
       }
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.

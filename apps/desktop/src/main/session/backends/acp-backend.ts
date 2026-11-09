@@ -260,6 +260,8 @@ export class AcpBackend implements SessionBackend {
   private grokReasoningEffort: string | null = null
   private pendingContextWindow: { model: string; contextWindow: number } | null = null
   private pendingModeId: string | null = null
+  private pendingPermissionMode: PermissionMode | null = null
+  private applyingPermissionMode: PermissionMode | null = null
   /**
    * Last Grok `message_usage` totals recorded into usage_daily per assistant
    * message. Mid-turn events are cumulative (response_started/completed +
@@ -705,6 +707,8 @@ export class AcpBackend implements SessionBackend {
       // Prefer the latest startOpts at the moment we actually call the factory —
       // a concurrent start() may have filled providerSessionId after prewarm queued us.
       const resumeAtSpawn = this.startOpts?.providerSessionId?.trim() || resumeSessionId
+      const permissionModeAtSpawn = this.startOpts?.permissionMode
+      this.pendingPermissionMode = null
       this.lastSpawnResumeId = resumeAtSpawn ?? null
       const runtime = await runtimeFactory({
         signal: abortController.signal,
@@ -714,13 +718,9 @@ export class AcpBackend implements SessionBackend {
         // the agent's own capability) has always existed here; nothing ever
         // supplied it, so BackendStartOptions.additionalDirectories was dropped.
         additionalRoots: this.startOpts?.additionalDirectories,
-        permissionMode: this.startOpts?.permissionMode,
+        permissionMode: permissionModeAtSpawn,
         onPermissionModeResolved: (mode) => {
-          for (const cb of this.permissionModeAppliedListeners) {
-            try { cb(mode) } catch (err) {
-              log.warn('[AcpBackend] permission mode rollback listener error:', err)
-            }
-          }
+          this.emitPermissionModeApplied(mode)
         },
         reasoningEffort:
           asGrokReasoningEffort(this.grokReasoningEffort)
@@ -806,8 +806,23 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
+  private emitPermissionModeApplied(mode: PermissionMode): void {
+    for (const cb of this.permissionModeAppliedListeners) {
+      try { cb(mode) } catch (err) {
+        log.warn('[AcpBackend] permission mode applied listener error:', err)
+      }
+    }
+  }
+
   private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
+    if (event.type === 'permission_mode_change') {
+      if (this.pendingPermissionMode !== null) return
+      if (this.applyingPermissionMode === event.mode) return
+      if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: event.mode }
+      this.emitPermissionModeApplied(event.mode)
+      if (this.permissionModeAppliedListeners.size > 0) return
+    }
     if (agentId === 'grok-build') this.noteGrokWorkflowUsage(event)
     if (event.type === 'compact_boundary' || (event.type === 'status_indicator' && event.compactResult)) {
       this.compactingManual = false
@@ -1655,6 +1670,8 @@ export class AcpBackend implements SessionBackend {
     this.modeConfigId = null
     this.selectedModelId = null
     this.lastModeConfig = null
+    this.pendingPermissionMode = null
+    this.applyingPermissionMode = null
     this.runtimeAgentKey = null
     this.runtimeCwd = null
     const runtime = this.runtime
@@ -1774,10 +1791,16 @@ export class AcpBackend implements SessionBackend {
 
   /** Context window and session mode chosen while no runtime existed. A refusal leaves the agent's own default. */
   private async applyPendingSelections(runtime: AcpRuntime): Promise<void> {
+    const permissionMode = this.pendingPermissionMode
     const window = this.pendingContextWindow
     const modeId = this.pendingModeId
+    this.pendingPermissionMode = null
     this.pendingContextWindow = null
     this.pendingModeId = null
+    if (permissionMode) {
+      await this.applyRuntimePermissionMode(runtime, permissionMode)
+        .catch((err) => log.warn('[AcpBackend] pending permission mode %s failed:', permissionMode, err))
+    }
     if (window) {
       await this.applyModel(runtime, window.model, { contextWindow: window.contextWindow })
         .catch((err) => log.warn('[AcpBackend] pending context window %d refused:', window.contextWindow, err))
@@ -1858,13 +1881,24 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
+  private async applyRuntimePermissionMode(runtime: AcpRuntime, mode: PermissionMode): Promise<void> {
+    this.applyingPermissionMode = mode
+    try {
+      await runtime.setPermissionMode(mode)
+    } finally {
+      if (this.applyingPermissionMode === mode) this.applyingPermissionMode = null
+    }
+  }
+
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     if (!this.runtime) {
       if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
+      if (this.ensureRuntimePromise) this.pendingPermissionMode = mode
       log.info('[AcpBackend] setPermissionMode deferred until runtime ready mode=%s', mode)
       return
     }
-    await this.runtime.setPermissionMode(mode)
+    this.pendingPermissionMode = null
+    await this.applyRuntimePermissionMode(this.runtime, mode)
     if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
     log.info('[AcpBackend] setPermissionMode applied mode=%s agent=%s', mode, this.config.agentId ?? '')
   }

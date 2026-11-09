@@ -461,6 +461,21 @@ describe('mapSessionUpdate', () => {
     expect(events).toEqual([{ type: 'permission_mode_change', mode: 'default' }])
   })
 
+  it('preserves auto baseline when current_mode_update reports accept-edits', () => {
+    expect(mapSessionUpdate({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'accept-edits',
+    }, ctx, { yoloBaseline: 'auto' })).toEqual([{ type: 'permission_mode_change', mode: 'auto' }])
+    expect(mapSessionUpdate({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'accept-edits',
+    }, ctx, { yoloBaseline: 'acceptEdits' })).toEqual([{ type: 'permission_mode_change', mode: 'acceptEdits' }])
+    expect(mapSessionUpdate({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'accept-edits',
+    }, ctx)).toEqual([{ type: 'permission_mode_change', mode: 'acceptEdits' }])
+  })
+
   it('stamps prompt _meta.mode plan vs agent', () => {
     expect(grokPromptMetaMode('plan')).toBe('plan')
     expect(grokPromptMetaMode('default')).toBe('agent')

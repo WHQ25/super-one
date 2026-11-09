@@ -1306,6 +1306,96 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
   })
 
+  it('keeps Antigravity on auto when set_mode accept-edits echoes current_mode_update', async () => {
+    const authMod = await import('./antigravity-profile')
+    const authSatisfiedSpy = vi.spyOn(authMod, 'isAntigravityAuthSatisfied').mockReturnValue(true)
+    const authConfigSpy = vi.spyOn(authMod, 'readAntigravityAuthConfig').mockReturnValue({
+      authMethod: 'google-login',
+      apiKey: '',
+      vertexProject: '',
+      vertexLocation: '',
+    })
+    const sessionEvents: AgentEvent[] = []
+    const setModeCalls: string[] = []
+    const hostPermissionCalls: string[] = []
+    let agentClient: { request: (method: string, params: unknown) => Promise<unknown> } | null = null
+    const agentApp = agent({ name: 'antigravity-mode-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.authenticate, async () => ({}))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        agentClient = ctx.client
+        return { sessionId: 'agy-mode-session' }
+      })
+      .onRequest(methods.agent.session.setMode, async (ctx) => {
+        const modeId = String((ctx.params as { modeId?: string }).modeId ?? '')
+        setModeCalls.push(modeId)
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId: 'agy-mode-session',
+          update: { sessionUpdate: 'current_mode_update', currentModeId: modeId },
+        })
+        return {}
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    try {
+      const runtime = await createAcpRuntime({
+        launch: { agentId: 'antigravity', command: 'unused', defaultCwd: '/tmp/proj' },
+        permissionMode: 'default',
+        permission: {
+          request: async (req) => {
+            hostPermissionCalls.push(req.toolCall.toolCallId)
+            return { outcome: { outcome: 'cancelled' } }
+          },
+        },
+        onSessionEvent: (e) => sessionEvents.push(e),
+        streamFactory: async () => ({
+          stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+          dispose: () => {},
+        }),
+      })
+      sessionEvents.length = 0
+      await runtime.setPermissionMode('auto')
+      await vi.waitFor(() => expect(sessionEvents).toContainEqual({
+        type: 'permission_mode_change',
+        mode: 'auto',
+      }))
+      expect(sessionEvents.some((e) => e.type === 'permission_mode_change' && e.mode === 'acceptEdits')).toBe(false)
+
+      const autoExecRes = await agentClient!.request(methods.client.session.requestPermission, {
+        sessionId: 'agy-mode-session',
+        toolCall: { toolCallId: 'exec-auto', kind: 'execute', title: 'run_command', rawInput: { command: 'ls' } },
+        options: [{ optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }],
+      })
+      expect(autoExecRes).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+      expect(hostPermissionCalls).toEqual([])
+
+      sessionEvents.length = 0
+      await runtime.setPermissionMode('acceptEdits')
+      await vi.waitFor(() => expect(sessionEvents).toContainEqual({
+        type: 'permission_mode_change',
+        mode: 'acceptEdits',
+      }))
+      await agentClient!.request(methods.client.session.requestPermission, {
+        sessionId: 'agy-mode-session',
+        toolCall: { toolCallId: 'exec-ask', kind: 'execute', title: 'run_command', rawInput: { command: 'ls' } },
+        options: [{ optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }],
+      })
+      expect(hostPermissionCalls).toEqual(['exec-ask'])
+      expect(setModeCalls.slice(-2)).toEqual(['accept-edits', 'accept-edits'])
+      await runtime.close()
+    } finally {
+      authSatisfiedSpy.mockRestore()
+      authConfigSpy.mockRestore()
+    }
+  })
+
   it('streams text then completes', async () => {
     const events: AgentEvent[] = []
     const runtime = await createAcpRuntime({

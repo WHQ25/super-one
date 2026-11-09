@@ -2346,5 +2346,54 @@ describe('AcpBackend', () => {
     )
     await backend.close()
   })
+
+  it('applies a permission mode selected while runtime initialization is in flight and ignores stale spawn mode updates', async () => {
+    let resolveSpawn!: (runtime: ReturnType<typeof mockRuntime>) => void
+    const setPermissionMode = vi.fn(async () => {})
+    let capturedOpts: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory((opts) => {
+      capturedOpts = opts
+      return new Promise((resolve) => {
+        resolveSpawn = resolve
+      })
+    })
+    const backend = new AcpBackend()
+    const applied: string[] = []
+    backend.onPermissionModeApplied((mode) => applied.push(mode))
+    const startPromise = backend.start({ ...startOpts({ agentId: 'antigravity' }), permissionMode: 'default' })
+    await vi.waitFor(() => expect(capturedOpts).toBeDefined())
+
+    await backend.setPermissionMode('auto')
+    capturedOpts!.onSessionEvent?.({ type: 'permission_mode_change', mode: 'default' })
+
+    resolveSpawn(mockRuntime({ setPermissionMode }))
+    await startPromise
+    await vi.waitFor(() => expect(setPermissionMode).toHaveBeenCalledWith('auto'))
+    expect(applied).toEqual([])
+    await backend.close()
+  })
+
+  it('forwards agent-initiated permission_mode_change to onPermissionModeApplied and suppresses echoes of in-flight host switches', async () => {
+    let capturedOpts: AcpRuntimeOptions | undefined
+    const setPermissionMode = vi.fn(async (mode) => {
+      capturedOpts?.onSessionEvent?.({ type: 'permission_mode_change', mode })
+    })
+    setAcpRuntimeFactory(async (opts) => {
+      capturedOpts = opts
+      return mockRuntime({ setPermissionMode })
+    })
+    const backend = new AcpBackend()
+    const applied: string[] = []
+    backend.onPermissionModeApplied((mode) => applied.push(mode))
+    await backend.start({ ...startOpts({ agentId: 'antigravity' }), permissionMode: 'default' })
+    await vi.waitFor(() => expect(backend.hasActiveRuntime()).toBe(true))
+
+    await backend.setPermissionMode('auto')
+    expect(applied).toEqual([])
+
+    capturedOpts!.onSessionEvent?.({ type: 'permission_mode_change', mode: 'plan' })
+    expect(applied).toEqual(['plan'])
+    await backend.close()
+  })
 })
 

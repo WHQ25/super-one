@@ -249,17 +249,20 @@ describe('settle is only offered for an idle session', () => {
     expect(canSettleSession('error')).toBe(true)
   })
 
-  it('hides settle while a turn, a background task, or a voice call is running', () => {
+  it('hides settle while a turn, a background task, a voice call, or a spawn child is running', () => {
     expect(ids(base, false)).not.toContain('settle')
     expect(canSettleSession('streaming')).toBe(false)
     expect(canSettleSession('background')).toBe(false)
     expect(canSettleSession('idle', { realtimeVoice: true })).toBe(false)
+    expect(canSettleSession('idle', { childTurnOpen: true })).toBe(false)
+    expect(canSettleSession(undefined, { childTurnOpen: true })).toBe(false)
   })
 
   it('keeps unsettle on a settled row even when that row looks busy', () => {
     expect(ids({ ...base, isSettled: true }, false)).toContain('settle')
     expect(canSettleSession('streaming', { isSettled: true })).toBe(true)
     expect(canSettleSession('idle', { realtimeVoice: true, isSettled: true })).toBe(true)
+    expect(canSettleSession('idle', { childTurnOpen: true, isSettled: true })).toBe(true)
   })
 
   it('hides pin while the session is settled', () => {

@@ -53,6 +53,15 @@ export function setSessionFlags(projectKey: string, sessionId: string, flags: { 
   return window.environment.setSessionUiFlags(connectionIdForProjectKey(projectKey), sessionId, flags)
 }
 
+/** True when settle was refused because a spawn child still has an open turn. */
+export function isRunningChildSettleError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const details = (err as { details?: { runningChildIds?: unknown } }).details
+  if (Array.isArray(details?.runningChildIds) && details.runningChildIds.length > 0) return true
+  const message = err instanceof Error ? err.message : ''
+  return /spawn child is running/i.test(message)
+}
+
 /** `read` records the latest completion as seen. Otherwise the receipt is cleared. */
 export function setSessionRead(projectKey: string, sessionId: string, read: boolean) {
   return window.environment.setSessionRead(connectionIdForProjectKey(projectKey), sessionId, read)

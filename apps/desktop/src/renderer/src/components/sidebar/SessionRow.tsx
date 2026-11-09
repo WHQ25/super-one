@@ -21,6 +21,7 @@ import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { canSettleSession } from '@/lib/session-menu-items'
+import { useSpawnChildTurnOpen } from '@/lib/spawn-child-turn'
 import { focusSession } from './sidebar-focus'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
@@ -87,6 +88,7 @@ function sessionRowViewModel(input: {
   stallLevel: StallLevel
   isSettled: boolean | undefined
   opening: boolean
+  childTurnOpen: boolean
 }) {
   const isProjectActive = input.hasRealProject && input.folderPath === input.currentFolder
   const isRealtimeVoiceSession = input.provider === 'codex'
@@ -112,6 +114,7 @@ function sessionRowViewModel(input: {
     settled: input.isSettled === true,
     showLeadingSettle: !input.opening && input.isSettled !== true && canSettleSession(input.status, {
       realtimeVoice: isRealtimeVoiceSession,
+      childTurnOpen: input.childTurnOpen,
     }),
   }
 }
@@ -320,6 +323,7 @@ export const SessionRow = memo(function SessionRow({
   // footer: amber after 60s without events, red after 120s. Harness icons no
   // longer carry this signal, so the title is the sidebar indicator.
   const stallLevel = useSessionStallLevel(folderPath, session.sessionId, isRunning)
+  const childTurnOpen = useSpawnChildTurnOpen(folderPath, session.sessionId)
   const view = sessionRowViewModel({
     hasRealProject,
     folderPath,
@@ -335,6 +339,7 @@ export const SessionRow = memo(function SessionRow({
     stallLevel,
     isSettled: session.isSettled,
     opening,
+    childTurnOpen,
   })
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
   const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, session.sessionId))

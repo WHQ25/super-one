@@ -165,7 +165,7 @@ session_read({ sessionId, view: "tool_detail", toolUseId: "..." })  // only if n
 
 ### Cleanup
 
-Settle marks a session finished: it leaves the active sidebar list and the pin strip, stops its running agent, and stays openable. Settling a parent also settles its spawn children. Unsettle puts that session back, does not unsettle its children, and does not restart its agent. Neither asks for confirmation. Settled sessions still appear in `session_list` and `session_search`.
+Settle marks a session finished: it leaves the active sidebar list and the pin strip, stops its running agent, and stays openable. Settling a parent also settles its spawn children, and is refused while any spawn child is running. Do not settle a spawn child unless the user explicitly asks. Unsettle puts that session back, does not unsettle its children, and does not restart its agent. Neither asks for confirmation. Settled sessions still appear in `session_list` and `session_search`.
 
 ```
 session_list({ order: "last_active_asc", limit: 50 })   // discover first

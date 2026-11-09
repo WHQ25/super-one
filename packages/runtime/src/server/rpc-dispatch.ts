@@ -2122,7 +2122,7 @@ async function handleSessionCleanup(payload: unknown, ctx: RpcContext): Promise<
   }
 }
 
-function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -2132,7 +2132,7 @@ function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): RpcResult {
   }
   try {
     return {
-      result: ctx.sessions.setUiFlags(sessionId, {
+      result: await ctx.sessions.setUiFlags(sessionId, {
         isPinned: typeof p.isPinned === 'boolean' ? p.isPinned : undefined,
         isHidden: typeof p.isHidden === 'boolean' ? p.isHidden : undefined,
         isSettled: typeof p.isSettled === 'boolean' ? p.isSettled : undefined,

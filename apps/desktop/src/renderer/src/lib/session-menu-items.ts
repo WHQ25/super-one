@@ -26,16 +26,18 @@ export interface SessionMenuHandlers {
 }
 
 /**
- * Settle is for a session that is not working. A running turn, a background
- * task, or a live voice call hides it. Unsettle stays on a row that is already
- * settled. A missing status has never been opened in this process, so it is idle.
+ * Settle is for a session that is not working, and for a parent whose spawn
+ * children are idle too. A running turn, a background task, a live voice call,
+ * or a spawn child in one of those states hides it. Unsettle stays on a row
+ * that is already settled. A missing status has never been opened in this
+ * process, so it is idle.
  */
 export function canSettleSession(
   status: AgentStatus | undefined,
-  opts: { realtimeVoice?: boolean; isSettled?: boolean } = {},
+  opts: { realtimeVoice?: boolean; isSettled?: boolean; childTurnOpen?: boolean } = {},
 ): boolean {
   if (opts.isSettled) return true
-  if (opts.realtimeVoice) return false
+  if (opts.realtimeVoice || opts.childTurnOpen) return false
   return status !== 'streaming' && status !== 'background'
 }
 
@@ -54,8 +56,9 @@ export interface SessionMenuOptions {
   /** Whether the sidebar currently shows this session's unread dot. */
   unread?: boolean
   /**
-   * Sidebar settle is only offered for an idle session. Unsettle stays
-   * available when the row is already settled. Omitted means allow.
+   * Sidebar settle is only offered when this session and its spawn children
+   * are idle. Unsettle stays available when the row is already settled.
+   * Omitted means allow.
    */
   allowSettle?: boolean
 }

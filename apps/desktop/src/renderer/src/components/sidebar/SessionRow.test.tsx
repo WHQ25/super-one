@@ -186,6 +186,31 @@ describe('SessionRow settle only while idle', () => {
     expect(menuIds(session)).not.toContain('settle')
   })
 
+  it('hides settle while a spawn child still has an open turn', () => {
+    const project = createDefaultProjectState()
+    const child = createDefaultPerSessionState()
+    child.status = 'streaming'
+    child._parentSessionId = 'parent'
+    project._sessions.child = child
+    useChatStore.setState({ activeProject: FOLDER, projectSessions: { [FOLDER]: project } })
+    const session = entry('parent', 'Parent')
+    render(<SessionRow session={session} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    expect(rowFor('Parent')?.querySelector('.lucide-circle-check')).toBeNull()
+    expect(menuIds(session)).not.toContain('settle')
+  })
+
+  it('keeps unsettle when a settled parent still has a running child', () => {
+    const project = createDefaultProjectState()
+    const child = createDefaultPerSessionState()
+    child.status = 'streaming'
+    child._parentSessionId = 'parent'
+    project._sessions.child = child
+    useChatStore.setState({ activeProject: FOLDER, projectSessions: { [FOLDER]: project } })
+    const session = { ...entry('parent', 'Settled parent'), isSettled: true }
+    render(<SessionRow session={session} folderPath={FOLDER} animateTitle={false} {...noop} />)
+    expect(menuIds(session)).toContain('settle')
+  })
+
   it('offers settle when the last turn ended in an error', () => {
     seedStatus('err', 'error')
     render(<SessionRow session={entry('err', 'Errored')} folderPath={FOLDER} animateTitle={false} {...noop} />)

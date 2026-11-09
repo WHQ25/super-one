@@ -35,6 +35,11 @@ export {
 } from './runtime-policy'
 export type { TurnImageAttachment, HarnessOperationHost, HarnessSteerInput, HarnessSteerDelivery } from './types'
 export { EventLog } from './event-log'
+export {
+  runningChildIdsFromSettleError,
+  runningChildSettleError,
+  runningChildSettleMessage,
+} from './settle-running'
 export { SessionReadModel, sessionReadModel } from './read-model'
 export { StreamingRing, STREAMING_RING_MAX_BYTES } from './streaming-ring'
 export {

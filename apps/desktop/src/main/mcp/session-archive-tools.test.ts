@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 
-const { getDbMock, getProjectIdMock, loadSessionStateMock, settleSessionMock, setSessionSeenReceiptMock, deleteSessionMock, settleSpawnChildrenMock } =
+const { getDbMock, getProjectIdMock, loadSessionStateMock, settleSessionMock, setSessionSeenReceiptMock, deleteSessionMock, settleSpawnChildrenMock, spawnChildSessionIdsMock } =
   vi.hoisted(() => ({
     getDbMock: vi.fn(),
     getProjectIdMock: vi.fn(),
@@ -10,6 +10,7 @@ const { getDbMock, getProjectIdMock, loadSessionStateMock, settleSessionMock, se
     setSessionSeenReceiptMock: vi.fn(),
     deleteSessionMock: vi.fn(),
     settleSpawnChildrenMock: vi.fn(() => [] as string[]),
+    spawnChildSessionIdsMock: vi.fn(() => [] as string[]),
   }))
 
 vi.mock('../database', () => ({ getDb: getDbMock }))
@@ -29,6 +30,7 @@ vi.mock('../db-sessions', () => ({
   setSessionSeenReceipt: setSessionSeenReceiptMock,
   deleteSession: deleteSessionMock,
   settleSpawnChildren: settleSpawnChildrenMock,
+  spawnChildSessionIds: spawnChildSessionIdsMock,
 }))
 vi.mock('../logger', () => ({
   default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -105,6 +107,8 @@ describe('session archive tools', () => {
     setSessionSeenReceiptMock.mockReset()
     settleSpawnChildrenMock.mockReset()
     settleSpawnChildrenMock.mockReturnValue([])
+    spawnChildSessionIdsMock.mockReset()
+    spawnChildSessionIdsMock.mockReturnValue([])
     deleteSessionMock.mockReset()
     _resetSessionCleanupConfirmsForTests()
   })
@@ -745,6 +749,60 @@ describe('session archive tools', () => {
     expect(settleSpawnChildrenMock).toHaveBeenCalledWith('parent-1', new Set(['self-session']))
     expect(deps.sessionHost!.releaseSettledSession).toHaveBeenCalledWith('parent-1')
     expect(deps.sessionHost!.releaseSettledSession).toHaveBeenCalledWith('spawn-1')
+  })
+
+  it('session_cleanup refuses to settle a parent while a spawn child is running', async () => {
+    spawnChildSessionIdsMock.mockReturnValue(['spawn-1'])
+    getDbMock.mockReturnValue({
+      prepare: () => ({
+        all: () => [{
+          id: 'parent-1',
+          title: 'Parent',
+          created_at: '2025-01-01T00:00:00.000Z',
+          last_user_msg_at: '2025-01-01T00:00:00.000Z',
+          is_worktree: 0,
+          is_pinned: 0,
+          is_hidden: 0,
+          git_branch: null,
+          worktree_path: null,
+          is_automation: 0,
+          provider_id: 'claude-base',
+          provider: 'claude',
+          acp_agent_id: null,
+          parent_session_id: null,
+          message_count: 1,
+          size_bytes: null,
+          selected_model: null,
+          total_cost_usd: 0,
+          context_tokens: 0,
+        }],
+        get: () => undefined,
+      }),
+    })
+    const deps = makeDeps()
+    deps.sessionHost!.getSession = ((id: string) => {
+      if (id === 'spawn-1') {
+        return {
+          setTitle: vi.fn(),
+          activityStatus: () => 'streaming',
+          getPendingInteractions: () => [],
+        }
+      }
+      return id === 'self-session'
+        ? { setTitle: vi.fn(), projectPath: '/tmp/proj', emitHostEvent: vi.fn() }
+        : null
+    }) as typeof deps.sessionHost.getSession
+    const result = await sessionCleanupHandler({ action: 'settle', sessionIds: ['parent-1'] }, deps)
+    expect(JSON.parse(textResult(result))).toMatchObject({
+      status: 'error',
+      action: 'settle',
+      affected: [],
+      blocked: [{ id: 'parent-1', runningChildIds: ['spawn-1'] }],
+    })
+    expect(result.isError).toBe(true)
+    expect(settleSessionMock).not.toHaveBeenCalled()
+    expect(settleSpawnChildrenMock).not.toHaveBeenCalled()
+    expect(deps.sessionHost!.releaseSettledSession).not.toHaveBeenCalled()
   })
 
   it('session_cleanup delete dismisses host confirm when tool AbortSignal aborts', async () => {

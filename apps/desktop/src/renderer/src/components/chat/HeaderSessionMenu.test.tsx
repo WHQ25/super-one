@@ -112,6 +112,31 @@ describe('HeaderSessionMenu item set', () => {
     expect(screen.queryByRole('menuitem', { name: 'Unpin Session' })).toBeNull()
   })
 
+  it('hides settle while a spawn child is still running', async () => {
+    const persisted: SessionHistoryEntry = {
+      sessionId: 'saved-1',
+      title: 'Saved',
+      lastActiveAt: '2026-01-01',
+      messageCount: 3,
+    }
+    seedProject({ active: 'saved-1', sessions: [persisted] })
+    act(() => {
+      const project = useChatStore.getState().projectSessions[FOLDER]!
+      const child = createDefaultPerSessionState()
+      child.status = 'streaming'
+      child._parentSessionId = 'saved-1'
+      project._sessions.child = child
+      useChatStore.setState({ projectSessions: { [FOLDER]: { ...project } } })
+    })
+    const user = userEvent.setup()
+    const { container } = render(<HeaderSessionMenu sessionId="saved-1" folderPath={FOLDER} />)
+
+    await user.click(trigger(container) as HTMLElement)
+
+    expect(await screen.findByRole('menuitem', { name: 'Pin Session' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Settle' })).toBeNull()
+  })
+
   it('hides settle while the open turn is streaming', async () => {
     const persisted: SessionHistoryEntry = {
       sessionId: 'saved-1',

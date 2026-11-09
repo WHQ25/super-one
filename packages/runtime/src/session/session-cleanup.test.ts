@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 import {
   SessionRuntime,
@@ -10,7 +10,7 @@ import {
 } from './session-runtime'
 import { runSessionCleanup } from './session-cleanup'
 
-function harness(opts?: { cleanupConfirmTimeoutMs?: number }) {
+function harness(opts?: { cleanupConfirmTimeoutMs?: number; turn?: ConstructorParameters<typeof SessionRuntime>[4] }) {
   const rows = new Map<string, NodeSessionRecord>()
   const appended: Array<{ sessionId: string; eventType: string; payload: unknown }> = []
   const store: SessionStore = {
@@ -39,7 +39,7 @@ function harness(opts?: { cleanupConfirmTimeoutMs?: number }) {
     },
   }
   const leases: LeaseGuard = { assertValid: () => {} }
-  const runtime = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }), {
+  const runtime = new SessionRuntime(store, events, leases, 'env-1', opts?.turn ?? createSimulatedTurnRunner({ delayMs: 0 }), {
     runtimeReaperIntervalMs: 0,
     cleanupConfirmTimeoutMs: opts?.cleanupConfirmTimeoutMs,
   })
@@ -75,6 +75,50 @@ describe('runSessionCleanup', () => {
     expect(rows.get(source.sessionId)?.isSettled).not.toBe(true)
     expect(rows.get(pinned.sessionId)?.isSettled).not.toBe(true)
     await runtime.dispose()
+  })
+
+  it('refuses to settle a parent while a spawn child is streaming', async () => {
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => { release = resolve })
+    const { runtime, rows } = harness({
+      turn: async () => {
+        await hold
+        return { finalText: 'ok' }
+      },
+    })
+    try {
+      const parent = runtime.create({ projectId: 'p', title: 'Parent' })
+      const child = runtime.create({ projectId: 'p', title: 'Child', parentSessionId: parent.sessionId })
+      const pending = runtime.send({
+        sessionId: child.sessionId,
+        text: 'go',
+        client: { clientSessionId: 'client-1' },
+        leaseId: 'lease',
+        generation: '1',
+      })
+      await vi.waitFor(() => expect(runtime.get(child.sessionId)?.status).toBe('streaming'))
+      expect(() => runtime.setUiFlags(parent.sessionId, { isSettled: true })).toThrow(/spawn child is running/)
+      expect(rows.get(parent.sessionId)?.isSettled).not.toBe(true)
+      expect(rows.get(child.sessionId)?.isSettled).not.toBe(true)
+
+      const body = await runSessionCleanup(runtime, {
+        action: 'settle',
+        sessionIds: [parent.sessionId],
+        sourceSessionId: 'someone-else',
+      })
+      expect(body).toMatchObject({
+        status: 'error',
+        affected: [],
+        blocked: [{ id: parent.sessionId, runningChildIds: [child.sessionId] }],
+      })
+      expect(rows.get(parent.sessionId)?.isSettled).not.toBe(true)
+
+      release()
+      await pending
+    } finally {
+      release()
+      await runtime.dispose()
+    }
   })
 
   it('reports node ids that are absent instead of pretending they were processed', async () => {

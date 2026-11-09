@@ -125,12 +125,13 @@ export const SESSION_TAG_MATCH_DESCRIPTION =
 
 export const SESSION_CLEANUP_DESCRIPTION =
   'Settle, unsettle, or delete SuperOne sessions by id (from session_list; ids may be from any project). ' +
-  'Settle marks a session finished so it leaves the active list and stops its running agent; settling a parent also settles its spawn children. Unsettle brings that session back and does not unsettle its children. Neither needs confirmation. ' +
+  'Settle marks a session finished so it leaves the active list and stops its running agent. Settling a parent also settles its spawn children, and is refused while any spawn child is running. ' +
+  'Do not settle a spawn child unless the user explicitly asks. Unsettle brings that session back and does not unsettle its children. Neither needs confirmation. ' +
   'delete always opens a user confirmation dialog. ' +
   'Never deletes the current session; skips pinned unless includePinned. Prefer session_list to choose ids first.'
 
 export const SESSION_CLEANUP_ACTION_DESCRIPTION =
-  'settle/unsettle mark a session finished or active again (no confirm). settle also stops that session\'s running agent, and settling a parent settles its spawn children. delete permanently removes after user approval dialog.'
+  'settle/unsettle mark a session finished or active again (no confirm). settle stops that session\'s running agent. Settling a parent settles its spawn children and is refused while any spawn child is running. Do not settle a spawn child unless the user asks. delete permanently removes after user approval dialog.'
 
 export const CONFIG_READ_DESCRIPTION =
   'Read live SuperOne settings and their field schema. Always call this before config_apply. ' +

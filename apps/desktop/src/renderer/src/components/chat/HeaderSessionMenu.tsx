@@ -23,7 +23,9 @@ import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { setChatFloating } from '@/lib/layout-actions'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { isRunningChildSettleError } from '@/lib/session-client'
 import { buildChatFormItems, buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
+import { useSpawnChildTurnOpen } from '@/lib/spawn-child-turn'
 import { setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -117,6 +119,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     !!provider && HARNESS_CAPABILITIES[provider].supportsRealtimeVoice === true
       && s.sessionId === sessionId && s.state !== 'idle'
   ))
+  const childTurnOpen = useSpawnChildTurnOpen(folderPath, sessionId)
   const sideChatAvailable = useCanOpenSideChat(sessionId)
   const chatFloating = useActivityPanelStore(selectPanelFillsWindow)
   // Listed rows omit a settled session. The host read fills that in, and a
@@ -184,17 +187,25 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
             const next = !settled
             localChoice.current = next
             setFetchedSettled(next)
-            const { setSessionFlags, setSessionRead } = await import('@/lib/session-client')
-            await setSessionFlags(folderPath, entry.sessionId, { isSettled: next })
-            if (next) {
-              useChatStore.setState((state) => setUnseenCompleted(state, folderPath, entry.sessionId, false))
-              try {
-                await setSessionRead(folderPath, entry.sessionId, true)
-              } catch (err) {
-                console.warn('[header] setSessionRead failed:', err)
+            try {
+              const { setSessionFlags, setSessionRead } = await import('@/lib/session-client')
+              await setSessionFlags(folderPath, entry.sessionId, { isSettled: next })
+              if (next) {
+                useChatStore.setState((state) => setUnseenCompleted(state, folderPath, entry.sessionId, false))
+                try {
+                  await setSessionRead(folderPath, entry.sessionId, true)
+                } catch (err) {
+                  console.warn('[header] setSessionRead failed:', err)
+                }
               }
+              await afterMutate()
+            } catch (err) {
+              localChoice.current = settled
+              setFetchedSettled(settled)
+              console.warn('[header] settle failed:', err)
+              toast.error(isRunningChildSettleError(err) ? t('sidebar.contextMenu.settleBlocked') : (err instanceof Error ? err.message : String(err)))
+              await afterMutate()
             }
-            await afterMutate()
           },
           onFork: handleFork,
           // Only offered where a side chat can actually dock beside the session:
@@ -203,7 +214,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
           onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
           chatView,
         },
-        { miniWindow: 'convert', allowSettle: canSettleSession(status, { realtimeVoice, isSettled: settled }) },
+        { miniWindow: 'convert', allowSettle: canSettleSession(status, { realtimeVoice, isSettled: settled, childTurnOpen }) },
       )
     : buildChatFormItems({ sessionId, title: '' }, folderPath, t, chatView, { miniWindow: 'convert' })
   const items = itemsFor(isSettled)

@@ -1,5 +1,7 @@
+import { runningChildSettleMessage } from '@superone/runtime/session'
 import { getDb } from '../database'
 import { deleteSession, setSessionSeenReceipt, settleSession, settleSpawnChildren } from '../db-sessions'
+import { asChildTurnView, remoteSpawnChildRunning, runningSpawnChildIds } from '../session/settle-guard'
 import log from '../logger'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import { deriveHarnessId } from '../session/session-repo'
@@ -163,25 +165,44 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
 
   if (action === 'settle' || action === 'unsettle') {
     const settled = action === 'settle'
-    for (const id of ids) {
-      settleSession(id, settled)
+    const done: typeof candidates = []
+    const blocked: Array<{ id: string; title: string; runningChildIds: string[] }> = []
+    for (const row of candidates) {
       if (settled) {
-        // Same effect as the sidebar: clear unread, stop the turn, and drop
-        // the harness process. A settled parent takes its spawn children with
-        // it. Unsettle leaves the runtime and those children alone.
-        setSessionSeenReceipt(id, null)
-        await deps.sessionHost?.releaseSettledSession?.(id)
-        for (const childId of settleSpawnChildren(id, new Set([deps.sessionId]))) {
+        // Same effect as the sidebar once this passes: a settled parent takes
+        // its spawn children with it. An open child turn refuses the parent
+        // before any of those writes.
+        const running = await runningSpawnChildIds(
+          row.id,
+          (childId) => asChildTurnView(deps.sessionHost?.getSession(childId)),
+          remoteSpawnChildRunning,
+        )
+        if (running.length > 0) {
+          blocked.push({ id: row.id, title: row.title ?? 'Untitled', runningChildIds: running })
+          continue
+        }
+      }
+      settleSession(row.id, settled)
+      if (settled) {
+        setSessionSeenReceipt(row.id, null)
+        await deps.sessionHost?.releaseSettledSession?.(row.id)
+        for (const childId of settleSpawnChildren(row.id, new Set([deps.sessionId]))) {
           await deps.sessionHost?.releaseSettledSession?.(childId)
         }
       }
+      done.push(row)
     }
+    const status = blocked.length === 0 ? 'ok' : done.length === 0 ? 'error' : 'partial'
     return toolResult({
-      status: 'ok',
+      status,
       action,
-      affected: candidates.map((r) => ({ id: r.id, title: r.title ?? 'Untitled' })),
+      affected: done.map((r) => ({ id: r.id, title: r.title ?? 'Untitled' })),
+      ...(blocked.length > 0 ? {
+        blocked,
+        message: blocked.map((row) => runningChildSettleMessage(row.id, row.runningChildIds)).join(' '),
+      } : {}),
       ...skipFields,
-    })
+    }, status === 'error')
   }
 
   // delete — expand collab children (still skip pinned/self)

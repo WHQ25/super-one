@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionActivity } from '@superone/shared/session-activity'
-import { completionSeen, countAttentionSessions, mergeSessionActivity, projectHasAttention, sessionActivityIconStatus } from './session-activity-state'
+import { completionSeen, countAttentionSessions, mergeSessionActivity, projectHasAttention, sessionActivityIconStatus, spawnChildWorking } from './session-activity-state'
 
 const idle: SessionActivity = { sessionId: 'other', projectPath: '/project', provider: 'codex', status: 'idle', completedMessageId: 'reply-1', pendingCount: 0, pendingReason: { en: null, zh: null } }
 
@@ -82,5 +82,22 @@ describe('countAttentionSessions', () => {
       unread: { ...idle, sessionId: 'unread', isUnseen: true },
       running: { ...idle, sessionId: 'running', status: 'streaming' },
     })).toBe(2)
+  })
+})
+
+describe('spawnChildWorking', () => {
+  const child = { ...idle, sessionId: 'child', parentSessionId: 'parent' }
+
+  it('is true while a spawn child is streaming, waiting, or on a voice call', () => {
+    expect(spawnChildWorking({ child: { ...child, status: 'streaming' } }, 'parent')).toBe(true)
+    expect(spawnChildWorking({ child: { ...child, status: 'background' } }, 'parent')).toBe(true)
+    expect(spawnChildWorking({ child: { ...child, pendingCount: 1 } }, 'parent')).toBe(true)
+    expect(spawnChildWorking({ child: { ...child, realtimeActive: true } }, 'parent')).toBe(true)
+  })
+
+  it('ignores an idle child and a running session that is not this parent\'s child', () => {
+    expect(spawnChildWorking({ child }, 'parent')).toBe(false)
+    expect(spawnChildWorking({ child: { ...child, status: 'streaming', parentSessionId: 'other' } }, 'parent')).toBe(false)
+    expect(spawnChildWorking({ child: { ...idle, sessionId: 'root', status: 'streaming' } }, 'parent')).toBe(false)
   })
 })

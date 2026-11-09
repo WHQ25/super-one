@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 import { CircleCheck, Pin, PinOff, Trash2, Undo2 } from 'lucide-react-native'
-import { useSessionActivity } from '../navigation/use-session-activity'
-import { LIVE_SESSION_STATUSES } from '../session-activity-state'
+import { SessionActivityContext } from '../navigation/use-session-activity'
+import { LIVE_SESSION_STATUSES, spawnChildWorking } from '../session-activity-state'
 import { SwipeRow, type SwipeAction } from './swipe-row'
 
 /**
@@ -22,10 +22,14 @@ export function SwipeSessionRow(props: {
   onDelete: () => void
 }) {
   const subject = props.title || 'session'
-  const activity = useSessionActivity(props.sessionId ?? '')
-  // A running turn or a live voice call is still working. Unsettle stays.
+  const activityMap = useContext(SessionActivityContext)
+  const activity = props.sessionId ? activityMap[props.sessionId] : undefined
+  // A running turn, a live voice call, or a spawn child in either state is
+  // still working. Unsettle stays.
   const working = !props.settled && (
-    activity?.realtimeActive === true || LIVE_SESSION_STATUSES.has(activity?.status ?? '')
+    activity?.realtimeActive === true
+    || LIVE_SESSION_STATUSES.has(activity?.status ?? '')
+    || spawnChildWorking(activityMap, props.sessionId ?? '')
   )
   const actions: SwipeAction[] = [
     ...(!working ? [{

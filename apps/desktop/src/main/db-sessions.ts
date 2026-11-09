@@ -671,6 +671,7 @@ export function spawnChildSessionIds(parentId: string): string[] {
 
 /**
  * Settling a parent also finishes its spawn children and marks them read.
+ * Callers refuse first when a spawn child still has an open turn.
  * Their harness processes are stopped by the caller. Unsettle does not call this.
  * `skipIds` keeps the calling session from settling itself when it is listed
  * as a child.

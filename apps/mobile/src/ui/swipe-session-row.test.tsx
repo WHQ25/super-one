@@ -46,6 +46,33 @@ test('offers Unsettle and Delete on a settled row, and no pin', async () => {
   expect(screen.getByRole('button', { name: 'Fix the drawer' }).props.accessibilityActions[1].label).toBe('Unsettle')
 })
 
+test('hides Settle while a spawn child is still working', async () => {
+  const child: SessionActivity = {
+    sessionId: 'child', projectPath: '/repo', status: 'streaming', provider: 'codex',
+    parentSessionId: 's1', pendingCount: 0, pendingReason: { en: null, zh: null },
+  }
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{ child }}>
+      {row()}
+    </SessionActivityContext.Provider>,
+  )
+  expect(actionNames()).toEqual(['activate', 'pin', 'delete'])
+  expect(paintedActions()).toEqual(['swipe-action-pin', 'swipe-action-delete'])
+})
+
+test('keeps Unsettle when a settled parent still has a running child', async () => {
+  const child: SessionActivity = {
+    sessionId: 'child', projectPath: '/repo', status: 'streaming', provider: 'codex',
+    parentSessionId: 's1', pendingCount: 0, pendingReason: { en: null, zh: null },
+  }
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{ child }}>
+      {row({ settled: true })}
+    </SessionActivityContext.Provider>,
+  )
+  expect(actionNames()).toEqual(['activate', 'settle', 'delete'])
+})
+
 test('hides Settle while the session is still working', async () => {
   const running: SessionActivity = {
     sessionId: 's1', projectPath: '/repo', status: 'streaming', provider: 'codex',

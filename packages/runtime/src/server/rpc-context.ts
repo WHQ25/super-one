@@ -321,7 +321,7 @@ export interface SessionHostPort {
   forkOnHost?(input: SessionForkRequest & { client: { clientSessionId: string }; leaseId: string; generation: string }): Promise<SessionForkResult & { session?: NodeSessionRecord }>
   rename(sessionId: string, title: string, source?: 'user' | 'agent'): NodeSessionRecord
   setTags(sessionId: string, tags: string[]): NodeSessionRecord
-  setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }): NodeSessionRecord
+  setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean }): NodeSessionRecord | Promise<NodeSessionRecord>
   /** Live rows including hidden and settled sessions. Omitted by hosts that page through list(). */
   archiveEntries?(): Iterable<Readonly<NodeSessionRecord>>
   /** Projected transcript count; avoids materializing cold messages for metadata. */

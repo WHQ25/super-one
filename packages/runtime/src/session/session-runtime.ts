@@ -42,6 +42,7 @@ import {
 } from './message-catalog'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_CLEANUP_CONFIRM_TIMEOUT_MS } from '@superone/shared/session-cleanup'
+import { runningChildSettleError } from './settle-running'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
@@ -2128,6 +2129,30 @@ export class SessionRuntime {
     sessionId: string,
     flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
   ): NodeSessionRecord {
+    // Refuse before any flag write. A settled parent takes its spawn children
+    // with it, so an open child turn blocks the parent entirely. The cascade
+    // below writes children without this check: one level, and those children
+    // were just found idle.
+    if (flags.isSettled === true) {
+      const running = this.runningSpawnChildIds(sessionId)
+      if (running.length > 0) throw runningChildSettleError(sessionId, running)
+    }
+    return this.writeUiFlags(sessionId, flags)
+  }
+
+  /** Direct spawn children whose turn is still streaming on this host. */
+  private runningSpawnChildIds(sessionId: string): string[] {
+    return (this.store.spawnChildSessionIds?.(sessionId) ?? []).filter((childId) => {
+      if (childId === sessionId) return false
+      const child = this.live.get(childId)
+      return child?.status === 'streaming' && child.isSettled !== true
+    })
+  }
+
+  private writeUiFlags(
+    sessionId: string,
+    flags: { isPinned?: boolean; isHidden?: boolean; isSettled?: boolean },
+  ): NodeSessionRecord {
     const session = this.live.get(sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     if (typeof flags.isPinned === 'boolean') session.isPinned = flags.isPinned
@@ -2150,7 +2175,7 @@ export class SessionRuntime {
         if (childId === sessionId || !this.live.has(childId)) continue
         const child = this.live.get(childId)
         if (!child || child.isSettled === true) continue
-        this.setUiFlags(childId, { isSettled: true })
+        this.writeUiFlags(childId, { isSettled: true })
       }
     }
     return this.clone(session)

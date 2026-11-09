@@ -5,6 +5,7 @@ import { encodeNodePairingCode } from '@superone/shared/environment/node-pairing
 import type { HostActionTerminalResult } from '@superone/shared/environment'
 import { assertSessionHarnessRuntimeReady } from '@superone/runtime/harness'
 import { getMachineInfo } from '@superone/runtime/machine'
+import { runningChildSettleError } from '@superone/runtime/session'
 import { isPrivateNetworkAddress, networkAddressScope } from '@superone/shared/private-network-address'
 import log from '../logger'
 import { LanAdvertiser } from '../lan-advertiser'
@@ -14,6 +15,7 @@ import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
 import { findPairedPhone } from '../database'
 import { createSession as createSessionRow, loadSessionMessage, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, settleSession, settleSpawnChildren, deleteSession } from '../db-sessions'
+import { asChildTurnView, remoteSpawnChildRunning, runningSpawnChildIds } from '../session/settle-guard'
 import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteController } from '../db-remote-controlled-sessions'
 import { disableDesktopHarness, enableDesktopHarness, getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { ensureShellPath } from '../shell-path'
@@ -156,13 +158,22 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       setController: setSessionRemoteController,
       rename: renameSession,
       tags: (id, tags) => { setSessionTags(id, tags) },
-      flags: (id, flags) => {
+      flags: async (id, flags) => {
+        // Refuse before any write. Spawn children follow a settled parent, so
+        // an open child turn keeps the parent active.
+        if (flags.isSettled === true) {
+          const running = await runningSpawnChildIds(
+            id,
+            (childId) => asChildTurnView(sessions.getSession(childId)),
+            remoteSpawnChildRunning,
+          )
+          if (running.length > 0) throw runningChildSettleError(id, running)
+        }
         if (flags.isPinned !== undefined) pinSession(id, flags.isPinned)
         if (flags.isHidden !== undefined) hideSession(id, flags.isHidden)
         if (flags.isSettled !== undefined) settleSession(id, flags.isSettled)
         // Settled is finished: stop the turn and drop the harness process.
-        // Spawn children follow a settled parent. Hidden stays live and only
-        // stops background work that would run unseen.
+        // Hidden stays live and only stops background work that would run unseen.
         if (flags.isSettled === true) {
           void sessions.releaseSettledSession?.(id)
           for (const childId of settleSpawnChildren(id)) {

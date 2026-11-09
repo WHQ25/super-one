@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { shallow } from 'zustand/shallow'
 import { useShallow } from 'zustand/react/shallow'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
+import { isRunningChildSettleError, removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
 import { ACTIVE_SESSION_PAGE_SIZE, isListedSession } from '@/lib/session-list-ops'
 import { noteListedUnread, setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { traceSidebar } from './sidebar-trace'
@@ -76,6 +78,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   /** When set, pins are loaded for each of these environments and grouped in the list. */
   pinnedConnectionIds?: string[]
 }) {
+  const { t } = useTranslation()
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
   const [loadingFolders, setLoadingFolders] = useState<Record<string, boolean>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
@@ -616,19 +619,24 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   }, [refreshPinned, refreshFolderSessions])
 
   const handleSettleSession = useCallback(async (sessionId: string, settled: boolean, folderPath: string) => {
-    await setSessionFlags(folderPath, sessionId, { isSettled: settled })
-    if (settled) {
-      useChatStore.setState((state) => setUnseenCompleted(state, folderPath, sessionId, false))
-      try {
-        await setSessionRead(folderPath, sessionId, true)
-      } catch (err) {
-        console.warn('[sidebar] setSessionRead failed:', err)
+    try {
+      await setSessionFlags(folderPath, sessionId, { isSettled: settled })
+      if (settled) {
+        useChatStore.setState((state) => setUnseenCompleted(state, folderPath, sessionId, false))
+        try {
+          await setSessionRead(folderPath, sessionId, true)
+        } catch (err) {
+          console.warn('[sidebar] setSessionRead failed:', err)
+        }
       }
+    } catch (err) {
+      console.warn('[sidebar] settle failed:', err)
+      toast.error(isRunningChildSettleError(err) ? t('sidebar.contextMenu.settleBlocked') : (err instanceof Error ? err.message : String(err)))
     }
     refreshFolderSessions(folderPath)
     refreshPinned()
     refreshSettled()
-  }, [refreshFolderSessions, refreshPinned, refreshSettled])
+  }, [refreshFolderSessions, refreshPinned, refreshSettled, t])
 
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
     const remote = parseRemoteProjectKey(target.folderPath)

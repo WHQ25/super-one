@@ -92,6 +92,20 @@ export function sessionActivityIconStatus(session: { status?: string; isUnseen?:
   return session.isAutomation ? 'automation' : session.status
 }
 
+/**
+ * A direct spawn child still has an open turn. The host refuses to settle the
+ * parent in that case, so the settle action stays hidden. Unrelated sessions,
+ * including ones with no parent, do not count.
+ */
+export function spawnChildWorking(activity: WorkspaceActivity, parentId: string): boolean {
+  if (!parentId) return false
+  for (const session of Object.values(activity)) {
+    if (session.parentSessionId !== parentId) continue
+    if (session.realtimeActive || (session.pendingCount ?? 0) > 0 || LIVE_SESSION_STATUSES.has(session.status ?? '')) return true
+  }
+  return false
+}
+
 /** A project row stays open enough to show live, unseen, and pending work. */
 export function projectHasAttention(activity: WorkspaceActivity, projectPath: string): boolean {
   return Object.values(activity).some((session) =>

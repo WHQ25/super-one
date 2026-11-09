@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type { HarnessId, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
+import { useSpawnChildTurnOpen } from '@/lib/spawn-child-turn'
 import { setSessionRead } from '@/lib/session-client'
 import { useChatStore } from '@/stores/chat-store'
 import { setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
@@ -35,7 +36,12 @@ export function useSessionMenuItems(
   const realtimeVoice = useRealtimeCallStore((s) => (
     s.sessionId === session.sessionId && s.state !== 'idle'
   ))
-  const allowSettle = canSettleSession(status, { realtimeVoice, isSettled: session.isSettled === true })
+  const childTurnOpen = useSpawnChildTurnOpen(folderPath, session.sessionId)
+  const allowSettle = canSettleSession(status, {
+    realtimeVoice,
+    isSettled: session.isSettled === true,
+    childTurnOpen,
+  })
 
   const handleMarkRead = useCallback(() => {
     useChatStore.setState((s) => setUnseenCompleted(s, folderPath, session.sessionId, !unread))

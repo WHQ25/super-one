@@ -5,6 +5,7 @@ import type {
   NodeSessionRecord,
   SessionCleanupConfirmInput,
 } from './types'
+import { runningChildIdsFromSettleError, runningChildSettleMessage } from './settle-running'
 
 export const SESSION_CLEANUP_MAX_DELETE = 50
 
@@ -12,7 +13,7 @@ export interface SessionCleanupHost {
   archiveEntries?(): Iterable<Readonly<NodeSessionRecord>>
   messageCount?(sessionId: string): number
   get(sessionId: string): NodeSessionRecord | null
-  setUiFlags(sessionId: string, flags: { isSettled?: boolean }): NodeSessionRecord
+  setUiFlags(sessionId: string, flags: { isSettled?: boolean }): NodeSessionRecord | Promise<NodeSessionRecord>
   remove(sessionId: string): NodeSessionRecord | null | Promise<NodeSessionRecord | null>
   requestCleanupConfirm?(input: SessionCleanupConfirmInput): Promise<CleanupConfirmOutcome>
 }
@@ -53,6 +54,8 @@ function confirmRow(row: NodeSessionRecord, host: SessionCleanupHost): SessionCl
  * Delete waits for requestCleanupConfirm. Spawn children are expanded from
  * parentSessionId (hidden and settled included). Settle only flags the
  * requested rows; setUiFlags already settles one level of spawn children.
+ * A parent with a streaming spawn child is left unsettled and reported in
+ * `blocked` instead of taking that child with it.
  */
 export async function runSessionCleanup(
   host: SessionCleanupHost,
@@ -126,11 +129,27 @@ export async function runSessionCleanup(
 
   if (action === 'settle' || action === 'unsettle') {
     const settled = action === 'settle'
-    for (const row of candidates) host.setUiFlags(row.sessionId, { isSettled: settled })
+    const affected: Array<{ id: string; title: string }> = []
+    const blocked: Array<{ id: string; title: string; runningChildIds: string[] }> = []
+    for (const row of candidates) {
+      try {
+        await host.setUiFlags(row.sessionId, { isSettled: settled })
+        affected.push({ id: row.sessionId, title: titleOf(row) })
+      } catch (err) {
+        const runningChildIds = settled ? runningChildIdsFromSettleError(err) : null
+        if (!runningChildIds) throw err
+        blocked.push({ id: row.sessionId, title: titleOf(row), runningChildIds })
+      }
+    }
+    const status = blocked.length === 0 ? 'ok' : affected.length === 0 ? 'error' : 'partial'
     return {
-      status: 'ok',
+      status,
       action,
-      affected: candidates.map((row) => ({ id: row.sessionId, title: titleOf(row) })),
+      affected,
+      ...(blocked.length > 0 ? {
+        blocked,
+        message: blocked.map((row) => runningChildSettleMessage(row.id, row.runningChildIds)).join(' '),
+      } : {}),
       ...skipFields,
     }
   }

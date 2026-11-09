@@ -139,10 +139,6 @@
     "count": 1,
     "reason": "Codex realtime voice"
   },
-  "hooks/useChatScroll.ts": {
-    "count": 1,
-    "reason": "Codex realtime voice"
-  },
   "lib/harness-visibility.ts": {
     "count": 6,
     "reason": "catalog ids of Settings > Harnesses"

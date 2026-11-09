@@ -1,5 +1,4 @@
 import { useContext, useEffect } from 'react'
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { resolveDesktopVoiceRoute } from '@superone/shared/doubao-call'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { AudioLines } from 'lucide-react'
@@ -22,10 +21,10 @@ export interface ComposerVoiceEntryProps {
   additionalDirs?: string[]
   disabled?: boolean
   /**
-   * Official Codex keeps WebRTC. Omitted means the harness capability flag is official,
-   * so existing composer tests keep the Codex button without passing an account id.
+   * Codex account id for this session. Omitted means no API provider, so an
+   * official Codex harness keeps WebRTC. A non-account provider id routes to Doubao.
    */
-  officialCodex?: boolean
+  codexProviderId?: string | null
   /** Remote sessions cannot open the desktop Doubao socket. */
   allowDoubao?: boolean
 }
@@ -37,7 +36,7 @@ export function ComposerVoiceEntry({
   sessionId,
   additionalDirs,
   disabled = false,
-  officialCodex,
+  codexProviderId,
   allowDoubao = true,
 }: ComposerVoiceEntryProps) {
   const { t } = useTranslation()
@@ -67,11 +66,10 @@ export function ComposerVoiceEntry({
     </IconButton>
   }
 
-  const official = officialCodex ?? HARNESS_CAPABILITIES[harness].supportsRealtimeVoice === true
   const route = resolveDesktopVoiceRoute({
     preference,
     harnessId: harness,
-    apiProviderId: official ? null : 'custom',
+    apiProviderId: codexProviderId,
     canSend: !disabled,
     doubaoConfigured: allowDoubao && doubaoConfigured,
   })

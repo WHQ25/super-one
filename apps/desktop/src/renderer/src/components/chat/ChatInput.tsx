@@ -11,7 +11,6 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Loader2, X } from 'lucide-react'
 import type { MentionKind, SessionWriteTarget } from '@/stores/chat'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
-import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useShallow } from 'zustand/react/shallow'
@@ -2323,7 +2322,7 @@ export function ChatInput({
                 sessionId={displayedSessionId}
                 additionalDirs={additionalDirs}
                 disabled={isStreaming && !realtimeVoiceEngaged}
-                officialCodex={activeProviderForResources === 'codex' && (!resolvedCodexProviderId || isCodexAccountProvider(resolvedCodexProviderId))}
+                codexProviderId={resolvedCodexProviderId}
                 allowDoubao={!isRemoteLocked}
               />
             )}

@@ -38,6 +38,10 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 28 | `result.credential_expires_at` | 0.3.318 | Stored login expiry reminder | Account-domain binding; can be estimated and is not an authentication verdict | open, deferred from [0.3.318](upgrades/0.3.318.md) |
 | 29 | File-tool boundaries and auto-mode Settings | 0.3.312–0.3.318 | Host read exemptions and tighter file writes | Not a shell/MCP/Hook sandbox; write boundary disables worktree tools; keep defaults unchanged | open, deferred from [0.3.318](upgrades/0.3.318.md) |
 | 30 | Private Mod UI `ui_attach.draws` and `ui_prompt_paint` | Native 2.1.318 observed | Backdrop/mobile input opt-ins and prompt decoration | Host does not advertise these; absent `draws` preserves existing behavior. Needs explicit shared UI support before enabling | open |
+| 31 | `mcp_call.check_permissions` | 0.3.321 | Run MCP Apps View calls through the same permission rules and hooks as a model call | View calls are host-dispatched after the visibility gate. Turning this on asks `canUseTool` and can refuse the call before the server sees it. Needs `mcp_call_check_permissions_v1` | open, deferred from [0.3.321](upgrades/0.3.321.md) |
+| 32 | `set_has_subscribers` | 0.3.321 | Shorten stream-event hold while nobody is watching the transcript | Only applies when `CLAUDE_CODE_STREAM_EVENT_HOLD_MS` is set, which SuperOne does not set. A process starts as watched | open, deferred from [0.3.321](upgrades/0.3.321.md) |
+| 33 | `permissions.denyInsteadOfPrompting` | 0.3.321 | Deny tool prompts instead of asking, including `canUseTool` | Stops the permission, question and plan bridges. User/managed settings only | rejected: SuperOne answers prompts through `canUseTool` |
+| 34 | `system/ui_notify` and `ui_notify_cancel` | Native 2.1.321 | Scheduled or keyed mod notifications, and withdrawing one | New plaintext notice shape (title, source, key, delay). Current mods still use `ui_log` / `ui_toast` | open |
 
 ## Integration gaps
 

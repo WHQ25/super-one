@@ -194,9 +194,9 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
       snapshot: false,
     },
     hooks: {
-      // Callback matchers only carry the callbacks and a timeout. The SDK
-      // initialize request drops any other field, including onFailure.
-      PreToolUse: [{ hooks: [denySubagentSessionRename] }],
+      // The SDK copies onFailure onto initialize. Stop ignores it, so only
+      // this authorization matcher fails closed.
+      PreToolUse: [{ hooks: [denySubagentSessionRename], onFailure: 'block' }],
       ...(opts.onSessionCrons ? { Stop: [sessionCronsStopHook(opts.onSessionCrons)] } : {}),
     },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId, opts.projectPath) },

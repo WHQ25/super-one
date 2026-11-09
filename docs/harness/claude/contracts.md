@@ -553,7 +553,8 @@ module that runs inside the CLI process. Upstream docs:
 ### `mcp_call` has no visibility check and reports `isError` as a failure
 
 - **Behavior:** The internal `mcp_call` control request runs any tool,
-  including model-only ones, without `canUseTool`. A result with `isError`
+  including model-only ones, without `canUseTool`, unless `check_permissions`
+  is set. SuperOne leaves it unset. A result with `isError`
   rejects the request with `control_request_failed`, indistinguishable from
   "could not run". An `AbortSignal` sends `control_cancel_request`, and the
   server gets `notifications/cancelled`.
@@ -680,9 +681,10 @@ module that runs inside the CLI process. Upstream docs:
 ## Process-scoped system notices and hook failures
 
 - **Behavior:** `system/informational` is plaintext with an info/notice/suggestion/
-  warning level. `system/session_writes_lost` may arrive as the CLI exits, after
-  its final result. It reports native transcript/global-config loss, not failure
-  of the completed model turn or proof that SuperOne's database lost data.
+  warning level. `system/session_writes_lost` is sent at most once, and only when
+  the CLI exits 0, after its final result if there was one. A run that exits 1
+  gets the stderr line only. It reports native transcript/global-config loss, not
+  failure of the completed model turn or proof that SuperOne's database lost data.
   A received result remains valid. Preserve unknown future storage codes/kinds.
 - **Shutdown:** desktop and node stop accepting queued input, interrupt active
   work and cancel SDK-held queued messages, then end the input generator and
@@ -693,7 +695,8 @@ module that runs inside the CLI process. Upstream docs:
   survives registry removal/session close until drain completes, and a new
   process for the same session waits for the old release. Notices persist
   without becoming a new assistant completion or changing session recency.
-- **Observed:** 0.3.318 declarations; both mappers and node lifecycle tested with
+- **Observed:** 0.3.321 declarations (exit 0 only; 2.1.317 through some later
+  builds also sent it on an error exit). Both mappers and node lifecycle tested with
   fixtures after result, while idle and during interruption. A real SDK reader
   received an EOF-only warning from a fixture process after a completed turn
   with bidirectional callbacks. Actual ENOSPC/EDQUOT was not induced on a live
@@ -719,9 +722,11 @@ module that runs inside the CLI process. Upstream docs:
   if the runtime cannot honor it or did not register those hooks; a host must
   not silently retry without it. Stop/SubagentStop/TaskCompleted/TeammateIdle
   ignore this option.
-- **Observed:** SDK/native 0.3.318; real native process against a local simulated
-  Anthropic API. A Write proposed by the fixture did not create its file for
-  either a thrown callback or invalid output, and a warning was streamed.
+- **Observed:** SDK 0.3.321 forwards `onFailure` on the initialize matcher.
+  The refusal sentence still starts with the same prefix and now continues
+  "Update Claude Code if it is old, or remove onFailure: \"block\" from your hooks."
+  A repeated initialize that did not register the hooks throws a different
+  sentence and is not classified as `runtime_upgrade_required`.
 - **Depends on it:** desktop `buildClaudeOptions` protects
   `denySubagentSessionRename` with `onFailure: block`. It does not replace the
   node executor's own authorization, or close pre-existing backlog G1.
@@ -771,3 +776,18 @@ module that runs inside the CLI process. Upstream docs:
   detached. This was a protocol smoke, not a desktop/phone UI acceptance test.
 - **Guard:** `packages/claude/src/mod-surface/mod-surface.test.ts`; new opt-ins
   remain backlog #30 until shared UI and host handlers exist.
+
+### `ui_notify` in 2.1.321
+
+- **Behavior:** Native 2.1.321 adds `system/ui_notify` and `system/ui_notify_cancel`
+  beside `ui_log` / `ui_toast`. A notify carries plugin, source, title and plain
+  text, plus an optional key, delay and fire time. Cancel withdraws one key for
+  that source, or every notification from the plugin when the key is absent.
+  `startup_ui_never_appeared` is a terminal-UI watchdog, not a host message.
+  Every `ui_*` name SuperOne already sends is still in the binary. Unknown
+  subtypes stay ignored.
+- **Observed:** string compare of the darwin-arm64 binaries for 2.1.318 and
+  2.1.321. Not exercised against a live mod.
+- **Depends on it:** nothing yet. `mapPluginUiMessage` still accepts only
+  `ui_log`, `ui_toast` and `ui_status`.
+- **Guard:** existing plugin-notice tests. Adoption is backlog #34.

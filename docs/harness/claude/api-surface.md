@@ -1,6 +1,6 @@
 # Claude Agent SDK API surface
 
-Ledger version: `0.3.318` · Check: `bun scripts/harness-api-inventory.ts claude`
+Ledger version: `0.3.321` · Check: `bun scripts/harness-api-inventory.ts claude`
 
 Every upstream interface of `@anthropic-ai/claude-agent-sdk` and how SuperOne uses it. Runtimes: **desktop** (local sessions), **node** (remote node CLI through `packages/claude`), **probe** (catalog queries with `maxTurns: 0`). Status vocabulary and row format: [docs/harness/README.md](../README.md#ledger-api-surfacemd). Undeclared messages and methods SuperOne relies on are in [contracts.md](contracts.md#typed-messages-may-not-be-emitted-untyped-ones-may-be).
 
@@ -281,7 +281,7 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `interrupt` | used | Desktop Stop and shared desktop/node busy-process teardown. Node per-turn cancellation uses an AbortSignal. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/src/query-shutdown.ts` |
 | `list_models` | n/a | No Query wrapper; it is the model catalog for remote thin clients. SuperOne uses `supportedModels`, which comes from `initialize`. | — |
 | `list_permission_rules` | unused | No Query wrapper; would return live `/permissions` rules and workspace dirs. | — |
-| `mcp_call` | used | No Query wrapper; sent through the internal `Query.request` for MCP Apps View tool calls. Runs no visibility or permission check, so the shared dispatch gate enforces visibility first; version-pinned by `CLAUDE_MCP_CALL_VERIFIED_SDK`. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
+| `mcp_call` | used | No Query wrapper; sent through the internal `Query.request` for MCP Apps View tool calls. `check_permissions` stays unset, so the call still skips the permission check; the shared dispatch gate enforces visibility first. Version-pinned by `CLAUDE_MCP_CALL_VERIFIED_SDK`. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `mcp_message` | used | via SDK MCP servers (`type: 'sdk'`); the in-process `superone` server on desktop and the host-action server on node. | `apps/desktop/src/main/agent/claude-query.ts`, `apps/desktop/src/main/mcp/superone-mcp-server.ts`, `apps/cli/src/session/host-action-mcp-server.ts` |
 | `mcp_read_resource` | used | via `readMcpResource`; MCP Apps View resources. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `mcp_reconnect` | used | via `reconnectMcpServer`; desktop MCP settings save, and after a relayed MCP Apps OAuth callback. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/src/mcp-apps.ts` |
@@ -298,6 +298,7 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `rewind_files` | used | via `rewindFiles`; desktop checkpoint restore and dry-run. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `seed_read_state` | unused | via `seedReadState` (never called). | — |
 | `set_color` | n/a | No Query wrapper; it sets the CLI/TUI session accent color, which SuperOne's own UI does not use. | — |
+| `set_has_subscribers` | unused | No Query wrapper. It only changes how long the CLI holds stream-event lines when `CLAUDE_CODE_STREAM_EVENT_HOLD_MS` is set. A new process starts as watched, which matches a live SuperOne session. | — |
 | `set_max_thinking_tokens` | deprecated | via `setMaxThinkingTokens` (deprecated, never called); thinking is set at spawn. | — |
 | `set_model` | used | via `setModel`; desktop model picker and per-turn model override. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `set_permission_mode` | used | via `setPermissionMode`; desktop mode switches (plan, default, bypass, etc.). | `apps/desktop/src/main/session/backends/claude-backend.ts` |

@@ -6,11 +6,11 @@ describe('Claude startup diagnostics', () => {
   it('rechecks the internal hook compatibility wording when upgrading the SDK', () => {
     // This fallback matches internal SDK prose, not a stable error code.
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe('0.3.318')
+    expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe('0.3.321')
   })
 
   it('keeps fail-closed runtime compatibility errors actionable without dropping the guard', () => {
-    const raw = 'The process answering initialize does not honor onFailure on hook matchers, so a hook that fails would not block. Update Claude Code.'
+    const raw = 'The process answering initialize does not honor onFailure on hook matchers, so a hook that fails would not block. Update Claude Code if it is old, or remove onFailure: "block" from your hooks.'
     expect(buildClaudeThrownFailure(new Error(raw))).toMatchObject({ errorInfo: { code: 'runtime_upgrade_required', raw } })
     expect(buildClaudeThrownFailure(Object.assign(new Error('recover this file'), { startupFailureReason: 'config_file_invalid' })))
       .toMatchObject({ errorInfo: { startupFailureReason: 'config_file_invalid', raw: 'recover this file' } })

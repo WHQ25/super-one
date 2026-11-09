@@ -23,10 +23,12 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Claude Agent SDK 0.3.321 (Claude Code 2.1.321).
 - Antigravity uses the agy CLI installed on the machine. Enable, readiness, and login resolve it on PATH or the known bin directories, and a saved agy_acp_server command moves onto that CLI.
 
 ### Fixed
 
+- Claude's subagent tool guard fails closed when its hook throws or returns invalid output. A runtime that cannot honor that guard still asks for an update.
 - Streaming reasoning no longer fades in. Markdown still fades each new commit.
 - Antigravity usage reads the active Cloud Code quota endpoint, and one endpoint's numbers no longer replace the other's.
 - Message actions sit above the compact turn rail, so table and diagram toolbars and copy on a user message stay on the markdown edge.

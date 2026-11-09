@@ -43,7 +43,7 @@ describe.skipIf(process.env.SUPERONE_TEST_CLAUDE_NATIVE !== '1')('Claude native 
       cwd: dir, pathToClaudeCodeExecutable: resolveSdkClaudeBinary()!, settingSources: [],
       tools: ['Write'], maxTurns: 2, permissionMode: 'default',
       canUseTool: async () => ({ behavior: 'allow' }),
-      hooks: { PreToolUse: [{ hooks: [callback as HookCallback] }] },
+      hooks: { PreToolUse: [{ hooks: [callback as HookCallback], onFailure: 'block' }] },
       env: { ...process.env, ANTHROPIC_API_KEY: 'fixture-key', ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
         ANTHROPIC_AUTH_TOKEN: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_SESSION_ACCESS_TOKEN: '',
         CLAUDE_CONFIG_DIR: dir, CLAUDE_SECURESTORAGE_CONFIG_DIR: dir,

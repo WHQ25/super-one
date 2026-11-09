@@ -77,7 +77,7 @@ beforeEach(() => {
 describe('buildClaudeOptions resume truncation', () => {
   it('registers the subagent session-rename authorization hook', () => {
     const options = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo' })
-    expect(options.hooks?.PreToolUse?.[0]?.hooks).toEqual([denySubagentSessionRename])
+    expect(options.hooks?.PreToolUse?.[0]).toMatchObject({ hooks: [denySubagentSessionRename], onFailure: 'block' })
   })
 
   it('passes resumeSessionAt and resumeDropsTurn through to SDK options', () => {

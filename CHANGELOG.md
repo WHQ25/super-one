@@ -15,7 +15,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent.
+- Doubao realtime voice. Official Codex sessions keep Codex voice. Other sessions that can send a turn use Doubao when a speech key is saved. The voice shell sends the conversation to the backend agent and returns immediately; the host forwards each reply for the voice model to read. Speakers: VV, Xiaohe, Yunzhou, Xiaotian, Tim, Dacey, and Stokie.
+- Read aloud, speech synthesis, and transcription. Read-aloud uses the enabled speech model and keeps the clip until the session is settled. ElevenLabs accepts a pasted voice id and plays that voice's preview. A provider with one key shows its name without the key label.
+- Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent. Activity-panel and in-chat previews share the image menu, including Save As. A local picture can start a system file drag. A remote picture that only has inlined bytes has neither menu nor drag.
+- Antigravity manage_task has its own card for listing background tasks, checking status, stopping a task, and sending input.
 - Each ACP agent keeps its own default model, effort, and permission mode. A session that has not chosen yet uses that agent's default.
 - Antigravity keeps a turn open while a subagent is still running after the prompt ends, and answers elicitation through the question card.
 - Offline hosts share one folded group. Project focus and the unfocused multi-host list give leftover pane height to long session lists. The 256px cap stays when every open environment already overflows it.
@@ -25,16 +28,59 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Claude Agent SDK 0.3.321 (Claude Code 2.1.321).
 - Antigravity uses the agy CLI installed on the machine. Enable, readiness, and login resolve it on PATH or the known bin directories, and a saved agy_acp_server command moves onto that CLI.
+- Settling a parent still settles idle spawn children. The host refuses while any direct child has an open turn. The settle control hides when this window already knows a child is running. Unsettle stays. An agent settles a child only when asked.
+- Next 16.4.5 and KaTeX 0.18.5 include the current advisories. The MCP SDK stays on 1.32.2.
 
 ### Fixed
 
 - Claude's subagent tool guard fails closed when its hook throws or returns invalid output. A runtime that cannot honor that guard still asks for an update.
 - Streaming reasoning no longer fades in. Markdown still fades each new commit.
 - Antigravity usage reads the active Cloud Code quota endpoint, and one endpoint's numbers no longer replace the other's.
+- An Antigravity turn counts context tokens as that turn's increment.
+- Antigravity stays on automatic review when accept-edits reports the current mode.
 - Message actions sit above the compact turn rail, so table and diagram toolbars and copy on a user message stay on the markdown edge.
 - Pending sends, MCP startup, and harness retries share one footer. A local send does not show the remote sending label.
+- An API retry replaces the message footer instead of sitting beside the duration and token counts.
+- The message footer stays one text line. The hover time and fork do not shift the transcript.
 - A queued message that joins a live reply clears the sending state. Steering that continues the current reply does not show a second pending reply. (#174)
 - Mentions resolve files, apps, and catalogs on the session's own host. A remote pane does not grant an app on the machine in front. (#172)
+- Session permission buttons stay on one row until the pane is 56rem. Decline rejects once and the turn continues. Cancel returns cancelled and stops.
+- Hover cards stay 4px to the right of the row and only slide vertically, so an offline host at the bottom of the window is not clipped.
+- A virtual transcript block keeps its height when the activity panel is fullscreen.
+- Collaboration wakes drain when a turn settles, and an orphaned ACP interaction is cleared. (#180)
+- Settings keeps the provider, credential, and binding lists when a local read returns nothing.
+
+## [0.79.0-alpha.1] - 2026-11-10
+
+### Added
+
+- Doubao realtime voice. Official Codex sessions keep Codex voice. Other sessions that can send a turn use Doubao when a speech key is saved. The voice shell sends the conversation to the backend agent and returns immediately; the host forwards each reply for the voice model to read. Speakers: VV, Xiaohe, Yunzhou, Xiaotian, Tim, Dacey, and Stokie.
+- Read aloud, speech synthesis, and transcription. Read-aloud uses the enabled speech model and keeps the clip until the session is settled. ElevenLabs accepts a pasted voice id and plays that voice's preview. A provider with one key shows its name without the key label.
+- Activity-panel and in-chat image previews share the image menu, including Save As. A local picture can start a system file drag. A remote picture that only has inlined bytes has neither menu nor drag.
+- Antigravity manage_task has its own card for listing background tasks, checking status, stopping a task, and sending input.
+
+### Changed
+
+- Claude Agent SDK 0.3.321 (Claude Code 2.1.321). MCP Apps stay unchecked, subscriber hold is unused, and deny-instead-of-prompt stays off.
+- Settling a parent still settles idle spawn children. The host refuses while any direct child has an open turn. The settle control hides when this window already knows a child is running. Unsettle stays. An agent settles a child only when asked.
+- Next 16.4.5 and KaTeX 0.18.5 include the current advisories. The MCP SDK stays on 1.32.2.
+
+### Fixed
+
+- Claude's subagent tool guard fails closed when its hook throws or returns invalid output. A runtime that cannot honor that guard still asks for an update.
+- Session permission buttons stay on one row until the pane is 56rem. Decline rejects once and the turn continues. Cancel returns cancelled and stops.
+- Hover cards stay 4px to the right of the row and only slide vertically, so an offline host at the bottom of the window is not clipped.
+- A virtual transcript block keeps its height when the activity panel is fullscreen.
+- An API retry replaces the message footer instead of sitting beside the duration and token counts.
+- The message footer stays one text line. The hover time and fork do not shift the transcript.
+- An Antigravity turn counts context tokens as that turn's increment.
+- Antigravity stays on automatic review when accept-edits reports the current mode.
+- Collaboration wakes drain when a turn settles, and an orphaned ACP interaction is cleared. (#180)
+- Settings keeps the provider, credential, and binding lists when a local read returns nothing.
+
+### Tests
+
+- A speech-recognition model stays on the Google chat endpoint when that endpoint also serves video. An empty task list remains the orphan.
 
 ## [0.79.0-alpha] - 2026-11-08
 

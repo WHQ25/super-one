@@ -147,19 +147,37 @@ export class VoiceAdmissionHost {
   start(seat: VoiceSeat, attemptId: string, request: RealtimeVoiceStartRequest, prepare: (control: VoiceCallControl) => VoiceLink): VoiceStatus {
     validateVoiceAttempt(attemptId)
     validateVoiceStart(request)
-    const key = this.key(seat.endpointId, attemptId)
-    if (this.retired.has(key)) throw refuse('Voice attempt already ended. Start a new call.')
-    if (this.call) {
-      if (this.call.endpointId === seat.endpointId && this.call.attemptId === attemptId && this.call.sessionId === seat.sessionId) {
-        return this.status(seat)
-      }
-      throw refuse('Another voice call is already starting or active on this desktop.')
-    }
+    const existing = this.claim(seat, attemptId)
+    if (existing) return existing
     if (!seat.capability.supported) throw refuse(seat.capability.reason ?? 'Voice is unavailable for this agent.')
     if (seat.busy) throw refuse(VOICE_SESSION_BUSY_REASON)
     try { assertVoiceAccount(seat.apiProviderId, request.selection?.apiProviderId) }
     catch (error) { throw refuse(error instanceof Error ? error.message : 'Voice requires an official Codex account.') }
+    return this.open(seat, attemptId, request, prepare)
+  }
 
+  /**
+   * Same single call slot as Codex, without an SDP offer or a Codex account.
+   * Desktop Doubao uses this. Phones keep using {@link start}.
+   */
+  startShell(seat: VoiceSeat, attemptId: string, prepare: (control: VoiceCallControl) => VoiceLink): VoiceStatus {
+    validateVoiceAttempt(attemptId)
+    const existing = this.claim(seat, attemptId)
+    if (existing) return existing
+    return this.open(seat, attemptId, { sdp: 'v=0\r\n' }, prepare)
+  }
+
+  private claim(seat: VoiceSeat, attemptId: string): VoiceStatus | undefined {
+    const key = this.key(seat.endpointId, attemptId)
+    if (this.retired.has(key)) throw refuse('Voice attempt already ended. Start a new call.')
+    if (!this.call) return undefined
+    if (this.call.endpointId === seat.endpointId && this.call.attemptId === attemptId && this.call.sessionId === seat.sessionId) {
+      return this.status(seat)
+    }
+    throw refuse('Another voice call is already starting or active on this desktop.')
+  }
+
+  private open(seat: VoiceSeat, attemptId: string, request: RealtimeVoiceStartRequest, prepare: (control: VoiceCallControl) => VoiceLink): VoiceStatus {
     const call: AdmittedCall = {
       endpointId: seat.endpointId,
       sessionId: seat.sessionId,

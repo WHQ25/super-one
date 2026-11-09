@@ -4529,6 +4529,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_STATUS, async () => (await import('./jev/jev-api-key')).getJevApiKeyStatus())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_SET, async (_e, key: string) => (await import('./jev/jev-api-key')).setJevApiKey(String(key ?? '')))
+  ipcMain.handle(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_GET, async () => (await import('./doubao/doubao-speech-settings')).getDoubaoVoiceSettings())
+  ipcMain.handle(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_SET, async (_e, patch: unknown) => {
+    const body = patch && typeof patch === 'object' ? patch as { preference?: 'auto' | 'codex' | 'doubao'; speaker?: string; apiKey?: string } : {}
+    return (await import('./doubao/doubao-speech-settings')).setDoubaoVoiceSettings(body)
+  })
   ipcMain.handle(AgentIpcChannels.SYNC_ZONE_USAGE_GET, async () => (await import('./environment/session-zone-reclaim')).syncZoneUsage())
   ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RECLAIM, async () => (await import('./environment/session-zone-reclaim')).sweepSyncZone())
   // A delivery automatic retry gave up on has no worker coming for it, so a

@@ -668,7 +668,7 @@ export interface PermissionDenialInfo {
 }
 
 /** How a user-role transcript bubble entered the session (omitted = human composer). */
-export type ChatMessageSource = 'user' | 'collaboration' | 'task-notification'
+export type ChatMessageSource = 'user' | 'collaboration' | 'task-notification' | 'doubao-voice'
 
 export interface CollaborationMessageMeta {
   /** initial_task = parent-approved launch task; mailbox = session_send content shown in UI. */
@@ -878,6 +878,7 @@ export interface MessageMetadata {
    * Transcript provenance. Omitted / `'user'` = human composer.
    * `'collaboration'` = multi-agent collab (task or mailbox).
    * `'task-notification'` = synthetic host wake (not human).
+   * `'doubao-voice'` = a voice-session delegation. The bubble is the `<realtime_delegation>` envelope.
    */
   source?: ChatMessageSource
   /** A host wake carrying text the user wrote; any other host wake is hidden (see `isModelOnlyHostWake`). */
@@ -2430,6 +2431,10 @@ export type AgentEventBase =
       phase: 'started' | 'delta' | 'completed'
       itemId: string
       text: string
+      /**
+       * Doubao ASR revisions replace the line. Codex deltas omit this and append.
+       */
+      replace?: boolean
       role?: RealtimeTranscriptRole
       realtimeSessionId?: string
       /**
@@ -2624,6 +2629,11 @@ export interface SendMessageRequest {
   acpAgentId?: string | null
   /** Transcript provenance for non-human or collab-originated user bubbles. */
   source?: ChatMessageSource
+  /**
+   * Voice-delegation stamp. The user envelope and the assistant rows of that
+   * turn carry it so the voice transcript can show the work in progress.
+   */
+  codexTimeline?: CodexTimelineMetadata
   /** A host wake carrying text the user wrote; the transcript shows it (see `isModelOnlyHostWake`). */
   userAuthored?: boolean
   collaboration?: CollaborationMessageMeta
@@ -4489,6 +4499,12 @@ export const AgentIpcChannels = {
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
   READY_REALTIME_VOICE: 'agent:ready-realtime-voice',
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
+  DOUBAO_VOICE_START: 'agent:doubao-voice-start',
+  DOUBAO_VOICE_STOP: 'agent:doubao-voice-stop',
+  DOUBAO_VOICE_AUDIO: 'agent:doubao-voice-audio',
+  DOUBAO_VOICE_MUTE: 'agent:doubao-voice-mute',
+  /** Push: `{ type: 'pcm', pcm: Uint8Array } | { type: 'drop' }`. Not an agent event. */
+  DOUBAO_VOICE_PLAYBACK: 'agent:doubao-voice-playback',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
   SUGGESTED_TASK_LAUNCH_OPTIONS: 'agent:suggested-task-launch-options',
@@ -4758,6 +4774,8 @@ export const AgentIpcChannels = {
   /** Jev (TypeSafe) API key for the experimental browser fast loop: configured? / replace. */
   JEV_API_KEY_STATUS: 'app:jev-api-key-status',
   JEV_API_KEY_SET: 'app:jev-api-key-set',
+  DOUBAO_VOICE_SETTINGS_GET: 'app:doubao-voice-settings-get',
+  DOUBAO_VOICE_SETTINGS_SET: 'app:doubao-voice-settings-set',
   /** What the session sync zone holds and what a sweep would free; the sweep itself. */
   SYNC_ZONE_USAGE_GET: 'app:sync-zone-usage',
   SYNC_ZONE_RECLAIM: 'app:sync-zone-reclaim',

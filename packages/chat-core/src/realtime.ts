@@ -17,7 +17,8 @@ export function reduceRealtime(session: ChatCoreSession, event: AgentEvent): Cha
   if (session.realtimeSessionId && realtimeSessionId !== session.realtimeSessionId) return {}
   if (event.phase === 'delta') {
     if (!current || !event.text) return {}
-    return { realtimeLiveSegments: live.map(item => item === current ? { ...item, text: item.text + event.text } : item) }
+    const text = event.replace ? event.text : current.text + event.text
+    return { realtimeLiveSegments: live.map(item => item === current ? { ...item, text } : item) }
   }
   const role = event.role ?? current?.role
   if (!role) return {}

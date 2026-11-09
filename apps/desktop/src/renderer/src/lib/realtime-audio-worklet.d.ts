@@ -3,4 +3,5 @@ export class VoiceSampleQueue {
   readonly length: number
   push(samples: Float32Array): void
   read(output: Float32Array): number
+  clear(): void
 }

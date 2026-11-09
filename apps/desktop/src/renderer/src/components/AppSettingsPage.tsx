@@ -27,6 +27,7 @@ import { SpeechModelRow } from '@/components/settings/SpeechModelRow'
 import { SpeechVoiceRow } from '@/components/settings/SpeechVoiceRow'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import { SessionStorageSection } from '@/components/settings/SessionStorageSection'
+import { DoubaoVoiceSetting } from '@/components/settings/DoubaoVoiceSetting'
 import { JevFastLoopSetting } from '@/components/settings/JevFastLoopSetting'
 import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 import { SettingsPage, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
@@ -277,6 +278,10 @@ export function AppSettingsPage() {
             )
           })}
         </div>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.general.voice')}>
+        <DoubaoVoiceSetting />
       </SettingsSection>
 
       <SettingsSection title={t('settings.general.experimental')}>

@@ -20,7 +20,7 @@ import { statSync } from 'fs'
 import log from '../logger'
 import { ensureShellPath } from '../shell-path'
 import { resolve, join } from 'path';
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type BrowserWindow, type IpcMainEvent } from 'electron'
 import { windowControlIpc } from '../session/control-context'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
@@ -143,6 +143,12 @@ export class AgentService {
   private remoteControlService?: RemoteControlService
   private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
   private warmupManager = new WarmupManager()
+  private readonly onDoubaoAudio = (event: IpcMainEvent, sessionId: unknown, pcm: unknown): void => {
+    if (!this.sessionManager || typeof sessionId !== 'string') return
+    const bytes = pcmBytes(pcm)
+    if (!bytes) return
+    this.sessionManager.doubaoVoice.pushAudio(event.sender.id, sessionId, bytes)
+  }
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
   }
@@ -1197,16 +1203,48 @@ export class AgentService {
       readyWindowVoice(mgr, session, event.sender, identity)
     })
 
+    windowIpc.handle(AgentIpcChannels.DOUBAO_VOICE_START, async (event, projectPath: string, sessionId: string, attemptId: string) => {
+      if (parseRemoteProjectKey(projectPath)) throw Object.assign(new Error('Doubao voice is only available on this desktop.'), { code: 'failed_precondition' })
+      if (!attemptId) throw new Error('Voice attempt is required.')
+      const mgr = this.requireSessionManager()
+      const session = mgr.getSession(sessionId)
+      if (!session || session.projectPath !== projectPath) throw new Error('Session unavailable.')
+      session.lease.assertMutation()
+      return mgr.doubaoVoice.start(session, event.sender, attemptId)
+    })
+    windowIpc.handle(AgentIpcChannels.DOUBAO_VOICE_STOP, async (event, projectPath: string, sessionId: string, attemptId: string) => {
+      const mgr = this.requireSessionManager()
+      const session = mgr.getSession(sessionId)
+      if (!session || session.projectPath !== projectPath) return
+      session.lease.assertMutation()
+      return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+    })
+    windowIpc.handle(AgentIpcChannels.DOUBAO_VOICE_MUTE, async (event, sessionId: string, muted: boolean) => {
+      this.sessionManager?.doubaoVoice.setMuted(event.sender.id, sessionId, muted === true)
+    })
+    ipcMain.removeListener(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
+    ipcMain.on(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
+
     windowIpc.handle(AgentIpcChannels.LOAD_REALTIME_TIMELINE, (_event, sessionId: string) => {
       return loadRealtimeTimeline(sessionId)
     })
 
     // A read the window makes just by showing the session: it takes no lease,
     // so looking at a session never stops a phone or controller driving it.
+    // An in-memory session is used as-is. Passing provider codex here recreated
+    // an empty Grok draft on the first voice click and the call died with it.
     windowIpc.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
       // Remote voice history is on the node's session.load, not this SQLite.
       if (parseRemoteProjectKey(projectPath)) {
         return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
+      }
+      const existing = this.sessionManager?.getSession(sessionId)
+      if (existing) {
+        if (existing.projectPath && existing.projectPath !== projectPath) {
+          return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
+        }
+        const timeline = await existing.getRealtimeTimeline()
+        return reconcileRealtimeTimeline(sessionId, timeline)
       }
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
@@ -2279,6 +2317,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
+    ipcMain.removeHandler(AgentIpcChannels.DOUBAO_VOICE_START)
+    ipcMain.removeHandler(AgentIpcChannels.DOUBAO_VOICE_STOP)
+    ipcMain.removeHandler(AgentIpcChannels.DOUBAO_VOICE_MUTE)
+    ipcMain.removeListener(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.LAUNCH_SUGGESTED_TASK)
@@ -2354,4 +2396,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_FOREGROUND)
     ipcMain.removeHandler(AgentIpcChannels.GET_LIVE_SNAPSHOTS)
   }
+}
+
+function pcmBytes(value: unknown): Uint8Array | null {
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  return null
 }

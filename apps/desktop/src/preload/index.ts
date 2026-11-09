@@ -55,6 +55,25 @@ const agentAPI = {
   readyRealtimeVoice: (projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity) =>
     ipcRenderer.invoke(AgentIpcChannels.READY_REALTIME_VOICE, projectPath, sessionId, identity) as Promise<void>,
 
+  startDoubaoVoice: (projectPath: string, sessionId: string, attemptId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_START, projectPath, sessionId, attemptId) as Promise<import('@superone/shared/realtime-voice').VoiceStatus>,
+
+  stopDoubaoVoice: (projectPath: string, sessionId: string, attemptId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_STOP, projectPath, sessionId, attemptId) as Promise<void>,
+
+  sendDoubaoVoiceAudio: (sessionId: string, pcm: Uint8Array) => {
+    ipcRenderer.send(AgentIpcChannels.DOUBAO_VOICE_AUDIO, sessionId, pcm)
+  },
+
+  setDoubaoVoiceMuted: (sessionId: string, muted: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_MUTE, sessionId, muted) as Promise<void>,
+
+  onDoubaoVoicePlayback: (callback: (frame: import('@superone/shared/doubao-call').DoubaoPlaybackFrame) => void) => {
+    const handler = (_event: unknown, frame: import('@superone/shared/doubao-call').DoubaoPlaybackFrame): void => callback(frame)
+    ipcRenderer.on(AgentIpcChannels.DOUBAO_VOICE_PLAYBACK, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.DOUBAO_VOICE_PLAYBACK, handler)
+  },
+
   loadRealtimeTimeline: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LOAD_REALTIME_TIMELINE, sessionId) as Promise<RealtimeTimelineResult | null>,
 
@@ -1824,6 +1843,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.JEV_API_KEY_STATUS),
   setJevApiKey: (key: string) =>
     ipcRenderer.invoke(AgentIpcChannels.JEV_API_KEY_SET, key),
+  getDoubaoVoiceSettings: () =>
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_GET) as Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>,
+  setDoubaoVoiceSettings: (patch: { preference?: import('@superone/shared/doubao-call').DesktopVoicePreference; speaker?: string; apiKey?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_SET, patch) as Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>,
   getSyncZoneUsage: () =>
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_USAGE_GET),
   reclaimSyncZone: () =>

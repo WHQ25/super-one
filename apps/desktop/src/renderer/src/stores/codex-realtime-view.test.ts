@@ -83,6 +83,8 @@ describe('codex realtime view store', () => {
     })
     store.appendTranscriptItemDelta('session-a', 'assistant-1', 'hello ')
     store.appendTranscriptItemDelta('session-a', 'assistant-1', 'world')
+    store.replaceTranscriptItemText('session-a', 'assistant-1', 'hello world')
+    expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.liveItems[0]?.text).toBe('hello world')
     store.completeTranscriptItem('session-a', {
       itemId: 'assistant-1', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Hello world.',
     })

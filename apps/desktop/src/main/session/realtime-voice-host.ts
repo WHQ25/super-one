@@ -1,4 +1,4 @@
-import { VoiceAdmissionHost, voiceSupport, type VoiceSeat } from '@superone/shared/realtime-voice-admission'
+import { VoiceAdmissionHost, voiceSupport, type VoiceLink, type VoiceSeat } from '@superone/shared/realtime-voice-admission'
 import { VOICE_DISCONNECT_GRACE_MS, type VoiceIdentity, type VoiceSignal, type VoiceStatus } from '@superone/shared/realtime-voice'
 import type { RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
 import type { Session } from './types'
@@ -66,6 +66,37 @@ export class RealtimeVoiceHost {
           lifecycle()
           windowCleanup?.()
           release()
+        },
+      }
+    })
+  }
+
+  /**
+   * Same slot and window teardown as {@link start}, without a Codex offer.
+   * The supplied link owns the socket. Admission still passes a placeholder SDP; the link must ignore it.
+   */
+  startShell(session: Session, endpoint: VoiceEndpoint, attemptId: string, link: VoiceLink): VoiceStatus {
+    return this.admission.startShell(this.seat(session, endpoint), attemptId, () => {
+      this.bound = { session, endpoint, attemptId }
+      const release = session.retainRealtimeVoice(endpoint.deviceId)
+      const proof = session.lease.current
+      const lifecycle = session.onLifecycle((event) => {
+        if (event.type === 'closed') this.admission.end('Session closed')
+        else if (event.type === 'control_changed' && (!event.lease || event.lease.leaseId !== proof?.leaseId || event.lease.generation !== proof?.generation)) {
+          void runHostReaction(() => this.stop(session, endpoint, attemptId))
+        }
+      })
+      const windowCleanup = endpoint.onDisconnect?.(() => { void this.stop(session, endpoint, attemptId) })
+      return {
+        start: () => link.start({ sdp: 'v=0\r\n' }),
+        stop: () => link.stop(),
+        release: () => {
+          this.clearDisconnect()
+          this.bound = null
+          lifecycle()
+          windowCleanup?.()
+          release()
+          link.release?.()
         },
       }
     })

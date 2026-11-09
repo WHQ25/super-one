@@ -450,6 +450,40 @@ describe('AgentService Realtime Voice', () => {
     expect(existing.lease.current).toBeNull()
   })
 
+  it('does not recreate an empty non-Codex session when reading the voice timeline', async () => {
+    const service = new AgentService()
+    const timeline = {
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: false,
+    }
+    const getRealtimeTimeline = vi.fn(async () => timeline)
+    const existing = makeMockSession({
+      id: 'sid-voice',
+      projectPath: '/repo/main',
+      cwd: '/repo/main',
+      snapshot: { projectPath: '/repo/main', harnessId: 'acp', messages: [] },
+      getRealtimeTimeline,
+    })
+    const disposeSession = vi.fn()
+    const createSession = vi.fn()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+      getActiveSession: vi.fn(() => existing),
+      setActiveSession: vi.fn(),
+      disposeSession,
+      createSession,
+    }
+    service.setup()
+
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)!
+    await expect(handler(null, '/repo/main', 'sid-voice')).resolves.toEqual(timeline)
+    expect(getRealtimeTimeline).toHaveBeenCalledOnce()
+    expect(disposeSession).not.toHaveBeenCalled()
+    expect(createSession).not.toHaveBeenCalled()
+  })
+
   it('does not mint a local session when the project is a remote key', async () => {
     const service = new AgentService()
     const createSession = vi.fn()

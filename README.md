@@ -172,7 +172,7 @@ SuperOne is in alpha and auto-updates from `dl.super-one.dev`.
 ```bash
 git clone https://github.com/WHQ25/super-one.git
 cd super-one
-bun install            # postinstall rebuilds native modules for Electron
+bun install            # postinstall downloads the Electron binary and rebuilds native modules
 
 bun run dev            # desktop app with hot reload
 bun run dev:cli        # headless node CLI

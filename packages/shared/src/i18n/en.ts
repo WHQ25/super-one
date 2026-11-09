@@ -1498,6 +1498,32 @@ export type Messages = {
         deepseek: string
       }
       experimental: string
+      voice: string
+      doubaoVoice: {
+        frontend: { label: string; description: string }
+        frontendAuto: string
+        frontendCodex: string
+        frontendDoubao: string
+        speaker: { label: string; description: string }
+        speakers: {
+          vv: string
+          xiaohe: string
+          yunzhou: string
+          xiaotian: string
+          tim: string
+          dacey: string
+          stokie: string
+        }
+        apiKey: {
+          label: string
+          description: string
+          placeholder: string
+          save: string
+          cancel: string
+          change: string
+          clear: string
+        }
+      }
       experimentalAgents: {
         label: string
         description: string
@@ -1848,6 +1874,7 @@ export type Messages = {
       microphoneMuted: string
       returnToVoice: string
       showConversation: string
+      /** `Show {{agent}} thread` — the session's coding agent. */
       showThread: string
       showTimeline: string
       stopping: string
@@ -1861,6 +1888,7 @@ export type Messages = {
       delegation: {
         label: string
         transcript: string
+        /** `Open in {{agent}} thread` */
         openThread: string
         viewPlan: string
       }
@@ -6440,6 +6468,38 @@ export const en: Messages = {
         deepseek: 'DeepSeek',
       },
       experimental: 'Experimental',
+      voice: 'Voice',
+      doubaoVoice: {
+        frontend: {
+          label: 'Voice Frontend',
+          description: 'Official Codex sessions keep Codex voice. Other sessions that can send a turn use Doubao when a speech key is saved.',
+        },
+        frontendAuto: 'Auto',
+        frontendCodex: 'Codex',
+        frontendDoubao: 'Doubao',
+        speaker: {
+          label: 'Doubao Speaker',
+          description: 'The voice used for acknowledgements and spoken summaries.',
+        },
+        speakers: {
+          vv: 'VV',
+          xiaohe: 'Xiaohe',
+          yunzhou: 'Yunzhou',
+          xiaotian: 'Xiaotian',
+          tim: 'Tim',
+          dacey: 'Dacey',
+          stokie: 'Stokie',
+        },
+        apiKey: {
+          label: 'Doubao Speech API Key',
+          description: 'Stored encrypted on this machine and used only from the main process.',
+          placeholder: 'Speech API key',
+          save: 'Save Key',
+          cancel: 'Cancel',
+          change: 'Change Key',
+          clear: 'Remove Key',
+        },
+      },
       experimentalAgents: {
         label: 'Experimental Agents',
         description: 'Show experimental agents including OpenCode and non-Grok ACP agents. Behavior may change.',
@@ -6799,7 +6859,7 @@ export const en: Messages = {
       microphoneMuted: 'Microphone muted',
       returnToVoice: 'Return to Voice Conversation',
       showConversation: 'Show conversation',
-      showThread: 'Show Codex thread',
+      showThread: 'Show {{agent}} thread',
       showTimeline: 'Show voice timeline',
       emptyTimeline: 'No voice transcript in this thread yet.',
       timelineLoadFailed: 'Could not load the voice timeline.',
@@ -6812,7 +6872,7 @@ export const en: Messages = {
       delegation: {
         label: 'Voice Delegation',
         transcript: 'Transcript ({{count}})',
-        openThread: 'Open in Codex thread',
+        openThread: 'Open in {{agent}} thread',
         viewPlan: 'View plan',
       },
     },

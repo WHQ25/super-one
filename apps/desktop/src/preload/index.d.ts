@@ -45,6 +45,12 @@ interface AgentAPI {
   startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<import('@superone/shared/realtime-voice').VoiceStatus>
   stopRealtimeVoice(projectPath: string, sessionId: string, attemptId: string): Promise<void>
   readyRealtimeVoice(projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity): Promise<void>
+  startDoubaoVoice(projectPath: string, sessionId: string, attemptId: string): Promise<import('@superone/shared/realtime-voice').VoiceStatus>
+  stopDoubaoVoice(projectPath: string, sessionId: string, attemptId: string): Promise<void>
+  /** Uplink PCM. Fire-and-forget so a live call does not wait on each chunk. */
+  sendDoubaoVoiceAudio(sessionId: string, pcm: Uint8Array): void
+  setDoubaoVoiceMuted(sessionId: string, muted: boolean): Promise<void>
+  onDoubaoVoicePlayback(callback: (frame: import('@superone/shared/doubao-call').DoubaoPlaybackFrame) => void): () => void
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   /** Local sessions only: the agents a pending `session_suggest_task` card can launch on, and its starting pick. */
@@ -562,6 +568,9 @@ interface AppAPI extends WindowLayoutAPI {
   getJevApiKeyStatus(): Promise<{ configured: boolean; masked: string }>
   /** Store a Jev API key (empty string clears). Rejects when secure storage refuses. */
   setJevApiKey(key: string): Promise<{ configured: boolean; masked: string }>
+  /** Doubao speech key status, speaker, and which voice frontend the composer uses. Never returns the key. */
+  getDoubaoVoiceSettings(): Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>
+  setDoubaoVoiceSettings(patch: { preference?: import('@superone/shared/doubao-call').DesktopVoicePreference; speaker?: string; apiKey?: string }): Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>
   getSyncZoneUsage(): Promise<SyncZoneUsage>
   reclaimSyncZone(): Promise<SyncZoneReclaimResult>
   retrySyncZoneHandoffs(): Promise<{ retried: number }>

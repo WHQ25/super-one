@@ -2,7 +2,10 @@ import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 
 /** Commit durable rows and late turn metadata without waiting for another turn. */
 export function shouldPersistSessionEvent(event: AgentEvent, insertedUserMessage: boolean): boolean {
-  return (event.type === 'user_message_appended' && insertedUserMessage)
+  return (event.type === 'user_message_appended' && (
+    insertedUserMessage
+    || event.message.metadata?.codexTimeline?.provenance === 'realtime-delegated'
+  ))
     || event.type === 'message_complete'
     || event.type === 'message_interrupted'
     || event.type === 'message_error'

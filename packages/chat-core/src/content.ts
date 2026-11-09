@@ -2,6 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { resolveDeltaHomeMessageId } from '@superone/shared/subagent-routing'
 import { applyContentDelta as applyDelta } from '@superone/shared/content-delta'
+import { visibleAssistantText } from '@superone/shared/doubao-realtime'
 import { persistStreamingToolInput } from './transformers'
 import type { ChatCoreSession } from './types'
 import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from './media-predicates'
@@ -185,5 +186,20 @@ export function reduceContentDelta(
     if (applied) extraUpdates = { ...extraUpdates, ...applied }
   }
 
-  return { messages: updatedMessages, lastEventAt: ports.now(), ...extraUpdates }
+  return { messages: hideSpokenTags(updatedMessages), lastEventAt: ports.now(), ...extraUpdates }
+}
+
+function hideSpokenTags(messages: ChatCoreSession['messages']): ChatCoreSession['messages'] {
+  return messages.map(message => {
+    if (message.role !== 'assistant' || !message.content.some(block => block.type === 'text' && block.text.includes('<spoken'))) return message
+    let touched = false
+    const content = message.content.map(block => {
+      if (block.type !== 'text' || !block.text.includes('<spoken')) return block
+      const text = visibleAssistantText(block.text)
+      if (text === block.text) return block
+      touched = true
+      return { ...block, text }
+    })
+    return touched ? { ...message, content } : message
+  })
 }

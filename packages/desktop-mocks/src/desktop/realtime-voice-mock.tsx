@@ -154,6 +154,8 @@ export interface CodexConversationViewToggleMockProps {
   defaultView?: CodexConversationView
   enabled?: boolean
   hasTimeline?: boolean
+  /** Coding agent named by the "show thread" tooltip. */
+  agent?: string
   className?: string
   onViewChange?: (view: CodexConversationView) => void
 }
@@ -164,6 +166,7 @@ export function CodexConversationViewToggleMock({
   defaultView = "realtime",
   enabled = true,
   hasTimeline = true,
+  agent = "Codex",
   className,
   onViewChange,
 }: CodexConversationViewToggleMockProps) {
@@ -177,7 +180,9 @@ export function CodexConversationViewToggleMock({
   if (!enabled || !hasTimeline) return null
 
   const showingRealtime = currentView === "realtime"
-  const label = t(showingRealtime ? "chat.realtimeVoice.showThread" : "chat.realtimeVoice.showTimeline")
+  const label = showingRealtime
+    ? t("chat.realtimeVoice.showThread", { agent })
+    : t("chat.realtimeVoice.showTimeline")
 
   return (
     <IconButton

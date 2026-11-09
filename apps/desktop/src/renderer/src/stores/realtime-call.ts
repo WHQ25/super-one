@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { preferTcpIceCandidates, startWebRtcDiagnostics, waitForIceGathering } from '@/lib/realtime-webrtc'
 import { VOICE_READY_CUE_MIC_GUARD_MS, playVoiceReadyCue } from '@/lib/audio-cue'
+import { startDoubaoMicCapture } from '@/lib/doubao-mic-capture'
+import { nextPlaybackBarge, PcmVoicePlayback } from '@/lib/pcm-voice-playback'
 import { refreshCodexRealtimeTimeline, useCodexRealtimeViewStore } from './codex-realtime-view'
 import { BufferedVoicePlayback } from '@/lib/realtime-audio'
 
@@ -48,11 +50,14 @@ interface CallMedia {
   identity: VoiceIdentity | null
   projectPath: string
   sessionId: string
+  transport: 'codex' | 'doubao'
   peer: RTCPeerConnection | null
   stream: MediaStream | null
-  audio: BufferedVoicePlayback | null
+  audio: BufferedVoicePlayback | PcmVoicePlayback | null
   stopDiagnostics: (() => void) | null
   unsubscribe: (() => void) | null
+  playbackUnsub: (() => void) | null
+  stopCapture: (() => void) | null
   negotiationTimer: number | null
   cueGuardTimer: number | null
   /** Armed while ICE reports `disconnected`; a recovery cancels it, expiry ends the call. */
@@ -62,6 +67,10 @@ interface CallMedia {
   cueGuarded: boolean
   readyCuePlayed: boolean
   pauseEpoch: number
+  /** Last mute sent to Doubao, so pause and the ready cue do not repeat the event. */
+  serverMuted: boolean | null
+  /** Consecutive loud mic batches while the speakers are still audible. */
+  playbackBargeHits: number
 }
 
 let media: CallMedia | null = null
@@ -105,7 +114,9 @@ function releaseMedia(): void {
   if (media.disconnectTimer !== null) window.clearTimeout(media.disconnectTimer)
   media.stopInputLevelMonitor?.()
   media.stopDiagnostics?.()
+  media.stopCapture?.()
   media.unsubscribe?.()
+  media.playbackUnsub?.()
   for (const track of media.stream?.getTracks() ?? []) track.stop()
   media.peer?.close()
   media.audio?.close()
@@ -147,12 +158,24 @@ function guardMicrophoneDuringCue(): void {
   applyMicrophoneEnabled()
   if (media.cueGuardTimer !== null) window.clearTimeout(media.cueGuardTimer)
   const current = media
+  syncDoubaoServerMute()
   media.cueGuardTimer = window.setTimeout(() => {
     if (media !== current) return
     media.cueGuardTimer = null
     media.cueGuarded = false
     applyMicrophoneEnabled()
+    syncDoubaoServerMute()
   }, VOICE_READY_CUE_MIC_GUARD_MS)
+}
+
+function syncDoubaoServerMute(): void {
+  const current = media
+  if (!current || current.transport !== 'doubao' || !current.identity) return
+  const state = useRealtimeCallStore.getState()
+  const muted = state.microphoneMuted || state.paused || current.cueGuarded || state.state !== 'active'
+  if (current.serverMuted === muted) return
+  current.serverMuted = muted
+  void window.agent.setDoubaoVoiceMuted(current.sessionId, muted).catch(() => {})
 }
 
 function handleAgentEvent(event: AgentEvent, directed = false): void {
@@ -166,6 +189,7 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
     if (current.identity && (current.identity.callId !== signal.callId || current.identity.hostEpoch !== signal.hostEpoch || current.identity.generation !== signal.generation)) return
     current.identity = signal
     if (signal.kind === 'answer') handleAgentEvent({ ...event, type: 'realtime_sdp', sdp: signal.sdp }, true)
+    else if (signal.kind === 'state' && signal.state === 'active' && current.transport === 'doubao') void markDoubaoReady(current)
     else if (signal.kind === 'closed') finishCall(sessionId, projectPath)
     else if (signal.kind === 'error') { reportError(new Error(signal.error)); void stopRealtimeCall() }
     return
@@ -201,7 +225,8 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
 
   if (event.type === 'realtime_transcript_item') {
     if (event.phase === 'delta') {
-      view().appendTranscriptItemDelta(sessionId, event.itemId, event.text)
+      if (event.replace) view().replaceTranscriptItemText(sessionId, event.itemId, event.text)
+      else view().appendTranscriptItemDelta(sessionId, event.itemId, event.text)
       return
     }
     // `started`/`completed` always carry the item's role and realtime session.
@@ -232,10 +257,31 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
   }
 
   if (event.type === 'realtime_error') {
-    // The directed signal already owns errors/closure; a queued generic event
-    // from the previous call must not tear down its replacement.
+    // Codex errors arrive again as a directed signal. Doubao has no second copy,
+    // so a failed delegation is reported here without hanging up the call.
+    if (current.transport === 'doubao') reportError(new Error(event.error))
     return
   }
+}
+
+function markDoubaoReady(current: CallMedia): void {
+  if (media !== current || current.transport !== 'doubao') return
+  if (current.negotiationTimer !== null) {
+    window.clearTimeout(current.negotiationTimer)
+    current.negotiationTimer = null
+  }
+  useRealtimeCallStore.setState({ state: 'active', activity: 'listening' })
+  if (current.readyCuePlayed) {
+    syncDoubaoServerMute()
+    return
+  }
+  current.readyCuePlayed = true
+  if (useRealtimeCallStore.getState().paused) {
+    syncDoubaoServerMute()
+    return
+  }
+  guardMicrophoneDuringCue()
+  playVoiceReadyCue()
 }
 
 export interface StartRealtimeCallOptions {
@@ -271,11 +317,14 @@ export async function startRealtimeCall({
     attemptId: crypto.randomUUID(), identity: null,
     projectPath,
     sessionId,
+    transport: 'codex',
     peer: null,
     stream: null,
     audio: null,
     stopDiagnostics: null,
     unsubscribe: null,
+    playbackUnsub: null,
+    stopCapture: null,
     negotiationTimer: null,
     cueGuardTimer: null,
     disconnectTimer: null,
@@ -283,6 +332,8 @@ export async function startRealtimeCall({
     cueGuarded: false,
     readyCuePlayed: false,
     pauseEpoch: 0,
+    serverMuted: null,
+    playbackBargeHits: 0,
   }
   const callMedia = media
   // The subscription's lifetime is the call's, so it is set up here rather than by a
@@ -410,7 +461,7 @@ export async function startRealtimeCall({
     if (useRealtimeCallStore.getState().state === 'starting' && media === callMedia) {
       media.negotiationTimer = window.setTimeout(() => {
         if (media !== callMedia || useRealtimeCallStore.getState().state !== 'starting') return
-        void window.agent.stopRealtimeVoice(projectPath, sessionId, callMedia.attemptId)
+        void stopAdmitted(callMedia).catch(() => {})
         releaseMedia()
         useRealtimeCallStore.setState({ sessionId: null, projectPath: null, state: 'idle' })
         view().setRealtimeStarting(sessionId, false)
@@ -419,7 +470,138 @@ export async function startRealtimeCall({
     }
   } catch (error) {
     if (media !== callMedia) return
-    void window.agent.stopRealtimeVoice(projectPath, sessionId, callMedia.attemptId).catch(() => {})
+    void stopAdmitted(callMedia).catch(() => {})
+    releaseMedia()
+    useRealtimeCallStore.setState({ sessionId: null, projectPath: null, state: 'idle' })
+    view().setRealtimeStarting(sessionId, false)
+    reportError(error)
+  }
+}
+
+async function stopAdmitted(current: CallMedia): Promise<void> {
+  const stop = current.transport === 'doubao' ? window.agent.stopDoubaoVoice : window.agent.stopRealtimeVoice
+  await stop(current.projectPath, current.sessionId, current.attemptId)
+}
+
+export async function startDoubaoCall({
+  projectPath,
+  sessionId,
+  prepareSession,
+  messages,
+}: StartRealtimeCallOptions): Promise<void> {
+  if (useRealtimeCallStore.getState().state !== 'idle') return
+  useRealtimeCallStore.setState({
+    sessionId,
+    projectPath,
+    state: 'starting',
+    microphoneMuted: false,
+    paused: false, pauseReason: null, resuming: false,
+    activity: 'listening',
+  })
+  view().setRealtimeStarting(sessionId, true)
+  view().setView(sessionId, 'realtime')
+  if (timelineLoadedFor !== `${projectPath}::${sessionId}`) void refreshTimeline(projectPath, sessionId)
+
+  media = {
+    attemptId: crypto.randomUUID(), identity: null,
+    projectPath,
+    sessionId,
+    transport: 'doubao',
+    peer: null,
+    stream: null,
+    audio: null,
+    stopDiagnostics: null,
+    unsubscribe: null,
+    playbackUnsub: null,
+    stopCapture: null,
+    negotiationTimer: null,
+    cueGuardTimer: null,
+    disconnectTimer: null,
+    stopInputLevelMonitor: null,
+    cueGuarded: false,
+    readyCuePlayed: false,
+    pauseEpoch: 0,
+    serverMuted: null,
+    playbackBargeHits: 0,
+  }
+  const callMedia = media
+  media.unsubscribe = window.agent.onAgentEvent(handleAgentEvent)
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('pause', () => pauseRealtimeCall('interrupted'))
+    navigator.mediaSession.setActionHandler('play', () => { if (useRealtimeCallStore.getState().paused) void toggleRealtimePlayback() })
+  }
+
+  try {
+    if (prepareSession) {
+      const preparedSessionId = await prepareSession()
+      if (media !== callMedia) return
+      if (!preparedSessionId) {
+        await stopRealtimeCall()
+        return
+      }
+      if (preparedSessionId !== sessionId) {
+        view().setRealtimeStarting(sessionId, false)
+        sessionId = preparedSessionId
+        callMedia.sessionId = sessionId
+        useRealtimeCallStore.setState({ sessionId })
+        view().setRealtimeStarting(sessionId, true)
+        view().setView(sessionId, 'realtime')
+        void refreshTimeline(projectPath, sessionId)
+      }
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    })
+    if (media !== callMedia) { for (const track of stream.getTracks()) track.stop(); return }
+    media.stream = stream
+    const audio = new PcmVoicePlayback(() => {
+      if (media === callMedia) pauseRealtimeCall('interrupted')
+    }, error => {
+      if (media !== callMedia) return
+      reportError(error); void stopRealtimeCall()
+    }, output => {
+      if (media === callMedia) realtimeVoiceAudioLevels.publish({ ...realtimeVoiceAudioLevels.snapshot(), output })
+    })
+    media.audio = audio
+    await audio.start()
+    if (media !== callMedia) return
+    if (useRealtimeCallStore.getState().paused) audio.pause()
+    media.playbackUnsub = window.agent.onDoubaoVoicePlayback((frame) => {
+      if (media !== callMedia || !(media.audio instanceof PcmVoicePlayback)) return
+      if (frame.type === 'drop') media.audio.drop()
+      else media.audio.pushPcm(frame.pcm)
+    })
+    media.stopCapture = await startDoubaoMicCapture(stream, (pcm, rms) => {
+      if (media !== callMedia) return
+      const state = useRealtimeCallStore.getState()
+      const silent = state.microphoneMuted || state.paused || callMedia.cueGuarded || state.state !== 'active'
+      const output = realtimeVoiceAudioLevels.snapshot().output
+      realtimeVoiceAudioLevels.publish({ input: silent ? 0 : rms, output })
+      if (silent || pcm.byteLength === 0) {
+        callMedia.playbackBargeHits = 0
+        return
+      }
+      const barge = nextPlaybackBarge(callMedia.playbackBargeHits, rms, output)
+      callMedia.playbackBargeHits = barge.hits
+      if (barge.drop && callMedia.audio instanceof PcmVoicePlayback) callMedia.audio.drop()
+      window.agent.sendDoubaoVoiceAudio(callMedia.sessionId, pcm)
+    })
+    if (media !== callMedia) return
+    const receipt = await window.agent.startDoubaoVoice(projectPath, sessionId, callMedia.attemptId)
+    if (media !== callMedia) return
+    if (!receipt.call?.owned || receipt.call.attemptId !== callMedia.attemptId) throw new Error('Voice start was not accepted.')
+    callMedia.identity = receipt.call
+    media.negotiationTimer = window.setTimeout(() => {
+      if (media !== callMedia || useRealtimeCallStore.getState().state !== 'starting') return
+      void stopAdmitted(callMedia).catch(() => {})
+      releaseMedia()
+      useRealtimeCallStore.setState({ sessionId: null, projectPath: null, state: 'idle' })
+      view().setRealtimeStarting(sessionId, false)
+      toast.error(messages.connectionTimedOut)
+    }, NEGOTIATION_TIMEOUT_MS)
+  } catch (error) {
+    if (media !== callMedia) return
+    void stopAdmitted(callMedia).catch(() => {})
     releaseMedia()
     useRealtimeCallStore.setState({ sessionId: null, projectPath: null, state: 'idle' })
     view().setRealtimeStarting(sessionId, false)
@@ -430,11 +612,11 @@ export async function startRealtimeCall({
 export async function stopRealtimeCall(): Promise<void> {
   const current = media
   if (!current) return
-  const { projectPath, sessionId, attemptId } = current
+  const { projectPath, sessionId } = current
   useRealtimeCallStore.setState({ state: 'stopping' })
   releaseMedia()
   try {
-    await window.agent.stopRealtimeVoice(projectPath, sessionId, attemptId)
+    await stopAdmitted(current)
   } catch (error) {
     reportError(error)
   } finally {
@@ -448,6 +630,7 @@ export function toggleRealtimeMicrophone(): void {
   useRealtimeCallStore.setState({ microphoneMuted: next })
   if (next) realtimeVoiceAudioLevels.publish({ ...realtimeVoiceAudioLevels.snapshot(), input: 0 })
   applyMicrophoneEnabled()
+  syncDoubaoServerMute()
 }
 
 export function pauseRealtimeCall(reason: 'manual' | 'interrupted' = 'manual'): void {
@@ -457,6 +640,7 @@ export function pauseRealtimeCall(reason: 'manual' | 'interrupted' = 'manual'): 
   useRealtimeCallStore.setState({ paused: true, pauseReason: reason })
   realtimeVoiceAudioLevels.publish(SILENT_VOICE_LEVELS)
   applyMicrophoneEnabled()
+  syncDoubaoServerMute()
 }
 
 export async function toggleRealtimePlayback(): Promise<void> {
@@ -472,6 +656,7 @@ export async function toggleRealtimePlayback(): Promise<void> {
     if (current.pauseEpoch !== epoch) { current.audio?.pause(); return }
     useRealtimeCallStore.setState({ paused: false, pauseReason: null })
     applyMicrophoneEnabled()
+    syncDoubaoServerMute()
   } catch (error) { if (media === current) reportError(error) }
   finally { if (media === current) useRealtimeCallStore.setState({ resuming: false }) }
 }

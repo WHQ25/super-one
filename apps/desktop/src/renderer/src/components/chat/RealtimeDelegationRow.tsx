@@ -5,6 +5,7 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { usePlanFullscreen } from './plan-fullscreen-context'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import type { RealtimeTurnActivity } from './realtime-turn-activities'
+import { useBackingAgentName } from './backing-agent-name'
 
 interface RealtimeDelegationRowProps {
   activity: RealtimeTurnActivity
@@ -13,7 +14,7 @@ interface RealtimeDelegationRowProps {
 }
 
 /**
- * The voice timeline's stand-in for a delegated Codex turn: the same one-line
+ * The voice timeline's stand-in for a delegated agent turn: the same one-line
  * status the collapsed turn used to show ("Working for 12s"), except that opening
  * it goes to the backing thread instead of unfolding in place.
  *
@@ -29,6 +30,7 @@ export function RealtimeDelegationRow({ activity, onOpen }: RealtimeDelegationRo
   const approveCodexPlan = useChatStore((state) => state.approveCodexPlan)
   const rejectCodexPlan = useChatStore((state) => state.rejectCodexPlan)
   const planFullscreen = usePlanFullscreen()
+  const agent = useBackingAgentName()
 
   const plan = activity.plan
   const canRespondToPlan = plan !== null
@@ -49,7 +51,7 @@ export function RealtimeDelegationRow({ activity, onOpen }: RealtimeDelegationRo
       data-activity-status={activity.status}
       className="@container flex min-w-0 flex-col"
     >
-      <RealtimeDelegationStatus activity={activity} onOpen={onOpen} />
+      <RealtimeDelegationStatus activity={activity} onOpen={onOpen} agent={agent} />
 
       {plan && planActions && (
         <div className="flex flex-col gap-2 py-2">

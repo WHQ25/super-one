@@ -96,8 +96,18 @@ export const VoiceButtonStates: Story = {
 export const ConversationViewToggle: Story = {
   render: () => (
     <div className="flex items-center gap-4 text-xs text-muted-foreground">
-      <CodexConversationViewToggleMock view="realtime" />
-      <CodexConversationViewToggleMock view="thread" />
+      <div className="flex flex-col items-center gap-2">
+        <CodexConversationViewToggleMock view="realtime" />
+        <span>Codex</span>
+      </div>
+      <div className="flex flex-col items-center gap-2">
+        <CodexConversationViewToggleMock view="realtime" agent="Grok" />
+        <span>Grok</span>
+      </div>
+      <div className="flex flex-col items-center gap-2">
+        <CodexConversationViewToggleMock view="thread" />
+        <span>timeline</span>
+      </div>
     </div>
   ),
 }

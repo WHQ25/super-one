@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
     getVersion: () => '0.0.0-test',
   },
   BrowserWindow: class BrowserWindow {},
-  ipcMain: { handle: () => undefined, on: () => undefined, removeHandler: () => undefined },
+  ipcMain: { handle: () => undefined, on: () => undefined, removeHandler: () => undefined, removeListener: () => undefined },
   session: { defaultSession: {} },
   net: {
     fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),

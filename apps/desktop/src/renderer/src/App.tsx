@@ -55,6 +55,7 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { CodexConversationViewToggle } from '@/components/chat/CodexConversationViewToggle'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
@@ -527,6 +528,9 @@ function App(): React.JSX.Element {
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
   }) === 'codex')
+  const hasVoiceTimeline = useCodexRealtimeViewStore((state) => (
+    sessionId ? state.sessions[sessionId]?.hasTimeline === true : false
+  ))
 
   useEffect(() => {
     useActivityPanelStore.getState().resetUserResized()
@@ -675,7 +679,7 @@ function App(): React.JSX.Element {
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
-            <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession} />
+            <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession || hasVoiceTimeline} />
             {(() => {
               const terminalButton = (
                 <TooltipProvider delayDuration={300}>

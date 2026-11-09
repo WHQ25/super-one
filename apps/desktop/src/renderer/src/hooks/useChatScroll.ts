@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { EMPTY_CODEX_REALTIME_SESSION_VIEW, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 interface UseChatScrollOptions {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -99,11 +98,10 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const messages = useActiveSession((s) => s.messages)
   const activeSessionId = useActiveSession((s) => s._activeSessionId)
   const sessionId = scope?.sessionId ?? activeSessionId
-  const provider = useActiveSession((s) => resolveProvider(s))
   const realtime = useCodexRealtimeViewStore((s) => sessionId
     ? s.sessions[sessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
     : EMPTY_CODEX_REALTIME_SESSION_VIEW)
-  const showRealtime = provider === 'codex' && realtime.hasTimeline && realtime.view === 'realtime'
+  const showRealtime = realtime.hasTimeline && realtime.view === 'realtime'
   // The two views mount different viewports, even within the same session.
   const viewKey = showRealtime ? 'realtime' : 'thread'
   const sessionKey = scope ? `${scope.projectPath}\0${scope.sessionId}` : activeSessionId

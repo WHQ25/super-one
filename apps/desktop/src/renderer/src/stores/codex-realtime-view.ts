@@ -90,6 +90,7 @@ interface CodexRealtimeViewStore {
   setRealtimeStarting: (sessionId: string, starting: boolean) => void
   startTranscriptItem: (sessionId: string, item: CodexRealtimeTranscriptItem) => void
   appendTranscriptItemDelta: (sessionId: string, itemId: string, text: string) => void
+  replaceTranscriptItemText: (sessionId: string, itemId: string, text: string) => void
   completeTranscriptItem: (sessionId: string, item: CodexRealtimeTranscriptItem) => void
 }
 
@@ -253,6 +254,22 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
           ...current,
           liveItems: current.liveItems.map((live) => (
             live.itemId === itemId ? { ...live, text: `${live.text}${text}` } : live
+          )),
+        },
+      },
+    }
+  }),
+
+  replaceTranscriptItemText: (sessionId, itemId, text) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (!current.liveItems.some((live) => live.itemId === itemId)) return state
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...current,
+          liveItems: current.liveItems.map((live) => (
+            live.itemId === itemId ? { ...live, text } : live
           )),
         },
       },

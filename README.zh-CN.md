@@ -172,7 +172,7 @@ SuperOne 目前处于 alpha 阶段，会从 `dl.super-one.dev` 自动更新。
 ```bash
 git clone https://github.com/WHQ25/super-one.git
 cd super-one
-bun install            # postinstall 会为 Electron 重建原生模块
+bun install            # postinstall 会下载 Electron 二进制并重建原生模块
 
 bun run dev            # 桌面应用（热重载）
 bun run dev:cli        # 无头节点 CLI

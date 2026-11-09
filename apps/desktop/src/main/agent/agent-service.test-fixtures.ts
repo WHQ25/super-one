@@ -49,7 +49,7 @@ const remoteDshMcpMocks = vi.hoisted(() => ({
 vi.mock('./event-trace', () => ({ trace: vi.fn() }))
 
 vi.mock('electron', () => ({
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn(), on: vi.fn(), removeListener: vi.fn(), removeHandler: vi.fn() },
 }))
 
 vi.mock('../environment/session-identity', () => ({

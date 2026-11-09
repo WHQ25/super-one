@@ -14,6 +14,12 @@ const EMPTY_TIMELINE: RealtimeTimelineResult = {
 }
 
 const transcriptStartOrders = new Map<string, number>()
+/**
+ * Completed lines that arrived before the sessions row existed.
+ * A voice draft is not inserted until the first message, so the user's
+ * opening line would otherwise be dropped and a later resume has nothing to pair.
+ */
+const pendingTimelineEvents = new Map<string, AgentEvent[]>()
 
 function transcriptOrderKey(sessionId: string, itemId: string): string {
   return `${sessionId}:${itemId}`
@@ -44,15 +50,32 @@ export function loadRealtimeTimeline(sessionId: string): RealtimeTimelineResult 
   return row ? parseTimeline(row.timeline_json) : null
 }
 
-export function saveRealtimeTimeline(sessionId: string, timeline: RealtimeTimelineResult): void {
-  getDb().prepare(`
+/** False when the sessions row is not there yet. The caller keeps the event and retries. */
+export function saveRealtimeTimeline(sessionId: string, timeline: RealtimeTimelineResult): boolean {
+  const result = getDb().prepare(`
     INSERT INTO session_realtime_timelines (session_id, timeline_json, updated_at)
     SELECT ?, ?, ?
     WHERE EXISTS (SELECT 1 FROM sessions WHERE id = ?)
     ON CONFLICT(session_id) DO UPDATE SET
       timeline_json = excluded.timeline_json,
       updated_at = excluded.updated_at
-  `).run(sessionId, JSON.stringify(timeline), new Date().toISOString(), sessionId)
+  `).run(sessionId, JSON.stringify(timeline), new Date().toISOString(), sessionId) as { changes?: number } | undefined
+  if (result && typeof result.changes === 'number') return result.changes > 0
+  return true
+}
+
+function holdTimelineEvent(sessionId: string, event: AgentEvent): void {
+  const pending = pendingTimelineEvents.get(sessionId) ?? []
+  pending.push(event)
+  pendingTimelineEvents.set(sessionId, pending)
+}
+
+/** Write lines that were spoken before this session had a row. No-op when nothing is waiting. */
+export function flushPendingRealtimeTimeline(sessionId: string): void {
+  const pending = pendingTimelineEvents.get(sessionId)
+  if (!pending?.length) return
+  pendingTimelineEvents.delete(sessionId)
+  for (const event of pending) applyRealtimeTimelineEvent(sessionId, event)
 }
 
 /** Replace the provider snapshot while retaining final local segments it has not published yet. */
@@ -91,18 +114,20 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
 
   const current = loadRealtimeTimeline(sessionId) ?? EMPTY_TIMELINE
   if (event.type === 'realtime_started') {
-    saveRealtimeTimeline(sessionId, {
+    const started = {
       ...current,
       activeRealtimeSessionId: event.realtimeSessionId ?? current.activeRealtimeSessionId,
       hasTimeline: true,
-    })
+    }
+    if (!saveRealtimeTimeline(sessionId, started)) holdTimelineEvent(sessionId, event)
     return
   }
   if (event.type === 'realtime_closed') {
     for (const key of transcriptStartOrders.keys()) {
       if (key.startsWith(`${sessionId}:`)) transcriptStartOrders.delete(key)
     }
-    saveRealtimeTimeline(sessionId, { ...current, activeRealtimeSessionId: null, hasTimeline: true })
+    const closed = { ...current, activeRealtimeSessionId: null, hasTimeline: true }
+    if (!saveRealtimeTimeline(sessionId, closed)) holdTimelineEvent(sessionId, event)
     return
   }
   if (event.phase === 'started') {
@@ -115,7 +140,6 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
 
   const orderKey = transcriptOrderKey(sessionId, event.itemId)
   const localOrder = transcriptStartOrders.get(orderKey) ?? event.seq
-  transcriptStartOrders.delete(orderKey)
 
   const realtimeSessionId = event.realtimeSessionId
     ?? current.activeRealtimeSessionId
@@ -133,7 +157,7 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
   const existing = current.segments.findIndex((candidate) => (
     candidate.sourceItemId === event.itemId || candidate.id === event.itemId
   ))
-  saveRealtimeTimeline(sessionId, {
+  const saved = saveRealtimeTimeline(sessionId, {
     ...current,
     segments: existing >= 0
       ? current.segments.map((candidate, index) => (
@@ -150,4 +174,9 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
       : [...current.segments, segment],
     hasTimeline: true,
   })
+  if (!saved) {
+    holdTimelineEvent(sessionId, event)
+    return
+  }
+  transcriptStartOrders.delete(orderKey)
 }

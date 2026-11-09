@@ -7,6 +7,7 @@ vi.mock('../database', () => ({ getDb: getDbMock }))
 
 import {
   applyRealtimeTimelineEvent,
+  flushPendingRealtimeTimeline,
   loadRealtimeTimeline,
   reconcileRealtimeTimeline,
 } from './realtime-timeline-repo'
@@ -177,6 +178,39 @@ describe('realtime timeline repository', () => {
 
     expect(reconcileRealtimeTimeline('sid-1', provider).segments.map((segment) => segment.id))
       .toEqual(['provider-old', 'local-new'])
+  })
+
+  it('keeps a completed line spoken before the session row exists', () => {
+    let sessionReady = false
+    let timeline: string | null = null
+    getDbMock.mockReturnValue({
+      prepare: () => ({
+        get: () => timeline ? { timeline_json: timeline } : undefined,
+        run: (...args: unknown[]) => {
+          if (!sessionReady) return { changes: 0 }
+          timeline = String(args[1])
+          return { changes: 1 }
+        },
+      }),
+    })
+
+    applyRealtimeTimelineEvent('sid-draft', {
+      type: 'realtime_transcript_item',
+      phase: 'completed',
+      itemId: 'user-1',
+      realtimeSessionId: 'dlg-1',
+      role: 'user',
+      text: 'Hello，让后端 agent 去打开浏览器',
+    })
+    expect(loadRealtimeTimeline('sid-draft')).toBeNull()
+
+    sessionReady = true
+    flushPendingRealtimeTimeline('sid-draft')
+    expect(loadRealtimeTimeline('sid-draft')?.segments).toMatchObject([{
+      sourceItemId: 'user-1',
+      role: 'user',
+      text: 'Hello，让后端 agent 去打开浏览器',
+    }])
   })
 
   it('repairs duplicate canonical segment ids while loading a snapshot', () => {

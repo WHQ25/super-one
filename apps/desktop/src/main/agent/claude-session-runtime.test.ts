@@ -752,6 +752,71 @@ describe('buildUserMessage (agent-agnostic constructor)', () => {
       { name: 'spec.pdf', base64: 'data', mimeType: 'application/pdf' },
     ])
   })
+
+  it('copies a voice-delegation stamp onto the user bubble', () => {
+    const msg = buildUserMessage(req({
+      content: '<realtime_delegation>\n  <input>看一下</input>\n</realtime_delegation>',
+      source: 'doubao-voice',
+      codexTimeline: { provenance: 'realtime-delegated', turnId: 'u-1' },
+    }), 'local')
+    expect(msg.metadata).toMatchObject({
+      source: 'doubao-voice',
+      codexTimeline: { provenance: 'realtime-delegated', turnId: 'u-1' },
+    })
+  })
+})
+
+describe('voice delegation stamp', () => {
+  function user(id: string, timeline?: ChatMessage['metadata']): ChatMessage {
+    return {
+      id,
+      role: 'user',
+      status: 'complete',
+      content: [{ type: 'text', text: id }],
+      createdAt: '',
+      providerId: 'local',
+      ...(timeline ? { metadata: timeline } : {}),
+    }
+  }
+
+  function assistant(id: string): ChatMessage {
+    return {
+      id,
+      role: 'assistant',
+      status: 'streaming',
+      content: [],
+      createdAt: '',
+      providerId: 'acp',
+    }
+  }
+
+  it('stamps the delegated user row and the assistant that follows it', () => {
+    const delegated = user('voice-user', { codexTimeline: { provenance: 'realtime-delegated', turnId: 'voice-user' } })
+    const appended = { type: 'user_message_appended', message: delegated, seq: 11 } as AgentEvent
+    let runtime = applyClaudeEventToRuntime(makeRuntime([delegated]), appended)
+    expect(runtime.messages[0]?.metadata?.codexTimeline).toMatchObject({
+      provenance: 'realtime-delegated',
+      turnId: 'voice-user',
+      localOrder: 11,
+    })
+
+    const started = { type: 'message_start', message: assistant('agent-1'), seq: 12 } as AgentEvent
+    runtime = applyClaudeEventToRuntime(runtime, started)
+    expect(runtime.messages[1]?.metadata?.codexTimeline).toMatchObject({
+      provenance: 'realtime-delegated',
+      turnId: 'voice-user',
+      localOrder: 12,
+    })
+    expect(started.type === 'message_start' ? started.message.metadata?.codexTimeline?.localOrder : null).toBe(12)
+  })
+
+  it('does not stamp an assistant that follows an ordinary typed user', () => {
+    const runtime = applyClaudeEventToRuntime(
+      makeRuntime([user('typed')]),
+      { type: 'message_start', message: assistant('agent-2'), seq: 20 } as AgentEvent,
+    )
+    expect(runtime.messages[1]?.metadata?.codexTimeline).toBeUndefined()
+  })
 })
 
 describe('extractClaudeTitle', () => {

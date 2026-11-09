@@ -5,3 +5,4 @@ const activity = { kind: 'codex' as const, status: 'working' as const, durationM
   summary: null, plan: null, isTail: true }
 export const Working = { args: { activity, onOpen: () => {} } }
 export const Detail = { args: { activity: { ...activity, status: 'completed' as const, workingSince: null }, onOpen: () => {} } }
+export const OpenInGrok = { args: { activity, onOpen: () => {}, agent: 'Grok' } }

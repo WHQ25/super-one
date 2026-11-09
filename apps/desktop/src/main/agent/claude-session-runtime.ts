@@ -1,6 +1,7 @@
 import type { AgentEvent, ChatMessage, ContentBlock, ModelUsageInfo, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
 import { readAgentOutputFile } from '@superone/runtime/stream/delivery/agent-output'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
+import { stampCodexTimelineOrder, withInheritedRealtimeDelegation } from '@superone/shared/codex-timeline-rows'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { applyContentDelta, retractContentBlocks, sealStreamingTools } from '@superone/shared/content-delta'
@@ -227,8 +228,14 @@ export function applyClaudeEventToRuntime(
   event: AgentEvent,
 ): ClaudeSessionRuntime {
   switch (event.type) {
-    case 'message_start':
-      return { ...runtime, messages: upsertMessage(runtime.messages, event.message) }
+    case 'message_start': {
+      const inherited = withInheritedRealtimeDelegation(runtime.messages, event.message)
+      const stamped = inherited.metadata?.codexTimeline
+        ? stampCodexTimelineOrder(inherited, event)
+        : inherited
+      if (stamped !== event.message) event.message = stamped
+      return { ...runtime, messages: upsertMessage(runtime.messages, stamped) }
+    }
     case 'content_retracted': {
       let changed = false
       const messages = runtime.messages.map((message) => {
@@ -409,8 +416,16 @@ export function applyClaudeEventToRuntime(
       return { ...runtime, messages }
     }
     case 'user_message_appended': {
-      if (runtime.messages.some((message) => message.id === event.message.id)) return runtime
-      return { ...runtime, messages: [...runtime.messages, event.message] }
+      const stamped = event.message.metadata?.codexTimeline
+        ? stampCodexTimelineOrder(event.message, event)
+        : event.message
+      if (stamped !== event.message) event.message = stamped
+      const index = runtime.messages.findIndex((message) => message.id === event.message.id)
+      if (index === -1) return { ...runtime, messages: [...runtime.messages, event.message] }
+      if (!event.message.metadata?.codexTimeline) return runtime
+      const next = runtime.messages.slice()
+      next[index] = stamped
+      return { ...runtime, messages: next }
     }
     case 'task_started': {
       if (!event.toolUseId) return runtime
@@ -549,11 +564,12 @@ export function buildUserMessage(
     { type: 'text' as const, text: request.content },
   ]
 
-  const metadata = (request.source && request.source !== 'user') || request.collaboration
+  const metadata = (request.source && request.source !== 'user') || request.collaboration || request.codexTimeline
     ? {
         ...(request.source && request.source !== 'user' ? { source: request.source } : {}),
         ...(request.userAuthored ? { userAuthored: true } : {}),
         ...(request.collaboration ? { collaboration: request.collaboration } : {}),
+        ...(request.codexTimeline ? { codexTimeline: request.codexTimeline } : {}),
       }
     : undefined
 

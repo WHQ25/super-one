@@ -1,4 +1,5 @@
 import { RealtimeVoiceInterest } from './realtime-voice-interest'
+import { extractSpokenSummary, visibleAssistantText } from '@superone/shared/doubao-realtime'
 import { assertVoiceAccount } from '@superone/shared/realtime-voice'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
@@ -1956,6 +1957,31 @@ export class Session implements SessionContract {
       || this._status === 'starting'
       || this._status === 'interrupting'
       || this.liveness.backendStreaming
+  }
+
+  stripSpokenDisplay(): string[] {
+    const spoken: string[] = []
+    let changed = false
+    const next = this._messages.map(message => {
+      if (message.role !== 'assistant') return message
+      let touched = false
+      const content = message.content.map(block => {
+        if (block.type !== 'text' || !block.text.includes('<spoken')) return block
+        const extracted = extractSpokenSummary(block.text)
+        if (extracted.spoken) spoken.push(extracted.spoken)
+        const text = visibleAssistantText(block.text)
+        if (text === block.text) return block
+        touched = true
+        changed = true
+        return { ...block, text }
+      })
+      return touched ? { ...message, content } : message
+    })
+    if (changed) {
+      this.replaceMessages(next)
+      this.notifyStateChange()
+    }
+    return spoken
   }
 
   truncateMessagesAt(checkpointId: string): void {

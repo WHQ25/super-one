@@ -21,6 +21,32 @@ export function stampCodexTimelineOrder(message: ChatMessage, event: AgentEvent)
   }
 }
 
+/**
+ * An assistant row opened for a voice delegation inherits that user row's stamp.
+ * The voice activity card stays "working" only while the assistant carries it too.
+ * A typed user row has no stamp, so the next assistant stays an ordinary turn.
+ */
+export function withInheritedRealtimeDelegation(
+  messages: readonly ChatMessage[],
+  message: ChatMessage,
+): ChatMessage {
+  if (message.role !== 'assistant' || message.metadata?.codexTimeline) return message
+  const user = messages.findLast((row) => row.role === 'user')
+  const timeline = user?.metadata?.codexTimeline
+  if (timeline?.provenance !== 'realtime-delegated') return message
+  return {
+    ...message,
+    metadata: {
+      ...message.metadata,
+      codexTimeline: {
+        provenance: 'realtime-delegated',
+        ...(timeline.turnId ? { turnId: timeline.turnId } : {}),
+        ...(timeline.realtimeSessionId ? { realtimeSessionId: timeline.realtimeSessionId } : {}),
+      },
+    },
+  }
+}
+
 function codexTurnId(message: ChatMessage): string | undefined {
   return message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
 }

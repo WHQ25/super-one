@@ -620,6 +620,8 @@ export interface Session {
   /** A user's worktree pick; never relocates a session that has a transcript. See `Session.applyWorktreeSelection`. */
   applyWorktreeSelection(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
+  /** Remove closed `<spoken>` tags from assistant text and return the spoken lines. */
+  stripSpokenDisplay(): string[]
   /** Sidebar liveness from backend events; see `Session.activityStatus`. */
   activityStatus(): AgentStatus
   /** Epoch ms of the last agent event or user action. */

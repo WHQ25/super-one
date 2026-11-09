@@ -73,6 +73,64 @@ export function realtimeDelegationText(text: string): string | null {
   return parseRealtimeDelegation(text)?.input ?? null
 }
 
+/** Codex caps each delegation field. A longer voice transcript keeps its newest lines. */
+const REALTIME_DELEGATION_FIELD_CAP = 4096
+
+function escapeXmlText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function capDelegationField(text: string): string {
+  return text.length <= REALTIME_DELEGATION_FIELD_CAP
+    ? text
+    : text.slice(text.length - REALTIME_DELEGATION_FIELD_CAP)
+}
+
+function capTranscriptDelta(lines: readonly string[]): string {
+  const kept: string[] = []
+  let size = 0
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = capDelegationField(lines[index] ?? '')
+    if (!line) continue
+    const next = size === 0 ? line.length : line.length + 1
+    if (size + next > REALTIME_DELEGATION_FIELD_CAP) break
+    kept.push(line)
+    size += next
+  }
+  return kept.reverse().join('\n')
+}
+
+/**
+ * The envelope a voice session injects into the backing thread.
+ * `instruction` is the task inside `<input>` (what the bubble shows).
+ * `preamble` is a model-only note outside that tag, so the bubble stays the task.
+ * `transcript` is the spoken context.
+ */
+export function formatRealtimeDelegation(input: {
+  instruction: string
+  transcript?: readonly RealtimeTranscriptLine[]
+  source?: RealtimeDelegationSource
+  preamble?: string
+}): string {
+  const instruction = capDelegationField(input.instruction.trim())
+  const preamble = input.preamble?.trim() ?? ''
+  const delta = capTranscriptDelta(
+    (input.transcript ?? [])
+      .map((line) => {
+        const text = line.text.replace(/\s+/g, ' ').trim()
+        return text ? `${line.role}: ${text}` : ''
+      })
+      .filter(Boolean),
+  )
+  const parts = ['<realtime_delegation>']
+  if (input.source === 'transcript_tail_flush') parts.push('  <source>transcript_tail_flush</source>')
+  if (preamble) parts.push(`  ${escapeXmlText(preamble)}`)
+  parts.push(`  <input>${escapeXmlText(instruction)}</input>`)
+  if (delta) parts.push(`  <transcript_delta>${escapeXmlText(delta)}</transcript_delta>`)
+  parts.push('</realtime_delegation>')
+  return parts.join('\n')
+}
+
 /** Remove duplicate canonical entries without collapsing legitimate repeated speech. */
 export function dedupeRealtimeTimelineSegments(
   segments: RealtimeTimelineSegment[],

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../database'
 import log from '../logger'
 import { getProjectId } from '../recent-folders'
+import { flushPendingRealtimeTimeline } from './realtime-timeline-repo'
 import { notifySessionList } from '../session-list-watch'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import { explicitClaudeModelId } from '@superone/claude'
@@ -282,6 +283,7 @@ export function insertSessionRecord(input: InsertSessionInput): void {
     input.worktreePath ?? null,
     input.isHidden ? 1 : 0,
   )
+  flushPendingRealtimeTimeline(input.id)
   // A hidden row is deliberately absent from every session list, so it is not a
   // change any list can show.
   if (!input.isHidden) notifySessionList(input.projectPath)
@@ -584,6 +586,8 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   })
 
   tx()
+  // The opening voice line can arrive while this sid is still a draft.
+  flushPendingRealtimeTimeline(input.sid)
 
   // Only when the row appears or its harness/branch changes, not on every
   // persist: this runs on each state change of a streaming turn, and clients

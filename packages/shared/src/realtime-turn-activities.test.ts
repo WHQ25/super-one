@@ -44,6 +44,31 @@ describe('latest delegated turn timer', () => {
     expect(activity?.workingSince).toBe(current.createdAt)
   })
 
+  it('keeps a later voice turn from stealing a delegation that started on the earlier one', () => {
+    const turns = buildRealtimeConversationTurns([
+      { id: 'ask', realtimeSessionId: 'rt', role: 'user', text: '打开活动面板', localOrder: 10 },
+      { id: 'follow', realtimeSessionId: 'rt', role: 'user', text: '顺便说一下进度', localOrder: 30 },
+    ])
+    const delegated: ChatMessage = {
+      id: 'agent',
+      role: 'assistant',
+      providerId: 'acp',
+      status: 'streaming',
+      createdAt: '2026-11-09T00:00:00Z',
+      content: [{ type: 'text', text: '正在打开。' }],
+      metadata: { codexTimeline: { provenance: 'realtime-delegated', localOrder: 12, turnId: 'turn-1' } },
+    }
+    const activity = mapRealtimeTurnActivities({
+      turns,
+      messages: [delegated],
+      sessionStatus: 'streaming',
+      needsDecision: false,
+    })
+
+    expect(activity.get('ask')).toMatchObject({ status: 'working', messageIds: ['agent'] })
+    expect(activity.has('follow')).toBe(false)
+  })
+
   it.each(['', 'invalid'])('does not inherit an older timestamp when the latest start is %j', (createdAt) => {
     const activity = mapRealtimeTurnActivities({ turns, messages: [earlier, { ...current, createdAt }], sessionStatus: 'streaming', needsDecision: false }).get('voice')
 

@@ -17,6 +17,7 @@ export class VoiceSampleQueue {
     if (this.head > 1024 || this.head === this.chunks.length) { this.chunks = this.chunks.slice(this.head); this.head = 0 }
     return written
   }
+  clear() { this.chunks = []; this.head = 0; this.offset = 0; this.length = 0 }
 }
 
 // This file is loaded as an AudioWorklet module, and also imported by queue tests.
@@ -40,6 +41,12 @@ if (typeof registerProcessor === 'function') {
     }
     receive(data) {
       if (data.type === 'pause') { this.paused = data.paused; this.energy = 0; this.meterFrames = 0 }
+      else if (data.type === 'clear') {
+        this.queue.clear()
+        this.energy = 0
+        this.meterFrames = 0
+        this.consumed = 0
+      }
       else if (data.type === 'samples' && !this.failed) {
         try { this.queue.push(data.samples) } catch (error) { this.fail(error) }
       }

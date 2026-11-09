@@ -98,7 +98,7 @@ describe('voice timeline isolation', () => {
     rerender(view({ ...running, status: 'complete' }))
     expect(screen.getByTestId('realtime-delegation-row')).toHaveAttribute('data-activity-status', 'completed')
     expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Detail')
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Codex thread' }))
+    fireEvent.click(screen.getByRole('button', { name: /Open in .+ thread/ }))
     expect(useCodexRealtimeViewStore.getState().sessions['ended-call']?.pendingJump)
       .toMatchObject({ view: 'thread', turnId: 'voice-turn', messageId: 'canonical-work' })
     vi.useRealTimers()
@@ -186,7 +186,7 @@ describe('voice timeline isolation', () => {
     rerender(view([earlier, { ...running, status: 'complete' }, { ...latest, status: 'complete' }], 'idle'))
     expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Detail')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Codex thread' }))
+    fireEvent.click(screen.getByRole('button', { name: /Open in .+ thread/ }))
     expect(useCodexRealtimeViewStore.getState().sessions['running-test']).toMatchObject({
       view: 'thread',
       pendingJump: { view: 'thread', turnId: 'earlier-turn', messageId: 'earlier-work' },

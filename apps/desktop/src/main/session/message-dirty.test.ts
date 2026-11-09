@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatMessage } from '@superone/shared/agent-types'
-import { collectChangedMessageIds } from './message-dirty'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import { collectChangedMessageIds, shouldPersistSessionEvent } from './message-dirty'
 
 function msg(id: string, text = id): ChatMessage {
   return {
@@ -29,6 +29,20 @@ describe('collectChangedMessageIds', () => {
     const prev = [msg('a', 'old')]
     const next = [msg('a', 'new')]
     expect(collectChangedMessageIds(prev, next)).toEqual(['a'])
+  })
+
+  it('persists a voice-delegation user row that was inserted before its stamp', () => {
+    const message: ChatMessage = {
+      ...msg('voice'),
+      role: 'user',
+      metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'voice' } },
+    }
+    const event = { type: 'user_message_appended', message } as AgentEvent
+    expect(shouldPersistSessionEvent(event, false)).toBe(true)
+    expect(shouldPersistSessionEvent(
+      { type: 'user_message_appended', message: msg('plain') } as AgentEvent,
+      false,
+    )).toBe(false)
   })
 
   it('ignores unchanged object identity', () => {

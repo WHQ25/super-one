@@ -433,7 +433,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     ? { client: desktopDetailClient, environmentId: remoteConnectionId, sessionId: displayedSessionId }
     : null, [remoteConnectionId, displayedSessionId])
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
-  useCodexConversationActivation({ sessionId: displayedSessionId, projectPath, enabled: isCodexSession, foreground })
+  useCodexConversationActivation({ sessionId: displayedSessionId, projectPath, enabled: true, foreground })
   const drawsMods = HARNESS_CAPABILITIES[resolveProvider({ sessionProvider, preferredProvider })].modUi
   const realtime = useCodexRealtimeViewStore(
     (state) => displayedSessionId
@@ -446,10 +446,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       : messages,
     [isCodexSession, messages, realtime],
   )
+  // Doubao uses the same voice pane. The Codex gate stays on timeline hydration,
+  // not on whether the call composer is allowed to replace the text composer.
   const showRealtime = Boolean(
     displayedSessionId
     && projectPath
-    && isCodexSession
     && realtime.hasTimeline
     && realtime.view === 'realtime',
   )

@@ -27,6 +27,16 @@ it('keeps decoded samples arriving during pause and resumes the processor at its
     expect(render([0, 0])).toEqual([3, 4]); expect(render([0, 0])).toEqual([5, 6])
   } finally { vi.unstubAllGlobals(); vi.resetModules() }
 })
+it('drops unheard samples when playback is cleared', () => {
+  const queue = new VoiceSampleQueue(20)
+  queue.push(new Float32Array([1, 2, 3]))
+  queue.clear()
+  const output = new Float32Array(3)
+  expect(queue.read(output)).toBe(0)
+  expect([...output]).toEqual([0, 0, 0])
+  expect(queue.length).toBe(0)
+})
+
 it('fails explicitly instead of overwriting unheard audio when full', () => {
   const queue = new VoiceSampleQueue(3)
   queue.push(new Float32Array([1, 2, 3]))

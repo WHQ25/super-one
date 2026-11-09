@@ -107,10 +107,21 @@ export function PortableTurnFooter({
   const showCopy = !isStreaming && Boolean(copyText)
   if (footer.isEmpty && !showCopy && !showActivity && !apiRetry) return null
 
+  if (apiRetry) {
+    return (
+      <div className={cn('mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
+        <Meta className="min-w-0 max-w-full shrink">
+          {showActivity && <Loader2 className="size-3 animate-spin" />}
+          <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
+        </Meta>
+      </div>
+    )
+  }
+
   const separator = <span aria-hidden>·</span>
 
   return (
-    <div data-pending-turn={apiRetry ? undefined : pendingTurn} role={!apiRetry && pendingTurn ? 'status' : undefined} aria-live={!apiRetry && pendingTurn ? 'polite' : undefined} className={cn('mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
+    <div data-pending-turn={pendingTurn} role={pendingTurn ? 'status' : undefined} aria-live={pendingTurn ? 'polite' : undefined} className={cn('mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
       {showCopy && (
         <button
           type="button"
@@ -130,12 +141,10 @@ export function PortableTurnFooter({
                 : <Copy className="size-3" />}
         </button>
       )}
-      {(showActivity || footer.showDuration || apiRetry) && (
+      {(showActivity || footer.showDuration) && (
         <Meta className="min-w-0 max-w-full shrink">
-          {showActivity ? <Loader2 className="size-3 animate-spin" /> : !apiRetry && <Clock className="size-3" />}
-          {apiRetry
-            ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
-            : pendingTurn
+          {showActivity ? <Loader2 className="size-3 animate-spin" /> : <Clock className="size-3" />}
+          {pendingTurn
             ? <span>{t(pendingTurn === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
             : <>
               {startup && <span>{t('chat.codex.startingMcpServers', startup)}</span>}
@@ -145,7 +154,7 @@ export function PortableTurnFooter({
       )}
       {footer.hasTokens && (
         <>
-          {(footer.showDuration || showActivity || !!apiRetry) && separator}
+          {(footer.showDuration || showActivity) && separator}
           <Token value={footer.tokenInput} direction="up" />
           <Token value={footer.tokenOutput} direction="down" />
         </>

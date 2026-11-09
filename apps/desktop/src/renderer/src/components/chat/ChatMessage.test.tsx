@@ -944,4 +944,16 @@ describe('session retry footer', () => {
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     expect(retry).toHaveBeenCalledOnce()
   })
+
+  it('replaces the entire footer with the retry indicator without token spend', () => {
+    const message = createCodexMessage({
+      metadata: { consumedTokens: { input: 271300, output: 17200 } },
+    })
+    const { container } = render(<ChatMessage message={message} sessionStatus="streaming" isLastAssistant
+      apiRetry={{ attempt: 3, maxRetries: 15, delayMs: 4000, message: 'rate limited' }} />)
+    expect(screen.getByText(/Retrying API request \(3\/15\)/)).toBeInTheDocument()
+    expect(container.querySelector('.tabular-nums')).toBeNull()
+    expect(screen.queryByText(/271\.3k/)).toBeNull()
+    expect(screen.queryByText(/17\.2k/)).toBeNull()
+  })
 })

@@ -162,4 +162,14 @@ describe('portable session runtime footer', () => {
     expect(render(message, props)).toContain('Starting MCP servers 1/2')
     expect(render({ ...message, content: [{ type: 'text', text: 'Reply started' }] }, props)).not.toContain('Starting MCP servers')
   })
+
+  it('replaces the entire portable footer with the retry indicator without token spend', () => {
+    const html = render(turn({ metadata: { consumedTokens: { input: 271300, output: 17200 } } }), {
+      isLastAssistant: true, sessionStreaming: true,
+      apiRetry: { attempt: 3, delayMs: 4000, maxRetries: 15 },
+    })
+    expect(html).toContain('Retrying API request (3/15)')
+    expect(html).not.toContain('271.3k')
+    expect(html).not.toContain('17.2k')
+  })
 })

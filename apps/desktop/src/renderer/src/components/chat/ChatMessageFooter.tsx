@@ -200,13 +200,30 @@ export function DurationFooter({
   const showSlashCommand = !apiRetry && !pendingTurn && isStreaming && !!runningSlashCommand && !hasTurnOutput
   if (!apiRetry && !showActivity && !showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !startup && !showMcpFailure && !showSlashCommand) return null
 
-  const stallColor = isStreaming && !apiRetry ? getStallColor(stallLevel) : 'text-muted-foreground'
+  if (apiRetry) {
+    return (
+      <div className={cn('group/footer mt-2 min-h-4 w-full min-w-0 text-xs text-muted-foreground transition-colors duration-500', className)}>
+        <div className="relative flex w-fit max-w-full min-h-4 min-w-0 flex-wrap items-center gap-1.5">
+          {showActivity ? (
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+              <Loader2 className="size-3 animate-spin" />
+              <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
+            </span>
+          ) : (
+            <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
     // The row stays one text line tall (16px). An icon alone is 12px, and the
     // hover time would otherwise wrap onto a second line in a narrow pane.
     // Those two sit outside the flow, anchored to the end of the content.
-    <div data-pending-turn={apiRetry ? undefined : pendingTurn} role={!apiRetry && pendingTurn ? 'status' : undefined} aria-live={!apiRetry && pendingTurn ? 'polite' : undefined} className={cn('group/footer mt-2 min-h-4 w-full min-w-0 text-xs transition-colors duration-500', stallColor, className)}>
+    <div data-pending-turn={pendingTurn} role={pendingTurn ? 'status' : undefined} aria-live={pendingTurn ? 'polite' : undefined} className={cn('group/footer mt-2 min-h-4 w-full min-w-0 text-xs transition-colors duration-500', stallColor, className)}>
       <div className="relative flex w-fit max-w-full min-h-4 min-w-0 flex-wrap items-center gap-1.5">
         {showCopy && (
           <button
@@ -220,14 +237,12 @@ export function DurationFooter({
           </button>
         )}
         {showCopy && copyText && <SpeakReplyButton messageId={message.id} text={copyText} />}
-        {(showActivity || showDuration || apiRetry) && (showActivity ? (
+        {(showActivity || showDuration) && (showActivity ? (
           <ModSpinner message={message}>
             {(label) => (
               <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
                 <Loader2 className="size-3 animate-spin" />
-                {apiRetry
-                  ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} />
-                  : pendingTurn
+                {pendingTurn
                   ? <span>{t(pendingTurn === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
                   : <>
                     {startup
@@ -240,10 +255,8 @@ export function DurationFooter({
           </ModSpinner>
         ) : (
           <>
-            {apiRetry ? <ApiRetryIndicator info={apiRetry} onRetry={onRetry} /> : <>
-              <Clock className="size-3" />
-              <span>{footer.durationLabel}</span>
-            </>}
+            <Clock className="size-3" />
+            <span>{footer.durationLabel}</span>
           </>
         ))}
         {showSlashCommand && (
@@ -254,7 +267,7 @@ export function DurationFooter({
         )}
         {hasTokens && (
           <>
-            {(showActivity || showDuration || !!apiRetry) && <span>·</span>}
+            {(showActivity || showDuration) && <span>·</span>}
             <AnimatedToken value={tokenInput} direction="up" active={isStreaming} />
             <AnimatedToken value={tokenOutput} direction="down" active={isStreaming} />
           </>

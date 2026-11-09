@@ -582,6 +582,26 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
       model: '',
     })
 
+    const promptUsage153 = extractAntigravityPromptResponseUsage({
+      stopReason: 'end_turn',
+      usage: {
+        inputTokens: 31000,
+        outputTokens: 800,
+        thoughtTokens: 300,
+        cachedReadTokens: 12000,
+        totalTokens: 31800,
+      },
+    })
+    expect(promptUsage153).toEqual({
+      inputTokens: 19000,
+      outputTokens: 800,
+      cacheReadTokens: 12000,
+      thoughtsTokens: 300,
+      contextTokens: 0,
+      contextWindow: 0,
+      model: '',
+    })
+
     const events: AgentEvent[] = []
     const scope: AntigravityTurnThinkingScope = {
       sawAgentThoughtChunk: true,
@@ -744,7 +764,7 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
 
       const summary = extractAntigravityTurnUsageAndThinking(sessionId, root)
       expect(summary).not.toBeNull()
-      expect(summary?.inputTokens).toBe(1200)
+      expect(summary?.inputTokens).toBe(1180)
       expect(summary?.outputTokens).toBe(150)
       expect(summary?.cacheReadTokens).toBe(39050)
       expect(summary?.contextTokens).toBe(20330)
@@ -770,6 +790,21 @@ describe('antigravity per-turn real-time and 1.4.5 SQLite token usage', () => {
           cacheReadTokens: 20050,
         },
       ])
+
+      const dbTurn2 = new Database(dbPath)
+      const insertTurn2 = dbTurn2.prepare('INSERT INTO steps (idx, step_type, metadata, step_payload) VALUES (?, ?, ?, ?)')
+      insertTurn2.run(3, 14, null, userStepPayload)
+      insertTurn2.run(4, 15, buildMeta(20500, 120, 0, 40, 80), step1Payload)
+      insertTurn2.run(5, 23, buildMeta(250000, 2000, 0, 0, 2000), step2Payload)
+      insertTurn2.run(6, 15, buildMeta(420, 90, 20480, 10, 80), step2Payload)
+      dbTurn2.close()
+
+      const summaryTurn2 = extractAntigravityTurnUsageAndThinking(sessionId, root)
+      expect(summaryTurn2).not.toBeNull()
+      expect(summaryTurn2?.inputTokens).toBe(450)
+      expect(summaryTurn2?.outputTokens).toBe(210)
+      expect(summaryTurn2?.cacheReadTokens).toBe(20480)
+      expect(summaryTurn2?.contextTokens).toBe(20990)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

@@ -635,7 +635,7 @@ describe('antigravity invoke_subagent normalization and transcript lifecycle', (
         status: 'DONE',
         created_at: nowIso,
         thinking: 'Spawning image-generator subagent.',
-        input_tokens: 11859,
+        input_tokens: 1824,
         output_tokens: 132,
         cache_read_tokens: 10035,
         tool_calls: [
@@ -667,7 +667,7 @@ describe('antigravity invoke_subagent normalization and transcript lifecycle', (
         created_at: nowIso,
         thinking: 'Waiting for subagent to complete.',
         content: '`image-generator` 子智能体已在后台启动，我会在完成后汇报。',
-        input_tokens: 12078,
+        input_tokens: 495,
         output_tokens: 89,
         cache_read_tokens: 11583,
       }),
@@ -759,7 +759,7 @@ describe('antigravity invoke_subagent normalization and transcript lifecycle', (
         thinking: 'The subagent finished generating the cyber shiba icon.',
         thinking_duration: '1.6s',
         content: '`image-generator` 子智能体已完成图标生成。',
-        input_tokens: 13537,
+        input_tokens: 1954,
         output_tokens: 258,
         cache_read_tokens: 11583,
       }),
@@ -802,10 +802,10 @@ describe('antigravity invoke_subagent normalization and transcript lifecycle', (
         (e) =>
           e.type === 'message_usage' &&
           e.messageId === 'msg-wakeup-1' &&
-          e.inputTokens === (11859 - 10035) + (12078 - 11583) + (13537 - 11583) &&
+          e.inputTokens === 1824 + 87 + 1370 &&
           e.outputTokens === 132 + 89 + 258 &&
           e.cacheReadTokens === 10035 + 11583 + 11583 &&
-          e.contextTokens === 13537 + 258,
+          e.contextTokens === 11583 + 1954 + 258,
       ),
     ).toBe(true)
 

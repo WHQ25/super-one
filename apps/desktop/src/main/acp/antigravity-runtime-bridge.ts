@@ -367,9 +367,12 @@ export function syncAntigravityTurnFromDb(
       })
     }
   }
-  const inputTokens = Math.max(summary?.inputTokens ?? 0, effectiveWire?.inputTokens ?? 0)
-  const outputTokens = Math.max(summary?.outputTokens ?? 0, effectiveWire?.outputTokens ?? 0)
-  const cacheReadTokens = Math.max(summary?.cacheReadTokens ?? 0, effectiveWire?.cacheReadTokens ?? 0)
+  const hasDbTokenSummary =
+    summary !== null &&
+    (summary.inputTokens > 0 || summary.outputTokens > 0 || summary.cacheReadTokens > 0)
+  const inputTokens = hasDbTokenSummary ? summary.inputTokens : (effectiveWire?.inputTokens ?? 0)
+  const outputTokens = hasDbTokenSummary ? summary.outputTokens : (effectiveWire?.outputTokens ?? 0)
+  const cacheReadTokens = hasDbTokenSummary ? summary.cacheReadTokens : (effectiveWire?.cacheReadTokens ?? 0)
   const rawContextTokens = (summary?.contextTokens ?? 0) > 0 ? summary!.contextTokens : (effectiveWire?.contextTokens ?? 0)
   const contextTokens = rawContextTokens > 0
     ? rawContextTokens

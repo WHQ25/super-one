@@ -327,3 +327,75 @@ export function extractStepEnvelope(buf: Uint8Array): {
 
   return { metadataBuf, hasUserInput, plannerResponse }
 }
+
+export function stepTotalOutputTokens(meta: AntigravityStepMetadata): number {
+  if (meta.candidatesTokens > 0 && meta.outputTokens >= meta.candidatesTokens + meta.thoughtsTokens) {
+    return meta.outputTokens
+  }
+  return meta.outputTokens + meta.thoughtsTokens
+}
+
+export interface AntigravityTurnTokenState {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  contextTokens: number
+  prevPrompt: number
+  prevContext: number
+}
+
+export function createAntigravityTurnTokenState(
+  preTurnPromptTokens = 0,
+  preTurnContextTokens = 0,
+): AntigravityTurnTokenState {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    contextTokens: 0,
+    prevPrompt: preTurnPromptTokens,
+    prevContext: preTurnContextTokens,
+  }
+}
+
+export function recordAntigravityPreTurnStep(
+  state: AntigravityTurnTokenState,
+  uncachedInputTokens: number,
+  cacheReadTokens: number,
+  outputTokens: number,
+): void {
+  const stepPrompt = uncachedInputTokens + cacheReadTokens
+  const stepContext = stepPrompt + outputTokens
+  if (stepPrompt > 0 || outputTokens > 0) {
+    state.prevPrompt = stepPrompt
+    state.prevContext = stepContext
+  }
+}
+
+export function accumulateAntigravityTurnStep(
+  state: AntigravityTurnTokenState,
+  uncachedInputTokens: number,
+  cacheReadTokens: number,
+  outputTokens: number,
+): void {
+  const stepPrompt = uncachedInputTokens + cacheReadTokens
+  const stepContext = stepPrompt + outputTokens
+  if (stepPrompt > 0) {
+    if (state.prevPrompt > 0 && stepPrompt < state.prevPrompt) {
+      state.prevPrompt = stepPrompt
+      state.prevContext = stepContext
+    } else {
+      const baseline = Math.max(state.prevContext, cacheReadTokens)
+      state.inputTokens += Math.max(0, stepPrompt - baseline)
+      state.prevPrompt = stepPrompt
+      state.prevContext = stepContext
+    }
+  } else if (outputTokens > 0 && state.prevContext > 0) {
+    state.prevContext += outputTokens
+  }
+  state.outputTokens += outputTokens
+  state.cacheReadTokens += cacheReadTokens
+  if (stepContext > 0) {
+    state.contextTokens = stepContext
+  }
+}

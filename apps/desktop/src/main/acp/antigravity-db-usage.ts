@@ -3,9 +3,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import {
+  accumulateAntigravityTurnStep,
+  createAntigravityTurnTokenState,
   extractStepEnvelope,
   parseAntigravityPlannerResponse,
   parseAntigravityStepMetadata,
+  recordAntigravityPreTurnStep,
+  stepTotalOutputTokens,
   type AntigravityPlannerResponse,
   type AntigravityStepMetadata,
 } from './antigravity-db-proto'
@@ -126,7 +130,12 @@ export function extractAntigravityPromptResponseUsage(response: unknown): Antigr
   const rawOutputTokens = num('outputTokens', 'output_tokens')
   const thoughtsTokens = num('thoughtTokens', 'thought_tokens')
   const cacheReadTokens = num('cachedReadTokens', 'cached_read_tokens')
-  const outputTokens = rawOutputTokens + thoughtsTokens
+  const totalTokens = num('totalTokens', 'total_tokens')
+  const includesThoughts =
+    thoughtsTokens > 0 &&
+    rawOutputTokens >= thoughtsTokens &&
+    (totalTokens <= 0 || totalTokens < rawInputTokens + rawOutputTokens + thoughtsTokens)
+  const outputTokens = includesThoughts ? rawOutputTokens : rawOutputTokens + thoughtsTokens
   const inputTokens =
     cacheReadTokens > 0 && rawInputTokens >= cacheReadTokens
       ? rawInputTokens - cacheReadTokens
@@ -148,24 +157,28 @@ export function extractAntigravityPromptResponseUsage(response: unknown): Antigr
 const STEP_TYPE_USER_INPUT = 14
 const STEP_TYPE_PLANNER_RESPONSE = 15
 
-function stepTotalOutputTokens(meta: AntigravityStepMetadata): number {
-  if (meta.candidatesTokens > 0 && meta.outputTokens >= meta.candidatesTokens + meta.thoughtsTokens) {
-    return meta.outputTokens
-  }
-  return meta.outputTokens + meta.thoughtsTokens
+interface CurrentTurnPlannerSteps {
+  preTurnPromptTokens: number
+  preTurnContextTokens: number
+  steps: Array<{
+    stepIndex: number
+    meta: AntigravityStepMetadata | null
+    payload: AntigravityPlannerResponse | null
+  }>
 }
 
-function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Array<{
-  stepIndex: number
-  meta: AntigravityStepMetadata | null
-  payload: AntigravityPlannerResponse | null
-}> {
+function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): CurrentTurnPlannerSteps {
+  const empty: CurrentTurnPlannerSteps = {
+    preTurnPromptTokens: 0,
+    preTurnContextTokens: 0,
+    steps: [],
+  }
   const columns = new Set(
     (db.prepare('PRAGMA table_info(steps)').all() as Array<{ name: string }>).map((col) => col.name),
   )
 
   const idxCol = columns.has('idx') ? 'idx' : columns.has('step_index') ? 'step_index' : null
-  if (!idxCol) return []
+  if (!idxCol) return empty
 
   if (columns.has('step_type')) {
     const lastUserRow = db
@@ -174,36 +187,69 @@ function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Array<
     const minStepIndex = typeof lastUserRow?.maxIndex === 'number' ? lastUserRow.maxIndex : -1
     const hasMetadataCol = columns.has('metadata')
     const hasPayloadCol = columns.has('step_payload')
+    let preTurnPromptTokens = 0
+    let preTurnContextTokens = 0
+    if (minStepIndex > 0) {
+      const prevCols = [
+        ...(hasPayloadCol ? ['step_payload'] : []),
+        ...(hasMetadataCol ? ['metadata'] : []),
+      ].join(', ')
+      if (prevCols) {
+        const prevRows = db
+          .prepare(
+            `SELECT ${prevCols} FROM steps WHERE ${idxCol} < ? AND step_type = ? ORDER BY ${idxCol} DESC`,
+          )
+          .iterate(minStepIndex, STEP_TYPE_PLANNER_RESPONSE) as IterableIterator<{
+          step_payload?: Buffer | null
+          metadata?: Buffer | null
+        }>
+        for (const prevRow of prevRows) {
+          const metaBuf =
+            prevRow.metadata ??
+            (prevRow.step_payload ? extractStepEnvelope(prevRow.step_payload).metadataBuf : null)
+          if (!metaBuf) continue
+          const prevMeta = parseAntigravityStepMetadata(metaBuf)
+          const prevOut = stepTotalOutputTokens(prevMeta)
+          const prevPrompt = prevMeta.inputTokens + prevMeta.cacheReadTokens
+          if (prevPrompt > 0 || prevOut > 0) {
+            preTurnPromptTokens = prevPrompt
+            preTurnContextTokens = prevPrompt + prevOut
+            break
+          }
+        }
+      }
+    }
     const selectCols = [
       `${idxCol} AS step_index`,
-      'step_type',
       ...(hasPayloadCol ? ['step_payload'] : []),
       ...(hasMetadataCol ? ['metadata'] : []),
     ].join(', ')
     const rows = db
-      .prepare(`SELECT ${selectCols} FROM steps WHERE ${idxCol} > ? AND step_type != ? ORDER BY ${idxCol} ASC`)
-      .all(minStepIndex, STEP_TYPE_USER_INPUT) as Array<{
+      .prepare(`SELECT ${selectCols} FROM steps WHERE ${idxCol} > ? AND step_type = ? ORDER BY ${idxCol} ASC`)
+      .all(minStepIndex, STEP_TYPE_PLANNER_RESPONSE) as Array<{
       step_index: number
-      step_type: number
       step_payload?: Buffer | null
       metadata?: Buffer | null
     }>
 
-    return rows.map((row) => {
-      const isPlanner = row.step_type === STEP_TYPE_PLANNER_RESPONSE
-      const env = isPlanner && row.step_payload ? extractStepEnvelope(row.step_payload) : null
-      const metaBuf = row.metadata ?? env?.metadataBuf ?? null
-      return {
-        stepIndex: row.step_index,
-        meta: metaBuf ? parseAntigravityStepMetadata(metaBuf) : null,
-        payload: isPlanner
-          ? (env?.plannerResponse ?? (row.step_payload ? parseAntigravityPlannerResponse(row.step_payload) : null))
-          : null,
-      }
-    })
+    return {
+      preTurnPromptTokens,
+      preTurnContextTokens,
+      steps: rows.map((row) => {
+        const env = row.step_payload ? extractStepEnvelope(row.step_payload) : null
+        const metaBuf = row.metadata ?? env?.metadataBuf ?? null
+        return {
+          stepIndex: row.step_index,
+          meta: metaBuf ? parseAntigravityStepMetadata(metaBuf) : null,
+          payload:
+            env?.plannerResponse ??
+            (row.step_payload ? parseAntigravityPlannerResponse(row.step_payload) : null),
+        }
+      }),
+    }
   }
 
-  if (!columns.has('step_payload')) return []
+  if (!columns.has('step_payload')) return empty
 
   const allRows = db
     .prepare(`SELECT ${idxCol} AS idx, step_payload FROM steps ORDER BY ${idxCol} ASC`)
@@ -220,20 +266,33 @@ function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Array<
     }
   }
 
-  const result: Array<{
-    stepIndex: number
-    meta: AntigravityStepMetadata | null
-    payload: AntigravityPlannerResponse | null
-  }> = []
+  const preState = createAntigravityTurnTokenState()
+  const steps: CurrentTurnPlannerSteps['steps'] = []
   for (const item of decoded) {
-    if (item.idx <= minStepIndex || !item.env?.plannerResponse) continue
-    result.push({
+    if (!item.env?.plannerResponse) continue
+    const meta = item.env.metadataBuf ? parseAntigravityStepMetadata(item.env.metadataBuf) : null
+    if (item.idx <= minStepIndex) {
+      if (meta) {
+        recordAntigravityPreTurnStep(
+          preState,
+          meta.inputTokens,
+          meta.cacheReadTokens,
+          stepTotalOutputTokens(meta),
+        )
+      }
+      continue
+    }
+    steps.push({
       stepIndex: item.idx,
-      meta: item.env.metadataBuf ? parseAntigravityStepMetadata(item.env.metadataBuf) : null,
+      meta,
       payload: item.env.plannerResponse,
     })
   }
-  return result
+  return {
+    preTurnPromptTokens: preState.prevPrompt,
+    preTurnContextTokens: preState.prevContext,
+    steps,
+  }
 }
 
 function resolveAntigravityConversationDirs(customHome?: string): string[] {
@@ -273,25 +332,18 @@ export function extractAntigravityTurnUsageAndThinking(
   let db: Database.Database | null = null
   try {
     db = new Database(dbPath, { readonly: true, fileMustExist: true })
-    const rows = readNormalizedPlannerStepsForCurrentTurn(db)
-    if (rows.length === 0) return null
+    const { preTurnPromptTokens, preTurnContextTokens, steps } = readNormalizedPlannerStepsForCurrentTurn(db)
+    if (steps.length === 0) return null
 
-    let inputTokens = 0
-    let outputTokens = 0
-    let cacheReadTokens = 0
-    let contextTokens = 0
+    const tokenState = createAntigravityTurnTokenState(preTurnPromptTokens, preTurnContextTokens)
     let contextWindow = 0
     let model = ''
     const thinkingSteps: AntigravityThinkingStep[] = []
 
-    for (const { stepIndex, meta, payload } of rows) {
+    for (const { stepIndex, meta, payload } of steps) {
       if (meta) {
         const stepOut = stepTotalOutputTokens(meta)
-        inputTokens += meta.inputTokens
-        outputTokens += stepOut
-        cacheReadTokens += meta.cacheReadTokens
-        const stepContext = meta.inputTokens + meta.cacheReadTokens + stepOut
-        if (stepContext > 0) contextTokens = stepContext
+        accumulateAntigravityTurnStep(tokenState, meta.inputTokens, meta.cacheReadTokens, stepOut)
         if (meta.contextWindow > 0) contextWindow = meta.contextWindow
         if (meta.model) model = meta.model
       }
@@ -322,10 +374,10 @@ export function extractAntigravityTurnUsageAndThinking(
     }
 
     return {
-      inputTokens,
-      outputTokens,
-      cacheReadTokens,
-      contextTokens,
+      inputTokens: tokenState.inputTokens,
+      outputTokens: tokenState.outputTokens,
+      cacheReadTokens: tokenState.cacheReadTokens,
+      contextTokens: tokenState.contextTokens,
       contextWindow,
       model,
       thinkingSteps,

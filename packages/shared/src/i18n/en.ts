@@ -2328,11 +2328,14 @@ export type Messages = {
       openFolder: string
       addToChat: string
       download: string
+      saveAs: string
       copied: string
       promptCopied: string
       copyFailed: string
       downloaded: string
       downloadFailed: string
+      savedAs: string
+      saveAsFailed: string
       generatedIn: string
       noMetadata: string
       prompt: string
@@ -7296,11 +7299,14 @@ export const en: Messages = {
       openFolder: 'Open Folder',
       addToChat: 'Add to Chat',
       download: 'Download',
+      saveAs: 'Save As',
       copied: 'Image copied to clipboard',
       promptCopied: 'Prompt copied to clipboard',
       copyFailed: 'Copy failed: {{error}}',
       downloaded: 'Image saved to {{path}}',
       downloadFailed: 'Download failed: {{error}}',
+      savedAs: 'Saved to {{path}}',
+      saveAsFailed: 'Save failed: {{error}}',
       generatedIn: 'Generated in {{duration}}',
       noMetadata: 'No metadata available.',
       prompt: 'Prompt',

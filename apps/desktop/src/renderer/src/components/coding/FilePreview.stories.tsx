@@ -7,13 +7,20 @@ import { mediaDataUrl } from '../chat/__fixtures__/media-data-url'
 import { FilePreview } from './FilePreview'
 
 const ROOT = '/storybook'
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC'
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e8e4f8"/><text x="24" y="100" font-size="28" fill="#3C3489">Preview</text></svg>'
 mockIpc('app', 'getMediaServerPort', async () => 0)
+mockIpc('app', 'saveFileAs', async () => ({ ok: false, canceled: true }))
+mockIpc('app', 'clipboardWriteImage', async () => ({ ok: true }))
+mockIpc('app', 'revealFile', async () => {})
 mockIpc('environment', 'mcpAppFileHandlers', async () => ({ ok: true, value: { handlers: [] } }))
 
 function Preview({ filePath, fileRoot, width = 720, height = 480 }: { filePath: string; fileRoot?: string; width?: number; height?: number }) {
-  useAppStore.setState({ currentFolder: ROOT })
+  useAppStore.setState({ currentFolder: ROOT, liquidGlass: false })
   mockIpc('app', 'getGitDiffFile', async () => ({ path: filePath, diff: '' }))
   mockIpc('app', 'readProjectFile', async () => {
+    if (filePath.endsWith('.svg')) return { path: filePath, language: 'svg', content: SVG }
+    if (/\.(png|jpe?g|gif|webp)$/i.test(filePath)) return { path: filePath, language: 'image', content: PNG }
     const video = filePath.endsWith('.mp4')
     return {
       path: filePath,
@@ -37,6 +44,9 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+export const Image: Story = { args: { filePath: 'shots/diagram.png' } }
+export const Svg: Story = { args: { filePath: 'shots/mark.svg' } }
+export const ImageNarrow: Story = { args: { filePath: 'shots/diagram.png' }, render: (args) => <Preview {...args} width={320} /> }
 export const Video: Story = { args: { filePath: 'onboarding.mp4' } }
 export const Audio: Story = { args: { filePath: 'song-with-cover.mp3' } }
 export const VideoShortPane: Story = { args: { filePath: 'onboarding.mp4' }, render: (args) => <Preview {...args} height={240} /> }

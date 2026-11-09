@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon, Pencil } from 'lucide-react'
+import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon, Pencil, Save } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
@@ -124,17 +124,21 @@ export function useImageMenuItems({ savedPath, prompt, downloadable }: { savedPa
     if (!prompt) return
     await copyImagePrompt(prompt, t)
   }
-  const handleDownload = async () => {
+  const saveCopy = async (kind: 'save' | 'download') => {
+    if (!savedPath) return
     const defaultDir = useAppStore.getState().currentFolder ?? undefined
     const res = await window.app.saveFileAs(savedPath, basename(savedPath), defaultDir)
-    if (res.ok) toast.success(t('chat.image.downloaded', { path: res.savedPath }))
-    else if (!res.canceled) toast.error(t('chat.image.downloadFailed', { error: res.error }))
+    if (res.ok) toast.success(t(kind === 'save' ? 'chat.image.savedAs' : 'chat.image.downloaded', { path: res.savedPath }))
+    else if (!res.canceled) toast.error(t(kind === 'save' ? 'chat.image.saveAsFailed' : 'chat.image.downloadFailed', { error: res.error }))
   }
 
   return [
     { kind: 'item', id: 'copy', label: t('chat.image.copyImage'), icon: Copy, onSelect: () => { void handleCopy() } },
+    ...(savedPath
+      ? ([{ kind: 'item', id: 'saveAs', label: t('chat.image.saveAs'), icon: Save, onSelect: () => { void saveCopy('save') } }] as AdaptiveMenuEntry[])
+      : []),
     ...(downloadable
-      ? ([{ kind: 'item', id: 'download', label: t('chat.image.download'), icon: Download, onSelect: () => { void handleDownload() } }] as AdaptiveMenuEntry[])
+      ? ([{ kind: 'item', id: 'download', label: t('chat.image.download'), icon: Download, onSelect: () => { void saveCopy('download') } }] as AdaptiveMenuEntry[])
       : []),
     ...(prompt
       ? ([{ kind: 'item', id: 'copyPrompt', label: t('chat.image.copyPrompt'), icon: ClipboardCopy, onSelect: () => { void handleCopyPrompt() } }] as AdaptiveMenuEntry[])
@@ -142,6 +146,70 @@ export function useImageMenuItems({ savedPath, prompt, downloadable }: { savedPa
     { kind: 'item', id: 'addToChat', label: t('chat.image.addToChat'), icon: MessageSquarePlus, onSelect: () => chatInputAPI.addImageFromPath?.(savedPath) },
     { kind: 'item', id: 'openFolder', label: t('chat.image.openFolder'), icon: FolderOpen, onSelect: () => window.app.revealFile(savedPath) },
   ]
+}
+
+/** The image menu (copy, save as, add to chat, reveal) on any picture surface. */
+export function ImageContextMenu({
+  savedPath,
+  prompt,
+  downloadable,
+  fileDrag,
+  className,
+  children,
+}: {
+  savedPath: string
+  prompt?: string
+  downloadable?: boolean
+  /** System file drag, the same gesture other in-chat images use. */
+  fileDrag?: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  const items = useImageMenuItems({ savedPath, prompt, downloadable })
+  return (
+    <AdaptiveContextMenu items={items}>
+      <div
+        data-image-context-menu
+        className={className}
+        draggable={fileDrag || undefined}
+        onDragStart={fileDrag ? (event) => beginImageFileDrag(savedPath, event) : undefined}
+      >
+        {children}
+      </div>
+    </AdaptiveContextMenu>
+  )
+}
+
+const IMAGE_DRAG_ENDED_ATTR = 'data-image-drag-ended-at'
+
+/**
+ * True when this click is the one the browser synthesizes at the end of a
+ * system image drag. Callers that open a viewer on click use it to stay put.
+ */
+export function isRecentImageDrag(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el || typeof el.closest !== 'function') return false
+  const host = el.closest(`[${IMAGE_DRAG_ENDED_ATTR}]`)
+  const at = Number(host?.getAttribute(IMAGE_DRAG_ENDED_ATTR) ?? 0)
+  return at > 0 && Date.now() - at < 200
+}
+
+/** Hand the picture to the OS as a file, matching other in-chat images. */
+function beginImageFileDrag(savedPath: string, event: React.DragEvent<HTMLElement>, onEnd?: () => void) {
+  event.preventDefault()
+  const imgEl = event.currentTarget.querySelector('img')
+  const dragImage = imgEl ? buildImageDragPng(imgEl) : null
+  if (dragImage) window.app.startDrag([savedPath], { png: dragImage.buffer, scaleFactor: dragImage.scaleFactor })
+  else window.app.startDrag([savedPath])
+  const host = event.currentTarget
+  const mark = () => {
+    host.setAttribute(IMAGE_DRAG_ENDED_ATTR, String(Date.now()))
+    onEnd?.()
+    document.removeEventListener('mouseup', mark)
+    document.removeEventListener('dragend', mark)
+  }
+  document.addEventListener('mouseup', mark)
+  document.addEventListener('dragend', mark)
 }
 
 function buildImageDragPng(img: HTMLImageElement): { buffer: ArrayBuffer; scaleFactor: number } | null {
@@ -186,19 +254,8 @@ export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prom
   const dragEndRef = useRef(0)
   const menuItems = useImageMenuItems({ savedPath, prompt, downloadable })
 
-  const handleDragStart = (e: React.DragEvent) => {
-    e.preventDefault()
-    const imgEl = e.currentTarget.querySelector('img')
-    const dragImage = imgEl ? buildImageDragPng(imgEl) : null
-    if (dragImage) window.app.startDrag([savedPath], { png: dragImage.buffer, scaleFactor: dragImage.scaleFactor })
-    else window.app.startDrag([savedPath])
-    const cleanup = () => {
-      dragEndRef.current = Date.now()
-      document.removeEventListener('mouseup', cleanup)
-      document.removeEventListener('dragend', cleanup)
-    }
-    document.addEventListener('mouseup', cleanup)
-    document.addEventListener('dragend', cleanup)
+  const handleDragStart = (e: React.DragEvent<HTMLElement>) => {
+    beginImageFileDrag(savedPath, e, () => { dragEndRef.current = Date.now() })
   }
 
   const handleClick = (event: React.MouseEvent) => {

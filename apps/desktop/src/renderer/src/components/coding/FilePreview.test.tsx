@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '@/stores/app'
-import { FilePreview } from './FilePreview'
+import { FilePreview, imageActionPath } from './FilePreview'
 
 vi.mock('./MarkdownEditor', () => ({
   MarkdownEditor: () => <div data-testid="markdown-editor" />,
@@ -175,6 +175,51 @@ describe('FilePreview read failures', () => {
     expect(readProjectFile).toHaveBeenCalledTimes(2)
     expect(tabLabels()).toEqual(['Preview', 'File'])
     expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
+  })
+})
+
+describe('FilePreview image menu', () => {
+  beforeEach(() => {
+    useAppStore.setState({ currentFolder: '/proj', liquidGlass: false })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('offers the image menu on a picture and saves a copy of the file', async () => {
+    stubFile({ language: 'image', content: '', diff: '' })
+    const saveFileAs = vi.fn().mockResolvedValue({ ok: true, savedPath: '/tmp/shot.png' })
+    Object.assign(window.app, { saveFileAs, clipboardWriteImage: vi.fn(), revealFile: vi.fn() })
+    render(<FilePreview filePath="shots/shot.png" />)
+
+    fireEvent.contextMenu(await screen.findByRole('img', { name: 'shot.png' }))
+    expect(screen.getByRole('menuitem', { name: 'Copy Image' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Add to Chat' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Open Folder' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Save As' }))
+    await waitFor(() => expect(saveFileAs).toHaveBeenCalledWith('/proj/shots/shot.png', 'shot.png', '/proj'))
+  })
+
+  it('saves a remote image from its session-zone mirror, not from inlined bytes', () => {
+    expect(imageActionPath('remote:node:/worktree/shots/shot.png', 'local-file:///tmp/mirror/shot.png', true)).toBe('/tmp/mirror/shot.png')
+    expect(imageActionPath('/proj/shots/shot.png', '', false)).toBe('/proj/shots/shot.png')
+    expect(imageActionPath('remote:node:/worktree/shots/shot.png', 'data:image/png;base64,aW1n', true)).toBeNull()
+  })
+
+  it('has no image menu when a remote picture was inlined and has no local file', async () => {
+    stubFile({ language: 'image', content: 'data:image/png;base64,aW1n', diff: '' })
+    render(<FilePreview filePath="shots/shot.png" fileRoot="remote:node:/worktree" />)
+
+    fireEvent.contextMenu(await screen.findByRole('img', { name: 'shot.png' }))
+    expect(screen.queryByRole('menuitem', { name: 'Save As' })).toBeNull()
+  })
+
+  it('offers the image menu on an svg preview', async () => {
+    stubFile({ language: 'svg', content: '<svg xmlns="http://www.w3.org/2000/svg"/>', diff: '' })
+    render(<FilePreview filePath="mark.svg" />)
+
+    fireEvent.contextMenu(await screen.findByRole('img', { name: 'mark.svg' }))
+    expect(screen.getByRole('menuitem', { name: 'Save As' })).toBeInTheDocument()
   })
 })
 

@@ -9,7 +9,11 @@ import type { PreviewerFile } from '@superone/shared/generative-ui/native-widget
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { CopyableMarkdown } from '@/components/chat/CopyableMarkdown'
 import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
+import { localFileUrlToPath } from '@/lib/path-utils'
+import { isAbsoluteLocalPath } from '@/lib/file-link'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
+import { ImageContextMenu } from '@/components/chat/image-shared'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { NotebookPreview } from '@/components/coding/NotebookPreview'
 import { FileWithDiffView } from '@/components/coding/source-control/FileWithDiffView'
@@ -41,6 +45,18 @@ function errorLabelKey(error: PreviewerLoadError): string {
     case 'undecodable': return 'chat.filesPreviewer.undecodable'
     case 'io': return 'chat.filesPreviewer.readFailed'
   }
+}
+
+/**
+ * A local file the image menu can copy and save. Remote bytes arrive as a data
+ * URI or as the mirror's local-file URL; a node path is not a file on this machine.
+ */
+export function previewerImageMenuPath(root: string, file: PreviewerFile, url: string | undefined): string | null {
+  if (file.kind !== 'image' || file.absolutePath.startsWith('data:')) return null
+  const mirrored = url ? localFileUrlToPath(url) : null
+  if (mirrored) return mirrored
+  if (url?.startsWith('data:') || parseRemoteProjectKey(root)) return null
+  return isAbsoluteLocalPath(file.absolutePath) ? file.absolutePath : null
 }
 
 /** Only a verdict that can change with time is worth a retry button. */
@@ -105,8 +121,8 @@ export function PreviewerStage({ file, state, mode, root, projectPath, initialMo
   const inert = card ? 'select-none' : ''
 
   switch (file.kind) {
-    case 'image':
-      return card
+    case 'image': {
+      const body = card
         ? (
           <img
             src={state.url}
@@ -117,6 +133,14 @@ export function PreviewerStage({ file, state, mode, root, projectPath, initialMo
           />
         )
         : <ImagePreview src={state.url!} alt={file.name} disableArrowKeys />
+      const path = previewerImageMenuPath(root, file, state.url)
+      if (!path) return body
+      return (
+        <ImageContextMenu savedPath={path} fileDrag={card} className={card ? 'absolute inset-0 flex items-center justify-center' : 'size-full'}>
+          {body}
+        </ImageContextMenu>
+      )
+    }
     case 'pdf':
       return (
         <div className={cn('h-full w-full', inert)}>

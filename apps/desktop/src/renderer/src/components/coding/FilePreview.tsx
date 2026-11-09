@@ -7,7 +7,9 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { absoluteFilePath } from '@/components/chat/file-chip-context-menu'
+import { ImageContextMenu } from '@/components/chat/image-shared'
 import { McpAppOpenWithActions, McpAppOpenWithButton } from '@/components/mcp-apps/McpAppOpenWith'
 import { lastTouchedPane } from '@/stores/chat-store/session-scope'
 import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
@@ -28,6 +30,22 @@ function previewSrc(content: string | undefined, fromPath: () => string, stream?
   const mirror = localFileUrlToPath(content)
   if (mirror) return stream ? stream(mirror) : content
   return fromPath()
+}
+
+/**
+ * Path the image menu can copy, save, and reveal. A remote read hands back the
+ * session-zone mirror as a local-file URL; inlined node bytes have no local file.
+ */
+export function imageActionPath(fullFilePath: string, content: string | undefined, remote: boolean): string | null {
+  const mirrored = content ? localFileUrlToPath(content) : null
+  if (mirrored) return mirrored
+  if (remote) return null
+  return isAbsoluteLocalPath(fullFilePath) ? fullFilePath : null
+}
+
+function withImageMenu(path: string | null, child: React.ReactNode) {
+  if (!path) return child
+  return <ImageContextMenu savedPath={path} className="size-full">{child}</ImageContextMenu>
 }
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
@@ -152,6 +170,7 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
   // Preview + File only (a notebook's raw JSON is not hand-editable safely).
   const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isMd && !isNotebook
   const fullFilePath = isAbsoluteLocalPath(selectedFile) ? selectedFile : `${fileRoot}/${selectedFile}`
+  const imagePath = imageActionPath(fullFilePath, fileContent?.content, !!parseRemoteProjectKey(fileRoot ?? ''))
   useEffect(() => { setModelViewState(null) }, [fullFilePath])
 
   const tabs = (() => {
@@ -349,10 +368,12 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
                 <NotebookPreview content={fileContent?.content ?? ''} />
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isBinImg ? (
-              <ImagePreview
-                src={previewSrc(fileContent?.content, () => toLocalFileUrl(fullFilePath))}
-                alt={fileName}
-              />
+              withImageMenu(imagePath, (
+                <ImagePreview
+                  src={previewSrc(fileContent?.content, () => toLocalFileUrl(fullFilePath))}
+                  alt={fileName}
+                />
+              ))
             ) : effectiveTab === 'preview' && isPdfFile ? (
               <PdfPreview
                 url={previewSrc(fileContent?.content, () => toLocalFileUrl(fullFilePath))}
@@ -384,14 +405,16 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
                 />
               </Suspense>
             ) : effectiveTab === 'preview' && isSvgFile ? (
-              <ImagePreview
-                src={
-                  fileContent?.content
-                    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fileContent.content)}`
-                    : toLocalFileUrl(fullFilePath)
-                }
-                alt={fileName}
-              />
+              withImageMenu(imagePath, (
+                <ImagePreview
+                  src={
+                    fileContent?.content
+                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fileContent.content)}`
+                      : toLocalFileUrl(fullFilePath)
+                  }
+                  alt={fileName}
+                />
+              ))
             ) : effectiveTab === 'file' ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
                 <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />

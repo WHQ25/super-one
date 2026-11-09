@@ -277,7 +277,7 @@ import {
 } from './window-glass'
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
 import { applyAppIcon, getAppIcon } from './app-icon'
-import { planStartDrag } from './start-drag'
+import { imageDragThumbnail, planStartDrag } from './start-drag'
 import type { PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 import { markStartup } from '@superone/shared/startup-marks'
@@ -3944,6 +3944,11 @@ function registerIpcHandlers(): void {
         event.sender.startDrag({ files, file: files[0], icon })
         return
       }
+      const thumb = imageDragThumbnail(nativeImage.createFromPath(files[0]), files[0])
+      if (thumb) {
+        event.sender.startDrag({ files, file: files[0], icon: thumb })
+        return
+      }
       const icon = await app.getFileIcon(files[0], {
         size: files[0].endsWith('.app') ? 'normal' : 'small',
       })
@@ -3970,6 +3975,21 @@ function registerIpcHandlers(): void {
         }
         event.sender.startDrag({ files, file: files[0], icon })
         return
+      }
+      // A picture with no canvas snapshot (the files-previewer card) still
+      // needs its thumbnail before the drag gesture moves on.
+      if (
+        !iconOpts?.png &&
+        Array.isArray(paths) &&
+        paths.length > 0 &&
+        paths.every((p) => typeof p === 'string' && existsSync(p))
+      ) {
+        const file = paths[0]
+        const thumb = imageDragThumbnail(nativeImage.createFromPath(file), file)
+        if (thumb) {
+          event.sender.startDrag({ files: paths, file, icon: thumb })
+          return
+        }
       }
       void run().catch((err) => log.warn('[start-drag] failed:', err))
     } catch (err) {

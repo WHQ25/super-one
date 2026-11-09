@@ -118,7 +118,11 @@ The card height is 480px in narrow panes and 640px from the `@lg` container
 breakpoint. Keeping it fixed avoids moving the transcript when slides change.
 Header, stage and note/navigation footer form one block. Single-file cards omit
 the counter, arrows and dots. Fullscreen is available from the stage and header.
-Media controls retain their playback interaction.
+Media controls retain their playback interaction. A local picture in the card
+uses the same system file drag as other in-chat images, including a thumbnail
+of the picture. The card image is served from `local-file://`, which a canvas
+cannot read back, so the thumbnail is built from the file. That drag does not
+open fullscreen. A picture with no local file has no drag.
 
 ### 4.2 Keyboard and focus
 

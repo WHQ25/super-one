@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { NativeImage } from 'electron'
-import { planStartDrag, type StartDragDeps } from './start-drag'
+import { imageDragThumbnail, planStartDrag, type StartDragDeps } from './start-drag'
 
 const fakeIcon = (empty: boolean): NativeImage => ({ isEmpty: () => empty }) as unknown as NativeImage
 
@@ -50,5 +50,31 @@ describe('planStartDrag file-chip drag guard', () => {
 
   it('returns null for a non-array payload', async () => {
     expect(await planStartDrag(undefined, undefined, makeDeps())).toBeNull()
+  })
+})
+
+describe('imageDragThumbnail', () => {
+  function sized(width: number, height: number, empty = false): NativeImage {
+    const image = {
+      isEmpty: () => empty,
+      getSize: () => ({ width, height }),
+      resize: ({ width: nextWidth, height: nextHeight }: { width: number; height: number }) => sized(nextWidth, nextHeight),
+    }
+    return image as unknown as NativeImage
+  }
+
+  it('shrinks a picture so the long side is 160', () => {
+    expect(imageDragThumbnail(sized(800, 400), '/repo/shot.png')?.getSize()).toEqual({ width: 160, height: 80 })
+  })
+
+  it('keeps a picture that is already small enough', () => {
+    const source = sized(120, 80)
+    expect(imageDragThumbnail(source, '/repo/shot.jpg')).toBe(source)
+  })
+
+  it('leaves non-images and undecodable files to the file icon', () => {
+    expect(imageDragThumbnail(sized(800, 400), '/repo/notes.txt')).toBeNull()
+    expect(imageDragThumbnail(sized(800, 400, true), '/repo/shot.png')).toBeNull()
+    expect(imageDragThumbnail(sized(0, 0), '/repo/shot.png')).toBeNull()
   })
 })

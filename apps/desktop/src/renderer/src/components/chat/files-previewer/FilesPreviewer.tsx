@@ -7,6 +7,7 @@ import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/genera
 import type { ModelPreviewViewState } from '@/components/coding/ModelPreview'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
+import { isRecentImageDrag } from '@/components/chat/image-shared'
 import { PreviewerFullscreen } from './PreviewerFullscreen'
 import { PreviewerStage } from './PreviewerStage'
 import { PreviewerDots, PreviewerFileChip } from './previewer-chrome'
@@ -35,9 +36,19 @@ export function isStageControlTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * Context menu content is portaled, but its React events still bubble through
+ * the stage. A menu-item click is not "open the preview".
+ */
+function isContextMenuTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el || typeof el.closest !== 'function') return false
+  return !!el.closest('[data-slot="context-menu-content"], [data-slot="context-menu-item"]')
+}
+
+/**
  * The card: a carousel, as tall as its tallest slide, of files with a note under each. It is a
  * stage, not a workspace — arrows and dots move between files, the stage click
- * opens fullscreen, and that is the whole interaction surface.
+ * opens fullscreen, and a local picture drags out as a file.
  */
 export function FilesPreviewer({ payload }: FilesPreviewerProps) {
   const { t } = useTranslation()
@@ -93,7 +104,7 @@ export function FilesPreviewer({ payload }: FilesPreviewerProps) {
   // controls and the stage's own buttons. Links and copy buttons inside a
   // Markdown slide are swallowed here before they can act.
   const onStageClickCapture = useCallback((e: React.MouseEvent) => {
-    if (isStageControlTarget(e.target)) return
+    if (isStageControlTarget(e.target) || isContextMenuTarget(e.target) || isRecentImageDrag(e.target)) return
     e.preventDefault()
     e.stopPropagation()
     setFullscreen(true)
@@ -149,7 +160,13 @@ export function FilesPreviewer({ payload }: FilesPreviewerProps) {
         className={cn('relative flex min-h-0 cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-transparent', stageHeight === null && 'flex-1')}
         style={stageHeight === null ? undefined : { height: stageHeight }}
         onClickCapture={onStageClickCapture}
-        onContextMenu={(e) => { if (!isStageControlTarget(e.target)) e.preventDefault() }}
+        onContextMenu={(e) => {
+          if (isStageControlTarget(e.target)) return
+          // A picture owns this click through its image menu. Other slides stay menu-less.
+          const el = e.target as HTMLElement | null
+          if (typeof el?.closest === 'function' && el.closest('[data-image-context-menu]')) return
+          e.preventDefault()
+        }}
         data-testid="previewer-stage"
       >
         <PreviewerStage

@@ -5,8 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
+import { useAppStore } from '@/stores/app'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { FilesPreviewer } from './FilesPreviewer'
+import { previewerImageMenuPath } from './PreviewerStage'
 
 vi.mock('@/components/coding/ModelPreview', () => ({
   ModelPreview: (props: {
@@ -61,6 +63,15 @@ afterEach(() => vi.restoreAllMocks())
 const card = () => screen.getByTestId('files-previewer')
 const stage = () => screen.getByTestId('previewer-stage')
 
+describe('previewer image menu path', () => {
+  it('uses a local file or its mirror, and skips inlined node bytes', () => {
+    expect(previewerImageMenuPath(ROOT, image, 'local-file:///repo/docs/diagram.png')).toBe('/repo/docs/diagram.png')
+    const nodeFile = { ...image, absolutePath: '/home/node/proj/shot.png', name: 'shot.png' }
+    expect(previewerImageMenuPath('remote:conn:/home/node/proj', nodeFile, 'local-file:///tmp/mirror/shot.png')).toBe('/tmp/mirror/shot.png')
+    expect(previewerImageMenuPath('remote:conn:/home/node/proj', nodeFile, 'data:image/png;base64,aW1n')).toBeNull()
+  })
+})
+
 describe('files previewer card — remote sessions', () => {
   const REMOTE_ROOT = 'remote:conn-1:/home/node/proj'
   const nodeShot: PreviewerFile = {
@@ -84,6 +95,12 @@ describe('files previewer card — remote sessions', () => {
     expect(img).toHaveAttribute('src', 'data:image/png;base64,aW1n')
     // It went through readProjectFile with the remote root, never a bare file:// URL.
     expect(readProjectFile).toHaveBeenCalledWith(REMOTE_ROOT, nodeShot.absolutePath)
+    fireEvent.contextMenu(img)
+    expect(screen.queryByRole('menuitem', { name: 'Save As' })).toBeNull()
+    const startDrag = vi.fn()
+    Object.assign(window.app, { startDrag })
+    fireEvent.dragStart(img)
+    expect(startDrag).not.toHaveBeenCalled()
   })
 
   it('loads a desktop-node file through the pane remote key when the payload root is a host path', async () => {
@@ -212,6 +229,56 @@ describe('files previewer card', () => {
     // The note survives the re-stat; the host does not know it.
     expect(screen.getByTestId('previewer-note').textContent).toBe('Not yet written')
     await waitFor(() => expect(readProjectFile).toHaveBeenCalledWith(ROOT, '/repo/gone.md'))
+  })
+
+  it('drags a local card image out as a file without opening fullscreen', () => {
+    const startDrag = vi.fn()
+    Object.assign(window.app, { startDrag })
+    render(<FilesPreviewer payload={payload([image])} />)
+
+    const img = stage().querySelector('img')!
+    fireEvent.dragStart(img)
+    expect(startDrag).toHaveBeenCalledWith(['/repo/docs/diagram.png'])
+    expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
+
+    // The click the browser emits when the drag ends is not "open".
+    fireEvent.mouseUp(document)
+    fireEvent.click(img)
+    expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
+  })
+
+  it('does not start a file drag from the fullscreen image', async () => {
+    const startDrag = vi.fn()
+    Object.assign(window.app, { startDrag })
+    render(<FilesPreviewer payload={payload([image])} />)
+    fireEvent.click(screen.getByLabelText('Open fullscreen'))
+    const img = await within(screen.getByTestId('previewer-fullscreen')).findByRole('img', { name: 'diagram.png' })
+    fireEvent.dragStart(img)
+    expect(startDrag).not.toHaveBeenCalled()
+  })
+
+  it('opens the image menu on a local picture without entering fullscreen', async () => {
+    useAppStore.setState({ currentFolder: ROOT, liquidGlass: false })
+    const saveFileAs = vi.fn().mockResolvedValue({ ok: true, savedPath: '/out/diagram.png' })
+    Object.assign(window.app, { saveFileAs, clipboardWriteImage: vi.fn(), revealFile: vi.fn() })
+    render(<FilesPreviewer payload={payload([image])} />)
+
+    const img = stage().querySelector('img')!
+    fireEvent.contextMenu(img)
+    expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Copy Image' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Save As' }))
+    expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
+    await waitFor(() => expect(saveFileAs).toHaveBeenCalledWith('/repo/docs/diagram.png', 'diagram.png', ROOT))
+  })
+
+  it('keeps the image menu in the fullscreen viewer', async () => {
+    useAppStore.setState({ liquidGlass: false })
+    render(<FilesPreviewer payload={payload([image])} />)
+    fireEvent.click(stage())
+    const fullscreen = screen.getByTestId('previewer-fullscreen')
+    fireEvent.contextMenu(await within(fullscreen).findByRole('img', { name: 'diagram.png' }))
+    expect(screen.getByRole('menuitem', { name: 'Save As' })).toBeInTheDocument()
   })
 
   it('flips an image that fails to decode into the error state without a host round trip', () => {

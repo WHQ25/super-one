@@ -73,6 +73,11 @@ interface CallMedia {
   playbackBargeHits: number
 }
 
+/** Doubao and Gemini share the PCM path. Codex Realtime keeps its own WebRTC call. */
+function usesPcmVoice(transport: CallMedia['transport']): transport is 'doubao' | 'gemini' {
+  return transport === 'doubao' || transport === 'gemini'
+}
+
 let media: CallMedia | null = null
 /** `projectPath::sessionId` whose timeline this renderer already fetched. */
 let timelineLoadedFor: string | null = null
@@ -189,7 +194,7 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
     if (current.identity && (current.identity.callId !== signal.callId || current.identity.hostEpoch !== signal.hostEpoch || current.identity.generation !== signal.generation)) return
     current.identity = signal
     if (signal.kind === 'answer') handleAgentEvent({ ...event, type: 'realtime_sdp', sdp: signal.sdp }, true)
-    else if (signal.kind === 'state' && signal.state === 'active' && current.transport !== 'codex') void markDoubaoReady(current)
+    else if (signal.kind === 'state' && signal.state === 'active' && usesPcmVoice(current.transport)) void markDoubaoReady(current)
     else if (signal.kind === 'closed') finishCall(sessionId, projectPath)
     else if (signal.kind === 'error') { reportError(new Error(signal.error)); void stopRealtimeCall() }
     return
@@ -257,15 +262,15 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
   }
 
   if (event.type === 'realtime_error') {
-    // Codex errors arrive again as a directed signal. Doubao has no second copy,
+    // Codex errors arrive again as a directed signal. A PCM voice has no second copy,
     // so a failed delegation is reported here without hanging up the call.
-    if (current.transport !== 'codex') reportError(new Error(event.error))
+    if (usesPcmVoice(current.transport)) reportError(new Error(event.error))
     return
   }
 }
 
 function markDoubaoReady(current: CallMedia): void {
-  if (media !== current || current.transport === 'codex') return
+  if (media !== current || !usesPcmVoice(current.transport)) return
   if (current.negotiationTimer !== null) {
     window.clearTimeout(current.negotiationTimer)
     current.negotiationTimer = null

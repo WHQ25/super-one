@@ -33,6 +33,7 @@ import { deriveSuperoneMcpSessionToken } from '../mcp/superone-mcp-auth'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
 import { acpHostContextText } from './acp-host-context'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { XAI_SUGGEST_PROMPT } from '@superone/shared/grok-suggest-prompt'
 
 // Grok routes x.ai methods only under the `_` wire prefix; the bare name is
 // rejected with `Method not found`. The in-process test agent mirrors the real
@@ -44,6 +45,7 @@ const XAI_CONSENT_RECORD_WIRE = xaiExtWireMethod(XAI_CONSENT_RECORD)
 const XAI_INTERJECT_WIRE = xaiExtWireMethod(XAI_INTERJECT)
 const XAI_COMPACT_WIRE = xaiExtWireMethod(XAI_COMPACT_CONVERSATION)
 const XAI_REWIND_EXECUTE_WIRE = xaiExtWireMethod(XAI_REWIND_EXECUTE)
+const XAI_SUGGEST_PROMPT_WIRE = xaiExtWireMethod(XAI_SUGGEST_PROMPT)
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -152,6 +154,14 @@ function makeEchoAgentStream(
       },
     )
     .onRequest(methods.agent.session.setMode, async () => ({}))
+    .onRequest(
+      XAI_SUGGEST_PROMPT_WIRE,
+      (raw: unknown) => raw,
+      async (ctx) => {
+        const params = ctx.params as { generation?: number }
+        return { suggestion: null, generation: params.generation ?? 0 }
+      },
+    )
 
   const clientToAgent = new TransformStream<Uint8Array>()
   const agentToClient = new TransformStream<Uint8Array>()
@@ -1424,6 +1434,74 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(texts.join('')).toContain('echo-ok')
     expect(events.some((e) => e.type === 'message_complete')).toBe(true)
     expect(events.some((e) => e.type === 'status_change' && e.status === 'idle')).toBe(true)
+  })
+
+  it('pulls x.ai/suggestPrompt after a grok-build turn and emits prompt_suggestion', async () => {
+    const sessionEvents: AgentEvent[] = []
+    const suggestCalls: Array<Record<string, unknown>> = []
+    const agentApp = agent({ name: 'suggest-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'suggest-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(XAI_SUGGEST_PROMPT_WIRE, (raw: unknown) => raw, async (ctx) => {
+        const params = ctx.params as Record<string, unknown>
+        suggestCalls.push(params)
+        return { suggestion: 'Run the tests', generation: params.generation }
+      })
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onSessionEvent: (e) => sessionEvents.push(e),
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    await runtime.prompt('go', 'msg-suggest', () => {})
+    await vi.waitFor(() => expect(sessionEvents).toContainEqual({
+      type: 'prompt_suggestion',
+      suggestion: 'Run the tests',
+    }))
+    expect(suggestCalls).toEqual([{ generation: 1, sessionId: 'suggest-session' }])
+    await runtime.close()
+  })
+
+  it('does not pull x.ai/suggestPrompt for a grok slash prompt', async () => {
+    const suggestCalls: Array<Record<string, unknown>> = []
+    const agentApp = agent({ name: 'suggest-slash-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'suggest-slash-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(XAI_SUGGEST_PROMPT_WIRE, (raw: unknown) => raw, async (ctx) => {
+        suggestCalls.push(ctx.params as Record<string, unknown>)
+        return { suggestion: 'should-not-emit', generation: 1 }
+      })
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    await runtime.prompt('/recap', 'msg-slash', () => {})
+    await new Promise((r) => setTimeout(r, 20))
+    expect(suggestCalls).toEqual([])
+    await runtime.close()
   })
 
   it('maps x.ai/session_notification workflow progress after prompt returns', async () => {

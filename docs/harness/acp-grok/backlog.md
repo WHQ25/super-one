@@ -27,11 +27,13 @@ Recheck the actual runtime surface before adopting an item.
 | MCP `_meta["x.ai/mcp/bearerTokenFile"]` | 1.0.45 | Rotate an HTTP MCP token without inlining the secret | Absolute or `~/` path on HTTP/SSE servers. A relative path is sent as written so the agent rejects it. Not a substitute for the Grok TOML catalog | done in 1.0.45+2bdd1d6a |
 | Spoof Grok Desktop client identity | Unknown | Access to richer agent-side permission options | Claims UI/behavior SuperOne does not implement | rejected; retain Generic identity and Auto explanation |
 | Pager/leader-specific chrome and Grok host filesystem delegation | Unknown | Upstream UI parity | Product-specific surfaces; text delegation corrupts binary reads | rejected for current integration |
+| Client-pull `x.ai/suggestPrompt` after idle | Unknown | Composer ghost / Tab after a Grok turn | Must send `_x.ai/suggestPrompt`. Desktop fire-and-forgets; node awaits before kill. Empty results must not wipe `follow_ups`. Do not spoof grok-desktop. | done |
 
 Ask create-time booleans, MCP login, selected-server reconnect, send-now
 steering, slash-workflow cards, the permission-chip transaction, load
 `noReplay`, folder trust, fork/detect launch, Generic Auto tool denies, node
-Grok launch and initialize, context window, and MCP bearer token files are
-implemented. They are contracts in the sibling docs, not pending work. A
-resident node session is still the node-controls row. Reasoning effort is the
-`reasoning_effort` config option in `contracts.md`, not an open item.
+Grok launch and initialize, context window, MCP bearer token files, and
+client-pull `x.ai/suggestPrompt` are implemented. They are contracts in the
+sibling docs, not pending work. A resident node session is still the
+node-controls row. Reasoning effort is the `reasoning_effort` config option in
+`contracts.md`, not an open item.

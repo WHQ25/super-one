@@ -1,5 +1,9 @@
 import { modelsFromSessionResult } from './config-map'
 import { superoneHostContext } from '@superone/shared/superone-system-prompt'
+import {
+  fetchGrokSuggestPrompt,
+  shouldFetchGrokSuggestPrompt,
+} from '@superone/shared/grok-suggest-prompt'
 /**
  * Node ACP agent turn: spawn process → initialize → buildSession → prompt.
  * Event projection includes standard ACP updates and Grok xAI notifications;
@@ -14,6 +18,7 @@ import {
 import type { TurnRunner } from '@superone/runtime/session'
 import {
   createAcpAgentEventMapper,
+  mapStopReason,
   type AcpAgentEventMapper,
 } from './agent-event-mapper'
 import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
@@ -358,8 +363,30 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
           if (input.signal.aborted) break
           await active.prompt(inject)
         }
+        if (input.signal.aborted) throw new Error('ACP turn interrupted')
+        const mapped = mapStopReason(stopReason)
+        // One-shot node kills the process after the turn, so the pull must
+        // finish before dispose. Desktop keeps the resident session and
+        // fire-and-forgets the same RPC.
+        const suggestPrompt = shouldFetchGrokSuggestPrompt({
+          grok,
+          complete: mapped.complete,
+          interrupted: mapped.interrupted,
+          text: input.text,
+        })
+          ? fetchGrokSuggestPrompt(
+              (method, params) => connection.agent.request(method, params as never),
+              { generation: 1, sessionId },
+            )
+          : null
         agentEventMapper?.complete(stopReason)
         if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'idle' })
+        if (suggestPrompt) {
+          const suggestion = await suggestPrompt
+          if (suggestion) {
+            (input.onAmbientEvent ?? input.onAgentEvent)?.({ type: 'prompt_suggestion', suggestion })
+          }
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         agentEventMapper?.fail(message, input.signal.aborted || /interrupt|cancel|abort/i.test(message))

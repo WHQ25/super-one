@@ -336,6 +336,7 @@ describe('ACP production turn runner AgentEvents', () => {
     expect(grokCalls.map((call) => call[0])).toEqual([
       'initialize',
       'authenticate',
+      '_x.ai/suggestPrompt',
     ])
     expect(grokCalls[1]?.[1]).toEqual({ methodId: 'cached_token' })
     expect(grokCalls[0]?.[1]).toEqual(expect.objectContaining({
@@ -353,7 +354,66 @@ describe('ACP production turn runner AgentEvents', () => {
       },
     }))
     expect(mocks.active.prompt).toHaveBeenCalledWith('go')
+    expect(grokCalls[2]?.[1]).toEqual({ generation: 1, sessionId: 'acp-provider-1' })
     mocks.connection.agent.request.mockImplementation(async () => ({}))
+  })
+
+  it('pulls x.ai/suggestPrompt after a grok turn and emits prompt_suggestion on the ambient path', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    mocks.connection.agent.request.mockImplementation(async (...args: unknown[]) => {
+      const method = args[0]
+      if (method === 'initialize') return { authMethods: [] }
+      if (method === '_x.ai/suggestPrompt') {
+        const body = args[1] as { generation: number }
+        return { suggestion: 'Run the tests', generation: body.generation }
+      }
+      return {}
+    })
+    const events: AgentEvent[] = []
+    const ambient: AgentEvent[] = []
+    try {
+      await createAcpAgentTurnRunner({
+        launch: { command: '/opt/grok', agentId: 'grok-build' },
+      })({
+        session: session(),
+        messageId: 'message-suggest',
+        text: 'go',
+        onAgentEvent: (event) => events.push(event),
+        onAmbientEvent: (event) => ambient.push(event),
+        onDelta: () => {},
+        signal: new AbortController().signal,
+      })
+      expect(ambient).toEqual([{ type: 'prompt_suggestion', suggestion: 'Run the tests' }])
+      expect(events.some((event) => event.type === 'prompt_suggestion')).toBe(false)
+    } finally {
+      mocks.connection.agent.request.mockImplementation(async () => ({}))
+    }
+  })
+
+  it('does not pull x.ai/suggestPrompt for a grok slash prompt', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    mocks.connection.agent.request.mockReset()
+    mocks.connection.agent.request.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === 'initialize') return { authMethods: [] }
+      return {}
+    })
+    try {
+      await createAcpAgentTurnRunner({
+        launch: { command: '/opt/grok', agentId: 'grok-build' },
+      })({
+        session: session(),
+        messageId: 'message-slash',
+        text: '/recap',
+        onAgentEvent: () => {},
+        onDelta: () => {},
+        signal: new AbortController().signal,
+      })
+      const methods = (mocks.connection.agent.request.mock.calls as unknown as Array<[string]>)
+        .map((call) => call[0])
+      expect(methods).not.toContain('_x.ai/suggestPrompt')
+    } finally {
+      mocks.connection.agent.request.mockImplementation(async () => ({}))
+    }
   })
 
   it('sends an explicit clientVersion on initialize', async () => {

@@ -46,6 +46,11 @@ MCP elicitation completion, settings, MCP status/progress/tools and model update
 Unknown variants are ignored. An upstream method absent from that list is not
 supported just because its name appears in an old design inventory.
 
+`x.ai/suggestPrompt` is a client → agent request, not a notification. SuperOne
+pulls it after a successful grok-build idle turn (`_x.ai/suggestPrompt`) and
+emits shared `prompt_suggestion`. `x.ai/follow_ups` stays on this notification
+bus and is still mapped if the agent pushes chips.
+
 ## Event mapping
 
 | Wire family | Host behavior |

@@ -129,6 +129,11 @@ import {
   grokInitializeAdvertisesPluginDirs,
 } from './acp-session-meta'
 import { GROK_AUTH_REQUIRED } from '@superone/shared/grok-auth'
+import {
+  fetchGrokSuggestPrompt,
+  shouldFetchGrokSuggestPrompt,
+  XAI_SUGGEST_PROMPT,
+} from '@superone/shared/grok-suggest-prompt'
 import { describeAcpRequestFailure } from './acp-request-error'
 import {
   ANTIGRAVITY_CLIENT_INFO,
@@ -1936,6 +1941,92 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }
         }
         onEvent({ type: 'status_change', status: 'idle' })
+        // Grok pager pulls x.ai/suggestPrompt after a clean idle turn. Fire-and-forget
+        // so Send is not blocked for the 45s generator bound. A later prompt or close
+        // discards a stale generation; empty results stay silent so follow_ups chips
+        // are not wiped.
+        const grokSuggest = shouldFetchGrokSuggestPrompt({
+          grok: launch.agentId === 'grok-build',
+          complete,
+          interrupted,
+          text,
+        })
+        if (!grokSuggest) {
+          if (launch.agentId === 'grok-build') {
+            log.info(
+              '[acp-runtime] suggestPrompt skip complete=%s interrupted=%s slash=%s',
+              complete,
+              interrupted,
+              text.trimStart().startsWith('/'),
+            )
+          }
+        } else {
+          const generation = gen
+          const sessionId = activeSession.sessionId
+          const method = xaiExtWireMethod(XAI_SUGGEST_PROMPT)
+          log.info(
+            '[acp-runtime] suggestPrompt send method=%s generation=%s session=%s',
+            method,
+            generation,
+            sessionId,
+          )
+          void fetchGrokSuggestPrompt(
+            async (requestMethod, params) => {
+              try {
+                const raw = await activeConnection.agent.request(requestMethod, params as never)
+                let preview = ''
+                try {
+                  preview = JSON.stringify(raw) ?? ''
+                } catch {
+                  preview = String(raw)
+                }
+                log.info(
+                  '[acp-runtime] suggestPrompt rpc-ok generation=%s raw=%s',
+                  generation,
+                  preview.length > 400 ? `${preview.slice(0, 400)}…` : preview,
+                )
+                return raw
+              } catch (err) {
+                log.info(
+                  '[acp-runtime] suggestPrompt rpc-failed generation=%s err=%s',
+                  generation,
+                  describeAcpRequestFailure(err),
+                )
+                throw err
+              }
+            },
+            {
+              generation,
+              sessionId,
+              method,
+            },
+          ).then((suggestion) => {
+            if (!suggestion) {
+              log.info(
+                '[acp-runtime] suggestPrompt empty generation=%s closed=%s currentGen=%s',
+                generation,
+                closed,
+                promptGen,
+              )
+              return
+            }
+            if (closed || generation !== promptGen) {
+              log.info(
+                '[acp-runtime] suggestPrompt discarded generation=%s closed=%s currentGen=%s',
+                generation,
+                closed,
+                promptGen,
+              )
+              return
+            }
+            log.info(
+              '[acp-runtime] suggestPrompt emit generation=%s text=%s',
+              generation,
+              suggestion.slice(0, 120),
+            )
+            deliver({ type: 'prompt_suggestion', suggestion })
+          })
+        }
       } catch (err) {
         if (settled) return
         fail(describeAcpRequestFailure(err))

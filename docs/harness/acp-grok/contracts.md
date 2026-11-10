@@ -67,3 +67,10 @@ Upstream behavior SuperOne depends on that the published types do not state.
   `apps/cli/src/session/harness-model-catalog.ts`, `apps/cli/src/session/collaboration.ts`.
 - **Guard:** `packages/acp/src/run-turn.test.ts`, `packages/acp/src/xai-event-map.test.ts`,
   `packages/acp/src/model-catalog.test.ts`, `apps/cli/src/session/collaboration.test.ts`.
+
+## Prompt suggestion (`x.ai/suggestPrompt`)
+
+- **Behavior:** After a successful idle turn, the Grok pager client-pulls `x.ai/suggestPrompt` with camelCase `{ generation, sessionId, model? }`. The agent echoes `generation` and returns `{ suggestion, generation }`; `suggestion` may be null. SuperOne must send `_x.ai/suggestPrompt` (ACP `_` prefix); the bare name is method-not-found. SuperOne does not pass `model` unless a pin exists. A 45s client timeout matches the shell bound. Generation mismatch, silence tokens (`none`, `n/a`, …), empty text, and cancelled or leading-slash turns produce no event. A null/empty result is not emitted, so an earlier `x.ai/follow_ups` chip list is not wiped. Desktop fire-and-forgets so Send is not blocked; the node one-shot awaits before dispose/kill because that process dies with the turn. The shared `prompt_suggestion` event fills composer ghost text / chips. `x.ai/follow_ups` remains a mapped notification if the agent ever pushes chips to `clientIdentifier: superone`.
+- **Observed:** grok-build pager `Effect::FetchPromptSuggestion` (`xai-grok-pager` effects + `dispatch/prompt.rs`); shell `extensions/suggest/handle_suggest_prompt` and `sanitize_suggestion`.
+- **Depends on it:** `packages/shared/src/grok-suggest-prompt.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `packages/acp/src/run-turn.ts`.
+- **Guard:** `packages/shared/src/grok-suggest-prompt.test.ts`, `apps/desktop/src/main/acp/acp-runtime.test.ts`, `packages/acp/src/run-turn.test.ts`.

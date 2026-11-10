@@ -2,6 +2,7 @@ import type { MentionCatalog } from '@superone/shared/mention-catalog'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { buildEnvironmentMentionCandidates } from '@superone/shared/environment-mention'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, waitFor } from 'storybook/test'
 import { useEffect, useRef, useState } from 'react'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRef, GitMentionRefsResult } from '@superone/shared/git-mention-query'
@@ -107,7 +108,10 @@ mockIpc('environment', 'listRemoteCollabProfiles', async () => [{ id: 'node-revi
 
 mockIpc('app', 'getAppSettings', async () => ({ computerUseEnabled: false, cdpEnabled: false }))
 mockIpc('app', 'onAppSettingsChange', () => () => {})
-mockIpc('app', 'getGitMentionCapabilities', async () => capabilities)
+mockIpc('app', 'getGitMentionCapabilities', async (_root: unknown, refresh?: unknown) => {
+  if (refresh === true && capabilities.repo === 'ready') capabilities = { repo: 'ready', github: true }
+  return capabilities
+})
 mockIpc('app', 'listGitMentionRefs', async (_root: unknown, kind: unknown, query: unknown) =>
   refsResult(kind as GitMentionRef['kind'], String(query ?? '')))
 mockIpc('environment', 'listDirectory', async () => [])
@@ -253,7 +257,13 @@ export const GitPortalNotARepo: Story = { args: { query: 'gi', repo: false } }
  * Without a signed-in `gh` (or a GitHub remote) the GitHub portal stays listed
  * but disabled and `@gh …` types as plain text; Git is untouched.
  */
-export const GhPortalUnavailable: Story = { args: { query: 'g', github: false } }
+export const GhPortalUnavailable: Story = {
+  args: { query: 'g', github: false },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('button', { name: 'Check Again' }))
+    await waitFor(() => expect(canvas.queryByRole('button', { name: 'Check Again' })).toBeNull())
+  },
+}
 
 /** `@gh `: pick issue or pull request. Tab completes `gh issue `. */
 export const GhPickKind: Story = { args: { query: 'gh ' } }

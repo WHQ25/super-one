@@ -37,6 +37,9 @@ export interface GitMentionState {
   settled: boolean
   /** Set when a list request came back unusable; cleared on the next good page. */
   unavailable: GitMentionRefsUnavailable | null
+  /** Probe this root again. The disabled portal row's recheck control. */
+  recheck: () => void
+  rechecking: boolean
 }
 
 /**
@@ -44,7 +47,7 @@ export interface GitMentionState {
  * A generation counter drops responses from a superseded keystroke.
  */
 export function useGitMention(query: string, fileRoot: string | null): GitMentionState {
-  const caps = useGitMentionCapabilities(fileRoot)
+  const { caps, recheck, rechecking } = useGitMentionCapabilities(fileRoot)
   const portals = useMemo(() => enabledGitMentionPortals(caps), [caps])
   const parsed = useMemo(() => parseGitMentionQuery(query, portals), [query, portals])
   const [availability, setAvailability] = useState<GitMentionAvailability>(caps?.repo ?? 'unknown')
@@ -140,5 +143,7 @@ export function useGitMention(query: string, fileRoot: string | null): GitMentio
     loading,
     settled: settledFor === query,
     unavailable,
+    recheck,
+    rechecking,
   }
 }

@@ -3951,6 +3951,7 @@ export const zh: Messages = {
       gitNotRepoHint: '不是 Git 仓库',
       gitUnsupportedHint: '远程节点需升级后才能 @ Git 引用',
       ghUnavailableHint: '需要已登录的 gh CLI 和 GitHub 远程仓库',
+      recheckCapabilities: '重新检测',
       gitLoadError: '无法读取 Git 引用',
       noGitKinds: '没有匹配的引用类型',
       noGitRefs: '没有匹配的引用',

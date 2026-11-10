@@ -3875,6 +3875,7 @@ export type Messages = {
       gitNotRepoHint: string
       gitUnsupportedHint: string
       ghUnavailableHint: string
+      recheckCapabilities: string
       gitLoadError: string
       noGitKinds: string
       noGitRefs: string
@@ -8890,6 +8891,7 @@ export const en: Messages = {
       gitNotRepoHint: 'Not a git repository',
       gitUnsupportedHint: 'Update the remote node to mention git refs',
       ghUnavailableHint: 'Needs the gh CLI signed in and a GitHub remote',
+      recheckCapabilities: 'Check Again',
       gitLoadError: 'Could not read git refs',
       noGitKinds: 'No matching ref type',
       noGitRefs: 'No matching refs',

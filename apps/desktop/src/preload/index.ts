@@ -2253,8 +2253,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_LOG, folderPath, query),
   listGitMentionRefs: (folderPath: string, kind: GitMentionRefKind, query?: string): Promise<GitMentionRefsResult> =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_REFS, folderPath, kind, query),
-  getGitMentionCapabilities: (folderPath: string): Promise<GitMentionCapabilities> =>
-    ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath),
+  getGitMentionCapabilities: (folderPath: string, refresh?: boolean): Promise<GitMentionCapabilities> =>
+    refresh
+      ? ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath, true)
+      : ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
   getSessionProject: (sessionId: string): Promise<string | null> =>

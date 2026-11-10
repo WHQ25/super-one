@@ -1,17 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const gitRun = vi.hoisted(() => vi.fn())
+const ghRun = vi.hoisted(() => vi.fn())
 vi.mock('../git-run', () => ({
   gitRun,
-  ghRun: vi.fn(),
+  ghRun,
 }))
 
 import { invalidateLocalGitReads } from './git-read-cache'
-import { resolveGitMentionRefs } from './mention-refs'
+import { clearGitHubMentionProbe, resolveGitMentionCapabilities, resolveGitMentionRefs } from './mention-refs'
 
 afterEach(() => {
   gitRun.mockReset()
+  ghRun.mockReset()
   invalidateLocalGitReads()
+  clearGitHubMentionProbe()
 })
 
 describe('resolveGitMentionRefs scan cache', () => {
@@ -32,6 +35,20 @@ describe('resolveGitMentionRefs scan cache', () => {
     invalidateLocalGitReads('/repo-scan')
     await resolveGitMentionRefs('/repo-scan', 'branch', 'feat')
     expect(scans()).toHaveLength(2)
+  })
+
+  it('probes gh again when a recheck drops the remembered no', async () => {
+    gitRun.mockResolvedValue('.git')
+    ghRun.mockRejectedValueOnce(new Error('none of the git remotes configured for this repository point to a known GitHub host'))
+    ghRun.mockResolvedValue('{"nameWithOwner":"WHQ25/super-one"}')
+
+    await expect(resolveGitMentionCapabilities('/repo-gh')).resolves.toEqual({ repo: 'ready', github: false })
+    await expect(resolveGitMentionCapabilities('/repo-gh')).resolves.toEqual({ repo: 'ready', github: false })
+    expect(ghRun).toHaveBeenCalledTimes(1)
+
+    await expect(resolveGitMentionCapabilities('/repo-gh', { refresh: true })).resolves.toEqual({ repo: 'ready', github: true })
+    expect(ghRun).toHaveBeenCalledTimes(2)
+    expect(ghRun.mock.calls[1]?.[1]).toEqual(['repo', 'view', '--json', 'nameWithOwner'])
   })
 
   it('does not cache a commit lookup', async () => {

@@ -38,8 +38,10 @@ export {
   type ParsedGitMentionQuery,
 } from '@superone/shared/git-mention-query'
 
-export function loadGitMentionCapabilities(folderPath: string): Promise<GitMentionCapabilities> {
-  return window.app.getGitMentionCapabilities(folderPath)
+export function loadGitMentionCapabilities(folderPath: string, refresh = false): Promise<GitMentionCapabilities> {
+  return refresh
+    ? window.app.getGitMentionCapabilities(folderPath, true)
+    : window.app.getGitMentionCapabilities(folderPath)
 }
 
 export function loadGitMentionRefs(

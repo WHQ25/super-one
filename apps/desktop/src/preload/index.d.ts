@@ -754,8 +754,11 @@ interface AppAPI extends WindowLayoutAPI {
   getGitLog(folderPath: string, query?: string): Promise<GitLogEntry[]>
   /** `@git` popup rows for a local folder / worktree or a remote project key. */
   listGitMentionRefs(folderPath: string, kind: GitMentionRefKind, query?: string): Promise<GitMentionRefsResult>
-  /** What `@git` / `@gh` may offer for this folder (repo present, gh reachable). */
-  getGitMentionCapabilities(folderPath: string): Promise<GitMentionCapabilities>
+  /**
+   * What `@git` / `@gh` may offer for this folder (repo present, gh reachable).
+   * `refresh` drops the remembered answer and probes again.
+   */
+  getGitMentionCapabilities(folderPath: string, refresh?: boolean): Promise<GitMentionCapabilities>
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
   /** The project of a local session, or null when there is no such session. */
   getSessionProject(sessionId: string): Promise<string | null>

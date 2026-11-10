@@ -1140,6 +1140,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             setItemRef={setItemRef(i)}
             onHover={() => onSetSelectedIndex(i)}
             onNavigate={() => handleItemClick(item, 'navigate')}
+            onRecheck={git.recheck}
+            rechecking={git.rechecking}
           />
         )
       }

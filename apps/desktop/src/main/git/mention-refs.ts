@@ -23,7 +23,7 @@ import {
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
-import { cachedLocalGitMentionCapabilities, cachedLocalGitMentionRefScan } from './git-read-cache'
+import { cachedLocalGitMentionCapabilities, cachedLocalGitMentionRefScan, invalidateLocalGitReads } from './git-read-cache'
 
 const GIT_READ_OPTS: GitRunOptions = { timeoutMs: 20_000 }
 /** GitHub round-trips; long enough for a slow API, short enough that a popup never hangs. */
@@ -68,19 +68,40 @@ export async function resolveGitMentionRefs(
  * that the popup would otherwise repeat on every open. Whether gh is installed,
  * signed in and the remote points at GitHub does not change while the app
  * runs, so that half is kept per folder for the process lifetime. The combined
- * answer is also kept until a git mutation or the file watcher drops it, so a
- * session switch does not probe again. `git init` invalidates that cache and
- * the repo half is read again.
+ * answer is also kept until a git mutation, the file watcher, or a manual
+ * recheck drops it. `git init` invalidates that cache and the repo half is
+ * read again.
  */
 const githubProbeByFolder = new Map<string, Promise<boolean>>()
+
+/** Forget a remembered `gh repo view`. Omit the folder to drop every one (tests). */
+export function clearGitHubMentionProbe(folderPath?: string): void {
+  if (folderPath) githubProbeByFolder.delete(folderPath)
+  else githubProbeByFolder.clear()
+}
 
 /**
  * What the `@git` / `@gh` portals may offer for a cwd — probed up front so a
  * portal is disabled in the popup instead of failing after the user typed into
  * it. Remote keys ask the node; a node that cannot answer reports `unsupported`.
+ * `refresh` drops the remembered answer first, for the recheck control on a
+ * disabled portal row.
  */
-export async function resolveGitMentionCapabilities(folderPath: string): Promise<GitMentionCapabilities> {
-  if (parseRemoteProjectKey(folderPath)) {
+export async function resolveGitMentionCapabilities(
+  folderPath: string,
+  options?: { refresh?: boolean },
+): Promise<GitMentionCapabilities> {
+  const remote = parseRemoteProjectKey(folderPath)
+  if (options?.refresh) {
+    if (remote) {
+      const { invalidateRemoteGitReads } = await import('../environment/remote-file-tree')
+      invalidateRemoteGitReads(folderPath)
+    } else {
+      clearGitHubMentionProbe(folderPath)
+      invalidateLocalGitReads(folderPath)
+    }
+  }
+  if (remote) {
     const { getEnvironmentHost } = await import('../environment')
     const { getRemoteGitMentionCapabilities } = await import('../environment/remote-file-tree')
     return getRemoteGitMentionCapabilities(getEnvironmentHost(), folderPath)

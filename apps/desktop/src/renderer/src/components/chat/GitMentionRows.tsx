@@ -5,8 +5,10 @@
  * one unit and the popup only branches on `isGitMode`.
  */
 import type { ReactNode } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { gitRefIcon, staticMentionIcon } from '@superone/ui/components/ui/mention-icons'
@@ -160,30 +162,25 @@ function HighlightedHandle({ keyword, indices }: { keyword: string; indices: num
 export function GitPortalRow({
   item,
   onNavigate,
+  onRecheck,
+  rechecking = false,
   index,
   selected,
   setItemRef,
   onHover,
-}: RowProps & { item: Extract<GitFlatItem, { kind: 'git-portal' }>; onNavigate: () => void }) {
+}: RowProps & {
+  item: Extract<GitFlatItem, { kind: 'git-portal' }>
+  onNavigate: () => void
+  /** Probe this folder again. Shown at the end of a disabled row. */
+  onRecheck?: () => void
+  rechecking?: boolean
+}) {
   const { t } = useTranslation()
-  const disabled = item.disabledReason !== undefined
-  return (
-    <button
-      key={`c-${item.id}-portal`}
-      ref={setItemRef}
-      type="button"
-      disabled={disabled}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={() => { if (!disabled) onNavigate() }}
-      onMouseEnter={onHover}
-      className={cn(
-        mentionRowClass(selected),
-        disabled && 'cursor-not-allowed opacity-55 hover:bg-transparent data-[disabled]:pointer-events-auto',
-      )}
-      data-index={index}
-      // The reason stays one hover away; the row itself reads like every other built-in.
-      title={item.disabledReason !== undefined ? t(disabledHintKey(item.disabledReason)) : undefined}
-    >
+  const reason = item.disabledReason
+  const disabled = reason !== undefined
+  const recheckLabel = t('chat.mentionPopup.recheckCapabilities')
+  const body = (
+    <>
       {portalIcon(item.id, cn('size-3.5 shrink-0', disabled ? 'text-muted-foreground' : 'text-foreground'))}
       <span className="min-w-0 flex-1 truncate">
         <span className="font-medium">
@@ -200,6 +197,57 @@ export function GitPortalRow({
           <Kbd>tab</Kbd>
         )}
       </span>
+    </>
+  )
+  // A disabled <button> cannot contain the recheck control, so that control
+  // sits beside it and stays at full opacity.
+  if (reason) {
+    return (
+      <div
+        className={cn(mentionRowClass(selected), 'pr-1')}
+        data-index={index}
+        onMouseEnter={onHover}
+      >
+        <button
+          key={`c-${item.id}-portal`}
+          ref={setItemRef}
+          type="button"
+          disabled
+          onMouseDown={(e) => e.preventDefault()}
+          className="flex min-w-0 flex-1 cursor-not-allowed items-center gap-2 text-left opacity-55"
+          title={t(disabledHintKey(reason))}
+        >
+          {body}
+        </button>
+        {onRecheck ? (
+          <IconButton
+            size="xs"
+            variant="ghost"
+            tooltip={recheckLabel}
+            aria-busy={rechecking}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onRecheck}
+            className="text-muted-foreground"
+          >
+            <RefreshCw className={cn(rechecking && 'animate-spin')} />
+          </IconButton>
+        ) : null}
+      </div>
+    )
+  }
+  return (
+    <button
+      key={`c-${item.id}-portal`}
+      ref={setItemRef}
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onNavigate}
+      onMouseEnter={onHover}
+      className={mentionRowClass(selected)}
+      data-index={index}
+    >
+      {body}
     </button>
   )
 }

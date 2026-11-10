@@ -3170,9 +3170,9 @@ function registerIpcHandlers(): void {
     },
   )
 
-  ipcMain.handle(AgentIpcChannels.GIT_MENTION_CAPABILITIES, async (_event, folderPath: string) => {
+  ipcMain.handle(AgentIpcChannels.GIT_MENTION_CAPABILITIES, async (_event, folderPath: string, refresh?: boolean) => {
     const { resolveGitMentionCapabilities } = await import('./git/mention-refs')
-    return resolveGitMentionCapabilities(folderPath)
+    return resolveGitMentionCapabilities(folderPath, { refresh: refresh === true })
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {

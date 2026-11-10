@@ -15,7 +15,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Doubao realtime voice. Official Codex sessions keep Codex voice. Other sessions that can send a turn use Doubao when a speech key is saved. The voice shell sends the conversation to the backend agent and returns immediately; the host forwards each reply for the voice model to read. Speakers: VV, Xiaohe, Yunzhou, Xiaotian, Tim, Dacey, and Stokie.
+- Doubao realtime voice or Gemini 3.8 Live. Official Codex sessions keep Codex Realtime. Other sessions that can send a turn use Gemini when that speech key is saved and Gemini is selected, or Doubao when Doubao is selected. The voice shell sends the conversation to the backend agent and returns immediately. Doubao reads each reply as it arrives. Gemini speaks the backend result after the current utterance. Doubao speakers: VV, Xiaohe, Yunzhou, Xiaotian, Tim, Dacey, and Stokie.
 - Read aloud, speech synthesis, and transcription. Read-aloud uses the enabled speech model and keeps the clip until the session is settled. ElevenLabs accepts a pasted voice id and plays that voice's preview. A provider with one key shows its name without the key label.
 - Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent. Activity-panel and in-chat previews share the image menu, including Save As. A local picture can start a system file drag. A remote picture that only has inlined bytes has neither menu nor drag.
 - Antigravity manage_task has its own card for listing background tasks, checking status, stopping a task, and sending input.
@@ -23,6 +23,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Antigravity keeps a turn open while a subagent is still running after the prompt ends, and answers elicitation through the question card.
 - Offline hosts share one folded group. Project focus and the unfocused multi-host list give leftover pane height to long session lists. The 256px cap stays when every open environment already overflows it.
 - Sidebar groups ease open and closed over 120ms. Heavy lists unmount after the close. Drafts keep their height animation.
+- After a successful idle Grok turn, the composer shows one prompt suggestion. A slash prompt does not request one. An empty or silence result is not shown, and an earlier follow-up list is left in place.
+- A disabled @git or @gh mention row has Check Again. It drops the cached probe and asks again, so signing in to gh turns the row and the composer grammar back on without quitting.
 
 ### Changed
 
@@ -49,6 +51,19 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A virtual transcript block keeps its height when the activity panel is fullscreen.
 - Collaboration wakes drain when a turn settles, and an orphaned ACP interaction is cleared. (#180)
 - Settings keeps the provider, credential, and binding lists when a local read returns nothing.
+- A markdown shell fence runs in a login interactive shell in the chat session's workspace, so startup files apply. The tab stays open and prints the exit code.
+
+## [0.79.0-alpha.2] - 2026-11-10
+
+### Added
+
+- Gemini 3.8 Live is a selectable voice. Official Codex sessions stay on Codex Realtime. Other sessions that can send a turn use Gemini when that speech key is saved, or Doubao when Doubao is selected. Gemini speaks the backend result after the current utterance.
+- After a successful idle Grok turn, the composer shows one prompt suggestion. A slash prompt does not request one. An empty or silence result is not shown, and an earlier follow-up list is left in place.
+- A disabled @git or @gh mention row has Check Again. It drops the cached probe and asks again, so signing in to gh turns the row and the composer grammar back on without quitting.
+
+### Fixed
+
+- A markdown shell fence runs in a login interactive shell in the chat session's workspace, so startup files apply. The tab stays open and prints the exit code.
 
 ## [0.79.0-alpha.1] - 2026-11-10
 

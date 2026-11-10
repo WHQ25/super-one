@@ -3,6 +3,7 @@ import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useTerminalStore } from '@/stores/terminal'
+import { terminalCreateSessionId } from '@/hooks/useTerminalSync'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { tryCopy } from '@/lib/clipboard'
 import { useIsDark } from '@/hooks/use-is-dark'
@@ -50,12 +51,23 @@ export function HighlightedCodeBlock(props: HighlightedCodeBlockProps) {
   const sessionId = scope?.sessionId ?? activeSessionId
   const runBash = useCallback(async (bashScript: string) => {
     if (!projectPath) return
-    // Omit sessionId: create resolves the project root, even when chat uses a worktree.
-    const item = await window.terminal.create({ projectPath, title: 'Shell', bashScript })
+    // Chat passes the session so the pty cwd is that session's workspace.
+    // A block outside chat has no session and stays on its own project path.
+    const chatSessionId = scope?.sessionId
+    const owned = chatSessionId
+      ? useChatStore.getState().projectSessions[projectPath]?._sessions[chatSessionId]?.hostSessionOwned === true
+      : false
+    const terminalSessionId = terminalCreateSessionId(projectPath, chatSessionId, owned)
+    const item = await window.terminal.create({
+      projectPath,
+      title: 'Shell',
+      bashScript,
+      ...(terminalSessionId ? { sessionId: terminalSessionId } : {}),
+    })
     const terminal = useTerminalStore.getState()
     terminal.upsertTab(projectPath, item, true)
     terminal.setOpen(sessionId ? projectSessionKey(projectPath, sessionId) : null, true)
-  }, [projectPath, sessionId])
+  }, [projectPath, scope?.sessionId, sessionId])
   const ports = useMemo<HighlightedCodeBlockPresenterPorts>(() => ({
     isDark,
     lightCodePlugin: codePluginLight,

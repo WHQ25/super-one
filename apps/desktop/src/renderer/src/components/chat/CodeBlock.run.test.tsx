@@ -29,12 +29,20 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('running a markdown shell block', () => {
-  it('opens a separate terminal at the scoped project root and passes the entire script unchanged', async () => {
+  it('opens a terminal in the session workspace and passes the entire script unchanged', async () => {
     block()
     fireEvent.click(screen.getByRole('button', { name: 'Run Shell' }))
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ projectPath: '/project with spaces', title: 'Shell', bashScript: script }))
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ projectPath: '/project with spaces', sessionId: 's1', title: 'Shell', bashScript: script }))
     expect(useTerminalStore.getState().byProject['/project with spaces'].activeId).toBe('t1')
     expect(useTerminalStore.getState().openBySession[projectSessionKey('/project with spaces', 's1')]).toBe(true)
+  })
+
+  it('does not pass a remote draft id, so the node keeps the project path', async () => {
+    render(<SessionScopeProvider value={{ projectPath: 'remote:env-1:/work/app', sessionId: 'draft-1' }}>
+      <Streamdown components={{ code: Code } as never}>{`\`\`\`bash\npwd\n\`\`\``}</Streamdown>
+    </SessionScopeProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Run Shell' }))
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ projectPath: 'remote:env-1:/work/app', title: 'Shell', bashScript: 'pwd\n' }))
   })
 
   it('prevents repeated clicks during launch and lets the user retry a failed launch', async () => {

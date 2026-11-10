@@ -24,7 +24,7 @@ export interface PtySpawnOptions {
   rows: number
   env?: Record<string, string>
   shell?: string
-  /** Run this script in `shell`, then leave that shell interactive. */
+  /** Run this script in a login interactive `shell`, then leave that shell at a prompt. */
   bashScript?: string
 }
 

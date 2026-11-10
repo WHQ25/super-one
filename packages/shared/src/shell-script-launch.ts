@@ -1,8 +1,10 @@
 /**
- * Argv for a code-fence script. The user's shell runs the script in a child
- * of itself, prints `[exit N]`, then replaces that process with an interactive
- * shell. `exit` in the script therefore cannot close the terminal tab.
- * The script is an argument, never interpolated, so quotes and newlines stay literal.
+ * Argv for a code-fence script. A login interactive child of the user's shell
+ * runs the script, so it reads the same startup files as a terminal paste
+ * (zsh: `.zprofile` and `.zshrc`). The wrapper prints `[exit N]`, then replaces
+ * itself with an interactive login shell. `exit` in the script therefore cannot
+ * close the terminal tab. The script is an argument, never interpolated, so
+ * quotes and newlines stay literal.
  */
 export function scriptedShellArgs(shell: string, script: string): string[] {
   const program = shellProgram(shell)
@@ -20,10 +22,11 @@ function shellProgram(shell: string): string {
 
 function posixArgs(shell: string, script: string): string[] {
   // set +e first: zsh reads .zshenv before -c, and set -e there would abort
-  // this wrapper when the script exits non-zero.
+  // this wrapper when the script exits non-zero. The script runs in a login
+  // interactive child (-ilc), not this wrapper, so its startup files still apply.
   return [
     '-c',
-    'set +e; "$1" -c "$2"; result=$?; printf "\\n[exit %s]\\n" "$result"; exec "$1" -i',
+    'set +e; "$1" -ilc "$2"; result=$?; printf "\\n[exit %s]\\n" "$result"; exec "$1" -il',
     'shell',
     shell,
     script,

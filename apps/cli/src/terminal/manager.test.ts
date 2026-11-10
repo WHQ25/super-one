@@ -44,6 +44,8 @@ describe('NodeTerminalManager exit bookkeeping', () => {
     const dir = mkdtempSync(join(tmpdir(), 'bash project '))
     dirs.push(dir)
     let terminalId: string | undefined
+    const previousZdot = process.env.ZDOTDIR
+    process.env.ZDOTDIR = dir
     try {
       const info = terminals.create({ cwd: dir, bashScript: "pwd\nvalue='你好'\nprintf '%s\\n' \"$value\"\nexit 7" })
       terminalId = info.terminalId
@@ -52,6 +54,8 @@ describe('NodeTerminalManager exit bookkeeping', () => {
       expect(terminals.get(info.terminalId)?.snapshot).toContain('你好')
       expect(terminals.get(info.terminalId)?.exitedAt).toBeNull()
     } finally {
+      if (previousZdot === undefined) delete process.env.ZDOTDIR
+      else process.env.ZDOTDIR = previousZdot
       if (terminalId) terminals.kill(terminalId)
       db.close()
       await settlePtyExit()

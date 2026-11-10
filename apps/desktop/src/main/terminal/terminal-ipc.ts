@@ -24,7 +24,8 @@ export function registerTerminalIpc(deps: TerminalIpcDeps): void {
       }
       await deps.ensureControl()
       const cwd = deps.resolveCwd(opts.projectPath, opts.sessionId)
-      // The pty inherits process.env and its shell is not a login shell.
+      // PATH comes from the login shell. A code-fence script then runs in its own
+      // login interactive child so rc files are read too.
       await deps.ensureShellPath()
       const session = deps.manager.create({
         cwd,
